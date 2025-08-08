@@ -605,6 +605,43 @@ class PCM_source
     virtual int Extended(int call, void *parm1, void *parm2, void *parm3) { return 0; } // return 0 if unsupported
 };
 
+/***************************************************************************************
+**** MIDI effect API
+***************************************************************************************/
+
+typedef struct _MIDI_effect_transfer_t
+{
+  double time_s; // start time of block
+  MIDI_eventlist* input_events;  // events entering the effect
+  MIDI_eventlist* output_events; // events produced by the effect
+} MIDI_effect_transfer_t;
+
+class MIDI_effect
+{
+  public:
+    virtual ~MIDI_effect() { }
+
+    virtual MIDI_effect *Duplicate()=0;
+    virtual bool IsAvailable()=0;
+    virtual void SetAvailable(bool avail) { }
+    virtual const char *GetType()=0;
+
+    virtual int PropertiesWindow(HWND hwndParent)=0;
+
+    virtual void Process(MIDI_effect_transfer_t *block)=0;
+
+    virtual void SaveState(ProjectStateContext *ctx)=0;
+    virtual int LoadState(const char *firstline, ProjectStateContext *ctx)=0; // -1 on error
+
+    virtual int Extended(int call, void *parm1, void *parm2, void *parm3) { return 0; } // return 0 if unsupported
+};
+
+typedef struct _REAPER_midieffect_register_t // register with "midieffect"
+{
+  const char* (*GetName)();
+  MIDI_effect* (*Create)();
+} midieffect_register_t;
+
 typedef struct _REAPER_cue
 {
   int m_id; // ignored for PCM_SINK_EXT_ADDCUE, populated for PCM_SOURCE_EXT_ENUMCUES

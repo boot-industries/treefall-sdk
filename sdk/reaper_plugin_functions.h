@@ -7278,6 +7278,22 @@ REAPERAPI_DEF //==============================================
   int (*REAPERAPI_FUNCNAME(TrackFX_GetNumParams))(MediaTrack* track, int fx);
 #endif
 
+#if defined(REAPERAPI_WANT_TrackMIDI_FX_AddByName) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// TrackMIDI_FX_AddByName
+// Adds or queries the position of a named MIDI effect in the track MIDI FX chain, which processes events before instrument FX. Specify instantiate semantics as with TrackFX_AddByName. Returns -1 on failure or the new position in chain on success.
+
+  int (*REAPERAPI_FUNCNAME(TrackMIDI_FX_AddByName))(MediaTrack* track, const char* fxname, int instantiate);
+#endif
+
+#if defined(REAPERAPI_WANT_TrackMIDI_FX_GetNumParams) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// TrackMIDI_FX_GetNumParams
+// Returns the number of parameters for the MIDI effect at index fx in the track MIDI FX chain.
+
+  int (*REAPERAPI_FUNCNAME(TrackMIDI_FX_GetNumParams))(MediaTrack* track, int fx);
+#endif
+
 #if defined(REAPERAPI_WANT_TrackFX_GetOffline) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // TrackFX_GetOffline
@@ -10170,6 +10186,12 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_TrackFX_GetNumParams) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(TrackFX_GetNumParams),"TrackFX_GetNumParams"},
+      #endif
+      #if defined(REAPERAPI_WANT_TrackMIDI_FX_AddByName) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(TrackMIDI_FX_AddByName),"TrackMIDI_FX_AddByName"},
+      #endif
+      #if defined(REAPERAPI_WANT_TrackMIDI_FX_GetNumParams) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(TrackMIDI_FX_GetNumParams),"TrackMIDI_FX_GetNumParams"},
       #endif
       #if defined(REAPERAPI_WANT_TrackFX_GetOffline) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(TrackFX_GetOffline),"TrackFX_GetOffline"},
