@@ -6574,6 +6574,30 @@ REAPERAPI_DEF //==============================================
   int (*REAPERAPI_FUNCNAME(StopTrackPreview2))(ReaProject* proj, preview_register_t* preview);
 #endif
 
+#if defined(REAPERAPI_WANT_stream_open) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// stream_open
+// Opens a WebSocket or SRT connection. Returns a handle, or 0 on failure.
+
+  int (*REAPERAPI_FUNCNAME(stream_open))(const char* url);
+#endif
+
+#if defined(REAPERAPI_WANT_stream_send) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// stream_send
+// Sends a PCM_source_transfer_t block over the network.
+
+  int (*REAPERAPI_FUNCNAME(stream_send))(int handle, const PCM_source_transfer_t* block);
+#endif
+
+#if defined(REAPERAPI_WANT_stream_receive) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// stream_receive
+// Receives a PCM_source_transfer_t block from the network.
+
+  int (*REAPERAPI_FUNCNAME(stream_receive))(int handle, PCM_source_transfer_t* block);
+#endif
+
 #if defined(REAPERAPI_WANT_stringToGuid) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // stringToGuid
@@ -10052,6 +10076,15 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_StopTrackPreview2) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(StopTrackPreview2),"StopTrackPreview2"},
+      #endif
+      #if defined(REAPERAPI_WANT_stream_open) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(stream_open),"stream_open"},
+      #endif
+      #if defined(REAPERAPI_WANT_stream_send) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(stream_send),"stream_send"},
+      #endif
+      #if defined(REAPERAPI_WANT_stream_receive) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(stream_receive),"stream_receive"},
       #endif
       #if defined(REAPERAPI_WANT_stringToGuid) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(stringToGuid),"stringToGuid"},
