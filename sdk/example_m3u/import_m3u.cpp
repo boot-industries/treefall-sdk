@@ -26,8 +26,13 @@
 
   */
 
-
+#ifdef _WIN32
 #include <windows.h>
+#include <string.h>
+#else
+#include "../../WDL/swell/swell.h"
+#include <strings.h>
+#endif
 #include <stdio.h>
 #include <math.h>
 
@@ -46,7 +51,12 @@ PCM_source *(*PCM_Source_CreateFromFile)(const char *filename);
 
 bool WantProjectFile(const char *fn)
 {
-  return strlen(fn)>4 && !stricmp(fn+strlen(fn)-4,".m3u");
+  return strlen(fn)>4 &&
+#ifdef _WIN32
+    !_stricmp(fn+strlen(fn)-4,".m3u");
+#else
+    !strcasecmp(fn+strlen(fn)-4,".m3u");
+#endif
 }
 
   // this is used for UI only
