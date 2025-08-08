@@ -2303,6 +2303,14 @@ REAPERAPI_DEF //==============================================
   bool (*REAPERAPI_FUNCNAME(GetMIDIOutputName))(int dev, char* nameout, int nameout_sz);
 #endif
 
+#if defined(REAPERAPI_WANT_GetMIDI_LiveMode) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// GetMIDI_LiveMode
+// Query whether minimal-buffering live mode is enabled for MIDI tracks in the project.
+
+  bool (*REAPERAPI_FUNCNAME(GetMIDI_LiveMode))(ReaProject* proj);
+#endif
+
 #if defined(REAPERAPI_WANT_GetMixerScroll) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // GetMixerScroll
@@ -3040,7 +3048,8 @@ REAPERAPI_DEF //==============================================
 // RENDER_DELAY: seconds to delay start of render to allow FX to initialize and load samples (requires RENDER_SETTINGS&(16<<16))
 // PROJECT_SRATE : sample rate (ignored unless PROJECT_SRATE_USE set)
 // PROJECT_SRATE_USE : set to 1 if project sample rate is used
-// 
+// MIDI_LIVE_MODE : 1 to stream MIDI instrument tracks directly to outputs with minimal buffering, 0 otherwise (serialized in project files)
+//
 
   double (*REAPERAPI_FUNCNAME(GetSetProjectInfo))(ReaProject* project, const char* desc, double value, bool is_set);
 #endif
@@ -6100,6 +6109,14 @@ REAPERAPI_DEF //==============================================
   void (*REAPERAPI_FUNCNAME(SetMIDIEditorGrid))(ReaProject* project, double division);
 #endif
 
+#if defined(REAPERAPI_WANT_SetMIDI_LiveMode) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// SetMIDI_LiveMode
+// Enable or disable minimal-buffering live mode for MIDI instrument tracks in the project.
+
+  void (*REAPERAPI_FUNCNAME(SetMIDI_LiveMode))(ReaProject* proj, bool enable);
+#endif
+
 #if defined(REAPERAPI_WANT_SetMixerScroll) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // SetMixerScroll
@@ -8602,6 +8619,9 @@ REAPERAPI_DEF //==============================================
       #if defined(REAPERAPI_WANT_GetMIDIOutputName) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(GetMIDIOutputName),"GetMIDIOutputName"},
       #endif
+      #if defined(REAPERAPI_WANT_GetMIDI_LiveMode) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(GetMIDI_LiveMode),"GetMIDI_LiveMode"},
+      #endif
       #if defined(REAPERAPI_WANT_GetMixerScroll) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(GetMixerScroll),"GetMixerScroll"},
       #endif
@@ -9834,6 +9854,9 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_SetMIDIEditorGrid) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(SetMIDIEditorGrid),"SetMIDIEditorGrid"},
+      #endif
+      #if defined(REAPERAPI_WANT_SetMIDI_LiveMode) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(SetMIDI_LiveMode),"SetMIDI_LiveMode"},
       #endif
       #if defined(REAPERAPI_WANT_SetMixerScroll) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(SetMixerScroll),"SetMixerScroll"},
