@@ -329,6 +329,22 @@ REAPERAPI_DEF //==============================================
   int (*REAPERAPI_FUNCNAME(CalculatePeaksFloatSrcPtr))(PCM_source_transfer_t* srcBlock, PCM_source_peaktransfer_t* pksBlock);
 #endif
 
+#if defined(REAPERAPI_WANT_CalibrateRoundTripLatency) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// CalibrateRoundTripLatency
+// measures roundtrip latency via ping/loopback probe
+
+  double (*REAPERAPI_FUNCNAME(CalibrateRoundTripLatency))();
+#endif
+
+#if defined(REAPERAPI_WANT_GetRoundTripLatency) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// GetRoundTripLatency
+// returns last measured roundtrip latency in seconds
+
+  double (*REAPERAPI_FUNCNAME(GetRoundTripLatency))();
+#endif
+
 #if defined(REAPERAPI_WANT_ClearAllRecArmed) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // ClearAllRecArmed
@@ -7823,6 +7839,12 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_CalculatePeaksFloatSrcPtr) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(CalculatePeaksFloatSrcPtr),"CalculatePeaksFloatSrcPtr"},
+      #endif
+      #if defined(REAPERAPI_WANT_CalibrateRoundTripLatency) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(CalibrateRoundTripLatency),"CalibrateRoundTripLatency"},
+      #endif
+      #if defined(REAPERAPI_WANT_GetRoundTripLatency) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(GetRoundTripLatency),"GetRoundTripLatency"},
       #endif
       #if defined(REAPERAPI_WANT_ClearAllRecArmed) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(ClearAllRecArmed),"ClearAllRecArmed"},

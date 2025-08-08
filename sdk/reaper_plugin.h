@@ -451,6 +451,7 @@ typedef struct _PCM_source_transfer_t
   MIDI_eventlist *midi_events;
 
   double approximate_playback_latency; // 0.0 if not supported
+  double roundtrip_latency; // calibrated roundtrip latency in seconds, 0.0 if unavailable
   double absolute_time_s;
   double force_bpm;
 } PCM_source_transfer_t;
