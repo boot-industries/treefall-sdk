@@ -38,14 +38,14 @@
 
 
 #include "../reaper_plugin.h"
+#include "../reaper_api_loader.hpp"
 
 
 REAPER_PLUGIN_HINSTANCE g_hInst; // used for dialogs, if any
 
-// these are used to resolve/make relative pathnames 
-void (*resolve_fn)(const char *in, char *out, int outlen);
-void (*relative_fn)(const char *in, char *out, int outlen);
-PCM_source *(*PCM_Source_CreateFromFile)(const char *filename);
+// these are used to resolve/make relative pathnames
+// resolve_fn, relative_fn and PCM_Source_CreateFromFile are provided by REAPER
+// and will be loaded via ReaperAPILoader.
 
 
 
@@ -163,16 +163,13 @@ REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hI
   g_hInst=hInstance;
   if (rec)
   {
-    if (rec->caller_version != REAPER_PLUGIN_VERSION || !rec->GetFunc)
+    ReaperAPILoader api(rec);
+    if (!api)
       return 0;
 
-    *((void **)&resolve_fn) = rec->GetFunc("resolve_fn");   
-    *((void **)&relative_fn) = rec->GetFunc("relative_fn");   
-    *((void **)&PCM_Source_CreateFromFile) = rec->GetFunc("PCM_Source_CreateFromFile");
-
-    if (!resolve_fn || 
-      !PCM_Source_CreateFromFile || 
-      !rec->Register ||      
+    if (!resolve_fn ||
+      !PCM_Source_CreateFromFile ||
+      !rec->Register ||
       !rec->Register("projectimport",&myRegStruct))
       return 0;
 
