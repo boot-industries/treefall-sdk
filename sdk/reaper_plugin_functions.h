@@ -1373,6 +1373,22 @@ REAPERAPI_DEF //==============================================
   const char* (*REAPERAPI_FUNCNAME(ExecProcess))(const char* cmdline, int timeoutmsec);
 #endif
 
+#if defined(REAPERAPI_WANT_ExportTrackMIDIToMusicXML) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// ExportTrackMIDIToMusicXML
+// Export track MIDI data to a MusicXML file.
+
+  bool (*REAPERAPI_FUNCNAME(ExportTrackMIDIToMusicXML))(MediaTrack* tr, const char* fn);
+#endif
+
+#if defined(REAPERAPI_WANT_ImportTrackMIDIFromMusicXML) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// ImportTrackMIDIFromMusicXML
+// Import MIDI data from a MusicXML file into a track.
+
+  bool (*REAPERAPI_FUNCNAME(ImportTrackMIDIFromMusicXML))(MediaTrack* tr, const char* fn);
+#endif
+
 #if defined(REAPERAPI_WANT_file_exists) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // file_exists
@@ -8306,6 +8322,12 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_ExecProcess) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(ExecProcess),"ExecProcess"},
+      #endif
+      #if defined(REAPERAPI_WANT_ExportTrackMIDIToMusicXML) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(ExportTrackMIDIToMusicXML),"ExportTrackMIDIToMusicXML"},
+      #endif
+      #if defined(REAPERAPI_WANT_ImportTrackMIDIFromMusicXML) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(ImportTrackMIDIFromMusicXML),"ImportTrackMIDIFromMusicXML"},
       #endif
       #if defined(REAPERAPI_WANT_file_exists) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(file_exists),"file_exists"},

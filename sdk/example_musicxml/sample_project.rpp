@@ -1,0 +1,20 @@
+<REAPER_PROJECT 0.1 "7.0" 0
+  <TRACK
+    NAME "MIDI Track"
+    <ITEM
+      POSITION 0
+      LENGTH 1
+      <TAKE
+        NAME "Take"
+        SOURCE MIDI
+        <SOURCE MIDI
+          <EVENTS
+            E 0 90 3C 64
+            E 480 80 3C 00
+            E 0
+          >
+        >
+      >
+    >
+  >
+>
