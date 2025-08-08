@@ -8,6 +8,8 @@
  *
  * to support via VST3: IEditController should support IReaperUIEmbedInterface, see reaper_vst3_interfaces.h
  *
+ * to support via ARA2: the plug-in's ARA factory should expose IReaperARAEmbedInterface (defined below)
+ *
  * to support via LV2: todo
  */
 
@@ -138,6 +140,19 @@ public:
   virtual void *getDC() { return 0; } // do not use
 
   virtual INT_PTR Extended(int id, void* data) { return 0; }
+};
+#endif
+
+#ifdef __cplusplus
+// ARA2 embedding interface. ARA-capable plug-ins can query the host for this
+// interface and send/receive REAPER_FXEMBED_WM_* messages just like VST3
+// plug-ins do via IReaperUIEmbedInterface.
+class IReaperARAEmbedInterface
+{
+public:
+  virtual INT_PTR embed_message(int msg, INT_PTR parm2, INT_PTR parm3) = 0;
+  // returns host-specific ARA context (for example an ARA::DocumentController*)
+  virtual void* get_ara_host() = 0;
 };
 #endif
 

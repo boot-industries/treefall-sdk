@@ -213,6 +213,23 @@ REAPERAPI_DEF //==============================================
   void (*REAPERAPI_FUNCNAME(APITest))();
 #endif
 
+#if defined(REAPERAPI_WANT_ARA_AttachProcessorToMediaItem) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// ARA_AttachProcessorToMediaItem
+// Attach an ARA2 processor identified by processorId to the specified media item.
+// Optional stateData contains serialized processor state or NULL.
+
+  bool (*REAPERAPI_FUNCNAME(ARA_AttachProcessorToMediaItem))(MediaItem* item, const char* processorId, const char* stateData);
+#endif
+
+#if defined(REAPERAPI_WANT_ARA_DetachProcessorFromMediaItem) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// ARA_DetachProcessorFromMediaItem
+// Detach any previously attached ARA2 processor from the media item.
+
+  bool (*REAPERAPI_FUNCNAME(ARA_DetachProcessorFromMediaItem))(MediaItem* item);
+#endif
+
 #if defined(REAPERAPI_WANT_ApplyNudge) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // ApplyNudge
@@ -7902,6 +7919,12 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_APITest) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(APITest),"APITest"},
+      #endif
+      #if defined(REAPERAPI_WANT_ARA_AttachProcessorToMediaItem) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(ARA_AttachProcessorToMediaItem),"ARA_AttachProcessorToMediaItem"},
+      #endif
+      #if defined(REAPERAPI_WANT_ARA_DetachProcessorFromMediaItem) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(ARA_DetachProcessorFromMediaItem),"ARA_DetachProcessorFromMediaItem"},
       #endif
       #if defined(REAPERAPI_WANT_ApplyNudge) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(ApplyNudge),"ApplyNudge"},
