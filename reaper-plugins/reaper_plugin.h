@@ -347,6 +347,8 @@ enum
 // &0xFFFF0000 is for receiver use
 
 #ifdef __cplusplus
+#include <string>
+#include <cstdio>
 
 #ifndef _WDL_PROJECTSTATECONTEXT_DEFINED_
 #define _REAPER_PLUGIN_PROJECTSTATECONTEXT_DEFINED_
@@ -406,7 +408,7 @@ class MIDI_eventlist
 {
 public:
   virtual void AddItem(MIDI_event_t *evt)=0;
-  virtual MIDI_event_t *EnumItems(int *bpos)=0; 
+  virtual MIDI_event_t *EnumItems(int *bpos)=0;
   virtual void DeleteItem(int bpos)=0;
   virtual int GetSize()=0; // size of block in bytes
   virtual void Empty()=0;
@@ -415,6 +417,34 @@ protected:
   // this is only defined in REAPER 4.60+, for 4.591 and earlier you should delete only via the implementation pointer
   virtual ~MIDI_eventlist() { }
 };
+
+struct track_marker_t {
+  int index;      // marker/region index number
+  int lane;       // lane index
+  bool isrgn;     // true if region
+  double pos;     // start position
+  double rgnend;  // end position (ignored if !isrgn)
+  std::string name;
+};
+
+static inline void TrackStateCtx_WriteTrackMarker(ProjectStateContext* ctx, const track_marker_t& tm)
+{
+  ctx->AddLine("TM %d %d %d %.17g %.17g %s", tm.index, tm.lane, tm.isrgn ? 1 : 0,
+               tm.pos, tm.rgnend, tm.name.c_str());
+}
+
+static inline bool TrackStateCtx_ReadTrackMarker(const char* line, track_marker_t& tm)
+{
+  int isrgn = 0;
+  char namebuf[4096] = {0};
+  if (std::sscanf(line, "TM %d %d %d %lf %lf %4095[^\r\n]", &tm.index, &tm.lane, &isrgn, &tm.pos, &tm.rgnend, namebuf) >= 5)
+  {
+    tm.isrgn = isrgn != 0;
+    tm.name = namebuf;
+    return true;
+  }
+  return false;
+}
 
 #endif // __cplusplus
 
@@ -1489,6 +1519,8 @@ class IReaperControlSurface
 #define CSURF_EXT_SETFXCHANGE 0x00010013 // parm1=(MediaTrack*)track, whenever FX are added, deleted, or change order. flags=(INT_PTR)parm2, &1=rec fx
 #define CSURF_EXT_SETPROJECTMARKERCHANGE 0x00010014 // whenever project markers are changed
 #define CSURF_EXT_TRACKFX_PRESET_CHANGED  0x00010015 // parm1=(MediaTrack*)track, parm2=(int*)fxidx (6.13+ probably)
+#define CSURF_EXT_SETTRACKMARKERLANEVIS 0x00010016 // parm1=(MediaTrack*)track, parm2=(int*)lane, parm3=(int*)visible
+#define CSURF_EXT_SETTRACKMARKERLANECOLOR 0x00010017 // parm1=(MediaTrack*)track, parm2=(int*)lane, parm3=(int*)color
 #define CSURF_EXT_SUPPORTS_EXTENDED_TOUCH 0x00080001 // returns nonzero if GetTouchState can take isPan=2 for width, etc
 #define CSURF_EXT_MIDI_DEVICE_REMAP 0x00010099 // parm1 = isout, parm2 = old idx, parm3 = new idx
 

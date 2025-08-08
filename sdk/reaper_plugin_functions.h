@@ -155,6 +155,14 @@ REAPERAPI_DEF //==============================================
   bool (*REAPERAPI_FUNCNAME(AddTempoTimeSigMarker))(ReaProject* proj, double timepos, double bpm, int timesig_num, int timesig_denom, bool lineartempochange);
 #endif
 
+#if defined(REAPERAPI_WANT_AddTrackMarker) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// AddTrackMarker
+// Returns the index of the created track marker/region, or -1 on failure. lane specifies the marker lane.
+
+  int (*REAPERAPI_FUNCNAME(AddTrackMarker))(MediaTrack* track, int lane, bool isrgn, double pos, double rgnend, const char* name, int wantidx);
+#endif
+
 #if defined(REAPERAPI_WANT_adjustZoom) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // adjustZoom
@@ -1070,6 +1078,14 @@ REAPERAPI_DEF //==============================================
   void (*REAPERAPI_FUNCNAME(DeleteTrack))(MediaTrack* tr);
 #endif
 
+#if defined(REAPERAPI_WANT_DeleteTrackMarker) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// DeleteTrackMarker
+// Delete a marker or region from a specific track and lane.
+
+  bool (*REAPERAPI_FUNCNAME(DeleteTrackMarker))(MediaTrack* track, int lane, int markrgnindexnumber, bool isrgn);
+#endif
+
 #if defined(REAPERAPI_WANT_DeleteTrackMediaItem) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // DeleteTrackMediaItem
@@ -1291,6 +1307,14 @@ REAPERAPI_DEF //==============================================
 // returns false if there are no plugins on the track that support MIDI programs,or if all programs have been enumerated
 
   bool (*REAPERAPI_FUNCNAME(EnumTrackMIDIProgramNamesEx))(ReaProject* proj, MediaTrack* track, int programNumber, char* programName, int programName_sz);
+#endif
+
+#if defined(REAPERAPI_WANT_EnumTrackMarkers) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// EnumTrackMarkers
+// Enumerate markers and regions on a track. Returns 0 when no more markers are available.
+
+  int (*REAPERAPI_FUNCNAME(EnumTrackMarkers))(MediaTrack* track, int idx, int* laneOut, bool* isrgnOut, double* posOut, double* rgnendOut, const char** nameOut, int* markrgnindexnumberOut);
 #endif
 
 #if defined(REAPERAPI_WANT_Envelope_Evaluate) || !defined(REAPERAPI_MINIMAL)
@@ -3525,6 +3549,14 @@ REAPERAPI_DEF //==============================================
 // Returns "MASTER" for master track, "Track N" if track has no name.
 
   bool (*REAPERAPI_FUNCNAME(GetTrackName))(MediaTrack* track, char* bufOut, int bufOut_sz);
+#endif
+
+#if defined(REAPERAPI_WANT_GetTrackMarkerLaneInfo) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// GetTrackMarkerLaneInfo
+// Retrieve visibility and color information for a track marker lane. color is ColorToNative(r,g,b)|0x1000000 or 0 for default.
+
+  bool (*REAPERAPI_FUNCNAME(GetTrackMarkerLaneInfo))(MediaTrack* track, int lane, bool* visibleOut, int* colorOut);
 #endif
 
 #if defined(REAPERAPI_WANT_GetTrackNumMediaItems) || !defined(REAPERAPI_MINIMAL)
@@ -6234,6 +6266,14 @@ REAPERAPI_DEF //==============================================
   void (*REAPERAPI_FUNCNAME(SetTrackColor))(MediaTrack* track, int color);
 #endif
 
+#if defined(REAPERAPI_WANT_SetTrackMarkerLaneInfo) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// SetTrackMarkerLaneInfo
+// Update visibility and color for a track marker lane. color is ColorToNative(r,g,b)|0x1000000 or 0 for default.
+
+  bool (*REAPERAPI_FUNCNAME(SetTrackMarkerLaneInfo))(MediaTrack* track, int lane, bool visible, int color);
+#endif
+
 #if defined(REAPERAPI_WANT_SetTrackMIDILyrics) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // SetTrackMIDILyrics
@@ -7796,6 +7836,9 @@ REAPERAPI_DEF //==============================================
       #if defined(REAPERAPI_WANT_AddTempoTimeSigMarker) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(AddTempoTimeSigMarker),"AddTempoTimeSigMarker"},
       #endif
+      #if defined(REAPERAPI_WANT_AddTrackMarker) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(AddTrackMarker),"AddTrackMarker"},
+      #endif
       #if defined(REAPERAPI_WANT_adjustZoom) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(adjustZoom),"adjustZoom"},
       #endif
@@ -8150,6 +8193,9 @@ REAPERAPI_DEF //==============================================
       #if defined(REAPERAPI_WANT_DeleteTrack) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(DeleteTrack),"DeleteTrack"},
       #endif
+      #if defined(REAPERAPI_WANT_DeleteTrackMarker) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(DeleteTrackMarker),"DeleteTrackMarker"},
+      #endif
       #if defined(REAPERAPI_WANT_DeleteTrackMediaItem) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(DeleteTrackMediaItem),"DeleteTrackMediaItem"},
       #endif
@@ -8236,6 +8282,9 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_EnumTrackMIDIProgramNamesEx) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(EnumTrackMIDIProgramNamesEx),"EnumTrackMIDIProgramNamesEx"},
+      #endif
+      #if defined(REAPERAPI_WANT_EnumTrackMarkers) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(EnumTrackMarkers),"EnumTrackMarkers"},
       #endif
       #if defined(REAPERAPI_WANT_Envelope_Evaluate) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(Envelope_Evaluate),"Envelope_Evaluate"},
@@ -8866,6 +8915,9 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_GetTrackName) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(GetTrackName),"GetTrackName"},
+      #endif
+      #if defined(REAPERAPI_WANT_GetTrackMarkerLaneInfo) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(GetTrackMarkerLaneInfo),"GetTrackMarkerLaneInfo"},
       #endif
       #if defined(REAPERAPI_WANT_GetTrackNumMediaItems) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(GetTrackNumMediaItems),"GetTrackNumMediaItems"},
@@ -9823,6 +9875,9 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_SetTrackColor) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(SetTrackColor),"SetTrackColor"},
+      #endif
+      #if defined(REAPERAPI_WANT_SetTrackMarkerLaneInfo) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(SetTrackMarkerLaneInfo),"SetTrackMarkerLaneInfo"},
       #endif
       #if defined(REAPERAPI_WANT_SetTrackMIDILyrics) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(SetTrackMIDILyrics),"SetTrackMIDILyrics"},
