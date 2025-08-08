@@ -33,6 +33,19 @@ void EncodeMTC(const Frame &src, uint8_t out[8]);
 // Decode an MTC frame from eight quarter-frame messages.
 bool DecodeMTC(const uint8_t in[8], Frame *out);
 
+// PTPv2 timestamp representation.
+struct PTPv2Time {
+    uint64_t seconds{0};
+    uint32_t nanoseconds{0};
+};
+
+// Convert a timecode frame to a PTPv2 timestamp.
+PTPv2Time ToPTP(const Frame &src);
+// Generate a timecode frame from a PTPv2 timestamp.
+Frame FromPTP(const PTPv2Time &src, FrameRate rate);
+// Convert a PTPv2 timestamp to an ST2110 RTP clock value.
+uint32_t ToST2110RTP(const PTPv2Time &src, uint32_t sampleRate);
+
 // Convert a timecode frame to seconds relative to start.
 double ToSeconds(const Frame &tc);
 // Generate a timecode frame from seconds.
