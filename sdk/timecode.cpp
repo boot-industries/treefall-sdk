@@ -56,6 +56,28 @@ bool DecodeMTC(const uint8_t in[8], Frame *out) {
     return true;
 }
 
+PTPv2Time ToPTP(const Frame &src) {
+    PTPv2Time out;
+    out.seconds = static_cast<uint64_t>(src.hours) * 3600ULL +
+                  static_cast<uint64_t>(src.minutes) * 60ULL +
+                  static_cast<uint64_t>(src.seconds);
+    const double fps = static_cast<int>(src.rate);
+    out.nanoseconds = static_cast<uint32_t>((src.frames / fps) * 1e9);
+    return out;
+}
+
+Frame FromPTP(const PTPv2Time &src, FrameRate rate) {
+    const double seconds = src.seconds + src.nanoseconds / 1e9;
+    return FromSeconds(seconds, rate);
+}
+
+uint32_t ToST2110RTP(const PTPv2Time &src, uint32_t sampleRate) {
+    uint64_t total = src.seconds;
+    total *= sampleRate;
+    total += (static_cast<uint64_t>(src.nanoseconds) * sampleRate) / 1000000000ULL;
+    return static_cast<uint32_t>(total & 0xFFFFFFFFULL);
+}
+
 double ToSeconds(const Frame &tc) {
     const double fps = static_cast<int>(tc.rate);
     return tc.hours * 3600.0 + tc.minutes * 60.0 + tc.seconds + tc.frames / fps;
