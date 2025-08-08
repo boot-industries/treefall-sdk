@@ -7647,6 +7647,22 @@ REAPERAPI_DEF //==============================================
   void (*REAPERAPI_FUNCNAME(Undo_OnStateChangeEx2))(ReaProject* proj, const char* descchange, int whichStates, int trackparm);
 #endif
 
+#if defined(REAPERAPI_WANT_RegisterTimecodeInput) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// RegisterTimecodeInput
+// Register a callback to receive decoded timecode frames.
+
+  void (*REAPERAPI_FUNCNAME(RegisterTimecodeInput))(void (*cb)(const char* frame, double seconds));
+#endif
+
+#if defined(REAPERAPI_WANT_SendTimecodeFrame) || !defined(REAPERAPI_MINIMAL)
+REAPERAPI_DEF //==============================================
+// SendTimecodeFrame
+// Transmit a timecode frame from REAPER.
+
+  void (*REAPERAPI_FUNCNAME(SendTimecodeFrame))(const char* frame);
+#endif
+
 #if defined(REAPERAPI_WANT_update_disk_counters) || !defined(REAPERAPI_MINIMAL)
 REAPERAPI_DEF //==============================================
 // update_disk_counters
@@ -10261,6 +10277,12 @@ REAPERAPI_DEF //==============================================
       #endif
       #if defined(REAPERAPI_WANT_Undo_OnStateChangeEx2) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(Undo_OnStateChangeEx2),"Undo_OnStateChangeEx2"},
+      #endif
+      #if defined(REAPERAPI_WANT_RegisterTimecodeInput) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(RegisterTimecodeInput),"RegisterTimecodeInput"},
+      #endif
+      #if defined(REAPERAPI_WANT_SendTimecodeFrame) || !defined(REAPERAPI_MINIMAL)
+        {(void**)&REAPERAPI_FUNCNAME(SendTimecodeFrame),"SendTimecodeFrame"},
       #endif
       #if defined(REAPERAPI_WANT_update_disk_counters) || !defined(REAPERAPI_MINIMAL)
         {(void**)&REAPERAPI_FUNCNAME(update_disk_counters),"update_disk_counters"},
