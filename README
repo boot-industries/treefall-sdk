@@ -1,18 +1,105 @@
-This is the REAPER C/C++ extension plug-in mini-SDK
+REAPER C/C++ extension plug-in mini-SDK
+======================================
 
-Paths:
+## Prerequisites
 
-sdk/             -- contains headers to use
-reaper-plugins/  -- contains source to some plug-ins which are included with REAPER
-                    (these are not to be used as models for well-designed plug-ins, 
-                    but they may be useful and/or available for LGPL compliance ;)
+* [WDL](https://github.com/justinfrankel/WDL) checked out next to this
+  repository (`WDL/`).
+* A C/C++ compiler – Visual Studio 2019 or newer on Windows, the Xcode
+  command line tools on macOS, or GCC/Clang 9+ on Linux.
+* Environment variables pointing at the sources:
+  * `REAPER_SDK` – path to this repository.
+  * `WDL_PATH` – path to the WDL checkout (defaults to `$REAPER_SDK/WDL`).
 
-Paths that should be added in order to compile:
+The headers live in `sdk/` and sample plug-ins live in
+`reaper-plugins/` (these plug-ins ship with REAPER and are useful as
+references but are not necessarily good design examples).
 
-WDL/
+Fetch WDL next to this repository:
 
-To compile most of this, merge or symlink in WDL:
+```
+git clone https://github.com/justinfrankel/WDL.git WDL
+```
 
-git remote add wdl https://github.com/justinfrankel/WDL.git
-git fetch --all
-git merge --allow-unrelated-histories wdl/main
+## Building
+
+### Windows (Visual Studio)
+
+1. Open a "x64 Native Tools" command prompt.
+2. Set environment variables:
+
+   ```bat
+   set REAPER_SDK=C:\path\to\reaper-sdk
+   set WDL_PATH=%REAPER_SDK%\WDL
+   ```
+
+3. Build the sample control surface plug-in:
+
+   ```bat
+   msbuild %REAPER_SDK%\reaper-plugins\reaper_csurf\reaper_csurf.vcxproj /p:Configuration=Release
+   ```
+
+The resulting `reaper_csurf.dll` will be in the project's `Release`
+folder.
+
+### macOS (clang)
+
+1. Install the Xcode command line tools.
+2. Set environment variables:
+
+   ```sh
+   export REAPER_SDK="$HOME/projects/reaper-sdk"
+   export WDL_PATH="$REAPER_SDK/WDL"
+   ```
+
+3. Build the sample plug-in:
+
+   ```sh
+   clang++ -dynamiclib -std=c++11 -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
+     reaper-plugins/reaper_csurf/csurf_main.cpp \
+     reaper-plugins/reaper_csurf/*.cpp \
+     -o reaper_csurf.dylib
+   ```
+
+### Linux (gcc/clang)
+
+1. Install GCC or Clang and make.
+2. Set the same environment variables as for macOS.
+3. Build the sample plug-in:
+
+   ```sh
+   g++ -shared -fPIC -std=c++11 -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
+     reaper-plugins/reaper_csurf/csurf_main.cpp \
+     reaper-plugins/reaper_csurf/*.cpp \
+     -o reaper_csurf.so
+   ```
+
+## Loading the plug-in in REAPER
+
+Copy the resulting binary into REAPER's `UserPlugins` directory:
+
+* **Windows:** `%APPDATA%\REAPER\UserPlugins`
+* **macOS:** `~/Library/Application Support/REAPER/UserPlugins`
+* **Linux:** `~/.config/REAPER/UserPlugins`
+
+Restart REAPER and the plug-in should appear under the "Extensions"
+menu.
+
+### Verifying the plug-in entry point
+
+Confirm that the binary exports `REAPER_PLUGIN_ENTRYPOINT` before
+loading it:
+
+* **Windows:**
+
+  ```bat
+  dumpbin /exports reaper_csurf.dll | findstr REAPER_PLUGIN_ENTRYPOINT
+  ```
+
+* **macOS/Linux:**
+
+  ```sh
+  nm -g reaper_csurf.{dylib,so} | grep REAPER_PLUGIN_ENTRYPOINT
+  ```
+
+If the symbol is present, REAPER will load the plug-in.
