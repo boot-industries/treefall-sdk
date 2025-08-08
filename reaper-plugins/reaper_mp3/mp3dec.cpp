@@ -7,6 +7,8 @@
 #include <math.h>
 
 #include "mp3dec.h"
+#include "../../WDL/wdltypes.h"
+#include "../../sdk/reaper_plugin_functions.h"
 
 
 mp3_decoder::mp3_decoder()
