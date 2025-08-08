@@ -3,8 +3,15 @@ REAPER C/C++ extension plug-in mini-SDK
 
 ## Prerequisites
 
-* [WDL](https://github.com/justinfrankel/WDL) checked out next to this
-  repository (`WDL/`).
+* [WDL](https://github.com/justinfrankel/WDL) checked out next to this repository (`WDL/`). Fetch it with a deterministic step such as:
+
+  ```sh
+  git submodule add https://github.com/justinfrankel/WDL.git WDL
+  # or
+  git clone https://github.com/justinfrankel/WDL.git WDL
+  ```
+
+  The CMake build requires the `WDL` directory to be present before configuration.
 * A C/C++ compiler – Visual Studio 2019 or newer on Windows, the Xcode
   command line tools on macOS, or GCC/Clang 9+ on Linux.
 * Environment variables pointing at the sources:
@@ -14,12 +21,6 @@ REAPER C/C++ extension plug-in mini-SDK
 The headers live in `sdk/` and sample plug-ins live in
 `reaper-plugins/` (these plug-ins ship with REAPER and are useful as
 references but are not necessarily good design examples).
-
-Fetch WDL next to this repository:
-
-```
-git clone https://github.com/justinfrankel/WDL.git WDL
-```
 
 ## Building
 
