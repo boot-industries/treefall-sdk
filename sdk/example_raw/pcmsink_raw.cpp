@@ -39,6 +39,7 @@
 #include "resource.h"
 
 #include "../reaper_plugin.h"
+#include "../../WDL/wdltypes.h"
 #include "reaper_plugin_functions.h"
 
 #include "../../WDL/wdlstring.h"

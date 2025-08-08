@@ -12,6 +12,8 @@
 #include "../../WDL/wdlcstring.h"
 
 #include "../reaper_plugin.h"
+#include "../../WDL/wdltypes.h"
+#include "../../sdk/reaper_plugin_functions.h"
 
 
 #include "mp3dec.h"

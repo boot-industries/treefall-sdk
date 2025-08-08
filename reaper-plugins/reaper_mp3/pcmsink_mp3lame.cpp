@@ -19,6 +19,8 @@ extern void (*gOnMallocFailPtr)(int);
 #include "resource.h"
 
 #include "../reaper_plugin.h"
+#include "../../WDL/wdltypes.h"
+#include "../../sdk/reaper_plugin_functions.h"
 #include "../localize.h"
 
 #include "../../WDL/win32_utf8.c"

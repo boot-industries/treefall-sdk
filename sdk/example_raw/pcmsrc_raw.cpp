@@ -47,6 +47,7 @@
 #define REAPERAPI_WANT_get_ini_file
 #define REAPER_PLUGIN_FUNCTIONS_IMPL_LOADFUNC
 #include "../reaper_plugin.h"
+#include "../../WDL/wdltypes.h"
 #include "reaper_plugin_functions.h"
 
 #include "../../WDL/fileread.h"

@@ -14,6 +14,8 @@ void (*gOnMallocFailPtr)(int);
 //#include "main.h"
 //#include "resource.h"
 #include "../reaper_plugin.h"
+#include "../../WDL/wdltypes.h"
+#include "../../sdk/reaper_plugin_functions.h"
 #include "../../WDL/lineparse.h"
 #include "../../WDL/wdlcstring.h"
 #include "../../WDL/wdlstring.h"
