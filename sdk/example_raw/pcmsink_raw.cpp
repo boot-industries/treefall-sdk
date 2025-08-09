@@ -44,6 +44,7 @@
 
 #include "../../WDL/wdlstring.h"
 #include "../../WDL/filewrite.h"
+#include "../config_ini.h"
 
 #define SINK_FOURCC REAPER_FOURCC('r','a','w',' ')
 
@@ -194,10 +195,10 @@ static int LoadDefaultConfig(void **data, const char *desc)
 {
   static WDL_HeapBuf m_hb;
   const char *fn=get_ini_file();
-  int l=GetPrivateProfileInt(desc,"default_size",0,fn);
+  int l=config_ini::getInt(fn, desc, "default_size", 0);
   if (l<1) return 0;
-  
-  if (GetPrivateProfileStruct(desc,"default",m_hb.Resize(l),l,fn))
+
+  if (config_ini::getBinary(fn, desc, "default", m_hb.Resize(l), l))
   {
     *data = m_hb.Get();
     return l;
@@ -241,10 +242,10 @@ void SaveDefaultConfig(HWND hwndDlg)
   int l=SinkGetConfigSize();
   const char *desc="raw encoder defaults";
   const char *fn=get_ini_file();
-  char buf[64]; 
+  char buf[64];
   sprintf(buf,"%d",l);
-  WritePrivateProfileString(desc,"default_size",buf,fn);
-  WritePrivateProfileStruct(desc,"default",data,l,fn);
+  config_ini::setString(fn, desc, "default_size", buf);
+  config_ini::setBinary(fn, desc, "default", data, l);
 }
 
 BOOL WINAPI wavecfgDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
