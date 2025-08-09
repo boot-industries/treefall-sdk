@@ -18,7 +18,7 @@
 
 #include "../../WDL/setthreadname.h"
 
-extern reaper_csurf_reg_t 
+extern reaper_csurf_reg_t
   csurf_bcf_reg,
   csurf_faderport_reg,
   csurf_faderport2_reg,
@@ -32,11 +32,27 @@ extern reaper_csurf_reg_t
   csurf_www_reg;
 
 
-REAPER_PLUGIN_HINSTANCE g_hInst; // used for dialogs, if any
-HWND g_hwnd;
+// Encapsulated runtime state for the csurf module
+struct CsurfState {
+  REAPER_PLUGIN_HINSTANCE hInst{}; // used for dialogs, if any
+  HWND hwnd{};
+};
 
+static CsurfState g_csurf;
+
+REAPER_PLUGIN_HINSTANCE &g_hInst = g_csurf.hInst;
+HWND &g_hwnd = g_csurf.hwnd;
 
 typedef bool (*OscLocalCallbackFunc)(void* obj, const char* msg, int msglen);
+
+static bool init_csurf_api(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t* rec)
+{
+  g_csurf.hInst = hInstance;
+  if (!rec || rec->caller_version != REAPER_PLUGIN_VERSION || !rec->GetFunc)
+    return false;
+  g_csurf.hwnd = rec->hwnd_main;
+  return true;
+}
 
 void* CreateLocalOscHandler(void* obj, OscLocalCallbackFunc callback);
 void SendLocalOscMessage(void* csurf_osc, const char* msg, int msglen);
@@ -301,12 +317,7 @@ extern "C"
 
 REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec)
 {
-  g_hInst=hInstance;
-
-  if (!rec || rec->caller_version != REAPER_PLUGIN_VERSION || !rec->GetFunc)
-      return 0;
-
-  g_hwnd = rec->hwnd_main;
+  if (!init_csurf_api(hInstance, rec)) return 0;
   int errcnt=0;
 #define IMPAPI(x) if (!((*((void **)&(x)) = (void *)rec->GetFunc(#x)))) errcnt++;
 
