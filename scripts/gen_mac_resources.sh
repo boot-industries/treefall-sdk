@@ -15,6 +15,11 @@ DLGGEN="$SWELL_DIR/swell_dlggen"
 MENU="$SWELL_DIR/swell_menu"
 RESGEN="$SWELL_DIR/swell_resgen.sh"
 
+if [[ ! ( -x "$DLGGEN" && -x "$MENU" ) && ! -x "$RESGEN" ]]; then
+  echo "warning: swell tools not found in $SWELL_DIR, skipping resource generation" >&2
+  exit 0
+fi
+
 for rc in "$REPO_ROOT"/reaper-plugins/*/res.rc; do
   [ -e "$rc" ] || continue
   plugindir=$(dirname "$rc")
@@ -23,8 +28,5 @@ for rc in "$REPO_ROOT"/reaper-plugins/*/res.rc; do
     "$MENU" "$rc" "$plugindir/res.rc_mac_menu"
   elif [[ -x "$RESGEN" ]]; then
     "$RESGEN" "$rc"
-  else
-    echo "swell tools not found in $SWELL_DIR" >&2
-    exit 1
   fi
 done
