@@ -12,8 +12,9 @@ REAPER C/C++ extension plug-in mini-SDK
   ```
 
   The CMake build requires the `WDL` directory to be present before configuration.
-* A C/C++ compiler – Visual Studio 2019 or newer on Windows, the Xcode
-  command line tools on macOS, or GCC/Clang 9+ on Linux.
+* A C/C++ compiler – Visual Studio 2019 or newer on Windows, GCC/Clang
+  (MinGW-w64) on Windows, the Xcode command line tools on macOS, or
+  GCC/Clang 9+ on Linux.
 * Environment variables pointing at the sources:
   * `REAPER_SDK` – path to this repository.
   * `WDL_PATH` – path to the WDL checkout (defaults to `$REAPER_SDK/WDL`).
@@ -42,6 +43,29 @@ references but are not necessarily good design examples).
 
 The resulting `reaper_csurf.dll` will be in the project's `Release`
 folder.
+
+### Windows (MinGW-w64 GCC/Clang)
+
+1. Install a MinGW-w64 toolchain (for example via MSYS2 or the
+   `mingw-w64` packages).
+2. Set environment variables:
+
+   ```sh
+   export REAPER_SDK="/path/to/reaper-sdk"
+   export WDL_PATH="$REAPER_SDK/WDL"
+   ```
+
+3. Build the sample control surface plug-in:
+
+   ```sh
+   x86_64-w64-mingw32-g++ -shared -std=c++11 -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
+     reaper-plugins/reaper_csurf/csurf_main.cpp \
+     reaper-plugins/reaper_csurf/*.cpp \
+     -lws2_32 \
+     -o reaper_csurf.dll
+   ```
+
+The resulting `reaper_csurf.dll` will be in the current directory.
 
 ### macOS (clang)
 
