@@ -8,3 +8,8 @@ Go to: Settings → Branches → Add rule
 - Allow deletions: OFF
 - Include administrators: ON
 (We will add "Required status checks" after CI exists in Step 3.)
+
+## Rollback
+To undo a merged PR:
+- **GitHub UI**: open the PR, click **Revert**, and merge the generated rollback PR.
+- **gh CLI**: run `gh pr revert <PR_NUMBER>` to create a revert PR from the merge commit.
