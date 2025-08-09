@@ -27,6 +27,7 @@ extern void (*gOnMallocFailPtr)(int);
 
 #include "../../WDL/lineparse.h"
 #include "../../WDL/wdlstring.h"
+#include "../../sdk/config_ini.h"
 extern void (*update_disk_counters)(int read, int write);
 #ifndef WDL_FILEWRITE_ON_ERROR
 #error WDL_FILEWRITE_ON_ERROR not defined
@@ -549,10 +550,10 @@ static int LoadDefaultConfig(void **data, const char *desc)
 {
   static WDL_HeapBuf m_hb;
   const char *fn=get_ini_file();
-  int l=GetPrivateProfileInt(desc,"default_size",0,fn);
+  int l=config_ini::getInt(fn, desc, "default_size", 0);
   if (l<1) return 0;
-  
-  if (GetPrivateProfileStruct(desc,"default",m_hb.Resize(l),l,fn))
+
+  if (config_ini::getBinary(fn, desc, "default", m_hb.Resize(l), l))
   {
     *data = m_hb.Get();
     return l;
@@ -564,8 +565,8 @@ static void SaveDefaultConfig(void *data, int l, const char *desc)
   const char *fn=get_ini_file();
   char buf[64];
   sprintf(buf,"%d",l);
-  WritePrivateProfileString(desc,"default_size",buf,fn);
-  WritePrivateProfileStruct(desc,"default",data,l,fn);
+  config_ini::setString(fn, desc, "default_size", buf);
+  config_ini::setBinary(fn, desc, "default", data, l);
 }
 
 WDL_DLGRET wavecfgDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
