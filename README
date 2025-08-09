@@ -92,7 +92,17 @@ The resulting `reaper_csurf.dll` will be in the current directory.
    export WDL_PATH="$REAPER_SDK/WDL"
    ```
 
-3. Build the sample plug-in:
+3. Generate macOS resource files (required for plug-ins that include
+   `res.rc_mac_*`):
+
+   ```sh
+   ./scripts/gen_mac_resources.sh
+   ```
+   This script runs `WDL/swell/swell_dlggen` and `WDL/swell/swell_menu`
+   to create the `res.rc_mac_dlg` and `res.rc_mac_menu` files in each
+   plug-in directory.
+
+4. Build the sample plug-in:
 
    ```sh
    clang++ -dynamiclib -std=c++11 -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
