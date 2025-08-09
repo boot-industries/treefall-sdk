@@ -48,3 +48,21 @@ TEST(TrackPlaylistTest, SerializeDeserializeDuplicateConsolidate) {
   EXPECT_EQ(c->name, "Consolidated");
   EXPECT_EQ(c->lanes, std::vector<std::string>({"L1", "L2", "L3"}));
 }
+
+TEST(TrackPlaylistTest, DeserializeBadHeader) {
+  std::string chunk = "NOTPLAYLISTS 1 0\nFoo|L1\n";
+  Track t = Track::Deserialize(chunk);
+  EXPECT_EQ(t.Serialize(), Track().Serialize());
+}
+
+TEST(TrackPlaylistTest, DeserializeCRLF) {
+  std::string chunk =
+      "PLAYLISTS 2 1\r\nOne|L1|L2\r\nTwo|L3\r\n";
+  Track t = Track::Deserialize(chunk);
+  std::string expected = "PLAYLISTS 2 1\nOne|L1|L2\nTwo|L3\n";
+  EXPECT_EQ(t.Serialize(), expected);
+  const Playlist *p = t.GetPlaylist(1);
+  ASSERT_NE(p, nullptr);
+  ASSERT_EQ(p->lanes.size(), 1u);
+  EXPECT_EQ(p->lanes[0], "L3");
+}
