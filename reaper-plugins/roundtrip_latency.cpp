@@ -1,7 +1,9 @@
 #include "roundtrip_latency.h"
 #include <vector>
 #include <numeric>
+#ifdef LATENCY_PROBE_TEST
 #include <cstdio>
+#endif
 
 static double g_roundtrip_latency = 0.0;
 
@@ -31,8 +33,9 @@ static size_t find_ping_offset(const std::vector<float>& ping,
 static std::vector<float> simulate_loopback(const std::vector<float>& ping, int srate)
 {
   int delay_samples = srate / 20; // simulate 50ms roundtrip
-  std::vector<float> buf(delay_samples + ping.size());
-  for (size_t i = 0; i < ping.size(); ++i)
+  const size_t ping_size = ping.size();
+  std::vector<float> buf(delay_samples + ping_size);
+  for (size_t i = 0; i < ping_size; ++i)
     buf[delay_samples + i] = ping[i];
   return buf;
 }

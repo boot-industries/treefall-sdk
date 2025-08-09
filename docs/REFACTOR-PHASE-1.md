@@ -2,6 +2,7 @@
 ## Changes
 - Simplified roundtrip latency helper and removed unused headers.
 - Replaced nested loops with `std::inner_product`.
+- Cached ping size in loopback sim and gated test-only `<cstdio>` include.
 ## Micro Perf
 - `find_ping_offset` (64 sample ping, 50ms delay, 1000 runs) avg **166.7µs → 161.9µs**.
 ## Phase 2 Follow-Ups
