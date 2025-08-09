@@ -14,6 +14,14 @@ set(MP3_SOURCES
   ${PROJECT_SOURCE_DIR}/WDL/WDL/lameencdec.cpp
 )
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "i[3-6]86" OR
+   CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR
+   CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64")
+  enable_language(ASM_NASM)
+  list(APPEND MP3_SOURCES mpglib/dct64_asm.nas)
+  set_source_files_properties(mpglib/dct64_asm.nas PROPERTIES LANGUAGE ASM_NASM)
+endif()
+
 add_library(reaper_mp3 MODULE ${MP3_SOURCES})
 
 if(WIN32)
