@@ -41,10 +41,21 @@ Track Track::Deserialize(const std::string &chunk) {
   std::istringstream iss(chunk);
   std::string header;
   size_t count = 0;
-  iss >> header >> count >> t.active_index_;
+  ID active = -1;
+  if (!(iss >> header >> count >> active) || header != "PLAYLISTS")
+    return t;
+  t.active_index_ = active;
+
+  auto trim_cr = [](std::string &s) {
+    if (!s.empty() && s.back() == '\r')
+      s.pop_back();
+  };
+
   std::string line;
   std::getline(iss, line); // consume endline
+  trim_cr(line);
   for (size_t i = 0; i < count && std::getline(iss, line); ++i) {
+    trim_cr(line);
     std::istringstream pl(line);
     std::string name;
     std::getline(pl, name, '|');
