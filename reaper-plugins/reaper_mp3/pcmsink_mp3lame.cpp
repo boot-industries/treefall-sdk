@@ -23,7 +23,11 @@ extern void (*gOnMallocFailPtr)(int);
 #include "../../sdk/reaper_plugin_functions.h"
 #include "../localize.h"
 
+#ifdef _WIN32
 #include "../../WDL/win32_utf8.c"
+#else
+#include "../../WDL/wdlutf8.h"
+#endif
 
 #include "../../WDL/lineparse.h"
 #include "../../WDL/wdlstring.h"

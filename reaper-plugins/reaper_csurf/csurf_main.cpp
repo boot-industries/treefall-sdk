@@ -10,7 +10,11 @@
 #include "../localize-import.h"
 #include "csurf.h"
 #include "osc.h"
+#ifdef _WIN32
 #include "../../WDL/win32_utf8.c"
+#else
+#include "../../WDL/wdlutf8.h"
+#endif
 
 #include "../../WDL/setthreadname.h"
 
