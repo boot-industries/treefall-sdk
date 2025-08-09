@@ -10,7 +10,12 @@ if(EXISTS "${WDL_ROOT}/wdltypes.h")
 
   add_executable(track_playlist_demo sdk/track_playlist/track_playlist_demo.cpp)
   target_link_libraries(track_playlist_demo track_playlist)
+
+  # Sample plug-ins
+  add_subdirectory(reaper-plugins/reaper_csurf)
+  add_subdirectory(reaper-plugins/reaper_atmos)
+  add_subdirectory(reaper-plugins/reaper_mp3)
+  add_subdirectory(reaper-plugins/reaper_stt)
 else()
   message(FATAL_ERROR "WDL not found")
 endif()
-
