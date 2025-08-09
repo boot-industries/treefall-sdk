@@ -115,23 +115,36 @@ The resulting `reaper_csurf.dll` will be in the current directory.
    export WDL_PATH="$REAPER_SDK/WDL"
    ```
 
-3. Generate macOS resource files (required for plug-ins that include
-   `res.rc_mac_*`):
+3. Generate macOS resource files for any plug-in that includes a
+   `res.rc`:
 
    ```sh
+   "$WDL_PATH/WDL/swell/swell_dlggen" reaper-plugins/reaper_csurf/res.rc
+   "$WDL_PATH/WDL/swell/swell_menu"   reaper-plugins/reaper_csurf/res.rc
+   # or run all generators at once
    ./scripts/gen_mac_resources.sh
    ```
-   This script runs `WDL/swell/swell_dlggen` and `WDL/swell/swell_menu`
-   to create the `res.rc_mac_dlg` and `res.rc_mac_menu` files in each
-   plug-in directory.
+   These commands produce `res.rc_mac_dlg` and `res.rc_mac_menu`
+   alongside the original `res.rc` and must be run whenever the
+   resources change.
 
-4. Build the sample plug-in:
+4. Build the sample plug-in (universal binary):
 
    ```sh
-   clang++ -dynamiclib -std=c++11 -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
+   clang++ -dynamiclib -std=c++11 -arch x86_64 -arch arm64 \
+     -I"$REAPER_SDK/sdk" -I"$WDL_PATH" \
      reaper-plugins/reaper_csurf/csurf_main.cpp \
      reaper-plugins/reaper_csurf/*.cpp \
+     -framework Cocoa \
      -o reaper_csurf.dylib
+   ```
+   Other frameworks may be required depending on the plug-in. On macOS
+   10.15 and later, the resulting binary must be codesigned and
+   notarized if distributed:
+
+   ```sh
+   codesign --force --deep --sign - reaper_csurf.dylib
+   xcrun notarytool submit --wait reaper_csurf.dylib
    ```
 
 ### Linux (gcc/clang)
