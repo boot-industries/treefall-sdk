@@ -40,7 +40,6 @@ static const char* ArpName() { return "Example Arpeggiator"; }
 static MIDI_effect* CreateArp() { return new SimpleArp(); }
 
 static midieffect_register_t reg = { ArpName, CreateArp };
-static int (*plugin_register)(const char*, void*);
 
 extern "C" {
 REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t* rec)

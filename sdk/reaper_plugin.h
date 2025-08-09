@@ -19,7 +19,8 @@
 **       misrepresented as being the original software.
 **    3. This notice may not be removed or altered from any source distribution.
 **
-** Notes: the C++ interfaces used require MSVC on win32, or at least the MSVC-compatible C++ ABI. Sorry, mingw users :(
+** Notes: the C++ interfaces assume a MSVC-compatible C++ ABI on Windows.
+**       They can be built with MSVC or GCC/Clang targets such as MinGW.
 **
 */
 
@@ -42,7 +43,11 @@ typedef double ReaSample;
 #ifdef _WIN32
 #include <windows.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define REAPER_PLUGIN_DLL_EXPORT __attribute__((dllexport))
+#else
 #define REAPER_PLUGIN_DLL_EXPORT __declspec(dllexport)
+#endif
 #define REAPER_PLUGIN_HINSTANCE HINSTANCE
 
 #else

@@ -24,7 +24,8 @@
 *  3. This notice may not be removed or altered from any source distribution.
 */
 
-// Note: the C++ pure virtual interfaces used require the MSVC-compatible C++ ABI on Win32.  Sorry, mingw users.
+// Note: the C++ pure virtual interfaces assume a MSVC-compatible C++ ABI on
+// Windows and can be used with MSVC or GCC/Clang targets such as MinGW.
 //
 // Reaper extensions: see http://www.cockos.com/reaper/sdk/plugin/plugin.php and reaper_plugin.h.
 // The API functions in this header can be retrieved using reaper_plugin_info_t.GetFunc().
