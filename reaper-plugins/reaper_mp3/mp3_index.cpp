@@ -24,6 +24,7 @@
 #include "../../WDL/win32_utf8.c"
 #else
 #include "../../WDL/wdlutf8.h"
+#define statUTF8 stat
 #endif
 #include "../../WDL/wdlstring.h"
 #include "../../WDL/ptrlist.h"

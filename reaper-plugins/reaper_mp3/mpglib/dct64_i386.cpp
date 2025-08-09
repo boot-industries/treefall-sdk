@@ -8,7 +8,7 @@
 
 #include "StdAfx.h"
 
-#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
+#ifdef MPGLIB_HAVE_ASM
 extern "C"
 {
         void __cdecl dct64_asm_x87(real *out0,real *out1,real *b1,real *b2,real *samples);
@@ -17,9 +17,7 @@ extern "C"
 };
 
 static void (__cdecl * p_dct64_asm)(real *out0,real *out1,real *b1,real *b2,real *samples) = detect_3dnow_ex() ? dct64_asm_3dnow : dct64_asm_x87;
-
-
-#else
+#endif
 
 static void dct64_1(real *out0,real *out1,real *b1,real *b2,real *samples)
 {
@@ -309,21 +307,22 @@ static void dct64_1(real *out0,real *out1,real *b1,real *b2,real *samples)
  b1[0x1B] += b1[0x1F];
  out1[0x10* 9] = b1[0x13] + b1[0x1B];
  out1[0x10*11] = b1[0x1B] + b1[0x17];
- out1[0x10*13] = b1[0x17] + b1[0x1F];
- out1[0x10*15] = b1[0x1F];
+  out1[0x10*13] = b1[0x17] + b1[0x1F];
+  out1[0x10*15] = b1[0x1F];
 
-}
-#endif
+ }
 /*
  * the call via dct64 is a trick to force GCC to use
  * (new) registers for the b1,b2 pointer to the bufs[xx] field
  */
 void dct64( real *a,real *b,real *c)
 {
-	profiler(dct64);
+        profiler(dct64);
   real bufs[0x40];
-#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
+#ifdef MPGLIB_HAVE_ASM
         p_dct64_asm(a,b,bufs,bufs+0x20,c);
+#elif defined(__aarch64__)
+        dct64_1(a,b,bufs,bufs+0x20,c); /* NEON hook can be added here */
 #else
         dct64_1(a,b,bufs,bufs+0x20,c);
 #endif

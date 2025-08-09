@@ -27,6 +27,7 @@ extern void (*gOnMallocFailPtr)(int);
 #include "../../WDL/win32_utf8.c"
 #else
 #include "../../WDL/wdlutf8.h"
+#define WDL_UTF8_HookComboBox(x) do { (void)(x); } while(0)
 #endif
 
 #include "../../WDL/lineparse.h"
