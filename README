@@ -25,6 +25,21 @@ references but are not necessarily good design examples).
 
 ## Building
 
+### CMake (Windows, macOS, Linux)
+
+The included CMake build can produce the sample plug-ins and example
+library on all supported platforms. After fetching the WDL submodule,
+run the usual configure and build steps:
+
+```sh
+cmake -S . -B build
+cmake --build build
+```
+
+The resulting binaries will be placed in `build/reaper-plugins/<name>/`.
+This workflow has been verified with Visual Studio on Windows, Xcode on
+macOS, and GCC/Clang on Linux.
+
 ### Windows (Visual Studio)
 
 1. Open a "x64 Native Tools" command prompt.
