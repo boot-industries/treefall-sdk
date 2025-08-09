@@ -1,6 +1,17 @@
 REAPER C/C++ extension plug-in mini-SDK
 ======================================
 
+This repository includes several sample extension plug-ins and a small
+utility library:
+
+* `reaper_csurf`
+* `reaper_atmos`
+* `reaper_mp3`
+* `reaper_stt`
+* `sdk/track_playlist` – example library with a `track_playlist_demo` target
+
+Each component can be enabled or disabled when configuring the CMake build.
+
 ## Prerequisites
 
 * [WDL](https://github.com/justinfrankel/WDL) checked out next to this repository (`WDL/`).
@@ -45,8 +56,20 @@ cmake --build build
 
 The plug-in binaries will be emitted to `build/plugins/`.
 
-To build only certain plug-ins, toggle the available options at
-configure time. For example, build just the control surface plug-in:
+The following CMake options control which sample plug-ins are built:
+
+| Component | Option |
+| --- | --- |
+| `reaper_csurf` | `-DBUILD_REAPER_CSURF=ON/OFF` |
+| `reaper_atmos` | `-DBUILD_REAPER_ATMOS=ON/OFF` |
+| `reaper_mp3` | `-DBUILD_REAPER_MP3=ON/OFF` |
+| `reaper_stt` | `-DBUILD_REAPER_STT=ON/OFF` |
+
+The `track_playlist` library and its `track_playlist_demo` example are built
+by default.
+
+To build only certain plug-ins, toggle the options above at configure time.
+For example, build just the control surface plug-in:
 
 ```sh
 cmake -S . -B build -DBUILD_REAPER_CSURF=ON -DBUILD_REAPER_ATMOS=OFF -DBUILD_REAPER_MP3=OFF -DBUILD_REAPER_STT=OFF
