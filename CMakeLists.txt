@@ -51,6 +51,7 @@ if(BUILD_TESTING)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(track_playlist_test sdk/track_playlist/track_playlist_test.cpp)
+  target_compile_features(track_playlist_test PRIVATE cxx_std_17)
   target_link_libraries(track_playlist_test track_playlist GTest::gtest_main)
   add_test(NAME track_playlist_test COMMAND track_playlist_test)
 endif()
