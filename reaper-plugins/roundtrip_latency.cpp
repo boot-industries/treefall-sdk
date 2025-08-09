@@ -1,7 +1,6 @@
 #include "roundtrip_latency.h"
 #include <vector>
-#include <algorithm>
-#include <cmath>
+#include <numeric>
 #include <cstdio>
 
 static double g_roundtrip_latency = 0.0;
@@ -10,14 +9,15 @@ static double g_roundtrip_latency = 0.0;
 static size_t find_ping_offset(const std::vector<float>& ping,
                                const std::vector<float>& capture)
 {
-  if (capture.size() < ping.size()) return 0;
+  const size_t ping_size = ping.size();
+  const size_t capture_size = capture.size();
+  if (capture_size < ping_size) return 0;
   size_t best_offset = 0;
   double best_val = -1.0;
-  for (size_t o = 0; o <= capture.size() - ping.size(); ++o)
+  const size_t max_offset = capture_size - ping_size;
+  for (size_t o = 0; o <= max_offset; ++o)
   {
-    double v = 0.0;
-    for (size_t i = 0; i < ping.size(); ++i)
-      v += ping[i] * capture[o + i];
+    double v = std::inner_product(ping.begin(), ping.end(), capture.begin() + o, 0.0);
     if (v > best_val)
     {
       best_val = v;
