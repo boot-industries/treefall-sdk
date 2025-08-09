@@ -2279,6 +2279,10 @@ REAPERAPI_DEF //==============================================
 // I_PANMODE : int * : pan mode, 0=classic 3.x, 3=new balance, 5=stereo pan, 6=dual pan
 // D_PANLAW : double * : pan law of track, <0=project default, 0.5=-6dB, 0.707..=-3dB, 1=+0dB, 1.414..=-3dB with gain compensation, 2=-6dB with gain compensation, etc
 // I_PANLAW_FLAGS : int * : pan law flags, 0=sine taper, 1=hybrid taper with deprecated behavior when gain compensation enabled, 2=linear taper, 3=hybrid taper
+// D_PLAYRATE : double * : track playback rate, 0.5=half speed, 1=normal, 2=double speed, etc
+// D_PITCH : double * : track pitch adjustment in semitones, -12=one octave down, 0=normal, +12=one octave up, etc
+// B_PPITCH : bool * : preserve pitch when changing playback rate
+// I_PITCHMODE : int * : pitch shifter mode, -1=project default, otherwise high 2 bytes=shifter, low 2 bytes=parameter
 // P_ENV:<envchunkname or P_ENV:{GUID... : TrackEnvelope * : (read-only) chunkname can be <VOLENV, <PANENV, etc; GUID is the stringified envelope GUID.
 // B_SHOWINMIXER : bool * : track control panel visible in mixer (do not use on master track)
 // B_SHOWINTCP : bool * : track control panel visible in arrange view (do not use on master track)
@@ -2956,6 +2960,10 @@ REAPERAPI_DEF //==============================================
 // I_PANMODE : int * : pan mode, 0=classic 3.x, 3=new balance, 5=stereo pan, 6=dual pan
 // D_PANLAW : double * : pan law of track, <0=project default, 0.5=-6dB, 0.707..=-3dB, 1=+0dB, 1.414..=-3dB with gain compensation, 2=-6dB with gain compensation, etc
 // I_PANLAW_FLAGS : int * : pan law flags, 0=sine taper, 1=hybrid taper with deprecated behavior when gain compensation enabled, 2=linear taper, 3=hybrid taper
+// D_PLAYRATE : double * : track playback rate, 0.5=half speed, 1=normal, 2=double speed, etc
+// D_PITCH : double * : track pitch adjustment in semitones, -12=one octave down, 0=normal, +12=one octave up, etc
+// B_PPITCH : bool * : preserve pitch when changing playback rate
+// I_PITCHMODE : int * : pitch shifter mode, -1=project default, otherwise high 2 bytes=shifter, low 2 bytes=parameter
 // P_ENV:<envchunkname or P_ENV:{GUID... : TrackEnvelope * : (read-only) chunkname can be <VOLENV, <PANENV, etc; GUID is the stringified envelope GUID.
 // B_SHOWINMIXER : bool * : track control panel visible in mixer (do not use on master track)
 // B_SHOWINTCP : bool * : track control panel visible in arrange view (do not use on master track)
