@@ -11,6 +11,9 @@ inline int getInt(const char *fn, const char *section, const char *key, int defv
 inline bool getBinary(const char *fn, const char *section, const char *key, void *data, unsigned int len) {
   return GetPrivateProfileStruct(section, key, data, len, fn) != 0;
 }
+inline unsigned int getString(const char *fn, const char *section, const char *key, char *value, unsigned int value_len, const char *def_value=nullptr) {
+  return (unsigned int)GetPrivateProfileString(section, key, def_value ? def_value : "", value, value_len, fn);
+}
 inline void setString(const char *fn, const char *section, const char *key, const char *value) {
   WritePrivateProfileString(section, key, value, fn);
 }
@@ -28,6 +31,7 @@ inline void setBinary(const char *fn, const char *section, const char *key, cons
 #include <filesystem>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 
 namespace config_ini {
 
@@ -127,6 +131,19 @@ inline bool getBinary(const char *fn, const char *section, const char *key, void
     out[i] = (unsigned char)byte;
   }
   return true;
+}
+
+inline unsigned int getString(const char *fn, const char *section, const char *key, char *value, unsigned int value_len, const char *def_value=nullptr) {
+  std::string v = readValue(std::filesystem::path(fn), section, key);
+  if (v.empty() && def_value) v = def_value;
+  if (value_len > 0) {
+    size_t len = v.size();
+    if (len > value_len - 1) len = value_len - 1;
+    std::memcpy(value, v.c_str(), len);
+    value[len] = 0;
+    return (unsigned int)len;
+  }
+  return 0;
 }
 
 inline void setString(const char *fn, const char *section, const char *key, const char *value) {
