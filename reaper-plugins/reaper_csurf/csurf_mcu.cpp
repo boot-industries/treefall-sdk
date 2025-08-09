@@ -8,6 +8,7 @@
 
 #include "csurf.h"
 #include "../../WDL/ptrlist.h"
+#include "../../sdk/config_ini.h"
 
 /*
 MCU documentation:
@@ -762,7 +763,7 @@ class CSurf_MCU : public IReaperControlSurface
     if (m_midiout) 
       m_midiout->Send(0x90, 0x33,g_csurf_mcpmode?0x7f:0,-1);
     TrackList_UpdateAllExternalSurfaces();
-    WritePrivateProfileString("csurf","mcu_mcp",g_csurf_mcpmode?"1":"0",get_ini_file());
+    config_ini::setString(get_ini_file(), "csurf", "mcu_mcp", g_csurf_mcpmode?"1":"0");
     return true;
 	}
 	
@@ -1700,7 +1701,7 @@ static IReaperControlSurface *createFunc(const char *type_string, const char *co
   if (!init)
   {
     init = true;
-    g_csurf_mcpmode = !!GetPrivateProfileInt("csurf","mcu_mcp",0,get_ini_file());
+    g_csurf_mcpmode = !!config_ini::getInt(get_ini_file(), "csurf", "mcu_mcp", 0);
   }
 
   return new CSurf_MCU(!strcmp(type_string,"MCUEX"),parms[0],parms[1],parms[2],parms[3],parms[4],errStats);
