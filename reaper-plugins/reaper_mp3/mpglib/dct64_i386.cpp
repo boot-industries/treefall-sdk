@@ -8,7 +8,7 @@
 
 #include "StdAfx.h"
 
-#if MPGLIB_HAVE_ASM
+#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
 extern "C"
 {
         void __cdecl dct64_asm_x87(real *out0,real *out1,real *b1,real *b2,real *samples);
@@ -322,7 +322,7 @@ void dct64( real *a,real *b,real *c)
 {
 	profiler(dct64);
   real bufs[0x40];
-#if MPGLIB_HAVE_ASM
+#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
         p_dct64_asm(a,b,bufs,bufs+0x20,c);
 #else
         dct64_1(a,b,bufs,bufs+0x20,c);

@@ -108,7 +108,7 @@ static void
     }
 }
 
-#if MPGLIB_HAVE_ASM
+#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
 extern "C"
 {
         float synth_sampleconv_scale[2] = {(float)(1.0 / (double)0x8000),0};

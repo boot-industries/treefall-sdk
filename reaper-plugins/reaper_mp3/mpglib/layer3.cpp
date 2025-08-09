@@ -26,7 +26,7 @@ static real tfcos12[3];
 
 
 
-#if MPGLIB_HAVE_ASM
+#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
 extern "C"
 {
         float ms_stereo_extrascalefactor[2] = {1.0 / sqrt(2.0),1.0 / sqrt(2.0)};
@@ -1693,7 +1693,7 @@ int mpglib::do_layer3(sample *pcm_sample,int *pcm_point)
 
 		  if(ms_stereo) {
 			  profiler(mpglib_do_layer3_ms_stereo);
-#if MPGLIB_HAVE_ASM
+#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64__)
                           p_do_ms_stereo((real*)hybridIn[0],(real*)hybridIn[1],SBLIMIT*SSLIMIT);
 #else
                           static const real extrascalefactor = 1.0 / sqrt(2.0);
