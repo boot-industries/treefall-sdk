@@ -3,12 +3,19 @@ REAPER C/C++ extension plug-in mini-SDK
 
 ## Prerequisites
 
-* [WDL](https://github.com/justinfrankel/WDL) checked out next to this repository (`WDL/`). Fetch it with a deterministic step such as:
+* [WDL](https://github.com/justinfrankel/WDL) checked out next to this repository (`WDL/`).
+
+  The WDL submodule is already declared in this repository's `.gitmodules`, so avoid
+  adding it again. Fetch the contents either when cloning the repository:
 
   ```sh
-  git submodule add https://github.com/justinfrankel/WDL.git WDL
-  # or
-  git clone https://github.com/justinfrankel/WDL.git WDL
+  git clone --recurse-submodules https://github.com/justinfrankel/reaper-sdk.git
+  ```
+
+  or, if the repository has already been cloned, initialize the submodule afterwards:
+
+  ```sh
+  git submodule update --init
   ```
 
   The CMake build requires the `WDL` directory to be present before configuration.
