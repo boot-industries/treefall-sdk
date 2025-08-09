@@ -26,9 +26,13 @@ void (*gOnMallocFailPtr)(int);
 #include "../../WDL/fileread.h"
 
 
+#ifdef _WIN32
 #define WDL_WIN32_UTF8_NO_UI_IMPL
 #define WDL_WIN32_UTF8_IMPL static
 #include "../../WDL/win32_utf8.c"
+#else
+#include "../../WDL/wdlutf8.h"
+#endif
 
 
 REAPER_PLUGIN_HINSTANCE g_hInst;

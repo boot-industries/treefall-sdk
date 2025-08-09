@@ -18,9 +18,13 @@
 
 #include "mp3dec.h"
 
+#ifdef _WIN32
 #define WDL_WIN32_UTF8_NO_UI_IMPL
 #define WDL_WIN32_UTF8_IMPL static
 #include "../../WDL/win32_utf8.c"
+#else
+#include "../../WDL/wdlutf8.h"
+#endif
 #include "../../WDL/wdlstring.h"
 #include "../../WDL/ptrlist.h"
 #include "../../WDL/mutex.h"
