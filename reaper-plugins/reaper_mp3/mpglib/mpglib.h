@@ -41,13 +41,6 @@
 
 #define sample real
 
-#if mpglib_real_size == 32 && \
-    (defined(__i386__) || defined(_M_IX86) || defined(__x86_64__))
-#define MPGLIB_HAVE_ASM 1
-#else
-#define MPGLIB_HAVE_ASM 0
-#endif
-
 enum
 {
 	SBLIMIT=32,
