@@ -24,24 +24,27 @@ endif()
 
 add_library(reaper_mp3 MODULE ${MP3_SOURCES})
 
+set_target_properties(reaper_mp3 PROPERTIES PREFIX "")
+
 if(WIN32)
   target_sources(reaper_mp3 PRIVATE res.rc)
   set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".dll")
+  target_compile_definitions(reaper_mp3 PRIVATE WIN32 _WINDOWS NOMINMAX)
 elseif(APPLE)
   set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".dylib")
+  target_compile_definitions(reaper_mp3 PRIVATE MAC_OS_X)
 else()
   set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".so")
+  target_compile_definitions(reaper_mp3 PRIVATE LINUX)
+  target_compile_options(reaper_mp3 PRIVATE -fPIC)
 endif()
 
-set(REAPER_SDK_ROOT ${PROJECT_SOURCE_DIR})
-set(REAPER_PLUGINS_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
 target_include_directories(reaper_mp3 PRIVATE
-  ${REAPER_PLUGINS_ROOT}
-  ${REAPER_SDK_ROOT}/sdk
-  ${REAPER_SDK_ROOT}/WDL/WDL
-  ${REAPER_SDK_ROOT}/WDL/swell
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../sdk
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/WDL
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/swell
 )
 
 target_compile_features(reaper_mp3 PRIVATE cxx_std_17)
-target_compile_definitions(reaper_mp3 PRIVATE NOMINMAX)
+target_compile_definitions(reaper_mp3 PRIVATE WDL_NO_DEFINE_MINMAX)

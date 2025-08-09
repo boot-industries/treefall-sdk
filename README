@@ -27,16 +27,39 @@ references but are not necessarily good design examples).
 
 ### CMake (Windows, macOS, Linux)
 
-The included CMake build can produce the sample plug-ins and example
-library on all supported platforms. After fetching the WDL submodule,
-run the usual configure and build steps:
+The included cross-platform CMake build can produce the sample plug-ins
+and example library on all supported platforms. After fetching the WDL
+submodule, configure and build:
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ```
 
-The resulting binaries will be placed in `build/reaper-plugins/<name>/`.
+The plug-in binaries will be emitted to `build/plugins/`.
+
+To build only certain plug-ins, toggle the available options at
+configure time. For example, build just the control surface plug-in:
+
+```sh
+cmake -S . -B build -DBUILD_REAPER_CSURF=ON -DBUILD_REAPER_ATMOS=OFF -DBUILD_REAPER_MP3=OFF -DBUILD_REAPER_STT=OFF
+cmake --build build
+```
+
+On Windows, specify a generator and configuration:
+
+```bat
+cmake -S . -B build -G "Visual Studio 17 2022"
+cmake --build build --config Release
+```
+
+On macOS and Linux, the default generator suffices:
+
+```sh
+cmake -S . -B build
+cmake --build build
+```
+
 This workflow has been verified with Visual Studio on Windows, Xcode on
 macOS, and GCC/Clang on Linux.
 

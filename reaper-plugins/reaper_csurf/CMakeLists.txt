@@ -14,27 +14,27 @@ add_library(reaper_csurf MODULE
   osc_message.cpp
 )
 
+set_target_properties(reaper_csurf PROPERTIES PREFIX "")
+
 if(WIN32)
   target_sources(reaper_csurf PRIVATE res.rc)
   set_target_properties(reaper_csurf PROPERTIES SUFFIX ".dll")
+  target_compile_definitions(reaper_csurf PRIVATE WIN32 _WINDOWS NOMINMAX)
 elseif(APPLE)
   set_target_properties(reaper_csurf PROPERTIES SUFFIX ".dylib")
+  target_compile_definitions(reaper_csurf PRIVATE MAC_OS_X)
 else()
   set_target_properties(reaper_csurf PROPERTIES SUFFIX ".so")
+  target_compile_definitions(reaper_csurf PRIVATE LINUX)
+  target_compile_options(reaper_csurf PRIVATE -fPIC)
 endif()
 
-# Include paths for SDK and WDL
-set(REAPER_SDK_ROOT ${PROJECT_SOURCE_DIR})
-
-# reaper-plugins directory for shared headers like reaper_plugin.h
-set(REAPER_PLUGINS_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
 target_include_directories(reaper_csurf PRIVATE
-  ${REAPER_PLUGINS_ROOT}
-  ${REAPER_SDK_ROOT}/sdk
-  ${REAPER_SDK_ROOT}/WDL/WDL
-  ${REAPER_SDK_ROOT}/WDL/swell
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../sdk
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/WDL
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/swell
 )
 
 target_compile_features(reaper_csurf PRIVATE cxx_std_17)
-target_compile_definitions(reaper_csurf PRIVATE NOMINMAX)
+target_compile_definitions(reaper_csurf PRIVATE WDL_NO_DEFINE_MINMAX)
