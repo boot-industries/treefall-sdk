@@ -6,6 +6,8 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <mutex>
+#include "stt_engine.h"
 
 /*
   Simple speech-to-text helper using PCM_source_transfer_t blocks.
@@ -15,15 +17,40 @@
 */
 
 // ----------------------------------------------------------------------
-// STT engine stub
+// STT engine abstraction
 // ----------------------------------------------------------------------
-static std::string run_local_stt(const ReaSample* samples,
-                                 int nch, int length, double samplerate)
+namespace {
+
+// Default stub implementation used when no real engine is provided.
+class StubEngine : public STTEngine {
+public:
+  std::string Transcribe(const ReaSample* samples,
+                         int nch, int length, double samplerate) override
+  {
+    // In real use, connect to an actual STT engine.
+    // Here we return a placeholder string for demonstration.
+    (void)samples; (void)nch; (void)length; (void)samplerate;
+    return "hello world"; // dummy transcription
+  }
+};
+
+static StubEngine g_stub_engine;
+static STTEngine* g_engine = &g_stub_engine;
+static std::mutex g_engine_mutex;
+
+static std::string run_stt(const ReaSample* samples,
+                           int nch, int length, double samplerate)
 {
-  // In real use, connect to an actual STT engine.
-  // Here we return a placeholder string for demonstration.
-  (void)samples; (void)nch; (void)length; (void)samplerate;
-  return "hello world"; // dummy transcription
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  return g_engine->Transcribe(samples, nch, length, samplerate);
+}
+
+} // namespace
+
+void STT_SetEngine(STTEngine* engine)
+{
+  std::lock_guard<std::mutex> lock(g_engine_mutex);
+  g_engine = engine ? engine : &g_stub_engine;
 }
 
 // ----------------------------------------------------------------------
@@ -34,37 +61,48 @@ struct WordEntry {
   double position; // seconds
 };
 
-static std::vector<WordEntry> g_lane;
+class TextLane {
+public:
+  void addWord(const std::string& word, double position)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    words_.push_back({word, position});
+  }
 
-static void lane_add_word(const std::string& word, double position)
-{
-  g_lane.push_back({word, position});
-}
+  int findWord(const std::string& word)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (size_t i = 0; i < words_.size(); ++i)
+      if (words_[i].word == word) return (int)i;
+    return -1;
+  }
 
-int lane_find_word(const std::string& word)
-{
-  for (size_t i = 0; i < g_lane.size(); ++i)
-    if (g_lane[i].word == word) return (int)i;
-  return -1;
-}
+  void replaceWord(const std::string& oldWord, const std::string& newWord)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &w : words_)
+      if (w.word == oldWord) w.word = newWord;
+  }
 
-void lane_replace_word(const std::string& oldWord, const std::string& newWord)
-{
-  for (auto &w : g_lane)
-    if (w.word == oldWord) w.word = newWord;
-}
+  void clear()
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    words_.clear();
+  }
 
-void lane_clear()
-{
-  g_lane.clear();
-}
+private:
+  std::vector<WordEntry> words_;
+  std::mutex mutex_;
+};
+
+static TextLane g_lane;
 
 // ----------------------------------------------------------------------
 // Feed a PCM block to STT and insert markers
 // ----------------------------------------------------------------------
 static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
 {
-  std::string text = run_local_stt(block->samples, block->nch, block->length, block->samplerate);
+  std::string text = run_stt(block->samples, block->nch, block->length, block->samplerate);
   std::istringstream iss(text);
   std::string word;
   double word_dur = (double)block->length / block->samplerate; // simple duration
@@ -73,7 +111,7 @@ static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
   {
     double pos = start_time + word_index * word_dur;
     AddProjectMarker(nullptr, false, pos, pos, word.c_str(), -1);
-    lane_add_word(word, pos);
+    g_lane.addWord(word, pos);
     ++word_index;
   }
 }
@@ -84,7 +122,7 @@ static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
 void TranscribeSource(PCM_source *src)
 {
   if (!src) return;
-  lane_clear();
+  g_lane.clear();
   const int block_len = 4096;
   std::vector<ReaSample> buffer(block_len * src->GetNumChannels());
   PCM_source_transfer_t block{};
@@ -109,12 +147,12 @@ void TranscribeSource(PCM_source *src)
 // ----------------------------------------------------------------------
 int STT_FindWord(const char *word)
 {
-  return lane_find_word(word ? word : "");
+  return g_lane.findWord(word ? word : "");
 }
 
 void STT_ReplaceWord(const char *oldWord, const char *newWord)
 {
   if (!oldWord || !newWord) return;
-  lane_replace_word(oldWord, newWord);
+  g_lane.replaceWord(oldWord, newWord);
 }
 
