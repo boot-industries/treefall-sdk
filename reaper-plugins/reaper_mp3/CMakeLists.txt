@@ -14,10 +14,16 @@ set(MP3_SOURCES
   ${PROJECT_SOURCE_DIR}/WDL/WDL/lameencdec.cpp
 )
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "i[3-6]86|x86_64|AMD64")
+set(MP3_DEFS WDL_NO_DEFINE_MINMAX WDL_ALLOW_UNSIGNED_DEFAULT_CHAR)
+if(NOT MSVC)
+  list(APPEND MP3_DEFS __cdecl= __fastcall=)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "i[3-6]86")
   enable_language(ASM_NASM)
   list(APPEND MP3_SOURCES mpglib/dct64_asm.nas)
   set_source_files_properties(mpglib/dct64_asm.nas PROPERTIES LANGUAGE ASM_NASM)
+  list(APPEND MP3_DEFS MPGLIB_HAVE_ASM)
 endif()
 
 add_library(reaper_mp3 MODULE ${MP3_SOURCES})
@@ -32,17 +38,16 @@ elseif(APPLE)
   set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".dylib")
   target_compile_definitions(reaper_mp3 PRIVATE MAC_OS_X)
 else()
-  set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".so")
+  set_target_properties(reaper_mp3 PROPERTIES SUFFIX ".so" POSITION_INDEPENDENT_CODE ON)
   target_compile_definitions(reaper_mp3 PRIVATE LINUX)
-  target_compile_options(reaper_mp3 PRIVATE -fPIC)
 endif()
 
 target_include_directories(reaper_mp3 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/..
   ${CMAKE_CURRENT_SOURCE_DIR}/../../sdk
   ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/WDL
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/swell
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../WDL/WDL/swell
 )
 
 target_compile_features(reaper_mp3 PRIVATE cxx_std_17)
-target_compile_definitions(reaper_mp3 PRIVATE WDL_NO_DEFINE_MINMAX)
+target_compile_definitions(reaper_mp3 PRIVATE ${MP3_DEFS})

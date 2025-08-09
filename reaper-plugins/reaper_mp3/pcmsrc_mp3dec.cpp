@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <algorithm>
 
 #define LOCALIZE_IMPORT_PREFIX "mp3dec_" // causes main.h to include localize-import.h
 #include "main.h"
@@ -200,7 +201,7 @@ public:
     {
       if (GetPreferredDiskReadMode) GetPreferredDiskReadMode(&mode,&nb,&bs);
     }
-    WDL_FileRead *file = new WDL_FileRead(filename,mode,min(bs,32768),min(nb,4));
+    WDL_FileRead *file = new WDL_FileRead(filename,mode,std::min(bs,32768),std::min(nb,4));
 
     if (!file->IsOpen()) 
     {
