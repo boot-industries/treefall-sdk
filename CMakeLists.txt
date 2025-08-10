@@ -1,5 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+
 cmake_minimum_required(VERSION 3.15)
 project(reaper_sdk_examples)
+set(WDL_PATH "${CMAKE_SOURCE_DIR}/WDL")
+if(EXISTS "${WDL_PATH}/WDL" AND NOT EXISTS "${WDL_PATH}/db2val.h")
+  message(STATUS "Flattening Cockos WDL into ${WDL_PATH}")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory "${WDL_PATH}/WDL" "${WDL_PATH}")
+endif()
 # Ensure consistent timestamps for FetchContent
 set(DOWNLOAD_EXTRACT_TIMESTAMP true)
 
