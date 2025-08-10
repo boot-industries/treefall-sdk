@@ -1,5 +1,11 @@
 #<Enumerator:0x0000000105122c70>
+
 name: Static
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 
 on:
   push:
