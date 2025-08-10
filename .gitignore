@@ -1,3 +1,12 @@
 build/
 .tidy.log
 .cppcheck.log
+# build + static-analysis outputs
+*.log
+*.top
+compile_commands.json
+.hotfiles
+.tidy.files
+codex_bundle.txt
+file_bundle.txt
+macos.log
