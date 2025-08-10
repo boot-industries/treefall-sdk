@@ -1,0 +1,224 @@
+build (macos-latest)	Set up job	﻿2025-08-10T02:19:13.5899030Z Current runner version: '2.327.1'
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5915240Z ##[group]Operating System
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5915700Z macOS
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5916060Z 14.7.6
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5916360Z 23H626
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5916670Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5917010Z ##[group]Runner Image
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5917360Z Image: macos-14-arm64
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5918000Z Version: 20250805.1714
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5918690Z Included Software: https://github.com/actions/runner-images/blob/macos-14-arm64/20250805.1714/images/macos/macos-14-arm64-Readme.md
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5919610Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-14-arm64%2F20250805.1714
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5920190Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5920510Z ##[group]Runner Image Provisioner
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5920900Z 2.0.449.1+6d46f4794670abc677653e70ad733fc4b7478209
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5921300Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5921950Z ##[group]GITHUB_TOKEN Permissions
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5922800Z Contents: read
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5923310Z Metadata: read
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5923630Z Packages: read
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5923950Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5925150Z Secret source: Actions
+build (macos-latest)	Set up job	2025-08-10T02:19:13.5925550Z Prepare workflow directory
+build (macos-latest)	Set up job	2025-08-10T02:19:13.6164720Z Prepare all required actions
+build (macos-latest)	Set up job	2025-08-10T02:19:13.6191010Z Getting action download info
+build (macos-latest)	Set up job	2025-08-10T02:19:14.0000980Z ##[group]Download immutable action package 'actions/checkout@v4'
+build (macos-latest)	Set up job	2025-08-10T02:19:14.0001750Z Version: 4.2.2
+build (macos-latest)	Set up job	2025-08-10T02:19:14.0002440Z Digest: sha256:ccb2698953eaebd21c7bf6268a94f9c26518a7e38e27e0b83c1fe1ad049819b1
+build (macos-latest)	Set up job	2025-08-10T02:19:14.0003240Z Source commit SHA: 11bd71901bbe5b1630ceea73d27597364c9af683
+build (macos-latest)	Set up job	2025-08-10T02:19:14.0003710Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:14.2932270Z ##[group]Download immutable action package 'actions/upload-artifact@v4'
+build (macos-latest)	Set up job	2025-08-10T02:19:14.2934780Z Version: 4.6.2
+build (macos-latest)	Set up job	2025-08-10T02:19:14.2935280Z Digest: sha256:290722aa3281d5caf23d0acdc3dbeb3424786a1a01a9cc97e72f147225e37c38
+build (macos-latest)	Set up job	2025-08-10T02:19:14.2935890Z Source commit SHA: ea165f8d65b6e75b540449e92b4886f43607fa02
+build (macos-latest)	Set up job	2025-08-10T02:19:14.2936390Z ##[endgroup]
+build (macos-latest)	Set up job	2025-08-10T02:19:14.4865280Z Complete job name: build (macos-latest)
+build (macos-latest)	Run actions/checkout@v4	﻿2025-08-10T02:19:14.5210560Z ##[group]Run actions/checkout@v4
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5211090Z with:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5211520Z   submodules: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5211850Z   repository: chrislyons/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5212310Z   token: ***
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5212600Z   ssh-strict: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5212900Z   ssh-user: git
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5213210Z   persist-credentials: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5213550Z   clean: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5213860Z   sparse-checkout-cone-mode: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5214230Z   fetch-depth: 1
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5214530Z   fetch-tags: false
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5214840Z   show-progress: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5215140Z   lfs: false
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5215420Z   set-safe-directory: true
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.5215830Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.8345160Z Syncing repository: chrislyons/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.8346550Z ##[group]Getting Git version info
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.8347090Z Working directory is '/Users/runner/work/orpheus-sdk/orpheus-sdk'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.8347870Z [command]/opt/homebrew/bin/git version
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.8902410Z git version 2.50.1
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9153990Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9179470Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/ef3284ae-63c6-4172-b632-3a16575bc81d/.gitconfig'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9180810Z Temporarily overriding HOME='/Users/runner/work/_temp/ef3284ae-63c6-4172-b632-3a16575bc81d' before making global git config changes
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9181850Z Adding repository directory to the temporary git global config as a safe directory
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9182830Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/orpheus-sdk/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9184100Z Deleting the contents of '/Users/runner/work/orpheus-sdk/orpheus-sdk'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9184970Z ##[group]Initializing the repository
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9186320Z [command]/opt/homebrew/bin/git init /Users/runner/work/orpheus-sdk/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9319490Z hint: Using 'master' as the name for the initial branch. This default branch name
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9320530Z hint: is subject to change. To configure the initial branch name to use in all
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9321610Z hint: of your new repositories, which will suppress this warning, call:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9322160Z hint:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9322540Z hint: 	git config --global init.defaultBranch <name>
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9322970Z hint:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9323380Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9324020Z hint: 'development'. The just-created branch can be renamed via this command:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9324530Z hint:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9324860Z hint: 	git branch -m <name>
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9325200Z hint:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9325630Z hint: Disable this message with "git config set advice.defaultBranchName false"
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9326340Z Initialized empty Git repository in /Users/runner/work/orpheus-sdk/orpheus-sdk/.git/
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9328720Z [command]/opt/homebrew/bin/git remote add origin https://github.com/chrislyons/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9389190Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9389890Z ##[group]Disabling automatic garbage collection
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9391170Z [command]/opt/homebrew/bin/git config --local gc.auto 0
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9432960Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9433490Z ##[group]Setting up auth
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9438080Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:14.9490390Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.0585610Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.0641570Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.1240570Z [command]/opt/homebrew/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.1320640Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.1321410Z ##[group]Fetching the repository
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.1328920Z [command]/opt/homebrew/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c88478fa77e45a4752fdf1a2303ddfc635e63d03:refs/remotes/pull/22/merge
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9714130Z From https://github.com/chrislyons/orpheus-sdk
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9716170Z  * [new ref]         c88478fa77e45a4752fdf1a2303ddfc635e63d03 -> pull/22/merge
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9796820Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9797730Z ##[group]Determining the checkout info
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9798600Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9800090Z [command]/opt/homebrew/bin/git sparse-checkout disable
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9863220Z [command]/opt/homebrew/bin/git config --local --unset-all extensions.worktreeConfig
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9917410Z ##[group]Checking out the ref
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:15.9919350Z [command]/opt/homebrew/bin/git checkout --progress --force refs/remotes/pull/22/merge
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.0163780Z HEAD is now at c88478f Merge ba3df5f7f22b7c2907ef35a8504813a6098a9c78 into 43ea66c931a2801941f5174b1d6adf28d2f0410a
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.0475380Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.0596140Z ##[group]Setting up auth for fetching submodules
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.0699130Z [command]/opt/homebrew/bin/git config --global http.https://github.com/.extraheader AUTHORIZATION: basic ***
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1006150Z [command]/opt/homebrew/bin/git config --global --unset-all url.https://github.com/.insteadOf
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1127230Z [command]/opt/homebrew/bin/git config --global --add url.https://github.com/.insteadOf git@github.com:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1176520Z [command]/opt/homebrew/bin/git config --global --add url.https://github.com/.insteadOf org-17039033@github.com:
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1231670Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1249600Z ##[group]Fetching submodules
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1287780Z [command]/opt/homebrew/bin/git submodule sync
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1475320Z [command]/opt/homebrew/bin/git -c protocol.version=2 submodule update --init --force --depth=1
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.1992950Z Submodule 'WDL' (https://github.com/justinfrankel/WDL.git) registered for path 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:16.2058240Z Cloning into '/Users/runner/work/orpheus-sdk/orpheus-sdk/WDL'...
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.5924270Z Submodule path 'WDL': checked out 'f527ba04ee9da3447439e5c556115ecf97422a55'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.6327820Z [command]/opt/homebrew/bin/git submodule foreach git config --local gc.auto 0
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.6985630Z Entering 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.7171320Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.7175770Z ##[group]Persisting credentials for submodules
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.7177420Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'url\.https\:\/\/github\.com\/\.insteadOf' && git config --local --unset-all 'url.https://github.com/.insteadOf' || :"
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.7823830Z Entering 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.7979530Z [command]/opt/homebrew/bin/git submodule foreach sh -c "git config --local 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ***' && git config --local --show-origin --name-only --get-regexp remote.origin.url"
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.8639140Z Entering 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.8777960Z file:/Users/runner/work/orpheus-sdk/orpheus-sdk/.git/modules/WDL/config	remote.origin.url
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.8795480Z [command]/opt/homebrew/bin/git submodule foreach git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.9435040Z Entering 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:17.9525110Z [command]/opt/homebrew/bin/git submodule foreach git config --local --add 'url.https://github.com/.insteadOf' 'org-17039033@github.com:'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:18.0208350Z Entering 'WDL'
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:18.0290140Z ##[endgroup]
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:18.0349130Z [command]/opt/homebrew/bin/git log -1 --format=%H
+build (macos-latest)	Run actions/checkout@v4	2025-08-10T02:19:18.0389480Z c88478fa77e45a4752fdf1a2303ddfc635e63d03
+build (macos-latest)	Configure	﻿2025-08-10T02:19:18.0542250Z ##[group]Run cmake -S . -B build
+build (macos-latest)	Configure	2025-08-10T02:19:18.0542590Z [36;1mcmake -S . -B build[0m
+build (macos-latest)	Configure	2025-08-10T02:19:18.0597580Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build (macos-latest)	Configure	2025-08-10T02:19:18.0597870Z ##[endgroup]
+build (macos-latest)	Configure	2025-08-10T02:19:20.1965010Z -- The C compiler identification is AppleClang 15.0.0.15000309
+build (macos-latest)	Configure	2025-08-10T02:19:20.2653660Z -- The CXX compiler identification is AppleClang 15.0.0.15000309
+build (macos-latest)	Configure	2025-08-10T02:19:20.2777770Z -- Detecting C compiler ABI info
+build (macos-latest)	Configure	2025-08-10T02:19:20.8269830Z -- Detecting C compiler ABI info - done
+build (macos-latest)	Configure	2025-08-10T02:19:20.8372140Z -- Check for working C compiler: /Applications/Xcode_15.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc - skipped
+build (macos-latest)	Configure	2025-08-10T02:19:20.8374050Z -- Detecting C compile features
+build (macos-latest)	Configure	2025-08-10T02:19:20.8380560Z -- Detecting C compile features - done
+build (macos-latest)	Configure	2025-08-10T02:19:20.8424910Z -- Detecting CXX compiler ABI info
+build (macos-latest)	Configure	2025-08-10T02:19:20.9399640Z -- Detecting CXX compiler ABI info - done
+build (macos-latest)	Configure	2025-08-10T02:19:20.9507310Z -- Check for working CXX compiler: /Applications/Xcode_15.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ - skipped
+build (macos-latest)	Configure	2025-08-10T02:19:20.9508370Z -- Detecting CXX compile features
+build (macos-latest)	Configure	2025-08-10T02:19:20.9512960Z -- Detecting CXX compile features - done
+build (macos-latest)	Configure	2025-08-10T02:19:20.9860520Z CMake Warning (dev) at /opt/homebrew/share/cmake/Modules/FetchContent.cmake:1373 (message):
+build (macos-latest)	Configure	2025-08-10T02:19:20.9861220Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+build (macos-latest)	Configure	2025-08-10T02:19:20.9861700Z   not set.  The policy's OLD behavior will be used.  When using a URL
+build (macos-latest)	Configure	2025-08-10T02:19:20.9862170Z   download, the timestamps of extracted files should preferably be that of
+build (macos-latest)	Configure	2025-08-10T02:19:20.9863540Z   the time of extraction, otherwise code that depends on the extracted
+build (macos-latest)	Configure	2025-08-10T02:19:20.9863970Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+build (macos-latest)	Configure	2025-08-10T02:19:20.9864450Z   preserves the timestamps from the archive instead, but this is usually not
+build (macos-latest)	Configure	2025-08-10T02:19:20.9864900Z   what you want.  Update your project to the NEW behavior or specify the
+build (macos-latest)	Configure	2025-08-10T02:19:20.9865380Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+build (macos-latest)	Configure	2025-08-10T02:19:20.9865760Z   robustness issue.
+build (macos-latest)	Configure	2025-08-10T02:19:20.9866030Z Call Stack (most recent call first):
+build (macos-latest)	Configure	2025-08-10T02:19:20.9868500Z   CMakeLists.txt:47 (FetchContent_Declare)
+build (macos-latest)	Configure	2025-08-10T02:19:20.9868810Z This warning is for project developers.  Use -Wno-dev to suppress it.
+build (macos-latest)	Configure	2025-08-10T02:19:20.9869030Z 
+build (macos-latest)	Configure	2025-08-10T02:19:23.1922380Z -- Found Python3: /opt/homebrew/Frameworks/Python.framework/Versions/3.13/bin/python3.13 (found version "3.13.5") found components: Interpreter
+build (macos-latest)	Configure	2025-08-10T02:19:23.1942420Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+build (macos-latest)	Configure	2025-08-10T02:19:23.3166030Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+build (macos-latest)	Configure	2025-08-10T02:19:23.3172010Z -- Found Threads: TRUE
+build (macos-latest)	Configure	2025-08-10T02:19:23.3218750Z -- Configuring done (5.2s)
+build (macos-latest)	Configure	2025-08-10T02:19:23.4042220Z -- Generating done (0.1s)
+build (macos-latest)	Configure	2025-08-10T02:19:23.4143260Z -- Build files have been written to: /Users/runner/work/orpheus-sdk/orpheus-sdk/build
+build (macos-latest)	Build	﻿2025-08-10T02:19:23.4273460Z ##[group]Run cmake --build build
+build (macos-latest)	Build	2025-08-10T02:19:23.4273720Z [36;1mcmake --build build[0m
+build (macos-latest)	Build	2025-08-10T02:19:23.4333610Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build (macos-latest)	Build	2025-08-10T02:19:23.4333920Z ##[endgroup]
+build (macos-latest)	Build	2025-08-10T02:19:23.5231590Z [  2%] Building CXX object CMakeFiles/track_playlist.dir/sdk/track_playlist/track_playlist.cpp.o
+build (macos-latest)	Build	2025-08-10T02:19:24.4405870Z [  4%] Linking CXX static library libtrack_playlist.a
+build (macos-latest)	Build	2025-08-10T02:19:24.4643350Z [  4%] Built target track_playlist
+build (macos-latest)	Build	2025-08-10T02:19:24.4792940Z [  6%] Building CXX object CMakeFiles/track_playlist_demo.dir/sdk/track_playlist/track_playlist_demo.cpp.o
+build (macos-latest)	Build	2025-08-10T02:19:24.7963230Z [  8%] Linking CXX executable track_playlist_demo
+build (macos-latest)	Build	2025-08-10T02:19:24.8339360Z [  8%] Built target track_playlist_demo
+build (macos-latest)	Build	2025-08-10T02:19:24.8466070Z [ 10%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+build (macos-latest)	Build	2025-08-10T02:19:26.0764890Z [ 13%] Linking CXX static library ../../../lib/libgtest.a
+build (macos-latest)	Build	2025-08-10T02:19:26.1400760Z [ 13%] Built target gtest
+build (macos-latest)	Build	2025-08-10T02:19:26.1744680Z [ 15%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
+build (macos-latest)	Build	2025-08-10T02:19:26.5822430Z [ 17%] Linking CXX static library ../../../lib/libgtest_main.a
+build (macos-latest)	Build	2025-08-10T02:19:26.6070030Z [ 17%] Built target gtest_main
+build (macos-latest)	Build	2025-08-10T02:19:26.6209740Z [ 19%] Building CXX object CMakeFiles/track_playlist_test.dir/sdk/track_playlist/track_playlist_test.cpp.o
+build (macos-latest)	Build	2025-08-10T02:19:27.1593400Z [ 21%] Linking CXX executable track_playlist_test
+build (macos-latest)	Build	2025-08-10T02:19:27.2030560Z [ 21%] Built target track_playlist_test
+build (macos-latest)	Build	2025-08-10T02:19:27.2158030Z [ 23%] Building CXX object reaper-plugins/reaper_csurf/CMakeFiles/reaper_csurf.dir/csurf_main.cpp.o
+build (macos-latest)	Build	2025-08-10T02:19:27.3855080Z In file included from /Users/runner/work/orpheus-sdk/orpheus-sdk/reaper-plugins/reaper_csurf/csurf_main.cpp:10:
+build (macos-latest)	Build	2025-08-10T02:19:27.3855780Z In file included from /Users/runner/work/orpheus-sdk/orpheus-sdk/reaper-plugins/reaper_csurf/../localize-import.h:14:
+build (macos-latest)	Build	2025-08-10T02:19:27.3857010Z /Users/runner/work/orpheus-sdk/orpheus-sdk/reaper-plugins/reaper_csurf/../../WDL/WDL/../WDL/localize/localize-import.h:74:5: warning: 'sprintf' is deprecated: This function is provided for compatibility reasons only.  Due to security concerns inherent in the design of sprintf(3), it is highly recommended that you use snprintf(3) instead. [-Wdeprecated-declarations]
+build (macos-latest)	Build	2025-08-10T02:19:27.3858200Z     sprintf(tmp,"%.100s%d",LOCALIZE_IMPORT_PREFIX,(int)(INT_PTR)lpTemplate);
+build (macos-latest)	Build	2025-08-10T02:19:27.3858460Z     ^
+build (macos-latest)	Build	2025-08-10T02:19:27.3859030Z /Applications/Xcode_15.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.5.sdk/usr/include/stdio.h:180:1: note: 'sprintf' has been explicitly marked deprecated here
+build (macos-latest)	Build	2025-08-10T02:19:27.3861980Z __deprecated_msg("This function is provided for compatibility reasons only.  Due to security concerns inherent in the design of sprintf(3), it is highly recommended that you use snprintf(3) instead.")
+build (macos-latest)	Build	2025-08-10T02:19:27.3862520Z ^
+build (macos-latest)	Build	2025-08-10T02:19:27.3863030Z /Applications/Xcode_15.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.5.sdk/usr/include/sys/cdefs.h:218:48: note: expanded from macro '__deprecated_msg'
+build (macos-latest)	Build	2025-08-10T02:19:27.3863690Z         #define __deprecated_msg(_msg) __attribute__((__deprecated__(_msg)))
+build (macos-latest)	Build	2025-08-10T02:19:27.3863970Z                                                       ^
+build (macos-latest)	Build	2025-08-10T02:19:27.3895580Z In file included from /Users/runner/work/orpheus-sdk/orpheus-sdk/reaper-plugins/reaper_csurf/csurf_main.cpp:11:
+build (macos-latest)	Build	2025-08-10T02:19:27.3896310Z /Users/runner/work/orpheus-sdk/orpheus-sdk/reaper-plugins/reaper_csurf/csurf.h:7:10: fatal error: '../../WDL/db2val.h' file not found
+build (macos-latest)	Build	2025-08-10T02:19:27.3896790Z #include "../../WDL/db2val.h"
+build (macos-latest)	Build	2025-08-10T02:19:27.3896950Z          ^~~~~~~~~~~~~~~~~~~~
+build (macos-latest)	Build	2025-08-10T02:19:27.3951100Z 1 warning and 1 error generated.
+build (macos-latest)	Build	2025-08-10T02:19:27.3965720Z make[2]: *** [reaper-plugins/reaper_csurf/CMakeFiles/reaper_csurf.dir/csurf_main.cpp.o] Error 1
+build (macos-latest)	Build	2025-08-10T02:19:27.3967190Z make[1]: *** [reaper-plugins/reaper_csurf/CMakeFiles/reaper_csurf.dir/all] Error 2
+build (macos-latest)	Build	2025-08-10T02:19:27.3976090Z make: *** [all] Error 2
+build (macos-latest)	Build	2025-08-10T02:19:27.3990970Z ##[error]Process completed with exit code 2.
+build (macos-latest)	Post Run actions/checkout@v4	﻿2025-08-10T02:19:27.4054330Z Post job cleanup.
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4792720Z [command]/opt/homebrew/bin/git version
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4848660Z git version 2.50.1
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4871720Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/6f6e04a2-de4c-4013-9b43-ab33e0399295/.gitconfig'
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4877960Z Temporarily overriding HOME='/Users/runner/work/_temp/6f6e04a2-de4c-4013-9b43-ab33e0399295' before making global git config changes
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4878600Z Adding repository directory to the temporary git global config as a safe directory
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4881310Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/orpheus-sdk/orpheus-sdk
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4921600Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.4957830Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.5414180Z Entering 'WDL'
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.5528240Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.5557200Z http.https://github.com/.extraheader
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.5564190Z [command]/opt/homebrew/bin/git config --local --unset-all http.https://github.com/.extraheader
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.5599970Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.6047110Z Entering 'WDL'
+build (macos-latest)	Post Run actions/checkout@v4	2025-08-10T02:19:27.6117670Z http.https://github.com/.extraheader
+build (macos-latest)	Complete job	﻿2025-08-10T02:19:27.6256340Z Cleaning up orphan processes
