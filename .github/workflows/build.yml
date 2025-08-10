@@ -10,7 +10,8 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
+fail-fast: false
+matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     defaults:
       run:
@@ -18,11 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: true
       - name: Configure
         run: cmake -S . -B build
       - name: Build
-        run: cmake --build build --target track_playlist track_playlist_demo track_playlist_test
+        run: cmake --build build
       - name: Collect plug-ins
         run: |
           mkdir -p plugins

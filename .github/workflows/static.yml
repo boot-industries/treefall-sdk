@@ -1,3 +1,4 @@
+#<Enumerator:0x0000000105122c70>
 name: Static
 
 on:
@@ -10,7 +11,59 @@ jobs:
   static-analysis:
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
+fail-fast: false
+matrix:
+        os: [ubuntu-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy cppcheck cmake build-essential
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+- name: Install analyzers (Ubuntu)
+  if: runner.os == "Linux"
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y clang-tidy cppcheck
+
+      - name: Run clang-tidy
+        run: |
+          python run-clang-tidy.py -p build -header-filter '^sdk/.*' > clangtidy.log || true
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --project=build/compile_commands.json \
+            --suppress=*:*WDL/* --suppress=*:*reaper-plugins/* --suppress=*:*build/* \
+            --output-file=cppcheck.log || true
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-logs
+          path: |
+            clangtidy.log
+            cppcheck.log
+
+name: Static
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-analysis:
+    runs-on: ${{ matrix.os }}
+    strategy:
+fail-fast: false
+matrix:
         os: [ubuntu-latest]
     steps:
       - name: Checkout repository

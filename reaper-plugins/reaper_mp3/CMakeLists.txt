@@ -28,6 +28,7 @@ endif()
 
 add_library(reaper_mp3 MODULE ${MP3_SOURCES})
 
+set_property(TARGET reaper_mp3 PROPERTY CXX_STANDARD 14)
 set_target_properties(reaper_mp3 PROPERTIES PREFIX "")
 
 if(WIN32)
