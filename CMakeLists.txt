@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(reaper_sdk_examples)
+# Ensure consistent timestamps for FetchContent
+set(DOWNLOAD_EXTRACT_TIMESTAMP true)
 
 include(CTest)
 
