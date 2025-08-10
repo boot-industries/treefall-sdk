@@ -1,0 +1,4 @@
+sdk/track_playlist/track_playlist.cpp
+sdk/track_playlist/track_playlist_demo.cpp
+sdk/track_playlist/track_playlist_test.cpp
+sdk/track_playlist/track_playlist.h
