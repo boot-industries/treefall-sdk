@@ -10,3 +10,7 @@ compile_commands.json
 codex_bundle.txt
 file_bundle.txt
 macos.log
+WDL/.git
+*.bak
+*.bak.*
+build/

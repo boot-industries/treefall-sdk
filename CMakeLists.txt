@@ -1,9 +1,6 @@
 # ---- GTest/GMock includes (global) ----
 include_directories(${CMAKE_BINARY_DIR}/_deps/googletest-src/googletest/include ${CMAKE_BINARY_DIR}/_deps/googletest-src/googlemock/include)
 
-# ---- GTest/GMock includes (global) ----
-include_directories(${PROJECT_BINARY_DIR}/_deps/googletest-src/googletest/include ${PROJECT_BINARY_DIR}/_deps/googletest-src/googlemock/include)
-
 cmake_policy(SET CMP0135 NEW)
 
 # ==== one-shot target/test guards (inserted by fix/cmake-dup-targets) ====
@@ -35,7 +32,6 @@ endfunction()
 
 cmake_minimum_required(VERSION 3.20)
 
-cmake_minimum_required(VERSION 3.15)
 project(reaper_sdk_examples)
 
 # ---- define-once helpers for duplicate-merge safety ----
@@ -52,7 +48,7 @@ macro(add_executable_if_missing name)
 endmacro()
 # ---------------------------------------------------------
 
-option(ORPHEUS_BUILD_REAPER_PLUGINS "Build REAPER plug-ins" OFF)
+option(ORPHEUS_BUILD_REAPER_PLUGINS "Build REAPER plug-ins" ON)
 set(WDL_PATH "${CMAKE_SOURCE_DIR}/WDL")
 if(EXISTS "${WDL_PATH}/WDL" AND NOT EXISTS "${WDL_PATH}/db2val.h")
   message(STATUS "Flattening Cockos WDL into ${WDL_PATH}")
