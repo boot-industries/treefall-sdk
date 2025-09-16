@@ -1,4 +1,5 @@
 add_library(reaper_atmos MODULE reaper_atmos.cpp)
+target_link_libraries(reaper_atmos PRIVATE reaper_atmos_engine)
 
 set_target_properties(reaper_atmos PROPERTIES PREFIX "")
 

@@ -51,7 +51,11 @@ typedef double ReaSample;
 #define REAPER_PLUGIN_HINSTANCE HINSTANCE
 
 #else
+#if __has_include("../WDL/swell/swell.h")
 #include "../WDL/swell/swell.h"
+#else
+#include "reaper_plugin_swell_stub.h"
+#endif
 #include <pthread.h>
 
 #define REAPER_PLUGIN_DLL_EXPORT __attribute__((visibility("default")))
@@ -73,6 +77,10 @@ typedef double ReaSample;
   #define REAPER_STATICFUNC __attribute__((unused)) static
 #else
   #define REAPER_STATICFUNC static
+#endif
+
+#ifndef REAPER_API_DECL
+#define REAPER_API_DECL
 #endif
 
 /* 

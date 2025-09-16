@@ -80,6 +80,12 @@ or_safe_add_library(track_playlist STATIC sdk/track_playlist/track_playlist.cpp)
 target_compile_features(track_playlist PUBLIC cxx_std_17)
 target_include_directories(track_playlist PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sdk)
 
+or_safe_add_library(reaper_atmos_engine STATIC reaper-plugins/reaper_atmos/atmos_engine.cpp)
+target_compile_features(reaper_atmos_engine PUBLIC cxx_std_17)
+target_include_directories(reaper_atmos_engine PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/sdk
+  ${CMAKE_CURRENT_SOURCE_DIR}/reaper-plugins)
+
 or_safe_add_executable(track_playlist_demo sdk/track_playlist/track_playlist_demo.cpp)
 target_link_libraries(track_playlist_demo PRIVATE track_playlist)
 
@@ -106,6 +112,19 @@ if(BUILD_TESTING AND ORPHEUS_ENABLE_TESTS)
   target_compile_features(track_playlist_test PRIVATE cxx_std_17)
 
   or_safe_add_test(track_playlist_test COMMAND track_playlist_test)
+
+  or_safe_add_executable(reaper_atmos_test reaper-plugins/reaper_atmos/reaper_atmos_test.cpp)
+  target_link_libraries(reaper_atmos_test
+    PRIVATE
+      gmock_main
+      reaper_atmos_engine
+      Threads::Threads)
+  target_include_directories(reaper_atmos_test PRIVATE
+    ${googletest_SOURCE_DIR}/googletest/include
+    ${googletest_SOURCE_DIR}/googlemock/include)
+  target_compile_features(reaper_atmos_test PRIVATE cxx_std_17)
+
+  or_safe_add_test(reaper_atmos_test COMMAND reaper_atmos_test)
 endif()
 
 if(ORPHEUS_BUILD_REAPER_PLUGINS)
