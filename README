@@ -45,53 +45,61 @@ references but are not necessarily good design examples).
 
 ### CMake (Windows, macOS, Linux)
 
-The included cross-platform CMake build can produce the sample plug-ins
-and example library on all supported platforms. After fetching the WDL
-submodule, configure and build:
+The top-level CMake project always configures the `track_playlist`
+library, its `track_playlist_demo` example, and the associated unit
+tests. Plug-in targets are currently opt-in and require the WDL checkout
+described above.
+
+Configure and build the defaults (library, demo, tests):
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ```
 
-The plug-in binaries will be emitted to `build/plugins/`.
-
-The following CMake options control which sample plug-ins are built:
-
-| Component | Option |
-| --- | --- |
-| `reaper_csurf` | `-DBUILD_REAPER_CSURF=ON/OFF` |
-| `reaper_atmos` | `-DBUILD_REAPER_ATMOS=ON/OFF` |
-| `reaper_mp3` | `-DBUILD_REAPER_MP3=ON/OFF` |
-| `reaper_stt` | `-DBUILD_REAPER_STT=ON/OFF` |
-
-The `track_playlist` library and its `track_playlist_demo` example are built
-by default.
-
-To build only certain plug-ins, toggle the options above at configure time.
-For example, build just the control surface plug-in:
+The cache variable `ORPHEUS_BUILD_REAPER_PLUGINS` controls whether the
+REAPER plug-in subdirectories are added to the build graph and defaults
+to `OFF`. When left at the default the commands above do **not** produce
+plug-in binaries. To attempt a plug-in build, enable the switch:
 
 ```sh
-cmake -S . -B build -DBUILD_REAPER_CSURF=ON -DBUILD_REAPER_ATMOS=OFF -DBUILD_REAPER_MP3=OFF -DBUILD_REAPER_STT=OFF
+cmake -S . -B build -DORPHEUS_BUILD_REAPER_PLUGINS=ON
 cmake --build build
 ```
 
-On Windows, specify a generator and configuration:
+With the switch enabled CMake checks for `sdk/reaper_plugin.h` and
+`WDL/swell/swell.h` and fails early if either prerequisite is missing.
+When configuration succeeds, the resulting plug-in binaries are emitted
+to `build/plugins/`.
+
+Per-plug-in toggles (`BUILD_REAPER_CSURF`, `BUILD_REAPER_ATMOS`,
+`BUILD_REAPER_MP3`, `BUILD_REAPER_STT`) are still declared in
+`CMakeLists.txt`, but their corresponding `add_subdirectory(...)`
+statements remain commented out, so changing those options has no effect
+on the generated targets.【F:CMakeLists.txt†L1241-L1297】 Building only a
+subset of plug-ins therefore requires manually editing the build files
+or using the Visual Studio / command-line recipes below.
+
+On Windows, specify a generator and configuration when invoking CMake:
 
 ```bat
 cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 ```
 
-On macOS and Linux, the default generator suffices:
+On macOS and Linux, the default generator suffices for either the
+library-only or plug-in-enabled configuration:
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ```
 
-This workflow has been verified with Visual Studio on Windows, Xcode on
-macOS, and GCC/Clang on Linux.
+The platform-specific sections below rely on the legacy Visual Studio
+projects or compiler invocations shipped with each plug-in. They assume
+the `WDL` checkout is present beside this repository and that the
+`REAPER_SDK` / `WDL_PATH` environment variables described in the
+prerequisites are configured before building.
 
 ### Windows (Visual Studio)
 
