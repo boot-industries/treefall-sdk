@@ -47,6 +47,7 @@ endif()
 set(DOWNLOAD_EXTRACT_TIMESTAMP true)
 
 include(CTest)
+include(FetchContent)
 
 # Verify that the WDL headers are available
 set(WDL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/WDL/WDL")
@@ -57,6 +58,24 @@ else()
   message(WARNING "WDL not found; sample plug-ins will not be built")
 endif()
 
+# Third-party dependencies
+set(IXWEBSOCKET_USE_TLS OFF CACHE BOOL "Use OpenSSL for TLS support")
+set(IXWEBSOCKET_ENABLE_MBED_TLS OFF CACHE BOOL "Disable mbed TLS" FORCE)
+set(IXWEBSOCKET_ENABLE_OPEN_SSL OFF CACHE BOOL "Disable optional OpenSSL helpers")
+set(IXWEBSOCKET_BUILD_TESTS OFF CACHE BOOL "Disable ixwebsocket tests" FORCE)
+set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "Skip ixwebsocket install rules" FORCE)
+
+FetchContent_Declare(
+  ixwebsocket
+  URL https://github.com/machinezone/IXWebSocket/archive/refs/tags/v11.4.6.zip
+)
+FetchContent_MakeAvailable(ixwebsocket)
+
+or_safe_add_library(reaper_stream STATIC sdk/reaper_stream/reaper_stream.cpp)
+target_link_libraries(reaper_stream PUBLIC ixwebsocket::ixwebsocket)
+target_include_directories(reaper_stream PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+target_compile_features(reaper_stream PUBLIC cxx_std_17)
+
 or_safe_add_library(track_playlist STATIC sdk/track_playlist/track_playlist.cpp)
 target_compile_features(track_playlist PUBLIC cxx_std_17)
 target_include_directories(track_playlist PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sdk)
@@ -65,7 +84,6 @@ or_safe_add_executable(track_playlist_demo sdk/track_playlist/track_playlist_dem
 target_link_libraries(track_playlist_demo PRIVATE track_playlist)
 
 if(BUILD_TESTING AND ORPHEUS_ENABLE_TESTS)
-  include(FetchContent)
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip

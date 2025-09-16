@@ -1,14 +1,16 @@
 #ifndef REAPER_STREAM_H
 #define REAPER_STREAM_H
 
-#include "../reaper_plugin.h"
+#include "pcm_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Open a WebSocket or SRT stream. The URL scheme (ws://, wss://, srt://)
-// selects the transport. Returns a non-zero handle on success.
+// Open a streaming connection. The URL scheme selects the transport.
+// Currently supported schemes: ws:// (and wss:// when TLS support is
+// enabled at build time).
+// Returns a non-zero handle on success.
 int stream_open(const char *url);
 
 // Send an audio block over the stream. Returns non-zero on success.
