@@ -38,6 +38,12 @@ static StubEngine g_stub_engine;
 static STTEngine* g_engine = &g_stub_engine;
 static std::mutex g_engine_mutex;
 
+constexpr const char kApiTranscribeSource[] = "API_TranscribeSource";
+constexpr const char kApiFindWord[] = "API_STT_FindWord";
+constexpr const char kApiReplaceWord[] = "API_STT_ReplaceWord";
+constexpr const char kApiSetEngine[] = "API_STT_SetEngine";
+bool g_api_registered = false;
+
 static std::string run_stt(const ReaSample* samples,
                            int nch, int length, double samplerate)
 {
@@ -154,5 +160,60 @@ void STT_ReplaceWord(const char *oldWord, const char *newWord)
 {
   if (!oldWord || !newWord) return;
   g_lane.replaceWord(oldWord, newWord);
+}
+
+extern "C" {
+REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t* rec)
+{
+  if (rec)
+  {
+    if (rec->caller_version != REAPER_PLUGIN_VERSION || !rec->Register || !rec->GetFunc)
+      return 0;
+    if (!REAPERAPI_LoadAPI(rec->GetFunc))
+      return 0;
+    if (!plugin_register || !AddProjectMarker)
+      return 0;
+
+    if (!plugin_register(kApiTranscribeSource, (void*)TranscribeSource))
+      return 0;
+
+    if (!plugin_register(kApiFindWord, (void*)STT_FindWord))
+    {
+      plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
+      return 0;
+    }
+
+    if (!plugin_register(kApiReplaceWord, (void*)STT_ReplaceWord))
+    {
+      plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
+      plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
+      return 0;
+    }
+
+    if (!plugin_register(kApiSetEngine, (void*)STT_SetEngine))
+    {
+      plugin_register("-API_STT_ReplaceWord", (void*)STT_ReplaceWord);
+      plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
+      plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
+      return 0;
+    }
+
+    g_api_registered = true;
+    return 1;
+  }
+
+  if (g_api_registered && plugin_register)
+  {
+    plugin_register("-API_STT_SetEngine", (void*)STT_SetEngine);
+    plugin_register("-API_STT_ReplaceWord", (void*)STT_ReplaceWord);
+    plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
+    plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
+  }
+
+  g_lane.clear();
+  STT_SetEngine(nullptr);
+  g_api_registered = false;
+  return 0;
+}
 }
 
