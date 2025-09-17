@@ -14,6 +14,23 @@ enum class FrameRate {
     FPS30_DROP = 29
 };
 
+inline constexpr double kFrameRate30Drop = 30000.0 / 1001.0;
+
+// Retrieve the true frames-per-second value for a frame rate.
+constexpr double FramesPerSecond(FrameRate rate) {
+    switch (rate) {
+        case FrameRate::FPS24:
+            return 24.0;
+        case FrameRate::FPS25:
+            return 25.0;
+        case FrameRate::FPS30:
+            return 30.0;
+        case FrameRate::FPS30_DROP:
+            return kFrameRate30Drop;
+    }
+    return 30.0;
+}
+
 // SMPTE timecode frame representation.
 struct Frame {
     int hours{0};

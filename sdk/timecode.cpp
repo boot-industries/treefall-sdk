@@ -61,7 +61,7 @@ PTPv2Time ToPTP(const Frame &src) {
     out.seconds = static_cast<uint64_t>(src.hours) * 3600ULL +
                   static_cast<uint64_t>(src.minutes) * 60ULL +
                   static_cast<uint64_t>(src.seconds);
-    const double fps = static_cast<int>(src.rate);
+    const double fps = FramesPerSecond(src.rate);
     out.nanoseconds = static_cast<uint32_t>((src.frames / fps) * 1e9);
     return out;
 }
@@ -79,14 +79,14 @@ uint32_t ToST2110RTP(const PTPv2Time &src, uint32_t sampleRate) {
 }
 
 double ToSeconds(const Frame &tc) {
-    const double fps = static_cast<int>(tc.rate);
+    const double fps = FramesPerSecond(tc.rate);
     return tc.hours * 3600.0 + tc.minutes * 60.0 + tc.seconds + tc.frames / fps;
 }
 
 Frame FromSeconds(double seconds, FrameRate rate) {
     Frame out;
     out.rate = rate;
-    const double fps = static_cast<int>(rate);
+    const double fps = FramesPerSecond(rate);
     out.hours = static_cast<int>(seconds / 3600.0);
     seconds -= out.hours * 3600.0;
     out.minutes = static_cast<int>(seconds / 60.0);

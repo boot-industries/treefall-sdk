@@ -113,6 +113,22 @@ if(BUILD_TESTING AND ORPHEUS_ENABLE_TESTS)
 
   or_safe_add_test(track_playlist_test COMMAND track_playlist_test)
 
+  or_safe_add_executable(timecode_test
+    sdk/timecode.cpp
+    sdk/timecode_test.cpp)
+  target_link_libraries(timecode_test
+    PRIVATE
+      gmock_main
+      Threads::Threads
+  )
+  target_include_directories(timecode_test PRIVATE
+    ${googletest_SOURCE_DIR}/googletest/include
+    ${googletest_SOURCE_DIR}/googlemock/include
+  )
+  target_compile_features(timecode_test PRIVATE cxx_std_17)
+
+  or_safe_add_test(timecode_test COMMAND timecode_test)
+
   or_safe_add_executable(reaper_atmos_test reaper-plugins/reaper_atmos/reaper_atmos_test.cpp)
   target_link_libraries(reaper_atmos_test
     PRIVATE
