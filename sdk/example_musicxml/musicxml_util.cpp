@@ -51,7 +51,7 @@ static bool DoExportTrackMIDIToMusicXML(MediaTrack* tr, const char* fn)
                         const char* step = steps[pitch % 12];
                         int octave = pitch / 12 - 1;
                         std::fprintf(f, "      <note>\n");
-                        std::fprintf(f, "        <pitch><step>%c</step", step[0]);
+                        std::fprintf(f, "        <pitch><step>%c</step>", step[0]);
                         if (step[1] == '#') std::fprintf(f, "<alter>1</alter>");
                         std::fprintf(f, "<octave>%d</octave></pitch>\n", octave);
                         std::fprintf(f, "        <duration>1</duration>\n");
