@@ -9,7 +9,7 @@ class STTEngine {
 public:
   virtual ~STTEngine() = default;
   virtual std::string Transcribe(const ReaSample *samples,
-                                 int nch, int length,
+                                 int nch, int frames,
                                  double samplerate) = 0;
 };
 

@@ -25,11 +25,11 @@ namespace {
 class StubEngine : public STTEngine {
 public:
   std::string Transcribe(const ReaSample* samples,
-                         int nch, int length, double samplerate) override
+                         int nch, int frames, double samplerate) override
   {
     // In real use, connect to an actual STT engine.
     // Here we return a placeholder string for demonstration.
-    (void)samples; (void)nch; (void)length; (void)samplerate;
+    (void)samples; (void)nch; (void)frames; (void)samplerate;
     return "hello world"; // dummy transcription
   }
 };
@@ -45,10 +45,10 @@ constexpr const char kApiSetEngine[] = "API_STT_SetEngine";
 bool g_api_registered = false;
 
 static std::string run_stt(const ReaSample* samples,
-                           int nch, int length, double samplerate)
+                           int nch, int frames, double samplerate)
 {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
-  return g_engine->Transcribe(samples, nch, length, samplerate);
+  return g_engine->Transcribe(samples, nch, frames, samplerate);
 }
 
 } // namespace
@@ -108,10 +108,15 @@ static TextLane g_lane;
 // ----------------------------------------------------------------------
 static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
 {
-  std::string text = run_stt(block->samples, block->nch, block->length, block->samplerate);
+  const int frames = (block->samples_out > 0) ? block->samples_out : block->length;
+  if (frames <= 0) return;
+
+  std::string text = run_stt(block->samples, block->nch, frames, block->samplerate);
   std::istringstream iss(text);
   std::string word;
-  double word_dur = (double)block->length / block->samplerate; // simple duration
+  double word_dur = (block->samplerate > 0.0)
+                      ? static_cast<double>(frames) / block->samplerate
+                      : 0.0;
   int word_index = 0;
   while (iss >> word)
   {
@@ -143,6 +148,12 @@ void TranscribeSource(PCM_source *src)
     block.time_s = t;
     src->GetSamples(&block);
     if (block.samples_out <= 0) break;
+    if (block.samples_out < block.length)
+    {
+      const size_t valid = static_cast<size_t>(block.samples_out) * static_cast<size_t>(block.nch);
+      const size_t total = static_cast<size_t>(block.length) * static_cast<size_t>(block.nch);
+      std::fill(block.samples + valid, block.samples + total, ReaSample{});
+    }
     feed_block_to_stt(&block, t);
     t += (double)block.samples_out / block.samplerate;
   }
