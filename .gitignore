@@ -1,16 +1,21 @@
-build/
-.tidy.log
-.cppcheck.log
-# build + static-analysis outputs
-*.log
-*.top
-compile_commands.json
-.hotfiles
-.tidy.files
-codex_bundle.txt
-file_bundle.txt
-macos.log
-WDL/.git
-*.bak
-*.bak.*
-build/
+# Build directories
+/build/
+/out/
+/dist/
+
+# CMake cache
+/CMakeCache.txt
+/CMakeFiles/
+/cmake-build-*/
+
+# Generated compile database
+/compile_commands.json
+
+# IDE settings
+/.vscode/
+/.idea/
+/*.code-workspace
+
+# Platform-specific clutter
+.DS_Store
+Thumbs.db

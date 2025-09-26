@@ -1,8 +1,7 @@
 Checks: >
-  -*,bugprone-*,performance-*,readability-*,
+  bugprone-*,modernize-*,performance-*,readability-*,
   -readability-identifier-length,
-  -bugprone-suspicious-include
-HeaderFilterRegex: '^sdk/.*'
+  -modernize-use-trailing-return-type
 WarningsAsErrors: ''
-AnalyzeTemporaryDtors: false
+HeaderFilterRegex: '^(adapters|include|src|tests)/'
 FormatStyle: file
