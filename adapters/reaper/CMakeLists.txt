@@ -5,14 +5,15 @@ add_library(reaper_orpheus SHARED
 
 target_link_libraries(reaper_orpheus
   PRIVATE
-    orpheus_core
+    Orpheus::core
 )
 
-target_compile_definitions(reaper_orpheus PRIVATE ORPHEUS_BUILD_SHARED)
+target_compile_definitions(reaper_orpheus PRIVATE ORPHEUS_SHARED ORPHEUS_BUILDING)
 
 target_include_directories(reaper_orpheus
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/core/session
 )
 
 include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)

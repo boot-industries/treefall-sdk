@@ -1,0 +1,8 @@
+name = "wordbird-web"
+main = "src/worker.ts"
+compatibility_date = "2023-10-01"
+
+[vars]
+PACKS_REMOTE_MANIFEST = "https://packs.wordbird.app/packs.json"
+PACKS_HOST = "https://packs.wordbird.app"
+REQUIRE_SIGNATURES = "0"

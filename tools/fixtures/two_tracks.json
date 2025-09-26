@@ -1,0 +1,33 @@
+{
+  "name": "Two Tracks",
+  "tempo_bpm": 100,
+  "start_beats": 0,
+  "end_beats": 32,
+  "tracks": [
+    {
+      "name": "Drums",
+      "clips": [
+        {
+          "name": "groove",
+          "start_beats": 0,
+          "length_beats": 8
+        },
+        {
+          "name": "fill",
+          "start_beats": 24,
+          "length_beats": 8
+        }
+      ]
+    },
+    {
+      "name": "Bass",
+      "clips": [
+        {
+          "name": "verse",
+          "start_beats": 8,
+          "length_beats": 16
+        }
+      ]
+    }
+  ]
+}

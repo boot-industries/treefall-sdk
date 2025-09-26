@@ -1,0 +1,100 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace orpheus::core {
+
+class Clip {
+ public:
+  Clip(std::string name, double start_beats, double length_beats);
+
+  void set_start(double start_beats);
+  void set_length(double length_beats);
+
+  [[nodiscard]] double start() const { return start_beats_; }
+  [[nodiscard]] double length() const { return length_beats_; }
+  [[nodiscard]] const std::string &name() const { return name_; }
+
+ private:
+  std::string name_;
+  double start_beats_;
+  double length_beats_;
+};
+
+class Track {
+ public:
+  explicit Track(std::string name);
+
+  [[nodiscard]] const std::string &name() const { return name_; }
+
+  Clip *add_clip(std::string name, double start_beats, double length_beats);
+  bool remove_clip(const Clip *clip);
+  Clip *find_clip(const Clip *clip);
+
+  [[nodiscard]] const std::vector<std::unique_ptr<Clip>> &clips() const {
+    return clips_;
+  }
+
+  void sort_clips();
+
+ private:
+  std::string name_;
+  std::vector<std::unique_ptr<Clip>> clips_;
+};
+
+struct TransportState {
+  double tempo_bpm{120.0};
+  double position_beats{0.0};
+  bool is_playing{false};
+};
+
+class SessionGraph {
+ public:
+  SessionGraph();
+
+  void set_name(std::string name);
+  [[nodiscard]] const std::string &name() const { return name_; }
+
+  Track *add_track(std::string name);
+  bool remove_track(const Track *track);
+
+  void set_tempo(double bpm);
+  [[nodiscard]] double tempo() const { return tempo_bpm_; }
+
+  [[nodiscard]] TransportState transport_state() const;
+
+  void set_session_range(double start_beats, double end_beats);
+  [[nodiscard]] double session_start_beats() const {
+    return session_start_beats_;
+  }
+  [[nodiscard]] double session_end_beats() const {
+    return session_end_beats_;
+  }
+
+  Clip *add_clip(Track &track, std::string name, double start_beats,
+                double length_beats);
+  bool remove_clip(const Clip *clip);
+  void set_clip_start(Clip &clip, double start_beats);
+  void set_clip_length(Clip &clip, double length_beats);
+  void commit_clip_grid();
+
+  [[nodiscard]] const std::vector<std::unique_ptr<Track>> &tracks() const {
+    return tracks_;
+  }
+
+ private:
+  Track *find_track(const Track *track);
+  Clip *find_clip(const Clip *clip);
+
+  double tempo_bpm_{120.0};
+  double transport_position_beats_{0.0};
+  bool transport_is_playing_{false};
+  std::string name_;
+  double session_start_beats_{0.0};
+  double session_end_beats_{0.0};
+  std::vector<std::unique_ptr<Track>> tracks_;
+};
+
+}  // namespace orpheus::core
