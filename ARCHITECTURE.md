@@ -8,8 +8,14 @@ round-trip correctness.
 ## Core Library (`src/` + `include/`)
 
 * `orpheus::AbiVersion` – Describes the SDK ABI and exposes negotiation helpers.
-* `orpheus::SessionState` – Represents a minimal event log that can be
-  serialised to and from a newline-delimited text format.
+* `orpheus::core::SessionGraph` – Owns an in-memory project graph made of
+  **tracks** (ordered containers for musical events) and **clips** (named spans of
+  beats). The graph tracks tempo, transport state, and session metadata so hosts
+  can query or mutate the arrangement in one place.
+* `orpheus::core::session_json` – A helper namespace that serialises
+  `SessionGraph` instances to and from the canonical JSON format used on disk.
+  It also exposes filesystem helpers for loading/saving sessions and for
+  generating filenames for rendered click tracks.
 * The library is header-driven with a static archive target (`orpheus_core`).
 
 ## Adapters (`adapters/`)
@@ -17,21 +23,28 @@ round-trip correctness.
 * **REAPER (`reaper_orpheus`)** – Builds a shared library that exports extension
   metadata. A tiny panel helper renders the current ABI version and ready status
   for display inside the host UI.
-* **Minhost (`orpheus_minhost`)** – Provides a CLI that can toggle transport
-  playback, serialise the resulting session events, and render a click track to
-  disk via a simple WAV writer.
+* **Minhost (`orpheus_minhost`)** – Provides a CLI that imports session JSON into
+  a `SessionGraph`, uses the public ABI tables to populate host-visible session
+  handles, and then either renders a click track via the render ABI or runs a
+  transport simulation that prints beat ticks to stdout.
 
 Both adapters link against `orpheus_core`, inherit the global warning policy, and
 are exercised in CI.
 
-## Testing (`tests/`)
+## Testing (`tests/` + `tools/`)
 
 GoogleTest powers smoke coverage:
 
-* ABI negotiation – Validates that major version mismatches gracefully fall back
-  to the compiled ABI and that minor versions cap to supported values.
-* Session round-trip – Ensures serialization retains ordering and ignores
-  malformed input lines.
+* ABI smoke (`tests/abi_smoke.cpp`) – Validates that major version mismatches
+  gracefully fall back to the compiled ABI and that clip/grid helpers bind
+  correctly.
+* Session JSON round-trip (`tests/session_roundtrip.cpp`) – Loads fixtures into a
+  `SessionGraph`, serialises them back to JSON, and ensures tracks, clips, and
+  tempo survive losslessly.
+
+Additional tooling mirrors the tests: `tools/conformance/json_roundtrip.cpp`
+performs a full-file round-trip comparison to guard against accidental schema
+drift.
 
 The tests are run automatically through `ctest` and the GitHub Actions workflow.
 
