@@ -3,14 +3,30 @@ cmake_minimum_required(VERSION 3.22)
 project(orpheus VERSION 0.2.0 LANGUAGES CXX)
 
 option(ORP_WITH_TESTS "Build Orpheus tests" ON)
-option(ORP_BUILD_REAPER "Build the REAPER adapter" ON)
-option(ORP_BUILD_MINHOST "Build the minimal host adapter" ON)
+option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
+option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
+option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
 option(ENABLE_LTO "Enable interprocedural optimization" OFF)
 option(ORP_BUILD_SHARED_CORE "Build Orpheus ABI libraries as shared" OFF)
 option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
 
 if(DEFINED ORPHEUS_BUILD_SHARED)
   set(ORP_BUILD_SHARED_CORE ${ORPHEUS_BUILD_SHARED} CACHE BOOL "" FORCE)
+endif()
+
+if(DEFINED ORP_BUILD_REAPER)
+  message(WARNING "ORP_BUILD_REAPER is deprecated. Use ORPHEUS_ENABLE_ADAPTER_REAPER instead.")
+  set(ORPHEUS_ENABLE_ADAPTER_REAPER ${ORP_BUILD_REAPER} CACHE BOOL "" FORCE)
+endif()
+
+if(DEFINED ORP_BUILD_MINHOST)
+  message(WARNING "ORP_BUILD_MINHOST is deprecated. Use ORPHEUS_ENABLE_ADAPTER_MINHOST instead.")
+  set(ORPHEUS_ENABLE_ADAPTER_MINHOST ${ORP_BUILD_MINHOST} CACHE BOOL "" FORCE)
+endif()
+
+if(NOT ORPHEUS_ENABLE_ADAPTERS)
+  set(ORPHEUS_ENABLE_ADAPTER_MINHOST OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_ADAPTER_REAPER OFF CACHE BOOL "" FORCE)
 endif()
 
 if(ORP_BUILD_ABI_DYNAMIC)
@@ -68,11 +84,11 @@ endif()
 
 add_subdirectory(src)
 
-if(ORP_BUILD_REAPER)
+if(ORPHEUS_ENABLE_ADAPTER_REAPER)
   add_subdirectory(adapters/reaper)
 endif()
 
-if(ORP_BUILD_MINHOST)
+if(ORPHEUS_ENABLE_ADAPTER_MINHOST)
   add_subdirectory(adapters/minhost)
 endif()
 
@@ -99,18 +115,22 @@ install(TARGETS orpheus_session orpheus_clipgrid orpheus_render
 install(TARGETS orpheus_core
   EXPORT OrpheusSDKTargets)
 
-if(ORP_BUILD_MINHOST)
+if(ORPHEUS_ENABLE_ADAPTER_MINHOST)
   install(TARGETS orpheus_minhost
     EXPORT OrpheusSDKTargets
     RUNTIME DESTINATION bin)
 endif()
 
-if(ORP_BUILD_REAPER)
+if(ORPHEUS_ENABLE_ADAPTER_REAPER)
   install(TARGETS reaper_orpheus
     EXPORT OrpheusSDKTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin)
+endif()
+
+if(ORPHEUS_ENABLE_ADAPTER_REAPER)
+  install(DIRECTORY adapters/reaper/include/ DESTINATION include)
 endif()
 
 if(TARGET orpheus_perf_render_click)

@@ -1,9 +1,10 @@
 # Orpheus SDK
 
-The Orpheus SDK provides a compact core library together with reference
-adapters for integrating with REAPER and a standalone "minhost" utility. The
-codebase is designed to be friendly to continuous integration, modern CMake
-workflows, and cross-platform development.
+The Orpheus SDK packages a host-neutral core for working with sessions,
+clip grids, and renders. Optional adapters provide thin integration layers
+for specific hosts, including a minimal standalone utility and a REAPER
+extension. The codebase is designed to be friendly to continuous
+integration, modern CMake workflows, and cross-platform development.
 
 ## Quickstart
 
@@ -13,9 +14,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The default configuration builds the core library, the REAPER extension
-(`reaper_orpheus`), the minimal host executable (`orpheus_minhost`), and the
-GoogleTest suite.
+By default the build produces the Orpheus core libraries, the reference
+`orpheus_minhost` adapter, and the GoogleTest suite. Host-specific adapters
+are opt-in.
 
 ### Rendering a Click Track
 
@@ -32,12 +33,11 @@ and renders a two-bar click track to `click.wav`. If you omit `--render`, the
 minhost instead runs a short transport simulation using the session tempo (or
 your override) and prints the suggested render path.
 
-### REAPER Adapter Panel
+### Adapter Overview
 
-The shared library target `reaper_orpheus` exposes metadata and a panel string
-that displays the negotiated ABI version. When the adapter is loaded by REAPER
-(or another host that understands the extension API) it can surface the panel
-text through the host UI.
+Adapters are thin shims over the Orpheus SDK core. See
+[`docs/ADAPTERS.md`](docs/ADAPTERS.md) for the complete matrix of supported
+hosts and build flags.
 
 ## Tooling
 
@@ -51,7 +51,7 @@ text through the host UI.
 ## Project Layout
 
 ```
-├── adapters/        # Host integrations (REAPER extension and minhost CLI)
+├── adapters/        # Host integrations (minhost CLI, optional REAPER shim)
 ├── cmake/           # Helper modules (warnings + third-party deps)
 ├── include/         # Public headers for the Orpheus core library
 ├── src/             # Core library implementation

@@ -2,7 +2,7 @@
 
 #include "json_io.h"
 #include "orpheus/abi.h"
-#include "orpheus/reaper_entry.h"
+#include "orpheus/adapters/reaper/entry.h"
 
 #include <algorithm>
 #include <cmath>

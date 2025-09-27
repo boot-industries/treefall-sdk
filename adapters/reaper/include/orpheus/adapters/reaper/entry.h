@@ -1,6 +1,6 @@
 #pragma once
 
-#include "orpheus/reaper_export.h"
+#include "orpheus/adapters/reaper/export.h"
 
 #ifdef __cplusplus
 extern "C" {
