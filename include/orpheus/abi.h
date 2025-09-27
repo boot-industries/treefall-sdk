@@ -2,6 +2,7 @@
 #pragma once
 
 #include "orpheus/abi_version.h"
+#include "orpheus/errors.h"
 #include "orpheus/export.h"
 
 #include <stdint.h>
@@ -14,16 +15,6 @@ typedef struct orpheus_abi_version {
   uint32_t major;
   uint32_t minor;
 } orpheus_abi_version;
-
-typedef enum orpheus_status {
-  ORPHEUS_STATUS_OK = 0,
-  ORPHEUS_STATUS_INVALID_ARGUMENT = 1,
-  ORPHEUS_STATUS_NOT_FOUND = 2,
-  ORPHEUS_STATUS_OUT_OF_MEMORY = 3,
-  ORPHEUS_STATUS_INTERNAL_ERROR = 4,
-  ORPHEUS_STATUS_NOT_IMPLEMENTED = 5,
-  ORPHEUS_STATUS_IO_ERROR = 6
-} orpheus_status;
 
 typedef struct orpheus_transport_state {
   double tempo_bpm;

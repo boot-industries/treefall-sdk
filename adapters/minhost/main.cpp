@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "json_io.h"
 #include "orpheus/abi.h"
+#include "orpheus/errors.h"
 
 #include <algorithm>
 #include <cctype>
@@ -97,26 +98,6 @@ void PrintError(const CliGlobalOptions &global, const ErrorInfo &error) {
       std::cerr << "  " << detail << std::endl;
     }
   }
-}
-
-std::string StatusToString(orpheus_status status) {
-  switch (status) {
-    case ORPHEUS_STATUS_OK:
-      return "ok";
-    case ORPHEUS_STATUS_INVALID_ARGUMENT:
-      return "invalid argument";
-    case ORPHEUS_STATUS_NOT_FOUND:
-      return "not found";
-    case ORPHEUS_STATUS_OUT_OF_MEMORY:
-      return "out of memory";
-    case ORPHEUS_STATUS_INTERNAL_ERROR:
-      return "internal error";
-    case ORPHEUS_STATUS_NOT_IMPLEMENTED:
-      return "not implemented";
-    case ORPHEUS_STATUS_IO_ERROR:
-      return "io error";
-  }
-  return "unknown";
 }
 
 struct TimelineRange {
@@ -337,7 +318,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (status != ORPHEUS_STATUS_OK) {
     error.code = "session.create";
     error.message = "Failed to create session";
-    error.details = {StatusToString(status)};
+    error.details = {std::string{orpheus_status_to_string(status)}};
     return false;
   }
   context.guard = SessionGuard{context.abi.session_api, handle};
@@ -375,7 +356,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (status != ORPHEUS_STATUS_OK) {
     error.code = "session.tempo";
     error.message = "Failed to set tempo";
-    error.details = {StatusToString(status)};
+    error.details = {std::string{orpheus_status_to_string(status)}};
     return false;
   }
 
@@ -396,7 +377,8 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
     if (status != ORPHEUS_STATUS_OK) {
       error.code = "session.track";
       error.message = "Failed to add track";
-      error.details = {track_ptr->name(), StatusToString(status)};
+      error.details = {track_ptr->name(),
+                       std::string{orpheus_status_to_string(status)}};
       return false;
     }
     ++context.loaded_tracks;
@@ -414,7 +396,8 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
       if (status != ORPHEUS_STATUS_OK) {
         error.code = "session.clip";
         error.message = "Failed to add clip";
-        error.details = {clip_ptr->name(), StatusToString(status)};
+        error.details = {clip_ptr->name(),
+                         std::string{orpheus_status_to_string(status)}};
         return false;
       }
       ++context.loaded_clips;
@@ -425,7 +408,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (status != ORPHEUS_STATUS_OK) {
     error.code = "session.commit";
     error.message = "Failed to commit clip grid";
-    error.details = {StatusToString(status)};
+    error.details = {std::string{orpheus_status_to_string(status)}};
     return false;
   }
 
@@ -434,7 +417,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (status != ORPHEUS_STATUS_OK) {
     error.code = "session.state";
     error.message = "Failed to query transport state";
-    error.details = {StatusToString(status)};
+    error.details = {std::string{orpheus_status_to_string(status)}};
     return false;
   }
   context.tempo_bpm = state.tempo_bpm;
@@ -754,7 +737,7 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
       context.guard.handle, options.output_directory.string().c_str());
   if (status != ORPHEUS_STATUS_OK) {
     ErrorInfo render_error{"render.tracks", "Track render failed",
-                           {StatusToString(status)}};
+                           {std::string{orpheus_status_to_string(status)}}};
     PrintError(global, render_error);
     return 1;
   }
@@ -1309,7 +1292,8 @@ int RunRenderClickCommand(const CliGlobalOptions &global,
     const auto status =
         context.abi.render_api->render_click(&spec, output_path.string().c_str());
     if (status != ORPHEUS_STATUS_OK) {
-      ErrorInfo render_error{"render.click", "Render failed", {StatusToString(status)}};
+      ErrorInfo render_error{"render.click", "Render failed",
+                             {std::string{orpheus_status_to_string(status)}}};
       PrintError(global, render_error);
       return 1;
     }

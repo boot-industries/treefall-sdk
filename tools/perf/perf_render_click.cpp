@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "orpheus/abi.h"
+#include "orpheus/errors.h"
 
 #include <chrono>
 #include <filesystem>
@@ -10,26 +11,6 @@
 #include <vector>
 
 namespace fs = std::filesystem;
-
-std::string StatusToString(orpheus_status status) {
-  switch (status) {
-    case ORPHEUS_STATUS_OK:
-      return "ok";
-    case ORPHEUS_STATUS_INVALID_ARGUMENT:
-      return "invalid argument";
-    case ORPHEUS_STATUS_NOT_FOUND:
-      return "not found";
-    case ORPHEUS_STATUS_OUT_OF_MEMORY:
-      return "out of memory";
-    case ORPHEUS_STATUS_INTERNAL_ERROR:
-      return "internal error";
-    case ORPHEUS_STATUS_NOT_IMPLEMENTED:
-      return "not implemented";
-    case ORPHEUS_STATUS_IO_ERROR:
-      return "io error";
-  }
-  return "unknown";
-}
 
 int main() {
   uint32_t got_major = 0;
@@ -65,8 +46,8 @@ int main() {
     const auto status = render->render_click(&spec, output.string().c_str());
     const auto end = std::chrono::steady_clock::now();
     if (status != ORPHEUS_STATUS_OK) {
-      std::cerr << "render_click failed: " << StatusToString(status)
-                << std::endl;
+      std::cerr << "render_click failed: "
+                << orpheus_status_to_string(status) << std::endl;
       return 1;
     }
 

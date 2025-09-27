@@ -4,6 +4,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "orpheus/abi.h"
+#include "orpheus/errors.h"
 #include "json_io.h"
 
 #include <cstdlib>
@@ -29,17 +30,7 @@ namespace {
 
 juce::String StatusToString(orpheus_status status)
 {
-    switch (status)
-    {
-        case ORPHEUS_STATUS_OK: return "ok";
-        case ORPHEUS_STATUS_INVALID_ARGUMENT: return "invalid argument";
-        case ORPHEUS_STATUS_NOT_FOUND: return "not found";
-        case ORPHEUS_STATUS_OUT_OF_MEMORY: return "out of memory";
-        case ORPHEUS_STATUS_INTERNAL_ERROR: return "internal error";
-        case ORPHEUS_STATUS_NOT_IMPLEMENTED: return "not implemented";
-        case ORPHEUS_STATUS_IO_ERROR: return "io error";
-    }
-    return "unknown";
+    return juce::String(orpheus_status_to_string(status));
 }
 
 fs::path ExecutableDirectory()

@@ -5,6 +5,7 @@ if(ORP_BUILD_SHARED_CORE)
 endif()
 
 add_library(orpheus_core_runtime OBJECT
+  core/common/errors.cpp
   core/session/session_graph.cpp
   core/session/json_io.cpp
 )
