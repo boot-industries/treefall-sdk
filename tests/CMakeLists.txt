@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 add_executable(orpheus_tests
   abi_smoke.cpp
+  render_tracks.cpp
   session_graph_ownership.cpp
   session_graph_invariants.cpp
   session_roundtrip.cpp

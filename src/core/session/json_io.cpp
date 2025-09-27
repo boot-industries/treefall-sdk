@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
@@ -453,6 +454,38 @@ SessionGraph ParseSession(const std::string &json_text) {
   const double end = RequireNumber(*end_field, "end_beats");
   session.set_session_range(start, end);
 
+  if (auto render_it = object.object.find("render");
+      render_it != object.object.end()) {
+    const JsonValue &render_object =
+        ExpectObject(render_it->second, "render settings");
+    if (auto rate_it = render_object.object.find("sample_rate_hz");
+        rate_it != render_object.object.end()) {
+      const double value =
+          RequireNumber(rate_it->second, "render.sample_rate_hz");
+      if (value < 0.0 || value > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error("render.sample_rate_hz out of range");
+      }
+      session.set_render_sample_rate(
+          static_cast<std::uint32_t>(std::llround(value)));
+    }
+    if (auto depth_it = render_object.object.find("bit_depth");
+        depth_it != render_object.object.end()) {
+      const double value = RequireNumber(depth_it->second, "render.bit_depth");
+      if (value < 0.0 || value > std::numeric_limits<std::uint16_t>::max()) {
+        throw std::runtime_error("render.bit_depth out of range");
+      }
+      session.set_render_bit_depth(
+          static_cast<std::uint16_t>(std::llround(value)));
+    }
+    if (auto dither_it = render_object.object.find("dither");
+        dither_it != render_object.object.end()) {
+      if (dither_it->second.type != JsonValue::Type::kBoolean) {
+        throw std::runtime_error("render.dither must be boolean");
+      }
+      session.set_render_dither(dither_it->second.boolean);
+    }
+  }
+
   const JsonValue *tracks_field = RequireField(object, "tracks");
   const JsonValue &tracks_value = ExpectArray(*tracks_field, "tracks array");
   for (const auto &track_value : tracks_value.array) {
@@ -498,6 +531,17 @@ std::string SerializeSession(const SessionGraph &session) {
   WriteIndent(stream, 2);
   stream << "\"end_beats\": " << FormatDouble(session.session_end_beats())
          << ",\n";
+  WriteIndent(stream, 2);
+  stream << "\"render\": {\n";
+  WriteIndent(stream, 4);
+  stream << "\"sample_rate_hz\": " << session.render_sample_rate() << ",\n";
+  WriteIndent(stream, 4);
+  stream << "\"bit_depth\": " << session.render_bit_depth() << ",\n";
+  WriteIndent(stream, 4);
+  stream << "\"dither\": " << (session.render_dither() ? "true" : "false")
+         << "\n";
+  WriteIndent(stream, 2);
+  stream << "},\n";
   WriteIndent(stream, 2);
   stream << "\"tracks\": [\n";
 
@@ -565,10 +609,10 @@ void SaveSessionToFile(const SessionGraph &session, const std::string &path) {
   }
 }
 
-std::string MakeRenderClickFilename(const std::string &session_name,
-                                    const std::string &stem_name,
-                                    std::uint32_t sample_rate_hz,
-                                    std::uint32_t bit_depth_bits) {
+std::string MakeRenderStemFilename(const std::string &session_name,
+                                   const std::string &stem_name,
+                                   std::uint32_t sample_rate_hz,
+                                   std::uint32_t bit_depth_bits) {
   std::string sanitized_project = SanitizeSessionName(session_name);
   std::string sanitized_stem = SanitizeSessionName(stem_name);
   if (sanitized_project.empty()) {
@@ -584,8 +628,17 @@ std::string MakeRenderClickFilename(const std::string &session_name,
     bit_depth_bits = 16u;
   }
   const std::string rate_tag = FormatSampleRateTag(sample_rate_hz);
-  return "out/" + sanitized_project + "_" + sanitized_stem + "_" + rate_tag +
-         "_" + std::to_string(bit_depth_bits) + "b.wav";
+  return sanitized_project + "_" + sanitized_stem + "_" + rate_tag + "_" +
+         std::to_string(bit_depth_bits) + "b.wav";
+}
+
+std::string MakeRenderClickFilename(const std::string &session_name,
+                                    const std::string &stem_name,
+                                    std::uint32_t sample_rate_hz,
+                                    std::uint32_t bit_depth_bits) {
+  return "out/" +
+         MakeRenderStemFilename(session_name, stem_name, sample_rate_hz,
+                                bit_depth_bits);
 }
 
 }  // namespace orpheus::core::session_json

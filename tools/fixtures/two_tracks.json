@@ -3,6 +3,11 @@
   "tempo_bpm": 100,
   "start_beats": 0,
   "end_beats": 32,
+  "render": {
+    "sample_rate_hz": 48000,
+    "bit_depth": 24,
+    "dither": true
+  },
   "tracks": [
     {
       "name": "Bass",

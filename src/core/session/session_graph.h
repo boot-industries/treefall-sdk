@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -88,6 +89,18 @@ class ORPHEUS_API SessionGraph {
   void set_tempo(double bpm);
   [[nodiscard]] double tempo() const { return tempo_bpm_; }
 
+  void set_render_sample_rate(std::uint32_t sample_rate_hz);
+  void set_render_bit_depth(std::uint16_t bit_depth_bits);
+  void set_render_dither(bool enabled);
+
+  [[nodiscard]] std::uint32_t render_sample_rate() const {
+    return render_sample_rate_hz_;
+  }
+  [[nodiscard]] std::uint16_t render_bit_depth() const {
+    return render_bit_depth_bits_;
+  }
+  [[nodiscard]] bool render_dither() const { return render_dither_enabled_; }
+
   [[nodiscard]] TransportState transport_state() const;
 
   void set_session_range(double start_beats, double end_beats);
@@ -132,6 +145,9 @@ class ORPHEUS_API SessionGraph {
   double session_end_beats_{0.0};
   std::vector<std::unique_ptr<Track>> tracks_;
   bool clip_grid_dirty_{false};
+  std::uint32_t render_sample_rate_hz_{48000u};
+  std::uint16_t render_bit_depth_bits_{24u};
+  bool render_dither_enabled_{true};
 };
 
 }  // namespace orpheus::core

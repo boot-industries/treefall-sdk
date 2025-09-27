@@ -98,6 +98,28 @@ void SessionGraph::set_tempo(double bpm) {
   tempo_bpm_ = bpm;
 }
 
+void SessionGraph::set_render_sample_rate(std::uint32_t sample_rate_hz) {
+  if (sample_rate_hz == 0u) {
+    throw std::invalid_argument("Sample rate must be non-zero");
+  }
+  render_sample_rate_hz_ = sample_rate_hz;
+}
+
+void SessionGraph::set_render_bit_depth(std::uint16_t bit_depth_bits) {
+  switch (bit_depth_bits) {
+    case 16:
+    case 24:
+      render_bit_depth_bits_ = bit_depth_bits;
+      return;
+    default:
+      throw std::invalid_argument("Unsupported bit depth");
+  }
+}
+
+void SessionGraph::set_render_dither(bool enabled) {
+  render_dither_enabled_ = enabled;
+}
+
 TransportState SessionGraph::transport_state() const {
   TransportState state;
   state.tempo_bpm = tempo_bpm_;

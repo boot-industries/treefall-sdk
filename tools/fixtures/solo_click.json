@@ -3,6 +3,11 @@
   "tempo_bpm": 120,
   "start_beats": 0,
   "end_beats": 16,
+  "render": {
+    "sample_rate_hz": 48000,
+    "bit_depth": 24,
+    "dither": true
+  },
   "tracks": [
     {
       "name": "Click",

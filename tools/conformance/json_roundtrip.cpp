@@ -31,6 +31,15 @@ bool SessionsEqual(const SessionGraph &lhs, const SessionGraph &rhs) {
   if (!NearlyEqual(lhs.session_end_beats(), rhs.session_end_beats())) {
     return false;
   }
+  if (lhs.render_sample_rate() != rhs.render_sample_rate()) {
+    return false;
+  }
+  if (lhs.render_bit_depth() != rhs.render_bit_depth()) {
+    return false;
+  }
+  if (lhs.render_dither() != rhs.render_dither()) {
+    return false;
+  }
   const auto &lhs_tracks = lhs.tracks();
   const auto &rhs_tracks = rhs.tracks();
   if (lhs_tracks.size() != rhs_tracks.size()) {
