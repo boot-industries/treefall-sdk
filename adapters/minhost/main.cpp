@@ -2,199 +2,101 @@
 #include "json_io.h"
 #include "orpheus/abi.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <map>
 #include <optional>
+#include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
 namespace session_json = orpheus::core::session_json;
 using orpheus::core::SessionGraph;
 
-namespace {
+namespace minhost {
 
-struct ClickOptions {
-  std::string session_path;
-  std::optional<std::string> render_path;
-  std::optional<double> bpm_override;
-  std::uint32_t bars = 4;
+struct CliGlobalOptions {
+  bool json_output = false;
 };
 
-struct RenderTracksOptions {
-  std::string session_path;
-  std::vector<std::string> track_names;
-  fs::path output_directory;
-  std::optional<double> bpm_override;
-  std::optional<std::uint32_t> sample_rate_override;
-  std::optional<std::uint16_t> bit_depth_override;
-  std::optional<bool> dither_override;
+struct ErrorInfo {
+  std::string code;
+  std::string message;
+  std::vector<std::string> details;
 };
 
-void PrintUsage() {
-  std::cout << "Usage:" << std::endl;
-  std::cout << "  orpheus_minhost --session <session.json> [--render <out.wav>]"
-            << " [--bars <count>] [--bpm <tempo>]" << std::endl;
-  std::cout <<
-      "  orpheus_minhost render --session <session.json> --out <dir> [--tracks"
-      << " <name,name,...>] [--sample-rate <hz>] [--bit-depth <bits>]"
-      << " [--dither <on|off>] [--bpm <tempo>]" << std::endl;
-}
-
-std::optional<ClickOptions> ParseClickOptions(int argc, char **argv) {
-  ClickOptions options;
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--session") {
-      if (i + 1 >= argc) {
-        std::cerr << "--session requires a path" << std::endl;
-        return std::nullopt;
-      }
-      options.session_path = argv[++i];
-    } else if (arg == "--render") {
-      if (i + 1 >= argc) {
-        std::cerr << "--render requires a path" << std::endl;
-        return std::nullopt;
-      }
-      options.render_path = argv[++i];
-    } else if (arg == "--bars") {
-      if (i + 1 >= argc) {
-        std::cerr << "--bars requires a value" << std::endl;
-        return std::nullopt;
-      }
-      options.bars = static_cast<std::uint32_t>(std::stoul(argv[++i]));
-      if (options.bars == 0) {
-        std::cerr << "--bars must be greater than zero" << std::endl;
-        return std::nullopt;
-      }
-    } else if (arg == "--bpm") {
-      if (i + 1 >= argc) {
-        std::cerr << "--bpm requires a value" << std::endl;
-        return std::nullopt;
-      }
-      options.bpm_override = std::stod(argv[++i]);
-      if (*options.bpm_override <= 0.0) {
-        std::cerr << "--bpm must be greater than zero" << std::endl;
-        return std::nullopt;
-      }
+void PrintJsonError(const ErrorInfo &error) {
+  std::cout << "{\n";
+  std::cout << "  \"error\": {\n";
+  std::cout << "    \"code\": \"" << error.code << "\",\n";
+  std::cout << "    \"message\": \"";
+  for (char c : error.message) {
+    if (c == '"') {
+      std::cout << "\\\"";
+    } else if (c == '\\') {
+      std::cout << "\\\\";
+    } else if (c == '\n') {
+      std::cout << "\\n";
     } else {
-      std::cerr << "Unknown argument: " << arg << std::endl;
-      return std::nullopt;
+      std::cout << c;
     }
   }
-
-  if (options.session_path.empty()) {
-    std::cerr << "Missing required --session argument" << std::endl;
-    return std::nullopt;
-  }
-
-  return options;
-}
-
-std::optional<RenderTracksOptions> ParseRenderOptions(int argc, char **argv) {
-  RenderTracksOptions options;
-  for (int i = 2; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--session") {
-      if (i + 1 >= argc) {
-        std::cerr << "--session requires a path" << std::endl;
-        return std::nullopt;
-      }
-      options.session_path = argv[++i];
-    } else if (arg == "--out") {
-      if (i + 1 >= argc) {
-        std::cerr << "--out requires a directory" << std::endl;
-        return std::nullopt;
-      }
-      options.output_directory = argv[++i];
-    } else if (arg == "--tracks") {
-      if (i + 1 >= argc) {
-        std::cerr << "--tracks requires a comma separated list" << std::endl;
-        return std::nullopt;
-      }
-      std::stringstream stream(argv[++i]);
-      std::string item;
-      while (std::getline(stream, item, ',')) {
-        auto begin = item.find_first_not_of(" \t");
-        auto end = item.find_last_not_of(" \t");
-        if (begin != std::string::npos && end != std::string::npos) {
-          options.track_names.push_back(item.substr(begin, end - begin + 1));
+  std::cout << "\"";
+  if (!error.details.empty()) {
+    std::cout << ",\n    \"details\": [\n";
+    for (std::size_t i = 0; i < error.details.size(); ++i) {
+      std::cout << "      \"";
+      for (char c : error.details[i]) {
+        if (c == '"') {
+          std::cout << "\\\"";
+        } else if (c == '\\') {
+          std::cout << "\\\\";
+        } else if (c == '\n') {
+          std::cout << "\\n";
+        } else {
+          std::cout << c;
         }
       }
-    } else if (arg == "--bpm") {
-      if (i + 1 >= argc) {
-        std::cerr << "--bpm requires a value" << std::endl;
-        return std::nullopt;
+      std::cout << "\"";
+      if (i + 1 != error.details.size()) {
+        std::cout << ",";
       }
-      options.bpm_override = std::stod(argv[++i]);
-      if (*options.bpm_override <= 0.0) {
-        std::cerr << "--bpm must be greater than zero" << std::endl;
-        return std::nullopt;
-      }
-    } else if (arg == "--sample-rate") {
-      if (i + 1 >= argc) {
-        std::cerr << "--sample-rate requires a value" << std::endl;
-        return std::nullopt;
-      }
-      const auto parsed = std::stoul(argv[++i]);
-      if (parsed == 0u) {
-        std::cerr << "--sample-rate must be greater than zero" << std::endl;
-        return std::nullopt;
-      }
-      options.sample_rate_override = static_cast<std::uint32_t>(parsed);
-    } else if (arg == "--bit-depth") {
-      if (i + 1 >= argc) {
-        std::cerr << "--bit-depth requires a value" << std::endl;
-        return std::nullopt;
-      }
-      const auto parsed = static_cast<std::uint16_t>(std::stoul(argv[++i]));
-      if (parsed != 16u && parsed != 24u) {
-        std::cerr << "--bit-depth must be 16 or 24" << std::endl;
-        return std::nullopt;
-      }
-      options.bit_depth_override = parsed;
-    } else if (arg == "--dither") {
-      if (i + 1 >= argc) {
-        std::cerr << "--dither requires a value" << std::endl;
-        return std::nullopt;
-      }
-      std::string value = argv[++i];
-      for (char &c : value) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-      }
-      if (value == "on" || value == "true" || value == "1") {
-        options.dither_override = true;
-      } else if (value == "off" || value == "false" || value == "0") {
-        options.dither_override = false;
-      } else {
-        std::cerr << "--dither expects on/off" << std::endl;
-        return std::nullopt;
-      }
-    } else {
-      std::cerr << "Unknown argument: " << arg << std::endl;
-      return std::nullopt;
+      std::cout << "\n";
+    }
+    std::cout << "    ]\n";
+  } else {
+    std::cout << "\n";
+  }
+  std::cout << "  }\n";
+  std::cout << "}" << std::endl;
+}
+
+void PrintError(const CliGlobalOptions &global, const ErrorInfo &error) {
+  if (global.json_output) {
+    PrintJsonError(error);
+  } else {
+    std::cerr << error.message << std::endl;
+    for (const auto &detail : error.details) {
+      std::cerr << "  " << detail << std::endl;
     }
   }
-
-  if (options.session_path.empty()) {
-    std::cerr << "Missing required --session argument" << std::endl;
-    return std::nullopt;
-  }
-  if (options.output_directory.empty()) {
-    std::cerr << "Missing required --out argument" << std::endl;
-    return std::nullopt;
-  }
-
-  return options;
 }
 
 std::string StatusToString(orpheus_status status) {
@@ -217,260 +119,1414 @@ std::string StatusToString(orpheus_status status) {
   return "unknown";
 }
 
-void RunTransportSimulation(double tempo_bpm, std::chrono::seconds duration) {
+struct TimelineRange {
+  std::optional<double> start_beats;
+  std::optional<double> end_beats;
+  bool specified = false;
+};
+
+bool ParseDouble(const std::string &text, double &value) {
+  char *end_ptr = nullptr;
+  errno = 0;
+  value = std::strtod(text.c_str(), &end_ptr);
+  if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
+    return false;
+  }
+  return true;
+}
+
+bool ParseRangeArgument(const std::string &argument, TimelineRange &range, std::string &error) {
+  auto colon = argument.find(':');
+  double start_value = 0.0;
+  double end_value = 0.0;
+  TimelineRange candidate = range;
+  candidate.specified = true;
+  if (colon == std::string::npos) {
+    if (!ParseDouble(argument, end_value) || end_value < 0.0) {
+      error = "range expects non-negative numeric value or start:end";
+      return false;
+    }
+    candidate.start_beats = 0.0;
+    candidate.end_beats = end_value;
+  } else {
+    const std::string start_text = argument.substr(0, colon);
+    const std::string end_text = argument.substr(colon + 1);
+    if (!start_text.empty()) {
+      if (!ParseDouble(start_text, start_value) || start_value < 0.0) {
+        error = "range start must be non-negative";
+        return false;
+      }
+      candidate.start_beats = start_value;
+    }
+    if (!end_text.empty()) {
+      if (!ParseDouble(end_text, end_value) || end_value < 0.0) {
+        error = "range end must be non-negative";
+        return false;
+      }
+      candidate.end_beats = end_value;
+    }
+    if (!candidate.start_beats && !candidate.end_beats) {
+      error = "range requires at least one of start or end";
+      return false;
+    }
+    if (candidate.start_beats && candidate.end_beats &&
+        *candidate.end_beats <= *candidate.start_beats) {
+      error = "range end must be greater than start";
+      return false;
+    }
+  }
+  range = candidate;
+  return true;
+}
+
+std::vector<std::string> SplitCommaSeparated(const std::string &value) {
+  std::vector<std::string> result;
+  std::stringstream stream(value);
+  std::string item;
+  while (std::getline(stream, item, ',')) {
+    auto begin = item.find_first_not_of(" \t");
+    auto end = item.find_last_not_of(" \t");
+    if (begin != std::string::npos && end != std::string::npos) {
+      result.emplace_back(item.substr(begin, end - begin + 1));
+    }
+  }
+  return result;
+}
+
+struct AbiContext {
+  const orpheus_session_api_v1 *session_api = nullptr;
+  const orpheus_clipgrid_api_v1 *clipgrid_api = nullptr;
+  const orpheus_render_api_v1 *render_api = nullptr;
+  uint32_t session_major = 0;
+  uint32_t session_minor = 0;
+  uint32_t clip_major = 0;
+  uint32_t clip_minor = 0;
+  uint32_t render_major = 0;
+  uint32_t render_minor = 0;
+};
+
+void PrintNegotiationSummary(const AbiContext &abi) {
+  std::cout << "ABI negotiation" << std::endl;
+  auto print_entry = [](const char *label, uint32_t major, uint32_t minor,
+                        bool ok) {
+    std::cout << "  " << std::left << std::setw(10) << label << " v" << major << "."
+              << minor << (ok ? " ✅" : " ❌") << std::endl;
+  };
+  print_entry("session", abi.session_major, abi.session_minor,
+              abi.session_api != nullptr && abi.session_major == ORPHEUS_ABI_V1_MAJOR &&
+                  abi.session_minor == ORPHEUS_ABI_V1_MINOR);
+  print_entry("clipgrid", abi.clip_major, abi.clip_minor,
+              abi.clipgrid_api != nullptr && abi.clip_major == ORPHEUS_ABI_V1_MAJOR &&
+                  abi.clip_minor == ORPHEUS_ABI_V1_MINOR);
+  print_entry("render", abi.render_major, abi.render_minor,
+              abi.render_api != nullptr && abi.render_major == ORPHEUS_ABI_V1_MAJOR &&
+                  abi.render_minor == ORPHEUS_ABI_V1_MINOR);
+}
+
+bool NegotiateApis(AbiContext &abi, ErrorInfo &error) {
+  abi.session_api = orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.session_major,
+                                           &abi.session_minor);
+  abi.clipgrid_api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.clip_major,
+                                             &abi.clip_minor);
+  abi.render_api = orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.render_major,
+                                         &abi.render_minor);
+  PrintNegotiationSummary(abi);
+  if (!abi.session_api || !abi.clipgrid_api || !abi.render_api ||
+      abi.session_major != ORPHEUS_ABI_V1_MAJOR ||
+      abi.clip_major != ORPHEUS_ABI_V1_MAJOR ||
+      abi.render_major != ORPHEUS_ABI_V1_MAJOR ||
+      abi.session_minor != ORPHEUS_ABI_V1_MINOR ||
+      abi.clip_minor != ORPHEUS_ABI_V1_MINOR ||
+      abi.render_minor != ORPHEUS_ABI_V1_MINOR) {
+    error.code = "abi.negotiation";
+    error.message = "ABI negotiation failed";
+    return false;
+  }
+  return true;
+}
+
+struct SessionGuard {
+  const orpheus_session_api_v1 *api = nullptr;
+  orpheus_session_handle handle = nullptr;
+
+  ~SessionGuard() {
+    if (api && handle) {
+      api->destroy(handle);
+    }
+  }
+};
+
+struct SessionLoadOptions {
+  std::string session_path;
+  std::vector<std::string> track_filters;
+  TimelineRange range;
+  std::optional<std::uint32_t> render_sample_rate_override;
+  std::optional<std::uint16_t> render_bit_depth_override;
+  bool require_tracks = true;
+};
+
+struct SessionContext {
+  AbiContext abi;
+  SessionGraph graph;
+  SessionGuard guard;
+  std::size_t loaded_tracks = 0;
+  std::size_t loaded_clips = 0;
+  double tempo_bpm = 0.0;
+  double range_start_beats = 0.0;
+  double range_end_beats = 0.0;
+
+  SessionGraph *session_impl() {
+    return guard.handle
+               ? reinterpret_cast<SessionGraph *>(guard.handle)
+               : nullptr;
+  }
+  const SessionGraph *session_impl() const {
+    return guard.handle
+               ? reinterpret_cast<const SessionGraph *>(guard.handle)
+               : nullptr;
+  }
+};
+
+bool ClipIntersectsRange(double clip_start, double clip_length, double start_beats,
+                         double end_beats) {
+  const double clip_end = clip_start + clip_length;
+  return clip_end > start_beats && clip_start < end_beats;
+}
+
+bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
+                    ErrorInfo &error) {
+  if (options.session_path.empty()) {
+    error.code = "cli.session";
+    error.message = "--session is required";
+    return false;
+  }
+
+  if (!NegotiateApis(context.abi, error)) {
+    return false;
+  }
+
+  try {
+    context.graph = session_json::LoadSessionFromFile(options.session_path);
+  } catch (const std::exception &ex) {
+    error.code = "session.load";
+    error.message = "Failed to load session JSON";
+    error.details = {ex.what()};
+    return false;
+  }
+
+  double start_beats = context.graph.session_start_beats();
+  double end_beats = context.graph.session_end_beats();
+  if (options.range.specified) {
+    if (options.range.start_beats) {
+      start_beats = *options.range.start_beats;
+    }
+    if (options.range.end_beats) {
+      end_beats = *options.range.end_beats;
+    }
+    if (end_beats <= start_beats) {
+      error.code = "session.range";
+      error.message = "Invalid session range";
+      error.details = {"end must be greater than start"};
+      return false;
+    }
+    context.graph.set_session_range(start_beats, end_beats);
+  }
+
+  orpheus_session_handle handle = nullptr;
+  auto status = context.abi.session_api->create(&handle);
+  if (status != ORPHEUS_STATUS_OK) {
+    error.code = "session.create";
+    error.message = "Failed to create session";
+    error.details = {StatusToString(status)};
+    return false;
+  }
+  context.guard = SessionGuard{context.abi.session_api, handle};
+
+  SessionGraph *session_impl = context.session_impl();
+  session_impl->set_name(context.graph.name());
+  session_impl->set_render_sample_rate(context.graph.render_sample_rate());
+  session_impl->set_render_bit_depth(context.graph.render_bit_depth());
+  session_impl->set_render_dither(context.graph.render_dither());
+  session_impl->set_session_range(start_beats, end_beats);
+
+  if (options.render_sample_rate_override) {
+    try {
+      session_impl->set_render_sample_rate(*options.render_sample_rate_override);
+    } catch (const std::exception &ex) {
+      error.code = "session.render";
+      error.message = "Invalid render sample rate";
+      error.details = {ex.what()};
+      return false;
+    }
+  }
+  if (options.render_bit_depth_override) {
+    try {
+      session_impl->set_render_bit_depth(*options.render_bit_depth_override);
+    } catch (const std::exception &ex) {
+      error.code = "session.render";
+      error.message = "Invalid render bit depth";
+      error.details = {ex.what()};
+      return false;
+    }
+  }
+
+  context.tempo_bpm = context.graph.tempo();
+  status = context.abi.session_api->set_tempo(context.guard.handle, context.tempo_bpm);
+  if (status != ORPHEUS_STATUS_OK) {
+    error.code = "session.tempo";
+    error.message = "Failed to set tempo";
+    error.details = {StatusToString(status)};
+    return false;
+  }
+
+  std::unordered_set<std::string> selected_tracks;
+  if (!options.track_filters.empty()) {
+    selected_tracks.insert(options.track_filters.begin(), options.track_filters.end());
+  }
+
+  for (const auto &track_ptr : context.graph.tracks()) {
+    if (!selected_tracks.empty() && !selected_tracks.count(track_ptr->name())) {
+      continue;
+    }
+
+    const orpheus_track_desc track_desc{track_ptr->name().c_str()};
+    orpheus_track_handle track_handle = nullptr;
+    status =
+        context.abi.session_api->add_track(context.guard.handle, &track_desc, &track_handle);
+    if (status != ORPHEUS_STATUS_OK) {
+      error.code = "session.track";
+      error.message = "Failed to add track";
+      error.details = {track_ptr->name(), StatusToString(status)};
+      return false;
+    }
+    ++context.loaded_tracks;
+
+    for (const auto &clip_ptr : track_ptr->clips()) {
+      if (!ClipIntersectsRange(clip_ptr->start(), clip_ptr->length(), start_beats,
+                               end_beats)) {
+        continue;
+      }
+      const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(), clip_ptr->start(),
+                                        clip_ptr->length()};
+      orpheus_clip_handle clip_handle = nullptr;
+      status = context.abi.clipgrid_api->add_clip(context.guard.handle, track_handle,
+                                                  &clip_desc, &clip_handle);
+      if (status != ORPHEUS_STATUS_OK) {
+        error.code = "session.clip";
+        error.message = "Failed to add clip";
+        error.details = {clip_ptr->name(), StatusToString(status)};
+        return false;
+      }
+      ++context.loaded_clips;
+    }
+  }
+
+  status = context.abi.clipgrid_api->commit(context.guard.handle);
+  if (status != ORPHEUS_STATUS_OK) {
+    error.code = "session.commit";
+    error.message = "Failed to commit clip grid";
+    error.details = {StatusToString(status)};
+    return false;
+  }
+
+  orpheus_transport_state state{};
+  status = context.abi.session_api->get_transport_state(context.guard.handle, &state);
+  if (status != ORPHEUS_STATUS_OK) {
+    error.code = "session.state";
+    error.message = "Failed to query transport state";
+    error.details = {StatusToString(status)};
+    return false;
+  }
+  context.tempo_bpm = state.tempo_bpm;
+  context.range_start_beats = start_beats;
+  context.range_end_beats = end_beats;
+
+  if (options.require_tracks && !selected_tracks.empty() && context.loaded_tracks == 0) {
+    error.code = "session.tracks";
+    error.message = "No tracks matched selection";
+    return false;
+  }
+  if (options.require_tracks && context.graph.tracks().empty()) {
+    error.code = "session.tracks";
+    error.message = "Session does not contain any tracks";
+    return false;
+  }
+  if (options.require_tracks && context.loaded_tracks == 0) {
+    error.code = "session.tracks";
+    error.message = "No tracks available in the selected range";
+    return false;
+  }
+
+  return true;
+}
+
+std::string FormatBeats(double beats) {
+  std::ostringstream stream;
+  stream.setf(std::ios::fixed);
+  stream.precision(2);
+  stream << beats;
+  return stream.str();
+}
+
+void PrintSessionSummary(const SessionContext &context) {
+  const SessionGraph *session_impl = context.session_impl();
+  std::cout << "Session: '" << context.graph.name() << "'" << std::endl;
+  std::cout << "  tempo       : " << std::fixed << std::setprecision(2) << context.tempo_bpm
+            << " bpm" << std::endl;
+  std::cout << "  range       : " << FormatBeats(context.range_start_beats) << " → "
+            << FormatBeats(context.range_end_beats) << " beats" << std::endl;
+  std::cout << "  tracks      : " << context.loaded_tracks << " loaded";
+  if (context.loaded_tracks < context.graph.tracks().size()) {
+    std::cout << " (of " << context.graph.tracks().size() << ")";
+  }
+  std::cout << std::endl;
+  std::cout << "  clips       : " << context.loaded_clips << std::endl;
+  if (session_impl) {
+    std::cout << "  render spec : " << session_impl->render_sample_rate() << " Hz, "
+              << session_impl->render_bit_depth() << "-bit, dither "
+              << (session_impl->render_dither() ? "on" : "off") << std::endl;
+  }
+}
+
+void PrintGlobalHelp() {
+  std::cout << "Orpheus Minhost (session ABI " << orpheus::ToString(orpheus::kSessionAbi)
+            << ")" << std::endl;
+  std::cout << "Usage: orpheus_minhost [--json] <command> [options]\n";
+  std::cout << "Commands:\n";
+  std::cout << "  load                 Load a session and print metadata\n";
+  std::cout << "  render-click         Render a metronome click track\n";
+  std::cout << "  render-tracks        Render track stems to disk\n";
+  std::cout << "  simulate-transport   Run a transport simulation\n";
+  std::cout << "\nUse 'orpheus_minhost <command> --help' for command options." << std::endl;
+}
+
+void PrintLoadHelp() {
+  std::cout << "Usage: orpheus_minhost load --session <file.json> [options]\n";
+  std::cout << "Options:\n";
+  std::cout << "  --session <file>       Session JSON to load\n";
+  std::cout << "  --tracks  <a,b,c>      Only load the named tracks\n";
+  std::cout << "  --range   <start:end>  Limit session range in beats\n";
+  std::cout << "  --sr      <hz>         Override render sample rate\n";
+  std::cout << "  --bd      <bits>       Override render bit depth" << std::endl;
+}
+
+void PrintRenderTracksHelp() {
+  std::cout << "Usage: orpheus_minhost render-tracks --session <file.json> --out <dir> [options]\n";
+  std::cout << "Options:\n";
+  std::cout << "  --session <file>       Session JSON to load\n";
+  std::cout << "  --out     <dir>        Directory to write rendered stems\n";
+  std::cout << "  --tracks  <a,b,c>      Only render the named tracks\n";
+  std::cout << "  --range   <start:end>  Limit session range in beats\n";
+  std::cout << "  --sr      <hz>         Override render sample rate\n";
+  std::cout << "  --bd      <bits>       Override render bit depth" << std::endl;
+}
+
+void PrintRenderClickHelp() {
+  std::cout << "Usage: orpheus_minhost render-click --session <file.json> [options]\n";
+  std::cout << "Options:\n";
+  std::cout << "  --session <file>       Session JSON to load\n";
+  std::cout << "  --out     <file.wav>   Output path for rendered click\n";
+  std::cout << "  --spec    <file.json>  Click render spec overrides\n";
+  std::cout << "  --range   <start:end>  Override click length in beats\n";
+  std::cout << "  --sr      <hz>         Override click sample rate\n";
+  std::cout << "  --bd      <bits>       Hint bit depth for suggested name\n";
+  std::cout << "  --tracks  <a,b,c>      Restrict session load to tracks" << std::endl;
+}
+
+void PrintSimulateTransportHelp() {
+  std::cout << "Usage: orpheus_minhost simulate-transport --session <file.json> [options]\n";
+  std::cout << "Options:\n";
+  std::cout << "  --session <file>       Session JSON to load\n";
+  std::cout << "  --range   <start:end>  Duration in beats to simulate" << std::endl;
+}
+
+bool ParseUint32(const std::string &text, std::uint32_t &value) {
+  char *end_ptr = nullptr;
+  errno = 0;
+  unsigned long parsed = std::strtoul(text.c_str(), &end_ptr, 10);
+  if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
+    return false;
+  }
+  value = static_cast<std::uint32_t>(parsed);
+  return true;
+}
+
+bool ParseUint16(const std::string &text, std::uint16_t &value) {
+  std::uint32_t temp = 0;
+  if (!ParseUint32(text, temp) || temp > std::numeric_limits<std::uint16_t>::max()) {
+    return false;
+  }
+  value = static_cast<std::uint16_t>(temp);
+  return true;
+}
+
+bool ParseSessionCommonArg(const std::vector<std::string> &args, std::size_t &index,
+                           SessionLoadOptions &options, bool &show_help,
+                           ErrorInfo &error) {
+  const std::string &arg = args[index];
+  if (arg == "--session") {
+    if (index + 1 >= args.size()) {
+      error.code = "cli.args";
+      error.message = "--session requires a path";
+      return false;
+    }
+    options.session_path = args[++index];
+    return true;
+  }
+  if (arg == "--tracks") {
+    if (index + 1 >= args.size()) {
+      error.code = "cli.args";
+      error.message = "--tracks requires a comma separated list";
+      return false;
+    }
+    options.track_filters = SplitCommaSeparated(args[++index]);
+    return true;
+  }
+  if (arg == "--range") {
+    if (index + 1 >= args.size()) {
+      error.code = "cli.args";
+      error.message = "--range requires a value";
+      return false;
+    }
+    std::string parse_error;
+    if (!ParseRangeArgument(args[++index], options.range, parse_error)) {
+      error.code = "cli.range";
+      error.message = parse_error;
+      return false;
+    }
+    return true;
+  }
+  if (arg == "--help") {
+    show_help = true;
+    return true;
+  }
+  return false;
+}
+
+struct LoadCommandOptions {
+  SessionLoadOptions session;
+};
+
+bool ParseLoadCommand(const std::vector<std::string> &args, LoadCommandOptions &options,
+                      bool &show_help, ErrorInfo &error) {
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string &arg = args[i];
+    if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
+      if (!error.message.empty()) {
+        return false;
+      }
+      continue;
+    }
+    if (arg == "--sr") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--sr requires a value";
+        return false;
+      }
+      std::uint32_t sr = 0;
+      if (!ParseUint32(args[++i], sr) || sr == 0u) {
+        error.code = "cli.args";
+        error.message = "--sr expects a positive integer";
+        return false;
+      }
+      options.session.render_sample_rate_override = sr;
+      continue;
+    }
+    if (arg == "--bd") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--bd requires a value";
+        return false;
+      }
+      std::uint16_t bd = 0;
+      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u)) {
+        error.code = "cli.args";
+        error.message = "--bd must be 16 or 24";
+        return false;
+      }
+      options.session.render_bit_depth_override = bd;
+      continue;
+    }
+    error.code = "cli.args";
+    error.message = "Unknown argument: " + arg;
+    return false;
+  }
+  return true;
+}
+
+int RunLoadCommand(const CliGlobalOptions &global, const LoadCommandOptions &options) {
+  SessionContext context;
+  ErrorInfo error;
+  if (!PrepareSession(options.session, context, error)) {
+    PrintError(global, error);
+    return 1;
+  }
+  PrintSessionSummary(context);
+  return 0;
+}
+
+struct RenderTracksCommandOptions {
+  SessionLoadOptions session;
+  fs::path output_directory;
+};
+
+bool ParseRenderTracksCommand(const std::vector<std::string> &args,
+                              RenderTracksCommandOptions &options, bool &show_help,
+                              ErrorInfo &error) {
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string &arg = args[i];
+    if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
+      if (!error.message.empty()) {
+        return false;
+      }
+      continue;
+    }
+    if (arg == "--out") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--out requires a directory";
+        return false;
+      }
+      options.output_directory = args[++i];
+      continue;
+    }
+    if (arg == "--sr") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--sr requires a value";
+        return false;
+      }
+      std::uint32_t sr = 0;
+      if (!ParseUint32(args[++i], sr) || sr == 0u) {
+        error.code = "cli.args";
+        error.message = "--sr expects a positive integer";
+        return false;
+      }
+      options.session.render_sample_rate_override = sr;
+      continue;
+    }
+    if (arg == "--bd") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--bd requires a value";
+        return false;
+      }
+      std::uint16_t bd = 0;
+      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u)) {
+        error.code = "cli.args";
+        error.message = "--bd must be 16 or 24";
+        return false;
+      }
+      options.session.render_bit_depth_override = bd;
+      continue;
+    }
+    error.code = "cli.args";
+    error.message = "Unknown argument: " + arg;
+    return false;
+  }
+  return true;
+}
+
+int RunRenderTracksCommand(const CliGlobalOptions &global,
+                           const RenderTracksCommandOptions &options) {
+  if (options.output_directory.empty()) {
+    ErrorInfo error{"cli.args", "--out is required", {}};
+    PrintError(global, error);
+    return 1;
+  }
+
+  SessionLoadOptions session_options = options.session;
+  session_options.require_tracks = true;
+
+  SessionContext context;
+  ErrorInfo error;
+  if (!PrepareSession(session_options, context, error)) {
+    PrintError(global, error);
+    return 1;
+  }
+  if (context.loaded_tracks == 0) {
+    ErrorInfo no_tracks{"session.tracks", "No tracks available for rendering", {}};
+    PrintError(global, no_tracks);
+    return 1;
+  }
+
+  const auto status = context.abi.render_api->render_tracks(
+      context.guard.handle, options.output_directory.string().c_str());
+  if (status != ORPHEUS_STATUS_OK) {
+    ErrorInfo render_error{"render.tracks", "Track render failed",
+                           {StatusToString(status)}};
+    PrintError(global, render_error);
+    return 1;
+  }
+
+  std::cout << "Rendered stems to " << options.output_directory << std::endl;
+  for (const auto &track_ptr : context.graph.tracks()) {
+    if (!options.session.track_filters.empty() &&
+        std::find(options.session.track_filters.begin(),
+                  options.session.track_filters.end(), track_ptr->name()) ==
+            options.session.track_filters.end()) {
+      continue;
+    }
+    const std::string filename = session_json::MakeRenderStemFilename(
+        context.graph.name(), track_ptr->name(),
+        context.session_impl()->render_sample_rate(),
+        context.session_impl()->render_bit_depth());
+    std::cout << "  - " << (options.output_directory / filename) << std::endl;
+  }
+  return 0;
+}
+
+namespace json {
+
+struct Value {
+  enum class Type { kNull, kObject, kArray, kString, kNumber, kBoolean };
+
+  Type type = Type::kNull;
+  double number = 0.0;
+  bool boolean = false;
+  std::string string;
+  std::map<std::string, Value> object;
+  std::vector<Value> array;
+};
+
+class Parser {
+ public:
+  explicit Parser(std::string_view input) : input_(input) {}
+
+  Value Parse() {
+    SkipWhitespace();
+    Value value = ParseValue();
+    SkipWhitespace();
+    if (!AtEnd()) {
+      throw std::runtime_error("Unexpected trailing data in JSON");
+    }
+    return value;
+  }
+
+ private:
+  bool AtEnd() const { return index_ >= input_.size(); }
+
+  char Peek() const { return AtEnd() ? '\0' : input_[index_]; }
+
+  char Consume() {
+    if (AtEnd()) {
+      throw std::runtime_error("Unexpected end of input");
+    }
+    return input_[index_++];
+  }
+
+  void SkipWhitespace() {
+    while (!AtEnd() && std::isspace(static_cast<unsigned char>(Peek()))) {
+      ++index_;
+    }
+  }
+
+  Value ParseValue() {
+    SkipWhitespace();
+    const char c = Peek();
+    switch (c) {
+      case '{':
+        return ParseObject();
+      case '[':
+        return ParseArray();
+      case '"': {
+        Value value;
+        value.type = Value::Type::kString;
+        value.string = ParseString();
+        return value;
+      }
+      case 't':
+      case 'f': {
+        Value value;
+        value.type = Value::Type::kBoolean;
+        value.boolean = ParseBoolean();
+        return value;
+      }
+      case 'n':
+        ParseNull();
+        return {};
+      default:
+        if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
+          Value value;
+          value.type = Value::Type::kNumber;
+          value.number = ParseNumber();
+          return value;
+        }
+    }
+    throw std::runtime_error("Unsupported JSON token");
+  }
+
+  Value ParseObject() {
+    Value value;
+    value.type = Value::Type::kObject;
+    Consume();
+    SkipWhitespace();
+    if (Peek() == '}') {
+      Consume();
+      return value;
+    }
+    while (true) {
+      SkipWhitespace();
+      if (Peek() != '"') {
+        throw std::runtime_error("JSON object keys must be strings");
+      }
+      const std::string key = ParseString();
+      SkipWhitespace();
+      if (Consume() != ':') {
+        throw std::runtime_error("Expected ':' after object key");
+      }
+      Value element = ParseValue();
+      value.object.emplace(key, std::move(element));
+      SkipWhitespace();
+      const char next = Consume();
+      if (next == '}') {
+        break;
+      }
+      if (next != ',') {
+        throw std::runtime_error("Expected ',' between object elements");
+      }
+    }
+    return value;
+  }
+
+  Value ParseArray() {
+    Value value;
+    value.type = Value::Type::kArray;
+    Consume();
+    SkipWhitespace();
+    if (Peek() == ']') {
+      Consume();
+      return value;
+    }
+    while (true) {
+      Value element = ParseValue();
+      value.array.push_back(std::move(element));
+      SkipWhitespace();
+      const char next = Consume();
+      if (next == ']') {
+        break;
+      }
+      if (next != ',') {
+        throw std::runtime_error("Expected ',' between array elements");
+      }
+      SkipWhitespace();
+    }
+    return value;
+  }
+
+  std::string ParseString() {
+    if (Consume() != '"') {
+      throw std::runtime_error("Expected string opening quote");
+    }
+    std::string result;
+    while (true) {
+      if (AtEnd()) {
+        throw std::runtime_error("Unterminated string literal");
+      }
+      const char c = Consume();
+      if (c == '"') {
+        break;
+      }
+      if (c == '\\') {
+        if (AtEnd()) {
+          throw std::runtime_error("Unterminated escape sequence");
+        }
+        const char esc = Consume();
+        switch (esc) {
+          case '"':
+          case '\\':
+          case '/':
+            result.push_back(esc);
+            break;
+          case 'b':
+            result.push_back('\b');
+            break;
+          case 'f':
+            result.push_back('\f');
+            break;
+          case 'n':
+            result.push_back('\n');
+            break;
+          case 'r':
+            result.push_back('\r');
+            break;
+          case 't':
+            result.push_back('\t');
+            break;
+          case 'u': {
+            unsigned int codepoint = 0;
+            for (int i = 0; i < 4; ++i) {
+              if (AtEnd()) {
+                throw std::runtime_error("Invalid unicode escape");
+              }
+              const char hex = Consume();
+              codepoint <<= 4;
+              if (hex >= '0' && hex <= '9') {
+                codepoint |= static_cast<unsigned int>(hex - '0');
+              } else if (hex >= 'a' && hex <= 'f') {
+                codepoint |= static_cast<unsigned int>(hex - 'a' + 10);
+              } else if (hex >= 'A' && hex <= 'F') {
+                codepoint |= static_cast<unsigned int>(hex - 'A' + 10);
+              } else {
+                throw std::runtime_error("Invalid unicode escape");
+              }
+            }
+            if (codepoint <= 0x7F) {
+              result.push_back(static_cast<char>(codepoint));
+            } else {
+              throw std::runtime_error("Only ASCII unicode escapes supported");
+            }
+            break;
+          }
+          default:
+            throw std::runtime_error("Unsupported escape sequence");
+        }
+      } else {
+        result.push_back(c);
+      }
+    }
+    return result;
+  }
+
+  bool ParseBoolean() {
+    if (input_.substr(index_, 4) == "true") {
+      index_ += 4;
+      return true;
+    }
+    if (input_.substr(index_, 5) == "false") {
+      index_ += 5;
+      return false;
+    }
+    throw std::runtime_error("Invalid boolean literal");
+  }
+
+  void ParseNull() {
+    if (input_.substr(index_, 4) != "null") {
+      throw std::runtime_error("Invalid null literal");
+    }
+    index_ += 4;
+  }
+
+  double ParseNumber() {
+    const std::size_t start = index_;
+    if (Peek() == '-') {
+      ++index_;
+    }
+    if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
+      throw std::runtime_error("Invalid number");
+    }
+    if (Peek() == '0') {
+      ++index_;
+    } else {
+      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
+        ++index_;
+      }
+    }
+    if (Peek() == '.') {
+      ++index_;
+      if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
+        throw std::runtime_error("Invalid fractional part");
+      }
+      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
+        ++index_;
+      }
+    }
+    if (Peek() == 'e' || Peek() == 'E') {
+      ++index_;
+      if (Peek() == '+' || Peek() == '-') {
+        ++index_;
+      }
+      if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
+        throw std::runtime_error("Invalid exponent");
+      }
+      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
+        ++index_;
+      }
+    }
+    const std::string number_string(input_.substr(start, index_ - start));
+    char *end_ptr = nullptr;
+    errno = 0;
+    const double value = std::strtod(number_string.c_str(), &end_ptr);
+    if (errno == ERANGE || end_ptr != number_string.c_str() + number_string.size()) {
+      throw std::runtime_error("Failed to parse number");
+    }
+    return value;
+  }
+
+  std::string_view input_;
+  std::size_t index_ = 0;
+};
+
+const Value &ExpectObject(const Value &value, const char *context) {
+  if (value.type != Value::Type::kObject) {
+    throw std::runtime_error(std::string("Expected object for ") + context);
+  }
+  return value;
+}
+
+}  // namespace json
+
+struct ClickSpecOverrides {
+  std::optional<double> tempo_bpm;
+  std::optional<std::uint32_t> bars;
+  std::optional<std::uint32_t> sample_rate;
+  std::optional<std::uint32_t> channels;
+  std::optional<double> gain;
+  std::optional<double> click_frequency_hz;
+  std::optional<double> click_duration_seconds;
+  std::optional<std::string> output_path;
+};
+
+bool ParseClickSpecOverrides(const fs::path &spec_path, ClickSpecOverrides &overrides,
+                             ErrorInfo &error) {
+  std::ifstream stream(spec_path);
+  if (!stream) {
+    error.code = "spec.open";
+    error.message = "Failed to open spec file";
+    error.details = {spec_path.string()};
+    return false;
+  }
+  std::stringstream buffer;
+  buffer << stream.rdbuf();
+  const std::string text = buffer.str();
+  try {
+    json::Parser parser(text);
+    const json::Value root = parser.Parse();
+    const json::Value &object = json::ExpectObject(root, "click spec");
+    if (auto it = object.object.find("tempo_bpm"); it != object.object.end() &&
+                                       it->second.type == json::Value::Type::kNumber) {
+      overrides.tempo_bpm = it->second.number;
+    }
+    if (auto it = object.object.find("bars"); it != object.object.end() &&
+                                    it->second.type == json::Value::Type::kNumber) {
+      if (it->second.number < 0.0) {
+        throw std::runtime_error("bars must be non-negative");
+      }
+      overrides.bars = static_cast<std::uint32_t>(std::llround(it->second.number));
+    }
+    if (auto it = object.object.find("sample_rate"); it != object.object.end() &&
+                                           it->second.type == json::Value::Type::kNumber) {
+      if (it->second.number <= 0.0) {
+        throw std::runtime_error("sample_rate must be positive");
+      }
+      overrides.sample_rate = static_cast<std::uint32_t>(std::llround(it->second.number));
+    }
+    if (auto it = object.object.find("channels"); it != object.object.end() &&
+                                         it->second.type == json::Value::Type::kNumber) {
+      if (it->second.number <= 0.0) {
+        throw std::runtime_error("channels must be positive");
+      }
+      overrides.channels = static_cast<std::uint32_t>(std::llround(it->second.number));
+    }
+    if (auto it = object.object.find("gain"); it != object.object.end() &&
+                                      it->second.type == json::Value::Type::kNumber) {
+      overrides.gain = it->second.number;
+    }
+    if (auto it = object.object.find("click_frequency_hz");
+        it != object.object.end() && it->second.type == json::Value::Type::kNumber) {
+      overrides.click_frequency_hz = it->second.number;
+    }
+    if (auto it = object.object.find("click_duration_seconds");
+        it != object.object.end() && it->second.type == json::Value::Type::kNumber) {
+      overrides.click_duration_seconds = it->second.number;
+    }
+    if (auto it = object.object.find("output_path"); it != object.object.end() &&
+                                            it->second.type == json::Value::Type::kString) {
+      overrides.output_path = it->second.string;
+    }
+  } catch (const std::exception &ex) {
+    error.code = "spec.parse";
+    error.message = "Failed to parse click spec";
+    error.details = {ex.what()};
+    return false;
+  }
+  return true;
+}
+
+struct RenderClickCommandOptions {
+  SessionLoadOptions session;
+  std::optional<fs::path> output_path;
+  std::optional<fs::path> spec_path;
+  std::optional<std::uint32_t> sample_rate_override;
+  std::optional<std::uint16_t> bit_depth_hint;
+};
+
+bool ParseRenderClickCommand(const std::vector<std::string> &args,
+                             RenderClickCommandOptions &options, bool &show_help,
+                             ErrorInfo &error) {
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string &arg = args[i];
+    if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
+      if (!error.message.empty()) {
+        return false;
+      }
+      continue;
+    }
+    if (arg == "--out") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--out requires a path";
+        return false;
+      }
+      options.output_path = fs::path(args[++i]);
+      continue;
+    }
+    if (arg == "--spec") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--spec requires a path";
+        return false;
+      }
+      options.spec_path = fs::path(args[++i]);
+      continue;
+    }
+    if (arg == "--sr") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--sr requires a value";
+        return false;
+      }
+      std::uint32_t sr = 0;
+      if (!ParseUint32(args[++i], sr) || sr == 0u) {
+        error.code = "cli.args";
+        error.message = "--sr expects a positive integer";
+        return false;
+      }
+      options.sample_rate_override = sr;
+      continue;
+    }
+    if (arg == "--bd") {
+      if (i + 1 >= args.size()) {
+        error.code = "cli.args";
+        error.message = "--bd requires a value";
+        return false;
+      }
+      std::uint16_t bd = 0;
+      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u)) {
+        error.code = "cli.args";
+        error.message = "--bd must be 16 or 24";
+        return false;
+      }
+      options.bit_depth_hint = bd;
+      continue;
+    }
+    error.code = "cli.args";
+    error.message = "Unknown argument: " + arg;
+    return false;
+  }
+  options.session.require_tracks = false;
+  return true;
+}
+
+double BeatsToBars(double beats) {
+  if (beats <= 0.0) {
+    return 0.0;
+  }
+  return beats / 4.0;
+}
+
+std::uint32_t ComputeBarsFromRange(const SessionContext &context,
+                                   const TimelineRange &range) {
+  double start = context.range_start_beats;
+  double end = context.range_end_beats;
+  if (range.specified) {
+    if (range.start_beats) {
+      start = *range.start_beats;
+    }
+    if (range.end_beats) {
+      end = *range.end_beats;
+    }
+  }
+  const double beats = std::max(0.0, end - start);
+  const double bars = BeatsToBars(beats);
+  if (bars <= 0.0) {
+    return 1u;
+  }
+  return static_cast<std::uint32_t>(std::ceil(bars));
+}
+
+int RunRenderClickCommand(const CliGlobalOptions &global,
+                          const RenderClickCommandOptions &options) {
+  SessionContext context;
+  ErrorInfo error;
+  if (!PrepareSession(options.session, context, error)) {
+    PrintError(global, error);
+    return 1;
+  }
+
+  orpheus_render_click_spec spec{};
+  spec.tempo_bpm = context.tempo_bpm;
+  spec.bars = ComputeBarsFromRange(context, options.session.range);
+  spec.sample_rate = options.sample_rate_override.value_or(44100u);
+  spec.channels = 2;
+  spec.gain = 0.3;
+  spec.click_frequency_hz = 1000.0;
+  spec.click_duration_seconds = 0.05;
+
+  std::optional<std::string> override_output;
+  if (options.spec_path) {
+    ClickSpecOverrides overrides;
+    if (!ParseClickSpecOverrides(*options.spec_path, overrides, error)) {
+      PrintError(global, error);
+      return 1;
+    }
+    if (overrides.tempo_bpm) {
+      spec.tempo_bpm = *overrides.tempo_bpm;
+    }
+    if (overrides.bars) {
+      spec.bars = *overrides.bars;
+    }
+    if (overrides.sample_rate) {
+      spec.sample_rate = *overrides.sample_rate;
+    }
+    if (overrides.channels) {
+      spec.channels = *overrides.channels;
+    }
+    if (overrides.gain) {
+      spec.gain = *overrides.gain;
+    }
+    if (overrides.click_frequency_hz) {
+      spec.click_frequency_hz = *overrides.click_frequency_hz;
+    }
+    if (overrides.click_duration_seconds) {
+      spec.click_duration_seconds = *overrides.click_duration_seconds;
+    }
+    if (overrides.output_path) {
+      override_output = overrides.output_path;
+    }
+  }
+
+  if (options.sample_rate_override) {
+    spec.sample_rate = *options.sample_rate_override;
+  }
+
+  const std::uint16_t bit_depth_hint = options.bit_depth_hint.value_or(16u);
+
+  const auto output_path =
+      options.output_path.value_or(fs::path(override_output.value_or("")));
+
+  if (!output_path.empty()) {
+    const auto status =
+        context.abi.render_api->render_click(&spec, output_path.string().c_str());
+    if (status != ORPHEUS_STATUS_OK) {
+      ErrorInfo render_error{"render.click", "Render failed", {StatusToString(status)}};
+      PrintError(global, render_error);
+      return 1;
+    }
+    std::cout << "Rendered click track to " << output_path << std::endl;
+  } else {
+    std::cout << "Click render spec ready (no output path provided)." << std::endl;
+  }
+
+  const std::string suggested = session_json::MakeRenderClickFilename(
+      context.graph.name(), "click", spec.sample_rate, bit_depth_hint);
+  std::cout << "Suggested render path: " << suggested << std::endl;
+  return 0;
+}
+
+struct SimulateTransportCommandOptions {
+  SessionLoadOptions session;
+};
+
+bool ParseSimulateTransportCommand(const std::vector<std::string> &args,
+                                   SimulateTransportCommandOptions &options,
+                                   bool &show_help, ErrorInfo &error) {
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
+      if (!error.message.empty()) {
+        return false;
+      }
+      continue;
+    }
+    error.code = "cli.args";
+    error.message = "Unknown argument: " + args[i];
+    return false;
+  }
+  options.session.require_tracks = false;
+  return true;
+}
+
+void RunTransportSimulation(double tempo_bpm, std::chrono::duration<double> duration) {
   if (tempo_bpm <= 0.0) {
     std::cout << "Transport simulation skipped: invalid tempo" << std::endl;
     return;
   }
 
   const double beat_duration_seconds = 60.0 / tempo_bpm;
-  const int total_beats = static_cast<int>(std::ceil(duration.count() /
-                                                     beat_duration_seconds));
+  const int total_beats = static_cast<int>(
+      std::ceil(duration.count() / beat_duration_seconds));
   auto start = std::chrono::steady_clock::now();
 
-  std::cout << "Simulating transport for " << duration.count() << " seconds"
-            << std::endl;
+  std::cout << "Simulating transport for " << std::fixed << std::setprecision(2)
+            << duration.count() << " seconds" << std::endl;
   for (int beat = 0; beat < total_beats; ++beat) {
     const double elapsed = beat * beat_duration_seconds;
     const auto delta = std::chrono::duration<double>(elapsed);
     const auto next_tick =
-        start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                     delta);
+        start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(delta);
     std::this_thread::sleep_until(next_tick);
     std::cout << "[transport] beat " << (beat + 1) << " at " << std::fixed
               << std::setprecision(2) << elapsed << "s" << std::endl;
   }
 
-  std::this_thread::sleep_until(start + duration);
+  std::this_thread::sleep_until(start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(duration));
   std::cout << "[transport] simulation complete" << std::endl;
 }
 
-}  // namespace
+int RunSimulateTransportCommand(const CliGlobalOptions &global,
+                                const SimulateTransportCommandOptions &options) {
+  SessionContext context;
+  ErrorInfo error;
+  if (!PrepareSession(options.session, context, error)) {
+    PrintError(global, error);
+    return 1;
+  }
 
-int main(int argc, char **argv) {
-  std::cout << "Orpheus Minhost (session ABI "
-            << orpheus::ToString(orpheus::kSessionAbi) << ")" << std::endl;
-
-  const bool render_tracks_mode =
-      argc > 1 && std::string_view(argv[1]) == "render";
-
-  std::optional<ClickOptions> click_options;
-  std::optional<RenderTracksOptions> render_options;
-  if (render_tracks_mode) {
-    render_options = ParseRenderOptions(argc, argv);
-    if (!render_options) {
-      PrintUsage();
-      return 1;
+  double start = context.range_start_beats;
+  double end = context.range_end_beats;
+  if (options.session.range.specified) {
+    if (options.session.range.start_beats) {
+      start = *options.session.range.start_beats;
     }
-  } else {
-    click_options = ParseClickOptions(argc, argv);
-    if (!click_options) {
-      PrintUsage();
-      return 1;
+    if (options.session.range.end_beats) {
+      end = *options.session.range.end_beats;
     }
   }
-
-  const std::string &session_path =
-      render_tracks_mode ? render_options->session_path
-                         : click_options->session_path;
-  const std::optional<double> bpm_override =
-      render_tracks_mode ? render_options->bpm_override
-                         : click_options->bpm_override;
-
-  uint32_t session_major = 0;
-  uint32_t session_minor = 0;
-  const auto *session_api =
-      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &session_major,
-                             &session_minor);
-  uint32_t clip_major = 0;
-  uint32_t clip_minor = 0;
-  const auto *clipgrid_api =
-      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
-  uint32_t render_major = 0;
-  uint32_t render_minor = 0;
-  const auto *render_api =
-      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &render_major,
-                            &render_minor);
-  if (!session_api || !clipgrid_api || !render_api ||
-      session_major != ORPHEUS_ABI_V1_MAJOR ||
-      clip_major != ORPHEUS_ABI_V1_MAJOR ||
-      render_major != ORPHEUS_ABI_V1_MAJOR ||
-      session_minor != ORPHEUS_ABI_V1_MINOR ||
-      clip_minor != ORPHEUS_ABI_V1_MINOR ||
-      render_minor != ORPHEUS_ABI_V1_MINOR) {
-    std::cerr << "ABI negotiation failed" << std::endl;
-    return 1;
+  double beats = end - start;
+  if (beats <= 0.0) {
+    beats = 16.0;  // default 4 bars
   }
+  const double seconds = beats * (60.0 / context.tempo_bpm);
+  RunTransportSimulation(context.tempo_bpm, std::chrono::duration<double>(seconds));
+  return 0;
+}
 
-  SessionGraph session_graph;
-  try {
-    session_graph = session_json::LoadSessionFromFile(session_path);
-  } catch (const std::exception &ex) {
-    std::cerr << "Failed to load session JSON: " << ex.what() << std::endl;
-    return 1;
-  }
+struct ParsedCommand {
+  std::string name;
+  std::vector<std::string> args;
+  bool show_help = false;
+};
 
-  const double tempo = bpm_override.value_or(session_graph.tempo());
-
-  orpheus_session_handle session_handle{};
-  if (session_api->create(&session_handle) != ORPHEUS_STATUS_OK) {
-    std::cerr << "Failed to create session" << std::endl;
-    return 1;
-  }
-
-  struct SessionGuard {
-    const orpheus_session_api_v1 *abi{};
-    orpheus_session_handle handle{};
-    ~SessionGuard() {
-      if (abi && handle) {
-        abi->destroy(handle);
-      }
-    }
-  } guard{session_api, session_handle};
-
-  auto *session_impl = reinterpret_cast<SessionGraph *>(session_handle);
-  session_impl->set_name(session_graph.name());
-  session_impl->set_render_sample_rate(session_graph.render_sample_rate());
-  session_impl->set_render_bit_depth(session_graph.render_bit_depth());
-  session_impl->set_render_dither(session_graph.render_dither());
-
-  auto status = session_api->set_tempo(session_handle, tempo);
-  if (status != ORPHEUS_STATUS_OK) {
-    std::cerr << "Failed to set tempo: " << StatusToString(status)
-              << std::endl;
-    return 1;
-  }
-
-  std::unordered_set<std::string> selected_tracks;
-  if (render_tracks_mode && !render_options->track_names.empty()) {
-    selected_tracks.insert(render_options->track_names.begin(),
-                           render_options->track_names.end());
-  }
-
-  std::size_t clip_count = 0;
-  std::size_t loaded_tracks = 0;
-  for (const auto &track_ptr : session_graph.tracks()) {
-    if (!selected_tracks.empty() &&
-        !selected_tracks.count(track_ptr->name())) {
+bool ParseArguments(int argc, char **argv, CliGlobalOptions &global,
+                    ParsedCommand &command) {
+  std::vector<std::string> positional;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--json") {
+      global.json_output = true;
       continue;
     }
-    orpheus_track_handle track_handle{};
-    const orpheus_track_desc track_desc{track_ptr->name().c_str()};
-    status = session_api->add_track(session_handle, &track_desc, &track_handle);
-    if (status != ORPHEUS_STATUS_OK) {
-      std::cerr << "Failed to add track: " << StatusToString(status)
-                << std::endl;
-      return 1;
-    }
-    ++loaded_tracks;
-
-    for (const auto &clip_ptr : track_ptr->clips()) {
-      const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(),
-                                        clip_ptr->start(),
-                                        clip_ptr->length()};
-      orpheus_clip_handle clip_handle{};
-      status =
-          clipgrid_api->add_clip(session_handle, track_handle, &clip_desc,
-                                 &clip_handle);
-      if (status != ORPHEUS_STATUS_OK) {
-        std::cerr << "Failed to add clip: " << StatusToString(status)
-                  << std::endl;
-        return 1;
+    if (arg == "--help") {
+      if (!command.name.empty()) {
+        command.show_help = true;
+      } else {
+        positional.push_back(arg);
       }
-      ++clip_count;
+      continue;
     }
+    if (arg == "--") {
+      for (int j = i + 1; j < argc; ++j) {
+        positional.emplace_back(argv[j]);
+      }
+      break;
+    }
+    positional.push_back(std::move(arg));
   }
 
-  status = clipgrid_api->commit(session_handle);
-  if (status != ORPHEUS_STATUS_OK) {
-    std::cerr << "Failed to commit clip grid: " << StatusToString(status)
-              << std::endl;
+  if (positional.empty()) {
+    return false;
+  }
+  command.name = positional.front();
+  command.args.assign(positional.begin() + 1, positional.end());
+  return true;
+}
+
+int Run(int argc, char **argv) {
+  CliGlobalOptions global;
+  ParsedCommand command;
+  if (!ParseArguments(argc, argv, global, command)) {
+    PrintGlobalHelp();
     return 1;
   }
 
-  orpheus_transport_state state{};
-  status = session_api->get_transport_state(session_handle, &state);
-  if (status != ORPHEUS_STATUS_OK) {
-    std::cerr << "Failed to query transport state: "
-              << StatusToString(status) << std::endl;
-    return 1;
-  }
-
-  std::cout << "Loaded session '" << session_graph.name() << "' with "
-            << loaded_tracks << " track(s) and " << clip_count
-            << " clip(s)" << std::endl;
-
-  if (render_tracks_mode) {
-    if (loaded_tracks == 0) {
-      std::cerr << "No tracks matched selection for rendering" << std::endl;
-      return 1;
-    }
-
-    try {
-      if (render_options->sample_rate_override) {
-        session_impl->set_render_sample_rate(*render_options->sample_rate_override);
-      }
-      if (render_options->bit_depth_override) {
-        session_impl->set_render_bit_depth(*render_options->bit_depth_override);
-      }
-      if (render_options->dither_override.has_value()) {
-        session_impl->set_render_dither(*render_options->dither_override);
-      }
-    } catch (const std::exception &ex) {
-      std::cerr << "Invalid render configuration: " << ex.what() << std::endl;
-      return 1;
-    }
-
-    status = render_api->render_tracks(session_handle,
-                                       render_options->output_directory.string().c_str());
-    if (status != ORPHEUS_STATUS_OK) {
-      std::cerr << "Track render failed: " << StatusToString(status)
-                << std::endl;
-      return 1;
-    }
-
-    std::cout << "Rendered stems to " << render_options->output_directory
-              << std::endl;
-    for (const auto &track_ptr : session_graph.tracks()) {
-      if (!selected_tracks.empty() &&
-          !selected_tracks.count(track_ptr->name())) {
-        continue;
-      }
-      const std::string filename = session_json::MakeRenderStemFilename(
-          session_graph.name(), track_ptr->name(),
-          session_impl->render_sample_rate(),
-          session_impl->render_bit_depth());
-      std::cout << "  - " << (render_options->output_directory / filename)
-                << std::endl;
-    }
+  if (command.name == "--help" || command.name == "help") {
+    PrintGlobalHelp();
     return 0;
   }
 
-  constexpr std::uint32_t kClickSampleRate = 44100;
-  constexpr std::uint32_t kClickBitDepth = 16;
-
-  if (click_options->render_path) {
-    orpheus_render_click_spec spec{};
-    spec.tempo_bpm = tempo;
-    spec.bars = click_options->bars;
-    spec.sample_rate = kClickSampleRate;
-    spec.channels = 2;
-    spec.gain = 0.3;
-    spec.click_frequency_hz = 1000.0;
-    spec.click_duration_seconds = 0.05;
-    status = render_api->render_click(&spec, click_options->render_path->c_str());
-    if (status != ORPHEUS_STATUS_OK) {
-      std::cerr << "Render failed: " << StatusToString(status) << std::endl;
+  ErrorInfo error;
+  if (command.name == "load") {
+    LoadCommandOptions options;
+    if (!ParseLoadCommand(command.args, options, command.show_help, error)) {
+      if (command.show_help) {
+        PrintLoadHelp();
+        return 0;
+      }
+      PrintError(global, error);
       return 1;
     }
-    std::cout << "Rendered click track to " << *click_options->render_path
-              << std::endl;
-  } else {
-    RunTransportSimulation(state.tempo_bpm, std::chrono::seconds(5));
-    const std::string suggested = session_json::MakeRenderClickFilename(
-        session_graph.name(), "click", kClickSampleRate, kClickBitDepth);
-    std::cout << "Suggested render path: " << suggested << std::endl;
+    if (command.show_help) {
+      PrintLoadHelp();
+      return 0;
+    }
+    return RunLoadCommand(global, options);
+  }
+  if (command.name == "render-tracks") {
+    RenderTracksCommandOptions options;
+    if (!ParseRenderTracksCommand(command.args, options, command.show_help, error)) {
+      if (command.show_help) {
+        PrintRenderTracksHelp();
+        return 0;
+      }
+      PrintError(global, error);
+      return 1;
+    }
+    if (command.show_help) {
+      PrintRenderTracksHelp();
+      return 0;
+    }
+    return RunRenderTracksCommand(global, options);
+  }
+  if (command.name == "render-click") {
+    RenderClickCommandOptions options;
+    if (!ParseRenderClickCommand(command.args, options, command.show_help, error)) {
+      if (command.show_help) {
+        PrintRenderClickHelp();
+        return 0;
+      }
+      PrintError(global, error);
+      return 1;
+    }
+    if (command.show_help) {
+      PrintRenderClickHelp();
+      return 0;
+    }
+    return RunRenderClickCommand(global, options);
+  }
+  if (command.name == "simulate-transport") {
+    SimulateTransportCommandOptions options;
+    if (!ParseSimulateTransportCommand(command.args, options, command.show_help,
+                                       error)) {
+      if (command.show_help) {
+        PrintSimulateTransportHelp();
+        return 0;
+      }
+      PrintError(global, error);
+      return 1;
+    }
+    if (command.show_help) {
+      PrintSimulateTransportHelp();
+      return 0;
+    }
+    return RunSimulateTransportCommand(global, options);
   }
 
-  return 0;
+  ErrorInfo unknown{"cli.command", "Unknown command: " + command.name, {}};
+  PrintError(global, unknown);
+  PrintGlobalHelp();
+  return 1;
 }
+
+}  // namespace minhost
+
+int main(int argc, char **argv) { return minhost::Run(argc, argv); }
