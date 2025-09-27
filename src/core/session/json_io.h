@@ -18,7 +18,8 @@ ORPHEUS_API void SaveSessionToFile(const SessionGraph &session,
                                    const std::string &path);
 
 ORPHEUS_API std::string MakeRenderClickFilename(const std::string &session_name,
-                                                double tempo_bpm,
-                                                std::uint32_t bars);
+                                                const std::string &stem_name,
+                                                std::uint32_t sample_rate_hz,
+                                                std::uint32_t bit_depth_bits);
 
 }  // namespace orpheus::core::session_json

@@ -2,6 +2,7 @@
 add_executable(orpheus_tests
   abi_smoke.cpp
   session_graph_ownership.cpp
+  session_graph_invariants.cpp
   session_roundtrip.cpp
 )
 

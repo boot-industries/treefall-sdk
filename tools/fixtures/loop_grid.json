@@ -2,8 +2,23 @@
   "name": "Loop Grid",
   "tempo_bpm": 128,
   "start_beats": 0,
-  "end_beats": 64,
+  "end_beats": 36,
   "tracks": [
+    {
+      "name": "FX",
+      "clips": [
+        {
+          "name": "impact",
+          "start_beats": 0,
+          "length_beats": 4
+        },
+        {
+          "name": "sweep",
+          "start_beats": 28,
+          "length_beats": 8
+        }
+      ]
+    },
     {
       "name": "Synth",
       "clips": [
@@ -21,21 +36,6 @@
           "name": "riff_c",
           "start_beats": 16,
           "length_beats": 16
-        }
-      ]
-    },
-    {
-      "name": "FX",
-      "clips": [
-        {
-          "name": "impact",
-          "start_beats": 0,
-          "length_beats": 4
-        },
-        {
-          "name": "sweep",
-          "start_beats": 28,
-          "length_beats": 8
         }
       ]
     }

@@ -122,6 +122,7 @@ class ORPHEUS_API SessionGraph {
  private:
   Track *find_track(const Track *track);
   Clip *find_clip(const Clip *clip);
+  void mark_clip_grid_dirty() { clip_grid_dirty_ = true; }
 
   double tempo_bpm_{120.0};
   double transport_position_beats_{0.0};
@@ -130,6 +131,7 @@ class ORPHEUS_API SessionGraph {
   double session_start_beats_{0.0};
   double session_end_beats_{0.0};
   std::vector<std::unique_ptr<Track>> tracks_;
+  bool clip_grid_dirty_{false};
 };
 
 }  // namespace orpheus::core

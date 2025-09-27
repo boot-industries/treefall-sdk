@@ -2,6 +2,8 @@
 #include "session_graph.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -56,7 +58,13 @@ Clip *Track::find_clip(const Clip *clip) {
 void Track::sort_clips() {
   std::sort(clips_.begin(), clips_.end(),
             [](const std::unique_ptr<Clip> &lhs, const std::unique_ptr<Clip> &rhs) {
-              return lhs->start() < rhs->start();
+              if (lhs->start() < rhs->start()) {
+                return true;
+              }
+              if (rhs->start() < lhs->start()) {
+                return false;
+              }
+              return lhs->name() < rhs->name();
             });
 }
 
@@ -66,6 +74,7 @@ void SessionGraph::set_name(std::string name) { name_ = std::move(name); }
 
 Track *SessionGraph::add_track(std::string name) {
   auto &slot = tracks_.emplace_back(std::make_unique<Track>(std::move(name)));
+  mark_clip_grid_dirty();
   return slot.get();
 }
 
@@ -78,6 +87,7 @@ bool SessionGraph::remove_track(const Track *track) {
     return false;
   }
   tracks_.erase(it);
+  mark_clip_grid_dirty();
   return true;
 }
 
@@ -110,12 +120,14 @@ Clip *SessionGraph::add_clip(Track &track, std::string name, double start_beats,
   if (target == nullptr) {
     throw std::invalid_argument("Track does not belong to session");
   }
+  mark_clip_grid_dirty();
   return target->add_clip(std::move(name), start_beats, length_beats);
 }
 
 bool SessionGraph::remove_clip(const Clip *clip) {
   for (const auto &track : tracks_) {
     if (track->remove_clip(clip)) {
+      mark_clip_grid_dirty();
       return true;
     }
   }
@@ -128,6 +140,7 @@ void SessionGraph::set_clip_start(Clip &clip, double start_beats) {
     throw std::invalid_argument("Clip does not belong to session");
   }
   target->set_start(start_beats);
+  mark_clip_grid_dirty();
 }
 
 void SessionGraph::set_clip_length(Clip &clip, double length_beats) {
@@ -136,11 +149,39 @@ void SessionGraph::set_clip_length(Clip &clip, double length_beats) {
     throw std::invalid_argument("Clip does not belong to session");
   }
   target->set_length(length_beats);
+  mark_clip_grid_dirty();
 }
 
 void SessionGraph::commit_clip_grid() {
+  if (!clip_grid_dirty_) {
+    return;
+  }
+  clip_grid_dirty_ = false;
+  std::stable_sort(tracks_.begin(), tracks_.end(),
+                   [](const std::unique_ptr<Track> &lhs,
+                      const std::unique_ptr<Track> &rhs) {
+                     return lhs->name() < rhs->name();
+                   });
+
+  double min_start = std::numeric_limits<double>::infinity();
+  double max_end = std::numeric_limits<double>::lowest();
+  bool has_clips = false;
+
   for (const auto &track : tracks_) {
     track->sort_clips();
+    for (const auto &clip : track->clips()) {
+      has_clips = true;
+      min_start = std::min(min_start, clip->start());
+      max_end = std::max(max_end, clip->start() + clip->length());
+    }
+  }
+
+  if (!has_clips) {
+    session_start_beats_ = 0.0;
+    session_end_beats_ = 0.0;
+  } else {
+    session_start_beats_ = (std::isfinite(min_start) ? min_start : 0.0);
+    session_end_beats_ = std::max(session_start_beats_, max_end);
   }
 }
 

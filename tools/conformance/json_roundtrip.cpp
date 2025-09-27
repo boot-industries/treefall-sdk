@@ -3,6 +3,9 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include <vector>
 #include <gtest/gtest.h>
 
@@ -65,6 +68,16 @@ fs::path FixturesRoot() {
   return fs::path(ORPHEUS_FIXTURES_DIR);
 }
 
+std::string LoadFixtureText(const fs::path &path) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to open fixture: " + path.string());
+  }
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  return buffer.str();
+}
+
 }  // namespace
 
 TEST(JsonConformance, RoundTripFixtures) {
@@ -72,26 +85,29 @@ TEST(JsonConformance, RoundTripFixtures) {
       "solo_click.json", "two_tracks.json", "loop_grid.json"};
   for (const auto &fixture : fixtures) {
     const fs::path path = FixturesRoot() / fixture;
+    const std::string original = LoadFixtureText(path);
     const SessionGraph session = LoadSessionFromFile(path.string());
     const std::string serialized = SerializeSession(session);
     const SessionGraph reparsed = ParseSession(serialized);
     ASSERT_TRUE(SessionsEqual(session, reparsed))
         << "Fixture round trip mismatch: " << fixture;
+    EXPECT_EQ(serialized, original)
+        << "Fixture serialization drifted: " << fixture;
   }
 }
 
 TEST(JsonConformance, DeterministicClickFilename) {
   const SessionGraph session =
       LoadSessionFromFile((FixturesRoot() / "solo_click.json").string());
-  const std::string filename =
-      MakeRenderClickFilename(session.name(), session.tempo(), 4);
-  EXPECT_EQ(filename, "out/solo_click__120__4.wav");
+  const std::string filename = MakeRenderClickFilename(session.name(), "Click",
+                                                       44100, 16);
+  EXPECT_EQ(filename, "out/solo_click_click_44p1k_16b.wav");
 
   const SessionGraph loop =
       LoadSessionFromFile((FixturesRoot() / "loop_grid.json").string());
   const std::string loop_filename =
-      MakeRenderClickFilename(loop.name(), loop.tempo(), 16);
-  EXPECT_EQ(loop_filename, "out/loop_grid__128__16.wav");
+      MakeRenderClickFilename(loop.name(), "Click", 48000, 16);
+  EXPECT_EQ(loop_filename, "out/loop_grid_click_48k_16b.wav");
 }
 
 }  // namespace orpheus::core::session_json::tests

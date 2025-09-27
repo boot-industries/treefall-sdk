@@ -5,6 +5,16 @@
   "end_beats": 32,
   "tracks": [
     {
+      "name": "Bass",
+      "clips": [
+        {
+          "name": "verse",
+          "start_beats": 8,
+          "length_beats": 16
+        }
+      ]
+    },
+    {
       "name": "Drums",
       "clips": [
         {
@@ -16,16 +26,6 @@
           "name": "fill",
           "start_beats": 24,
           "length_beats": 8
-        }
-      ]
-    },
-    {
-      "name": "Bass",
-      "clips": [
-        {
-          "name": "verse",
-          "start_beats": 8,
-          "length_beats": 16
         }
       ]
     }

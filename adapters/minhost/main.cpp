@@ -248,11 +248,14 @@ int main(int argc, char **argv) {
             << session_graph.tracks().size() << " track(s) and " << clip_count
             << " clip(s)" << std::endl;
 
+  constexpr std::uint32_t kClickSampleRate = 44100;
+  constexpr std::uint32_t kClickBitDepth = 16;
+
   if (options.render_path) {
     orpheus_render_click_spec spec{};
     spec.tempo_bpm = tempo;
     spec.bars = options.bars;
-    spec.sample_rate = 44100;
+    spec.sample_rate = kClickSampleRate;
     spec.channels = 2;
     spec.gain = 0.3;
     spec.click_frequency_hz = 1000.0;
@@ -267,7 +270,7 @@ int main(int argc, char **argv) {
   } else {
     RunTransportSimulation(state.tempo_bpm, std::chrono::seconds(5));
     const std::string suggested = session_json::MakeRenderClickFilename(
-        session_graph.name(), tempo, options.bars);
+        session_graph.name(), "click", kClickSampleRate, kClickBitDepth);
     std::cout << "Suggested render path: " << suggested << std::endl;
   }
 

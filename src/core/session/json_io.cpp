@@ -358,6 +358,25 @@ std::string FormatDouble(double value) {
   return text;
 }
 
+std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
+  if (sample_rate_hz == 0u) {
+    return "0k";
+  }
+  std::ostringstream builder;
+  builder << (sample_rate_hz / 1000u);
+  std::uint32_t remainder = sample_rate_hz % 1000u;
+  if (remainder != 0u) {
+    while (remainder % 10u == 0u) {
+      remainder /= 10u;
+    }
+    if (remainder != 0u) {
+      builder << 'p' << remainder;
+    }
+  }
+  builder << 'k';
+  return builder.str();
+}
+
 void WriteIndent(std::ostringstream &stream, int indent) {
   stream << std::string(indent, ' ');
 }
@@ -547,12 +566,26 @@ void SaveSessionToFile(const SessionGraph &session, const std::string &path) {
 }
 
 std::string MakeRenderClickFilename(const std::string &session_name,
-                                    double tempo_bpm, std::uint32_t bars) {
-  std::string sanitized = SanitizeSessionName(session_name);
-  std::string tempo = FormatDouble(tempo_bpm);
-  std::replace(tempo.begin(), tempo.end(), '.', 'p');
-  return "out/" + sanitized + "__" + tempo + "__" + std::to_string(bars) +
-         ".wav";
+                                    const std::string &stem_name,
+                                    std::uint32_t sample_rate_hz,
+                                    std::uint32_t bit_depth_bits) {
+  std::string sanitized_project = SanitizeSessionName(session_name);
+  std::string sanitized_stem = SanitizeSessionName(stem_name);
+  if (sanitized_project.empty()) {
+    sanitized_project = "session";
+  }
+  if (sanitized_stem.empty()) {
+    sanitized_stem = "stem";
+  }
+  if (sample_rate_hz == 0u) {
+    sample_rate_hz = 44100u;
+  }
+  if (bit_depth_bits == 0u) {
+    bit_depth_bits = 16u;
+  }
+  const std::string rate_tag = FormatSampleRateTag(sample_rate_hz);
+  return "out/" + sanitized_project + "_" + sanitized_stem + "_" + rate_tag +
+         "_" + std::to_string(bit_depth_bits) + "b.wav";
 }
 
 }  // namespace orpheus::core::session_json
