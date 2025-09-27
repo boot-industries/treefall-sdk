@@ -20,11 +20,17 @@ GoogleTest suite.
 ### Rendering a Click Track
 
 ```sh
-./build/orpheus_minhost --play --out click.wav --bpm 100 --bars 2
+./build/orpheus_minhost \
+  --session tools/fixtures/solo_click.json \
+  --render click.wav \
+  --bars 2 \
+  --bpm 100
 ```
 
-The command above toggles the simulated transport to play, serialises that
-state for debugging, and renders a 2-bar click track to `click.wav`.
+This command loads the provided session JSON, overrides the tempo to 100 BPM,
+and renders a two-bar click track to `click.wav`. If you omit `--render`, the
+minhost instead runs a short transport simulation using the session tempo (or
+your override) and prints the suggested render path.
 
 ### REAPER Adapter Panel
 
