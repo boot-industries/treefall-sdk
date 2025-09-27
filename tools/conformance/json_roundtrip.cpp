@@ -40,6 +40,49 @@ bool SessionsEqual(const SessionGraph &lhs, const SessionGraph &rhs) {
   if (lhs.render_dither() != rhs.render_dither()) {
     return false;
   }
+  const auto &lhs_marker_sets = lhs.marker_sets();
+  const auto &rhs_marker_sets = rhs.marker_sets();
+  if (lhs_marker_sets.size() != rhs_marker_sets.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < lhs_marker_sets.size(); ++index) {
+    const MarkerSet &lhs_set = *lhs_marker_sets[index];
+    const MarkerSet &rhs_set = *rhs_marker_sets[index];
+    if (lhs_set.name() != rhs_set.name()) {
+      return false;
+    }
+    const auto &lhs_markers = lhs_set.markers();
+    const auto &rhs_markers = rhs_set.markers();
+    if (lhs_markers.size() != rhs_markers.size()) {
+      return false;
+    }
+    for (std::size_t marker_index = 0; marker_index < lhs_markers.size();
+         ++marker_index) {
+      const auto &lhs_marker = lhs_markers[marker_index];
+      const auto &rhs_marker = rhs_markers[marker_index];
+      if (lhs_marker.name != rhs_marker.name) {
+        return false;
+      }
+      if (!NearlyEqual(lhs_marker.position_beats, rhs_marker.position_beats)) {
+        return false;
+      }
+    }
+  }
+  const auto &lhs_playlist_lanes = lhs.playlist_lanes();
+  const auto &rhs_playlist_lanes = rhs.playlist_lanes();
+  if (lhs_playlist_lanes.size() != rhs_playlist_lanes.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < lhs_playlist_lanes.size(); ++index) {
+    const PlaylistLane &lhs_lane = *lhs_playlist_lanes[index];
+    const PlaylistLane &rhs_lane = *rhs_playlist_lanes[index];
+    if (lhs_lane.name() != rhs_lane.name()) {
+      return false;
+    }
+    if (lhs_lane.is_active() != rhs_lane.is_active()) {
+      return false;
+    }
+  }
   const auto &lhs_tracks = lhs.tracks();
   const auto &rhs_tracks = rhs.tracks();
   if (lhs_tracks.size() != rhs_tracks.size()) {

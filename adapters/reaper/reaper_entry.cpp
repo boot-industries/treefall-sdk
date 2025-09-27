@@ -13,6 +13,9 @@
 
 namespace session_json = orpheus::core::session_json;
 using orpheus::core::SessionGraph;
+using orpheus::reaper::MarkerSetSnapshot;
+using orpheus::reaper::PanelMarker;
+using orpheus::reaper::PlaylistLaneSnapshot;
 
 namespace {
 
@@ -159,6 +162,28 @@ bool ImportSessionLocked(const std::string &path, std::string &error) {
   gSnapshot.track_count = graph.tracks().size();
   gSnapshot.clip_count = clip_count;
   gSnapshot.tempo_bpm = graph.tempo();
+  gSnapshot.marker_sets.clear();
+  gSnapshot.marker_sets.reserve(graph.marker_sets().size());
+  for (const auto &marker_set_ptr : graph.marker_sets()) {
+    MarkerSetSnapshot snapshot_set;
+    snapshot_set.name = marker_set_ptr->name();
+    snapshot_set.markers.reserve(marker_set_ptr->markers().size());
+    for (const auto &marker : marker_set_ptr->markers()) {
+      PanelMarker snapshot_marker;
+      snapshot_marker.name = marker.name;
+      snapshot_marker.position_beats = marker.position_beats;
+      snapshot_set.markers.push_back(std::move(snapshot_marker));
+    }
+    gSnapshot.marker_sets.push_back(std::move(snapshot_set));
+  }
+  gSnapshot.playlist_lanes.clear();
+  gSnapshot.playlist_lanes.reserve(graph.playlist_lanes().size());
+  for (const auto &lane_ptr : graph.playlist_lanes()) {
+    PlaylistLaneSnapshot lane_snapshot;
+    lane_snapshot.name = lane_ptr->name();
+    lane_snapshot.is_active = lane_ptr->is_active();
+    gSnapshot.playlist_lanes.push_back(std::move(lane_snapshot));
+  }
   const double total_beats =
       std::max(0.0, graph.session_end_beats() - graph.session_start_beats());
   const double bars_exact = total_beats / static_cast<double>(kBeatsPerBar);

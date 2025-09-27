@@ -486,6 +486,58 @@ SessionGraph ParseSession(const std::string &json_text) {
     }
   }
 
+  if (auto marker_sets_it = object.object.find("marker_sets");
+      marker_sets_it != object.object.end()) {
+    const JsonValue &marker_sets_value =
+        ExpectArray(marker_sets_it->second, "marker_sets");
+    for (const auto &marker_set_value : marker_sets_value.array) {
+      const JsonValue &marker_set_object =
+          ExpectObject(marker_set_value, "marker_set");
+      const JsonValue *name_field = RequireField(marker_set_object, "name");
+      const std::string marker_set_name =
+          RequireString(*name_field, "marker_set.name");
+      MarkerSet *marker_set = session.add_marker_set(marker_set_name);
+      const JsonValue *markers_field =
+          RequireField(marker_set_object, "markers");
+      const JsonValue &markers_array =
+          ExpectArray(*markers_field, "marker_set.markers");
+      for (const auto &marker_value : markers_array.array) {
+        const JsonValue &marker_object = ExpectObject(marker_value, "marker");
+        const JsonValue *marker_name_field =
+            RequireField(marker_object, "name");
+        const std::string marker_name =
+            RequireString(*marker_name_field, "marker.name");
+        const JsonValue *marker_position_field =
+            RequireField(marker_object, "position_beats");
+        const double position =
+            RequireNumber(*marker_position_field, "marker.position_beats");
+        marker_set->add_marker(marker_name, position);
+      }
+    }
+  }
+
+  if (auto playlist_lanes_it = object.object.find("playlist_lanes");
+      playlist_lanes_it != object.object.end()) {
+    const JsonValue &playlist_lanes_array =
+        ExpectArray(playlist_lanes_it->second, "playlist_lanes");
+    for (const auto &lane_value : playlist_lanes_array.array) {
+      const JsonValue &lane_object = ExpectObject(lane_value, "playlist_lane");
+      const JsonValue *name_field = RequireField(lane_object, "name");
+      const std::string lane_name =
+          RequireString(*name_field, "playlist_lane.name");
+      bool is_active = false;
+      if (auto active_it = lane_object.object.find("is_active");
+          active_it != lane_object.object.end()) {
+        if (active_it->second.type != JsonValue::Type::kBoolean) {
+          throw std::runtime_error(
+              "playlist_lane.is_active must be boolean");
+        }
+        is_active = active_it->second.boolean;
+      }
+      session.add_playlist_lane(lane_name, is_active);
+    }
+  }
+
   const JsonValue *tracks_field = RequireField(object, "tracks");
   const JsonValue &tracks_value = ExpectArray(*tracks_field, "tracks array");
   for (const auto &track_value : tracks_value.array) {
@@ -542,6 +594,69 @@ std::string SerializeSession(const SessionGraph &session) {
          << "\n";
   WriteIndent(stream, 2);
   stream << "},\n";
+  WriteIndent(stream, 2);
+  stream << "\"marker_sets\": [\n";
+  const auto &marker_sets = session.marker_sets();
+  for (std::size_t marker_set_index = 0;
+       marker_set_index < marker_sets.size(); ++marker_set_index) {
+    const MarkerSet &marker_set = *marker_sets[marker_set_index];
+    WriteIndent(stream, 4);
+    stream << "{\n";
+    WriteIndent(stream, 6);
+    stream << "\"name\": \"" << EscapeString(marker_set.name()) << "\",\n";
+    WriteIndent(stream, 6);
+    stream << "\"markers\": [\n";
+    const auto &markers = marker_set.markers();
+    for (std::size_t marker_index = 0; marker_index < markers.size();
+         ++marker_index) {
+      const MarkerSet::Marker &marker = markers[marker_index];
+      WriteIndent(stream, 8);
+      stream << "{\n";
+      WriteIndent(stream, 10);
+      stream << "\"name\": \"" << EscapeString(marker.name) << "\",\n";
+      WriteIndent(stream, 10);
+      stream << "\"position_beats\": "
+             << FormatDouble(marker.position_beats) << "\n";
+      WriteIndent(stream, 8);
+      stream << "}";
+      if (marker_index + 1 < markers.size()) {
+        stream << ",";
+      }
+      stream << "\n";
+    }
+    WriteIndent(stream, 6);
+    stream << "]\n";
+    WriteIndent(stream, 4);
+    stream << "}";
+    if (marker_set_index + 1 < marker_sets.size()) {
+      stream << ",";
+    }
+    stream << "\n";
+  }
+  WriteIndent(stream, 2);
+  stream << "],\n";
+  WriteIndent(stream, 2);
+  stream << "\"playlist_lanes\": [\n";
+  const auto &playlist_lanes = session.playlist_lanes();
+  for (std::size_t lane_index = 0; lane_index < playlist_lanes.size();
+       ++lane_index) {
+    const PlaylistLane &lane = *playlist_lanes[lane_index];
+    WriteIndent(stream, 4);
+    stream << "{\n";
+    WriteIndent(stream, 6);
+    stream << "\"name\": \"" << EscapeString(lane.name()) << "\",\n";
+    WriteIndent(stream, 6);
+    stream << "\"is_active\": " << (lane.is_active() ? "true" : "false")
+           << "\n";
+    WriteIndent(stream, 4);
+    stream << "}";
+    if (lane_index + 1 < playlist_lanes.size()) {
+      stream << ",";
+    }
+    stream << "\n";
+  }
+  WriteIndent(stream, 2);
+  stream << "],\n";
   WriteIndent(stream, 2);
   stream << "\"tracks\": [\n";
 

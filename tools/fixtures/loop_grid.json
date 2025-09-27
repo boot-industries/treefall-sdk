@@ -8,6 +8,35 @@
     "bit_depth": 24,
     "dither": true
   },
+  "marker_sets": [
+    {
+      "name": "Drops",
+      "markers": [
+        {
+          "name": "Intro",
+          "position_beats": 0
+        },
+        {
+          "name": "Break",
+          "position_beats": 16
+        },
+        {
+          "name": "Outro",
+          "position_beats": 32
+        }
+      ]
+    }
+  ],
+  "playlist_lanes": [
+    {
+      "name": "Main",
+      "is_active": true
+    },
+    {
+      "name": "Alt",
+      "is_active": false
+    }
+  ],
   "tracks": [
     {
       "name": "FX",

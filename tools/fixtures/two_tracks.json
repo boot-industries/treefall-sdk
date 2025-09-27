@@ -8,6 +8,31 @@
     "bit_depth": 24,
     "dither": true
   },
+  "marker_sets": [
+    {
+      "name": "Song",
+      "markers": [
+        {
+          "name": "Verse",
+          "position_beats": 0
+        },
+        {
+          "name": "Chorus",
+          "position_beats": 16
+        }
+      ]
+    }
+  ],
+  "playlist_lanes": [
+    {
+      "name": "Main",
+      "is_active": true
+    },
+    {
+      "name": "Experiment",
+      "is_active": false
+    }
+  ],
   "tracks": [
     {
       "name": "Bass",

@@ -8,6 +8,23 @@
     "bit_depth": 24,
     "dither": true
   },
+  "marker_sets": [
+    {
+      "name": "Guide",
+      "markers": [
+        {
+          "name": "Count-in",
+          "position_beats": 0
+        }
+      ]
+    }
+  ],
+  "playlist_lanes": [
+    {
+      "name": "Main",
+      "is_active": true
+    }
+  ],
   "tracks": [
     {
       "name": "Click",

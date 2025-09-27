@@ -4,8 +4,24 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace orpheus::reaper {
+
+struct PanelMarker {
+  std::string name;
+  double position_beats{0.0};
+};
+
+struct MarkerSetSnapshot {
+  std::string name;
+  std::vector<PanelMarker> markers;
+};
+
+struct PlaylistLaneSnapshot {
+  std::string name;
+  bool is_active{false};
+};
 
 struct PanelSnapshot {
   bool visible{true};
@@ -16,6 +32,8 @@ struct PanelSnapshot {
   std::uint32_t bars{4};
   std::string last_render_path{"-"};
   std::string status_line{"Ready"};
+  std::vector<MarkerSetSnapshot> marker_sets;
+  std::vector<PlaylistLaneSnapshot> playlist_lanes;
 };
 
 std::string BuildPanelText(const PanelSnapshot &snapshot);

@@ -76,6 +76,42 @@ void Track::sort_clips() {
             });
 }
 
+MarkerSet::MarkerSet(std::string name) : name_(std::move(name)) {}
+
+MarkerSet::Marker *MarkerSet::add_marker(std::string name,
+                                         double position_beats) {
+  auto &marker = markers_.emplace_back();
+  marker.name = std::move(name);
+  marker.position_beats = position_beats;
+  return &marker;
+}
+
+bool MarkerSet::remove_marker(const Marker *marker) {
+  const auto it = std::find_if(markers_.begin(), markers_.end(),
+                               [&](const Marker &candidate) {
+                                 return &candidate == marker;
+                               });
+  if (it == markers_.end()) {
+    return false;
+  }
+  markers_.erase(it);
+  return true;
+}
+
+MarkerSet::Marker *MarkerSet::find_marker(const Marker *marker) {
+  const auto it = std::find_if(markers_.begin(), markers_.end(),
+                               [&](const Marker &candidate) {
+                                 return &candidate == marker;
+                               });
+  if (it == markers_.end()) {
+    return nullptr;
+  }
+  return &(*it);
+}
+
+PlaylistLane::PlaylistLane(std::string name, bool is_active)
+    : name_(std::move(name)), is_active_(is_active) {}
+
 SessionGraph::SessionGraph() : name_("Session") {}
 
 void SessionGraph::set_name(std::string name) { name_ = std::move(name); }
@@ -97,6 +133,19 @@ bool SessionGraph::remove_track(const Track *track) {
   tracks_.erase(it);
   mark_clip_grid_dirty();
   return true;
+}
+
+MarkerSet *SessionGraph::add_marker_set(std::string name) {
+  auto &slot = marker_sets_.emplace_back(
+      std::make_unique<MarkerSet>(std::move(name)));
+  return slot.get();
+}
+
+PlaylistLane *SessionGraph::add_playlist_lane(std::string name,
+                                              bool is_active) {
+  auto &slot = playlist_lanes_.emplace_back(
+      std::make_unique<PlaylistLane>(std::move(name), is_active));
+  return slot.get();
 }
 
 void SessionGraph::set_tempo(double bpm) {

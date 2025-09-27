@@ -71,6 +71,52 @@ class ORPHEUS_API Track {
   std::vector<std::unique_ptr<Clip>> clips_;
 };
 
+class ORPHEUS_API MarkerSet {
+ public:
+  struct Marker {
+    std::string name;
+    double position_beats{0.0};
+  };
+
+  explicit MarkerSet(std::string name);
+
+  [[nodiscard]] const std::string &name() const { return name_; }
+
+  Marker *add_marker(std::string name, double position_beats);
+  bool remove_marker(const Marker *marker);
+  Marker *find_marker(const Marker *marker);
+
+  [[nodiscard]] const std::vector<Marker> &markers() const {
+    return markers_;
+  }
+
+  [[nodiscard]] std::vector<Marker>::const_iterator markers_begin() const {
+    return markers_.begin();
+  }
+
+  [[nodiscard]] std::vector<Marker>::const_iterator markers_end() const {
+    return markers_.end();
+  }
+
+ private:
+  std::string name_;
+  std::vector<Marker> markers_;
+};
+
+class ORPHEUS_API PlaylistLane {
+ public:
+  explicit PlaylistLane(std::string name, bool is_active = false);
+
+  [[nodiscard]] const std::string &name() const { return name_; }
+  [[nodiscard]] bool is_active() const { return is_active_; }
+
+  void set_active(bool active) { is_active_ = active; }
+
+ private:
+  std::string name_;
+  bool is_active_{false};
+};
+
 struct ORPHEUS_API TransportState {
   double tempo_bpm{120.0};
   double position_beats{0.0};
@@ -103,6 +149,9 @@ class ORPHEUS_API SessionGraph {
 
   Track *add_track(std::string name);
   bool remove_track(const Track *track);
+
+  MarkerSet *add_marker_set(std::string name);
+  PlaylistLane *add_playlist_lane(std::string name, bool is_active = false);
 
   void set_tempo(double bpm);
   [[nodiscard]] double tempo() const { return tempo_bpm_; }
@@ -161,6 +210,36 @@ class ORPHEUS_API SessionGraph {
     return tracks_.end();
   }
 
+  [[nodiscard]] const std::vector<std::unique_ptr<MarkerSet>> &marker_sets()
+      const {
+    return marker_sets_;
+  }
+
+  [[nodiscard]] std::vector<std::unique_ptr<MarkerSet>>::const_iterator
+  marker_sets_begin() const {
+    return marker_sets_.begin();
+  }
+
+  [[nodiscard]] std::vector<std::unique_ptr<MarkerSet>>::const_iterator
+  marker_sets_end() const {
+    return marker_sets_.end();
+  }
+
+  [[nodiscard]] const std::vector<std::unique_ptr<PlaylistLane>> &
+  playlist_lanes() const {
+    return playlist_lanes_;
+  }
+
+  [[nodiscard]] std::vector<std::unique_ptr<PlaylistLane>>::const_iterator
+  playlist_lanes_begin() const {
+    return playlist_lanes_.begin();
+  }
+
+  [[nodiscard]] std::vector<std::unique_ptr<PlaylistLane>>::const_iterator
+  playlist_lanes_end() const {
+    return playlist_lanes_.end();
+  }
+
  private:
   Track *find_track(const Track *track);
   Clip *find_clip(const Clip *clip);
@@ -199,6 +278,8 @@ class ORPHEUS_API SessionGraph {
   std::vector<SceneTimelineEntry> scene_timeline_;
   std::unordered_map<std::uint32_t, ActiveScene> active_scenes_;
   std::vector<CommittedClip> committed_clips_;
+  std::vector<std::unique_ptr<MarkerSet>> marker_sets_;
+  std::vector<std::unique_ptr<PlaylistLane>> playlist_lanes_;
 };
 
 }  // namespace orpheus::core
@@ -214,3 +295,12 @@ static_assert(std::is_same_v<decltype(std::declval<const orpheus::core::Track &>
 static_assert(
     std::is_same_v<decltype(std::declval<const orpheus::core::SessionGraph &>().tracks()),
                    const std::vector<std::unique_ptr<orpheus::core::Track>> &>);
+
+static_assert(std::is_same_v<decltype(std::declval<const orpheus::core::MarkerSet &>().markers()),
+                             const std::vector<orpheus::core::MarkerSet::Marker> &>);
+
+static_assert(std::is_same_v<decltype(std::declval<const orpheus::core::SessionGraph &>().marker_sets()),
+                   const std::vector<std::unique_ptr<orpheus::core::MarkerSet>> &>);
+
+static_assert(std::is_same_v<decltype(std::declval<const orpheus::core::SessionGraph &>().playlist_lanes()),
+                   const std::vector<std::unique_ptr<orpheus::core::PlaylistLane>> &>);

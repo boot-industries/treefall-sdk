@@ -6,11 +6,13 @@ add_executable(orpheus_tests
   session_graph_invariants.cpp
   session_graph_scenes.cpp
   session_roundtrip.cpp
+  reaper_adapter.cpp
 )
 
 target_link_libraries(orpheus_tests
   PRIVATE
     Orpheus::core
+    reaper_orpheus
     GTest::gtest_main
 )
 
@@ -22,6 +24,7 @@ target_include_directories(orpheus_tests
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/core
+    ${CMAKE_SOURCE_DIR}/adapters/reaper/include
 )
 
 include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
@@ -36,6 +39,12 @@ if(ORP_BUILD_SHARED_CORE)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:orpheus_render> $<TARGET_FILE_DIR:orpheus_tests>
   )
+  if(TARGET reaper_orpheus)
+    add_custom_command(TARGET orpheus_tests POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              $<TARGET_FILE:reaper_orpheus> $<TARGET_FILE_DIR:orpheus_tests>
+    )
+  endif()
 endif()
 
 include(GoogleTest)
