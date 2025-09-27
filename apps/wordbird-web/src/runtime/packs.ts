@@ -17,10 +17,8 @@ async function sha256(buffer: ArrayBuffer): Promise<string> {
 }
 
 function readMagic(bytes: Uint8Array): string {
-  return bytes
-    .slice(0, 4)
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join(' ');
+  const header = Array.from(bytes.slice(0, 4));
+  return header.map((value) => value.toString(16).padStart(2, '0')).join(' ');
 }
 
 function ensureZstdMagic(bytes: Uint8Array): void {
@@ -32,6 +30,13 @@ function ensureZstdMagic(bytes: Uint8Array): void {
     }
   }
 }
+
+/*
+Manual test snippet:
+const bad = new Uint8Array([0x00, 0x10, 0x20, 0x30, 0x40]);
+ensureZstdMagic(bad);
+// throws "Error: pack payload invalid (no zstd magic; got 00 10 20 30)"
+*/
 
 export interface BootstrapOutcome {
   catalogUrl: string;
