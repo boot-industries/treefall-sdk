@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include "orpheus/export.h"
+
 namespace orpheus::core::json {
 
 struct JsonValue {
@@ -23,7 +25,7 @@ struct JsonValue {
   std::vector<JsonValue> array;
 };
 
-class JsonParser {
+class ORPHEUS_API JsonParser {
  public:
   explicit JsonParser(std::string_view input);
 
@@ -47,14 +49,19 @@ class JsonParser {
   std::size_t index_ = 0;
 };
 
-const JsonValue &ExpectObject(const JsonValue &value, const char *context);
-const JsonValue &ExpectArray(const JsonValue &value, const char *context);
-const JsonValue *RequireField(const JsonValue &object, const std::string &key);
-double RequireNumber(const JsonValue &value, const std::string &key);
-std::string RequireString(const JsonValue &value, const std::string &key);
+ORPHEUS_API const JsonValue &ExpectObject(const JsonValue &value,
+                                          const char *context);
+ORPHEUS_API const JsonValue &ExpectArray(const JsonValue &value,
+                                         const char *context);
+ORPHEUS_API const JsonValue *RequireField(const JsonValue &object,
+                                          const std::string &key);
+ORPHEUS_API double RequireNumber(const JsonValue &value,
+                                 const std::string &key);
+ORPHEUS_API std::string RequireString(const JsonValue &value,
+                                      const std::string &key);
 
-std::string FormatDouble(double value);
-void WriteIndent(std::ostringstream &stream, int indent);
-std::string EscapeString(const std::string &value);
+ORPHEUS_API std::string FormatDouble(double value);
+ORPHEUS_API void WriteIndent(std::ostringstream &stream, int indent);
+ORPHEUS_API std::string EscapeString(const std::string &value);
 
 }  // namespace orpheus::core::json
