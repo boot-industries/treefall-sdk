@@ -5,28 +5,60 @@
 
 namespace orpheus::tests {
 
-TEST(AbiNegotiationTest, PrefersCurrentMajor) {
-  AbiVersion requested{1, 5};
-  const auto negotiated = NegotiateAbi(requested);
-  EXPECT_EQ(negotiated.major, 1u);
-  EXPECT_LE(negotiated.minor, requested.minor);
+TEST(AbiNegotiationTest, DowngradesToSupportedMajor) {
+  uint32_t got_major = 0;
+  uint32_t got_minor = 0;
+  const auto *session = orpheus_session_abi_v1(2, &got_major, &got_minor);
+  ASSERT_NE(session, nullptr);
+  EXPECT_EQ(got_major, ORPHEUS_ABI_V1_MAJOR);
+  EXPECT_EQ(got_minor, ORPHEUS_ABI_V1_MINOR);
 }
 
-TEST(AbiNegotiationTest, FallsBackOnMajorMismatch) {
-  AbiVersion requested{2, 0};
-  const auto negotiated = NegotiateAbi(requested);
-  EXPECT_EQ(negotiated.major, 1u);
-  EXPECT_EQ(negotiated.minor, 0u);
+TEST(AbiNegotiationTest, UpgradesOlderMajorRequests) {
+  uint32_t got_major = 0;
+  uint32_t got_minor = 0;
+  const auto *session = orpheus_session_abi_v1(0, &got_major, &got_minor);
+  ASSERT_NE(session, nullptr);
+  EXPECT_EQ(got_major, ORPHEUS_ABI_V1_MAJOR);
+  EXPECT_EQ(got_minor, ORPHEUS_ABI_V1_MINOR);
 }
 
 TEST(AbiTablesTest, SessionTableProvidesCreateDestroy) {
-  const auto *session = orpheus_session_abi_v1();
+  uint32_t got_major = 0;
+  uint32_t got_minor = 0;
+  const auto *session =
+      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &got_major, &got_minor);
   ASSERT_NE(session, nullptr);
+  EXPECT_EQ(got_major, ORPHEUS_ABI_V1_MAJOR);
+  EXPECT_EQ(got_minor, ORPHEUS_ABI_V1_MINOR);
 
   orpheus_session_handle handle{};
   ASSERT_EQ(session->create(&handle), ORPHEUS_STATUS_OK);
   ASSERT_NE(handle, nullptr);
   session->destroy(handle);
+}
+
+TEST(AbiTablesTest, CapBitsAdvertised) {
+  uint32_t session_major = 0;
+  uint32_t session_minor = 0;
+  const auto *session = orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR,
+                                               &session_major, &session_minor);
+  ASSERT_NE(session, nullptr);
+  EXPECT_NE(session->caps & ORPHEUS_SESSION_CAP_V1_CORE, 0ull);
+
+  uint32_t clip_major = 0;
+  uint32_t clip_minor = 0;
+  const auto *clipgrid =
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
+  ASSERT_NE(clipgrid, nullptr);
+  EXPECT_NE(clipgrid->caps & ORPHEUS_CLIPGRID_CAP_V1_CORE, 0ull);
+
+  uint32_t render_major = 0;
+  uint32_t render_minor = 0;
+  const auto *render =
+      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &render_major, &render_minor);
+  ASSERT_NE(render, nullptr);
+  EXPECT_NE(render->caps & ORPHEUS_RENDER_CAP_V1_CORE, 0ull);
 }
 
 }  // namespace orpheus::tests

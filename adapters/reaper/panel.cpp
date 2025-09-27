@@ -11,7 +11,7 @@ namespace orpheus::reaper {
 std::string BuildPanelText(const PanelSnapshot &snapshot) {
   std::ostringstream stream;
   stream << "Orpheus Adapter\n";
-  stream << "ABI Version: " << ToString(kCurrentAbi) << "\n";
+  stream << "ABI Version: " << ToString(kSessionAbi) << "\n";
   stream << "Panel: " << (snapshot.visible ? "Visible" : "Hidden") << "\n";
   stream << "Session: " << snapshot.session_name << " (Tracks: "
          << snapshot.track_count << " Clips: " << snapshot.clip_count << ")\n";

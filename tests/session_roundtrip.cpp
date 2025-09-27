@@ -10,11 +10,16 @@ namespace {
 class SessionHandle {
  public:
   SessionHandle() {
-    const auto *abi = orpheus_session_abi_v1();
+    uint32_t got_major = 0;
+    uint32_t got_minor = 0;
+    const auto *abi =
+        orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &got_major, &got_minor);
     EXPECT_NE(abi, nullptr);
     if (abi == nullptr) {
       return;
     }
+    EXPECT_EQ(got_major, ORPHEUS_ABI_V1_MAJOR);
+    EXPECT_EQ(got_minor, ORPHEUS_ABI_V1_MINOR);
     EXPECT_EQ(abi->create(&handle_), ORPHEUS_STATUS_OK);
     abi_ = abi;
   }
@@ -29,10 +34,10 @@ class SessionHandle {
   SessionHandle &operator=(const SessionHandle &) = delete;
 
   [[nodiscard]] orpheus_session_handle get() const { return handle_; }
-  [[nodiscard]] const orpheus_session_v1 *abi() const { return abi_; }
+  [[nodiscard]] const orpheus_session_api_v1 *abi() const { return abi_; }
 
  private:
-  const orpheus_session_v1 *abi_{};
+  const orpheus_session_api_v1 *abi_{};
   orpheus_session_handle handle_{};
 };
 
@@ -66,8 +71,13 @@ TEST(SessionApiTest, ClipgridOperationsSucceed) {
             ORPHEUS_STATUS_OK);
   ASSERT_NE(track, nullptr);
 
-  const auto *clipgrid = orpheus_clipgrid_abi_v1();
+  uint32_t clip_major = 0;
+  uint32_t clip_minor = 0;
+  const auto *clipgrid =
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
   ASSERT_NE(clipgrid, nullptr);
+  EXPECT_EQ(clip_major, ORPHEUS_ABI_V1_MAJOR);
+  EXPECT_EQ(clip_minor, ORPHEUS_ABI_V1_MINOR);
 
   const orpheus_clip_desc clip_desc{"intro", 0.0, 4.0};
   orpheus_clip_handle clip{};

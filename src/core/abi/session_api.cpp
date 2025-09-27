@@ -3,7 +3,6 @@
 
 #include "abi/abi_internal.h"
 
-#include <algorithm>
 #include <string>
 
 using orpheus::abi_internal::GuardAbiCall;
@@ -81,28 +80,26 @@ orpheus_status SessionGetTransportState(orpheus_session_handle session,
   return ORPHEUS_STATUS_OK;
 }
 
-const orpheus_session_v1 kSessionV1{
-    &SessionCreate,        &SessionDestroy,     &SessionAddTrack,
-    &SessionRemoveTrack,   &SessionSetTempo,    &SessionGetTransportState};
-
-orpheus_abi_version NegotiateAbi(orpheus_abi_version requested) {
-  using orpheus::abi_internal::kCurrentAbi;
-  if (requested.major != kCurrentAbi.major) {
-    return kCurrentAbi;
-  }
-  orpheus_abi_version negotiated = kCurrentAbi;
-  negotiated.minor = std::min(requested.minor, kCurrentAbi.minor);
-  return negotiated;
-}
-
-const orpheus_abi_negotiator kNegotiator{&NegotiateAbi};
+const orpheus_session_api_v1 kSessionApiV1{
+    ORPHEUS_SESSION_CAP_V1_CORE, &SessionCreate,      &SessionDestroy,
+    &SessionAddTrack,            &SessionRemoveTrack, &SessionSetTempo,
+    &SessionGetTransportState};
 
 }  // namespace
 
 extern "C" {
 
-const orpheus_session_v1 *orpheus_session_abi_v1() { return &kSessionV1; }
-
-const orpheus_abi_negotiator *orpheus_negotiate_abi() { return &kNegotiator; }
+const orpheus_session_api_v1 *orpheus_session_abi_v1(uint32_t want_major,
+                                                     uint32_t *got_major,
+                                                     uint32_t *got_minor) {
+  (void)want_major;
+  if (got_major != nullptr) {
+    *got_major = ORPHEUS_ABI_V1_MAJOR;
+  }
+  if (got_minor != nullptr) {
+    *got_minor = ORPHEUS_ABI_V1_MINOR;
+  }
+  return &kSessionApiV1;
+}
 
 }  // extern "C"

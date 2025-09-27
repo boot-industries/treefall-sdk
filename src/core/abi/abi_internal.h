@@ -17,8 +17,6 @@ class IoException : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-inline constexpr orpheus_abi_version kCurrentAbi{1, 0};
-
 inline orpheus::core::SessionGraph *ToSession(orpheus_session_handle handle) {
   return reinterpret_cast<orpheus::core::SessionGraph *>(handle);
 }

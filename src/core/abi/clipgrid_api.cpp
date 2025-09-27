@@ -85,15 +85,26 @@ orpheus_status ClipgridCommit(orpheus_session_handle session) {
   });
 }
 
-const orpheus_clipgrid_v1 kClipgridV1{&ClipgridAddClip,    &ClipgridRemoveClip,
-                                      &ClipgridSetClipStart,
-                                      &ClipgridSetClipLength,
-                                      &ClipgridCommit};
+const orpheus_clipgrid_api_v1 kClipgridApiV1{
+    ORPHEUS_CLIPGRID_CAP_V1_CORE, &ClipgridAddClip, &ClipgridRemoveClip,
+    &ClipgridSetClipStart,        &ClipgridSetClipLength,
+    &ClipgridCommit};
 
 }  // namespace
 
 extern "C" {
 
-const orpheus_clipgrid_v1 *orpheus_clipgrid_abi_v1() { return &kClipgridV1; }
+const orpheus_clipgrid_api_v1 *orpheus_clipgrid_abi_v1(uint32_t want_major,
+                                                       uint32_t *got_major,
+                                                       uint32_t *got_minor) {
+  (void)want_major;
+  if (got_major != nullptr) {
+    *got_major = ORPHEUS_ABI_V1_MAJOR;
+  }
+  if (got_minor != nullptr) {
+    *got_minor = ORPHEUS_ABI_V1_MINOR;
+  }
+  return &kClipgridApiV1;
+}
 
 }  // extern "C"

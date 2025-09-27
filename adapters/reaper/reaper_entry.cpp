@@ -21,9 +21,41 @@ orpheus::reaper::PanelSnapshot gSnapshot;
 std::string gPanelText;
 constexpr std::uint32_t kBeatsPerBar = 4;
 
-const orpheus_session_v1 *SessionAbi() { return orpheus_session_abi_v1(); }
-const orpheus_clipgrid_v1 *ClipgridAbi() { return orpheus_clipgrid_abi_v1(); }
-const orpheus_render_v1 *RenderAbi() { return orpheus_render_abi_v1(); }
+const orpheus_session_api_v1 *SessionAbi() {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  const auto *api =
+      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
+      minor != ORPHEUS_ABI_V1_MINOR) {
+    return nullptr;
+  }
+  return api;
+}
+
+const orpheus_clipgrid_api_v1 *ClipgridAbi() {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  const auto *api =
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
+      minor != ORPHEUS_ABI_V1_MINOR) {
+    return nullptr;
+  }
+  return api;
+}
+
+const orpheus_render_api_v1 *RenderAbi() {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  const auto *api =
+      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
+      minor != ORPHEUS_ABI_V1_MINOR) {
+    return nullptr;
+  }
+  return api;
+}
 
 std::string StatusToString(orpheus_status status) {
   switch (status) {
@@ -48,7 +80,7 @@ std::string StatusToString(orpheus_status status) {
 void RefreshPanelLocked() { gPanelText = orpheus::reaper::BuildPanelText(gSnapshot); }
 
 struct SessionGuard {
-  const orpheus_session_v1 *abi{};
+  const orpheus_session_api_v1 *abi{};
   orpheus_session_handle handle{};
   ~SessionGuard() {
     if (abi && handle) {
@@ -59,8 +91,8 @@ struct SessionGuard {
 
 orpheus_status PopulateSession(const SessionGraph &graph,
                                orpheus_session_handle handle,
-                               const orpheus_session_v1 *session_abi,
-                               const orpheus_clipgrid_v1 *clipgrid_abi,
+                               const orpheus_session_api_v1 *session_abi,
+                               const orpheus_clipgrid_api_v1 *clipgrid_abi,
                                std::size_t &clip_count) {
   clip_count = 0;
   for (const auto &track_ptr : graph.tracks()) {
@@ -174,7 +206,7 @@ extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionName() {
 }
 
 extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionVersion() {
-  static std::string version = "ABI " + orpheus::ToString(orpheus::kCurrentAbi);
+  static std::string version = "ABI " + orpheus::ToString(orpheus::kSessionAbi);
   return version.c_str();
 }
 

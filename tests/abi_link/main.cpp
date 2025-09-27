@@ -3,6 +3,7 @@
 
 #include <array>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -105,9 +106,7 @@ struct ModuleInfo {
   const char *factory_symbol;
 };
 
-template <typename Fn>
-void PrintResolution(const std::string &symbol, Fn &&fn) {
-  const void *address = reinterpret_cast<const void *>(fn());
+void PrintResolution(const std::string &symbol, const void *address) {
   if (address == nullptr) {
     throw std::runtime_error("Factory returned null pointer for " + symbol);
   }
@@ -159,37 +158,42 @@ int main() {
                                  LastErrorString());
       }
 
+      PrintResolution(module.factory_symbol, symbol);
       if (module.factory_symbol == std::string("orpheus_session_abi_v1")) {
-        auto fn = reinterpret_cast<const orpheus_session_v1 *(*)()>(symbol);
-        PrintResolution(module.factory_symbol, fn);
-
-        void *negotiate_symbol = LoadSymbol(handle, "orpheus_negotiate_abi");
-        if (negotiate_symbol == nullptr) {
-          throw std::runtime_error("Failed to resolve orpheus_negotiate_abi from " +
-                                   library_path.string() + ": " +
-                                   LastErrorString());
+        auto fn = reinterpret_cast<const orpheus_session_api_v1 *(*)(
+            uint32_t, uint32_t *, uint32_t *)>(symbol);
+        uint32_t major = 0;
+        uint32_t minor = 0;
+        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        if (abi == nullptr) {
+          throw std::runtime_error("Session ABI negotiation returned null");
         }
-
-        auto negotiate_fn =
-            reinterpret_cast<const orpheus_abi_negotiator *(*)()>(
-                negotiate_symbol);
-        const auto *negotiator = negotiate_fn();
-        if (negotiator == nullptr || negotiator->negotiate == nullptr) {
-          throw std::runtime_error("Negotiator ABI unavailable");
-        }
-        const auto negotiated =
-            negotiator->negotiate({orpheus::kCurrentAbi.major,
-                                   orpheus::kCurrentAbi.minor});
-        std::cout << "Negotiated ABI " << negotiated.major << "."
-                  << negotiated.minor << std::endl;
+        std::cout << "Negotiated session ABI " << major << "." << minor
+                  << " caps=0x" << std::hex << abi->caps << std::dec << std::endl;
       } else if (module.factory_symbol ==
                  std::string("orpheus_clipgrid_abi_v1")) {
-        auto fn = reinterpret_cast<const orpheus_clipgrid_v1 *(*)()>(symbol);
-        PrintResolution(module.factory_symbol, fn);
+        auto fn = reinterpret_cast<const orpheus_clipgrid_api_v1 *(*)(
+            uint32_t, uint32_t *, uint32_t *)>(symbol);
+        uint32_t major = 0;
+        uint32_t minor = 0;
+        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        if (abi == nullptr) {
+          throw std::runtime_error("Clipgrid ABI negotiation returned null");
+        }
+        std::cout << "Negotiated clipgrid ABI " << major << "." << minor
+                  << " caps=0x" << std::hex << abi->caps << std::dec << std::endl;
       } else if (module.factory_symbol ==
                  std::string("orpheus_render_abi_v1")) {
-        auto fn = reinterpret_cast<const orpheus_render_v1 *(*)()>(symbol);
-        PrintResolution(module.factory_symbol, fn);
+        auto fn = reinterpret_cast<const orpheus_render_api_v1 *(*)(
+            uint32_t, uint32_t *, uint32_t *)>(symbol);
+        uint32_t major = 0;
+        uint32_t minor = 0;
+        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        if (abi == nullptr) {
+          throw std::runtime_error("Render ABI negotiation returned null");
+        }
+        std::cout << "Negotiated render ABI " << major << "." << minor
+                  << " caps=0x" << std::hex << abi->caps << std::dec << std::endl;
       }
     }
   } catch (const std::exception &ex) {

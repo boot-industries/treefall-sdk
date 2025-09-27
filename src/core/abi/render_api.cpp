@@ -156,12 +156,24 @@ orpheus_status RenderTracks(orpheus_session_handle /*session*/,
   return ORPHEUS_STATUS_NOT_IMPLEMENTED;
 }
 
-const orpheus_render_v1 kRenderV1{&RenderClick, &RenderTracks};
+const orpheus_render_api_v1 kRenderApiV1{ORPHEUS_RENDER_CAP_V1_CORE, &RenderClick,
+                                         &RenderTracks};
 
 }  // namespace
 
 extern "C" {
 
-const orpheus_render_v1 *orpheus_render_abi_v1() { return &kRenderV1; }
+const orpheus_render_api_v1 *orpheus_render_abi_v1(uint32_t want_major,
+                                                   uint32_t *got_major,
+                                                   uint32_t *got_minor) {
+  (void)want_major;
+  if (got_major != nullptr) {
+    *got_major = ORPHEUS_ABI_V1_MAJOR;
+  }
+  if (got_minor != nullptr) {
+    *got_minor = ORPHEUS_ABI_V1_MINOR;
+  }
+  return &kRenderApiV1;
+}
 
 }  // extern "C"

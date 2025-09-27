@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "orpheus/abi_version.h"
 #include "orpheus/export.h"
 
 #include <stdint.h>
@@ -58,7 +59,8 @@ typedef struct orpheus_render_click_spec {
   double click_duration_seconds;
 } orpheus_render_click_spec;
 
-typedef struct orpheus_session_v1 {
+typedef struct orpheus_session_api_v1 {
+  uint64_t caps;
   orpheus_status (*create)(orpheus_session_handle *out_session);
   void (*destroy)(orpheus_session_handle session);
   orpheus_status (*add_track)(orpheus_session_handle session,
@@ -69,9 +71,10 @@ typedef struct orpheus_session_v1 {
   orpheus_status (*set_tempo)(orpheus_session_handle session, double bpm);
   orpheus_status (*get_transport_state)(orpheus_session_handle session,
                                         orpheus_transport_state *out_state);
-} orpheus_session_v1;
+} orpheus_session_api_v1;
 
-typedef struct orpheus_clipgrid_v1 {
+typedef struct orpheus_clipgrid_api_v1 {
+  uint64_t caps;
   orpheus_status (*add_clip)(orpheus_session_handle session,
                              orpheus_track_handle track,
                              const orpheus_clip_desc *desc,
@@ -85,23 +88,22 @@ typedef struct orpheus_clipgrid_v1 {
                                     orpheus_clip_handle clip,
                                     double length_beats);
   orpheus_status (*commit)(orpheus_session_handle session);
-} orpheus_clipgrid_v1;
+} orpheus_clipgrid_api_v1;
 
-typedef struct orpheus_render_v1 {
+typedef struct orpheus_render_api_v1 {
+  uint64_t caps;
   orpheus_status (*render_click)(const orpheus_render_click_spec *spec,
                                  const char *out_path);
   orpheus_status (*render_tracks)(orpheus_session_handle session,
                                   const char *out_path);
-} orpheus_render_v1;
+} orpheus_render_api_v1;
 
-typedef struct orpheus_abi_negotiator {
-  orpheus_abi_version (*negotiate)(orpheus_abi_version requested);
-} orpheus_abi_negotiator;
-
-ORPHEUS_API const orpheus_session_v1 *orpheus_session_abi_v1(void);
-ORPHEUS_API const orpheus_clipgrid_v1 *orpheus_clipgrid_abi_v1(void);
-ORPHEUS_API const orpheus_render_v1 *orpheus_render_abi_v1(void);
-ORPHEUS_API const orpheus_abi_negotiator *orpheus_negotiate_abi(void);
+ORPHEUS_API const orpheus_session_api_v1 *orpheus_session_abi_v1(
+    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
+ORPHEUS_API const orpheus_clipgrid_api_v1 *orpheus_clipgrid_abi_v1(
+    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
+ORPHEUS_API const orpheus_render_api_v1 *orpheus_render_abi_v1(
+    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
 
 #ifdef __cplusplus
 }
@@ -114,18 +116,15 @@ namespace orpheus {
 
 using AbiVersion = orpheus_abi_version;
 
-inline constexpr AbiVersion kCurrentAbi{1, 0};
+inline constexpr AbiVersion kSessionAbi{ORPHEUS_ABI_V1_MAJOR,
+                                        ORPHEUS_ABI_V1_MINOR};
+inline constexpr AbiVersion kClipgridAbi{ORPHEUS_ABI_V1_MAJOR,
+                                         ORPHEUS_ABI_V1_MINOR};
+inline constexpr AbiVersion kRenderAbi{ORPHEUS_ABI_V1_MAJOR,
+                                       ORPHEUS_ABI_V1_MINOR};
 
 inline std::string ToString(const AbiVersion &version) {
   return std::to_string(version.major) + "." + std::to_string(version.minor);
-}
-
-inline AbiVersion NegotiateAbi(const AbiVersion &requested) {
-  const auto *negotiator = orpheus_negotiate_abi();
-  if (negotiator == nullptr || negotiator->negotiate == nullptr) {
-    return kCurrentAbi;
-  }
-  return negotiator->negotiate(requested);
 }
 
 }  // namespace orpheus

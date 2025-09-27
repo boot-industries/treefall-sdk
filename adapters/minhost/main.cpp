@@ -132,8 +132,8 @@ void RunTransportSimulation(double tempo_bpm, std::chrono::seconds duration) {
 }  // namespace
 
 int main(int argc, char **argv) {
-  std::cout << "Orpheus Minhost (ABI " << orpheus::ToString(orpheus::kCurrentAbi)
-            << ")" << std::endl;
+  std::cout << "Orpheus Minhost (session ABI "
+            << orpheus::ToString(orpheus::kSessionAbi) << ")" << std::endl;
 
   auto parsed = ParseOptions(argc, argv);
   if (!parsed) {
@@ -142,11 +142,28 @@ int main(int argc, char **argv) {
   }
   const Options &options = *parsed;
 
-  const auto *session_api = orpheus_session_abi_v1();
-  const auto *clipgrid_api = orpheus_clipgrid_abi_v1();
-  const auto *render_api = orpheus_render_abi_v1();
-  if (!session_api || !clipgrid_api || !render_api) {
-    std::cerr << "ABI tables are unavailable" << std::endl;
+  uint32_t session_major = 0;
+  uint32_t session_minor = 0;
+  const auto *session_api =
+      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &session_major,
+                             &session_minor);
+  uint32_t clip_major = 0;
+  uint32_t clip_minor = 0;
+  const auto *clipgrid_api =
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
+  uint32_t render_major = 0;
+  uint32_t render_minor = 0;
+  const auto *render_api =
+      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &render_major,
+                            &render_minor);
+  if (!session_api || !clipgrid_api || !render_api ||
+      session_major != ORPHEUS_ABI_V1_MAJOR ||
+      clip_major != ORPHEUS_ABI_V1_MAJOR ||
+      render_major != ORPHEUS_ABI_V1_MAJOR ||
+      session_minor != ORPHEUS_ABI_V1_MINOR ||
+      clip_minor != ORPHEUS_ABI_V1_MINOR ||
+      render_minor != ORPHEUS_ABI_V1_MINOR) {
+    std::cerr << "ABI negotiation failed" << std::endl;
     return 1;
   }
 
@@ -168,7 +185,7 @@ int main(int argc, char **argv) {
   }
 
   struct SessionGuard {
-    const orpheus_session_v1 *abi{};
+    const orpheus_session_api_v1 *abi{};
     orpheus_session_handle handle{};
     ~SessionGuard() {
       if (abi && handle) {
