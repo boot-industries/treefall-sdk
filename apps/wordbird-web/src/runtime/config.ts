@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 export type CatalogSource =
   | 'VITE_PACK_CATALOG_URL'
   | 'PACKS_REMOTE_MANIFEST'

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 const PACKS_CACHE = 'wordbird-packs-v1';
 const rawPacksHost = self.__WB_PACKS_HOST__ || 'https://packs.wordbird.app';
 let packsOrigin;

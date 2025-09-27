@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "session_graph.h"
 
 #include <algorithm>

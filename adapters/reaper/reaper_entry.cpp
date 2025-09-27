@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "panel.h"
 
 #include "json_io.h"

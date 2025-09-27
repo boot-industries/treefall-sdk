@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 add_library(reaper_orpheus SHARED
   panel.cpp
   reaper_entry.cpp

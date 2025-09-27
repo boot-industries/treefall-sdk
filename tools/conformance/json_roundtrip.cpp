@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "json_io.h"
 
 #include <cmath>

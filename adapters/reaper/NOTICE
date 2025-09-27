@@ -1,0 +1,11 @@
+SPDX-License-Identifier: MIT
+REAPER Adapter Notice
+=====================
+
+The REAPER adapter is an optional compatibility layer that allows the Orpheus SDK to plug into Cockos REAPER.
+It does not bundle the proprietary host itself. To build a fully functional integration you must
+provide the Cockos REAPER C/C++ extension mini-SDK (v7.42 at the time of writing) under its original license terms.
+
+The mini-SDK components located in `backup/non_orpheus_20250926/` remain the copyright of Cockos
+Incorporated and are distributed under the `LicenseRef-Cockos-REAPER` terms reproduced in
+`LICENSES/LicenseRef-Cockos-REAPER.txt`.

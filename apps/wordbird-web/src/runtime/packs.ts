@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { resolveCatalog, resolvePacksHost } from './config';
 
 type CatalogEntry = {

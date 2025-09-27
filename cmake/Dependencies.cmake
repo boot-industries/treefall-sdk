@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 include(FetchContent)
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)

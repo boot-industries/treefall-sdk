@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Architecture Overview
 
 Orpheus is organised around a compact C++20 core library that exposes ABI

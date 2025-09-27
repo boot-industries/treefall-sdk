@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 Checks: >
   bugprone-*,modernize-*,performance-*,readability-*,
   -readability-identifier-length,

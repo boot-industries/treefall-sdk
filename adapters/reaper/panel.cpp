@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "panel.h"
 
 #include "orpheus/abi.h"

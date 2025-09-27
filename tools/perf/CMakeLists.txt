@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 add_executable(orpheus_perf_render_click
   perf_render_click.cpp
 )

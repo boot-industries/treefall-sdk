@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.22)
 
 project(orpheus_find_package_smoke LANGUAGES CXX)

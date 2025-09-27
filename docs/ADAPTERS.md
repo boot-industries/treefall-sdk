@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Orpheus Adapters
 
 Orpheus ships with a compact, host-neutral core. Adapters provide thin shims

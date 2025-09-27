@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Repository Audit
 
 Date: 2025-09-26 (UTC)

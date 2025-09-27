@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 if(NOT DEFINED source_dir OR NOT DEFINED binary_dir OR NOT DEFINED OrpheusSDK_DIR)
   message(FATAL_ERROR "Missing variables for find_package smoke test")
 endif()

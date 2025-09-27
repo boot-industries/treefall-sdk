@@ -1,0 +1,19 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Orpheus SDK
+Source: https://github.com/orpheus-sdk/orpheus-sdk
+
+Files: *
+Copyright: 2024 Orpheus SDK Contributors
+License: MIT
+
+Files: backup/non_orpheus_20250926/**
+Copyright: 2006-2024 Cockos Incorporated
+License: LicenseRef-Cockos-REAPER
+
+Files: backup/non_orpheus_20250926/run-clang-tidy.py
+Copyright: 2007-2024 The LLVM Project
+License: Apache-2.0 WITH LLVM-exception
+
+Files: LICENSES/LicenseRef-Cockos-REAPER.txt
+Copyright: 2006-2024 Cockos Incorporated
+License: LicenseRef-Cockos-REAPER

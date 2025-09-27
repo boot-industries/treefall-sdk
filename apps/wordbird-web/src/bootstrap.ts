@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { bootstrapFromCatalog } from './runtime/packs';
 
 function ensureRoot(): HTMLElement {

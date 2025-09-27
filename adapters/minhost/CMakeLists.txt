@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 add_executable(orpheus_minhost
   main.cpp
 )

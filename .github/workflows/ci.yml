@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 name: CI
 
 on:
@@ -66,3 +67,23 @@ jobs:
       - name: Perf smoke
         run: ./build-perf/tools/perf/orpheus_perf_render_click
         shell: bash
+
+  legal:
+    name: legal-compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install reuse
+        run: python -m pip install --upgrade pip reuse
+
+      - name: Run reuse lint
+        run: reuse lint
+        env:
+          PYTHONWARNINGS: ignore

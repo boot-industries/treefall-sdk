@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Orpheus SDK
 
 The Orpheus SDK packages a host-neutral core for working with sessions,
