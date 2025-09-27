@@ -13,10 +13,12 @@ namespace {
 constexpr double kMinimumLengthBeats = 1e-6;
 }
 
-Clip::Clip(std::string name, double start_beats, double length_beats)
+Clip::Clip(std::string name, double start_beats, double length_beats,
+           std::uint32_t scene_index)
     : name_(std::move(name)),
       start_beats_(start_beats),
-      length_beats_(std::max(length_beats, kMinimumLengthBeats)) {}
+      length_beats_(std::max(length_beats, kMinimumLengthBeats)),
+      scene_index_(scene_index) {}
 
 void Clip::set_start(double start_beats) { start_beats_ = start_beats; }
 
@@ -24,11 +26,17 @@ void Clip::set_length(double length_beats) {
   length_beats_ = std::max(length_beats, kMinimumLengthBeats);
 }
 
+void Clip::set_scene_index(std::uint32_t scene_index) {
+  scene_index_ = scene_index;
+}
+
 Track::Track(std::string name) : name_(std::move(name)) {}
 
-Clip *Track::add_clip(std::string name, double start_beats, double length_beats) {
+Clip *Track::add_clip(std::string name, double start_beats, double length_beats,
+                      std::uint32_t scene_index) {
   auto &slot = clips_.emplace_back(
-      std::make_unique<Clip>(std::move(name), start_beats, length_beats));
+      std::make_unique<Clip>(std::move(name), start_beats, length_beats,
+                             scene_index));
   return slot.get();
 }
 
@@ -137,13 +145,14 @@ void SessionGraph::set_session_range(double start_beats, double end_beats) {
 }
 
 Clip *SessionGraph::add_clip(Track &track, std::string name, double start_beats,
-                             double length_beats) {
+                             double length_beats, std::uint32_t scene_index) {
   Track *target = find_track(&track);
   if (target == nullptr) {
     throw std::invalid_argument("Track does not belong to session");
   }
   mark_clip_grid_dirty();
-  return target->add_clip(std::move(name), start_beats, length_beats);
+  return target->add_clip(std::move(name), start_beats, length_beats,
+                          scene_index);
 }
 
 bool SessionGraph::remove_clip(const Clip *clip) {
@@ -171,6 +180,15 @@ void SessionGraph::set_clip_length(Clip &clip, double length_beats) {
     throw std::invalid_argument("Clip does not belong to session");
   }
   target->set_length(length_beats);
+  mark_clip_grid_dirty();
+}
+
+void SessionGraph::set_clip_scene(Clip &clip, std::uint32_t scene_index) {
+  Clip *target = find_clip(&clip);
+  if (target == nullptr) {
+    throw std::invalid_argument("Clip does not belong to session");
+  }
+  target->set_scene_index(scene_index);
   mark_clip_grid_dirty();
 }
 
@@ -205,6 +223,135 @@ void SessionGraph::commit_clip_grid() {
     session_start_beats_ = (std::isfinite(min_start) ? min_start : 0.0);
     session_end_beats_ = std::max(session_start_beats_, max_end);
   }
+}
+
+double SessionGraph::QuantizePosition(double position_beats,
+                                      const QuantizationWindow &quantization,
+                                      double minimum_beats) {
+  if (quantization.grid_beats <= 0.0) {
+    throw std::invalid_argument("Quantization grid must be positive");
+  }
+  const double grid = quantization.grid_beats;
+  const double normalized = position_beats / grid;
+  const double nearest = std::round(normalized) * grid;
+  const double diff = std::abs(nearest - position_beats);
+  if (diff <= quantization.tolerance_beats) {
+    return std::max(nearest, minimum_beats);
+  }
+  if (nearest < position_beats) {
+    return std::max(nearest + grid, minimum_beats);
+  }
+  return std::max(nearest, minimum_beats);
+}
+
+void SessionGraph::trigger_scene(std::uint32_t scene_index,
+                                 double position_beats,
+                                 const QuantizationWindow &quantization) {
+  const double quantized_start =
+      QuantizePosition(position_beats, quantization, /*minimum_beats=*/0.0);
+
+  SceneTimelineEntry entry;
+  entry.scene_index = scene_index;
+  entry.trigger_position_beats = position_beats;
+  entry.trigger_quantization = quantization;
+  entry.quantized_start_beats = quantized_start;
+  const std::size_t index = scene_timeline_.size();
+  scene_timeline_.push_back(entry);
+  active_scenes_[scene_index] = ActiveScene{index};
+}
+
+void SessionGraph::end_scene(std::uint32_t scene_index, double position_beats,
+                             const QuantizationWindow &quantization) {
+  const auto active = active_scenes_.find(scene_index);
+  if (active == active_scenes_.end()) {
+    throw std::invalid_argument("Scene has not been triggered");
+  }
+  SceneTimelineEntry &entry = scene_timeline_[active->second.timeline_index];
+  const double quantized_end =
+      QuantizePosition(position_beats, quantization, entry.quantized_start_beats);
+  entry.has_end = true;
+  entry.end_position_beats = position_beats;
+  entry.end_quantization = quantization;
+  entry.quantized_end_beats = std::max(quantized_end, entry.quantized_start_beats);
+  active_scenes_.erase(active);
+}
+
+void SessionGraph::update_session_range_from_commits() {
+  if (committed_clips_.empty()) {
+    session_start_beats_ = 0.0;
+    session_end_beats_ = 0.0;
+    return;
+  }
+
+  double min_start = std::numeric_limits<double>::infinity();
+  double max_end = std::numeric_limits<double>::lowest();
+  for (const auto &clip : committed_clips_) {
+    min_start = std::min(min_start, clip.arranged_start_beats);
+    max_end =
+        std::max(max_end, clip.arranged_start_beats + clip.arranged_length_beats);
+  }
+
+  if (!std::isfinite(min_start) || !std::isfinite(max_end)) {
+    session_start_beats_ = 0.0;
+    session_end_beats_ = 0.0;
+    return;
+  }
+
+  session_start_beats_ = min_start;
+  session_end_beats_ = std::max(session_start_beats_, max_end);
+}
+
+void SessionGraph::commit_arrangement(double fallback_scene_length_beats) {
+  committed_clips_.clear();
+
+  std::vector<SceneTimelineEntry> resolved_timeline = scene_timeline_;
+
+  for (auto &entry : resolved_timeline) {
+    if (!entry.has_end) {
+      entry.quantized_end_beats =
+          entry.quantized_start_beats + std::max(fallback_scene_length_beats, 0.0);
+      entry.has_end = entry.quantized_end_beats > entry.quantized_start_beats;
+    }
+  }
+
+  std::stable_sort(resolved_timeline.begin(), resolved_timeline.end(),
+                   [](const SceneTimelineEntry &lhs,
+                      const SceneTimelineEntry &rhs) {
+                     if (lhs.quantized_start_beats < rhs.quantized_start_beats) {
+                       return true;
+                     }
+                     if (rhs.quantized_start_beats < lhs.quantized_start_beats) {
+                       return false;
+                     }
+                     return lhs.scene_index < rhs.scene_index;
+                   });
+
+  for (const SceneTimelineEntry &entry : resolved_timeline) {
+    const double scene_end = entry.has_end
+                                 ? entry.quantized_end_beats
+                                 : entry.quantized_start_beats +
+                                       std::max(fallback_scene_length_beats, 0.0);
+    for (const auto &track : tracks_) {
+      for (const auto &clip : track->clips()) {
+        if (clip->scene_index() != entry.scene_index) {
+          continue;
+        }
+        CommittedClip committed;
+        committed.clip = clip.get();
+        committed.scene_index = entry.scene_index;
+        committed.arranged_start_beats = entry.quantized_start_beats;
+        const double max_length = scene_end - entry.quantized_start_beats;
+        committed.arranged_length_beats =
+            std::max(kMinimumLengthBeats,
+                     std::min(clip->length(), std::max(max_length, 0.0)));
+        committed_clips_.push_back(committed);
+      }
+    }
+  }
+
+  update_session_range_from_commits();
+  scene_timeline_.clear();
+  active_scenes_.clear();
 }
 
 Track *SessionGraph::find_track(const Track *track) {

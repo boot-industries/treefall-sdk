@@ -105,7 +105,8 @@ orpheus_status PopulateSession(const SessionGraph &graph,
     for (const auto &clip_ptr : track_ptr->clips()) {
       const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(),
                                         clip_ptr->start(),
-                                        clip_ptr->length()};
+                                        clip_ptr->length(),
+                                        0u};
       orpheus_clip_handle clip_handle{};
       status = clipgrid_abi->add_clip(handle, track_handle, &clip_desc,
                                       &clip_handle);

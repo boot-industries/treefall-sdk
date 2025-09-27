@@ -79,7 +79,7 @@ TEST(SessionApiTest, ClipgridOperationsSucceed) {
   EXPECT_EQ(clip_major, ORPHEUS_ABI_V1_MAJOR);
   EXPECT_EQ(clip_minor, ORPHEUS_ABI_V1_MINOR);
 
-  const orpheus_clip_desc clip_desc{"intro", 0.0, 4.0};
+  const orpheus_clip_desc clip_desc{"intro", 0.0, 4.0, 0u};
   orpheus_clip_handle clip{};
   ASSERT_EQ(clipgrid->add_clip(session.get(), track, &clip_desc, &clip),
             ORPHEUS_STATUS_OK);

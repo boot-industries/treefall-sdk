@@ -4,6 +4,7 @@ add_executable(orpheus_tests
   render_tracks.cpp
   session_graph_ownership.cpp
   session_graph_invariants.cpp
+  session_graph_scenes.cpp
   session_roundtrip.cpp
 )
 

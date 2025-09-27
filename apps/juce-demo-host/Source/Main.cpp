@@ -388,7 +388,7 @@ public:
             trackState.handle = trackHandle;
             for (const auto& clipPtr : trackPtr->clips())
             {
-                const orpheus_clip_desc clipDesc{ clipPtr->name().c_str(), clipPtr->start(), clipPtr->length() };
+                const orpheus_clip_desc clipDesc{ clipPtr->name().c_str(), clipPtr->start(), clipPtr->length(), 0u };
                 orpheus_clip_handle clipHandle{};
                 status = clipgridApi->add_clip(guard.handle, trackHandle, &clipDesc, &clipHandle);
                 if (status != ORPHEUS_STATUS_OK)

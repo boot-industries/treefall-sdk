@@ -24,9 +24,9 @@ orpheus_status ClipgridAddClip(orpheus_session_handle session,
     auto *session_ptr = ToSession(session);
     auto *track_ptr = ToTrack(track);
     const std::string name = desc->name != nullptr ? desc->name : "";
-    orpheus::core::Clip *clip = session_ptr->add_clip(*track_ptr, name,
-                                                      desc->start_beats,
-                                                      desc->length_beats);
+    orpheus::core::Clip *clip = session_ptr->add_clip(
+        *track_ptr, name, desc->start_beats, desc->length_beats,
+        desc->scene_index);
     *out_clip = reinterpret_cast<orpheus_clip_handle>(clip);
     return ORPHEUS_STATUS_OK;
   });
@@ -75,6 +75,20 @@ orpheus_status ClipgridSetClipLength(orpheus_session_handle session,
   });
 }
 
+orpheus_status ClipgridSetClipScene(orpheus_session_handle session,
+                                    orpheus_clip_handle clip,
+                                    uint32_t scene_index) {
+  if (session == nullptr || clip == nullptr) {
+    return ORPHEUS_STATUS_INVALID_ARGUMENT;
+  }
+  return GuardAbiCall([&]() -> orpheus_status {
+    auto *session_ptr = ToSession(session);
+    auto *clip_ptr = ToClip(clip);
+    session_ptr->set_clip_scene(*clip_ptr, scene_index);
+    return ORPHEUS_STATUS_OK;
+  });
+}
+
 orpheus_status ClipgridCommit(orpheus_session_handle session) {
   if (session == nullptr) {
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
@@ -85,10 +99,61 @@ orpheus_status ClipgridCommit(orpheus_session_handle session) {
   });
 }
 
+orpheus_status ClipgridTriggerScene(orpheus_session_handle session,
+                                    const orpheus_scene_trigger_desc *desc) {
+  if (session == nullptr || desc == nullptr) {
+    return ORPHEUS_STATUS_INVALID_ARGUMENT;
+  }
+  return GuardAbiCall([&]() -> orpheus_status {
+    auto *session_ptr = ToSession(session);
+    orpheus::core::QuantizationWindow window;
+    window.grid_beats = desc->quant.grid_beats;
+    window.tolerance_beats = desc->quant.tolerance_beats;
+    session_ptr->trigger_scene(desc->scene_index, desc->position_beats, window);
+    return ORPHEUS_STATUS_OK;
+  });
+}
+
+orpheus_status ClipgridEndScene(orpheus_session_handle session,
+                                const orpheus_scene_end_desc *desc) {
+  if (session == nullptr || desc == nullptr) {
+    return ORPHEUS_STATUS_INVALID_ARGUMENT;
+  }
+  return GuardAbiCall([&]() -> orpheus_status {
+    auto *session_ptr = ToSession(session);
+    orpheus::core::QuantizationWindow window;
+    window.grid_beats = desc->quant.grid_beats;
+    window.tolerance_beats = desc->quant.tolerance_beats;
+    session_ptr->end_scene(desc->scene_index, desc->position_beats, window);
+    return ORPHEUS_STATUS_OK;
+  });
+}
+
+orpheus_status ClipgridCommitArrangement(
+    orpheus_session_handle session,
+    const orpheus_arrangement_commit_desc *desc) {
+  if (session == nullptr) {
+    return ORPHEUS_STATUS_INVALID_ARGUMENT;
+  }
+  return GuardAbiCall([&]() -> orpheus_status {
+    const double fallback = desc != nullptr ? desc->fallback_scene_length_beats
+                                            : 0.0;
+    ToSession(session)->commit_arrangement(fallback);
+    return ORPHEUS_STATUS_OK;
+  });
+}
+
 const orpheus_clipgrid_api_v1 kClipgridApiV1{
-    ORPHEUS_CLIPGRID_CAP_V1_CORE, &ClipgridAddClip, &ClipgridRemoveClip,
-    &ClipgridSetClipStart,        &ClipgridSetClipLength,
-    &ClipgridCommit};
+    ORPHEUS_CLIPGRID_CAP_V1_CORE | ORPHEUS_CLIPGRID_CAP_V1_SCENES,
+    &ClipgridAddClip,
+    &ClipgridRemoveClip,
+    &ClipgridSetClipStart,
+    &ClipgridSetClipLength,
+    &ClipgridSetClipScene,
+    &ClipgridCommit,
+    &ClipgridTriggerScene,
+    &ClipgridEndScene,
+    &ClipgridCommitArrangement};
 
 }  // namespace
 

@@ -232,7 +232,8 @@ TEST(RenderTracks, GeneratesSineStemsWithDitheredQuantization) {
     for (const auto &clip_spec : track_def.clips) {
       const orpheus_clip_desc clip_desc{track_def.name.c_str(),
                                         clip_spec.start_beats,
-                                        clip_spec.length_beats};
+                                        clip_spec.length_beats,
+                                        0u};
       orpheus_clip_handle clip_handle{};
       ASSERT_EQ(clipgrid_api->add_clip(session_handle, track_handle,
                                        &clip_desc, &clip_handle),

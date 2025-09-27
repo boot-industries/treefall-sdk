@@ -52,6 +52,11 @@ TEST(AbiTablesTest, CapBitsAdvertised) {
       orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
   ASSERT_NE(clipgrid, nullptr);
   EXPECT_NE(clipgrid->caps & ORPHEUS_CLIPGRID_CAP_V1_CORE, 0ull);
+  EXPECT_NE(clipgrid->caps & ORPHEUS_CLIPGRID_CAP_V1_SCENES, 0ull);
+  EXPECT_NE(clipgrid->set_clip_scene, nullptr);
+  EXPECT_NE(clipgrid->trigger_scene, nullptr);
+  EXPECT_NE(clipgrid->end_scene, nullptr);
+  EXPECT_NE(clipgrid->commit_arrangement, nullptr);
 
   uint32_t render_major = 0;
   uint32_t render_minor = 0;

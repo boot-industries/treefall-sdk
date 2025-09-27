@@ -34,10 +34,12 @@ typedef struct orpheus_transport_state {
 struct orpheus_session_handle_t;
 struct orpheus_track_handle_t;
 struct orpheus_clip_handle_t;
+struct orpheus_scene_handle_t;
 
 typedef struct orpheus_session_handle_t *orpheus_session_handle;
 typedef struct orpheus_track_handle_t *orpheus_track_handle;
 typedef struct orpheus_clip_handle_t *orpheus_clip_handle;
+typedef struct orpheus_scene_handle_t *orpheus_scene_handle;
 
 typedef struct orpheus_track_desc {
   const char *name;
@@ -47,7 +49,29 @@ typedef struct orpheus_clip_desc {
   const char *name;
   double start_beats;
   double length_beats;
+  uint32_t scene_index;
 } orpheus_clip_desc;
+
+typedef struct orpheus_quantization_window {
+  double grid_beats;
+  double tolerance_beats;
+} orpheus_quantization_window;
+
+typedef struct orpheus_scene_trigger_desc {
+  uint32_t scene_index;
+  double position_beats;
+  orpheus_quantization_window quant;
+} orpheus_scene_trigger_desc;
+
+typedef struct orpheus_scene_end_desc {
+  uint32_t scene_index;
+  double position_beats;
+  orpheus_quantization_window quant;
+} orpheus_scene_end_desc;
+
+typedef struct orpheus_arrangement_commit_desc {
+  double fallback_scene_length_beats;
+} orpheus_arrangement_commit_desc;
 
 typedef struct orpheus_render_click_spec {
   double tempo_bpm;
@@ -87,7 +111,17 @@ typedef struct orpheus_clipgrid_api_v1 {
   orpheus_status (*set_clip_length)(orpheus_session_handle session,
                                     orpheus_clip_handle clip,
                                     double length_beats);
+  orpheus_status (*set_clip_scene)(orpheus_session_handle session,
+                                   orpheus_clip_handle clip,
+                                   uint32_t scene_index);
   orpheus_status (*commit)(orpheus_session_handle session);
+  orpheus_status (*trigger_scene)(orpheus_session_handle session,
+                                  const orpheus_scene_trigger_desc *desc);
+  orpheus_status (*end_scene)(orpheus_session_handle session,
+                              const orpheus_scene_end_desc *desc);
+  orpheus_status (*commit_arrangement)(
+      orpheus_session_handle session,
+      const orpheus_arrangement_commit_desc *desc);
 } orpheus_clipgrid_api_v1;
 
 typedef struct orpheus_render_api_v1 {

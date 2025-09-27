@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 
 #include "orpheus/export.h"
 
@@ -14,19 +15,23 @@ namespace orpheus::core {
 
 class ORPHEUS_API Clip {
  public:
-  Clip(std::string name, double start_beats, double length_beats);
+  Clip(std::string name, double start_beats, double length_beats,
+       std::uint32_t scene_index = 0u);
 
   void set_start(double start_beats);
   void set_length(double length_beats);
+  void set_scene_index(std::uint32_t scene_index);
 
   [[nodiscard]] double start() const { return start_beats_; }
   [[nodiscard]] double length() const { return length_beats_; }
   [[nodiscard]] const std::string &name() const { return name_; }
+  [[nodiscard]] std::uint32_t scene_index() const { return scene_index_; }
 
  private:
   std::string name_;
   double start_beats_;
   double length_beats_;
+  std::uint32_t scene_index_;
 };
 
 class ORPHEUS_API Track {
@@ -40,7 +45,8 @@ class ORPHEUS_API Track {
 
   [[nodiscard]] const std::string &name() const { return name_; }
 
-  Clip *add_clip(std::string name, double start_beats, double length_beats);
+  Clip *add_clip(std::string name, double start_beats, double length_beats,
+                 std::uint32_t scene_index = 0u);
   bool remove_clip(const Clip *clip);
   Clip *find_clip(const Clip *clip);
 
@@ -69,6 +75,18 @@ struct ORPHEUS_API TransportState {
   double tempo_bpm{120.0};
   double position_beats{0.0};
   bool is_playing{false};
+};
+
+struct ORPHEUS_API QuantizationWindow {
+  double grid_beats{1.0};
+  double tolerance_beats{0.0};
+};
+
+struct ORPHEUS_API CommittedClip {
+  const Clip *clip{nullptr};
+  std::uint32_t scene_index{0u};
+  double arranged_start_beats{0.0};
+  double arranged_length_beats{0.0};
 };
 
 class ORPHEUS_API SessionGraph {
@@ -112,11 +130,22 @@ class ORPHEUS_API SessionGraph {
   }
 
   Clip *add_clip(Track &track, std::string name, double start_beats,
-                double length_beats);
+                double length_beats, std::uint32_t scene_index = 0u);
   bool remove_clip(const Clip *clip);
   void set_clip_start(Clip &clip, double start_beats);
   void set_clip_length(Clip &clip, double length_beats);
+  void set_clip_scene(Clip &clip, std::uint32_t scene_index);
   void commit_clip_grid();
+
+  void trigger_scene(std::uint32_t scene_index, double position_beats,
+                     const QuantizationWindow &quantization);
+  void end_scene(std::uint32_t scene_index, double position_beats,
+                 const QuantizationWindow &quantization);
+  void commit_arrangement(double fallback_scene_length_beats = 0.0);
+
+  [[nodiscard]] const std::vector<CommittedClip> &committed_clips() const {
+    return committed_clips_;
+  }
 
   [[nodiscard]] const std::vector<std::unique_ptr<Track>> &tracks() const {
     return tracks_;
@@ -136,6 +165,25 @@ class ORPHEUS_API SessionGraph {
   Track *find_track(const Track *track);
   Clip *find_clip(const Clip *clip);
   void mark_clip_grid_dirty() { clip_grid_dirty_ = true; }
+  void update_session_range_from_commits();
+  static double QuantizePosition(double position_beats,
+                                 const QuantizationWindow &quantization,
+                                 double minimum_beats);
+
+  struct SceneTimelineEntry {
+    std::uint32_t scene_index{0u};
+    double trigger_position_beats{0.0};
+    QuantizationWindow trigger_quantization{};
+    double quantized_start_beats{0.0};
+    bool has_end{false};
+    double end_position_beats{0.0};
+    QuantizationWindow end_quantization{};
+    double quantized_end_beats{0.0};
+  };
+
+  struct ActiveScene {
+    std::size_t timeline_index{0};
+  };
 
   double tempo_bpm_{120.0};
   double transport_position_beats_{0.0};
@@ -148,6 +196,9 @@ class ORPHEUS_API SessionGraph {
   std::uint32_t render_sample_rate_hz_{48000u};
   std::uint16_t render_bit_depth_bits_{24u};
   bool render_dither_enabled_{true};
+  std::vector<SceneTimelineEntry> scene_timeline_;
+  std::unordered_map<std::uint32_t, ActiveScene> active_scenes_;
+  std::vector<CommittedClip> committed_clips_;
 };
 
 }  // namespace orpheus::core

@@ -20,4 +20,5 @@
 
 #define ORPHEUS_SESSION_CAP_V1_CORE (1ull << 0)
 #define ORPHEUS_CLIPGRID_CAP_V1_CORE (1ull << 0)
+#define ORPHEUS_CLIPGRID_CAP_V1_SCENES (1ull << 1)
 #define ORPHEUS_RENDER_CAP_V1_CORE (1ull << 0)
