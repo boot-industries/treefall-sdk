@@ -2,7 +2,7 @@
 
 #include "json_io.h"
 #include "orpheus/abi.h"
-#include "orpheus/export.h"
+#include "orpheus/reaper_entry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -168,29 +168,29 @@ void EnsurePanelInitialized() {
 
 }  // namespace
 
-extern "C" ORPHEUS_API const char *ReaperExtensionName() {
+extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionName() {
   return orpheus::reaper::PanelTitle();
 }
 
-extern "C" ORPHEUS_API const char *ReaperExtensionVersion() {
+extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionVersion() {
   static std::string version = "ABI " + orpheus::ToString(orpheus::kCurrentAbi);
   return version.c_str();
 }
 
-extern "C" ORPHEUS_API const char *ReaperExtensionPanelText() {
+extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionPanelText() {
   std::lock_guard lock(gStateMutex);
   EnsurePanelInitialized();
   return gPanelText.c_str();
 }
 
-extern "C" ORPHEUS_API int OrpheusTogglePanel() {
+extern "C" REAPER_ORPHEUS_API int OrpheusTogglePanel() {
   std::lock_guard lock(gStateMutex);
   gSnapshot.visible = !gSnapshot.visible;
   RefreshPanelLocked();
   return 1;
 }
 
-extern "C" ORPHEUS_API int OrpheusImportSession(const char *json_path) {
+extern "C" REAPER_ORPHEUS_API int OrpheusImportSession(const char *json_path) {
   if (json_path == nullptr) {
     return 0;
   }
@@ -204,7 +204,7 @@ extern "C" ORPHEUS_API int OrpheusImportSession(const char *json_path) {
   return ok ? 1 : 0;
 }
 
-extern "C" ORPHEUS_API int OrpheusRenderClickToFile(const char *output_path) {
+extern "C" REAPER_ORPHEUS_API int OrpheusRenderClickToFile(const char *output_path) {
   if (output_path == nullptr) {
     return 0;
   }

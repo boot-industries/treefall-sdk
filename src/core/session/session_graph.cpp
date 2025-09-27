@@ -24,10 +24,9 @@ void Clip::set_length(double length_beats) {
 Track::Track(std::string name) : name_(std::move(name)) {}
 
 Clip *Track::add_clip(std::string name, double start_beats, double length_beats) {
-  auto clip = std::make_unique<Clip>(std::move(name), start_beats, length_beats);
-  Clip *result = clip.get();
-  clips_.push_back(std::move(clip));
-  return result;
+  auto &slot = clips_.emplace_back(
+      std::make_unique<Clip>(std::move(name), start_beats, length_beats));
+  return slot.get();
 }
 
 bool Track::remove_clip(const Clip *clip) {
@@ -65,10 +64,8 @@ SessionGraph::SessionGraph() : name_("Session") {}
 void SessionGraph::set_name(std::string name) { name_ = std::move(name); }
 
 Track *SessionGraph::add_track(std::string name) {
-  auto track = std::make_unique<Track>(std::move(name));
-  Track *result = track.get();
-  tracks_.push_back(std::move(track));
-  return result;
+  auto &slot = tracks_.emplace_back(std::make_unique<Track>(std::move(name)));
+  return slot.get();
 }
 
 bool SessionGraph::remove_track(const Track *track) {

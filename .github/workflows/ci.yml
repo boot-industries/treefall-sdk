@@ -24,14 +24,12 @@ jobs:
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=arm64"
           fi
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            extra="${extra} -DORP_BUILD_SHARED_CORE=OFF"
-          fi
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DORP_WITH_TESTS=ON \
             -DORP_BUILD_REAPER=ON \
             -DORP_BUILD_MINHOST=ON \
+            -DORP_BUILD_ABI_DYNAMIC=ON \
             ${extra}
         shell: bash
 
@@ -39,7 +37,16 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }}
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            export PATH="$(pwd)/build:${PATH}"
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            export DYLD_LIBRARY_PATH="$(pwd)/build:${DYLD_LIBRARY_PATH}"
+          else
+            export LD_LIBRARY_PATH="$(pwd)/build:${LD_LIBRARY_PATH}"
+          fi
+          ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
 
   perf-smoke:
     name: perf-smoke

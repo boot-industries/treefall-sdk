@@ -4,7 +4,7 @@ add_executable(orpheus_conformance_json
 
 target_link_libraries(orpheus_conformance_json
   PRIVATE
-    orpheus_core
+    Orpheus::core
     GTest::gtest_main
 )
 
@@ -22,3 +22,14 @@ target_compile_definitions(orpheus_conformance_json
 include(GoogleTest)
 set(TEST_NAME conformance_json)
 add_test(NAME ${TEST_NAME} COMMAND orpheus_conformance_json)
+
+if(ORP_BUILD_SHARED_CORE)
+  add_custom_command(TARGET orpheus_conformance_json POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:orpheus_session> $<TARGET_FILE_DIR:orpheus_conformance_json>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:orpheus_clipgrid> $<TARGET_FILE_DIR:orpheus_conformance_json>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:orpheus_render> $<TARGET_FILE_DIR:orpheus_conformance_json>
+  )
+endif()
