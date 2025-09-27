@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "timeline": "Demo Sequence",
+  "operations": [
+    {
+      "kind": "delete",
+      "target": {
+        "start_seconds": 12,
+        "duration_seconds": 4
+      }
+    }
+  ]
+}

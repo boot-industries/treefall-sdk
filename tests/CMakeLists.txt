@@ -7,6 +7,7 @@ add_executable(orpheus_tests
   session_graph_scenes.cpp
   session_roundtrip.cpp
   reaper_adapter.cpp
+  otio_reconform_plan.cpp
 )
 
 target_link_libraries(orpheus_tests

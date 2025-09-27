@@ -6,14 +6,17 @@
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
 #include "json_io.h"
+#include "otio/reconform_plan.h"
 
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <type_traits>
 #include <vector>
 
 #if JUCE_WINDOWS
@@ -25,6 +28,7 @@
 namespace fs = std::filesystem;
 using orpheus::core::SessionGraph;
 namespace session_json = orpheus::core::session_json;
+namespace reconform = orpheus::core::otio;
 
 namespace {
 
@@ -558,7 +562,62 @@ public:
         stream << "ClipGrid committed: " << (snapshot.clipgridCommitted ? "yes" : "no") << "\n";
         if (snapshot.lastRenderDirectory.isNotEmpty())
             stream << "Last render: " << snapshot.lastRenderDirectory << '\n';
-        statusBox_.setText(stream.str());
+        sessionSummary_ = stream.str();
+        refreshStatusBox();
+    }
+
+    void updateReconformPlan(const juce::String& planPath,
+                             const reconform::ReconformPlan& plan)
+    {
+        auto formatSeconds = [](double seconds) {
+            std::ostringstream out;
+            out.setf(std::ios::fixed);
+            out << std::setprecision(2) << seconds;
+            return out.str();
+        };
+
+        auto describeRange = [&](const reconform::ReconformTimeRange& range) {
+            std::ostringstream out;
+            out << "@" << formatSeconds(range.start_seconds) << "s for "
+                << formatSeconds(range.duration_seconds) << "s";
+            return out.str();
+        };
+
+        std::ostringstream stream;
+        stream << "Reconform plan: " << plan.timeline_name << '\n';
+        stream << "Plan file: " << planPath << '\n';
+        stream << "Operations: " << plan.operations.size() << '\n';
+
+        for (std::size_t index = 0; index < plan.operations.size(); ++index)
+        {
+            const auto& operation = plan.operations[index];
+            stream << "  [" << (index + 1) << "] ";
+            std::visit(
+                [&](const auto& op) {
+                    using T = std::decay_t<decltype(op)>;
+                    if constexpr (std::is_same_v<T, reconform::ReconformInsert>)
+                    {
+                        stream << "Insert " << describeRange(op.source) << " → "
+                               << describeRange(op.target);
+                    }
+                    else if constexpr (std::is_same_v<T, reconform::ReconformDelete>)
+                    {
+                        stream << "Delete " << describeRange(op.target);
+                    }
+                    else if constexpr (std::is_same_v<T, reconform::ReconformRetime>)
+                    {
+                        stream << "Retime " << describeRange(op.target) << " → "
+                               << formatSeconds(op.retimed_duration_seconds) << "s";
+                    }
+                },
+                operation.data);
+            if (!operation.note.empty())
+                stream << " — " << operation.note;
+            stream << '\n';
+        }
+
+        reconformSummary_ = stream.str();
+        refreshStatusBox();
     }
 
     void resized() override
@@ -570,6 +629,22 @@ public:
     }
 
 private:
+    void refreshStatusBox()
+    {
+        juce::String text = sessionSummary_;
+        if (text.isEmpty())
+            text = initialInstructions();
+
+        if (reconformSummary_.isNotEmpty())
+        {
+            if (!text.isEmpty() && !text.endsWithChar('\n'))
+                text << '\n';
+            text << '\n' << reconformSummary_;
+        }
+
+        statusBox_.setText(text, juce::dontSendNotification);
+    }
+
     static juce::String initialInstructions()
     {
         juce::String text;
@@ -584,6 +659,8 @@ private:
     juce::Label disclaimer_;
     juce::TextEditor statusBox_;
     juce::AudioDeviceManager audioDeviceManager_;
+    juce::String sessionSummary_;
+    juce::String reconformSummary_;
 };
 
 class MainWindow : public juce::DocumentWindow, public juce::MenuBarModel
@@ -620,6 +697,7 @@ public:
         if (menuName == "File")
         {
             menu.addItem(CommandIDs::openSession, "Open Session...");
+            menu.addItem(CommandIDs::openReconformPlan, "Open Reconform Plan...");
             menu.addSeparator();
             menu.addItem(CommandIDs::quit, "Quit");
         }
@@ -641,6 +719,9 @@ public:
         {
             case CommandIDs::openSession:
                 handleOpenSession();
+                break;
+            case CommandIDs::openReconformPlan:
+                handleOpenReconformPlan();
                 break;
             case CommandIDs::triggerClipgrid:
                 handleTriggerClipgrid();
@@ -666,6 +747,7 @@ private:
     enum CommandIDs
     {
         openSession = 1,
+        openReconformPlan,
         triggerClipgrid,
         renderSession,
         quit,
@@ -692,6 +774,27 @@ private:
 
         mainComponent().updateSnapshot(controller_.snapshot());
         menuItemsChanged();
+    }
+
+    void handleOpenReconformPlan()
+    {
+        juce::FileChooser chooser("Open Reconform Plan", juce::File(), "*.json;*.*");
+        if (!chooser.browseForFileToOpen())
+            return;
+
+        const juce::File file = chooser.getResult();
+        try
+        {
+            const reconform::ReconformPlan plan =
+                reconform::LoadReconformPlanFromFile(file.getFullPathName().toStdString());
+            mainComponent().updateReconformPlan(file.getFullPathName(), plan);
+        }
+        catch (const std::exception& ex)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Reconform Plan",
+                                                   juce::String("Failed to open reconform plan:\n") + ex.what());
+        }
     }
 
     void handleTriggerClipgrid()

@@ -6,8 +6,10 @@ endif()
 
 add_library(orpheus_core_runtime OBJECT
   core/common/errors.cpp
+  core/common/json_parser.cpp
   core/session/session_graph.cpp
   core/session/json_io.cpp
+  core/otio/reconform_plan.cpp
 )
 
 target_compile_features(orpheus_core_runtime PUBLIC cxx_std_20)

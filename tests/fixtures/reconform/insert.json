@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "timeline": "Demo Sequence",
+  "operations": [
+    {
+      "kind": "insert",
+      "note": "Insert establishing shot",
+      "target": {
+        "start_seconds": 5,
+        "duration_seconds": 3.5
+      },
+      "source": {
+        "start_seconds": 42.5,
+        "duration_seconds": 3.5
+      }
+    }
+  ]
+}

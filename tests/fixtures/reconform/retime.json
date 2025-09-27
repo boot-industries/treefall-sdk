@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "timeline": "Demo Sequence",
+  "operations": [
+    {
+      "kind": "retime",
+      "note": "Slow motion bridge",
+      "target": {
+        "start_seconds": 30,
+        "duration_seconds": 5
+      },
+      "retimed_duration_seconds": 7.5
+    }
+  ]
+}
