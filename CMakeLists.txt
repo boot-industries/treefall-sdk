@@ -7,6 +7,7 @@ option(ORP_WITH_TESTS "Build Orpheus tests" ON)
 option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
 option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
+option(ORPHEUS_ENABLE_APP_JUCE_HOST "Build the Orpheus JUCE demo host" OFF)
 option(ENABLE_LTO "Enable interprocedural optimization" OFF)
 option(ORP_BUILD_SHARED_CORE "Build Orpheus ABI libraries as shared" OFF)
 option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
@@ -91,6 +92,10 @@ endif()
 
 if(ORPHEUS_ENABLE_ADAPTER_MINHOST)
   add_subdirectory(adapters/minhost)
+endif()
+
+if(ORPHEUS_ENABLE_APP_JUCE_HOST)
+  add_subdirectory(apps/juce-demo-host)
 endif()
 
 include(CTest)

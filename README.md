@@ -17,7 +17,24 @@ ctest --test-dir build --output-on-failure
 
 By default the build produces the Orpheus core libraries, the reference
 `orpheus_minhost` adapter, and the GoogleTest suite. Host-specific adapters
-are opt-in.
+and demo applications are opt-in.
+
+### Standalone Demo Host
+
+To compile the JUCE-based demonstration host, enable the dedicated CMake flag:
+
+```sh
+cmake -S . -B build -DORPHEUS_ENABLE_APP_JUCE_HOST=ON
+cmake --build build --target orpheus_demo_host_app
+```
+
+`OrpheusDemoHost` dynamically loads the Orpheus ABI shared libraries at
+runtime. The menu flow mirrors the demo brief: **File → Open Session…** loads a
+session JSON, **Session → Trigger ClipGrid Scene** negotiates the clip grid,
+and **Session → Render WAV Stems…** writes the rendered stems to disk. The app
+shows the active session summary and requires no DAW or plug-in.
+The executable is produced as `OrpheusDemoHost` (with the usual platform
+extension) inside your build directory.
 
 ### Rendering a Click Track
 
@@ -53,6 +70,7 @@ hosts and build flags.
 
 ```
 ├── adapters/        # Host integrations (minhost CLI, optional REAPER shim)
+├── apps/            # Standalone demo hosts (JUCE demo)
 ├── cmake/           # Helper modules (warnings + third-party deps)
 ├── include/         # Public headers for the Orpheus core library
 ├── src/             # Core library implementation
