@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "json_parser.h"
+#include "orpheus/json.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -9,7 +9,7 @@
 #include <limits>
 #include <stdexcept>
 
-namespace orpheus::core::json {
+namespace orpheus::json {
 
 JsonParser::JsonParser(std::string_view input) : input_(input) {}
 
@@ -368,4 +368,4 @@ std::string EscapeString(const std::string &value) {
   return result;
 }
 
-}  // namespace orpheus::core::json
+}  // namespace orpheus::json

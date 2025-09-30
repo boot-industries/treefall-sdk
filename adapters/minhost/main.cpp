@@ -2,6 +2,7 @@
 #include "json_io.h"
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
+#include "orpheus/json.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -15,7 +16,6 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -29,6 +29,7 @@
 
 namespace fs = std::filesystem;
 namespace session_json = orpheus::core::session_json;
+namespace json = orpheus::json;
 using orpheus::core::SessionGraph;
 
 namespace minhost {
@@ -759,295 +760,8 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
   return 0;
 }
 
-namespace json {
 
-struct Value {
-  enum class Type { kNull, kObject, kArray, kString, kNumber, kBoolean };
 
-  Type type = Type::kNull;
-  double number = 0.0;
-  bool boolean = false;
-  std::string string;
-  std::map<std::string, Value> object;
-  std::vector<Value> array;
-};
-
-class Parser {
- public:
-  explicit Parser(std::string_view input) : input_(input) {}
-
-  Value Parse() {
-    SkipWhitespace();
-    Value value = ParseValue();
-    SkipWhitespace();
-    if (!AtEnd()) {
-      throw std::runtime_error("Unexpected trailing data in JSON");
-    }
-    return value;
-  }
-
- private:
-  bool AtEnd() const { return index_ >= input_.size(); }
-
-  char Peek() const { return AtEnd() ? '\0' : input_[index_]; }
-
-  char Consume() {
-    if (AtEnd()) {
-      throw std::runtime_error("Unexpected end of input");
-    }
-    return input_[index_++];
-  }
-
-  void SkipWhitespace() {
-    while (!AtEnd() && std::isspace(static_cast<unsigned char>(Peek()))) {
-      ++index_;
-    }
-  }
-
-  Value ParseValue() {
-    SkipWhitespace();
-    const char c = Peek();
-    switch (c) {
-      case '{':
-        return ParseObject();
-      case '[':
-        return ParseArray();
-      case '"': {
-        Value value;
-        value.type = Value::Type::kString;
-        value.string = ParseString();
-        return value;
-      }
-      case 't':
-      case 'f': {
-        Value value;
-        value.type = Value::Type::kBoolean;
-        value.boolean = ParseBoolean();
-        return value;
-      }
-      case 'n':
-        ParseNull();
-        return {};
-      default:
-        if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
-          Value value;
-          value.type = Value::Type::kNumber;
-          value.number = ParseNumber();
-          return value;
-        }
-    }
-    throw std::runtime_error("Unsupported JSON token");
-  }
-
-  Value ParseObject() {
-    Value value;
-    value.type = Value::Type::kObject;
-    Consume();
-    SkipWhitespace();
-    if (Peek() == '}') {
-      Consume();
-      return value;
-    }
-    while (true) {
-      SkipWhitespace();
-      if (Peek() != '"') {
-        throw std::runtime_error("JSON object keys must be strings");
-      }
-      const std::string key = ParseString();
-      SkipWhitespace();
-      if (Consume() != ':') {
-        throw std::runtime_error("Expected ':' after object key");
-      }
-      Value element = ParseValue();
-      value.object.emplace(key, std::move(element));
-      SkipWhitespace();
-      const char next = Consume();
-      if (next == '}') {
-        break;
-      }
-      if (next != ',') {
-        throw std::runtime_error("Expected ',' between object elements");
-      }
-    }
-    return value;
-  }
-
-  Value ParseArray() {
-    Value value;
-    value.type = Value::Type::kArray;
-    Consume();
-    SkipWhitespace();
-    if (Peek() == ']') {
-      Consume();
-      return value;
-    }
-    while (true) {
-      Value element = ParseValue();
-      value.array.push_back(std::move(element));
-      SkipWhitespace();
-      const char next = Consume();
-      if (next == ']') {
-        break;
-      }
-      if (next != ',') {
-        throw std::runtime_error("Expected ',' between array elements");
-      }
-      SkipWhitespace();
-    }
-    return value;
-  }
-
-  std::string ParseString() {
-    if (Consume() != '"') {
-      throw std::runtime_error("Expected string opening quote");
-    }
-    std::string result;
-    while (true) {
-      if (AtEnd()) {
-        throw std::runtime_error("Unterminated string literal");
-      }
-      const char c = Consume();
-      if (c == '"') {
-        break;
-      }
-      if (c == '\\') {
-        if (AtEnd()) {
-          throw std::runtime_error("Unterminated escape sequence");
-        }
-        const char esc = Consume();
-        switch (esc) {
-          case '"':
-          case '\\':
-          case '/':
-            result.push_back(esc);
-            break;
-          case 'b':
-            result.push_back('\b');
-            break;
-          case 'f':
-            result.push_back('\f');
-            break;
-          case 'n':
-            result.push_back('\n');
-            break;
-          case 'r':
-            result.push_back('\r');
-            break;
-          case 't':
-            result.push_back('\t');
-            break;
-          case 'u': {
-            unsigned int codepoint = 0;
-            for (int i = 0; i < 4; ++i) {
-              if (AtEnd()) {
-                throw std::runtime_error("Invalid unicode escape");
-              }
-              const char hex = Consume();
-              codepoint <<= 4;
-              if (hex >= '0' && hex <= '9') {
-                codepoint |= static_cast<unsigned int>(hex - '0');
-              } else if (hex >= 'a' && hex <= 'f') {
-                codepoint |= static_cast<unsigned int>(hex - 'a' + 10);
-              } else if (hex >= 'A' && hex <= 'F') {
-                codepoint |= static_cast<unsigned int>(hex - 'A' + 10);
-              } else {
-                throw std::runtime_error("Invalid unicode escape");
-              }
-            }
-            if (codepoint <= 0x7F) {
-              result.push_back(static_cast<char>(codepoint));
-            } else {
-              throw std::runtime_error("Only ASCII unicode escapes supported");
-            }
-            break;
-          }
-          default:
-            throw std::runtime_error("Unsupported escape sequence");
-        }
-      } else {
-        result.push_back(c);
-      }
-    }
-    return result;
-  }
-
-  bool ParseBoolean() {
-    if (input_.substr(index_, 4) == "true") {
-      index_ += 4;
-      return true;
-    }
-    if (input_.substr(index_, 5) == "false") {
-      index_ += 5;
-      return false;
-    }
-    throw std::runtime_error("Invalid boolean literal");
-  }
-
-  void ParseNull() {
-    if (input_.substr(index_, 4) != "null") {
-      throw std::runtime_error("Invalid null literal");
-    }
-    index_ += 4;
-  }
-
-  double ParseNumber() {
-    const std::size_t start = index_;
-    if (Peek() == '-') {
-      ++index_;
-    }
-    if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
-      throw std::runtime_error("Invalid number");
-    }
-    if (Peek() == '0') {
-      ++index_;
-    } else {
-      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
-        ++index_;
-      }
-    }
-    if (Peek() == '.') {
-      ++index_;
-      if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
-        throw std::runtime_error("Invalid fractional part");
-      }
-      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
-        ++index_;
-      }
-    }
-    if (Peek() == 'e' || Peek() == 'E') {
-      ++index_;
-      if (Peek() == '+' || Peek() == '-') {
-        ++index_;
-      }
-      if (!std::isdigit(static_cast<unsigned char>(Peek()))) {
-        throw std::runtime_error("Invalid exponent");
-      }
-      while (std::isdigit(static_cast<unsigned char>(Peek()))) {
-        ++index_;
-      }
-    }
-    const std::string number_string(input_.substr(start, index_ - start));
-    char *end_ptr = nullptr;
-    errno = 0;
-    const double value = std::strtod(number_string.c_str(), &end_ptr);
-    if (errno == ERANGE || end_ptr != number_string.c_str() + number_string.size()) {
-      throw std::runtime_error("Failed to parse number");
-    }
-    return value;
-  }
-
-  std::string_view input_;
-  std::size_t index_ = 0;
-};
-
-const Value &ExpectObject(const Value &value, const char *context) {
-  if (value.type != Value::Type::kObject) {
-    throw std::runtime_error(std::string("Expected object for ") + context);
-  }
-  return value;
-}
-
-}  // namespace json
 
 struct ClickSpecOverrides {
   std::optional<double> tempo_bpm;
@@ -1073,48 +787,48 @@ bool ParseClickSpecOverrides(const fs::path &spec_path, ClickSpecOverrides &over
   buffer << stream.rdbuf();
   const std::string text = buffer.str();
   try {
-    json::Parser parser(text);
-    const json::Value root = parser.Parse();
-    const json::Value &object = json::ExpectObject(root, "click spec");
+    json::JsonParser parser(text);
+    const json::JsonValue root = parser.Parse();
+    const json::JsonValue &object = json::ExpectObject(root, "click spec");
     if (auto it = object.object.find("tempo_bpm"); it != object.object.end() &&
-                                       it->second.type == json::Value::Type::kNumber) {
+                                       it->second.type == json::JsonValue::Type::kNumber) {
       overrides.tempo_bpm = it->second.number;
     }
     if (auto it = object.object.find("bars"); it != object.object.end() &&
-                                    it->second.type == json::Value::Type::kNumber) {
+                                    it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number < 0.0) {
         throw std::runtime_error("bars must be non-negative");
       }
       overrides.bars = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
     if (auto it = object.object.find("sample_rate"); it != object.object.end() &&
-                                           it->second.type == json::Value::Type::kNumber) {
+                                           it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number <= 0.0) {
         throw std::runtime_error("sample_rate must be positive");
       }
       overrides.sample_rate = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
     if (auto it = object.object.find("channels"); it != object.object.end() &&
-                                         it->second.type == json::Value::Type::kNumber) {
+                                         it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number <= 0.0) {
         throw std::runtime_error("channels must be positive");
       }
       overrides.channels = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
     if (auto it = object.object.find("gain"); it != object.object.end() &&
-                                      it->second.type == json::Value::Type::kNumber) {
+                                      it->second.type == json::JsonValue::Type::kNumber) {
       overrides.gain = it->second.number;
     }
     if (auto it = object.object.find("click_frequency_hz");
-        it != object.object.end() && it->second.type == json::Value::Type::kNumber) {
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       overrides.click_frequency_hz = it->second.number;
     }
     if (auto it = object.object.find("click_duration_seconds");
-        it != object.object.end() && it->second.type == json::Value::Type::kNumber) {
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       overrides.click_duration_seconds = it->second.number;
     }
     if (auto it = object.object.find("output_path"); it != object.object.end() &&
-                                            it->second.type == json::Value::Type::kString) {
+                                            it->second.type == json::JsonValue::Type::kString) {
       overrides.output_path = it->second.string;
     }
   } catch (const std::exception &ex) {
@@ -1513,4 +1227,6 @@ int Run(int argc, char **argv) {
 
 }  // namespace minhost
 
+#ifndef ORPHEUS_MINHOST_NO_ENTRYPOINT
 int main(int argc, char **argv) { return minhost::Run(argc, argv); }
+#endif

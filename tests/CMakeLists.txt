@@ -3,6 +3,7 @@ set(ORPHEUS_TEST_SOURCES
   abi_smoke.cpp
   adm_entity_graph.cpp
   render_tracks.cpp
+  json_minhost_bridge_tests.cpp
   session_graph_ownership.cpp
   session_graph_invariants.cpp
   session_graph_scenes.cpp
@@ -34,6 +35,7 @@ target_include_directories(orpheus_tests
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/core
+    ${CMAKE_SOURCE_DIR}/src/core/session
     ${CMAKE_SOURCE_DIR}/adapters/reaper/include
 )
 
