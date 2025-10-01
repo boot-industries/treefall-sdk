@@ -1,8 +1,0 @@
-/*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' data: https://packs.wordbird.app; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;
-
-/packs/*
-  Content-Type: application/octet-stream
-  Content-Encoding: identity
-  X-Content-Type-Options: nosniff
-  Cache-Control: public, max-age=31536000, immutable
