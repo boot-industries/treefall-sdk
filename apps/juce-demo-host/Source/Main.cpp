@@ -32,6 +32,8 @@ namespace reconform = orpheus::core::otio;
 
 namespace {
 
+juce::String DescribeLoaderError();
+
 juce::String StatusToString(orpheus_status status)
 {
     return juce::String(orpheus_status_to_string(status));
