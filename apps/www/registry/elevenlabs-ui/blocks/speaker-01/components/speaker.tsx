@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useEffect, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { Music, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react"
 
@@ -25,10 +25,63 @@ const globalAudioState = {
   isDark: false,
 }
 
+const PlayButton = memo(
+  ({ currentTrackIndex }: { currentTrackIndex: number }) => {
+    const player = useAudioPlayer()
+    return (
+      <AudioPlayerButton
+        variant="outline"
+        size="icon"
+        item={
+          player.activeItem
+            ? {
+                id: exampleTracks[currentTrackIndex].id,
+                src: exampleTracks[currentTrackIndex].url,
+                data: { name: exampleTracks[currentTrackIndex].name },
+              }
+            : undefined
+        }
+        className={cn(
+          "border-border h-14 w-14 rounded-full transition-all duration-300",
+          player.isPlaying
+            ? "bg-foreground/10 hover:bg-foreground/15 border-foreground/30 dark:bg-primary/20 dark:hover:bg-primary/30 dark:border-primary/50"
+            : "bg-background hover:bg-muted"
+        )}
+      />
+    )
+  }
+)
+
+PlayButton.displayName = "PlayButton"
+
+const TimeDisplay = memo(() => {
+  return (
+    <div className="flex items-center gap-2">
+      <AudioPlayerTime className="text-xs" />
+      <AudioPlayerProgress className="flex-1" />
+      <AudioPlayerDuration className="text-xs" />
+    </div>
+  )
+})
+
+TimeDisplay.displayName = "TimeDisplay"
+
+const SpeakerContextBridge = ({ className }: { className?: string }) => {
+  const player = useAudioPlayer()
+  const playerRefStatic = useRef(player)
+
+  playerRefStatic.current = player
+
+  return useMemo(
+    () => <SpeakerControls className={className} playerRef={playerRefStatic} />,
+    [className]
+  )
+}
+
 export function Speaker({ className }: { className?: string }) {
   return (
     <AudioPlayerProvider>
-      <SpeakerControls className={className} />
+      <SpeakerContextBridge className={className} />
     </AudioPlayerProvider>
   )
 }
@@ -38,17 +91,20 @@ const SpeakerOrb = memo(
     seed,
     side,
     isDark,
-    isPlaying,
-    audioData,
+    audioDataRef,
   }: {
     seed: number
     side: "left" | "right"
     isDark: boolean
-    isPlaying: boolean
-    audioData: number[]
+    audioDataRef: React.RefObject<number[]>
   }) => {
     const getInputVolume = useCallback(() => {
-      if (!isPlaying || globalAudioState.volume === 0 || audioData.length === 0)
+      const audioData = audioDataRef?.current || []
+      if (
+        !globalAudioState.isPlaying ||
+        globalAudioState.volume === 0 ||
+        audioData.length === 0
+      )
         return 0
       const lowFreqEnd = Math.floor(audioData.length * 0.25)
       let sum = 0
@@ -58,10 +114,15 @@ const SpeakerOrb = memo(
       const avgLow = sum / lowFreqEnd
       const amplified = Math.pow(avgLow, 0.5) * 3.5
       return Math.max(0.2, Math.min(1.0, amplified))
-    }, [isPlaying, audioData])
+    }, [audioDataRef])
 
     const getOutputVolume = useCallback(() => {
-      if (!isPlaying || globalAudioState.volume === 0 || audioData.length === 0)
+      const audioData = audioDataRef?.current || []
+      if (
+        !globalAudioState.isPlaying ||
+        globalAudioState.volume === 0 ||
+        audioData.length === 0
+      )
         return 0
       const midStart = Math.floor(audioData.length * 0.25)
       const midEnd = Math.floor(audioData.length * 0.75)
@@ -73,11 +134,12 @@ const SpeakerOrb = memo(
       const modifier = side === "left" ? 0.9 : 1.1
       const amplified = Math.pow(avgMid, 0.5) * 4.0
       return Math.max(0.25, Math.min(1.0, amplified * modifier))
-    }, [side, isPlaying, audioData])
+    }, [side, audioDataRef])
 
-    const colors: [string, string] = isDark
-      ? ["#A0A0A0", "#232323"]
-      : ["#F4F4F4", "#E0E0E0"]
+    const colors: [string, string] = useMemo(
+      () => (isDark ? ["#A0A0A0", "#232323"] : ["#F4F4F4", "#E0E0E0"]),
+      [isDark]
+    )
 
     return (
       <Orb
@@ -88,22 +150,148 @@ const SpeakerOrb = memo(
         getOutputVolume={getOutputVolume}
       />
     )
+  },
+  (prevProps, nextProps) => {
+    return (
+      prevProps.isDark === nextProps.isDark &&
+      prevProps.seed === nextProps.seed &&
+      prevProps.side === nextProps.side
+    )
   }
 )
 
 SpeakerOrb.displayName = "SpeakerOrb"
 
-function SpeakerControls({ className }: { className?: string }) {
-  const player = useAudioPlayer()
+const SpeakerOrbsSection = memo(
+  ({
+    isDark,
+    audioDataRef,
+  }: {
+    isDark: boolean
+    audioDataRef: React.RefObject<number[]>
+  }) => {
+    return (
+      <div className="mt-8 grid grid-cols-2 gap-8">
+        <div className="relative aspect-square">
+          <div className="bg-muted relative h-full w-full rounded-full p-1 shadow-[inset_0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]">
+            <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
+              <SpeakerOrb
+                key={`left-${isDark}`}
+                seed={100}
+                side="left"
+                isDark={isDark}
+                audioDataRef={audioDataRef}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="relative aspect-square">
+          <div className="bg-muted relative h-full w-full rounded-full p-1 shadow-[inset_0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]">
+            <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
+              <SpeakerOrb
+                key={`right-${isDark}`}
+                seed={2000}
+                side="right"
+                isDark={isDark}
+                audioDataRef={audioDataRef}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  },
+  (prevProps, nextProps) => {
+    return prevProps.isDark === nextProps.isDark
+  }
+)
+
+SpeakerOrbsSection.displayName = "SpeakerOrbsSection"
+
+const VolumeSlider = memo(
+  ({
+    volume,
+    setVolume,
+  }: {
+    volume: number
+    setVolume: (value: number | ((prev: number) => number)) => void
+  }) => {
+    return (
+      <div className="flex items-center justify-center gap-4 pt-4">
+        <button
+          onClick={() => setVolume((prev: number) => (prev > 0 ? 0 : 0.7))}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Volume2
+            className={cn(
+              "h-4 w-4 transition-all",
+              volume === 0 && "text-muted-foreground/50"
+            )}
+          />
+        </button>
+        <div
+          className="volume-slider bg-foreground/10 group relative h-1 w-48 cursor-pointer rounded-full"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const x = Math.max(
+              0,
+              Math.min(1, (e.clientX - rect.left) / rect.width)
+            )
+            setVolume(x)
+          }}
+          onMouseDown={(e) => {
+            const sliderRect = e.currentTarget.getBoundingClientRect()
+            const handleMove = (e: MouseEvent) => {
+              const x = Math.max(
+                0,
+                Math.min(1, (e.clientX - sliderRect.left) / sliderRect.width)
+              )
+              setVolume(x)
+            }
+            const handleUp = () => {
+              document.removeEventListener("mousemove", handleMove)
+              document.removeEventListener("mouseup", handleUp)
+            }
+            document.addEventListener("mousemove", handleMove)
+            document.addEventListener("mouseup", handleUp)
+          }}
+        >
+          <div
+            className="bg-primary absolute top-0 left-0 h-full rounded-full transition-all"
+            style={{ width: `${volume * 100}%` }}
+          />
+        </div>
+        <span className="text-muted-foreground w-12 text-right font-mono text-xs">
+          {Math.round(volume * 100)}%
+        </span>
+      </div>
+    )
+  }
+)
+
+VolumeSlider.displayName = "VolumeSlider"
+
+function SpeakerControls({
+  className,
+  playerRef,
+}: {
+  className?: string
+  playerRef: React.RefObject<ReturnType<typeof useAudioPlayer>>
+}) {
+  const playerApiRef = playerRef
+  const isPlayingRef = useRef(false)
+
   const [volume, setVolume] = useState(0.7)
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0)
   const [showTrackList, setShowTrackList] = useState(false)
-  const [audioData, setAudioData] = useState<number[]>([])
+  const audioDataRef = useRef<number[]>([])
   const [isDark, setIsDark] = useState(false)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [isMomentumActive, setIsMomentumActive] = useState(false)
   const [precomputedWaveform, setPrecomputedWaveform] = useState<number[]>([])
-  const [waveformOffset, setWaveformOffset] = useState(0)
+  const waveformOffset = useRef(0)
+  const waveformElementRef = useRef<HTMLDivElement>(null)
   const [ambienceMode, setAmbienceMode] = useState(false)
   const containerWidthRef = useRef(300)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -143,18 +331,24 @@ function SpeakerControls({ className }: { className?: string }) {
     if (container) {
       const rect = container.getBoundingClientRect()
       containerWidthRef.current = rect.width
-      setWaveformOffset(rect.width)
+      waveformOffset.current = rect.width
+      if (waveformElementRef.current) {
+        waveformElementRef.current.style.transform = `translateX(${rect.width}px)`
+      }
     }
   }, [])
 
   useEffect(() => {
     if (precomputedWaveform.length > 0 && containerWidthRef.current > 0) {
-      setWaveformOffset(containerWidthRef.current)
-      if (player.ref.current) {
-        player.ref.current.currentTime = 0
+      waveformOffset.current = containerWidthRef.current
+      if (waveformElementRef.current) {
+        waveformElementRef.current.style.transform = `translateX(${containerWidthRef.current}px)`
+      }
+      if (playerApiRef.current.ref.current) {
+        playerApiRef.current.ref.current.currentTime = 0
       }
     }
-  }, [precomputedWaveform, player.ref])
+  }, [precomputedWaveform])
 
   const precomputeWaveform = useCallback(async (audioUrl: string) => {
     try {
@@ -209,9 +403,9 @@ function SpeakerControls({ className }: { className?: string }) {
       src: exampleTracks[0].url,
       data: { name: exampleTracks[0].name },
     }
-    player.setActiveItem(track)
+    playerApiRef.current.setActiveItem(track)
     precomputeWaveform(track.src)
-  }, [])
+  }, [precomputeWaveform])
 
   const createImpulseResponse = (
     audioContext: AudioContext,
@@ -236,174 +430,178 @@ function SpeakerControls({ className }: { className?: string }) {
     return impulse
   }
 
-  const setupAudioContext = useCallback(
-    (ambience: boolean) => {
-      console.log("Setting up audio context, ambience:", ambience)
-      console.log("Player ref:", player.ref.current)
-      console.log("Audio context exists:", !!audioContextRef.current)
-      console.log("Source exists:", !!sourceRef.current)
-      console.log("Wet gain exists:", !!wetGainRef.current)
-      console.log("Dry gain exists:", !!dryGainRef.current)
-
-      if (!player.ref.current) {
-        console.log("Player not ready")
-        return
-      }
-
-      if (
-        audioContextRef.current &&
-        sourceRef.current &&
-        wetGainRef.current &&
-        dryGainRef.current
-      ) {
-        console.log("All audio nodes already exist")
-        return
-      }
-
-      try {
-        let audioContext = audioContextRef.current
-        let source = sourceRef.current
-        let analyser = analyserRef.current
-
-        if (!audioContext) {
-          audioContext = new (window.AudioContext ||
-            (window as unknown as { webkitAudioContext: typeof AudioContext })
-              .webkitAudioContext)()
-          audioContextRef.current = audioContext
-          console.log("Created new audio context")
-        }
-
-        if (audioContext.state === "suspended") {
-          audioContext.resume()
-        }
-
-        if (!source) {
-          source = audioContext.createMediaElementSource(player.ref.current)
-          sourceRef.current = source
-          console.log("Created audio source")
-        }
-
-        if (!analyser) {
-          analyser = audioContext.createAnalyser()
-          analyser.fftSize = 512
-          analyser.smoothingTimeConstant = 0.7
-          analyserRef.current = analyser
-          console.log("Created analyser")
-        }
-
-        console.log("Creating effect nodes...")
-
-        const convolver = audioContext.createConvolver()
-        convolver.buffer = createImpulseResponse(audioContext, 6, 1.5)
-
-        const delay = audioContext.createDelay(2)
-        delay.delayTime.value = 0.001
-
-        const feedback = audioContext.createGain()
-        feedback.gain.value = 0.05
-
-        const lowPassFilter = audioContext.createBiquadFilter()
-        lowPassFilter.type = "lowpass"
-        lowPassFilter.frequency.value = 1500
-        lowPassFilter.Q.value = 0.5
-
-        const highPassFilter = audioContext.createBiquadFilter()
-        highPassFilter.type = "highpass"
-        highPassFilter.frequency.value = 100
-        highPassFilter.Q.value = 0.7
-
-        const wetGain = audioContext.createGain()
-        wetGain.gain.value = ambience ? 0.85 : 0
-
-        const dryGain = audioContext.createGain()
-        dryGain.gain.value = ambience ? 0.4 : 1
-
-        const masterGain = audioContext.createGain()
-        masterGain.gain.value = 1
-
-        const compressor = audioContext.createDynamicsCompressor()
-        compressor.threshold.value = -12
-        compressor.knee.value = 2
-        compressor.ratio.value = 8
-        compressor.attack.value = 0.003
-        compressor.release.value = 0.1
-
-        try {
-          source.disconnect()
-          if (analyserRef.current) analyserRef.current.disconnect()
-        } catch (e) {}
-
-        console.log("Connecting audio graph...")
-
-        source.connect(dryGain)
-        dryGain.connect(masterGain)
-
-        source.connect(highPassFilter)
-        highPassFilter.connect(convolver)
-        convolver.connect(delay)
-
-        delay.connect(feedback)
-        feedback.connect(lowPassFilter)
-        lowPassFilter.connect(delay)
-
-        delay.connect(wetGain)
-        wetGain.connect(masterGain)
-
-        masterGain.connect(compressor)
-        compressor.connect(analyser)
-        analyser.connect(audioContext.destination)
-
-        convolverRef.current = convolver
-        delayRef.current = delay
-        feedbackRef.current = feedback
-        wetGainRef.current = wetGain
-        dryGainRef.current = dryGain
-        masterGainRef.current = masterGain
-        lowPassFilterRef.current = lowPassFilter
-        highPassFilterRef.current = highPassFilter
-
-        console.log(
-          "Audio setup complete! Wet gain:",
-          wetGain.gain.value,
-          "Dry gain:",
-          dryGain.gain.value
-        )
-      } catch (error) {
-        console.error("Error setting up audio context:", error)
-      }
-    },
-    [player.ref]
-  )
-
-  useEffect(() => {
-    globalAudioState.isPlaying = player.isPlaying
-    globalAudioState.isDark = isDark
-
-    if (player.isPlaying && !analyserRef.current) {
-      console.log("Player playing, setting up audio effects...")
-      setTimeout(() => {
-        setupAudioContext(ambienceMode)
-      }, 100)
-    }
-  }, [player.isPlaying, setupAudioContext, isDark, ambienceMode])
-
-  useEffect(() => {
-    if (player.ref.current) {
-      player.ref.current.volume = volume
-    }
-    globalAudioState.volume = volume
-  }, [volume, player.ref])
-
-  useEffect(() => {
-    if (!audioContextRef.current) {
-      console.log("No audio context yet")
+  const setupAudioContext = useCallback((ambience: boolean) => {
+    if (!playerApiRef.current.ref.current) {
       return
     }
 
-    console.log("Ambience mode:", ambienceMode)
-    console.log("Audio context state:", audioContextRef.current.state)
-    console.log("Wet gain ref:", wetGainRef.current)
-    console.log("Dry gain ref:", dryGainRef.current)
+    if (
+      audioContextRef.current &&
+      sourceRef.current &&
+      wetGainRef.current &&
+      dryGainRef.current
+    ) {
+      return
+    }
+
+    try {
+      let audioContext = audioContextRef.current
+      let source = sourceRef.current
+      let analyser = analyserRef.current
+
+      if (!audioContext) {
+        audioContext = new (window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext)()
+        audioContextRef.current = audioContext
+      }
+
+      if (audioContext.state === "suspended") {
+        audioContext.resume()
+      }
+
+      if (!source) {
+        source = audioContext.createMediaElementSource(
+          playerApiRef.current.ref.current
+        )
+        sourceRef.current = source
+      }
+
+      if (!analyser) {
+        analyser = audioContext.createAnalyser()
+        analyser.fftSize = 512
+        analyser.smoothingTimeConstant = 0.7
+        analyserRef.current = analyser
+      }
+
+      const convolver = audioContext.createConvolver()
+      convolver.buffer = createImpulseResponse(audioContext, 6, 1.5)
+
+      const delay = audioContext.createDelay(2)
+      delay.delayTime.value = 0.001
+
+      const feedback = audioContext.createGain()
+      feedback.gain.value = 0.05
+
+      const lowPassFilter = audioContext.createBiquadFilter()
+      lowPassFilter.type = "lowpass"
+      lowPassFilter.frequency.value = 1500
+      lowPassFilter.Q.value = 0.5
+
+      const highPassFilter = audioContext.createBiquadFilter()
+      highPassFilter.type = "highpass"
+      highPassFilter.frequency.value = 100
+      highPassFilter.Q.value = 0.7
+
+      const wetGain = audioContext.createGain()
+      wetGain.gain.value = ambience ? 0.85 : 0
+
+      const dryGain = audioContext.createGain()
+      dryGain.gain.value = ambience ? 0.4 : 1
+
+      const masterGain = audioContext.createGain()
+      masterGain.gain.value = 1
+
+      const compressor = audioContext.createDynamicsCompressor()
+      compressor.threshold.value = -12
+      compressor.knee.value = 2
+      compressor.ratio.value = 8
+      compressor.attack.value = 0.003
+      compressor.release.value = 0.1
+
+      try {
+        source.disconnect()
+        if (analyserRef.current) analyserRef.current.disconnect()
+      } catch (e) {}
+
+      source.connect(dryGain)
+      dryGain.connect(masterGain)
+
+      source.connect(highPassFilter)
+      highPassFilter.connect(convolver)
+      convolver.connect(delay)
+
+      delay.connect(feedback)
+      feedback.connect(lowPassFilter)
+      lowPassFilter.connect(delay)
+
+      delay.connect(wetGain)
+      wetGain.connect(masterGain)
+
+      masterGain.connect(compressor)
+      compressor.connect(analyser)
+      analyser.connect(audioContext.destination)
+
+      convolverRef.current = convolver
+      delayRef.current = delay
+      feedbackRef.current = feedback
+      wetGainRef.current = wetGain
+      dryGainRef.current = dryGain
+      masterGainRef.current = masterGain
+      lowPassFilterRef.current = lowPassFilter
+      highPassFilterRef.current = highPassFilter
+    } catch (error) {
+      console.error("Error setting up audio context:", error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePlay = () => {
+      isPlayingRef.current = true
+      globalAudioState.isPlaying = true
+
+      if (!analyserRef.current) {
+        setTimeout(() => {
+          setupAudioContext(ambienceMode)
+        }, 100)
+      }
+    }
+    const handlePause = () => {
+      isPlayingRef.current = false
+      globalAudioState.isPlaying = false
+    }
+
+    const checkInterval = setInterval(() => {
+      const audioEl = playerApiRef.current.ref.current
+      if (audioEl) {
+        clearInterval(checkInterval)
+
+        audioEl.addEventListener("play", handlePlay)
+        audioEl.addEventListener("pause", handlePause)
+        audioEl.addEventListener("ended", handlePause)
+
+        if (!audioEl.paused) {
+          handlePlay()
+        }
+      }
+    }, 100)
+
+    return () => {
+      clearInterval(checkInterval)
+      const audioEl = playerApiRef.current.ref.current
+      if (audioEl) {
+        audioEl.removeEventListener("play", handlePlay)
+        audioEl.removeEventListener("pause", handlePause)
+        audioEl.removeEventListener("ended", handlePause)
+      }
+    }
+  }, [ambienceMode, setupAudioContext])
+
+  useEffect(() => {
+    globalAudioState.isDark = isDark
+  }, [isDark])
+
+  useEffect(() => {
+    if (playerApiRef.current.ref.current) {
+      playerApiRef.current.ref.current.volume = volume
+    }
+    globalAudioState.volume = volume
+  }, [volume])
+
+  useEffect(() => {
+    if (!audioContextRef.current) {
+      return
+    }
 
     const targetWet = ambienceMode ? 0.7 : 0
     const targetDry = ambienceMode ? 0.5 : 1
@@ -430,12 +628,6 @@ function SpeakerControls({ className }: { className?: string }) {
         targetDry,
         currentTime + 0.5
       )
-
-      console.log("Wet gain target:", targetWet, "Dry gain target:", targetDry)
-      console.log("Current wet value:", wetGainRef.current.gain.value)
-      console.log("Current dry value:", dryGainRef.current.gain.value)
-    } else {
-      console.log("Gain refs not available yet")
     }
 
     if (feedbackRef.current) {
@@ -504,30 +696,41 @@ function SpeakerControls({ className }: { className?: string }) {
   }, [ambienceMode])
 
   useEffect(() => {
-    if (!isScrubbing && !isMomentumActive && player.ref.current) {
+    if (!isScrubbing && !isMomentumActive && playerApiRef.current.ref.current) {
+      let animationId: number
+
       const updatePosition = () => {
-        if (player.ref.current && !isScrubbing && !isMomentumActive) {
-          const duration = player.ref.current.duration
-          const currentTime = player.ref.current.currentTime
+        const audioEl = playerApiRef.current.ref.current
+        if (
+          audioEl &&
+          !isScrubbing &&
+          !isMomentumActive &&
+          waveformElementRef.current
+        ) {
+          const duration = audioEl.duration
+          const currentTime = audioEl.currentTime
           if (!isNaN(duration) && duration > 0) {
             const position = currentTime / duration
             const containerWidth = containerWidthRef.current
             const totalWidth = totalBarsRef.current * 5
-            setWaveformOffset(containerWidth - position * totalWidth)
+            const newOffset = containerWidth - position * totalWidth
+            waveformOffset.current = newOffset
+            waveformElementRef.current.style.transform = `translateX(${newOffset}px)`
           }
         }
+        animationId = requestAnimationFrame(updatePosition)
       }
 
-      const interval = setInterval(updatePosition, 8)
-      return () => clearInterval(interval)
+      animationId = requestAnimationFrame(updatePosition)
+      return () => cancelAnimationFrame(animationId)
     }
-  }, [player.isPlaying, isScrubbing, isMomentumActive, player.ref])
+  }, [isScrubbing, isMomentumActive])
 
   useEffect(() => {
     let animationId: number
 
     const updateWaveform = () => {
-      if (analyserRef.current && player.isPlaying) {
+      if (analyserRef.current && isPlayingRef.current) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
         analyserRef.current.getByteFrequencyData(dataArray)
 
@@ -536,9 +739,9 @@ function SpeakerControls({ className }: { className?: string }) {
           return normalized
         })
 
-        setAudioData(normalizedData)
-      } else if (!player.isPlaying && audioData.length > 0) {
-        setAudioData((prev) => prev.map((v) => v * 0.9))
+        audioDataRef.current = normalizedData
+      } else if (!isPlayingRef.current && audioDataRef.current.length > 0) {
+        audioDataRef.current = audioDataRef.current.map((v) => v * 0.9)
       }
 
       animationId = requestAnimationFrame(updateWaveform)
@@ -551,19 +754,22 @@ function SpeakerControls({ className }: { className?: string }) {
         cancelAnimationFrame(animationId)
       }
     }
-  }, [player.isPlaying, audioData.length])
+  }, [])
 
-  const playTrack = (index: number) => {
-    setCurrentTrackIndex(index)
-    const track = {
-      id: exampleTracks[index].id,
-      src: exampleTracks[index].url,
-      data: { name: exampleTracks[index].name },
-    }
-    player.play(track)
-    setShowTrackList(false)
-    precomputeWaveform(track.src)
-  }
+  const playTrack = useCallback(
+    (index: number) => {
+      setCurrentTrackIndex(index)
+      const track = {
+        id: exampleTracks[index].id,
+        src: exampleTracks[index].url,
+        data: { name: exampleTracks[index].name },
+      }
+      playerApiRef.current.play(track)
+      setShowTrackList(false)
+      precomputeWaveform(track.src)
+    },
+    [precomputeWaveform]
+  )
 
   const nextTrack = () => {
     const nextIndex = (currentTrackIndex + 1) % exampleTracks.length
@@ -584,7 +790,6 @@ function SpeakerControls({ className }: { className?: string }) {
       audioContextRef.current = audioContext
     }
 
-    // Resume audio context if suspended (required on mobile)
     if (audioContextRef.current.state === "suspended") {
       audioContextRef.current.resume()
     }
@@ -696,10 +901,10 @@ function SpeakerControls({ className }: { className?: string }) {
                 e.preventDefault()
                 setIsScrubbing(true)
 
-                const wasPlaying = player.isPlaying
+                const wasPlaying = isPlayingRef.current
 
-                if (player.isPlaying) {
-                  player.pause()
+                if (isPlayingRef.current) {
+                  playerApiRef.current.pause()
                 }
 
                 const rect = e.currentTarget.getBoundingClientRect()
@@ -707,7 +912,7 @@ function SpeakerControls({ className }: { className?: string }) {
                 const containerWidth = rect.width
                 containerWidthRef.current = containerWidth
                 const totalWidth = totalBarsRef.current * 5
-                const currentOffset = waveformOffset
+                const currentOffset = waveformOffset.current
                 let lastTouchX = startX
                 let lastScratchTime = 0
                 const scratchThrottle = 10
@@ -727,19 +932,19 @@ function SpeakerControls({ className }: { className?: string }) {
                     minOffset,
                     Math.min(maxOffset, newOffset)
                   )
-                  setWaveformOffset(clampedOffset)
+                  waveformOffset.current = clampedOffset
+                  if (waveformElementRef.current) {
+                    waveformElementRef.current.style.transform = `translateX(${clampedOffset}px)`
+                  }
 
                   const position = Math.max(
                     0,
                     Math.min(1, (containerWidth - clampedOffset) / totalWidth)
                   )
 
-                  if (
-                    player.ref.current &&
-                    !isNaN(player.ref.current.duration)
-                  ) {
-                    player.ref.current.currentTime =
-                      position * player.ref.current.duration
+                  const audioEl = playerApiRef.current.ref.current
+                  if (audioEl && !isNaN(audioEl.duration)) {
+                    audioEl.currentTime = position * audioEl.duration
                   }
 
                   const now = Date.now()
@@ -770,7 +975,7 @@ function SpeakerControls({ className }: { className?: string }) {
 
                   if (Math.abs(velocity) > 0.1) {
                     setIsMomentumActive(true)
-                    let momentumOffset = waveformOffset
+                    let momentumOffset = waveformOffset.current
                     let currentVelocity = velocity * 15
                     const friction = 0.92
                     const minVelocity = 0.5
@@ -794,7 +999,10 @@ function SpeakerControls({ className }: { className?: string }) {
                         }
 
                         momentumOffset = clampedOffset
-                        setWaveformOffset(clampedOffset)
+                        waveformOffset.current = clampedOffset
+                        if (waveformElementRef.current) {
+                          waveformElementRef.current.style.transform = `translateX(${clampedOffset}px)`
+                        }
 
                         const position = Math.max(
                           0,
@@ -804,12 +1012,9 @@ function SpeakerControls({ className }: { className?: string }) {
                           )
                         )
 
-                        if (
-                          player.ref.current &&
-                          !isNaN(player.ref.current.duration)
-                        ) {
-                          player.ref.current.currentTime =
-                            position * player.ref.current.duration
+                        const audioEl2 = playerApiRef.current.ref.current
+                        if (audioEl2 && !isNaN(audioEl2.duration)) {
+                          audioEl2.currentTime = position * audioEl2.duration
                         }
 
                         const now = Date.now()
@@ -830,7 +1035,7 @@ function SpeakerControls({ className }: { className?: string }) {
                         setIsMomentumActive(false)
                         if (wasPlaying) {
                           setTimeout(() => {
-                            player.play()
+                            playerApiRef.current.play()
                           }, 10)
                         }
                       }
@@ -839,7 +1044,7 @@ function SpeakerControls({ className }: { className?: string }) {
                     requestAnimationFrame(animateMomentum)
                   } else {
                     if (wasPlaying) {
-                      player.play()
+                      playerApiRef.current.play()
                     }
                   }
 
@@ -854,10 +1059,10 @@ function SpeakerControls({ className }: { className?: string }) {
                 e.preventDefault()
                 setIsScrubbing(true)
 
-                const wasPlaying = player.isPlaying
+                const wasPlaying = isPlayingRef.current
 
-                if (player.isPlaying) {
-                  player.pause()
+                if (isPlayingRef.current) {
+                  playerApiRef.current.pause()
                 }
 
                 const rect = e.currentTarget.getBoundingClientRect()
@@ -865,7 +1070,7 @@ function SpeakerControls({ className }: { className?: string }) {
                 const containerWidth = rect.width
                 containerWidthRef.current = containerWidth
                 const totalWidth = totalBarsRef.current * 5
-                const currentOffset = waveformOffset
+                const currentOffset = waveformOffset.current
                 let lastMouseX = startX
                 let lastScratchTime = 0
                 const scratchThrottle = 10
@@ -884,19 +1089,19 @@ function SpeakerControls({ className }: { className?: string }) {
                     minOffset,
                     Math.min(maxOffset, newOffset)
                   )
-                  setWaveformOffset(clampedOffset)
+                  waveformOffset.current = clampedOffset
+                  if (waveformElementRef.current) {
+                    waveformElementRef.current.style.transform = `translateX(${clampedOffset}px)`
+                  }
 
                   const position = Math.max(
                     0,
                     Math.min(1, (containerWidth - clampedOffset) / totalWidth)
                   )
 
-                  if (
-                    player.ref.current &&
-                    !isNaN(player.ref.current.duration)
-                  ) {
-                    player.ref.current.currentTime =
-                      position * player.ref.current.duration
+                  const audioEl = playerApiRef.current.ref.current
+                  if (audioEl && !isNaN(audioEl.duration)) {
+                    audioEl.currentTime = position * audioEl.duration
                   }
 
                   const now = Date.now()
@@ -927,7 +1132,7 @@ function SpeakerControls({ className }: { className?: string }) {
 
                   if (Math.abs(velocity) > 0.1) {
                     setIsMomentumActive(true)
-                    let momentumOffset = waveformOffset
+                    let momentumOffset = waveformOffset.current
                     let currentVelocity = velocity * 15
                     const friction = 0.92
                     const minVelocity = 0.5
@@ -951,7 +1156,10 @@ function SpeakerControls({ className }: { className?: string }) {
                         }
 
                         momentumOffset = clampedOffset
-                        setWaveformOffset(clampedOffset)
+                        waveformOffset.current = clampedOffset
+                        if (waveformElementRef.current) {
+                          waveformElementRef.current.style.transform = `translateX(${clampedOffset}px)`
+                        }
 
                         const position = Math.max(
                           0,
@@ -961,12 +1169,9 @@ function SpeakerControls({ className }: { className?: string }) {
                           )
                         )
 
-                        if (
-                          player.ref.current &&
-                          !isNaN(player.ref.current.duration)
-                        ) {
-                          player.ref.current.currentTime =
-                            position * player.ref.current.duration
+                        const audioEl2 = playerApiRef.current.ref.current
+                        if (audioEl2 && !isNaN(audioEl2.duration)) {
+                          audioEl2.currentTime = position * audioEl2.duration
                         }
 
                         const now = Date.now()
@@ -987,7 +1192,7 @@ function SpeakerControls({ className }: { className?: string }) {
                         setIsMomentumActive(false)
                         if (wasPlaying) {
                           setTimeout(() => {
-                            player.play()
+                            playerApiRef.current.play()
                           }, 10)
                         }
                       }
@@ -996,7 +1201,7 @@ function SpeakerControls({ className }: { className?: string }) {
                     requestAnimationFrame(animateMomentum)
                   } else {
                     if (wasPlaying) {
-                      player.play()
+                      playerApiRef.current.play()
                     }
                   }
 
@@ -1010,8 +1215,9 @@ function SpeakerControls({ className }: { className?: string }) {
             >
               <div className="relative h-full w-full overflow-hidden">
                 <div
+                  ref={waveformElementRef}
                   style={{
-                    transform: `translateX(${waveformOffset}px)`,
+                    transform: `translateX(${waveformOffset.current}px)`,
                     transition:
                       isScrubbing || isMomentumActive
                         ? "none"
@@ -1026,7 +1232,7 @@ function SpeakerControls({ className }: { className?: string }) {
                     data={
                       precomputedWaveform.length > 0
                         ? precomputedWaveform
-                        : audioData
+                        : audioDataRef.current
                     }
                     height={32}
                     barWidth={3}
@@ -1040,11 +1246,7 @@ function SpeakerControls({ className }: { className?: string }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <AudioPlayerTime className="text-xs" />
-              <AudioPlayerProgress className="flex-1" />
-              <AudioPlayerDuration className="text-xs" />
-            </div>
+            <TimeDisplay />
           </div>
         </div>
 
@@ -1092,25 +1294,7 @@ function SpeakerControls({ className }: { className?: string }) {
             <SkipBack className="text-muted-foreground h-4 w-4" />
           </Button>
 
-          <AudioPlayerButton
-            variant="outline"
-            size="icon"
-            item={
-              player.activeItem
-                ? {
-                    id: exampleTracks[currentTrackIndex].id,
-                    src: exampleTracks[currentTrackIndex].url,
-                    data: { name: exampleTracks[currentTrackIndex].name },
-                  }
-                : undefined
-            }
-            className={cn(
-              "border-border h-14 w-14 rounded-full transition-all duration-300",
-              player.isPlaying
-                ? "bg-foreground/10 hover:bg-foreground/15 border-foreground/30 dark:bg-primary/20 dark:hover:bg-primary/30 dark:border-primary/50"
-                : "bg-background hover:bg-muted"
-            )}
-          />
+          <PlayButton currentTrackIndex={currentTrackIndex} />
 
           <Button
             variant="outline"
@@ -1122,86 +1306,9 @@ function SpeakerControls({ className }: { className?: string }) {
           </Button>
         </div>
 
-        <div className="mt-8 grid grid-cols-2 gap-8">
-          <div className="relative aspect-square">
-            <div className="bg-muted relative h-full w-full rounded-full p-1 shadow-[inset_0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]">
-              <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
-                <SpeakerOrb
-                  key={`left-${isDark}`}
-                  seed={100}
-                  side="left"
-                  isDark={isDark}
-                  isPlaying={player.isPlaying}
-                  audioData={audioData}
-                />
-              </div>
-            </div>
-          </div>
+        <SpeakerOrbsSection isDark={isDark} audioDataRef={audioDataRef} />
 
-          <div className="relative aspect-square">
-            <div className="bg-muted relative h-full w-full rounded-full p-1 shadow-[inset_0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)]">
-              <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
-                <SpeakerOrb
-                  key={`right-${isDark}`}
-                  seed={2000}
-                  side="right"
-                  isDark={isDark}
-                  isPlaying={player.isPlaying}
-                  audioData={audioData}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <button
-            onClick={() => setVolume((prev) => (prev > 0 ? 0 : 0.7))}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Volume2
-              className={cn(
-                "h-4 w-4 transition-all",
-                volume === 0 && "text-muted-foreground/50"
-              )}
-            />
-          </button>
-          <div
-            className="volume-slider bg-foreground/10 group relative h-1 w-48 cursor-pointer rounded-full"
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect()
-              const x = Math.max(
-                0,
-                Math.min(1, (e.clientX - rect.left) / rect.width)
-              )
-              setVolume(x)
-            }}
-            onMouseDown={(e) => {
-              const sliderRect = e.currentTarget.getBoundingClientRect()
-              const handleMove = (e: MouseEvent) => {
-                const x = Math.max(
-                  0,
-                  Math.min(1, (e.clientX - sliderRect.left) / sliderRect.width)
-                )
-                setVolume(x)
-              }
-              const handleUp = () => {
-                document.removeEventListener("mousemove", handleMove)
-                document.removeEventListener("mouseup", handleUp)
-              }
-              document.addEventListener("mousemove", handleMove)
-              document.addEventListener("mouseup", handleUp)
-            }}
-          >
-            <div
-              className="bg-primary absolute top-0 left-0 h-full rounded-full transition-all"
-              style={{ width: `${volume * 100}%` }}
-            />
-          </div>
-          <span className="text-muted-foreground w-12 text-right font-mono text-xs">
-            {Math.round(volume * 100)}%
-          </span>
-        </div>
+        <VolumeSlider volume={volume} setVolume={setVolume} />
       </div>
     </Card>
   )
