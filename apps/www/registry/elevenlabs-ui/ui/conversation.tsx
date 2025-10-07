@@ -32,8 +32,8 @@ export const ConversationContent = ({
 )
 
 export type ConversationEmptyStateProps = ComponentProps<"div"> & {
-  title?: string
-  description?: string
+  title?: React.ReactNode
+  description?: React.ReactNode
   icon?: React.ReactNode
 }
 

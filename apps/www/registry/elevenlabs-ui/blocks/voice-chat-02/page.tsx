@@ -70,6 +70,16 @@ export default function Page() {
   const isTransitioning =
     agentState === "connecting" || agentState === "disconnecting"
 
+  const getInputVolume = useCallback(() => {
+    const rawValue = conversation.getInputVolume?.() ?? 0
+    return Math.min(1.0, Math.pow(rawValue, 0.5) * 2.5)
+  }, [conversation])
+
+  const getOutputVolume = useCallback(() => {
+    const rawValue = conversation.getOutputVolume?.() ?? 0
+    return Math.min(1.0, Math.pow(rawValue, 0.5) * 2.5)
+  }, [conversation])
+
   return (
     <Card className="flex h-[400px] w-full flex-col items-center justify-center overflow-hidden p-6">
       <div className="flex flex-col items-center gap-6">
@@ -78,8 +88,9 @@ export default function Page() {
             <div className="bg-background h-full w-full overflow-hidden rounded-full shadow-[inset_0_0_12px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_12px_rgba(0,0,0,0.3)]">
               <Orb
                 className="h-full w-full"
-                getInputVolume={conversation.getInputVolume}
-                getOutputVolume={conversation.getOutputVolume}
+                volumeMode="manual"
+                getInputVolume={getInputVolume}
+                getOutputVolume={getOutputVolume}
               />
             </div>
           </div>

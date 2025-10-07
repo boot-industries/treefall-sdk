@@ -179,8 +179,12 @@ function Scene({
     let targetIn = 0
     let targetOut = 0.3
     if (modeRef.current === "manual") {
-      targetIn = manualInRef.current
-      targetOut = manualOutRef.current
+      targetIn = clamp01(
+        manualInput ?? inputVolumeRef?.current ?? getInputVolume?.() ?? 0
+      )
+      targetOut = clamp01(
+        manualOutput ?? outputVolumeRef?.current ?? getOutputVolume?.() ?? 0
+      )
     } else {
       const t = u.uTime.value * 2
       if (agentRef.current === null) {

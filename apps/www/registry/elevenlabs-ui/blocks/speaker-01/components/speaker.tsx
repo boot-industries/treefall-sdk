@@ -83,6 +83,7 @@ const SpeakerOrb = memo(
       <Orb
         colors={colors}
         seed={seed}
+        volumeMode="manual"
         getInputVolume={getInputVolume}
         getOutputVolume={getOutputVolume}
       />

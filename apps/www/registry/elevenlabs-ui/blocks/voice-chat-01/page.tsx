@@ -207,7 +207,7 @@ export default function Page() {
       setAgentState("connecting")
       try {
         await startConversation(false)
-      } catch (error) {
+      } catch {
         setAgentState("disconnected")
       }
     } else if (agentState === "connected") {
@@ -284,6 +284,16 @@ export default function Page() {
   const isTransitioning =
     agentState === "connecting" || agentState === "disconnecting"
 
+  const getInputVolume = useCallback(() => {
+    const rawValue = conversation.getInputVolume?.() ?? 0
+    return Math.min(1.0, Math.pow(rawValue, 0.5) * 2.5)
+  }, [conversation])
+
+  const getOutputVolume = useCallback(() => {
+    const rawValue = conversation.getOutputVolume?.() ?? 0
+    return Math.min(1.0, Math.pow(rawValue, 0.5) * 2.5)
+  }, [conversation])
+
   return (
     <Card
       className={cn(
@@ -295,7 +305,9 @@ export default function Page() {
           <div className="ring-border relative size-10 overflow-hidden rounded-full ring-1">
             <Orb
               className="h-full w-full"
-              agentState={agentState === "connected" ? "talking" : null}
+              volumeMode="manual"
+              getInputVolume={getInputVolume}
+              getOutputVolume={getOutputVolume}
             />
           </div>
           <div className="flex flex-col gap-0.5">
