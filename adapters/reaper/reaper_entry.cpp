@@ -29,9 +29,9 @@ const orpheus_session_api_v1 *SessionAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
   const auto *api =
-      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
-      minor != ORPHEUS_ABI_V1_MINOR) {
+      orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
+      minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;
@@ -41,9 +41,9 @@ const orpheus_clipgrid_api_v1 *ClipgridAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
   const auto *api =
-      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
-      minor != ORPHEUS_ABI_V1_MINOR) {
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
+      minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;
@@ -53,9 +53,9 @@ const orpheus_render_api_v1 *RenderAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
   const auto *api =
-      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_V1_MAJOR ||
-      minor != ORPHEUS_ABI_V1_MINOR) {
+      orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
+      minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;

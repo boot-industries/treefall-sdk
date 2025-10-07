@@ -164,27 +164,27 @@ TEST(RenderTracks, GeneratesSineStemsWithDitheredQuantization) {
   uint32_t session_major = 0;
   uint32_t session_minor = 0;
   const auto *session_api =
-      orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &session_major,
+      orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &session_major,
                              &session_minor);
   ASSERT_NE(session_api, nullptr);
-  ASSERT_EQ(session_major, ORPHEUS_ABI_V1_MAJOR);
-  ASSERT_EQ(session_minor, ORPHEUS_ABI_V1_MINOR);
+  ASSERT_EQ(session_major, ORPHEUS_ABI_MAJOR);
+  ASSERT_EQ(session_minor, ORPHEUS_ABI_MINOR);
 
   uint32_t clip_major = 0;
   uint32_t clip_minor = 0;
   const auto *clipgrid_api =
-      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &clip_major, &clip_minor);
+      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &clip_major, &clip_minor);
   ASSERT_NE(clipgrid_api, nullptr);
-  ASSERT_EQ(clip_major, ORPHEUS_ABI_V1_MAJOR);
-  ASSERT_EQ(clip_minor, ORPHEUS_ABI_V1_MINOR);
+  ASSERT_EQ(clip_major, ORPHEUS_ABI_MAJOR);
+  ASSERT_EQ(clip_minor, ORPHEUS_ABI_MINOR);
 
   uint32_t render_major = 0;
   uint32_t render_minor = 0;
   const auto *render_api =
-      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &render_major, &render_minor);
+      orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &render_major, &render_minor);
   ASSERT_NE(render_api, nullptr);
-  ASSERT_EQ(render_major, ORPHEUS_ABI_V1_MAJOR);
-  ASSERT_EQ(render_minor, ORPHEUS_ABI_V1_MINOR);
+  ASSERT_EQ(render_major, ORPHEUS_ABI_MAJOR);
+  ASSERT_EQ(render_minor, ORPHEUS_ABI_MINOR);
 
   orpheus_session_handle session_handle{};
   ASSERT_EQ(session_api->create(&session_handle), ORPHEUS_STATUS_OK);

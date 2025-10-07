@@ -237,8 +237,8 @@ public:
                 auto fn = reinterpret_cast<const orpheus_session_api_v1*(*) (uint32_t, uint32_t*, uint32_t*)>(symbol);
                 uint32_t major{};
                 uint32_t minor{};
-                tables_.session = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-                if (tables_.session == nullptr || major != ORPHEUS_ABI_V1_MAJOR)
+                tables_.session = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
+                if (tables_.session == nullptr || major != ORPHEUS_ABI_MAJOR)
                 {
                     error = "Session ABI negotiation failed";
                     unload();
@@ -250,8 +250,8 @@ public:
                 auto fn = reinterpret_cast<const orpheus_clipgrid_api_v1*(*) (uint32_t, uint32_t*, uint32_t*)>(symbol);
                 uint32_t major{};
                 uint32_t minor{};
-                tables_.clipgrid = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-                if (tables_.clipgrid == nullptr || major != ORPHEUS_ABI_V1_MAJOR)
+                tables_.clipgrid = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
+                if (tables_.clipgrid == nullptr || major != ORPHEUS_ABI_MAJOR)
                 {
                     error = "ClipGrid ABI negotiation failed";
                     unload();
@@ -263,8 +263,8 @@ public:
                 auto fn = reinterpret_cast<const orpheus_render_api_v1*(*) (uint32_t, uint32_t*, uint32_t*)>(symbol);
                 uint32_t major{};
                 uint32_t minor{};
-                tables_.render = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
-                if (tables_.render == nullptr || major != ORPHEUS_ABI_V1_MAJOR)
+                tables_.render = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
+                if (tables_.render == nullptr || major != ORPHEUS_ABI_MAJOR)
                 {
                     error = "Render ABI negotiation failed";
                     unload();

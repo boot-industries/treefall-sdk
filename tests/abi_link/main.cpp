@@ -164,7 +164,7 @@ int main() {
             uint32_t, uint32_t *, uint32_t *)>(symbol);
         uint32_t major = 0;
         uint32_t minor = 0;
-        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        const auto *abi = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
         if (abi == nullptr) {
           throw std::runtime_error("Session ABI negotiation returned null");
         }
@@ -176,7 +176,7 @@ int main() {
             uint32_t, uint32_t *, uint32_t *)>(symbol);
         uint32_t major = 0;
         uint32_t minor = 0;
-        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        const auto *abi = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
         if (abi == nullptr) {
           throw std::runtime_error("Clipgrid ABI negotiation returned null");
         }
@@ -188,7 +188,7 @@ int main() {
             uint32_t, uint32_t *, uint32_t *)>(symbol);
         uint32_t major = 0;
         uint32_t minor = 0;
-        const auto *abi = fn(ORPHEUS_ABI_V1_MAJOR, &major, &minor);
+        const auto *abi = fn(ORPHEUS_ABI_MAJOR, &major, &minor);
         if (abi == nullptr) {
           throw std::runtime_error("Render ABI negotiation returned null");
         }

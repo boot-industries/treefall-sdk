@@ -90,12 +90,14 @@ const orpheus_session_api_v1 kSessionApiV1{
 extern "C" ORPHEUS_API const orpheus_session_api_v1 *
 orpheus_session_abi_v1(uint32_t want_major, uint32_t *got_major,
                        uint32_t *got_minor) {
-  (void)want_major;
   if (got_major != nullptr) {
-    *got_major = ORPHEUS_ABI_V1_MAJOR;
+    *got_major = ORPHEUS_ABI_MAJOR;
   }
   if (got_minor != nullptr) {
-    *got_minor = ORPHEUS_ABI_V1_MINOR;
+    *got_minor = ORPHEUS_ABI_MINOR;
+  }
+  if (want_major != ORPHEUS_ABI_MAJOR) {
+    return nullptr;
   }
   return &kSessionApiV1;
 }

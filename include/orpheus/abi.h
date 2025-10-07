@@ -141,12 +141,9 @@ namespace orpheus {
 
 using AbiVersion = orpheus_abi_version;
 
-inline constexpr AbiVersion kSessionAbi{ORPHEUS_ABI_V1_MAJOR,
-                                        ORPHEUS_ABI_V1_MINOR};
-inline constexpr AbiVersion kClipgridAbi{ORPHEUS_ABI_V1_MAJOR,
-                                         ORPHEUS_ABI_V1_MINOR};
-inline constexpr AbiVersion kRenderAbi{ORPHEUS_ABI_V1_MAJOR,
-                                       ORPHEUS_ABI_V1_MINOR};
+inline constexpr AbiVersion kSessionAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
+inline constexpr AbiVersion kClipgridAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
+inline constexpr AbiVersion kRenderAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
 
 inline std::string ToString(const AbiVersion &version) {
   return std::to_string(version.major) + "." + std::to_string(version.minor);

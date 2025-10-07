@@ -16,9 +16,9 @@ int main() {
   uint32_t got_major = 0;
   uint32_t got_minor = 0;
   const auto *render =
-      orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &got_major, &got_minor);
-  if (render == nullptr || got_major != ORPHEUS_ABI_V1_MAJOR ||
-      got_minor != ORPHEUS_ABI_V1_MINOR) {
+      orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &got_major, &got_minor);
+  if (render == nullptr || got_major != ORPHEUS_ABI_MAJOR ||
+      got_minor != ORPHEUS_ABI_MINOR) {
     std::cerr << "render ABI unavailable" << std::endl;
     return 1;
   }

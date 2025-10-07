@@ -195,31 +195,31 @@ void PrintNegotiationSummary(const AbiContext &abi) {
               << minor << (ok ? " ✅" : " ❌") << std::endl;
   };
   print_entry("session", abi.session_major, abi.session_minor,
-              abi.session_api != nullptr && abi.session_major == ORPHEUS_ABI_V1_MAJOR &&
-                  abi.session_minor == ORPHEUS_ABI_V1_MINOR);
+              abi.session_api != nullptr && abi.session_major == ORPHEUS_ABI_MAJOR &&
+                  abi.session_minor == ORPHEUS_ABI_MINOR);
   print_entry("clipgrid", abi.clip_major, abi.clip_minor,
-              abi.clipgrid_api != nullptr && abi.clip_major == ORPHEUS_ABI_V1_MAJOR &&
-                  abi.clip_minor == ORPHEUS_ABI_V1_MINOR);
+              abi.clipgrid_api != nullptr && abi.clip_major == ORPHEUS_ABI_MAJOR &&
+                  abi.clip_minor == ORPHEUS_ABI_MINOR);
   print_entry("render", abi.render_major, abi.render_minor,
-              abi.render_api != nullptr && abi.render_major == ORPHEUS_ABI_V1_MAJOR &&
-                  abi.render_minor == ORPHEUS_ABI_V1_MINOR);
+              abi.render_api != nullptr && abi.render_major == ORPHEUS_ABI_MAJOR &&
+                  abi.render_minor == ORPHEUS_ABI_MINOR);
 }
 
 bool NegotiateApis(AbiContext &abi, ErrorInfo &error) {
-  abi.session_api = orpheus_session_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.session_major,
+  abi.session_api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &abi.session_major,
                                            &abi.session_minor);
-  abi.clipgrid_api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.clip_major,
+  abi.clipgrid_api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &abi.clip_major,
                                              &abi.clip_minor);
-  abi.render_api = orpheus_render_abi_v1(ORPHEUS_ABI_V1_MAJOR, &abi.render_major,
+  abi.render_api = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &abi.render_major,
                                          &abi.render_minor);
   PrintNegotiationSummary(abi);
   if (!abi.session_api || !abi.clipgrid_api || !abi.render_api ||
-      abi.session_major != ORPHEUS_ABI_V1_MAJOR ||
-      abi.clip_major != ORPHEUS_ABI_V1_MAJOR ||
-      abi.render_major != ORPHEUS_ABI_V1_MAJOR ||
-      abi.session_minor != ORPHEUS_ABI_V1_MINOR ||
-      abi.clip_minor != ORPHEUS_ABI_V1_MINOR ||
-      abi.render_minor != ORPHEUS_ABI_V1_MINOR) {
+      abi.session_major != ORPHEUS_ABI_MAJOR ||
+      abi.clip_major != ORPHEUS_ABI_MAJOR ||
+      abi.render_major != ORPHEUS_ABI_MAJOR ||
+      abi.session_minor != ORPHEUS_ABI_MINOR ||
+      abi.clip_minor != ORPHEUS_ABI_MINOR ||
+      abi.render_minor != ORPHEUS_ABI_MINOR) {
     error.code = "abi.negotiation";
     error.message = "ABI negotiation failed";
     return false;
