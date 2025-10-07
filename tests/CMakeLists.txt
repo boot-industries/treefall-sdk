@@ -8,6 +8,8 @@ set(ORPHEUS_TEST_SOURCES
   session_graph_invariants.cpp
   session_graph_scenes.cpp
   session_roundtrip.cpp
+  session_api.cpp
+  filename_rules.cpp
   otio_reconform_plan.cpp
 )
 
@@ -21,6 +23,11 @@ target_link_libraries(orpheus_tests
   PRIVATE
     Orpheus::core
     GTest::gtest_main
+)
+
+target_compile_definitions(orpheus_tests
+  PRIVATE
+    ORPHEUS_SESSION_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/session"
 )
 
 if(TARGET reaper_orpheus)

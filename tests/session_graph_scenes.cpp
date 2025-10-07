@@ -67,8 +67,8 @@ TEST(SessionGraphScenes, ArrangementCommitOrdersScenesAndTracks) {
 
   Clip *a1 = session.add_clip(*a, "A1", 0.0, 1.5);
   Clip *b1 = session.add_clip(*b, "B1", 0.0, 1.0);
-  Clip *a2 = session.add_clip(*a, "A2", 0.0, 1.0);
-  Clip *b2 = session.add_clip(*b, "B2", 0.0, 0.5);
+  Clip *a2 = session.add_clip(*a, "A2", 2.0, 1.0);
+  Clip *b2 = session.add_clip(*b, "B2", 2.0, 0.5);
 
   ASSERT_NE(a1, nullptr);
   ASSERT_NE(b1, nullptr);

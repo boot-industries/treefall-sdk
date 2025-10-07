@@ -67,8 +67,12 @@ class ORPHEUS_API Track {
   void sort_clips();
 
  private:
+  void validate_clip_layout() const;
+
   std::string name_;
   std::vector<std::unique_ptr<Clip>> clips_;
+
+  friend class SessionGraph;
 };
 
 class ORPHEUS_API MarkerSet {
@@ -242,6 +246,7 @@ class ORPHEUS_API SessionGraph {
 
  private:
   Track *find_track(const Track *track);
+  Track *find_clip_track(const Clip *clip);
   Clip *find_clip(const Clip *clip);
   void mark_clip_grid_dirty() { clip_grid_dirty_ = true; }
   void update_session_range_from_commits();

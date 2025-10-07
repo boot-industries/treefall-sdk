@@ -1,0 +1,40 @@
+{
+  "name": "Solo Click",
+  "tempo_bpm": 120,
+  "start_beats": 0,
+  "end_beats": 16,
+  "render": {
+    "sample_rate_hz": 48000,
+    "bit_depth": 24,
+    "dither": true
+  },
+  "marker_sets": [
+    {
+      "name": "Guide",
+      "markers": [
+        {
+          "name": "Count-in",
+          "position_beats": 0
+        }
+      ]
+    }
+  ],
+  "playlist_lanes": [
+    {
+      "name": "Main",
+      "is_active": true
+    }
+  ],
+  "tracks": [
+    {
+      "name": "Click",
+      "clips": [
+        {
+          "name": "metronome",
+          "start_beats": 0,
+          "length_beats": 16
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ namespace orpheus::core {
 
 namespace {
 constexpr double kMinimumLengthBeats = 1e-6;
+constexpr double kClipOrderingTolerance = 1e-9;
 }
 
 Clip::Clip(std::string name, double start_beats, double length_beats,
@@ -34,10 +35,18 @@ Track::Track(std::string name) : name_(std::move(name)) {}
 
 Clip *Track::add_clip(std::string name, double start_beats, double length_beats,
                       std::uint32_t scene_index) {
-  auto &slot = clips_.emplace_back(
-      std::make_unique<Clip>(std::move(name), start_beats, length_beats,
-                             scene_index));
-  return slot.get();
+  auto clip = std::make_unique<Clip>(std::move(name), start_beats, length_beats,
+                                     scene_index);
+  Clip *raw = clip.get();
+  clips_.push_back(std::move(clip));
+  sort_clips();
+  try {
+    validate_clip_layout();
+  } catch (...) {
+    remove_clip(raw);
+    throw;
+  }
+  return raw;
 }
 
 bool Track::remove_clip(const Clip *clip) {
@@ -74,6 +83,25 @@ void Track::sort_clips() {
               }
               return lhs->name() < rhs->name();
             });
+}
+
+void Track::validate_clip_layout() const {
+  if (clips_.empty()) {
+    return;
+  }
+  for (std::size_t index = 1; index < clips_.size(); ++index) {
+    const Clip &previous = *clips_[index - 1];
+    const Clip &current = *clips_[index];
+    if (current.start() + kClipOrderingTolerance < previous.start()) {
+      throw std::invalid_argument("Clips on track \"" + name_ +
+                                  "\" must be sorted by start time");
+    }
+    const double previous_end = previous.start() + previous.length();
+    if (previous_end > current.start() + kClipOrderingTolerance) {
+      throw std::invalid_argument("Clips on track \"" + name_ +
+                                  "\" must not overlap");
+    }
+  }
 }
 
 MarkerSet::MarkerSet(std::string name) : name_(std::move(name)) {}
@@ -215,20 +243,38 @@ bool SessionGraph::remove_clip(const Clip *clip) {
 }
 
 void SessionGraph::set_clip_start(Clip &clip, double start_beats) {
-  Clip *target = find_clip(&clip);
-  if (target == nullptr) {
+  Track *owner = find_clip_track(&clip);
+  if (owner == nullptr) {
     throw std::invalid_argument("Clip does not belong to session");
   }
+  Clip *target = owner->find_clip(&clip);
+  const double previous_start = target->start();
   target->set_start(start_beats);
+  owner->sort_clips();
+  try {
+    owner->validate_clip_layout();
+  } catch (...) {
+    target->set_start(previous_start);
+    owner->sort_clips();
+    throw;
+  }
   mark_clip_grid_dirty();
 }
 
 void SessionGraph::set_clip_length(Clip &clip, double length_beats) {
-  Clip *target = find_clip(&clip);
-  if (target == nullptr) {
+  Track *owner = find_clip_track(&clip);
+  if (owner == nullptr) {
     throw std::invalid_argument("Clip does not belong to session");
   }
+  Clip *target = owner->find_clip(&clip);
+  const double previous_length = target->length();
   target->set_length(length_beats);
+  try {
+    owner->validate_clip_layout();
+  } catch (...) {
+    target->set_length(previous_length);
+    throw;
+  }
   mark_clip_grid_dirty();
 }
 
@@ -258,6 +304,7 @@ void SessionGraph::commit_clip_grid() {
 
   for (const auto &track : tracks_) {
     track->sort_clips();
+    track->validate_clip_layout();
     for (const auto &clip : track->clips()) {
       has_clips = true;
       min_start = std::min(min_start, clip->start());
@@ -414,14 +461,21 @@ Track *SessionGraph::find_track(const Track *track) {
   return it->get();
 }
 
-Clip *SessionGraph::find_clip(const Clip *clip) {
+Track *SessionGraph::find_clip_track(const Clip *clip) {
   for (const auto &track : tracks_) {
-    Clip *candidate = track->find_clip(clip);
-    if (candidate != nullptr) {
-      return candidate;
+    if (track->find_clip(clip) != nullptr) {
+      return track.get();
     }
   }
   return nullptr;
+}
+
+Clip *SessionGraph::find_clip(const Clip *clip) {
+  Track *owner = find_clip_track(clip);
+  if (owner == nullptr) {
+    return nullptr;
+  }
+  return owner->find_clip(clip);
 }
 
 }  // namespace orpheus::core

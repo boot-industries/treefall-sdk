@@ -1,97 +1,188 @@
 // SPDX-License-Identifier: MIT
-#include "orpheus/abi.h"
+#include "session/json_io.h"
+
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
-namespace orpheus::tests {
+namespace fs = std::filesystem;
 
+namespace orpheus::core::session_json::tests {
 namespace {
 
-class SessionHandle {
- public:
-  SessionHandle() {
-    uint32_t got_major = 0;
-    uint32_t got_minor = 0;
-    const auto *abi =
-        orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &got_major, &got_minor);
-    EXPECT_NE(abi, nullptr);
-    if (abi == nullptr) {
-      return;
-    }
-    EXPECT_EQ(got_major, ORPHEUS_ABI_MAJOR);
-    EXPECT_EQ(got_minor, ORPHEUS_ABI_MINOR);
-    EXPECT_EQ(abi->create(&handle_), ORPHEUS_STATUS_OK);
-    abi_ = abi;
+constexpr double kDoubleTolerance = 1e-6;
+
+bool NearlyEqual(double lhs, double rhs) {
+  return std::abs(lhs - rhs) <= kDoubleTolerance;
+}
+
+bool SessionsEqual(const SessionGraph &lhs, const SessionGraph &rhs) {
+  if (lhs.name() != rhs.name()) {
+    return false;
   }
-
-  ~SessionHandle() {
-    if (abi_ != nullptr && handle_ != nullptr) {
-      abi_->destroy(handle_);
+  if (!NearlyEqual(lhs.tempo(), rhs.tempo())) {
+    return false;
+  }
+  if (!NearlyEqual(lhs.session_start_beats(), rhs.session_start_beats())) {
+    return false;
+  }
+  if (!NearlyEqual(lhs.session_end_beats(), rhs.session_end_beats())) {
+    return false;
+  }
+  if (lhs.render_sample_rate() != rhs.render_sample_rate()) {
+    return false;
+  }
+  if (lhs.render_bit_depth() != rhs.render_bit_depth()) {
+    return false;
+  }
+  if (lhs.render_dither() != rhs.render_dither()) {
+    return false;
+  }
+  const auto &lhs_marker_sets = lhs.marker_sets();
+  const auto &rhs_marker_sets = rhs.marker_sets();
+  if (lhs_marker_sets.size() != rhs_marker_sets.size()) {
+    return false;
+  }
+  for (std::size_t set_index = 0; set_index < lhs_marker_sets.size(); ++set_index) {
+    const MarkerSet &lhs_set = *lhs_marker_sets[set_index];
+    const MarkerSet &rhs_set = *rhs_marker_sets[set_index];
+    if (lhs_set.name() != rhs_set.name()) {
+      return false;
+    }
+    const auto &lhs_markers = lhs_set.markers();
+    const auto &rhs_markers = rhs_set.markers();
+    if (lhs_markers.size() != rhs_markers.size()) {
+      return false;
+    }
+    for (std::size_t marker_index = 0; marker_index < lhs_markers.size();
+         ++marker_index) {
+      const auto &lhs_marker = lhs_markers[marker_index];
+      const auto &rhs_marker = rhs_markers[marker_index];
+      if (lhs_marker.name != rhs_marker.name) {
+        return false;
+      }
+      if (!NearlyEqual(lhs_marker.position_beats, rhs_marker.position_beats)) {
+        return false;
+      }
     }
   }
+  const auto &lhs_lanes = lhs.playlist_lanes();
+  const auto &rhs_lanes = rhs.playlist_lanes();
+  if (lhs_lanes.size() != rhs_lanes.size()) {
+    return false;
+  }
+  for (std::size_t lane_index = 0; lane_index < lhs_lanes.size(); ++lane_index) {
+    const PlaylistLane &lhs_lane = *lhs_lanes[lane_index];
+    const PlaylistLane &rhs_lane = *rhs_lanes[lane_index];
+    if (lhs_lane.name() != rhs_lane.name()) {
+      return false;
+    }
+    if (lhs_lane.is_active() != rhs_lane.is_active()) {
+      return false;
+    }
+  }
+  const auto &lhs_tracks = lhs.tracks();
+  const auto &rhs_tracks = rhs.tracks();
+  if (lhs_tracks.size() != rhs_tracks.size()) {
+    return false;
+  }
+  for (std::size_t track_index = 0; track_index < lhs_tracks.size(); ++track_index) {
+    const Track &lhs_track = *lhs_tracks[track_index];
+    const Track &rhs_track = *rhs_tracks[track_index];
+    if (lhs_track.name() != rhs_track.name()) {
+      return false;
+    }
+    const auto &lhs_clips = lhs_track.clips();
+    const auto &rhs_clips = rhs_track.clips();
+    if (lhs_clips.size() != rhs_clips.size()) {
+      return false;
+    }
+    for (std::size_t clip_index = 0; clip_index < lhs_clips.size(); ++clip_index) {
+      const Clip &lhs_clip = *lhs_clips[clip_index];
+      const Clip &rhs_clip = *rhs_clips[clip_index];
+      if (lhs_clip.name() != rhs_clip.name()) {
+        return false;
+      }
+      if (!NearlyEqual(lhs_clip.start(), rhs_clip.start())) {
+        return false;
+      }
+      if (!NearlyEqual(lhs_clip.length(), rhs_clip.length())) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
-  SessionHandle(const SessionHandle &) = delete;
-  SessionHandle &operator=(const SessionHandle &) = delete;
+std::string LoadFixtureText(const fs::path &path) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to open fixture: " + path.string());
+  }
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  return buffer.str();
+}
 
-  [[nodiscard]] orpheus_session_handle get() const { return handle_; }
-  [[nodiscard]] const orpheus_session_api_v1 *abi() const { return abi_; }
-
- private:
-  const orpheus_session_api_v1 *abi_{};
-  orpheus_session_handle handle_{};
-};
+fs::path FixturesRoot() {
+  return fs::path(ORPHEUS_SESSION_FIXTURES_DIR);
+}
 
 }  // namespace
 
-TEST(SessionApiTest, CanCreateSessionAndManipulateTempo) {
-  SessionHandle session;
-  ASSERT_NE(session.get(), nullptr);
+TEST(SessionRoundTrip, GoldenFixturesAreStableAndDeterministic) {
+  const std::vector<std::string> fixtures = {
+      "solo_click.json", "two_tracks.json", "loop_grid.json"};
 
-  const auto *abi = session.abi();
-  ASSERT_NE(abi, nullptr);
+  for (const auto &fixture : fixtures) {
+    const fs::path path = FixturesRoot() / fixture;
+    const std::string original = LoadFixtureText(path);
+    const SessionGraph session = LoadSessionFromFile(path.string());
+    const std::string serialized = SerializeSession(session);
+    EXPECT_EQ(serialized, original)
+        << "Fixture serialization drifted: " << fixture;
 
-  ASSERT_EQ(abi->set_tempo(session.get(), 140.0), ORPHEUS_STATUS_OK);
+    const SessionGraph reparsed = ParseSession(serialized);
+    ASSERT_TRUE(SessionsEqual(session, reparsed))
+        << "Round-trip mismatch for fixture: " << fixture;
 
-  orpheus_transport_state state{};
-  ASSERT_EQ(abi->get_transport_state(session.get(), &state),
-            ORPHEUS_STATUS_OK);
-  EXPECT_DOUBLE_EQ(state.tempo_bpm, 140.0);
+    const std::string reserialized = SerializeSession(reparsed);
+    EXPECT_EQ(reserialized, serialized)
+        << "Repeated serialization is not deterministic for: " << fixture;
+  }
 }
 
-TEST(SessionApiTest, ClipgridOperationsSucceed) {
-  SessionHandle session;
-  ASSERT_NE(session.get(), nullptr);
+TEST(SessionRoundTrip, RejectsOverlappingClips) {
+  const std::string invalid = R"({
+    "name": "Invalid",
+    "tempo_bpm": 120,
+    "start_beats": 0,
+    "end_beats": 8,
+    "render": {
+      "sample_rate_hz": 48000,
+      "bit_depth": 24,
+      "dither": true
+    },
+    "marker_sets": [],
+    "playlist_lanes": [],
+    "tracks": [
+      {
+        "name": "Track",
+        "clips": [
+          {"name": "one", "start_beats": 0, "length_beats": 4},
+          {"name": "two", "start_beats": 2, "length_beats": 4}
+        ]
+      }
+    ]
+  })";
 
-  const auto *session_abi = session.abi();
-  ASSERT_NE(session_abi, nullptr);
-
-  orpheus_track_handle track{};
-  const orpheus_track_desc track_desc{"drums"};
-  ASSERT_EQ(session_abi->add_track(session.get(), &track_desc, &track),
-            ORPHEUS_STATUS_OK);
-  ASSERT_NE(track, nullptr);
-
-  uint32_t clip_major = 0;
-  uint32_t clip_minor = 0;
-  const auto *clipgrid =
-      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &clip_major, &clip_minor);
-  ASSERT_NE(clipgrid, nullptr);
-  EXPECT_EQ(clip_major, ORPHEUS_ABI_MAJOR);
-  EXPECT_EQ(clip_minor, ORPHEUS_ABI_MINOR);
-
-  const orpheus_clip_desc clip_desc{"intro", 0.0, 4.0, 0u};
-  orpheus_clip_handle clip{};
-  ASSERT_EQ(clipgrid->add_clip(session.get(), track, &clip_desc, &clip),
-            ORPHEUS_STATUS_OK);
-  ASSERT_NE(clip, nullptr);
-
-  EXPECT_EQ(clipgrid->set_clip_start(session.get(), clip, 1.0),
-            ORPHEUS_STATUS_OK);
-  EXPECT_EQ(clipgrid->set_clip_length(session.get(), clip, 2.0),
-            ORPHEUS_STATUS_OK);
-  EXPECT_EQ(clipgrid->commit(session.get()), ORPHEUS_STATUS_OK);
-
-  EXPECT_EQ(clipgrid->remove_clip(session.get(), clip), ORPHEUS_STATUS_OK);
+  EXPECT_THROW(ParseSession(invalid), std::invalid_argument);
 }
 
-}  // namespace orpheus::tests
+}  // namespace orpheus::core::session_json::tests

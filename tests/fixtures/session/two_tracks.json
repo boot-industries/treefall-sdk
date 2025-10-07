@@ -1,0 +1,63 @@
+{
+  "name": "Two Tracks",
+  "tempo_bpm": 100,
+  "start_beats": 0,
+  "end_beats": 32,
+  "render": {
+    "sample_rate_hz": 48000,
+    "bit_depth": 24,
+    "dither": true
+  },
+  "marker_sets": [
+    {
+      "name": "Song",
+      "markers": [
+        {
+          "name": "Verse",
+          "position_beats": 0
+        },
+        {
+          "name": "Chorus",
+          "position_beats": 16
+        }
+      ]
+    }
+  ],
+  "playlist_lanes": [
+    {
+      "name": "Main",
+      "is_active": true
+    },
+    {
+      "name": "Experiment",
+      "is_active": false
+    }
+  ],
+  "tracks": [
+    {
+      "name": "Bass",
+      "clips": [
+        {
+          "name": "verse",
+          "start_beats": 8,
+          "length_beats": 16
+        }
+      ]
+    },
+    {
+      "name": "Drums",
+      "clips": [
+        {
+          "name": "groove",
+          "start_beats": 0,
+          "length_beats": 8
+        },
+        {
+          "name": "fill",
+          "start_beats": 24,
+          "length_beats": 8
+        }
+      ]
+    }
+  ]
+}

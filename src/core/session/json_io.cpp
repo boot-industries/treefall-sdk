@@ -12,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 #include "common/json_parser.h"
 
@@ -28,6 +29,8 @@ using ::orpheus::core::json::RequireField;
 using ::orpheus::core::json::RequireNumber;
 using ::orpheus::core::json::RequireString;
 using ::orpheus::core::json::WriteIndent;
+
+constexpr double kClipOrderingTolerance = 1e-9;
 
 std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
   if (sample_rate_hz == 0u) {
@@ -51,25 +54,31 @@ std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
 std::string SanitizeSessionName(const std::string &session_name) {
   std::string sanitized;
   sanitized.reserve(session_name.size());
+
+  bool needs_separator = false;
   for (char c : session_name) {
-    if (std::isalnum(static_cast<unsigned char>(c))) {
-      sanitized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    } else if (c == '_' || c == '-' || c == ' ') {
-      sanitized.push_back('_');
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isalnum(uc)) {
+      if (needs_separator && !sanitized.empty()) {
+        sanitized.push_back('_');
+      }
+      sanitized.push_back(static_cast<char>(std::tolower(uc)));
+      needs_separator = false;
+      continue;
+    }
+
+    if (c == '_' || c == '-' || std::isspace(uc)) {
+      if (!sanitized.empty()) {
+        needs_separator = true;
+      }
+      continue;
+    }
+
+    if (!sanitized.empty()) {
+      needs_separator = true;
     }
   }
-  while (sanitized.find("__") != std::string::npos) {
-    const auto pos = sanitized.find("__");
-    sanitized.replace(pos, 2, "_");
-  }
-  sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), ' '),
-                  sanitized.end());
-  sanitized.erase(std::unique(sanitized.begin(), sanitized.end(),
-                              [](char lhs, char rhs) { return lhs == '_' && rhs == '_'; }),
-                  sanitized.end());
-  if (sanitized.empty()) {
-    sanitized = "session";
-  }
+
   return sanitized;
 }
 
@@ -245,9 +254,35 @@ std::string SerializeSession(const SessionGraph &session) {
     WriteIndent(stream, 6);
     stream << "\"markers\": [\n";
     const auto &markers = marker_set.markers();
-    for (std::size_t marker_index = 0; marker_index < markers.size();
+    std::vector<const MarkerSet::Marker *> ordered_markers;
+    ordered_markers.reserve(markers.size());
+    for (const auto &marker : markers) {
+      ordered_markers.push_back(&marker);
+    }
+    std::stable_sort(ordered_markers.begin(), ordered_markers.end(),
+                     [](const MarkerSet::Marker *lhs,
+                        const MarkerSet::Marker *rhs) {
+                       if (lhs->position_beats <
+                           rhs->position_beats - kClipOrderingTolerance) {
+                         return true;
+                       }
+                       if (rhs->position_beats <
+                           lhs->position_beats - kClipOrderingTolerance) {
+                         return false;
+                       }
+                       return lhs->name < rhs->name;
+                     });
+    for (std::size_t marker_index = 0; marker_index < ordered_markers.size();
          ++marker_index) {
-      const MarkerSet::Marker &marker = markers[marker_index];
+      const MarkerSet::Marker &marker = *ordered_markers[marker_index];
+      if (marker_index > 0) {
+        const MarkerSet::Marker &previous = *ordered_markers[marker_index - 1];
+        if (previous.position_beats >
+            marker.position_beats + kClipOrderingTolerance) {
+          throw std::invalid_argument("Markers in set \"" + marker_set.name() +
+                                      "\" must be sorted by position");
+        }
+      }
       WriteIndent(stream, 8);
       stream << "{\n";
       WriteIndent(stream, 10);
@@ -257,7 +292,7 @@ std::string SerializeSession(const SessionGraph &session) {
              << FormatDouble(marker.position_beats) << "\n";
       WriteIndent(stream, 8);
       stream << "}";
-      if (marker_index + 1 < markers.size()) {
+      if (marker_index + 1 < ordered_markers.size()) {
         stream << ",";
       }
       stream << "\n";
@@ -298,9 +333,18 @@ std::string SerializeSession(const SessionGraph &session) {
   WriteIndent(stream, 2);
   stream << "\"tracks\": [\n";
 
-  const auto &tracks = session.tracks();
-  for (std::size_t track_index = 0; track_index < tracks.size(); ++track_index) {
-    const Track &track = *tracks[track_index];
+  std::vector<const Track *> ordered_tracks;
+  ordered_tracks.reserve(session.tracks().size());
+  for (const auto &track : session.tracks()) {
+    ordered_tracks.push_back(track.get());
+  }
+  std::stable_sort(ordered_tracks.begin(), ordered_tracks.end(),
+                   [](const Track *lhs, const Track *rhs) {
+                     return lhs->name() < rhs->name();
+                   });
+  for (std::size_t track_index = 0; track_index < ordered_tracks.size();
+       ++track_index) {
+    const Track &track = *ordered_tracks[track_index];
     WriteIndent(stream, 4);
     stream << "{\n";
     WriteIndent(stream, 6);
@@ -308,8 +352,36 @@ std::string SerializeSession(const SessionGraph &session) {
     WriteIndent(stream, 6);
     stream << "\"clips\": [\n";
     const auto &clips = track.clips();
-    for (std::size_t clip_index = 0; clip_index < clips.size(); ++clip_index) {
-      const Clip &clip = *clips[clip_index];
+    std::vector<const Clip *> ordered_clips;
+    ordered_clips.reserve(clips.size());
+    for (const auto &clip : clips) {
+      ordered_clips.push_back(clip.get());
+    }
+    std::stable_sort(ordered_clips.begin(), ordered_clips.end(),
+                     [](const Clip *lhs, const Clip *rhs) {
+                       if (lhs->start() < rhs->start() - kClipOrderingTolerance) {
+                         return true;
+                       }
+                       if (rhs->start() < lhs->start() - kClipOrderingTolerance) {
+                         return false;
+                       }
+                       return lhs->name() < rhs->name();
+                     });
+    for (std::size_t clip_index = 0; clip_index < ordered_clips.size();
+         ++clip_index) {
+      const Clip &clip = *ordered_clips[clip_index];
+      if (clip_index > 0) {
+        const Clip &previous = *ordered_clips[clip_index - 1];
+        if (previous.start() > clip.start() + kClipOrderingTolerance) {
+          throw std::invalid_argument("Clips on track \"" + track.name() +
+                                      "\" must be sorted by start time");
+        }
+        const double previous_end = previous.start() + previous.length();
+        if (previous_end > clip.start() + kClipOrderingTolerance) {
+          throw std::invalid_argument("Clips on track \"" + track.name() +
+                                      "\" must not overlap");
+        }
+      }
       WriteIndent(stream, 8);
       stream << "{\n";
       WriteIndent(stream, 10);
@@ -320,7 +392,7 @@ std::string SerializeSession(const SessionGraph &session) {
       stream << "\"length_beats\": " << FormatDouble(clip.length()) << "\n";
       WriteIndent(stream, 8);
       stream << "}";
-      if (clip_index + 1 < clips.size()) {
+      if (clip_index + 1 < ordered_clips.size()) {
         stream << ",";
       }
       stream << "\n";
@@ -329,7 +401,7 @@ std::string SerializeSession(const SessionGraph &session) {
     stream << "]\n";
     WriteIndent(stream, 4);
     stream << "}";
-    if (track_index + 1 < tracks.size()) {
+    if (track_index + 1 < ordered_tracks.size()) {
       stream << ",";
     }
     stream << "\n";

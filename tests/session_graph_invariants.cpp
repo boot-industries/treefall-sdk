@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+
 namespace orpheus::core::tests {
 namespace {
 
@@ -20,7 +22,7 @@ TEST(SessionGraphInvariants, CommitSortsTracksAndClipsAndUpdatesRange) {
 
   Clip *late = session.add_clip(*second, "zzz", 8.0, 2.0);
   Clip *early = session.add_clip(*second, "aaa", 2.0, 1.0);
-  Clip *tied = session.add_clip(*second, "mmm", 2.0, 0.5);
+  Clip *tied = session.add_clip(*second, "mmm", 3.0, 0.5);
   ASSERT_NE(late, nullptr);
   ASSERT_NE(early, nullptr);
   ASSERT_NE(tied, nullptr);
@@ -71,6 +73,30 @@ TEST(SessionGraphInvariants, ClipLengthIsClampedToMinimum) {
 
   session.set_clip_length(*clip, -10.0);
   EXPECT_GT(clip->length(), 0.0);
+}
+
+TEST(SessionGraphInvariants, RejectsOverlappingClips) {
+  SessionGraph session;
+  Track *track = session.add_track("Track");
+  ASSERT_NE(track, nullptr);
+
+  Clip *first = session.add_clip(*track, "one", 0.0, 4.0);
+  ASSERT_NE(first, nullptr);
+
+  EXPECT_THROW(session.add_clip(*track, "two", 2.0, 4.0),
+               std::invalid_argument);
+
+  Clip *second = session.add_clip(*track, "two", 4.0, 4.0);
+  ASSERT_NE(second, nullptr);
+
+  EXPECT_THROW(session.set_clip_start(*second, 2.0), std::invalid_argument);
+  EXPECT_DOUBLE_EQ(second->start(), 4.0);
+
+  Clip *third = session.add_clip(*track, "three", 12.0, 4.0);
+  ASSERT_NE(third, nullptr);
+
+  EXPECT_THROW(session.set_clip_length(*second, 10.0), std::invalid_argument);
+  EXPECT_DOUBLE_EQ(second->length(), 4.0);
 }
 
 }  // namespace orpheus::core::tests
