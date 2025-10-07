@@ -3,13 +3,13 @@
 
 #include "abi/abi_internal.h"
 #include "session/json_io.h"
+#include "render/orpheus_wav.hpp"
+#include "render/render_tracks.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <limits>
 #include <numbers>
 #include <string>
 #include <stdexcept>
@@ -92,126 +92,6 @@ std::vector<int16_t> GenerateClickSamples(const RenderClickParams &params) {
   return buffer;
 }
 
-struct WavHeader {
-  char riff[4] = {'R', 'I', 'F', 'F'};
-  std::uint32_t chunkSize = 0;
-  char wave[4] = {'W', 'A', 'V', 'E'};
-  char fmt[4] = {'f', 'm', 't', ' '};
-  std::uint32_t fmtChunkSize = 16;
-  std::uint16_t audioFormat = 1;
-  std::uint16_t numChannels = 0;
-  std::uint32_t sampleRate = 0;
-  std::uint32_t byteRate = 0;
-  std::uint16_t blockAlign = 0;
-  std::uint16_t bitsPerSample = 0;
-  char data[4] = {'d', 'a', 't', 'a'};
-  std::uint32_t dataSize = 0;
-};
-
-void WriteWaveFile(const std::string &path, std::uint32_t sample_rate,
-                   std::uint16_t channels, std::uint16_t bits_per_sample,
-                   const void *data, std::size_t byte_count) {
-  namespace fs = std::filesystem;
-  const fs::path output_path(path);
-  if (!output_path.parent_path().empty()) {
-    fs::create_directories(output_path.parent_path());
-  }
-
-  WavHeader header;
-  header.numChannels = channels;
-  header.sampleRate = sample_rate;
-  const std::uint16_t bytes_per_sample =
-      static_cast<std::uint16_t>((bits_per_sample + 7u) / 8u);
-  header.bitsPerSample = bits_per_sample;
-  header.blockAlign = header.numChannels * bytes_per_sample;
-  header.byteRate = header.sampleRate * header.blockAlign;
-  if (byte_count > std::numeric_limits<std::uint32_t>::max()) {
-    throw std::invalid_argument("render payload too large");
-  }
-  header.dataSize = static_cast<std::uint32_t>(byte_count);
-  header.chunkSize = 36 + header.dataSize;
-
-  std::ofstream stream(path, std::ios::binary);
-  if (!stream) {
-    throw orpheus::abi_internal::IoException("Unable to open render target: " +
-                                             path);
-  }
-
-  stream.write(reinterpret_cast<const char *>(&header), sizeof(header));
-  if (byte_count > 0) {
-    stream.write(reinterpret_cast<const char *>(data),
-                 static_cast<std::streamsize>(byte_count));
-  }
-  if (!stream) {
-    throw orpheus::abi_internal::IoException("Failed to write render output: " +
-                                             path);
-  }
-}
-
-class TpdfDitherGenerator {
- public:
-  explicit TpdfDitherGenerator(std::uint64_t seed) : state_(seed) {}
-
-  double Next(double lsb) {
-    if (lsb == 0.0) {
-      return 0.0;
-    }
-    return (Uniform() - Uniform()) * lsb;
-  }
-
- private:
-  double Uniform() {
-    state_ = state_ * 6364136223846793005ull + 1ull;
-    const std::uint64_t mantissa = (state_ >> 11u) & ((1ull << 53u) - 1u);
-    return static_cast<double>(mantissa) / static_cast<double>(1ull << 53u);
-  }
-
-  std::uint64_t state_;
-};
-
-std::vector<std::uint8_t> QuantizeInterleaved(
-    const std::vector<double> &samples, std::uint16_t bit_depth_bits,
-    bool dither, std::uint64_t seed) {
-  const std::size_t bytes_per_sample = (bit_depth_bits + 7u) / 8u;
-  if (bytes_per_sample != 2u && bytes_per_sample != 3u) {
-    throw std::invalid_argument("Unsupported bit depth");
-  }
-
-  const std::int64_t min_value = -(1ll << (bit_depth_bits - 1));
-  const std::int64_t max_value = (1ll << (bit_depth_bits - 1)) - 1ll;
-  const double max_amplitude = static_cast<double>(max_value);
-  const double lsb = 1.0 / static_cast<double>(1ull << (bit_depth_bits - 1));
-
-  std::vector<std::uint8_t> pcm(samples.size() * bytes_per_sample);
-  TpdfDitherGenerator generator(seed);
-
-  for (std::size_t index = 0; index < samples.size(); ++index) {
-    double sample = std::clamp(samples[index], -1.0, 1.0);
-    if (dither) {
-      sample += generator.Next(lsb);
-    }
-    sample = std::clamp(sample, -1.0, 1.0);
-
-    std::int64_t quantized =
-        static_cast<std::int64_t>(std::llround(sample * max_amplitude));
-    quantized = std::clamp(quantized, min_value, max_value);
-
-    const std::size_t offset = index * bytes_per_sample;
-    if (bytes_per_sample == 2u) {
-      const std::int16_t value = static_cast<std::int16_t>(quantized);
-      pcm[offset] = static_cast<std::uint8_t>(value & 0xFF);
-      pcm[offset + 1] = static_cast<std::uint8_t>((value >> 8) & 0xFF);
-    } else {
-      const std::int32_t value = static_cast<std::int32_t>(quantized);
-      pcm[offset] = static_cast<std::uint8_t>(value & 0xFF);
-      pcm[offset + 1] = static_cast<std::uint8_t>((value >> 8) & 0xFF);
-      pcm[offset + 2] = static_cast<std::uint8_t>((value >> 16) & 0xFF);
-    }
-  }
-
-  return pcm;
-}
-
 orpheus_status RenderClick(const orpheus_render_click_spec *spec,
                            const char *out_path) {
   if (spec == nullptr || out_path == nullptr) {
@@ -220,10 +100,11 @@ orpheus_status RenderClick(const orpheus_render_click_spec *spec,
   return GuardAbiCall([&]() -> orpheus_status {
     const RenderClickParams params = NormalizeRenderSpec(*spec);
     const std::vector<int16_t> samples = GenerateClickSamples(params);
-    WriteWaveFile(out_path, params.sample_rate,
-                  static_cast<std::uint16_t>(params.channels),
-                  kClickBitsPerSample, samples.data(),
-                  samples.size() * sizeof(int16_t));
+    orpheus::core::render::WriteWaveFile(
+        std::filesystem::path(out_path), params.sample_rate,
+        static_cast<std::uint16_t>(params.channels), kClickBitsPerSample,
+        reinterpret_cast<const std::uint8_t *>(samples.data()),
+        samples.size() * sizeof(int16_t));
     return ORPHEUS_STATUS_OK;
   });
 }
@@ -254,9 +135,13 @@ orpheus_status RenderTracks(orpheus_session_handle session,
     const std::uint16_t bit_depth = session_graph->render_bit_depth();
     const bool dither = session_graph->render_dither();
 
+    namespace fs = std::filesystem;
+    fs::path base_path(out_path);
+    if (base_path.empty()) {
+      base_path = fs::current_path();
+    }
     const double session_start = session_graph->session_start_beats();
     const double session_end = session_graph->session_end_beats();
-    const double total_beats = std::max(0.0, session_end - session_start);
     const double seconds_per_beat = 60.0 / tempo;
 
     const auto BeatsToSampleIndex = [&](double beats) -> std::size_t {
@@ -279,61 +164,69 @@ orpheus_status RenderTracks(orpheus_session_handle session,
       return static_cast<std::size_t>(std::max<long long>(1, rounded));
     };
 
-    const std::size_t total_samples = BeatsToSampleCount(total_beats);
+    orpheus::core::render::Session session_desc;
+    session_desc.name = session_graph->name();
+    session_desc.tempo_bpm = tempo;
+    session_desc.start_beats = session_start;
+    session_desc.end_beats = session_end;
 
-    namespace fs = std::filesystem;
-    fs::path base_path(out_path);
-    if (base_path.empty()) {
-      base_path = fs::current_path();
-    }
-    fs::create_directories(base_path);
+    orpheus::core::render::TrackList render_tracks_list;
+    render_tracks_list.reserve(tracks.size());
 
     const std::size_t track_count = tracks.size();
     for (std::size_t track_index = 0; track_index < track_count; ++track_index) {
       const auto &track = tracks[track_index];
-      std::vector<double> interleaved(total_samples * 2u, 0.0);
+      orpheus::core::render::Track render_track;
+      render_track.name = track->name();
+      render_track.output_map = {0, 1};
 
-      const double pan =
-          track_count > 1 ? static_cast<double>(track_index) /
-                                static_cast<double>(track_count - 1)
-                           : 0.5;
+      const double pan = track_count > 1
+                              ? static_cast<double>(track_index) /
+                                    static_cast<double>(track_count - 1)
+                              : 0.5;
       const double left_gain = std::clamp(1.0 - pan, 0.0, 1.0);
       const double right_gain = std::clamp(pan, 0.0, 1.0);
       const double amplitude = 0.4;
       const double frequency = 220.0 + 110.0 * static_cast<double>(track_index);
 
       for (const auto &clip : track->clips()) {
-        const double clip_start = clip->start() - session_start;
         const double clip_length = clip->length();
-        const std::size_t start_sample = BeatsToSampleIndex(clip_start);
         std::size_t clip_samples = BeatsToSampleCount(clip_length);
         if (clip_samples == 0u) {
           continue;
         }
+        const std::size_t start_sample =
+            BeatsToSampleIndex(clip->start() - session_start);
+        std::vector<float> left_channel(clip_samples, 0.0f);
+        std::vector<float> right_channel(clip_samples, 0.0f);
         for (std::size_t i = 0; i < clip_samples; ++i) {
           const std::size_t sample_index = start_sample + i;
-          if (sample_index >= interleaved.size() / 2u) {
-            break;
-          }
           const double t = static_cast<double>(sample_index) /
                            static_cast<double>(sample_rate);
           const double sample_value =
               std::sin(2.0 * std::numbers::pi * frequency * t) * amplitude;
-          interleaved[sample_index * 2u] += sample_value * left_gain;
-          interleaved[sample_index * 2u + 1u] += sample_value * right_gain;
+          left_channel[i] = static_cast<float>(sample_value * left_gain);
+          right_channel[i] = static_cast<float>(sample_value * right_gain);
         }
+        orpheus::core::render::Clip render_clip;
+        render_clip.start_beats = clip->start();
+        render_clip.samples.push_back(std::move(left_channel));
+        render_clip.samples.push_back(std::move(right_channel));
+        render_track.clips.push_back(std::move(render_clip));
       }
 
-      const std::vector<std::uint8_t> pcm =
-          QuantizeInterleaved(interleaved, bit_depth, dither,
-                              0x9e3779b97f4a7c15ull + track_index);
-      const std::string stem_name =
-          orpheus::core::session_json::MakeRenderStemFilename(
-              session_graph->name(), track->name(), sample_rate, bit_depth);
-      const fs::path target_path = base_path / stem_name;
-      WriteWaveFile(target_path.string(), sample_rate, 2u, bit_depth,
-                    pcm.data(), pcm.size());
+      render_tracks_list.push_back(std::move(render_track));
     }
+
+    orpheus::core::render::RenderSpec spec;
+    spec.output_directory = base_path;
+    spec.sample_rate_hz = sample_rate;
+    spec.bit_depth_bits = bit_depth;
+    spec.output_channels = 2u;
+    spec.dither = dither;
+    spec.dither_seed = 0x9e3779b97f4a7c15ull;
+
+    orpheus::core::render::render_tracks(session_desc, render_tracks_list, spec);
 
     return ORPHEUS_STATUS_OK;
   });

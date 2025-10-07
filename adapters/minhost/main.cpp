@@ -244,6 +244,7 @@ struct SessionLoadOptions {
   TimelineRange range;
   std::optional<std::uint32_t> render_sample_rate_override;
   std::optional<std::uint16_t> render_bit_depth_override;
+  std::optional<bool> render_dither_override;
   bool require_tracks = true;
 };
 
@@ -350,6 +351,9 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
       error.details = {ex.what()};
       return false;
     }
+  }
+  if (options.render_dither_override) {
+    session_impl->set_render_dither(*options.render_dither_override);
   }
 
   context.tempo_bpm = context.graph.tempo();
@@ -491,7 +495,7 @@ void PrintLoadHelp() {
   std::cout << "  --tracks  <a,b,c>      Only load the named tracks\n";
   std::cout << "  --range   <start:end>  Limit session range in beats\n";
   std::cout << "  --sr      <hz>         Override render sample rate\n";
-  std::cout << "  --bd      <bits>       Override render bit depth" << std::endl;
+  std::cout << "  --bd      <bits>       Override render bit depth (16/24/32)" << std::endl;
 }
 
 void PrintRenderTracksHelp() {
@@ -502,7 +506,8 @@ void PrintRenderTracksHelp() {
   std::cout << "  --tracks  <a,b,c>      Only render the named tracks\n";
   std::cout << "  --range   <start:end>  Limit session range in beats\n";
   std::cout << "  --sr      <hz>         Override render sample rate\n";
-  std::cout << "  --bd      <bits>       Override render bit depth" << std::endl;
+  std::cout << "  --bd      <bits>       Override render bit depth (16/24/32)\n";
+  std::cout << "  --no-dither            Disable render dither" << std::endl;
 }
 
 void PrintRenderClickHelp() {
@@ -623,9 +628,10 @@ bool ParseLoadCommand(const std::vector<std::string> &args, LoadCommandOptions &
         return false;
       }
       std::uint16_t bd = 0;
-      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u)) {
+      if (!ParseUint16(args[++i], bd) ||
+          (bd != 16u && bd != 24u && bd != 32u)) {
         error.code = "cli.args";
-        error.message = "--bd must be 16 or 24";
+        error.message = "--bd must be 16, 24, or 32";
         return false;
       }
       options.session.render_bit_depth_override = bd;
@@ -696,12 +702,17 @@ bool ParseRenderTracksCommand(const std::vector<std::string> &args,
         return false;
       }
       std::uint16_t bd = 0;
-      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u)) {
+      if (!ParseUint16(args[++i], bd) ||
+          (bd != 16u && bd != 24u && bd != 32u)) {
         error.code = "cli.args";
-        error.message = "--bd must be 16 or 24";
+        error.message = "--bd must be 16, 24, or 32";
         return false;
       }
       options.session.render_bit_depth_override = bd;
+      continue;
+    }
+    if (arg == "--no-dither") {
+      options.session.render_dither_override = false;
       continue;
     }
     error.code = "cli.args";

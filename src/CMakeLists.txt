@@ -8,6 +8,8 @@ add_library(orpheus_core_runtime OBJECT
   core/common/errors.cpp
   core/common/json_parser.cpp
   core/adm/entity_graph.cpp
+  core/render/pcm.cpp
+  orpheus/render_tracks.cpp
   core/session/session_graph.cpp
   core/session/json_io.cpp
   core/otio/reconform_plan.cpp

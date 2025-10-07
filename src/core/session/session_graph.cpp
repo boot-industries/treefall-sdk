@@ -194,6 +194,7 @@ void SessionGraph::set_render_bit_depth(std::uint16_t bit_depth_bits) {
   switch (bit_depth_bits) {
     case 16:
     case 24:
+    case 32:
       render_bit_depth_bits_ = bit_depth_bits;
       return;
     default:

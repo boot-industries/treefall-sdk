@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Build directories
+# Build artifacts
+*.wav
 /build/
+/build*/
 /out/
 /dist/
+/tmp/
 
 # CMake cache
 /CMakeCache.txt
