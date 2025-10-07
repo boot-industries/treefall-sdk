@@ -15,12 +15,20 @@ The resulting binary lives at `build/orpheus_minhost`.
 
 ## Global flags
 
-* `--json` – return structured error output (helpful for CI parsing).
+All subcommands understand the following global options:
+
+* `--session <file>` – default session JSON to load.
+* `--spec <file>` – default click render spec overrides.
+* `--tracks <a,b,c>` – restrict session loading/rendering to named tracks.
+* `--range <start:end>` – limit the session beat range (start and/or end).
+* `--sr <hz>` – override render/click sample rate.
+* `--bd <bits>` – override render bit depth (16/24/32) or click bit-depth hint.
+* `--json` – emit structured JSON summaries (success + error cases).
 
 Run `orpheus_minhost --help` to see the list of available subcommands:
 
 ```text
-Usage: orpheus_minhost [--json] <command> [options]
+Usage: orpheus_minhost [global options] <command> [options]
 Commands:
   load                 Load a session and print metadata
   render-click         Render a metronome click track
@@ -35,8 +43,7 @@ Each subcommand also supports `--help` for command-specific options.
 ### Load a session and inspect negotiated capabilities
 
 ```sh
-orpheus_minhost load \
-  --session tools/fixtures/sessions/basic.json
+orpheus_minhost --session tools/fixtures/sessions/basic.json load
 ```
 
 Example output:
@@ -57,21 +64,21 @@ Session: 'demo session'
 Use `--tracks` and `--range` to scope the load:
 
 ```sh
-orpheus_minhost load \
-  --session tools/fixtures/sessions/basic.json \
+orpheus_minhost --session tools/fixtures/sessions/basic.json \
   --tracks drums,bass \
-  --range 16:32
+  --range 16:32 \
+  load
 ```
 
 ### Render a metronome click
 
 ```sh
-orpheus_minhost render-click \
-  --session tools/fixtures/sessions/basic.json \
-  --out /tmp/minhost-click.wav \
+orpheus_minhost --session tools/fixtures/sessions/basic.json \
   --range 0:16 \
   --sr 48000 \
-  --bd 24
+  --bd 24 \
+  render-click \
+  --out /tmp/minhost-click.wav
 ```
 
 The click renderer accepts optional JSON overrides via `--spec`:
@@ -90,12 +97,12 @@ When supplied, these overrides merge into the generated spec.
 ### Render track stems
 
 ```sh
-orpheus_minhost render-tracks \
-  --session tools/fixtures/sessions/basic.json \
-  --out /tmp/minhost-stems \
+orpheus_minhost --session tools/fixtures/sessions/basic.json \
   --tracks drums,bass \
   --sr 96000 \
-  --bd 24
+  --bd 24 \
+  render-tracks \
+  --out /tmp/minhost-stems
 ```
 
 This command writes per-track stems using the negotiated render spec (or the
@@ -104,9 +111,9 @@ provided overrides) and lists the generated filenames.
 ### Simulate the transport
 
 ```sh
-orpheus_minhost simulate-transport \
-  --session tools/fixtures/sessions/basic.json \
-  --range 0:8
+orpheus_minhost --session tools/fixtures/sessions/basic.json \
+  --range 0:8 \
+  simulate-transport
 ```
 
 The simulation honours the session tempo and prints beat callbacks over the
@@ -114,21 +121,35 @@ requested beat range. Without `--range`, it defaults to four bars.
 
 ## JSON diagnostics
 
-Add `--json` to any invocation to receive structured error output suitable for
-machine parsing:
+Add `--json` to any invocation to receive structured summaries that are easy to
+consume from automation:
 
 ```sh
-orpheus_minhost render-tracks --json --session missing.json --out /tmp/out
+orpheus_minhost --session tools/fixtures/sessions/basic.json \
+  --range 0:8 \
+  render-click --json
 ```
 
 ```json
 {
-  "error": {
-    "code": "session.load",
-    "message": "Failed to load session JSON",
-    "details": [
-      "No such file or directory"
-    ]
-  }
+  "command": "render-click",
+  "abi": {
+    "session": {"major": 1, "minor": 0, "ok": true},
+    "clipgrid": {"major": 1, "minor": 0, "ok": true},
+    "render": {"major": 1, "minor": 0, "ok": true}
+  },
+  "spec": {
+    "tempo_bpm": 120.000000,
+    "bars": 4,
+    "sample_rate": 48000,
+    "channels": 2,
+    "gain": 0.300000,
+    "click_frequency_hz": 1000.000000,
+    "click_duration_seconds": 0.050000
+  },
+  "output_path": null,
+  "suggested_path": "demo-session_click_48000hz_24bit.wav"
 }
 ```
+
+Errors are also emitted in the same JSON envelope with an `"error"` object.
