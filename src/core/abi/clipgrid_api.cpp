@@ -157,11 +157,9 @@ const orpheus_clipgrid_api_v1 kClipgridApiV1{
 
 }  // namespace
 
-extern "C" {
-
-const orpheus_clipgrid_api_v1 *orpheus_clipgrid_abi_v1(uint32_t want_major,
-                                                       uint32_t *got_major,
-                                                       uint32_t *got_minor) {
+extern "C" ORPHEUS_API const orpheus_clipgrid_api_v1 *
+orpheus_clipgrid_abi_v1(uint32_t want_major, uint32_t *got_major,
+                        uint32_t *got_minor) {
   (void)want_major;
   if (got_major != nullptr) {
     *got_major = ORPHEUS_ABI_V1_MAJOR;
@@ -171,5 +169,3 @@ const orpheus_clipgrid_api_v1 *orpheus_clipgrid_abi_v1(uint32_t want_major,
   }
   return &kClipgridApiV1;
 }
-
-}  // extern "C"

@@ -87,11 +87,9 @@ const orpheus_session_api_v1 kSessionApiV1{
 
 }  // namespace
 
-extern "C" {
-
-const orpheus_session_api_v1 *orpheus_session_abi_v1(uint32_t want_major,
-                                                     uint32_t *got_major,
-                                                     uint32_t *got_minor) {
+extern "C" ORPHEUS_API const orpheus_session_api_v1 *
+orpheus_session_abi_v1(uint32_t want_major, uint32_t *got_major,
+                       uint32_t *got_minor) {
   (void)want_major;
   if (got_major != nullptr) {
     *got_major = ORPHEUS_ABI_V1_MAJOR;
@@ -101,5 +99,3 @@ const orpheus_session_api_v1 *orpheus_session_abi_v1(uint32_t want_major,
   }
   return &kSessionApiV1;
 }
-
-}  // extern "C"

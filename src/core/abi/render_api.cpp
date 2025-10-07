@@ -344,11 +344,9 @@ const orpheus_render_api_v1 kRenderApiV1{ORPHEUS_RENDER_CAP_V1_CORE, &RenderClic
 
 }  // namespace
 
-extern "C" {
-
-const orpheus_render_api_v1 *orpheus_render_abi_v1(uint32_t want_major,
-                                                   uint32_t *got_major,
-                                                   uint32_t *got_minor) {
+extern "C" ORPHEUS_API const orpheus_render_api_v1 *
+orpheus_render_abi_v1(uint32_t want_major, uint32_t *got_major,
+                      uint32_t *got_minor) {
   (void)want_major;
   if (got_major != nullptr) {
     *got_major = ORPHEUS_ABI_V1_MAJOR;
@@ -358,5 +356,3 @@ const orpheus_render_api_v1 *orpheus_render_abi_v1(uint32_t want_major,
   }
   return &kRenderApiV1;
 }
-
-}  // extern "C"
