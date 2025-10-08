@@ -84,6 +84,8 @@ void AppendEnvelopeJson(std::ostringstream &oss, const EntityEnvelope &envelope)
 
 Bed::Bed(EntityEnvelope envelope) : envelope_(std::move(envelope)) {}
 
+Bed::~Bed() = default;
+
 const EntityEnvelope &Bed::envelope() const { return envelope_; }
 
 void Bed::add_channel(BedChannel channel) {
@@ -93,6 +95,8 @@ void Bed::add_channel(BedChannel channel) {
 const std::vector<BedChannel> &Bed::channels() const { return channels_; }
 
 Object::Object(EntityEnvelope envelope) : envelope_(std::move(envelope)) {}
+
+Object::~Object() = default;
 
 const EntityEnvelope &Object::envelope() const { return envelope_; }
 
@@ -106,6 +110,8 @@ std::vector<ObjectPoint> Object::trajectory(ThinningPolicy policy) const {
 }
 
 Content::Content(EntityEnvelope envelope) : envelope_(std::move(envelope)) {}
+
+Content::~Content() = default;
 
 const EntityEnvelope &Content::envelope() const { return envelope_; }
 
@@ -128,6 +134,12 @@ const std::vector<std::size_t> &Content::objects() const { return objects_; }
 
 Programme::Programme(EntityEnvelope envelope)
     : envelope_(std::move(envelope)) {}
+
+Programme::~Programme() = default;
+
+EntityGraph::EntityGraph() = default;
+
+EntityGraph::~EntityGraph() = default;
 
 const EntityEnvelope &Programme::envelope() const { return envelope_; }
 

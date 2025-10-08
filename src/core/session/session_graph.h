@@ -13,14 +13,15 @@
 
 namespace orpheus::core {
 
-class ORPHEUS_API Clip {
+class Clip {
  public:
-  Clip(std::string name, double start_beats, double length_beats,
-       std::uint32_t scene_index = 0u);
+  ORPHEUS_API Clip(std::string name, double start_beats, double length_beats,
+                   std::uint32_t scene_index = 0u);
+  ORPHEUS_API ~Clip();
 
-  void set_start(double start_beats);
-  void set_length(double length_beats);
-  void set_scene_index(std::uint32_t scene_index);
+  ORPHEUS_API void set_start(double start_beats);
+  ORPHEUS_API void set_length(double length_beats);
+  ORPHEUS_API void set_scene_index(std::uint32_t scene_index);
 
   [[nodiscard]] double start() const { return start_beats_; }
   [[nodiscard]] double length() const { return length_beats_; }
@@ -34,21 +35,23 @@ class ORPHEUS_API Clip {
   std::uint32_t scene_index_;
 };
 
-class ORPHEUS_API Track {
+class Track {
  public:
-  explicit Track(std::string name);
+  ORPHEUS_API explicit Track(std::string name);
+  ORPHEUS_API ~Track();
 
   Track(const Track &) = delete;
   Track &operator=(const Track &) = delete;
-  Track(Track &&) noexcept = default;
-  Track &operator=(Track &&) noexcept = default;
+  ORPHEUS_API Track(Track &&) noexcept = default;
+  ORPHEUS_API Track &operator=(Track &&) noexcept = default;
 
   [[nodiscard]] const std::string &name() const { return name_; }
 
-  Clip *add_clip(std::string name, double start_beats, double length_beats,
-                 std::uint32_t scene_index = 0u);
-  bool remove_clip(const Clip *clip);
-  Clip *find_clip(const Clip *clip);
+  [[nodiscard]] ORPHEUS_API Clip *add_clip(std::string name, double start_beats,
+                                           double length_beats,
+                                           std::uint32_t scene_index = 0u);
+  [[nodiscard]] ORPHEUS_API bool remove_clip(const Clip *clip);
+  [[nodiscard]] ORPHEUS_API Clip *find_clip(const Clip *clip);
 
   [[nodiscard]] const std::vector<std::unique_ptr<Clip>> &clips() const {
     return clips_;
@@ -64,7 +67,7 @@ class ORPHEUS_API Track {
     return clips_.end();
   }
 
-  void sort_clips();
+  ORPHEUS_API void sort_clips();
 
  private:
   void validate_clip_layout() const;
@@ -75,20 +78,22 @@ class ORPHEUS_API Track {
   friend class SessionGraph;
 };
 
-class ORPHEUS_API MarkerSet {
+class MarkerSet {
  public:
   struct Marker {
     std::string name;
     double position_beats{0.0};
   };
 
-  explicit MarkerSet(std::string name);
+  ORPHEUS_API explicit MarkerSet(std::string name);
+  ORPHEUS_API ~MarkerSet();
 
   [[nodiscard]] const std::string &name() const { return name_; }
 
-  Marker *add_marker(std::string name, double position_beats);
-  bool remove_marker(const Marker *marker);
-  Marker *find_marker(const Marker *marker);
+  [[nodiscard]] ORPHEUS_API Marker *add_marker(std::string name,
+                                              double position_beats);
+  [[nodiscard]] ORPHEUS_API bool remove_marker(const Marker *marker);
+  [[nodiscard]] ORPHEUS_API Marker *find_marker(const Marker *marker);
 
   [[nodiscard]] const std::vector<Marker> &markers() const {
     return markers_;
@@ -107,14 +112,15 @@ class ORPHEUS_API MarkerSet {
   std::vector<Marker> markers_;
 };
 
-class ORPHEUS_API PlaylistLane {
+class PlaylistLane {
  public:
-  explicit PlaylistLane(std::string name, bool is_active = false);
+  ORPHEUS_API explicit PlaylistLane(std::string name, bool is_active = false);
+  ORPHEUS_API ~PlaylistLane();
 
   [[nodiscard]] const std::string &name() const { return name_; }
   [[nodiscard]] bool is_active() const { return is_active_; }
 
-  void set_active(bool active) { is_active_ = active; }
+  ORPHEUS_API void set_active(bool active);
 
  private:
   std::string name_;
@@ -139,30 +145,32 @@ struct ORPHEUS_API CommittedClip {
   double arranged_length_beats{0.0};
 };
 
-class ORPHEUS_API SessionGraph {
+class SessionGraph {
  public:
-  SessionGraph();
+  ORPHEUS_API SessionGraph();
+  ORPHEUS_API ~SessionGraph();
 
   SessionGraph(const SessionGraph &) = delete;
   SessionGraph &operator=(const SessionGraph &) = delete;
-  SessionGraph(SessionGraph &&) noexcept = default;
-  SessionGraph &operator=(SessionGraph &&) noexcept = default;
+  ORPHEUS_API SessionGraph(SessionGraph &&) noexcept = default;
+  ORPHEUS_API SessionGraph &operator=(SessionGraph &&) noexcept = default;
 
-  void set_name(std::string name);
+  ORPHEUS_API void set_name(std::string name);
   [[nodiscard]] const std::string &name() const { return name_; }
 
-  Track *add_track(std::string name);
-  bool remove_track(const Track *track);
+  [[nodiscard]] ORPHEUS_API Track *add_track(std::string name);
+  [[nodiscard]] ORPHEUS_API bool remove_track(const Track *track);
 
-  MarkerSet *add_marker_set(std::string name);
-  PlaylistLane *add_playlist_lane(std::string name, bool is_active = false);
+  [[nodiscard]] ORPHEUS_API MarkerSet *add_marker_set(std::string name);
+  [[nodiscard]] ORPHEUS_API PlaylistLane *add_playlist_lane(
+      std::string name, bool is_active = false);
 
-  void set_tempo(double bpm);
+  ORPHEUS_API void set_tempo(double bpm);
   [[nodiscard]] double tempo() const { return tempo_bpm_; }
 
-  void set_render_sample_rate(std::uint32_t sample_rate_hz);
-  void set_render_bit_depth(std::uint16_t bit_depth_bits);
-  void set_render_dither(bool enabled);
+  ORPHEUS_API void set_render_sample_rate(std::uint32_t sample_rate_hz);
+  ORPHEUS_API void set_render_bit_depth(std::uint16_t bit_depth_bits);
+  ORPHEUS_API void set_render_dither(bool enabled);
 
   [[nodiscard]] std::uint32_t render_sample_rate() const {
     return render_sample_rate_hz_;
@@ -172,9 +180,9 @@ class ORPHEUS_API SessionGraph {
   }
   [[nodiscard]] bool render_dither() const { return render_dither_enabled_; }
 
-  [[nodiscard]] TransportState transport_state() const;
+  [[nodiscard]] ORPHEUS_API TransportState transport_state() const;
 
-  void set_session_range(double start_beats, double end_beats);
+  ORPHEUS_API void set_session_range(double start_beats, double end_beats);
   [[nodiscard]] double session_start_beats() const {
     return session_start_beats_;
   }
@@ -182,19 +190,23 @@ class ORPHEUS_API SessionGraph {
     return session_end_beats_;
   }
 
-  Clip *add_clip(Track &track, std::string name, double start_beats,
-                double length_beats, std::uint32_t scene_index = 0u);
-  bool remove_clip(const Clip *clip);
-  void set_clip_start(Clip &clip, double start_beats);
-  void set_clip_length(Clip &clip, double length_beats);
-  void set_clip_scene(Clip &clip, std::uint32_t scene_index);
-  void commit_clip_grid();
+  [[nodiscard]] ORPHEUS_API Clip *add_clip(Track &track, std::string name,
+                                          double start_beats,
+                                          double length_beats,
+                                          std::uint32_t scene_index = 0u);
+  [[nodiscard]] ORPHEUS_API bool remove_clip(const Clip *clip);
+  ORPHEUS_API void set_clip_start(Clip &clip, double start_beats);
+  ORPHEUS_API void set_clip_length(Clip &clip, double length_beats);
+  ORPHEUS_API void set_clip_scene(Clip &clip, std::uint32_t scene_index);
+  ORPHEUS_API void commit_clip_grid();
 
-  void trigger_scene(std::uint32_t scene_index, double position_beats,
-                     const QuantizationWindow &quantization);
-  void end_scene(std::uint32_t scene_index, double position_beats,
-                 const QuantizationWindow &quantization);
-  void commit_arrangement(double fallback_scene_length_beats = 0.0);
+  ORPHEUS_API void trigger_scene(std::uint32_t scene_index,
+                                 double position_beats,
+                                 const QuantizationWindow &quantization);
+  ORPHEUS_API void end_scene(std::uint32_t scene_index, double position_beats,
+                             const QuantizationWindow &quantization);
+  ORPHEUS_API void commit_arrangement(
+      double fallback_scene_length_beats = 0.0);
 
   [[nodiscard]] const std::vector<CommittedClip> &committed_clips() const {
     return committed_clips_;

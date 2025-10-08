@@ -2,6 +2,7 @@
 #include "reconform_plan.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <limits>
@@ -36,7 +37,7 @@ ReconformTimeRange ParseTimeRange(const JsonValue &value,
                                            context + ".duration_seconds")};
 }
 
-void WriteTimeRange(std::ostringstream &stream, int indent,
+void WriteTimeRange(std::ostringstream &stream, std::size_t indent,
                     const std::string &name, const ReconformTimeRange &range) {
   WriteIndent(stream, indent);
   stream << '"' << name << '"' << ": {\n";

@@ -336,7 +336,7 @@ std::string FormatDouble(double value) {
   return text;
 }
 
-void WriteIndent(std::ostringstream &stream, int indent) {
+void WriteIndent(std::ostringstream &stream, std::size_t indent) {
   stream << std::string(indent, ' ');
 }
 

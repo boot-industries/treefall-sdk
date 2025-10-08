@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
@@ -510,9 +511,9 @@ void PrintSessionSummary(const SessionContext &context) {
   }
 }
 
-void PrintAbiJson(const AbiContext &abi, int indent) {
+void PrintAbiJson(const AbiContext &abi, std::size_t indent) {
   const std::string base(indent, ' ');
-  const std::string inner(indent + 2, ' ');
+  const std::string inner(indent + std::size_t{2}, ' ');
   const bool session_ok = abi.session_api != nullptr &&
                           abi.session_major == ORPHEUS_ABI_MAJOR &&
                           abi.session_minor == ORPHEUS_ABI_MINOR;

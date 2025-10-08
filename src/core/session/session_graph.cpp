@@ -21,6 +21,8 @@ Clip::Clip(std::string name, double start_beats, double length_beats,
       length_beats_(std::max(length_beats, kMinimumLengthBeats)),
       scene_index_(scene_index) {}
 
+Clip::~Clip() = default;
+
 void Clip::set_start(double start_beats) { start_beats_ = start_beats; }
 
 void Clip::set_length(double length_beats) {
@@ -32,6 +34,8 @@ void Clip::set_scene_index(std::uint32_t scene_index) {
 }
 
 Track::Track(std::string name) : name_(std::move(name)) {}
+
+Track::~Track() = default;
 
 Clip *Track::add_clip(std::string name, double start_beats, double length_beats,
                       std::uint32_t scene_index) {
@@ -106,6 +110,8 @@ void Track::validate_clip_layout() const {
 
 MarkerSet::MarkerSet(std::string name) : name_(std::move(name)) {}
 
+MarkerSet::~MarkerSet() = default;
+
 MarkerSet::Marker *MarkerSet::add_marker(std::string name,
                                          double position_beats) {
   auto &marker = markers_.emplace_back();
@@ -140,7 +146,13 @@ MarkerSet::Marker *MarkerSet::find_marker(const Marker *marker) {
 PlaylistLane::PlaylistLane(std::string name, bool is_active)
     : name_(std::move(name)), is_active_(is_active) {}
 
+PlaylistLane::~PlaylistLane() = default;
+
+void PlaylistLane::set_active(bool active) { is_active_ = active; }
+
 SessionGraph::SessionGraph() : name_("Session") {}
+
+SessionGraph::~SessionGraph() = default;
 
 void SessionGraph::set_name(std::string name) { name_ = std::move(name); }
 
