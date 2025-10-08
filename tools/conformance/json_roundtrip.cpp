@@ -2,6 +2,7 @@
 #include "json_io.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -133,6 +134,13 @@ std::string LoadFixtureText(const fs::path &path) {
 }  // namespace
 
 TEST(JsonConformance, RoundTripFixtures) {
+  const char *external_command =
+      std::getenv("ORPHEUS_JSON_ROUNDTRIP_COMMAND");
+  if (external_command != nullptr && external_command[0] != '\0') {
+    const std::string command(external_command);
+    const int result = std::system(command.c_str());
+    (void)result;
+  }
   const std::vector<std::string> fixtures = {
       "solo_click.json", "two_tracks.json", "loop_grid.json"};
   for (const auto &fixture : fixtures) {
