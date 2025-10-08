@@ -12,6 +12,7 @@ set(ORPHEUS_TEST_SOURCES
   session_api.cpp
   filename_rules.cpp
   otio_reconform_plan.cpp
+  dsp/oscillator_test.cpp
 )
 
 if(TARGET reaper_orpheus)
