@@ -26,6 +26,10 @@ target_link_libraries(orpheus_tests
     GTest::gtest_main
 )
 
+if(ORPHEUS_THREADS_TARGET)
+  target_link_libraries(orpheus_tests PRIVATE ${ORPHEUS_THREADS_TARGET})
+endif()
+
 target_compile_definitions(orpheus_tests
   PRIVATE
     ORPHEUS_SESSION_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/session"
