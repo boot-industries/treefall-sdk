@@ -9,7 +9,7 @@ add_executable(orpheus_find_package_smoke main.cpp)
 
 target_link_libraries(orpheus_find_package_smoke PRIVATE Orpheus::core)
 
-include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/CompilerWarnings.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_find_package_smoke)
 
 if(APPLE)
