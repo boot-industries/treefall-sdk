@@ -20,6 +20,9 @@ target_compile_definitions(orpheus_conformance_json
     ORPHEUS_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tools/fixtures"
 )
 
+include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+orpheus_enable_warnings(orpheus_conformance_json)
+
 include(GoogleTest)
 set(TEST_NAME conformance_json)
 add_test(NAME ${TEST_NAME} COMMAND orpheus_conformance_json)

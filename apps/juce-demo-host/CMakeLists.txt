@@ -55,3 +55,6 @@ target_link_libraries(orpheus_demo_host_app
 set_target_properties(orpheus_demo_host_app PROPERTIES
   OUTPUT_NAME "OrpheusDemoHost"
 )
+
+include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+orpheus_enable_warnings(orpheus_demo_host_app)
