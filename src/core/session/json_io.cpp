@@ -158,7 +158,10 @@ SessionGraph ParseSession(const std::string &json_text) {
             RequireField(marker_object, "position_beats");
         const double position =
             RequireNumber(*marker_position_field, "marker.position_beats");
-        marker_set->add_marker(marker_name, position);
+        auto *marker = marker_set->add_marker(marker_name, position);
+        if (marker == nullptr) {
+          throw std::runtime_error("Failed to add marker: " + marker_name);
+        }
       }
     }
   }
@@ -181,7 +184,10 @@ SessionGraph ParseSession(const std::string &json_text) {
         }
         is_active = active_it->second.boolean;
       }
-      session.add_playlist_lane(lane_name, is_active);
+      auto *lane = session.add_playlist_lane(lane_name, is_active);
+      if (lane == nullptr) {
+        throw std::runtime_error("Failed to add playlist lane: " + lane_name);
+      }
     }
   }
 
@@ -209,7 +215,10 @@ SessionGraph ParseSession(const std::string &json_text) {
           RequireNumber(*clip_start_field, "clip.start_beats");
       const double clip_length =
           RequireNumber(*clip_length_field, "clip.length_beats");
-      session.add_clip(*track, clip_name, clip_start, clip_length);
+      auto *clip = session.add_clip(*track, clip_name, clip_start, clip_length);
+      if (clip == nullptr) {
+        throw std::runtime_error("Failed to add clip: " + clip_name);
+      }
     }
   }
 

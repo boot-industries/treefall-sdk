@@ -47,7 +47,8 @@ Clip *Track::add_clip(std::string name, double start_beats, double length_beats,
   try {
     validate_clip_layout();
   } catch (...) {
-    remove_clip(raw);
+    const bool removed = remove_clip(raw);
+    (void)removed;
     throw;
   }
   return raw;

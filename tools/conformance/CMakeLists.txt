@@ -26,6 +26,7 @@ orpheus_enable_warnings(orpheus_conformance_json)
 include(GoogleTest)
 set(TEST_NAME conformance_json)
 add_test(NAME ${TEST_NAME} COMMAND orpheus_conformance_json)
+set_tests_properties(${TEST_NAME} PROPERTIES TIMEOUT 300)
 
 if(ORP_BUILD_SHARED_CORE)
   add_custom_command(TARGET orpheus_conformance_json POST_BUILD

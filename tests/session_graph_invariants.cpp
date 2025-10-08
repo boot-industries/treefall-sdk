@@ -83,7 +83,8 @@ TEST(SessionGraphInvariants, RejectsOverlappingClips) {
   Clip *first = session.add_clip(*track, "one", 0.0, 4.0);
   ASSERT_NE(first, nullptr);
 
-  EXPECT_THROW(session.add_clip(*track, "two", 2.0, 4.0),
+  EXPECT_THROW(static_cast<void>(
+                   session.add_clip(*track, "two", 2.0, 4.0)),
                std::invalid_argument);
 
   Clip *second = session.add_clip(*track, "two", 4.0, 4.0);

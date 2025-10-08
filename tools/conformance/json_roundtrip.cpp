@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT
 #include "json_io.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 #include <gtest/gtest.h>
 
@@ -131,6 +137,49 @@ std::string LoadFixtureText(const fs::path &path) {
   return buffer.str();
 }
 
+std::vector<std::uint8_t> DecodeBase64(std::string_view encoded) {
+  static const auto table = [] {
+    std::array<int, 256> values{};
+    values.fill(-1);
+    const std::string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (std::size_t index = 0; index < alphabet.size(); ++index) {
+      values[static_cast<unsigned char>(alphabet[index])] =
+          static_cast<int>(index);
+    }
+    return values;
+  }();
+
+  std::vector<std::uint8_t> result;
+  int value = 0;
+  int bits = -8;
+  for (const char ch : encoded) {
+    const unsigned char byte = static_cast<unsigned char>(ch);
+    if (std::isspace(byte) != 0) {
+      continue;
+    }
+    if (byte == '=') {
+      break;
+    }
+    const int decoded = table[byte];
+    if (decoded < 0) {
+      throw std::runtime_error("Invalid character in base64 fixture");
+    }
+    value = (value << 6) | decoded;
+    bits += 6;
+    if (bits >= 0) {
+      result.push_back(static_cast<std::uint8_t>((value >> bits) & 0xFF));
+      bits -= 8;
+    }
+  }
+  return result;
+}
+
+std::vector<std::uint8_t> DecodeBase64Fixture(const fs::path &path) {
+  const std::string contents = LoadFixtureText(path);
+  return DecodeBase64(contents);
+}
+
 }  // namespace
 
 TEST(JsonConformance, RoundTripFixtures) {
@@ -168,6 +217,35 @@ TEST(JsonConformance, DeterministicClickFilename) {
   const std::string loop_filename =
       MakeRenderClickFilename(loop.name(), "Click", 48000, 16);
   EXPECT_EQ(loop_filename, "out/loop_grid_click_48k_16b.wav");
+}
+
+TEST(JsonConformance, AudioFixturesAreDecodedFromText) {
+  const fs::path audio_root = FixturesRoot() / "audio";
+  if (!fs::exists(audio_root)) {
+    GTEST_SKIP() << "No audio fixtures present";
+  }
+
+  std::size_t decoded_files = 0;
+  for (const auto &entry : fs::directory_iterator(audio_root)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    if (entry.path().extension() != ".b64") {
+      continue;
+    }
+    const auto bytes = DecodeBase64Fixture(entry.path());
+    ASSERT_GE(bytes.size(), 12u)
+        << "Decoded WAV too small: " << entry.path().string();
+    const std::array<std::uint8_t, 4> riff{{'R', 'I', 'F', 'F'}};
+    ASSERT_TRUE(std::equal(riff.begin(), riff.end(), bytes.begin()))
+        << "Missing RIFF header for " << entry.path().string();
+    const std::array<std::uint8_t, 4> wave{{'W', 'A', 'V', 'E'}};
+    ASSERT_TRUE(std::equal(wave.begin(), wave.end(), bytes.begin() + 8))
+        << "Missing WAVE signature for " << entry.path().string();
+    ++decoded_files;
+  }
+
+  EXPECT_GT(decoded_files, 0u) << "Expected at least one audio fixture";
 }
 
 }  // namespace orpheus::core::session_json::tests

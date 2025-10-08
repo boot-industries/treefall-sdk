@@ -34,7 +34,55 @@ jobs:
         build_type: [Debug, RelWithDebInfo]
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
+        with:
+          fetch-depth: 0
+      - name: Fail on binary artifacts in PRs
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          mapfile -t added < <(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}"...HEAD)
+          if [ ${#added[@]} -eq 0 ]; then
+            echo "No newly added files; performing repository scan instead."
+          fi
+          declare -a banned=(".wav" ".dll" ".exe" ".a" ".so" ".dylib" ".lib")
+          declare -a violations=()
+          declare -A seen=()
+          for file in "${added[@]}"; do
+            lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+            for ext in "${banned[@]}"; do
+              if [[ "$lower" == *"${ext}" ]]; then
+                if [[ -z "${seen[$file]:-}" ]]; then
+                  violations+=("$file")
+                  seen["$file"]=1
+                fi
+                break
+              fi
+            done
+          done
+          if [ ${#violations[@]} -eq 0 ]; then
+            mapfile -t tracked < <(git ls-files)
+            for file in "${tracked[@]}"; do
+              lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+              for ext in "${banned[@]}"; do
+                if [[ "$lower" == *"${ext}" ]]; then
+                  if [[ -z "${seen[$file]:-}" ]]; then
+                    violations+=("$file")
+                    seen["$file"]=1
+                  fi
+                  break
+                fi
+              done
+            done
+          fi
+          if [ ${#violations[@]} -ne 0 ]; then
+            echo "Binary artifacts detected by CI guardrails:"
+            for file in "${violations[@]}"; do
+              echo "  $file"
+            done
+            echo "Please store binary fixtures as text (e.g. base64) instead of committing them directly."
+            exit 1
+          fi
       - name: Lint Windows includes
         run: |
           python3 - <<'PY'
@@ -84,3 +132,12 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
         timeout-minutes: 10
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-${{ matrix.build_type }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/CTestCostData.txt
+          if-no-files-found: ignore
