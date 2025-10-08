@@ -35,6 +35,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
+      - name: Lint Windows includes
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          ROOT = pathlib.Path('.')
+          violations = []
+          for path in ROOT.rglob('*'):
+            if not path.is_file():
+              continue
+            try:
+              relative = path.relative_to(ROOT)
+            except ValueError:
+              continue
+            parts = set(relative.parts)
+            if 'backup' in parts:
+              continue
+            if path.suffix.lower() not in {
+                '.c', '.cc', '.cxx', '.cpp', '.h', '.hh', '.hpp', '.hxx', '.inl'
+            }:
+              continue
+            try:
+              text = path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+              continue
+            lines = text.splitlines()
+            for index, line in enumerate(lines):
+              if '#include <windows.h>' not in line:
+                continue
+              prior = lines[:index]
+              if not any('#define NOMINMAX' in candidate for candidate in prior):
+                violations.append(f"{path}:{index + 1}")
+
+          if violations:
+            print('Found #include <windows.h> without prior #define NOMINMAX:')
+            for violation in violations:
+              print(f"  {violation}")
+            sys.exit(1)
+          PY
       - name: Configure
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} $([[ "${{ matrix.build_type }}" == "Debug" ]] && echo "-DORP_ENABLE_SANITIZERS=ON")
