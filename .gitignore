@@ -23,3 +23,29 @@
 # Platform-specific clutter
 .DS_Store
 Thumbs.db
+# === Orpheus SDK defaults ===
+node_modules/
+**/node_modules/
+.pnpm-store/
+dist/
+build/
+out/
+*.log
+# Prevent accidental binary blobs in repo
+*.zip
+*.7z
+*.tar
+*.gz
+*.tgz
+*.dylib
+*.dll
+*.so
+*.node
+*.wasm
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp3
+*.wav
+*.pdf
