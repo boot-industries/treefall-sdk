@@ -7,6 +7,19 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "echo 'Workspace bootstrap complete.'"
+    "postinstall": "echo 'Workspace bootstrap complete.'",
+    "lint:js": "pnpm -r --filter @orpheus/* exec -- prettier --check . && pnpm -r --filter @orpheus/* exec -- eslint --ext .js,.jsx,.ts,.tsx --no-error-on-unmatched-pattern .",
+    "lint:cpp": "bash scripts/lint-cpp.sh",
+    "lint": "pnpm run lint:js && pnpm run lint:cpp"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.26.2",
+    "@typescript-eslint/eslint-plugin": "^7.15.0",
+    "@typescript-eslint/parser": "^7.15.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^3.6.1",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.3.2"
   }
 }

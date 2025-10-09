@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@2.3.1/schema.json",
+  "changelog": ["@changesets/changelog-github", { "repo": "chrislyons/orpheus-sdk" }],
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [],
+  "packages": [
+    "@orpheus/engine-native",
+    "@orpheus/shmui"
+  ],
+  "prerelease": {
+    "tag": null,
+    "initialVersions": {},
+    "prefix": "",
+    "channelPrereleaseTemplate": {
+      "beta": "{name}-beta",
+      "rc": "{name}-rc"
+    }
+  },
+  "releaseTagging": {
+    "strategy": "independent"
+  }
+}

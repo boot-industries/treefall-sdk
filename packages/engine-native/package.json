@@ -6,7 +6,14 @@
   "scripts": {
     "build": "echo 'Native build delegated to existing CMake toolchain'"
   },
-  "os": ["darwin", "linux", "win32"],
-  "cpu": ["x64", "arm64"],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "license": "MIT"
 }

@@ -1,0 +1,14 @@
+build/
+out/
+cmake-*
+**/*.node
+**/*.wasm
+node_modules/
+src/
+include/
+apps/
+adapters/
+tests/
+public/
+assets/
+static/

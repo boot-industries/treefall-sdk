@@ -9,7 +9,11 @@
     "build": "echo 'TODO: build pipeline to be integrated'",
     "test": "node tests/placeholder.test.js"
   },
-  "keywords": ["orpheus", "shmui", "ui"],
+  "keywords": [
+    "orpheus",
+    "shmui",
+    "ui"
+  ],
   "author": "Orpheus Project",
   "license": "MIT"
 }

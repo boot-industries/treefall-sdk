@@ -4,5 +4,5 @@ Checks: >
   -readability-identifier-length,
   -modernize-use-trailing-return-type
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(adapters|include|src|tests)/'
+HeaderFilterRegex: '^(adapters|apps|include|src|tests)/'
 FormatStyle: file
