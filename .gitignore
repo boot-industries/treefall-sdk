@@ -49,3 +49,20 @@ out/
 *.mp3
 *.wav
 *.pdf
+
+# Orpheus binary guard
+*.node
+*.wasm
+*.dylib
+*.dll
+*.so
+*.zip
+*.7z
+*.tar
+*.gz
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp3
+*.wav
