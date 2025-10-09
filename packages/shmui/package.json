@@ -1,5 +1,5 @@
 {
-  "name": "ui",
+  "name": "@orpheus/shmui",
   "version": "0.0.1",
   "private": true,
   "license": "MIT",
@@ -14,10 +14,11 @@
   ],
   "scripts": {
     "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "start-server-and-test dev http://localhost:4000 test:dev",
     "build:registry": "pnpm --filter=www build:registry && pnpm lint:fix && pnpm format:write -- --loglevel silent",
     "registry:build": "pnpm --filter=www registry:build && pnpm lint:fix && pnpm format:write -- --loglevel silent",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "typecheck": "turbo run typecheck",
     "format:write": "turbo run format:write",
@@ -25,7 +26,6 @@
     "check": "turbo lint typecheck format:check",
     "release": "changeset version",
     "test:dev": "turbo run test --force",
-    "test": "start-server-and-test dev http://localhost:4000 test:dev",
     "validate:registries": "pnpm validate:registries"
   },
   "packageManager": "pnpm@9.0.6",
