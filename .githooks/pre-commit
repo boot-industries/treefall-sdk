@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Allowlist (regex, anchored to repo root paths)
+ALLOWLIST_REGEX='^(docs/images/.*\.(png|jpg|jpeg|svg)$|packages/contract/fixtures/golden-audio/.*\.wav$)'
+
+# Gather staged files (Added/Copy/Modified/Renamed)
+mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR)
+
+is_binary_ext() {
+  case "${1,,}" in
+    *.wasm|*.node|*.so|*.dylib|*.dll|*.exe|*.a|*.lib|*.o|*.obj|*.bin|*.pdf|*.zip|*.7z|*.tar|*.gz|*.rar|*.mp3|*.wav|*.flac|*.png|*.jpg|*.jpeg) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+BLOCKED=()
+for f in "${FILES[@]}"; do
+  # Skip deleted or non-files
+  [ -f "$f" ] || continue
+
+  # Allowlist paths
+  if [[ "$f" =~ $ALLOWLIST_REGEX ]]; then
+    continue
+  fi
+
+  # Extension check first (fast)
+  if is_binary_ext "$f"; then
+    BLOCKED+=("$f (extension)")
+    continue
+  fi
+
+  # MIME check (fallback)
+  if command -v file >/dev/null 2>&1; then
+    MIME="$(file -b --mime "$f" || true)"
+    if [[ "$MIME" == *"charset=binary"* || "$MIME" == *"application/octet-stream"* ]]; then
+      BLOCKED+=("$f ($MIME)")
+    fi
+  fi
+done
+
+if [ "${#BLOCKED[@]}" -gt 0 ]; then
+  echo "❌ Commit blocked: binary files are not allowed in PRs."
+  echo "   If a file must be permitted, add it to the pre-commit allowlist."
+  printf '   Offending files:\n'
+  for b in "${BLOCKED[@]}"; do printf '     - %s\n' "$b"; done
+  exit 1
+fi

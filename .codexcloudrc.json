@@ -1,0 +1,13 @@
+{
+  "project": "orpheus-sdk",
+  "primaryDoc": "docs/integration/ORP068 Implementation Plan v2.0_ Orpheus SDK × Shmui Integration .md",
+  "taskIdFormat": "{PHASE}.{DOMAIN}.{SEQUENCE}",
+  "bootstrap": "scripts/bootstrap-dev.sh",
+  "phaseValidators": {
+    "P0": "scripts/validate-phase0.sh",
+    "P1": "scripts/validate-phase1.sh",
+    "P2": "scripts/validate-phase2.sh",
+    "P3": "scripts/validate-phase3.sh",
+    "P4": "scripts/validate-phase4.sh"
+  }
+}

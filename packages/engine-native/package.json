@@ -1,0 +1,12 @@
+{
+  "name": "@orpheus/engine-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native engine bindings packaged for consumption by Electron and Node.js shells.",
+  "scripts": {
+    "build": "echo 'Native build delegated to existing CMake toolchain'"
+  },
+  "os": ["darwin", "linux", "win32"],
+  "cpu": ["x64", "arm64"],
+  "license": "MIT"
+}
