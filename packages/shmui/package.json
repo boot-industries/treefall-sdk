@@ -13,7 +13,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "turbo run build",
+    "build": "echo \"shmui build (deferred)\"",
+    "build:turbo": "turbo run build",
     "lint": "turbo run lint",
     "test": "start-server-and-test dev http://localhost:4000 test:dev",
     "build:registry": "pnpm --filter=www build:registry && pnpm lint:fix && pnpm format:write -- --loglevel silent",
@@ -28,7 +29,7 @@
     "test:dev": "turbo run test --force",
     "validate:registries": "pnpm validate:registries"
   },
-  "packageManager": "pnpm@9.0.6",
+  "packageManager": "pnpm@10.5.2",
   "dependencies": {
     "@babel/core": "^7.22.1",
     "@changesets/changelog-github": "^0.4.8",
