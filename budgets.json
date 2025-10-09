@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "budgets": {
+    "bundleSize": {
+      "@orpheus/shmui": {
+        "max": 1572864,
+        "warn": 1468006,
+        "description": "UI bundle (1.5 MB max, warn at 1.4 MB)"
+      },
+      "@orpheus/engine-wasm": {
+        "max": 5242880,
+        "warn": 4718592,
+        "description": "WASM module (5 MB max, warn at 4.5 MB)"
+      }
+    },
+    "commandLatency": {
+      "LoadSession": { "p95": 200, "p99": 500, "unit": "ms" },
+      "RenderClick": { "p95": 1000, "p99": 2000, "unit": "ms" }
+    },
+    "eventFrequency": {
+      "TransportTick": { "max": 30, "unit": "Hz" },
+      "RenderProgress": { "max": 10, "unit": "Hz" }
+    },
+    "degradationTolerance": { "latency": "10%", "size": "15%" }
+  }
+}
