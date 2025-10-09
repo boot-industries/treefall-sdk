@@ -1,3 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "(placeholder) Phase validation script — replace in Phase 0 tasks"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/phase-validation.sh"
+
+cd "$REPO_ROOT"
+
+print_header "Phase 0 Validation"
+phase0_baseline_checks
+print_success "Phase 0 validation complete"
