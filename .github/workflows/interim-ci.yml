@@ -1,83 +1,120 @@
-name: interim-ci
+name: Interim CI Pipeline
 
 on:
-  pull_request:
-    paths:
-      - "CMakeLists.txt"
-      - "cmake/**"
-      - "src/**"
-      - "include/**"
-      - "apps/**"
-      - "adapters/**"
-      - "tests/**"
-      - "packages/**"
-      - "docs/integration/**"
   push:
-    branches: [ main ]
-    paths:
-      - "CMakeLists.txt"
-      - "cmake/**"
-      - "src/**"
-      - "include/**"
-      - "apps/**"
-      - "adapters/**"
-      - "tests/**"
-      - "packages/**"
-      - "docs/integration/**"
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
   build-cpp:
-    name: C++ build & tests (Ubuntu)
-    runs-on: ubuntu-latest
+    name: Build C++ (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            generator: "Unix Makefiles"
+          - os: windows-latest
+            generator: "Visual Studio 17 2022"
+          - os: macos-latest
+            generator: "Unix Makefiles"
+    
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
         with:
-          fetch-depth: 0
+          cmake-version: '3.27.x'
+      
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -G "${{ matrix.generator }}"
+      
+      - name: Build
+        run: cmake --build build --config Debug
+      
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --build-config Debug
+      
       - name: Cache CMake build
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: build
-          key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**') }}
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+          key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
 
   build-ui:
-    name: UI build & lint (Ubuntu)
+    name: Build UI & Run Tests
     runs-on: ubuntu-latest
+    
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-      - name: Install PNPM
-        uses: pnpm/action-setup@v3
+          node-version: '18'
+      
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v2
         with:
           version: 8
-      - name: Detect JS workspace
-        id: detect
-        run: |
-          if [ -f package.json ] || [ -f pnpm-workspace.yaml ]; then
-            echo "has_ws=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_ws=false" >> "$GITHUB_OUTPUT"
-          fi
+      
+      - name: Get PNPM store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
       - name: Cache PNPM store
-        if: steps.detect.outputs.has_ws == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-${{ runner.os }}-
-      - name: Install deps
-        if: steps.detect.outputs.has_ws == 'true'
-        run: pnpm install --frozen-lockfile || pnpm install
-      - name: Build UI
-        if: steps.detect.outputs.has_ws == 'true'
-        run: pnpm -w run build || true
-      - name: Lint JS
-        if: steps.detect.outputs.has_ws == 'true'
-        run: pnpm run lint:js || true
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Lint TypeScript
+        run: pnpm run lint:js
+      
+      - name: Type check
+        run: pnpm run type-check || echo "Type checking not configured yet"
+      
+      - name: Build packages
+        run: pnpm run build
+      
+      - name: Run tests
+        run: pnpm run test || echo "Tests not configured yet"
+
+  lint-cpp:
+    name: Lint C++
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-14
+      
+      - name: Run clang-format
+        run: |
+          find src include -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
+          xargs clang-format-14 --dry-run --Werror
+
+  status-check:
+    name: All Checks Passed
+    runs-on: ubuntu-latest
+    needs: [build-cpp, build-ui, lint-cpp]
+    if: always()
+    
+    steps:
+      - name: Check build status
+        run: |
+          if [[ "${{ needs.build-cpp.result }}" != "success" ]] || \
+             [[ "${{ needs.build-ui.result }}" != "success" ]] || \
+             [[ "${{ needs.lint-cpp.result }}" != "success" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
