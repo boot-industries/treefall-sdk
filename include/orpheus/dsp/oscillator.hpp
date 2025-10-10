@@ -8,11 +8,13 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <span>
+#include <type_traits>
 
 #include "orpheus/export.h"
 
@@ -53,14 +55,19 @@ template <std::size_t Size> constexpr std::array<double, Size> make_sine_table()
 
 } // namespace detail
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
+
 class ORPHEUS_API AtomicDouble {
 public:
   AtomicDouble() noexcept {
-    storage_.store(0.0, std::memory_order_relaxed);
+    storage_.store(std::bit_cast<std::uint64_t>(0.0), std::memory_order_relaxed);
   }
 
   explicit AtomicDouble(double value) noexcept {
-    storage_.store(value, std::memory_order_relaxed);
+    storage_.store(std::bit_cast<std::uint64_t>(value), std::memory_order_relaxed);
   }
 
   AtomicDouble(const AtomicDouble&) = delete;
@@ -69,11 +76,12 @@ public:
   AtomicDouble& operator=(AtomicDouble&&) = delete;
 
   void store(double value, std::memory_order order = std::memory_order_relaxed) noexcept {
-    storage_.store(value, order);
+    storage_.store(std::bit_cast<std::uint64_t>(value), order);
   }
 
   [[nodiscard]] double load(std::memory_order order = std::memory_order_relaxed) const noexcept {
-    return storage_.load(order);
+    const std::uint64_t bits = storage_.load(order);
+    return std::bit_cast<double>(bits);
   }
 
   AtomicDouble& operator=(double value) noexcept {
@@ -86,8 +94,130 @@ public:
   }
 
 private:
-  std::atomic<double> storage_;
+  std::atomic<std::uint64_t> storage_;
 };
+
+class ORPHEUS_API AtomicBool {
+public:
+  AtomicBool() noexcept : storage_(0U) {}
+
+  explicit AtomicBool(bool value) noexcept : storage_(value ? 1U : 0U) {}
+
+  AtomicBool(const AtomicBool&) = delete;
+  AtomicBool& operator=(const AtomicBool&) = delete;
+  AtomicBool(AtomicBool&&) = delete;
+  AtomicBool& operator=(AtomicBool&&) = delete;
+
+  void store(bool value, std::memory_order order = std::memory_order_seq_cst) noexcept {
+    storage_.store(value ? 1U : 0U, order);
+  }
+
+  [[nodiscard]] bool load(std::memory_order order = std::memory_order_seq_cst) const noexcept {
+    return storage_.load(order) != 0U;
+  }
+
+  bool exchange(bool desired, std::memory_order order = std::memory_order_seq_cst) noexcept {
+    return storage_.exchange(desired ? 1U : 0U, order) != 0U;
+  }
+
+  bool compare_exchange_strong(bool& expected, bool desired,
+                               std::memory_order success = std::memory_order_seq_cst,
+                               std::memory_order failure = std::memory_order_seq_cst) noexcept {
+    std::uint8_t expected_value = expected ? 1U : 0U;
+    const bool result =
+        storage_.compare_exchange_strong(expected_value, desired ? 1U : 0U, success, failure);
+    expected = expected_value != 0U;
+    return result;
+  }
+
+  bool compare_exchange_weak(bool& expected, bool desired,
+                             std::memory_order success = std::memory_order_seq_cst,
+                             std::memory_order failure = std::memory_order_seq_cst) noexcept {
+    std::uint8_t expected_value = expected ? 1U : 0U;
+    const bool result =
+        storage_.compare_exchange_weak(expected_value, desired ? 1U : 0U, success, failure);
+    expected = expected_value != 0U;
+    return result;
+  }
+
+  AtomicBool& operator=(bool value) noexcept {
+    store(value);
+    return *this;
+  }
+
+  operator bool() const noexcept {
+    return load();
+  }
+
+private:
+  std::atomic<std::uint8_t> storage_;
+};
+
+template <typename Enum> class ORPHEUS_API AtomicEnum {
+  static_assert(std::is_enum_v<Enum>, "AtomicEnum requires an enum type");
+
+public:
+  using underlying_type = std::underlying_type_t<Enum>;
+
+  // Default-construct the atomic storage at run time to avoid MSVC warnings
+  // about constexpr initialization of std::atomic.
+  AtomicEnum() noexcept : storage_(static_cast<underlying_type>(Enum{})) {}
+
+  explicit AtomicEnum(Enum value) noexcept : storage_(static_cast<underlying_type>(value)) {}
+
+  AtomicEnum(const AtomicEnum&) = delete;
+  AtomicEnum& operator=(const AtomicEnum&) = delete;
+  AtomicEnum(AtomicEnum&&) = delete;
+  AtomicEnum& operator=(AtomicEnum&&) = delete;
+
+  void store(Enum value, std::memory_order order = std::memory_order_seq_cst) noexcept {
+    storage_.store(static_cast<underlying_type>(value), order);
+  }
+
+  [[nodiscard]] Enum load(std::memory_order order = std::memory_order_seq_cst) const noexcept {
+    return static_cast<Enum>(storage_.load(order));
+  }
+
+  Enum exchange(Enum desired, std::memory_order order = std::memory_order_seq_cst) noexcept {
+    return static_cast<Enum>(storage_.exchange(static_cast<underlying_type>(desired), order));
+  }
+
+  bool compare_exchange_strong(Enum& expected, Enum desired,
+                               std::memory_order success = std::memory_order_seq_cst,
+                               std::memory_order failure = std::memory_order_seq_cst) noexcept {
+    auto expected_value = static_cast<underlying_type>(expected);
+    const bool result = storage_.compare_exchange_strong(
+        expected_value, static_cast<underlying_type>(desired), success, failure);
+    expected = static_cast<Enum>(expected_value);
+    return result;
+  }
+
+  bool compare_exchange_weak(Enum& expected, Enum desired,
+                             std::memory_order success = std::memory_order_seq_cst,
+                             std::memory_order failure = std::memory_order_seq_cst) noexcept {
+    auto expected_value = static_cast<underlying_type>(expected);
+    const bool result = storage_.compare_exchange_weak(
+        expected_value, static_cast<underlying_type>(desired), success, failure);
+    expected = static_cast<Enum>(expected_value);
+    return result;
+  }
+
+  AtomicEnum& operator=(Enum value) noexcept {
+    store(value);
+    return *this;
+  }
+
+  operator Enum() const noexcept {
+    return load();
+  }
+
+private:
+  std::atomic<underlying_type> storage_;
+};
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /**
  * @brief Oscillator waveforms.
@@ -331,11 +461,11 @@ private:
   AtomicDouble pulse_width_;
   AtomicDouble detune_cents_;
   std::atomic<std::size_t> voice_count_{1};
-  std::atomic<bool> sub_oscillator_{false};
-  std::atomic<bool> lfo_mode_{false};
-  std::atomic<Waveform> waveform_{Waveform::Sine};
+  AtomicBool sub_oscillator_{false};
+  AtomicBool lfo_mode_{false};
+  AtomicEnum<Waveform> waveform_{Waveform::Sine};
   AtomicDouble fm_depth_;
-  std::atomic<bool> phase_sync_pending_{false};
+  AtomicBool phase_sync_pending_{false};
   AtomicDouble requested_phase_;
 };
 
