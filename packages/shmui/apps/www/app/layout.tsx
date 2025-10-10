@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 
 import { META_THEME_COLORS, siteConfig } from "@/lib/config"
 import { fontVariables } from "@/lib/fonts"
+import { buildAbsoluteUrl, getMetadataBase, resolveAppUrl } from "@/lib/app-url"
 import { cn } from "@/lib/utils"
 import { LayoutProvider } from "@/hooks/use-layout"
 import { ActiveThemeProvider } from "@/components/active-theme"
@@ -12,12 +13,14 @@ import { Toaster } from "@/registry/elevenlabs-ui/ui/sonner"
 
 import "@/styles/globals.css"
 
+const appUrl = resolveAppUrl()
+
 export const metadata: Metadata = {
   title: {
     default: siteConfig.name,
     template: `%s | ${siteConfig.name}`,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL!),
+  metadataBase: getMetadataBase(),
   description: siteConfig.description,
   keywords: ["ElevenLabs", "UI", "shadcn", "Components", "audio", "agents"],
   authors: [
@@ -30,13 +33,13 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: process.env.NEXT_PUBLIC_APP_URL!,
+    url: appUrl,
     title: siteConfig.name,
     description: siteConfig.description,
     siteName: siteConfig.name,
     images: [
       {
-        url: `${process.env.NEXT_PUBLIC_APP_URL}/opengraph-image.png`,
+        url: buildAbsoluteUrl("/opengraph-image.png"),
         width: 1200,
         height: 630,
         alt: siteConfig.name,
@@ -47,7 +50,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: siteConfig.name,
     description: siteConfig.description,
-    images: [`${process.env.NEXT_PUBLIC_APP_URL}/opengraph-image.png`],
+    images: [buildAbsoluteUrl("/opengraph-image.png")],
     creator: "@elevenlabsio",
   },
   icons: {
@@ -55,7 +58,7 @@ export const metadata: Metadata = {
     shortcut: "/favicon-16x16.png",
     apple: "/apple-touch-icon.png",
   },
-  manifest: `${siteConfig.url}/site.webmanifest`,
+  manifest: buildAbsoluteUrl("/site.webmanifest"),
 }
 
 export default function RootLayout({

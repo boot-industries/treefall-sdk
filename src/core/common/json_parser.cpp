@@ -11,7 +11,7 @@
 
 namespace orpheus::json {
 
-JsonParser::JsonParser(std::string_view input) : input_(input) {}
+JsonParser::JsonParser(std::string_view input) : data_(input.data()), size_(input.size()) {}
 
 JsonValue JsonParser::Parse() {
   SkipWhitespace();
@@ -23,20 +23,22 @@ JsonValue JsonParser::Parse() {
   return value;
 }
 
-bool JsonParser::AtEnd() const { return index_ >= input_.size(); }
+bool JsonParser::AtEnd() const {
+  return index_ >= size_;
+}
 
 char JsonParser::Peek() const {
   if (AtEnd()) {
     return '\0';
   }
-  return input_[index_];
+  return data_[index_];
 }
 
 char JsonParser::Consume() {
   if (AtEnd()) {
     throw std::runtime_error("Unexpected end of input");
   }
-  return input_[index_++];
+  return data_[index_++];
 }
 
 void JsonParser::SkipWhitespace() {
@@ -49,34 +51,34 @@ JsonValue JsonParser::ParseValue() {
   SkipWhitespace();
   const char c = Peek();
   switch (c) {
-    case '{':
-      return ParseObject();
-    case '[':
-      return ParseArray();
-    case '"': {
+  case '{':
+    return ParseObject();
+  case '[':
+    return ParseArray();
+  case '"': {
+    JsonValue value;
+    value.type = JsonValue::Type::kString;
+    value.string = ParseString();
+    return value;
+  }
+  case 't':
+  case 'f': {
+    JsonValue value;
+    value.type = JsonValue::Type::kBoolean;
+    value.boolean = ParseBoolean();
+    return value;
+  }
+  case 'n':
+    ParseNull();
+    return {};
+  default:
+    if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
       JsonValue value;
-      value.type = JsonValue::Type::kString;
-      value.string = ParseString();
+      value.type = JsonValue::Type::kNumber;
+      value.number = ParseNumber();
       return value;
     }
-    case 't':
-    case 'f': {
-      JsonValue value;
-      value.type = JsonValue::Type::kBoolean;
-      value.boolean = ParseBoolean();
-      return value;
-    }
-    case 'n':
-      ParseNull();
-      return {};
-    default:
-      if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
-        JsonValue value;
-        value.type = JsonValue::Type::kNumber;
-        value.number = ParseNumber();
-        return value;
-      }
-      break;
+    break;
   }
   throw std::runtime_error("Unsupported JSON token");
 }
@@ -84,7 +86,7 @@ JsonValue JsonParser::ParseValue() {
 JsonValue JsonParser::ParseObject() {
   JsonValue value;
   value.type = JsonValue::Type::kObject;
-  Consume();  // '{'
+  Consume(); // '{'
   SkipWhitespace();
   if (Peek() == '}') {
     Consume();
@@ -117,7 +119,7 @@ JsonValue JsonParser::ParseObject() {
 JsonValue JsonParser::ParseArray() {
   JsonValue value;
   value.type = JsonValue::Type::kArray;
-  Consume();  // '['
+  Consume(); // '['
   SkipWhitespace();
   if (Peek() == ']') {
     Consume();
@@ -158,53 +160,53 @@ std::string JsonParser::ParseString() {
       }
       const char esc = Consume();
       switch (esc) {
-        case '"':
-        case '\\':
-        case '/':
-          result.push_back(esc);
-          break;
-        case 'b':
-          result.push_back('\b');
-          break;
-        case 'f':
-          result.push_back('\f');
-          break;
-        case 'n':
-          result.push_back('\n');
-          break;
-        case 'r':
-          result.push_back('\r');
-          break;
-        case 't':
-          result.push_back('\t');
-          break;
-        case 'u': {
-          unsigned int codepoint = 0;
-          for (int i = 0; i < 4; ++i) {
-            if (AtEnd()) {
-              throw std::runtime_error("Invalid unicode escape");
-            }
-            const char hex = Consume();
-            codepoint <<= 4;
-            if (hex >= '0' && hex <= '9') {
-              codepoint |= static_cast<unsigned int>(hex - '0');
-            } else if (hex >= 'a' && hex <= 'f') {
-              codepoint |= static_cast<unsigned int>(hex - 'a' + 10);
-            } else if (hex >= 'A' && hex <= 'F') {
-              codepoint |= static_cast<unsigned int>(hex - 'A' + 10);
-            } else {
-              throw std::runtime_error("Invalid unicode escape");
-            }
+      case '"':
+      case '\\':
+      case '/':
+        result.push_back(esc);
+        break;
+      case 'b':
+        result.push_back('\b');
+        break;
+      case 'f':
+        result.push_back('\f');
+        break;
+      case 'n':
+        result.push_back('\n');
+        break;
+      case 'r':
+        result.push_back('\r');
+        break;
+      case 't':
+        result.push_back('\t');
+        break;
+      case 'u': {
+        unsigned int codepoint = 0;
+        for (int i = 0; i < 4; ++i) {
+          if (AtEnd()) {
+            throw std::runtime_error("Invalid unicode escape");
           }
-          if (codepoint <= 0x7F) {
-            result.push_back(static_cast<char>(codepoint));
+          const char hex = Consume();
+          codepoint <<= 4;
+          if (hex >= '0' && hex <= '9') {
+            codepoint |= static_cast<unsigned int>(hex - '0');
+          } else if (hex >= 'a' && hex <= 'f') {
+            codepoint |= static_cast<unsigned int>(hex - 'a' + 10);
+          } else if (hex >= 'A' && hex <= 'F') {
+            codepoint |= static_cast<unsigned int>(hex - 'A' + 10);
           } else {
-            throw std::runtime_error("Only ASCII unicode escapes supported");
+            throw std::runtime_error("Invalid unicode escape");
           }
-          break;
         }
-        default:
-          throw std::runtime_error("Unsupported escape sequence");
+        if (codepoint <= 0x7F) {
+          result.push_back(static_cast<char>(codepoint));
+        } else {
+          throw std::runtime_error("Only ASCII unicode escapes supported");
+        }
+        break;
+      }
+      default:
+        throw std::runtime_error("Unsupported escape sequence");
       }
     } else {
       result.push_back(c);
@@ -214,11 +216,11 @@ std::string JsonParser::ParseString() {
 }
 
 bool JsonParser::ParseBoolean() {
-  if (input_.substr(index_, 4) == "true") {
+  if (size_ - index_ >= 4 && Slice(index_, 4) == "true") {
     index_ += 4;
     return true;
   }
-  if (input_.substr(index_, 5) == "false") {
+  if (size_ - index_ >= 5 && Slice(index_, 5) == "false") {
     index_ += 5;
     return false;
   }
@@ -226,7 +228,7 @@ bool JsonParser::ParseBoolean() {
 }
 
 void JsonParser::ParseNull() {
-  if (input_.substr(index_, 4) != "null") {
+  if (size_ - index_ < 4 || Slice(index_, 4) != "null") {
     throw std::runtime_error("Invalid null literal");
   }
   index_ += 4;
@@ -268,10 +270,10 @@ double JsonParser::ParseNumber() {
       ++index_;
     }
   }
-  const std::string_view number_view = input_.substr(start, index_ - start);
+  const std::string_view number_view = Slice(start, index_ - start);
   const std::string number_string(number_view);
   errno = 0;
-  char *end_ptr = nullptr;
+  char* end_ptr = nullptr;
   const double value = std::strtod(number_string.c_str(), &end_ptr);
   if (end_ptr != number_string.c_str() + number_string.size() || errno == ERANGE ||
       end_ptr == number_string.c_str()) {
@@ -280,21 +282,29 @@ double JsonParser::ParseNumber() {
   return value;
 }
 
-const JsonValue &ExpectObject(const JsonValue &value, const char *context) {
+std::string_view JsonParser::Slice(std::size_t start, std::size_t length) const {
+  if (start >= size_) {
+    return std::string_view();
+  }
+  const std::size_t clamped = std::min(length, size_ - start);
+  return std::string_view(data_ + start, clamped);
+}
+
+const JsonValue& ExpectObject(const JsonValue& value, const char* context) {
   if (value.type != JsonValue::Type::kObject) {
     throw std::runtime_error(std::string("Expected object for ") + context);
   }
   return value;
 }
 
-const JsonValue &ExpectArray(const JsonValue &value, const char *context) {
+const JsonValue& ExpectArray(const JsonValue& value, const char* context) {
   if (value.type != JsonValue::Type::kArray) {
     throw std::runtime_error(std::string("Expected array for ") + context);
   }
   return value;
 }
 
-const JsonValue *RequireField(const JsonValue &object, const std::string &key) {
+const JsonValue* RequireField(const JsonValue& object, const std::string& key) {
   const auto it = object.object.find(key);
   if (it == object.object.end()) {
     throw std::runtime_error("Missing field: " + key);
@@ -302,14 +312,14 @@ const JsonValue *RequireField(const JsonValue &object, const std::string &key) {
   return &it->second;
 }
 
-double RequireNumber(const JsonValue &value, const std::string &key) {
+double RequireNumber(const JsonValue& value, const std::string& key) {
   if (value.type != JsonValue::Type::kNumber) {
     throw std::runtime_error("Expected numeric field: " + key);
   }
   return value.number;
 }
 
-std::string RequireString(const JsonValue &value, const std::string &key) {
+std::string RequireString(const JsonValue& value, const std::string& key) {
   if (value.type != JsonValue::Type::kString) {
     throw std::runtime_error("Expected string field: " + key);
   }
@@ -336,36 +346,36 @@ std::string FormatDouble(double value) {
   return text;
 }
 
-void WriteIndent(std::ostringstream &stream, std::size_t indent) {
+void WriteIndent(std::ostringstream& stream, std::size_t indent) {
   stream << std::string(indent, ' ');
 }
 
-std::string EscapeString(const std::string &value) {
+std::string EscapeString(const std::string& value) {
   std::string result;
   result.reserve(value.size());
   for (char c : value) {
     switch (c) {
-      case '"':
-        result += "\\\"";
-        break;
-      case '\\':
-        result += "\\\\";
-        break;
-      case '\n':
-        result += "\\n";
-        break;
-      case '\r':
-        result += "\\r";
-        break;
-      case '\t':
-        result += "\\t";
-        break;
-      default:
-        result.push_back(c);
-        break;
+    case '"':
+      result += "\\\"";
+      break;
+    case '\\':
+      result += "\\\\";
+      break;
+    case '\n':
+      result += "\\n";
+      break;
+    case '\r':
+      result += "\\r";
+      break;
+    case '\t':
+      result += "\\t";
+      break;
+    default:
+      result.push_back(c);
+      break;
     }
   }
   return result;
 }
 
-}  // namespace orpheus::json
+} // namespace orpheus::json

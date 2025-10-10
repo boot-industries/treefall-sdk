@@ -27,17 +27,17 @@ struct orpheus_track_handle_t;
 struct orpheus_clip_handle_t;
 struct orpheus_scene_handle_t;
 
-typedef struct orpheus_session_handle_t *orpheus_session_handle;
-typedef struct orpheus_track_handle_t *orpheus_track_handle;
-typedef struct orpheus_clip_handle_t *orpheus_clip_handle;
-typedef struct orpheus_scene_handle_t *orpheus_scene_handle;
+typedef struct orpheus_session_handle_t* orpheus_session_handle;
+typedef struct orpheus_track_handle_t* orpheus_track_handle;
+typedef struct orpheus_clip_handle_t* orpheus_clip_handle;
+typedef struct orpheus_scene_handle_t* orpheus_scene_handle;
 
 typedef struct orpheus_track_desc {
-  const char *name;
+  const char* name;
 } orpheus_track_desc;
 
 typedef struct orpheus_clip_desc {
-  const char *name;
+  const char* name;
   double start_beats;
   double length_beats;
   uint32_t scene_index;
@@ -76,59 +76,47 @@ typedef struct orpheus_render_click_spec {
 
 typedef struct orpheus_session_api_v1 {
   uint64_t caps;
-  orpheus_status (*create)(orpheus_session_handle *out_session);
+  orpheus_status (*create)(orpheus_session_handle* out_session);
   void (*destroy)(orpheus_session_handle session);
-  orpheus_status (*add_track)(orpheus_session_handle session,
-                              const orpheus_track_desc *desc,
-                              orpheus_track_handle *out_track);
-  orpheus_status (*remove_track)(orpheus_session_handle session,
-                                 orpheus_track_handle track);
+  orpheus_status (*add_track)(orpheus_session_handle session, const orpheus_track_desc* desc,
+                              orpheus_track_handle* out_track);
+  orpheus_status (*remove_track)(orpheus_session_handle session, orpheus_track_handle track);
   orpheus_status (*set_tempo)(orpheus_session_handle session, double bpm);
   orpheus_status (*get_transport_state)(orpheus_session_handle session,
-                                        orpheus_transport_state *out_state);
+                                        orpheus_transport_state* out_state);
 } orpheus_session_api_v1;
 
 typedef struct orpheus_clipgrid_api_v1 {
   uint64_t caps;
-  orpheus_status (*add_clip)(orpheus_session_handle session,
-                             orpheus_track_handle track,
-                             const orpheus_clip_desc *desc,
-                             orpheus_clip_handle *out_clip);
-  orpheus_status (*remove_clip)(orpheus_session_handle session,
-                                orpheus_clip_handle clip);
-  orpheus_status (*set_clip_start)(orpheus_session_handle session,
-                                   orpheus_clip_handle clip,
+  orpheus_status (*add_clip)(orpheus_session_handle session, orpheus_track_handle track,
+                             const orpheus_clip_desc* desc, orpheus_clip_handle* out_clip);
+  orpheus_status (*remove_clip)(orpheus_session_handle session, orpheus_clip_handle clip);
+  orpheus_status (*set_clip_start)(orpheus_session_handle session, orpheus_clip_handle clip,
                                    double start_beats);
-  orpheus_status (*set_clip_length)(orpheus_session_handle session,
-                                    orpheus_clip_handle clip,
+  orpheus_status (*set_clip_length)(orpheus_session_handle session, orpheus_clip_handle clip,
                                     double length_beats);
-  orpheus_status (*set_clip_scene)(orpheus_session_handle session,
-                                   orpheus_clip_handle clip,
+  orpheus_status (*set_clip_scene)(orpheus_session_handle session, orpheus_clip_handle clip,
                                    uint32_t scene_index);
   orpheus_status (*commit)(orpheus_session_handle session);
   orpheus_status (*trigger_scene)(orpheus_session_handle session,
-                                  const orpheus_scene_trigger_desc *desc);
-  orpheus_status (*end_scene)(orpheus_session_handle session,
-                              const orpheus_scene_end_desc *desc);
-  orpheus_status (*commit_arrangement)(
-      orpheus_session_handle session,
-      const orpheus_arrangement_commit_desc *desc);
+                                  const orpheus_scene_trigger_desc* desc);
+  orpheus_status (*end_scene)(orpheus_session_handle session, const orpheus_scene_end_desc* desc);
+  orpheus_status (*commit_arrangement)(orpheus_session_handle session,
+                                       const orpheus_arrangement_commit_desc* desc);
 } orpheus_clipgrid_api_v1;
 
 typedef struct orpheus_render_api_v1 {
   uint64_t caps;
-  orpheus_status (*render_click)(const orpheus_render_click_spec *spec,
-                                 const char *out_path);
-  orpheus_status (*render_tracks)(orpheus_session_handle session,
-                                  const char *out_path);
+  orpheus_status (*render_click)(const orpheus_render_click_spec* spec, const char* out_path);
+  orpheus_status (*render_tracks)(orpheus_session_handle session, const char* out_path);
 } orpheus_render_api_v1;
 
-ORPHEUS_API const orpheus_session_api_v1 *orpheus_session_abi_v1(
-    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
-ORPHEUS_API const orpheus_clipgrid_api_v1 *orpheus_clipgrid_abi_v1(
-    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
-ORPHEUS_API const orpheus_render_api_v1 *orpheus_render_abi_v1(
-    uint32_t want_major, uint32_t *got_major, uint32_t *got_minor);
+ORPHEUS_API const orpheus_session_api_v1*
+orpheus_session_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor);
+ORPHEUS_API const orpheus_clipgrid_api_v1*
+orpheus_clipgrid_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor);
+ORPHEUS_API const orpheus_render_api_v1*
+orpheus_render_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor);
 
 #ifdef __cplusplus
 }
@@ -145,10 +133,10 @@ inline constexpr AbiVersion kSessionAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
 inline constexpr AbiVersion kClipgridAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
 inline constexpr AbiVersion kRenderAbi{ORPHEUS_ABI_MAJOR, ORPHEUS_ABI_MINOR};
 
-inline std::string ToString(const AbiVersion &version) {
+inline std::string ToString(const AbiVersion& version) {
   return std::to_string(version.major) + "." + std::to_string(version.minor);
 }
 
-}  // namespace orpheus
+} // namespace orpheus
 
-#endif  // __cplusplus
+#endif // __cplusplus

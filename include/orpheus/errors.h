@@ -27,20 +27,16 @@ typedef enum orpheus_log_level {
   ORPHEUS_LOG_LEVEL_ERROR = 3
 } orpheus_log_level;
 
-typedef void (*orpheus_log_callback)(orpheus_log_level level,
-                                      const char *message,
-                                      void *user_data);
+typedef void (*orpheus_log_callback)(orpheus_log_level level, const char* message, void* user_data);
 
-ORPHEUS_API const char *orpheus_status_to_string(orpheus_status status);
-ORPHEUS_API void orpheus_set_logger(orpheus_log_callback callback,
-                                    void *user_data);
+ORPHEUS_API const char* orpheus_status_to_string(orpheus_status status);
+ORPHEUS_API void orpheus_set_logger(orpheus_log_callback callback, void* user_data);
 
-typedef void (*orpheus_telemetry_callback)(const char *event_name,
-                                            const char *json_payload,
-                                            void *user_data);
+typedef void (*orpheus_telemetry_callback)(const char* event_name, const char* json_payload,
+                                           void* user_data);
 
-ORPHEUS_API void orpheus_set_telemetry_callback(
-    orpheus_telemetry_callback callback, void *user_data);
+ORPHEUS_API void orpheus_set_telemetry_callback(orpheus_telemetry_callback callback,
+                                                void* user_data);
 
 #ifdef __cplusplus
 }
@@ -52,9 +48,8 @@ ORPHEUS_API void orpheus_set_telemetry_callback(
 namespace orpheus {
 
 ORPHEUS_API void Log(orpheus_log_level level, std::string_view message);
-ORPHEUS_API void EmitTelemetry(std::string_view event_name,
-                               std::string_view json_payload);
+ORPHEUS_API void EmitTelemetry(std::string_view event_name, std::string_view json_payload);
 
-}  // namespace orpheus
+} // namespace orpheus
 
-#endif  // __cplusplus
+#endif // __cplusplus

@@ -7,7 +7,7 @@
 namespace orpheus::core::render {
 
 class TpdfDitherGenerator {
- public:
+public:
   explicit TpdfDitherGenerator(std::uint64_t seed) : state_(seed) {}
 
   double Next(double lsb) {
@@ -17,14 +17,14 @@ class TpdfDitherGenerator {
     return (Uniform() - Uniform()) * lsb;
   }
 
- private:
+private:
   double Uniform();
 
   std::uint64_t state_;
 };
 
-std::vector<std::uint8_t> QuantizeInterleaved(
-    const std::vector<double> &samples, std::uint16_t bit_depth_bits,
-    bool dither, std::uint64_t seed);
+std::vector<std::uint8_t> QuantizeInterleaved(const std::vector<double>& samples,
+                                              std::uint16_t bit_depth_bits, bool dither,
+                                              std::uint64_t seed);
 
-}  // namespace orpheus::core::render
+} // namespace orpheus::core::render

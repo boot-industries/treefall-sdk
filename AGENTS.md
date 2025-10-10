@@ -20,9 +20,9 @@ Mission: Maintain the Orpheus SDK as a professional-grade audio engine — a hos
 	•	Future expansion includes ADM authoring, OSC control, and clip-grid scheduling
 
 3. UI Layer (Shmui Integration)
-	•	Shmui (forked from ElevenLabs UI) exists to visualize sessions, transport, and audio players, not to host cloud agents
-	•	Components: Orb (metering/transport), AudioPlayer (local PCM playback), waveform/timeline prototypes
-	•	No dependencies on ElevenLabs APIs; external “agent” endpoints remain opt-in, local-mocked, or disabled by default
+	•	Shmui (Next.js/Turbopack + pnpm workspace) exists to visualize sessions, transport, and audio players, not to host cloud agents
+	•	Components: Orb (metering/transport), AudioPlayer (local PCM playback), waveform/timeline prototypes, docs tooling
+	•	No dependencies on ElevenLabs APIs; external “agent” endpoints remain opt-in, local-mocked, or disabled by default. `pnpm --filter www dev` launches the mock site on localhost:4000.
 
 ⸻
 
@@ -61,9 +61,10 @@ ctest --test-dir build --output-on-failure
 	•	Preserve float determinism across OSes
 
 UI (Shmui)
-	•	Examples live under packages/shmui/apps/www/
+	•	Examples live under packages/shmui/apps/www/ (Next.js on port 4000)
+        •       Bootstrapped with pnpm (`pnpm install` at repo root). Keep scripts compatible with `pnpm --filter www …` invocation
 	•	Always guard networked features behind env vars (e.g. VITE_ENABLE_AGENT=0)
-	•	Use mock data for voice or waveform demos
+	•	Use mock data for voice or waveform demos; no hard dependencies on SaaS audio APIs
 	•	Avoid adding npm deps that bind directly to audio cloud APIs
 
 ⸻
@@ -100,9 +101,9 @@ Docs	docs/	ORP068 Implementation Plan.md
 
 Request Type	Expected Output
 Add core feature	C++20 code + CMake + unit tests (ctest)
-Create UI demo	React/TSX mock, no external API
+Create UI demo	Next.js/React mock using pnpm workspace, no external API
 Add background service	Localhost-only, behind flag
-Update docs	Link back to README + Integration Plan
+Update docs	Link back to README + Integration Plan (docs should reflect the repository setup described in README)
 
 
 ⸻

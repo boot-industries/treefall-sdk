@@ -27,18 +27,16 @@ using ::orpheus::core::json::RequireNumber;
 using ::orpheus::core::json::RequireString;
 using ::orpheus::core::json::WriteIndent;
 
-ReconformTimeRange ParseTimeRange(const JsonValue &value,
-                                  const std::string &context) {
-  const JsonValue &object = ExpectObject(value, context.c_str());
-  const JsonValue *start_field = RequireField(object, "start_seconds");
-  const JsonValue *duration_field = RequireField(object, "duration_seconds");
+ReconformTimeRange ParseTimeRange(const JsonValue& value, const std::string& context) {
+  const JsonValue& object = ExpectObject(value, context.c_str());
+  const JsonValue* start_field = RequireField(object, "start_seconds");
+  const JsonValue* duration_field = RequireField(object, "duration_seconds");
   return ReconformTimeRange{RequireNumber(*start_field, context + ".start_seconds"),
-                            RequireNumber(*duration_field,
-                                           context + ".duration_seconds")};
+                            RequireNumber(*duration_field, context + ".duration_seconds")};
 }
 
-void WriteTimeRange(std::ostringstream &stream, std::size_t indent,
-                    const std::string &name, const ReconformTimeRange &range) {
+void WriteTimeRange(std::ostringstream& stream, std::size_t indent, const std::string& name,
+                    const ReconformTimeRange& range) {
   WriteIndent(stream, indent);
   stream << '"' << name << '"' << ": {\n";
   WriteIndent(stream, indent + 2);
@@ -49,7 +47,7 @@ void WriteTimeRange(std::ostringstream &stream, std::size_t indent,
   stream << '}';
 }
 
-std::string OperationKindString(const ReconformOperationData &data) {
+std::string OperationKindString(const ReconformOperationData& data) {
   if (std::holds_alternative<ReconformInsert>(data)) {
     return "insert";
   }
@@ -59,25 +57,21 @@ std::string OperationKindString(const ReconformOperationData &data) {
   return "retime";
 }
 
-ReconformInsert ParseInsertOperation(const JsonValue &object,
-                                     const std::string &context) {
-  const JsonValue *target_field = RequireField(object, "target");
-  const JsonValue *source_field = RequireField(object, "source");
+ReconformInsert ParseInsertOperation(const JsonValue& object, const std::string& context) {
+  const JsonValue* target_field = RequireField(object, "target");
+  const JsonValue* source_field = RequireField(object, "source");
   return ReconformInsert{ParseTimeRange(*target_field, context + ".target"),
                          ParseTimeRange(*source_field, context + ".source")};
 }
 
-ReconformDelete ParseDeleteOperation(const JsonValue &object,
-                                     const std::string &context) {
-  const JsonValue *target_field = RequireField(object, "target");
+ReconformDelete ParseDeleteOperation(const JsonValue& object, const std::string& context) {
+  const JsonValue* target_field = RequireField(object, "target");
   return ReconformDelete{ParseTimeRange(*target_field, context + ".target")};
 }
 
-ReconformRetime ParseRetimeOperation(const JsonValue &object,
-                                     const std::string &context) {
-  const JsonValue *target_field = RequireField(object, "target");
-  const JsonValue *duration_field =
-      RequireField(object, "retimed_duration_seconds");
+ReconformRetime ParseRetimeOperation(const JsonValue& object, const std::string& context) {
+  const JsonValue* target_field = RequireField(object, "target");
+  const JsonValue* duration_field = RequireField(object, "retimed_duration_seconds");
   ReconformRetime result{};
   result.target = ParseTimeRange(*target_field, context + ".target");
   result.retimed_duration_seconds =
@@ -85,18 +79,16 @@ ReconformRetime ParseRetimeOperation(const JsonValue &object,
   return result;
 }
 
-}  // namespace
+} // namespace
 
-ReconformPlan ParseReconformPlan(const std::string &json_text) {
+ReconformPlan ParseReconformPlan(const std::string& json_text) {
   JsonParser parser(json_text);
   const JsonValue root = parser.Parse();
-  const JsonValue &object = ExpectObject(root, "reconform_plan");
+  const JsonValue& object = ExpectObject(root, "reconform_plan");
 
   ReconformPlan plan;
-  if (auto version_it = object.object.find("version");
-      version_it != object.object.end()) {
-    const double version_value =
-        RequireNumber(version_it->second, "plan.version");
+  if (auto version_it = object.object.find("version"); version_it != object.object.end()) {
+    const double version_value = RequireNumber(version_it->second, "plan.version");
     if (version_value < 0.0 ||
         version_value > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
       throw std::runtime_error("plan.version out of range");
@@ -108,22 +100,20 @@ ReconformPlan ParseReconformPlan(const std::string &json_text) {
     plan.version = static_cast<std::uint32_t>(rounded);
   }
 
-  const JsonValue *timeline_field = RequireField(object, "timeline");
+  const JsonValue* timeline_field = RequireField(object, "timeline");
   plan.timeline_name = RequireString(*timeline_field, "plan.timeline");
 
-  const JsonValue *operations_field = RequireField(object, "operations");
-  const JsonValue &operations_array =
-      ExpectArray(*operations_field, "plan.operations");
+  const JsonValue* operations_field = RequireField(object, "operations");
+  const JsonValue& operations_array = ExpectArray(*operations_field, "plan.operations");
   plan.operations.reserve(operations_array.array.size());
   for (std::size_t index = 0; index < operations_array.array.size(); ++index) {
-    const JsonValue &op_value = operations_array.array[index];
-    const JsonValue &op_object = ExpectObject(op_value, "plan.operation");
-    const JsonValue *kind_field = RequireField(op_object, "kind");
+    const JsonValue& op_value = operations_array.array[index];
+    const JsonValue& op_object = ExpectObject(op_value, "plan.operation");
+    const JsonValue* kind_field = RequireField(op_object, "kind");
     const std::string kind = RequireString(*kind_field, "plan.operation.kind");
 
     ReconformOperation operation;
-    if (auto note_it = op_object.object.find("note");
-        note_it != op_object.object.end()) {
+    if (auto note_it = op_object.object.find("note"); note_it != op_object.object.end()) {
       operation.note = RequireString(note_it->second, "plan.operation.note");
     }
 
@@ -143,7 +133,7 @@ ReconformPlan ParseReconformPlan(const std::string &json_text) {
   return plan;
 }
 
-std::string SerializeReconformPlan(const ReconformPlan &plan) {
+std::string SerializeReconformPlan(const ReconformPlan& plan) {
   std::ostringstream stream;
   stream << "{\n";
   WriteIndent(stream, 2);
@@ -154,7 +144,7 @@ std::string SerializeReconformPlan(const ReconformPlan &plan) {
   stream << "\"operations\": [\n";
 
   for (std::size_t index = 0; index < plan.operations.size(); ++index) {
-    const ReconformOperation &operation = plan.operations[index];
+    const ReconformOperation& operation = plan.operations[index];
     WriteIndent(stream, 4);
     stream << "{\n";
 
@@ -175,7 +165,7 @@ std::string SerializeReconformPlan(const ReconformPlan &plan) {
     }
 
     std::visit(
-        [&](const auto &op_data) {
+        [&](const auto& op_data) {
           using T = std::decay_t<decltype(op_data)>;
           if constexpr (std::is_same_v<T, ReconformInsert>) {
             std::ostringstream target_field;
@@ -203,8 +193,7 @@ std::string SerializeReconformPlan(const ReconformPlan &plan) {
         },
         operation.data);
 
-    for (std::size_t field_index = 0; field_index < field_blocks.size();
-         ++field_index) {
+    for (std::size_t field_index = 0; field_index < field_blocks.size(); ++field_index) {
       stream << field_blocks[field_index];
       if (field_index + 1 < field_blocks.size()) {
         stream << ",\n";
@@ -227,7 +216,7 @@ std::string SerializeReconformPlan(const ReconformPlan &plan) {
   return stream.str();
 }
 
-ReconformPlan LoadReconformPlanFromFile(const std::string &path) {
+ReconformPlan LoadReconformPlanFromFile(const std::string& path) {
   std::ifstream file(path);
   if (!file.is_open()) {
     throw std::runtime_error("Unable to open reconform plan: " + path);
@@ -237,7 +226,7 @@ ReconformPlan LoadReconformPlanFromFile(const std::string &path) {
   return ParseReconformPlan(buffer.str());
 }
 
-void SaveReconformPlanToFile(const ReconformPlan &plan, const std::string &path) {
+void SaveReconformPlanToFile(const ReconformPlan& plan, const std::string& path) {
   std::ofstream file(path);
   if (!file.is_open()) {
     throw std::runtime_error("Unable to write reconform plan: " + path);
@@ -257,4 +246,4 @@ ReconformPlan DiffReconformTimelines(std::string_view /*reference_otio*/,
   return {};
 }
 
-}  // namespace orpheus::core::otio
+} // namespace orpheus::core::otio
