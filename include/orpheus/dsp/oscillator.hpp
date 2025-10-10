@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -42,36 +41,39 @@ constexpr double sine_taylor(double angle) noexcept {
   return x - (x3 / 6.0) + (x5 / 120.0) - (x7 / 5040.0) + (x9 / 362880.0);
 }
 
-template <std::size_t Size>
-constexpr std::array<double, Size> make_sine_table() noexcept {
+template <std::size_t Size> constexpr std::array<double, Size> make_sine_table() noexcept {
   std::array<double, Size> table{};
   for (std::size_t i = 0; i < Size; ++i) {
     const double phase =
-        (static_cast<double>(i) / static_cast<double>(Size)) * 2.0 *
-        std::numbers::pi_v<double>;
+        (static_cast<double>(i) / static_cast<double>(Size)) * 2.0 * std::numbers::pi_v<double>;
     table[i] = sine_taylor(phase);
   }
   return table;
 }
 
-}  // namespace detail
+} // namespace detail
 
-class AtomicDouble {
+class ORPHEUS_API AtomicDouble {
 public:
-  AtomicDouble() noexcept : storage_{0u} {}
+  AtomicDouble() noexcept {
+    storage_.store(0.0, std::memory_order_relaxed);
+  }
 
   explicit AtomicDouble(double value) noexcept {
-    store(value);
+    storage_.store(value, std::memory_order_relaxed);
   }
 
-  void store(double value,
-             std::memory_order order = std::memory_order_relaxed) noexcept {
-    storage_.store(std::bit_cast<std::uint64_t>(value), order);
+  AtomicDouble(const AtomicDouble&) = delete;
+  AtomicDouble& operator=(const AtomicDouble&) = delete;
+  AtomicDouble(AtomicDouble&&) = delete;
+  AtomicDouble& operator=(AtomicDouble&&) = delete;
+
+  void store(double value, std::memory_order order = std::memory_order_relaxed) noexcept {
+    storage_.store(value, order);
   }
 
-  [[nodiscard]] double load(
-      std::memory_order order = std::memory_order_relaxed) const noexcept {
-    return std::bit_cast<double>(storage_.load(order));
+  [[nodiscard]] double load(std::memory_order order = std::memory_order_relaxed) const noexcept {
+    return storage_.load(order);
   }
 
   AtomicDouble& operator=(double value) noexcept {
@@ -84,9 +86,7 @@ public:
   }
 
 private:
-  // Initialize with integer zero in the constructor to avoid MSVC warning when
-  // /WX is enabled. The IEEE-754 representation of 0.0 is all zero bits.
-  std::atomic<std::uint64_t> storage_;
+  std::atomic<double> storage_;
 };
 
 /**
@@ -287,11 +287,8 @@ private:
     PinkState pink{};
   };
 
-  [[nodiscard]] double render_voice(VoiceState& voice,
-                                    Waveform waveform,
-                                    double phase_increment,
-                                    double pulse_width,
-                                    double sub_increment,
+  [[nodiscard]] double render_voice(VoiceState& voice, Waveform waveform, double phase_increment,
+                                    double pulse_width, double sub_increment,
                                     double& sub_mix) noexcept;
 
   void apply_phase_sync_if_needed() noexcept;
@@ -304,14 +301,12 @@ private:
 
   [[nodiscard]] double voice_detune(std::size_t voice_index) const noexcept;
 
-  [[nodiscard]] static double detune_factor(double spread_cents,
-                                            std::size_t voices,
+  [[nodiscard]] static double detune_factor(double spread_cents, std::size_t voices,
                                             std::size_t voice_index) noexcept;
 
   static void advance_phase(double& phase, double increment) noexcept;
 
-  template <typename T>
-  static constexpr T lerp(T a, T b, T alpha) noexcept {
+  template <typename T> static constexpr T lerp(T a, T b, T alpha) noexcept {
     return a + (b - a) * alpha;
   }
 
@@ -326,17 +321,22 @@ private:
   static constexpr std::size_t kVoiceAlignment = 64;
   alignas(kVoiceAlignment) std::array<VoiceState, kMaxVoices> voices_{};
 
-  AtomicDouble sample_rate_{48000.0};
-  AtomicDouble frequency_{440.0};
-  AtomicDouble pulse_width_{0.5};
-  AtomicDouble detune_cents_{12.0};
+  inline static constexpr double kDefaultSampleRate = 48'000.0;
+  inline static constexpr double kDefaultFrequency = 440.0;
+  inline static constexpr double kDefaultPulseWidth = 0.5;
+  inline static constexpr double kDefaultDetuneCents = 12.0;
+
+  AtomicDouble sample_rate_;
+  AtomicDouble frequency_;
+  AtomicDouble pulse_width_;
+  AtomicDouble detune_cents_;
   std::atomic<std::size_t> voice_count_{1};
   std::atomic<bool> sub_oscillator_{false};
   std::atomic<bool> lfo_mode_{false};
   std::atomic<Waveform> waveform_{Waveform::Sine};
-  AtomicDouble fm_depth_{0.0};
+  AtomicDouble fm_depth_;
   std::atomic<bool> phase_sync_pending_{false};
-  AtomicDouble requested_phase_{0.0};
+  AtomicDouble requested_phase_;
 };
 
-}  // namespace orpheus::dsp
+} // namespace orpheus::dsp
