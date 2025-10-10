@@ -37,8 +37,7 @@ struct RenderSpec {
   std::uint64_t dither_seed{0x9e3779b97f4a7c15ull};
 };
 
-std::vector<std::filesystem::path> render_tracks(const Session &session,
-                                                  const TrackList &tracks,
-                                                  const RenderSpec &spec);
+std::vector<std::filesystem::path> render_tracks(const Session& session, const TrackList& tracks,
+                                                 const RenderSpec& spec);
 
-}  // namespace orpheus::core::render
+} // namespace orpheus::core::render

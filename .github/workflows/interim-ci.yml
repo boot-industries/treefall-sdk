@@ -83,6 +83,8 @@ jobs:
         run: pnpm run type-check || echo "Type checking not configured yet"
       
       - name: Build packages
+        env:
+          NEXT_PUBLIC_APP_URL: https://ui.elevenlabs.io
         run: pnpm run build
       
       - name: Run tests

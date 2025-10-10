@@ -16,10 +16,8 @@
 namespace orpheus::core::render {
 namespace {
 
-std::size_t BeatsToSampleIndex(double beats, double seconds_per_beat,
-                               std::uint32_t sample_rate) {
-  const double samples = beats * seconds_per_beat *
-                         static_cast<double>(sample_rate);
+std::size_t BeatsToSampleIndex(double beats, double seconds_per_beat, std::uint32_t sample_rate) {
+  const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
   const auto rounded = static_cast<long long>(std::llround(samples));
   if (rounded <= 0) {
     return 0;
@@ -27,23 +25,21 @@ std::size_t BeatsToSampleIndex(double beats, double seconds_per_beat,
   return static_cast<std::size_t>(rounded);
 }
 
-std::size_t BeatsToSampleCount(double beats, double seconds_per_beat,
-                               std::uint32_t sample_rate) {
+std::size_t BeatsToSampleCount(double beats, double seconds_per_beat, std::uint32_t sample_rate) {
   if (beats <= 0.0) {
     return 0;
   }
-  const double samples = beats * seconds_per_beat *
-                         static_cast<double>(sample_rate);
+  const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
   const auto rounded = static_cast<long long>(std::llround(samples));
   return static_cast<std::size_t>(std::max<long long>(1, rounded));
 }
 
-std::size_t ClipFrameCount(const Clip &clip) {
+std::size_t ClipFrameCount(const Clip& clip) {
   if (clip.samples.empty()) {
     return 0;
   }
   const std::size_t frames = clip.samples.front().size();
-  for (const auto &channel : clip.samples) {
+  for (const auto& channel : clip.samples) {
     if (channel.size() != frames) {
       throw std::invalid_argument("clip channels have mismatched length");
     }
@@ -51,8 +47,7 @@ std::size_t ClipFrameCount(const Clip &clip) {
   return frames;
 }
 
-std::vector<int> MakeDefaultMap(std::size_t clip_channels,
-                                std::uint32_t output_channels) {
+std::vector<int> MakeDefaultMap(std::size_t clip_channels, std::uint32_t output_channels) {
   std::vector<int> map;
   if (output_channels == 0u) {
     return map;
@@ -70,9 +65,8 @@ std::vector<int> MakeDefaultMap(std::size_t clip_channels,
   return map;
 }
 
-void MixClip(const Clip &clip, const std::vector<int> &routing,
-             std::uint32_t output_channels, std::vector<double> &buffer,
-             std::size_t start_sample) {
+void MixClip(const Clip& clip, const std::vector<int>& routing, std::uint32_t output_channels,
+             std::vector<double>& buffer, std::size_t start_sample) {
   const std::size_t clip_frames = ClipFrameCount(clip);
   if (clip_frames == 0u || routing.empty() || output_channels == 0u) {
     return;
@@ -81,14 +75,12 @@ void MixClip(const Clip &clip, const std::vector<int> &routing,
   const std::size_t frame_capacity = buffer.size() / output_channels;
   for (std::size_t route = 0; route < routing.size(); ++route) {
     const int target = routing[route];
-    if (target < 0 ||
-        static_cast<std::uint32_t>(target) >= output_channels) {
+    if (target < 0 || static_cast<std::uint32_t>(target) >= output_channels) {
       throw std::invalid_argument("clip routing index out of range");
     }
     const std::size_t source_channel =
-        clip_channels == 1u ? 0u
-                            : std::min<std::size_t>(route, clip_channels - 1u);
-    const auto &channel_samples = clip.samples[source_channel];
+        clip_channels == 1u ? 0u : std::min<std::size_t>(route, clip_channels - 1u);
+    const auto& channel_samples = clip.samples[source_channel];
     for (std::size_t frame = 0; frame < clip_frames; ++frame) {
       const std::size_t dest_frame = start_sample + frame;
       if (dest_frame >= frame_capacity) {
@@ -100,7 +92,7 @@ void MixClip(const Clip &clip, const std::vector<int> &routing,
   }
 }
 
-void ValidateSpec(const RenderSpec &spec) {
+void ValidateSpec(const RenderSpec& spec) {
   if (spec.output_directory.empty()) {
     throw std::invalid_argument("render output directory is empty");
   }
@@ -110,17 +102,15 @@ void ValidateSpec(const RenderSpec &spec) {
   if (spec.output_channels != 1u && spec.output_channels != 2u) {
     throw std::invalid_argument("render requires mono or stereo output");
   }
-  if (spec.bit_depth_bits != 16u && spec.bit_depth_bits != 24u &&
-      spec.bit_depth_bits != 32u) {
+  if (spec.bit_depth_bits != 16u && spec.bit_depth_bits != 24u && spec.bit_depth_bits != 32u) {
     throw std::invalid_argument("render supports 16, 24, or 32-bit output");
   }
 }
 
-}  // namespace
+} // namespace
 
-std::vector<std::filesystem::path> render_tracks(const Session &session,
-                                                  const TrackList &tracks,
-                                                  const RenderSpec &spec) {
+std::vector<std::filesystem::path> render_tracks(const Session& session, const TrackList& tracks,
+                                                 const RenderSpec& spec) {
   if (session.tempo_bpm <= 0.0) {
     throw std::invalid_argument("tempo must be positive");
   }
@@ -132,8 +122,7 @@ std::vector<std::filesystem::path> render_tracks(const Session &session,
   std::filesystem::create_directories(spec.output_directory);
 
   const double seconds_per_beat = 60.0 / session.tempo_bpm;
-  const double total_beats =
-      std::max(0.0, session.end_beats - session.start_beats);
+  const double total_beats = std::max(0.0, session.end_beats - session.start_beats);
   const std::size_t session_frames =
       BeatsToSampleCount(total_beats, seconds_per_beat, spec.sample_rate_hz);
 
@@ -141,34 +130,32 @@ std::vector<std::filesystem::path> render_tracks(const Session &session,
   outputs.reserve(tracks.size());
 
   for (std::size_t track_index = 0; track_index < tracks.size(); ++track_index) {
-    const Track &track = tracks[track_index];
+    const Track& track = tracks[track_index];
 
     std::size_t required_frames = session_frames;
-    for (const auto &clip : track.clips) {
+    for (const auto& clip : track.clips) {
       const std::size_t clip_frames = ClipFrameCount(clip);
       if (clip_frames == 0u) {
         continue;
       }
       const double offset_beats = clip.start_beats - session.start_beats;
       const std::size_t start_sample =
-          BeatsToSampleIndex(offset_beats, seconds_per_beat,
-                             spec.sample_rate_hz);
+          BeatsToSampleIndex(offset_beats, seconds_per_beat, spec.sample_rate_hz);
       required_frames = std::max(required_frames, start_sample + clip_frames);
     }
 
     std::vector<double> mix_buffer(required_frames * spec.output_channels, 0.0);
 
-    for (const auto &clip : track.clips) {
+    for (const auto& clip : track.clips) {
       const std::size_t clip_frames = ClipFrameCount(clip);
       if (clip_frames == 0u) {
         continue;
       }
       const double offset_beats = clip.start_beats - session.start_beats;
       const std::size_t start_sample =
-          BeatsToSampleIndex(offset_beats, seconds_per_beat,
-                             spec.sample_rate_hz);
+          BeatsToSampleIndex(offset_beats, seconds_per_beat, spec.sample_rate_hz);
       std::vector<int> fallback_map;
-      const std::vector<int> *routing = nullptr;
+      const std::vector<int>* routing = nullptr;
       if (track.output_map.empty()) {
         fallback_map = MakeDefaultMap(clip.samples.size(), spec.output_channels);
         routing = &fallback_map;
@@ -184,22 +171,17 @@ std::vector<std::filesystem::path> render_tracks(const Session &session,
 
     const std::uint64_t dither_seed = spec.dither_seed + track_index;
     const std::vector<std::uint8_t> pcm =
-        QuantizeInterleaved(mix_buffer, spec.bit_depth_bits, spec.dither,
-                            dither_seed);
+        QuantizeInterleaved(mix_buffer, spec.bit_depth_bits, spec.dither, dither_seed);
 
-    const std::string filename =
-        session_json::MakeRenderStemFilename(session.name, track.name,
-                                             spec.sample_rate_hz,
-                                             spec.bit_depth_bits);
-    const std::filesystem::path target_path =
-        spec.output_directory / filename;
+    const std::string filename = session_json::MakeRenderStemFilename(
+        session.name, track.name, spec.sample_rate_hz, spec.bit_depth_bits);
+    const std::filesystem::path target_path = spec.output_directory / filename;
     WriteWaveFile(target_path, spec.sample_rate_hz,
-                  static_cast<std::uint16_t>(spec.output_channels),
-                  spec.bit_depth_bits, pcm);
+                  static_cast<std::uint16_t>(spec.output_channels), spec.bit_depth_bits, pcm);
     outputs.push_back(target_path);
   }
 
   return outputs;
 }
 
-}  // namespace orpheus::core::render
+} // namespace orpheus::core::render

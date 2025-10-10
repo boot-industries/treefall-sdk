@@ -16,4 +16,4 @@ using ::orpheus::json::RequireNumber;
 using ::orpheus::json::RequireString;
 using ::orpheus::json::WriteIndent;
 
-}  // namespace orpheus::core::json
+} // namespace orpheus::core::json

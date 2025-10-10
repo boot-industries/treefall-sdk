@@ -1,116 +1,151 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Orpheus SDK
 
-The Orpheus Software Development Kit (SDK) supplies a host-neutral core for
-negotiating sessions, clip grids, and renders. Thin adapter layers expose the
-core to host applications, including a minimal standalone utility and a REAPER
-extension, while remaining portable across Windows, macOS, and Linux.
+Orpheus is a professional audio SDK that combines a host-neutral C++20 core
+with optional adapter layers and UI prototypes. The repository contains the
+deterministic session/transport engine, thin integrations for host software, and
+a JavaScript workspace ("Shmui") for visualising session data without relying on
+third-party cloud services.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Key Features](#key-features)
+- [Core Capabilities](#core-capabilities)
+- [Repository Layout](#repository-layout)
 - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Quickstart](#quickstart)
+  - [C++ Toolchain](#c-toolchain)
   - [Optional Targets](#optional-targets)
+  - [JavaScript Workspace](#javascript-workspace)
 - [Demo Workflows](#demo-workflows)
   - [Standalone Demo Host](#standalone-demo-host)
   - [Render a Click Track](#render-a-click-track)
 - [Tooling & Quality](#tooling--quality)
-- [Repository Layout](#repository-layout)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Overview
 
-Orpheus offers a modern C++ foundation for hosts that need to negotiate and
-render session data without relying on a particular digital audio workstation
-(DAW). The core is intentionally host-neutral and built to be:
+The Orpheus SDK targets hosts that need deterministic session negotiation and
+render pipelines while remaining portable across Windows, macOS, and Linux. The
+project is organised around three pillars:
 
-- **Modular** – adapters opt into only the integrations they require.
-- **Portable** – CMake-based workflows keep Windows, macOS, and Linux builds in
-  sync.
-- **Automation-friendly** – the project embraces continuous integration and
-  static analysis to maintain code health.
+1. **Core library** – `src/` + `include/` expose ABI negotiation, session graph
+   modelling, and clip-grid utilities.
+2. **Adapters** – thin CMake targets (minhost CLI, REAPER extension) that opt in
+   to the features their host requires.
+3. **Shmui UI workspace** – a Next.js/Turbopack playground that renders
+   transport state and session timelines using local, mock data sources.
 
-## Key Features
+## Core Capabilities
 
-- Host-agnostic session negotiation and render APIs.
-- Reference adapters, including a minimal command-line host and an optional
-  REAPER extension.
-- JUCE-based demo application for interactive exploration of the SDK.
-- Click-track rendering utilities with overridable render specifications.
-- GoogleTest-based smoke tests covering core functionality.
+- Host-agnostic APIs for session graphs, tempo maps, and clip grids.
+- ABI negotiation helpers that keep host/plugin compatibility deterministic.
+- Click-track rendering utilities surfaced through the minhost adapter.
+- Optional JUCE-based demo host for hands-on exploration of the SDK.
+- Smoke tests and tooling that enforce cross-platform correctness.
+
+## Repository Layout
+
+```
+├── adapters/        # Host integrations (minhost CLI, optional REAPER shim)
+├── apps/            # Standalone JUCE demo host
+├── cmake/           # Helper modules and warning policies
+├── docs/            # Architecture notes, roadmaps, adapter guides
+├── include/         # Public headers for the Orpheus core library
+├── packages/
+│   ├── engine-native/  # Placeholder for language bindings around the core
+│   └── shmui/          # TypeScript workspace for UI demos (Next.js/Turbo)
+├── src/             # Core library implementation
+├── tests/           # GoogleTest smoke and conformance coverage
+└── backup/          # Quarantined legacy SDK content (read-only)
+```
 
 ## Supported Platforms
 
-The SDK is regularly built and tested on:
+The core SDK is regularly built and tested on:
 
 - Windows (MSVC toolchains for x64)
 - macOS (Clang toolchains for x86_64 and arm64)
 - Linux (GCC and Clang)
 
-Other platforms may work but are not part of the automated coverage.
+Other platforms may work but are not part of automated coverage.
 
 ## Getting Started
 
-### Prerequisites
+### C++ Toolchain
 
-- CMake 3.20 or newer.
-- A C++20-capable compiler (MSVC 2019+, Clang 13+, or GCC 11+).
-- Ninja or Make (optional, but recommended for faster incremental builds).
-- Git, for fetching submodules and adapters as needed.
+1. Install the prerequisites:
+   - CMake 3.20+
+   - A C++20-capable compiler (MSVC 2019+, Clang 13+, or GCC 11+)
+   - Ninja or Make (optional, for faster incremental builds)
+2. Configure, build, and test the core library:
 
-### Quickstart
+   ```sh
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+   cmake --build build
+   ctest --test-dir build --output-on-failure
+   ```
 
-Configure, build, and run the test suite in Debug mode:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-By default these commands produce the Orpheus core libraries, the
-`orpheus_minhost` adapter, and the GoogleTest suite.
+   These commands produce the `orpheus_core` static library, build the
+   `orpheus_minhost` adapter, and run the GoogleTest suite by default.
 
 ### Optional Targets
 
 Additional components are disabled unless explicitly requested during
 configuration:
 
-- **JUCE demo application** – enable the standalone demonstration host:
+- **JUCE demo application** – build an interactive host for session inspection:
 
   ```sh
   cmake -S . -B build -DORPHEUS_ENABLE_APP_JUCE_HOST=ON
   cmake --build build --target orpheus_demo_host_app
   ```
 
-- **Host integrations** – each adapter advertises a CMake option documented in
-  [`docs/ADAPTERS.md`](docs/ADAPTERS.md). Toggle only the integrations your
-  environment supports.
+- **Host integrations** – toggle adapters via CMake cache entries. See
+  [`docs/ADAPTERS.md`](docs/ADAPTERS.md) for the full list of flags and host
+  requirements.
+
+### JavaScript Workspace
+
+The `packages/shmui` directory houses a pnpm workspace used for UI prototypes
+and documentation tooling. It is optional but useful for visualising Orpheus
+sessions.
+
+1. Enable pnpm (via [`corepack`](https://nodejs.org/api/corepack.html) or a local
+   installation) and bootstrap the workspace:
+
+   ```sh
+   pnpm install
+   ```
+
+2. Launch the Shmui demo site (Next.js on port 4000):
+
+   ```sh
+   pnpm --filter www dev
+   ```
+
+   The site uses mocked data by default so it can run without external network
+   access.
 
 ## Demo Workflows
 
 ### Standalone Demo Host
 
-`OrpheusDemoHost` dynamically loads the Orpheus ABI shared libraries at
-runtime. The menu flow mirrors the demo brief:
+`OrpheusDemoHost` dynamically loads the Orpheus ABI shared libraries at runtime
+and mirrors the demo workflow:
 
 1. **File → Open Session…** – load a session JSON file.
 2. **Session → Trigger ClipGrid Scene** – negotiate the clip grid.
 3. **Session → Render WAV Stems…** – write rendered stems to disk.
 
-The application summarizes the active session and runs without a DAW or plugin
-host. The resulting executable (`OrpheusDemoHost` with the usual platform
-extension) is emitted inside your build directory.
+The executable (`OrpheusDemoHost` plus the platform extension) is emitted inside
+your build directory.
 
 ### Render a Click Track
 
-Generate a two-bar click track with an overridden tempo:
+Use the minhost CLI to generate a two-bar click track with an overridden tempo:
 
 ```sh
 ./build/orpheus_minhost \
@@ -120,29 +155,19 @@ Generate a two-bar click track with an overridden tempo:
   --bpm 100
 ```
 
-If you omit `--render`, the minhost performs a brief transport simulation and
-prints the suggested render path instead of writing audio.
+Omit `--render` to run a transport simulation and print the proposed render
+graph instead of writing audio.
 
 ## Tooling & Quality
 
 - **Sanitizers** – AddressSanitizer and UBSan are enabled automatically for
   Debug builds on non-MSVC toolchains.
-- **Static analysis** – Repository-wide `.clang-format` and `.clang-tidy`
-  configurations enforce a consistent style and catch common issues.
-- **Continuous Integration** – GitHub Actions builds and tests the project on
-  Linux, macOS, and Windows for every push and pull request.
-
-## Repository Layout
-
-```
-├── adapters/        # Host integrations (minhost CLI, optional REAPER shim)
-├── apps/            # Standalone demo hosts (JUCE demo)
-├── cmake/           # Helper modules (warnings + third-party deps)
-├── include/         # Public headers for the Orpheus core library
-├── src/             # Core library implementation
-├── tests/           # GoogleTest-based smoke tests
-└── backup/          # Quarantined legacy SDK content (read-only)
-```
+- **Static analysis** – `.clang-format`, `.clang-tidy`, and workspace linting
+  scripts (see `package.json`) enforce consistent style across C++ and
+  TypeScript.
+- **Continuous Integration** – GitHub Actions builds and tests the C++ targets
+  and runs formatting/linting checks for the monorepo on Linux, macOS, and
+  Windows.
 
 ## Documentation
 
@@ -150,14 +175,14 @@ prints the suggested render path instead of writing audio.
   host-specific notes.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
-  core (if available in your checkout).
+  core.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please open a discussion or issue before
-contributing substantial changes so that design goals remain aligned. Follow
-the existing code style (`.clang-format`, `.clang-tidy`) and ensure `ctest`
-passes locally before submitting.
+Issues and pull requests are welcome. Please discuss substantial changes in an
+issue before opening a PR so design goals remain aligned. Follow the existing
+code style (`.clang-format`, `.clang-tidy`) and ensure both `ctest` and relevant
+pnpm lint/test scripts pass locally before submitting.
 
 ## License
 

@@ -27,12 +27,9 @@ struct WavHeader {
   std::uint32_t data_size = 0;
 };
 
-inline void WriteWaveFile(const std::filesystem::path &path,
-                          std::uint32_t sample_rate,
-                          std::uint16_t channels,
-                          std::uint16_t bits_per_sample,
-                          const std::uint8_t *data,
-                          std::size_t byte_count) {
+inline void WriteWaveFile(const std::filesystem::path& path, std::uint32_t sample_rate,
+                          std::uint16_t channels, std::uint16_t bits_per_sample,
+                          const std::uint8_t* data, std::size_t byte_count) {
   if (!path.parent_path().empty()) {
     std::filesystem::create_directories(path.parent_path());
   }
@@ -40,8 +37,7 @@ inline void WriteWaveFile(const std::filesystem::path &path,
   WavHeader header;
   header.num_channels = channels;
   header.sample_rate = sample_rate;
-  const std::uint16_t bytes_per_sample =
-      static_cast<std::uint16_t>((bits_per_sample + 7u) / 8u);
+  const std::uint16_t bytes_per_sample = static_cast<std::uint16_t>((bits_per_sample + 7u) / 8u);
   header.bits_per_sample = bits_per_sample;
   header.block_align = header.num_channels * bytes_per_sample;
   header.byte_rate = header.sample_rate * header.block_align;
@@ -57,23 +53,20 @@ inline void WriteWaveFile(const std::filesystem::path &path,
     throw std::ios_base::failure("Unable to open WAV target");
   }
 
-  stream.write(reinterpret_cast<const char *>(&header), sizeof(header));
+  stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
   if (byte_count > 0) {
-    stream.write(reinterpret_cast<const char *>(data),
-                 static_cast<std::streamsize>(byte_count));
+    stream.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(byte_count));
   }
   if (!stream) {
     throw std::ios_base::failure("Failed to write WAV payload");
   }
 }
 
-inline void WriteWaveFile(const std::filesystem::path &path,
-                          std::uint32_t sample_rate,
-                          std::uint16_t channels,
-                          std::uint16_t bits_per_sample,
-                          const std::vector<std::uint8_t> &data) {
-  WriteWaveFile(path, sample_rate, channels, bits_per_sample,
-                data.empty() ? nullptr : data.data(), data.size());
+inline void WriteWaveFile(const std::filesystem::path& path, std::uint32_t sample_rate,
+                          std::uint16_t channels, std::uint16_t bits_per_sample,
+                          const std::vector<std::uint8_t>& data) {
+  WriteWaveFile(path, sample_rate, channels, bits_per_sample, data.empty() ? nullptr : data.data(),
+                data.size());
 }
 
-}  // namespace orpheus::core::render
+} // namespace orpheus::core::render

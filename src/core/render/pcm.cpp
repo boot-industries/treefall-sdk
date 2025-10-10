@@ -14,7 +14,7 @@ constexpr std::uint64_t kLcgMultiplier = 6364136223846793005ull;
 constexpr std::uint64_t kLcgIncrement = 1ull;
 constexpr std::uint64_t kMantissaMask = (1ull << 53u) - 1ull;
 constexpr int kMantissaShift = 11;
-}  // namespace
+} // namespace
 
 double TpdfDitherGenerator::Uniform() {
   state_ = state_ * kLcgMultiplier + kLcgIncrement;
@@ -22,9 +22,9 @@ double TpdfDitherGenerator::Uniform() {
   return static_cast<double>(mantissa) / static_cast<double>(1ull << 53u);
 }
 
-std::vector<std::uint8_t> QuantizeInterleaved(
-    const std::vector<double> &samples, std::uint16_t bit_depth_bits,
-    bool dither, std::uint64_t seed) {
+std::vector<std::uint8_t> QuantizeInterleaved(const std::vector<double>& samples,
+                                              std::uint16_t bit_depth_bits, bool dither,
+                                              std::uint64_t seed) {
   if (bit_depth_bits != 16u && bit_depth_bits != 24u && bit_depth_bits != 32u) {
     throw std::invalid_argument("Unsupported bit depth");
   }
@@ -48,11 +48,10 @@ std::vector<std::uint8_t> QuantizeInterleaved(
     std::vector<std::uint8_t> pcm(samples.size() * sizeof(float));
     for (std::size_t index = 0; index < samples.size(); ++index) {
       const double clamped = std::clamp(samples[index], -1.0, 1.0);
-      std::int64_t quantized =
-          RoundTiesToZero(clamped * static_cast<double>(1 << 15));
+      std::int64_t quantized = RoundTiesToZero(clamped * static_cast<double>(1 << 15));
       quantized = std::clamp<std::int64_t>(quantized, -32768, 32767);
-      const float value = static_cast<float>(
-          static_cast<double>(quantized) / static_cast<double>(1 << 15));
+      const float value =
+          static_cast<float>(static_cast<double>(quantized) / static_cast<double>(1 << 15));
       std::uint32_t raw = 0;
       std::memcpy(&raw, &value, sizeof(float));
       const std::size_t offset = index * sizeof(float);
@@ -69,9 +68,7 @@ std::vector<std::uint8_t> QuantizeInterleaved(
   const std::int64_t max_value = (1ll << (bit_depth_bits - 1)) - 1ll;
   const double max_amplitude = static_cast<double>(max_value);
   const double lsb =
-      bit_depth_bits == 0u
-          ? 0.0
-          : 1.0 / static_cast<double>(1ull << (bit_depth_bits - 1));
+      bit_depth_bits == 0u ? 0.0 : 1.0 / static_cast<double>(1ull << (bit_depth_bits - 1));
 
   std::vector<std::uint8_t> pcm(samples.size() * bytes_per_sample);
   TpdfDitherGenerator generator(seed);
@@ -102,4 +99,4 @@ std::vector<std::uint8_t> QuantizeInterleaved(
   return pcm;
 }
 
-}  // namespace orpheus::core::render
+} // namespace orpheus::core::render
