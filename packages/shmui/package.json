@@ -29,7 +29,7 @@
     "test:dev": "turbo run test --force",
     "validate:registries": "pnpm validate:registries"
   },
-  "packageManager": "pnpm@10.5.2",
+  "packageManager": "pnpm@8.15.4",
   "dependencies": {
     "@babel/core": "^7.22.1",
     "@changesets/changelog-github": "^0.4.8",

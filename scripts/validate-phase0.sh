@@ -15,7 +15,25 @@ echo "→ Checking monorepo structure..."
 
 echo ""
 echo "→ Verifying dependency installation..."
+# Ensure pnpm@8.15.4 is present
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "→ Installing pnpm@8.15.4 (local)"
+  npm i -g pnpm@8.15.4
+else
+  echo "→ Detected pnpm $(pnpm -v)"
+fi
+
+echo "→ Installing dependencies (frozen lockfile)"
+set +e
 pnpm install --frozen-lockfile
+rc=$?
+set -e
+if [ $rc -ne 0 ]; then
+  echo "✗ pnpm frozen install failed (lockfile mismatch)."
+  echo "  Fix with: npm i -g pnpm@8.15.4 && pnpm install && git add pnpm-lock.yaml && git commit -m 'chore: regen lockfile'"
+  exit 1
+fi
+echo "✓ Dependencies installed"
 pnpm list --depth 0
 
 echo ""

@@ -48,3 +48,8 @@
 - 📦 [Package Naming](PACKAGE_NAMING.md)
 - 📈 [Performance Budgets](PERFORMANCE.md)
 - 🧪 [CI Validation Checklist](<ORP-CDX-013-ci-revalidation.md>)
+
+### Branch Protection (Manual Verification)
+- Ensure **main** has required status checks: `build-cpp`, `build-ui`, `lint-cpp`.
+- Require ≥1 reviewer, disallow force-push, enforce linear history.
+- Record audit date in `docs/GOVERNANCE.md`.
