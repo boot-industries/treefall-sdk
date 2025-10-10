@@ -22,11 +22,11 @@ namespace orpheus::dsp {
 namespace detail {
 
 constexpr double wrap_to_pi(double angle) noexcept {
-  const double two_pi = 2.0 * std::numbers::pi;
-  while (angle > std::numbers::pi) {
+  const double two_pi = 2.0 * std::numbers::pi_v<double>;
+  while (angle > std::numbers::pi_v<double>) {
     angle -= two_pi;
   }
-  while (angle < -std::numbers::pi) {
+  while (angle < -std::numbers::pi_v<double>) {
     angle += two_pi;
   }
   return angle;
@@ -42,10 +42,12 @@ constexpr double sine_taylor(double angle) noexcept {
   return x - (x3 / 6.0) + (x5 / 120.0) - (x7 / 5040.0) + (x9 / 362880.0);
 }
 
-template <std::size_t Size> constexpr std::array<double, Size> make_sine_table() noexcept {
+template <std::size_t Size>
+constexpr std::array<double, Size> make_sine_table() noexcept {
   std::array<double, Size> table{};
   for (std::size_t i = 0; i < Size; ++i) {
-    const double phase = (static_cast<double>(i) / Size) * 2.0 * std::numbers::pi;
+    const double phase = (static_cast<double>(i) / static_cast<double>(Size)) *
+                         2.0 * std::numbers::pi_v<double>;
     table[i] = sine_taylor(phase);
   }
   return table;
@@ -56,15 +58,15 @@ template <std::size_t Size> constexpr std::array<double, Size> make_sine_table()
 class AtomicDouble {
 public:
   AtomicDouble() noexcept : storage_{0u} {}
-  explicit AtomicDouble(double value) noexcept {
-    store(value);
-  }
+  explicit AtomicDouble(double value) noexcept { store(value); }
 
-  void store(double value, std::memory_order order = std::memory_order_relaxed) noexcept {
+  void store(double value,
+             std::memory_order order = std::memory_order_relaxed) noexcept {
     storage_.store(std::bit_cast<std::uint64_t>(value), order);
   }
 
-  [[nodiscard]] double load(std::memory_order order = std::memory_order_relaxed) const noexcept {
+  [[nodiscard]] double load(
+      std::memory_order order = std::memory_order_relaxed) const noexcept {
     return std::bit_cast<double>(storage_.load(order));
   }
 
@@ -73,15 +75,11 @@ public:
     return *this;
   }
 
-  operator double() const noexcept {
-    return load();
-  }
+  operator double() const noexcept { return load(); }
 
 private:
   // Initialize with integer zero in the constructor to avoid MSVC warning when
-  // /WX is enabled. The IEEE-754 representation of 0.0 is all zero bits, so
-  // this preserves the default value without requiring a bit_cast in the
-  // member initializer.
+  // /WX is enabled. The IEEE-754 representation of 0.0 is all zero bits.
   std::atomic<std::uint64_t> storage_;
 };
 
@@ -289,9 +287,9 @@ private:
     PinkState pink{};
   };
 
-  [[nodiscard]] double render_voice(VoiceState& voice, Waveform waveform, double phase_increment,
-                                    double pulse_width, double sub_increment,
-                                    double& sub_mix) noexcept;
+  [[nodiscard]] double render_voice(VoiceState& voice, Waveform waveform,
+                                    double phase_increment, double pulse_width,
+                                    double sub_increment, double& sub_mix) noexcept;
 
   void apply_phase_sync_if_needed() noexcept;
 
@@ -303,12 +301,14 @@ private:
                                             std::size_t voice_index) noexcept;
   static void advance_phase(double& phase, double increment) noexcept;
 
-  template <typename T> static constexpr T lerp(T a, T b, T alpha) noexcept {
+  template <typename T>
+  static constexpr T lerp(T a, T b, T alpha) noexcept {
     return a + (b - a) * alpha;
   }
 
   static constexpr std::size_t kSineTableSize = 2048;
-  static constexpr std::array<double, kSineTableSize> kSineTable =
+  // Inline variable to avoid ODR violations (duplicate definitions) across TUs.
+  inline static constexpr std::array<double, kSineTableSize> kSineTable =
       detail::make_sine_table<kSineTableSize>();
 
   [[nodiscard]] static double sine_from_table(double phase) noexcept;
