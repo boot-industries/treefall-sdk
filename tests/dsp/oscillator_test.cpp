@@ -140,7 +140,7 @@ TEST(OscillatorTest, ThreadSafeParameterUpdates) {
   orpheus::dsp::Oscillator osc{kSampleRate};
   osc.set_waveform(orpheus::dsp::Waveform::Saw);
   osc.set_unison_voice_count(4);
-  std::atomic<bool> running{true};
+  orpheus::dsp::AtomicBool running{true};
 
   auto controller = std::async(std::launch::async, [&]() {
     std::mt19937 rng{std::random_device{}()};
