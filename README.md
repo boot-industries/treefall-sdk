@@ -77,7 +77,7 @@ Other platforms may work but are not part of automated coverage.
 ### C++ Toolchain
 
 1. Install the prerequisites:
-   - CMake 3.20+
+   - CMake 3.22+
    - A C++20-capable compiler (MSVC 2019+, Clang 13+, or GCC 11+)
    - Ninja or Make (optional, for faster incremental builds)
 2. Configure, build, and test the core library:
