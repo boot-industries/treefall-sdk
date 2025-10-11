@@ -135,6 +135,31 @@ std::vector<std::int64_t> DecodeChannel(const support::ParsedWav &wav,
   return samples;
 }
 
+std::vector<float> DecodeChannelFloat32(const support::ParsedWav &wav, std::size_t channel) {
+  if (wav.audio_format != 3u || wav.bits_per_sample != 32u) {
+    return {};
+  }
+
+  const std::size_t bytes_per_sample = sizeof(float);
+  if (wav.channels == 0) {
+    return {};
+  }
+  const std::size_t frame_stride = wav.channels * bytes_per_sample;
+  if (frame_stride == 0 || wav.data.size() % frame_stride != 0) {
+    return {};
+  }
+  const std::size_t frame_count = wav.data.size() / frame_stride;
+  std::vector<float> samples(frame_count, 0.0f);
+  for (std::size_t frame = 0; frame < frame_count; ++frame) {
+    const std::size_t offset = frame * frame_stride + channel * bytes_per_sample;
+    if (offset + sizeof(float) > wav.data.size()) {
+      return {};
+    }
+    std::memcpy(&samples[frame], wav.data.data() + offset, sizeof(float));
+  }
+  return samples;
+}
+
 double ComputeRms(const std::vector<std::int64_t> &samples,
                   std::int64_t full_scale) {
   if (samples.empty() || full_scale == 0) {
@@ -392,4 +417,52 @@ TEST(RenderTracksBasic, SineWithDcOffsetRemainsStable) {
   const double mean = ComputeMean(samples, full_scale);
   constexpr double kExpectedMean = 3.5762786865234375e-07;
   EXPECT_NEAR(mean, kExpectedMean, tolerance);
+}
+
+TEST(RenderTracksBasic, Float32PreservesSubLsbContent) {
+  const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  ScratchDir scratch(test_info->name());
+
+  auto ctx = MakeBaseContext(test_info->name(), 48000, 32, 1);
+  ctx.spec.output_directory = scratch.path();
+  ctx.spec.dither = true;  // Float path should ignore dithering requests.
+
+  const float amplitude = std::ldexp(1.0f, -20);
+
+  orpheus::core::render::Clip clip;
+  clip.start_beats = 0.0;
+  clip.samples.push_back(
+      support::GenerateDc(ctx.spec.sample_rate_hz, amplitude));
+
+  orpheus::core::render::Track track;
+  track.name = "float_dc";
+  track.clips.push_back(std::move(clip));
+  ctx.tracks.push_back(std::move(track));
+
+  const auto outputs =
+      orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+  ASSERT_EQ(outputs.size(), 1u);
+  FailureArtifactGuard guard(outputs);
+
+  const support::ParsedWav wav = support::ReadWav(outputs.front());
+  EXPECT_EQ(wav.audio_format, 3u);
+  EXPECT_EQ(wav.sample_rate, ctx.spec.sample_rate_hz);
+  EXPECT_EQ(wav.channels, ctx.spec.output_channels);
+  EXPECT_EQ(wav.bits_per_sample, ctx.spec.bit_depth_bits);
+
+  const auto floats = DecodeChannelFloat32(wav, 0);
+  ASSERT_FALSE(floats.empty());
+
+  double sum = 0.0;
+  double max_abs = 0.0;
+  for (float sample : floats) {
+    sum += static_cast<double>(sample);
+    max_abs = std::max(max_abs, std::abs(static_cast<double>(sample)));
+  }
+  const double mean = sum / static_cast<double>(floats.size());
+  const double expected = static_cast<double>(amplitude);
+  const double tolerance = expected * 0.1 + 1e-9;
+
+  EXPECT_NEAR(mean, expected, tolerance);
+  EXPECT_NEAR(max_abs, expected, tolerance);
 }
