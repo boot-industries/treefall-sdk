@@ -162,12 +162,17 @@ graph instead of writing audio.
 
 - **Sanitizers** – AddressSanitizer and UBSan are enabled automatically for
   Debug builds on non-MSVC toolchains.
-- **Static analysis** – `.clang-format`, `.clang-tidy`, and workspace linting
-  scripts (see `package.json`) enforce consistent style across C++ and
-  TypeScript.
+- **Formatting & linting** – GitHub Actions runs `clang-format` against the C++
+  sources and executes the workspace linting scripts for TypeScript (see
+  `package.json`). A project-wide `.clang-tidy` configuration is available for
+  local static analysis, but it is not currently a required CI gate.
 - **Continuous Integration** – GitHub Actions builds and tests the C++ targets
-  and runs formatting/linting checks for the monorepo on Linux, macOS, and
-  Windows.
+  on Linux, macOS, and Windows, verifies sanitizer builds, and checks for
+  accidentally committed binary artifacts.
+
+To experiment with `clang-tidy` locally, configure a build with
+`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and invoke `clang-tidy -p build` (or the
+LLVM `run-clang-tidy.py` helper) on the files you want to inspect.
 
 ## Documentation
 
