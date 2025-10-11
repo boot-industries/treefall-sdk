@@ -7,6 +7,27 @@ deterministic session/transport engine, thin integrations for host software, and
 a JavaScript workspace ("Shmui") for visualising session data without relying on
 third-party cloud services.
 
+## ⚡ Quick Start
+
+**New contributor?** Get up and running in under 5 minutes:
+
+```bash
+# Clone and bootstrap (installs deps, builds core, runs tests)
+git clone https://github.com/orpheus-sdk/orpheus-sdk.git
+cd orpheus-sdk
+./scripts/bootstrap-dev.sh
+
+# Start the UI development server
+pnpm --filter @orpheus/shmui dev
+# Visit http://localhost:4000
+```
+
+**Prerequisites:** Node.js 18+, PNPM 8+, CMake 3.22+, C++20 compiler
+**Troubleshooting:** See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+**Full guide:** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
