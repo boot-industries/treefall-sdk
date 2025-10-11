@@ -24,6 +24,12 @@ else
 fi
 
 echo "→ Installing dependencies (frozen lockfile)"
+# Prevent Puppeteer from downloading Chromium during validation runs. This mirrors
+# the guard used in bootstrap scripts so CI remains lean while still allowing
+# contributors to opt-in by pre-setting these variables differently.
+export PUPPETEER_SKIP_DOWNLOAD=${PUPPETEER_SKIP_DOWNLOAD:-1}
+export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=${PUPPETEER_SKIP_CHROMIUM_DOWNLOAD:-1}
+
 set +e
 pnpm install --frozen-lockfile
 rc=$?
