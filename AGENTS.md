@@ -92,7 +92,8 @@ When working on Orpheus SDK code, understand:
 
 - **Language:** C++20
 - **Scope:** Portable across Windows/macOS/Linux (ARM64 and x86_64)
-- **Build System:** CMake + ctest; CI uses clang-format, clang-tidy, AddressSanitizer
+- **Build System:** CMake + ctest; CI enforces clang-format, runs sanitizer builds,
+  and ships a `.clang-tidy` configuration for optional local analysis
 - **Core Features:** 
   - SessionGraph (tracks, clips, tempo, transport)
   - Deterministic render path (offline or real-time)
@@ -180,7 +181,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Requirements:**
-- Enforce `.clang-format` + `.clang-tidy` (CI fails if violated)
+- Match the repository `.clang-format`; clang-tidy findings are encouraged but not
+  currently CI-blocking (run `clang-tidy -p build` locally if needed)
 - Keep adapters ≤300 LOC when possible
 - Preserve float determinism across OSes (use `std::bit_cast`, avoid undefined behavior)
 - No allocations in audio callback threads (use lock-free structures, pre-allocate)
