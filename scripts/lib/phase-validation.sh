@@ -8,6 +8,12 @@ fi
 
 : "${REPO_ROOT:?REPO_ROOT must be set before sourcing phase-validation.sh}"
 
+# Ensure Puppeteer never attempts to download Chromium as part of validation
+# workflows. These exports can be overridden by callers, but default to skip
+# downloads for CI and bootstrap scripts that source this helper.
+export PUPPETEER_SKIP_DOWNLOAD=${PUPPETEER_SKIP_DOWNLOAD:-1}
+export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=${PUPPETEER_SKIP_CHROMIUM_DOWNLOAD:-1}
+
 CHECK_MARK="✓"
 CROSS_MARK="✗"
 ARROW="→"
