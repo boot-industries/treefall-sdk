@@ -35,6 +35,9 @@ fi
 
 echo ""
 echo "→ Installing dependencies..."
+# Prevent Puppeteer from downloading bundled Chromium during bootstrap; keeps CI/dev installs lean.
+export PUPPETEER_SKIP_DOWNLOAD=1
+export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1
 pnpm install
 
 echo ""

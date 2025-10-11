@@ -460,7 +460,7 @@ private:
   AtomicDouble frequency_;
   AtomicDouble pulse_width_;
   AtomicDouble detune_cents_;
-  std::atomic<std::size_t> voice_count_{1};
+  std::atomic<std::size_t> voice_count_;
   AtomicBool sub_oscillator_{false};
   AtomicBool lfo_mode_{false};
   AtomicEnum<Waveform> waveform_{Waveform::Sine};
