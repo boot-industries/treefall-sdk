@@ -48,10 +48,7 @@ std::vector<std::uint8_t> QuantizeInterleaved(const std::vector<double>& samples
     std::vector<std::uint8_t> pcm(samples.size() * sizeof(float));
     for (std::size_t index = 0; index < samples.size(); ++index) {
       const double clamped = std::clamp(samples[index], -1.0, 1.0);
-      std::int64_t quantized = RoundTiesToZero(clamped * static_cast<double>(1 << 15));
-      quantized = std::clamp<std::int64_t>(quantized, -32768, 32767);
-      const float value =
-          static_cast<float>(static_cast<double>(quantized) / static_cast<double>(1 << 15));
+      const float value = static_cast<float>(clamped);
       std::uint32_t raw = 0;
       std::memcpy(&raw, &value, sizeof(float));
       const std::size_t offset = index * sizeof(float);
