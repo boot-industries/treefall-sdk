@@ -36,7 +36,7 @@ export async function commandRoute(server: FastifyInstance): Promise<void> {
       if (response.success && response.result) {
         if (type === 'LoadSession') {
           // Emit SessionChanged event after LoadSession
-          const result = response.result as any;
+          const result = response.result as { session?: { name?: string; tempo_bpm?: number; tracks?: { loaded: number }; clips?: number } };
           if (result.session) {
             server.eventEmitter.emitSessionChanged({
               name: result.session.name || 'Unnamed Session',

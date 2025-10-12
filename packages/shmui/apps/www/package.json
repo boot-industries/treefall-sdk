@@ -24,6 +24,8 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@elevenlabs/elevenlabs-js": "^2.16.0",
     "@elevenlabs/react": "^0.7.0",
+    "@orpheus/client": "workspace:*",
+    "@orpheus/react": "workspace:*",
     "@faker-js/faker": "^8.2.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accessible-icon": "^1.1.1",
