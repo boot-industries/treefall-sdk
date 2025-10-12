@@ -4,6 +4,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { CommandRequest, CommandResponse } from '../types.js';
+import { executeOrpheusCommand } from '../orpheus/minhost-executor.js';
 
 export async function commandRoute(server: FastifyInstance): Promise<void> {
   server.post<{ Body: CommandRequest }>('/command', async (request: FastifyRequest<{ Body: CommandRequest }>, reply: FastifyReply) => {
@@ -22,21 +23,16 @@ export async function commandRoute(server: FastifyInstance): Promise<void> {
       return reply.code(400).send(response);
     }
 
-    // TODO (P1.DRIV.002): Link to Orpheus C++ core for actual command execution
-    // For now, return a mock response indicating the command was received
-    server.log.info({ type, payload, requestId }, 'Received command');
+    server.log.info({ type, payload, requestId }, 'Executing command via Orpheus SDK');
 
     try {
-      // Mock implementation - will be replaced in P1.DRIV.002
-      const result = await mockCommandHandler(type, payload);
+      // Execute command via orpheus_minhost bridge
+      const response = await executeOrpheusCommand(
+        { type, payload, requestId },
+        { timeout: 60000 } // 60 second timeout
+      );
 
-      const response: CommandResponse = {
-        success: true,
-        requestId,
-        result,
-      };
-
-      reply.code(200).send(response);
+      reply.code(response.success ? 200 : 500).send(response);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const response: CommandResponse = {
@@ -51,25 +47,4 @@ export async function commandRoute(server: FastifyInstance): Promise<void> {
       reply.code(500).send(response);
     }
   });
-}
-
-/**
- * Mock command handler - will be replaced with actual Orpheus SDK integration
- * in P1.DRIV.002 (TASK-018)
- */
-async function mockCommandHandler(type: string, payload: unknown): Promise<unknown> {
-  switch (type) {
-    case 'LoadSession':
-      return {
-        sessionId: (payload as { sessionId?: string })?.sessionId || 'mock-session',
-        status: 'loaded',
-      };
-    case 'RenderClick':
-      return {
-        status: 'rendering',
-        message: 'Mock render started (C++ integration pending)',
-      };
-    default:
-      throw new Error(`Unknown command type: ${type}`);
-  }
 }
