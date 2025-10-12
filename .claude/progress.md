@@ -129,7 +129,7 @@
 
 ### Phase 1 Completion Summary ✅
 
-**All validation passing** - Commit: TBD
+**All validation passing** - Commit: `25cc2895`
 
 **Validation Results:**
 ```
@@ -185,9 +185,11 @@ pnpm run build
 - Performance budgets: `budgets.json`
 
 ### Recent Commits:
+- `25cc2895` - Phase 1 complete: All drivers, React integration, debug panel, validation passing (2025-10-12)
+- `753c0c9a` - docs: finalize session 2 notes with complete P1.DRIV.001-004 summary (2025-10-11)
+- `ce1b06de` - feat(engine-service): implement comprehensive token authentication (P1.DRIV.004) (2025-10-11)
 - `c0cc85bd` - ORP068 progress tracking added (2025-10-11)
 - `d8910fce` - Phase 0 complete + @orpheus/contract package (2025-10-11)
-- `a963b686` - Unclamped float32 PCM precision tests
 
 ## Critical Path
 
