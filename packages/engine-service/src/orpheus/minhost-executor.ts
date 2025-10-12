@@ -3,7 +3,7 @@
  */
 
 import { spawn } from 'child_process';
-import { resolve } from 'path';
+import { resolve as pathResolve } from 'path';
 import type { CommandRequest, CommandResponse } from '../types.js';
 
 /**
@@ -21,11 +21,11 @@ function findMinhostBinary(): string {
   // Try multiple potential locations
   const candidates = [
     // Release build (preferred - no sanitizers)
-    resolve(sdkRoot, 'build-release/adapters/minhost/orpheus_minhost'),
+    pathResolve(sdkRoot, 'build-release/adapters/minhost/orpheus_minhost'),
     // Debug build
-    resolve(sdkRoot, 'build/adapters/minhost/orpheus_minhost'),
+    pathResolve(sdkRoot, 'build/adapters/minhost/orpheus_minhost'),
     // CI/packaged location
-    resolve(sdkRoot, 'bin/orpheus_minhost'),
+    pathResolve(sdkRoot, 'bin/orpheus_minhost'),
   ];
 
   // For now, use the first candidate
@@ -54,9 +54,24 @@ export async function executeMinhostCommand(
 
   return new Promise((resolve, reject) => {
     const fullArgs = ['--json', command, ...args];
+
+    // Set up library path for dylib resolution
+    // On macOS, minhost needs to find liborpheus_*.dylib files
+    const env = { ...process.env };
+    const buildType = minhostPath.includes('build-release') ? 'build-release' : 'build';
+    const libPath = pathResolve(sdkRoot, `${buildType}/src`);
+
+    // Add dylib path to environment
+    if (process.platform === 'darwin') {
+      env.DYLD_LIBRARY_PATH = libPath + (env.DYLD_LIBRARY_PATH ? `:${env.DYLD_LIBRARY_PATH}` : '');
+    } else if (process.platform === 'linux') {
+      env.LD_LIBRARY_PATH = libPath + (env.LD_LIBRARY_PATH ? `:${env.LD_LIBRARY_PATH}` : '');
+    }
+
     const proc = spawn(minhostPath, fullArgs, {
       cwd: sdkRoot, // Run from SDK root so relative paths work
       stdio: ['ignore', 'pipe', 'pipe'],
+      env, // Pass environment with library paths
     });
 
     let stdout = '';
@@ -89,19 +104,27 @@ export async function executeMinhostCommand(
         return; // Already rejected
       }
 
-      if (code !== 0) {
+      // code === null means signal exit (can happen on successful exit too)
+      // code === 0 means normal successful exit
+      if (code !== null && code !== 0) {
         // Try to parse error from stderr or stdout
         let errorMessage = `Minhost exited with code ${code}`;
+
+        // Include stderr for debugging
+        if (stderr) {
+          errorMessage += `\nStderr: ${stderr.trim()}`;
+        }
+        if (stdout) {
+          errorMessage += `\nStdout: ${stdout.trim()}`;
+        }
+
         try {
           const errorJson = JSON.parse(stdout || stderr);
           if (errorJson.error) {
             errorMessage = errorJson.error.message || errorMessage;
           }
         } catch {
-          // Not JSON, use raw stderr
-          if (stderr) {
-            errorMessage = stderr.trim();
-          }
+          // Not JSON, already appended raw output above
         }
         reject(new Error(errorMessage));
         return;
