@@ -281,6 +281,17 @@ Other platforms may work but are not part of automated coverage.
 - `apps/` — Application code (Clip Composer, Wave Finder, etc.)
 - `tests/` — GoogleTest suite
 
+## ORP068 Implementation Progress
+
+**Current status tracked in:** `.claude/progress.md`
+
+When resuming ORP068 implementation work, always check:
+1. `.claude/progress.md` - Current phase, completed tasks, next steps
+2. `docs/integration/ORP068 Implementation Plan v2.0...md` - Full task breakdown
+3. `git log --oneline -5` - Recent commits and context
+
+**Quick resume:** Just say "Continue with ORP068" and reference `.claude/progress.md`
+
 ---
 
 **Remember:** Orpheus SDK is infrastructure for a sovereign audio ecosystem. We're building tools that professionals can rely on for decades, not chasing trends. When in doubt, favor simplicity, determinism, and user autonomy.
