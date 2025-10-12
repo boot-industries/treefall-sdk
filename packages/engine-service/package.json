@@ -1,0 +1,59 @@
+{
+  "name": "@orpheus/engine-service",
+  "version": "0.1.0-alpha.0",
+  "description": "Orpheus Service Driver (orpheusd) - HTTP/WebSocket service for Orpheus SDK integration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "orpheusd": "./dist/bin/orpheusd.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/bin/orpheusd.ts",
+    "start": "node dist/bin/orpheusd.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format:check": "prettier --check 'src/**/*.ts'",
+    "format:write": "prettier --write 'src/**/*.ts'",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "orpheus",
+    "audio",
+    "service",
+    "driver",
+    "websocket",
+    "http"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@orpheus/contract": "workspace:*",
+    "fastify": "^4.26.2",
+    "@fastify/websocket": "^10.0.1",
+    "commander": "^12.0.0",
+    "pino": "^8.19.0",
+    "pino-pretty": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.27",
+    "@types/ws": "^8.5.10",
+    "eslint": "^8.57.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.5.3",
+    "vitest": "^1.4.0"
+  }
+}
