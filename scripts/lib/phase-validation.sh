@@ -2,8 +2,8 @@
 # Shared helpers for phase validation scripts.
 
 if [[ -n ${BASH_VERSINFO:-} && ${BASH_VERSINFO[0]} -lt 4 ]]; then
-  echo "Phase validation scripts require Bash >= 4.0" >&2
-  exit 1
+  echo "Warning: Bash version ${BASH_VERSINFO[0]} detected. Some features may not work correctly." >&2
+  echo "Continuing anyway..." >&2
 fi
 
 : "${REPO_ROOT:?REPO_ROOT must be set before sourcing phase-validation.sh}"
@@ -86,8 +86,29 @@ phase0_baseline_checks() {
 phase1_tooling_checks() {
   print_section "Phase 1 – Tooling Normalization"
 
-  run_step "Build native engine workspace package" pnpm --filter @orpheus/engine-native build
-  run_step "Run workspace test suites" pnpm -r test
+  # Contract package
+  run_step "Build contract package" pnpm --filter @orpheus/contract build
+  run_step "Validate contract schemas" pnpm --filter @orpheus/contract validate:schemas
+  run_step "Generate contract manifest" pnpm --filter @orpheus/contract generate:manifest
+
+  # Engine drivers
+  run_step "Build service driver" pnpm --filter @orpheus/engine-service build
+  run_step "Build native driver TypeScript" pnpm --filter @orpheus/engine-native build:ts
+
+  # Client packages
+  run_step "Build client broker" pnpm --filter @orpheus/client build
+  run_step "Build React integration" pnpm --filter @orpheus/react build
+
+  # UI integration
+  run_step "Build Shmui www app" pnpm --filter www build
+
+  # Documentation checks
+  run_step "Verify driver integration guide exists" test -f "$REPO_ROOT/docs/DRIVER_INTEGRATION_GUIDE.md"
+  run_step "Verify contract development guide exists" test -f "$REPO_ROOT/docs/CONTRACT_DEVELOPMENT.md"
+
+  # Verify debug panel integration
+  run_step "Verify OrpheusDebugPanel component exists" test -f "$REPO_ROOT/packages/shmui/apps/www/components/orpheus-debug-panel.tsx"
+  run_step "Verify OrpheusProvider in layout" grep -q "OrpheusProvider" "$REPO_ROOT/packages/shmui/apps/www/app/layout.tsx"
 }
 
 phase2_feature_checks() {

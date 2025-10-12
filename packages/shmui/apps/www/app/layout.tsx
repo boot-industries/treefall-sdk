@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
 
+import { OrpheusProvider } from "@orpheus/react"
+
 import { META_THEME_COLORS, siteConfig } from "@/lib/config"
 import { fontVariables } from "@/lib/fonts"
 import { buildAbsoluteUrl, getMetadataBase, resolveAppUrl } from "@/lib/app-url"
@@ -7,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { LayoutProvider } from "@/hooks/use-layout"
 import { ActiveThemeProvider } from "@/components/active-theme"
 import { Analytics } from "@/components/analytics"
+import { OrpheusDebugPanel } from "@/components/orpheus-debug-panel"
 import { TailwindIndicator } from "@/components/tailwind-indicator"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/registry/elevenlabs-ui/ui/sonner"
@@ -94,10 +97,13 @@ export default function RootLayout({
         <ThemeProvider>
           <LayoutProvider>
             <ActiveThemeProvider>
-              {children}
-              <TailwindIndicator />
-              <Toaster position="top-center" />
-              <Analytics />
+              <OrpheusProvider config={{ autoConnect: true }}>
+                {children}
+                <TailwindIndicator />
+                <Toaster position="top-center" />
+                <Analytics />
+                <OrpheusDebugPanel />
+              </OrpheusProvider>
             </ActiveThemeProvider>
           </LayoutProvider>
         </ThemeProvider>

@@ -79,12 +79,14 @@ export interface ValidationResult {
   errors?: string[];
 }
 
-export function validateCommand(command: unknown): ValidationResult {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function validateCommand(_command: unknown): ValidationResult {
   // TODO: Implement AJV validation in TASK-016
   return { valid: true };
 }
 
-export function validateEvent(event: unknown): ValidationResult {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function validateEvent(_event: unknown): ValidationResult {
   // TODO: Implement AJV validation in TASK-016
   return { valid: true };
 }

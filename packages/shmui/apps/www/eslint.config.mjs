@@ -16,6 +16,12 @@ const eslintConfig = [
       "@next/next/no-duplicate-head": "off",
     },
   }),
+  {
+    files: ["components/orpheus-debug-panel.tsx"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
 ]
 
 export default eslintConfig

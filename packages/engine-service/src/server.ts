@@ -3,6 +3,7 @@
  */
 
 import Fastify, { FastifyInstance } from 'fastify';
+// eslint-disable-next-line import/no-named-as-default
 import fastifyWebsocket from '@fastify/websocket';
 import type { ServiceConfig } from './types.js';
 import { healthRoute } from './routes/health.js';
