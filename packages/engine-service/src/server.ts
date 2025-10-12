@@ -10,6 +10,14 @@ import { versionRoute } from './routes/version.js';
 import { contractRoute } from './routes/contract.js';
 import { commandRoute } from './routes/command.js';
 import { setupWebSocket } from './websocket.js';
+import { EventEmitter } from './events/event-emitter.js';
+
+// Extend Fastify instance with event emitter
+declare module 'fastify' {
+  interface FastifyInstance {
+    eventEmitter: EventEmitter;
+  }
+}
 
 export async function createServer(config: ServiceConfig): Promise<FastifyInstance> {
   const server = Fastify({
@@ -24,6 +32,20 @@ export async function createServer(config: ServiceConfig): Promise<FastifyInstan
         },
       },
     },
+  });
+
+  // Create event emitter for WebSocket broadcasting
+  const eventEmitter = new EventEmitter();
+  server.decorate('eventEmitter', eventEmitter);
+
+  // Start heartbeat emissions (every 10 seconds)
+  const heartbeatInterval = setInterval(() => {
+    eventEmitter.emitHeartbeat();
+  }, 10000);
+
+  // Clean up on server close
+  server.addHook('onClose', async () => {
+    clearInterval(heartbeatInterval);
   });
 
   // Register WebSocket support

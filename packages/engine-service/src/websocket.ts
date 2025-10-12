@@ -8,11 +8,16 @@ import type { WebSocketMessage } from './types.js';
 
 export async function setupWebSocket(server: FastifyInstance): Promise<void> {
   server.get('/ws', { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
+    server.log.info({
+      remoteAddress: request.socket.remoteAddress,
+      clientCount: server.eventEmitter.getClientCount() + 1,
+    }, 'WebSocket client connected');
 
-    server.log.info({ remoteAddress: request.socket.remoteAddress }, 'WebSocket client connected');
+    // Register this client with the event emitter
+    server.eventEmitter.addClient(socket);
 
-    // Send initial heartbeat
-    const heartbeat: WebSocketMessage = {
+    // Send initial connection event
+    const welcome: WebSocketMessage = {
       type: 'event',
       payload: {
         type: 'Heartbeat',
@@ -23,26 +28,9 @@ export async function setupWebSocket(server: FastifyInstance): Promise<void> {
       },
       timestamp: Date.now(),
     };
-    socket.send(JSON.stringify(heartbeat));
+    socket.send(JSON.stringify(welcome));
 
-    // Set up periodic heartbeat
-    const heartbeatInterval = setInterval(() => {
-      if (socket.readyState === socket.OPEN) {
-        const msg: WebSocketMessage = {
-          type: 'event',
-          payload: {
-            type: 'Heartbeat',
-            payload: {
-              timestamp: Date.now(),
-            },
-          },
-          timestamp: Date.now(),
-        };
-        socket.send(JSON.stringify(msg));
-      }
-    }, 10000); // Every 10 seconds
-
-    // Handle incoming messages (ping/pong)
+    // Handle incoming messages (ping/pong, subscriptions)
     socket.on('message', (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as WebSocketMessage;
@@ -54,6 +42,8 @@ export async function setupWebSocket(server: FastifyInstance): Promise<void> {
           };
           socket.send(JSON.stringify(pong));
         }
+        // Future: Handle subscription filtering
+        // if (message.type === 'subscribe') { ... }
       } catch (error) {
         server.log.error({ error }, 'Failed to parse WebSocket message');
       }
@@ -61,19 +51,16 @@ export async function setupWebSocket(server: FastifyInstance): Promise<void> {
 
     // Handle disconnection
     socket.on('close', () => {
-      clearInterval(heartbeatInterval);
-      server.log.info('WebSocket client disconnected');
+      server.eventEmitter.removeClient(socket);
+      server.log.info({
+        clientCount: server.eventEmitter.getClientCount(),
+      }, 'WebSocket client disconnected');
     });
 
     // Handle errors
     socket.on('error', (error: Error) => {
-      clearInterval(heartbeatInterval);
+      server.eventEmitter.removeClient(socket);
       server.log.error({ error }, 'WebSocket error');
     });
-
-    // TODO (P1.DRIV.003): Integrate with Orpheus SDK event system
-    // - Listen for SessionChanged events
-    // - Listen for transport state changes
-    // - Emit events to all connected WebSocket clients
   });
 }
