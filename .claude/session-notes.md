@@ -190,7 +190,7 @@ curl http://127.0.0.1:8080/contract # Lists available commands
 
 ### Completed: P1.DRIV.003 (TASK-019) - Service Driver Event Emission ✅
 
-**Commit:** `[pending]` - feat(engine-service): implement event emission system
+**Commit:** `33c49bcc` - feat(engine-service): implement WebSocket event emission system
 
 **Objective:** Implement real-time event streaming from Orpheus SDK via WebSocket.
 
@@ -245,6 +245,76 @@ Command Request → Execute via minhost → Success → Emit Event → Broadcast
 - Heartbeat interval functional
 
 **Status:** Ready for production use with real-time event streaming
+
+---
+
+### Completed: P1.DRIV.004 (TASK-099) - Service Driver Authentication ✅
+
+**Commit:** `[pending]` - feat(engine-service): implement comprehensive token authentication
+
+**Objective:** Implement optional token-based authentication for the Service Driver.
+
+**Acceptance Criteria (from ORP068):**
+- [x] Token authentication configurable via CLI flag
+- [x] Authorization header validation (Bearer token)
+- [x] Health/version endpoints exempt from auth
+- [x] WebSocket authentication support *(via HTTP upgrade)*
+- [x] Clear error messages for auth failures
+- [x] Documentation for authentication usage
+
+**Implementation Details:**
+
+1. **Enhanced Authentication Middleware** (`src/server.ts`)
+   - Bearer token format validation (`Authorization: Bearer <token>`)
+   - Three distinct error cases with specific messages:
+     - Missing Authorization header
+     - Invalid format (not "Bearer ...")
+     - Invalid token
+   - Public endpoint exemptions: `/health`, `/version`
+   - Security logging for all authentication attempts
+
+2. **Authentication Flow:**
+   ```
+   Request → Check public endpoint → Check Authorization header
+   → Validate Bearer format → Validate token → Allow/Deny
+   ```
+
+3. **Comprehensive Documentation** (`AUTHENTICATION.md`)
+   - Quick start guide with examples
+   - Security best practices (token generation, storage)
+   - Integration examples (JavaScript, Python, curl)
+   - Error response reference
+   - Troubleshooting guide
+
+4. **Security Logging:**
+   - `[INFO]` Token authentication enabled
+   - `[WARN]` Authentication failures (missing, invalid format, wrong token)
+   - `[DEBUG]` Successful authentications (optional, with --log-level debug)
+
+**Testing Results:**
+✅ Public endpoints accessible without token
+✅ Protected endpoints reject missing token
+✅ Invalid token format rejected with clear error
+✅ Wrong token rejected with clear error
+✅ Valid token grants full access
+✅ Command endpoint execution with auth working
+✅ WebSocket authentication functional (via HTTP upgrade)
+
+**Usage Example:**
+```bash
+# Generate secure token
+TOKEN=$(openssl rand -hex 32)
+
+# Start with authentication
+orpheusd --auth-token "$TOKEN"
+
+# Make authenticated request
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/command \
+  -d '{"type":"LoadSession",...}'
+```
+
+**Status:** Production-ready with comprehensive security and documentation
 
 ---
 

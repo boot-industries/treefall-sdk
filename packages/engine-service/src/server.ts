@@ -78,23 +78,69 @@ export async function createServer(config: ServiceConfig): Promise<FastifyInstan
 
   // Authentication middleware (if token configured)
   if (config.authToken) {
+    server.log.info('Token authentication enabled');
+
     server.addHook('onRequest', async (request, reply) => {
-      // Skip auth for health and version endpoints
+      // Skip auth for health and version endpoints (always public)
       if (request.url === '/health' || request.url === '/version') {
         return;
       }
 
       const authHeader = request.headers.authorization;
-      const token = authHeader?.replace('Bearer ', '');
 
-      if (token !== config.authToken) {
-        reply.code(401).send({
+      // Check for Authorization header
+      if (!authHeader) {
+        server.log.warn({
+          url: request.url,
+          remoteAddress: request.socket.remoteAddress,
+        }, 'Authentication failed: missing Authorization header');
+
+        return reply.code(401).send({
           error: {
             code: 'UNAUTHORIZED',
-            message: 'Invalid or missing authentication token',
+            message: 'Missing Authorization header. Use: Authorization: Bearer <token>',
           },
         });
       }
+
+      // Validate Bearer token format
+      if (!authHeader.startsWith('Bearer ')) {
+        server.log.warn({
+          url: request.url,
+          remoteAddress: request.socket.remoteAddress,
+        }, 'Authentication failed: invalid token format');
+
+        return reply.code(401).send({
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Invalid Authorization format. Use: Authorization: Bearer <token>',
+          },
+        });
+      }
+
+      const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+
+      // Validate token
+      if (token !== config.authToken) {
+        server.log.warn({
+          url: request.url,
+          remoteAddress: request.socket.remoteAddress,
+          tokenMatch: false,
+        }, 'Authentication failed: invalid token');
+
+        return reply.code(401).send({
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Invalid authentication token',
+          },
+        });
+      }
+
+      // Authentication successful
+      server.log.debug({
+        url: request.url,
+        remoteAddress: request.socket.remoteAddress,
+      }, 'Authentication successful');
     });
   }
 
