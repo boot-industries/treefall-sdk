@@ -73,24 +73,52 @@ This directory contains authoritative implementation plans for the Orpheus SDK e
 **Focus:** Platform audio drivers, routing, performance monitoring
 
 **Scope:**
-- Phase 1: Platform audio drivers (CoreAudio, WASAPI) - Months 1-2
-- Phase 2: Routing matrix (4 Clip Groups → Master) - Months 3-4
-- Phase 3: Performance monitor + ASIO + stability - Months 5-6
+- Phase 1: Platform audio drivers (CoreAudio, WASAPI) - Months 1-2 ✅ **COMPLETE**
+- Phase 2: Routing matrix (4 Clip Groups → Master) - Months 3-4 ✅ **COMPLETE**
+- Phase 3: Performance monitor + ASIO + stability - Months 5-6 ⏳ In Progress
 
 **Key Deliverables:**
 - ITransportController (COMPLETE ✅)
 - IAudioFileReader (COMPLETE ✅)
-- IAudioDriver (Dummy complete ✅, platform drivers in progress)
-- IRoutingMatrix (Months 3-4)
-- IPerformanceMonitor (Months 4-5)
+- IAudioDriver (CoreAudio ✅, WASAPI pending)
+- IRoutingMatrix (COMPLETE ✅ - 64ch → 16 groups → 32 outputs)
+- IPerformanceMonitor (Months 4-5 ⏳)
 
-**Progress Tracking:** To be added to `.claude/progress.md`
+**Progress Tracking:** `.claude/orp070-progress.md` (Phase 1 & 2 complete)
 
 **Related Documents:**
 - `docs/ORP/ORP069.md` (full plan)
+- `docs/ORP/ORP070 OCC MVP Sprint.md` (detailed sprint plan)
 - `apps/clip-composer/docs/OCC/OCC029.md` (requirements)
 - `apps/clip-composer/docs/OCC/OCC030.md` (current status)
 - `apps/clip-composer/docs/OCC/OCC027.md` (interface specs)
+
+---
+
+### ORP071 - AES67 Network Audio Driver Integration (Optional)
+
+**Status:** Planning Complete (Implementation Optional)
+**Timeline:** 9 days (if prioritized)
+**Focus:** Network audio infrastructure for professional installations
+
+**Scope:**
+- RTP transport layer (RFC 3550, L16/L24 payloads)
+- PTP clock synchronization (IEEE 1588 PTP slave)
+- AES67 driver implementation (IAudioDriver interface)
+- Interoperability with Dante, Ravenna, Q-LAN
+
+**Key Features:**
+- Up to 128 network input channels (16 streams × 8 channels)
+- Sample-accurate timing (PTP sync, ±4.8 samples @ 48kHz)
+- Broadcast-safe design (zero allocations, packet loss concealment)
+- SDP session management (manual configuration + future SAP discovery)
+
+**Implementation Approach:** From scratch (MIT licensed, ~2,300 LOC)
+
+**Progress Tracking:** Not yet started (awaiting priority decision)
+
+**Related Documents:**
+- `docs/ORP/ORP071.md` (full integration plan with IEEE citations)
 
 ---
 
@@ -237,5 +265,5 @@ This directory contains authoritative implementation plans for the Orpheus SDK e
 
 ---
 
-**Last Updated:** October 12, 2025
+**Last Updated:** October 13, 2025
 **Maintained By:** SDK Core Team
