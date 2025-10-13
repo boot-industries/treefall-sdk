@@ -259,7 +259,7 @@ When proposing changes, ask:
 - **Linting:** Workspace linting scripts for TypeScript (see `package.json`)
 - **Performance budgets:** `scripts/validate-performance.js` validates bundle sizes against `budgets.json`
 - **Dependency integrity:** Madge checks for circular dependencies (783 files scanned)
-- **Security:** Weekly OSV scanner + npm audit, SBOM generation (CycloneDX format)
+- **Security:** Manual audits available (`pnpm audit --audit-level=high`, `pnpm run dep:check`)
 
 **Chaos Testing** (`.github/workflows/chaos-tests.yml`):
 
@@ -279,6 +279,7 @@ When proposing changes, ask:
 - **Performance validation:** `pnpm run perf:validate` checks bundle sizes locally
 - **Dependency check:** `pnpm run dep:check` validates no circular dependencies
 - **Dependency graph:** `pnpm run dep:graph` generates SVG visualization
+- **Security audits:** `pnpm audit --audit-level=high` checks for high severity vulnerabilities (manual, run as needed)
 
 ## Platform Support
 
@@ -355,7 +356,7 @@ Other platforms may work but are not part of automated coverage.
 - Performance budget enforcement (bundle size validation)
 - Chaos testing (nightly failure scenario testing)
 - Dependency graph integrity checks (no circular dependencies)
-- Security audits (npm audit, OSV scanner, SBOM generation)
+- Manual security audit tooling (npm audit commands, dependency checks)
 - Pre-merge validation (Husky hooks, commitlint, lint-staged)
 
 When resuming ORP068 implementation work, always check:
