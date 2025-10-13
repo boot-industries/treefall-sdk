@@ -1,10 +1,10 @@
 #include "track_playlist.h"
-#include <sstream>
 #include <algorithm>
+#include <sstream>
 
 namespace rpr {
 
-Track::ID Track::CreateTrackPlaylist(const std::string &name) {
+Track::ID Track::CreateTrackPlaylist(const std::string& name) {
   playlists_.push_back({name, {}});
   if (active_index_ == -1)
     active_index_ = 0;
@@ -19,7 +19,7 @@ bool Track::SetActiveTrackPlaylist(ID id) {
   return false;
 }
 
-void Track::EnumTrackPlaylists(const std::function<void(const Playlist &, bool)> &fn) const {
+void Track::EnumTrackPlaylists(const std::function<void(const Playlist&, bool)>& fn) const {
   for (ID i = 0; i < static_cast<ID>(playlists_.size()); ++i)
     fn(playlists_[i], i == active_index_);
 }
@@ -27,16 +27,16 @@ void Track::EnumTrackPlaylists(const std::function<void(const Playlist &, bool)>
 std::string Track::Serialize() const {
   std::ostringstream oss;
   oss << "PLAYLISTS " << playlists_.size() << " " << active_index_ << "\n";
-  for (const auto &pl : playlists_) {
+  for (const auto& pl : playlists_) {
     oss << pl.name;
-    for (const auto &lane : pl.lanes)
+    for (const auto& lane : pl.lanes)
       oss << "|" << lane;
     oss << "\n";
   }
   return oss.str();
 }
 
-Track Track::Deserialize(const std::string &chunk) {
+Track Track::Deserialize(const std::string& chunk) {
   Track t;
   std::istringstream iss(chunk);
   std::string header;
@@ -46,7 +46,7 @@ Track Track::Deserialize(const std::string &chunk) {
     return t;
   t.active_index_ = active;
 
-  auto trim_cr = [](std::string &s) {
+  auto trim_cr = [](std::string& s) {
     if (!s.empty() && s.back() == '\r')
       s.pop_back();
   };
@@ -70,7 +70,7 @@ Track Track::Deserialize(const std::string &chunk) {
 
 Track Track::DuplicatePlaylistToNewTrack(ID id) const {
   Track t;
-  if (const Playlist *p = GetPlaylist(id)) {
+  if (const Playlist* p = GetPlaylist(id)) {
     t.playlists_.push_back(*p);
     t.active_index_ = 0;
   }
@@ -80,18 +80,17 @@ Track Track::DuplicatePlaylistToNewTrack(ID id) const {
 Track Track::ConsolidatePlaylistsToNewTrack() const {
   Track t;
   Playlist merged{"Consolidated"};
-  for (const auto &pl : playlists_)
+  for (const auto& pl : playlists_)
     merged.lanes.insert(merged.lanes.end(), pl.lanes.begin(), pl.lanes.end());
   t.playlists_.push_back(std::move(merged));
   t.active_index_ = 0;
   return t;
 }
 
-const Playlist *Track::GetPlaylist(ID id) const {
+const Playlist* Track::GetPlaylist(ID id) const {
   if (id >= 0 && id < static_cast<ID>(playlists_.size()))
     return &playlists_[id];
   return nullptr;
 }
 
 } // namespace rpr
-

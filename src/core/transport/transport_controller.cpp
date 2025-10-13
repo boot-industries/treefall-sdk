@@ -22,8 +22,8 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
 
   RoutingConfig routingConfig;
   routingConfig.num_channels = MAX_ACTIVE_CLIPS; // One channel per possible active clip
-  routingConfig.num_groups = 4; // 4 Clip Groups (as per ORP070)
-  routingConfig.num_outputs = 2; // Stereo output
+  routingConfig.num_groups = 4;                  // 4 Clip Groups (as per ORP070)
+  routingConfig.num_outputs = 2;                 // Stereo output
   routingConfig.solo_mode = SoloMode::SIP;
   routingConfig.metering_mode = MeteringMode::Peak;
   routingConfig.gain_smoothing_ms = 10.0f;
@@ -205,7 +205,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       continue; // Already past end
     }
 
-    size_t framesToRead = static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
+    size_t framesToRead =
+        static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
 
     // Seek to current position (respecting trim IN point)
     int64_t readPosition = clip.trimInSamples + clip.currentSample;
@@ -257,11 +258,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   }
 
   // Process routing matrix: clips → groups → master output
-  m_routingMatrix->processRouting(
-      const_cast<const float**>(m_clipChannelPointers.data()),
-      outputBuffers,
-      static_cast<uint32_t>(numFrames)
-  );
+  m_routingMatrix->processRouting(const_cast<const float**>(m_clipChannelPointers.data()),
+                                  outputBuffers, static_cast<uint32_t>(numFrames));
 
   // Update clips
   size_t i = 0;
@@ -374,7 +372,7 @@ void TransportController::addActiveClip(ClipHandle handle) {
   // NOTE: Brief mutex lock in audio thread - only happens when starting clip, not during playback
   // TODO: Optimize to lock-free structure for production
   IAudioFileReader* reader = nullptr;
-  uint16_t numChannels = 2; // Default stereo
+  uint16_t numChannels = 2;         // Default stereo
   int64_t totalFrames = 48000 * 10; // Default 10 seconds
 
   {
@@ -430,7 +428,8 @@ void TransportController::processCallbacks() {
   }
 }
 
-SessionGraphError TransportController::registerClipAudio(ClipHandle handle, const std::string& file_path) {
+SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
+                                                         const std::string& file_path) {
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }

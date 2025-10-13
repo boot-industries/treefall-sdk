@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <orpheus/transport_controller.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/routing_matrix.h>
+#include <orpheus/transport_controller.h>
 
 #include <array>
 #include <atomic>
@@ -31,14 +31,14 @@ struct TransportCommand {
 /// Active clip state (in audio thread)
 struct ActiveClip {
   ClipHandle handle;
-  int64_t startSample;    // When clip started playing
-  int64_t currentSample;  // Current position within clip audio
-  int64_t trimInSamples;  // Trim IN point (from metadata)
-  int64_t trimOutSamples; // Trim OUT point (from metadata)
-  float fadeOutGain;      // 1.0 = normal, 0.0 = fully faded
-  bool isStopping;        // true if fade-out in progress
+  int64_t startSample;           // When clip started playing
+  int64_t currentSample;         // Current position within clip audio
+  int64_t trimInSamples;         // Trim IN point (from metadata)
+  int64_t trimOutSamples;        // Trim OUT point (from metadata)
+  float fadeOutGain;             // 1.0 = normal, 0.0 = fully faded
+  bool isStopping;               // true if fade-out in progress
   IAudioFileReader* audioReader; // Cached pointer to audio file reader (owned by m_audioFiles)
-  uint16_t numChannels;   // Number of channels in audio file
+  uint16_t numChannels;          // Number of channels in audio file
 };
 
 /// Transport controller implementation
@@ -137,7 +137,7 @@ private:
   // Each active clip gets its own channel buffer for routing
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
   std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES]
-  std::vector<float*> m_clipChannelPointers; // Pointers for processRouting()
+  std::vector<float*> m_clipChannelPointers;            // Pointers for processRouting()
 };
 
 } // namespace orpheus

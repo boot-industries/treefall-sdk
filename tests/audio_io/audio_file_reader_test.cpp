@@ -10,52 +10,52 @@ using namespace orpheus;
 // Test fixture
 class AudioFileReaderTest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        m_reader = createAudioFileReader();
-    }
+  void SetUp() override {
+    m_reader = createAudioFileReader();
+  }
 
-    void TearDown() override {
-        m_reader->close();
-        m_reader.reset();
-    }
+  void TearDown() override {
+    m_reader->close();
+    m_reader.reset();
+  }
 
-    std::unique_ptr<IAudioFileReader> m_reader;
+  std::unique_ptr<IAudioFileReader> m_reader;
 };
 
 // Basic Tests
 
 TEST_F(AudioFileReaderTest, InitialState) {
-    // Initially, no file should be open
-    EXPECT_FALSE(m_reader->isOpen());
-    EXPECT_EQ(m_reader->getCurrentPosition(), 0);
+  // Initially, no file should be open
+  EXPECT_FALSE(m_reader->isOpen());
+  EXPECT_EQ(m_reader->getCurrentPosition(), 0);
 }
 
 TEST_F(AudioFileReaderTest, OpenNonExistentFile) {
-    auto result = m_reader->open("/nonexistent/file.wav");
+  auto result = m_reader->open("/nonexistent/file.wav");
 
-    EXPECT_FALSE(result.isOk());
-    EXPECT_EQ(result.error, SessionGraphError::InternalError);
-    EXPECT_FALSE(m_reader->isOpen());
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.error, SessionGraphError::InternalError);
+  EXPECT_FALSE(m_reader->isOpen());
 }
 
 TEST_F(AudioFileReaderTest, ReadWithoutOpening) {
-    std::vector<float> buffer(1024);
-    auto result = m_reader->readSamples(buffer.data(), 1024);
+  std::vector<float> buffer(1024);
+  auto result = m_reader->readSamples(buffer.data(), 1024);
 
-    EXPECT_FALSE(result.isOk());
-    EXPECT_EQ(result.error, SessionGraphError::NotReady);
-    EXPECT_EQ(result.value, 0);
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.error, SessionGraphError::NotReady);
+  EXPECT_EQ(result.value, 0);
 }
 
 TEST_F(AudioFileReaderTest, SeekWithoutOpening) {
-    auto error = m_reader->seek(0);
-    EXPECT_EQ(error, SessionGraphError::NotReady);
+  auto error = m_reader->seek(0);
+  EXPECT_EQ(error, SessionGraphError::NotReady);
 }
 
 TEST_F(AudioFileReaderTest, CloseWhenNotOpen) {
-    // Should not crash
-    m_reader->close();
-    EXPECT_FALSE(m_reader->isOpen());
+  // Should not crash
+  m_reader->close();
+  EXPECT_FALSE(m_reader->isOpen());
 }
 
 // TODO: Add tests with actual audio files

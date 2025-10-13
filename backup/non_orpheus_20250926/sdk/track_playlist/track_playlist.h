@@ -1,7 +1,7 @@
 #pragma once
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
 
 namespace rpr {
 
@@ -16,24 +16,24 @@ public:
   Track() = default;
 
   // API: create a new playlist and return its ID
-  ID CreateTrackPlaylist(const std::string &name);
+  ID CreateTrackPlaylist(const std::string& name);
 
   // API: set active playlist by ID
   bool SetActiveTrackPlaylist(ID id);
 
   // API: enumerate playlists, callback receives playlist and active flag
-  void EnumTrackPlaylists(const std::function<void(const Playlist &, bool)> &fn) const;
+  void EnumTrackPlaylists(const std::function<void(const Playlist&, bool)>& fn) const;
 
   // Serialize playlists to a track state chunk for persistence
   std::string Serialize() const;
   // Restore playlists from a state chunk
-  static Track Deserialize(const std::string &chunk);
+  static Track Deserialize(const std::string& chunk);
 
   // Helper functions
   Track DuplicatePlaylistToNewTrack(ID id) const;
   Track ConsolidatePlaylistsToNewTrack() const;
 
-  const Playlist *GetPlaylist(ID id) const;
+  const Playlist* GetPlaylist(ID id) const;
 
 private:
   std::vector<Playlist> playlists_;
@@ -41,4 +41,3 @@ private:
 };
 
 } // namespace rpr
-

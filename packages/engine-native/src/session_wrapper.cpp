@@ -17,23 +17,24 @@ namespace session_json = orpheus::core::session_json;
 using orpheus::core::SessionGraph;
 
 Napi::Object SessionWrapper::Init(Napi::Env env, Napi::Object exports) {
-  Napi::Function func = DefineClass(env, "Session", {
-    InstanceMethod("loadSession", &SessionWrapper::LoadSession),
-    InstanceMethod("getSessionInfo", &SessionWrapper::GetSessionInfo),
-    InstanceMethod("renderClick", &SessionWrapper::RenderClick),
-    InstanceMethod("getTempo", &SessionWrapper::GetTempo),
-    InstanceMethod("setTempo", &SessionWrapper::SetTempo),
-    InstanceMethod("subscribe", &SessionWrapper::Subscribe),
-    InstanceMethod("unsubscribe", &SessionWrapper::Unsubscribe),
-  });
+  Napi::Function func =
+      DefineClass(env, "Session",
+                  {
+                      InstanceMethod("loadSession", &SessionWrapper::LoadSession),
+                      InstanceMethod("getSessionInfo", &SessionWrapper::GetSessionInfo),
+                      InstanceMethod("renderClick", &SessionWrapper::RenderClick),
+                      InstanceMethod("getTempo", &SessionWrapper::GetTempo),
+                      InstanceMethod("setTempo", &SessionWrapper::SetTempo),
+                      InstanceMethod("subscribe", &SessionWrapper::Subscribe),
+                      InstanceMethod("unsubscribe", &SessionWrapper::Unsubscribe),
+                  });
 
   exports.Set("Session", func);
   return exports;
 }
 
 SessionWrapper::SessionWrapper(const Napi::CallbackInfo& info)
-    : Napi::ObjectWrap<SessionWrapper>(info),
-      start_time_(std::chrono::steady_clock::now()) {
+    : Napi::ObjectWrap<SessionWrapper>(info), start_time_(std::chrono::steady_clock::now()) {
   // Constructor - session will be initialized when loadSession is called
 }
 
@@ -48,16 +49,14 @@ Napi::Value SessionWrapper::LoadSession(const Napi::CallbackInfo& info) {
 
   // Validate arguments
   if (info.Length() < 1 || !info[0].IsObject()) {
-    Napi::TypeError::New(env, "Expected object with sessionPath")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "Expected object with sessionPath").ThrowAsJavaScriptException();
     return env.Null();
   }
 
   Napi::Object payload = info[0].As<Napi::Object>();
 
   if (!payload.Has("sessionPath") || !payload.Get("sessionPath").IsString()) {
-    Napi::TypeError::New(env, "sessionPath must be a string")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "sessionPath must be a string").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -106,8 +105,7 @@ Napi::Value SessionWrapper::GetSessionInfo(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (!session_) {
-    Napi::Error::New(env, "No session loaded")
-        .ThrowAsJavaScriptException();
+    Napi::Error::New(env, "No session loaded").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -133,23 +131,22 @@ Napi::Value SessionWrapper::RenderClick(const Napi::CallbackInfo& info) {
 
   // Extract parameters
   if (!params.Has("outputPath") || !params.Get("outputPath").IsString()) {
-    Napi::TypeError::New(env, "outputPath is required")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "outputPath is required").ThrowAsJavaScriptException();
     return env.Null();
   }
   std::string outputPath = params.Get("outputPath").As<Napi::String>().Utf8Value();
 
   uint32_t bars = params.Has("bars") && params.Get("bars").IsNumber()
-      ? params.Get("bars").As<Napi::Number>().Uint32Value()
-      : 4;
+                      ? params.Get("bars").As<Napi::Number>().Uint32Value()
+                      : 4;
 
   double bpm = params.Has("bpm") && params.Get("bpm").IsNumber()
-      ? params.Get("bpm").As<Napi::Number>().DoubleValue()
-      : (session_ ? session_->tempo() : 120.0);
+                   ? params.Get("bpm").As<Napi::Number>().DoubleValue()
+                   : (session_ ? session_->tempo() : 120.0);
 
   uint32_t sampleRate = params.Has("sampleRate") && params.Get("sampleRate").IsNumber()
-      ? params.Get("sampleRate").As<Napi::Number>().Uint32Value()
-      : (session_ ? session_->render_sample_rate() : 48000);
+                            ? params.Get("sampleRate").As<Napi::Number>().Uint32Value()
+                            : (session_ ? session_->render_sample_rate() : 48000);
 
   try {
     // Get render API via ABI
@@ -211,8 +208,7 @@ Napi::Value SessionWrapper::GetTempo(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (!session_) {
-    Napi::Error::New(env, "No session loaded")
-        .ThrowAsJavaScriptException();
+    Napi::Error::New(env, "No session loaded").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -223,14 +219,12 @@ Napi::Value SessionWrapper::SetTempo(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (!session_) {
-    Napi::Error::New(env, "No session loaded")
-        .ThrowAsJavaScriptException();
+    Napi::Error::New(env, "No session loaded").ThrowAsJavaScriptException();
     return env.Null();
   }
 
   if (info.Length() < 1 || !info[0].IsNumber()) {
-    Napi::TypeError::New(env, "Expected number for tempo")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "Expected number for tempo").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -244,8 +238,7 @@ Napi::Value SessionWrapper::Subscribe(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (info.Length() < 1 || !info[0].IsFunction()) {
-    Napi::TypeError::New(env, "Expected callback function")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "Expected callback function").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -253,23 +246,19 @@ Napi::Value SessionWrapper::Subscribe(const Napi::CallbackInfo& info) {
   uint32_t callback_id = next_callback_id_++;
   Napi::Function callback = info[0].As<Napi::Function>();
 
-  callbacks_.push_back(CallbackEntry{
-    callback_id,
-    Napi::Persistent(callback)
-  });
+  callbacks_.push_back(CallbackEntry{callback_id, Napi::Persistent(callback)});
 
   // Return an unsubscribe function
-  Napi::Function unsubscribe_fn = Napi::Function::New(env, [this, callback_id](const Napi::CallbackInfo& unsubscribe_info) {
-    // Remove callback by ID
-    callbacks_.erase(
-      std::remove_if(callbacks_.begin(), callbacks_.end(),
-        [callback_id](const CallbackEntry& entry) {
-          return entry.id == callback_id;
-        }),
-      callbacks_.end()
-    );
-    return unsubscribe_info.Env().Undefined();
-  });
+  Napi::Function unsubscribe_fn =
+      Napi::Function::New(env, [this, callback_id](const Napi::CallbackInfo& unsubscribe_info) {
+        // Remove callback by ID
+        callbacks_.erase(std::remove_if(callbacks_.begin(), callbacks_.end(),
+                                        [callback_id](const CallbackEntry& entry) {
+                                          return entry.id == callback_id;
+                                        }),
+                         callbacks_.end());
+        return unsubscribe_info.Env().Undefined();
+      });
 
   return unsubscribe_fn;
 }
@@ -278,8 +267,7 @@ Napi::Value SessionWrapper::Unsubscribe(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
   if (info.Length() < 1 || !info[0].IsNumber()) {
-    Napi::TypeError::New(env, "Expected callback ID")
-        .ThrowAsJavaScriptException();
+    Napi::TypeError::New(env, "Expected callback ID").ThrowAsJavaScriptException();
     return env.Null();
   }
 
@@ -287,12 +275,9 @@ Napi::Value SessionWrapper::Unsubscribe(const Napi::CallbackInfo& info) {
 
   // Remove callback by ID
   callbacks_.erase(
-    std::remove_if(callbacks_.begin(), callbacks_.end(),
-      [callback_id](const CallbackEntry& entry) {
-        return entry.id == callback_id;
-      }),
-    callbacks_.end()
-  );
+      std::remove_if(callbacks_.begin(), callbacks_.end(),
+                     [callback_id](const CallbackEntry& entry) { return entry.id == callback_id; }),
+      callbacks_.end());
 
   return env.Undefined();
 }
@@ -311,7 +296,7 @@ void SessionWrapper::EmitEvent(const Napi::Env& env, const Napi::Object& event) 
 
 void SessionWrapper::EmitSessionChanged() {
   if (callbacks_.empty()) {
-    return;  // No callbacks registered
+    return; // No callbacks registered
   }
 
   // Get the environment from the first callback
@@ -341,7 +326,7 @@ void SessionWrapper::EmitSessionChanged() {
 
 void SessionWrapper::EmitHeartbeat() {
   if (callbacks_.empty()) {
-    return;  // No callbacks registered
+    return; // No callbacks registered
   }
 
   // Get the environment from the first callback

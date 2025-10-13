@@ -2,13 +2,13 @@
 
 #pragma once
 
-#include <juce_gui_extra/juce_gui_extra.h>
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
 #include "Session/SessionManager.h"
 #include "Transport/TransportControls.h"
 #include "UI/InterLookAndFeel.h"
 #include "UI/TabSwitcher.h"
+#include <juce_gui_extra/juce_gui_extra.h>
 
 //==============================================================================
 /**
@@ -26,60 +26,58 @@
  * - Communicates with audio thread via lock-free commands
  * - Never blocks the audio thread
  */
-class MainComponent : public juce::Component,
-                      public juce::MenuBarModel
-{
+class MainComponent : public juce::Component, public juce::MenuBarModel {
 public:
-    //==============================================================================
-    MainComponent();
-    ~MainComponent() override;
+  //==============================================================================
+  MainComponent();
+  ~MainComponent() override;
 
-    //==============================================================================
-    void paint(juce::Graphics&) override;
-    void resized() override;
-    bool keyPressed(const juce::KeyPress& key) override;
+  //==============================================================================
+  void paint(juce::Graphics&) override;
+  void resized() override;
+  bool keyPressed(const juce::KeyPress& key) override;
 
-    //==============================================================================
-    // MenuBarModel overrides
-    juce::StringArray getMenuBarNames() override;
-    juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
-    void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
+  //==============================================================================
+  // MenuBarModel overrides
+  juce::StringArray getMenuBarNames() override;
+  juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
+  void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
 
 private:
-    //==============================================================================
-    // Core Functionality
-    void onClipRightClicked(int buttonIndex);
-    void onClipTriggered(int buttonIndex);  // Trigger clip (keyboard or mouse)
-    void loadClipToButton(int buttonIndex, const juce::String& filePath);
-    void updateButtonFromClip(int buttonIndex);
-    void onStopAll();
-    void onPanic();
+  //==============================================================================
+  // Core Functionality
+  void onClipRightClicked(int buttonIndex);
+  void onClipTriggered(int buttonIndex); // Trigger clip (keyboard or mouse)
+  void loadClipToButton(int buttonIndex, const juce::String& filePath);
+  void updateButtonFromClip(int buttonIndex);
+  void onStopAll();
+  void onPanic();
 
-    // Tab management
-    void onTabSelected(int tabIndex);
+  // Tab management
+  void onTabSelected(int tabIndex);
 
-    // Keyboard mapping
-    int getButtonIndexFromKey(const juce::KeyPress& key) const;
-    juce::String getKeyboardShortcutForButton(int buttonIndex) const;
+  // Keyboard mapping
+  int getButtonIndexFromKey(const juce::KeyPress& key) const;
+  juce::String getKeyboardShortcutForButton(int buttonIndex) const;
 
-    //==============================================================================
-    // UI Components
-    std::unique_ptr<TabSwitcher> m_tabSwitcher;
-    std::unique_ptr<ClipGrid> m_clipGrid;
-    std::unique_ptr<TransportControls> m_transportControls;
+  //==============================================================================
+  // UI Components
+  std::unique_ptr<TabSwitcher> m_tabSwitcher;
+  std::unique_ptr<ClipGrid> m_clipGrid;
+  std::unique_ptr<TransportControls> m_transportControls;
 
-    // Future components
-    // std::unique_ptr<RoutingPanel> m_routingPanel;
-    // std::unique_ptr<WaveformDisplay> m_waveformDisplay;
+  // Future components
+  // std::unique_ptr<RoutingPanel> m_routingPanel;
+  // std::unique_ptr<WaveformDisplay> m_waveformDisplay;
 
-    // SDK Integration (Active!)
-    std::unique_ptr<AudioEngine> m_audioEngine;
+  // SDK Integration (Active!)
+  std::unique_ptr<AudioEngine> m_audioEngine;
 
-    // Session Management (Real Functionality)
-    SessionManager m_sessionManager;
+  // Session Management (Real Functionality)
+  SessionManager m_sessionManager;
 
-    // Custom Look and Feel (Inter font)
-    InterLookAndFeel m_interLookAndFeel;
+  // Custom Look and Feel (Inter font)
+  InterLookAndFeel m_interLookAndFeel;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -5,8 +5,8 @@
 
 #include <filesystem>
 #include <fstream>
-#include <string>
 #include <gtest/gtest.h>
+#include <string>
 
 namespace session_json = orpheus::core::session_json;
 
@@ -18,10 +18,10 @@ TEST(ReaperAdapterIntegration, ImportsMarkerSetsAndPlaylistLanes) {
   graph.set_name("Adapter Test");
   graph.set_tempo(120.0);
   graph.set_session_range(0.0, 8.0);
-  auto *track = graph.add_track("Track");
+  auto* track = graph.add_track("Track");
   ASSERT_NE(track, nullptr);
   graph.add_clip(*track, "Clip", 0.0, 4.0);
-  auto *marker_set = graph.add_marker_set("Song");
+  auto* marker_set = graph.add_marker_set("Song");
   ASSERT_NE(marker_set, nullptr);
   marker_set->add_marker("Intro", 0.0);
   marker_set->add_marker("Outro", 7.5);
@@ -38,7 +38,7 @@ TEST(ReaperAdapterIntegration, ImportsMarkerSetsAndPlaylistLanes) {
   }
 
   ASSERT_EQ(OrpheusImportSession(temp_path.string().c_str()), 1);
-  const char *panel_text = ReaperExtensionPanelText();
+  const char* panel_text = ReaperExtensionPanelText();
   ASSERT_NE(panel_text, nullptr);
   const std::string panel(panel_text);
   EXPECT_NE(panel.find("Marker Sets: 1"), std::string::npos);
@@ -47,5 +47,5 @@ TEST(ReaperAdapterIntegration, ImportsMarkerSetsAndPlaylistLanes) {
   EXPECT_NE(panel.find("Alternate"), std::string::npos);
 }
 
-}  // namespace
-}  // namespace orpheus::tests
+} // namespace
+} // namespace orpheus::tests

@@ -15,15 +15,14 @@ typedef double ReaSample;
 
 struct MIDI_eventlist;
 
-typedef struct _PCM_source_transfer_t
-{
+typedef struct _PCM_source_transfer_t {
   double time_s;
   double samplerate;
   int nch;
   int length;
-  ReaSample *samples;
+  ReaSample* samples;
   int samples_out;
-  MIDI_eventlist *midi_events;
+  MIDI_eventlist* midi_events;
   double approximate_playback_latency;
   double roundtrip_latency;
   double absolute_time_s;

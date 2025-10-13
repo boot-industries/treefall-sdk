@@ -12,7 +12,7 @@ TEST(TrackPlaylistTest, CreateAndSetActive) {
 
   std::vector<std::string> names;
   std::vector<bool> actives;
-  t.EnumTrackPlaylists([&](const Playlist &pl, bool active) {
+  t.EnumTrackPlaylists([&](const Playlist& pl, bool active) {
     names.push_back(pl.name);
     actives.push_back(active);
   });
@@ -21,8 +21,7 @@ TEST(TrackPlaylistTest, CreateAndSetActive) {
 
   EXPECT_TRUE(t.SetActiveTrackPlaylist(second));
   actives.clear();
-  t.EnumTrackPlaylists(
-      [&](const Playlist &, bool active) { actives.push_back(active); });
+  t.EnumTrackPlaylists([&](const Playlist&, bool active) { actives.push_back(active); });
   EXPECT_EQ(actives, std::vector<bool>({false, true}));
 }
 
@@ -32,8 +31,7 @@ TEST(TrackPlaylistTest, SerializeAndDeserializeRoundTrip) {
   EXPECT_EQ(t.Serialize(), chunk);
 
   std::vector<bool> actives;
-  t.EnumTrackPlaylists(
-      [&](const Playlist &, bool active) { actives.push_back(active); });
+  t.EnumTrackPlaylists([&](const Playlist&, bool active) { actives.push_back(active); });
   EXPECT_EQ(actives, std::vector<bool>({false, true}));
 }
 
@@ -41,7 +39,7 @@ TEST(TrackPlaylistTest, DuplicatePlaylistToNewTrack) {
   std::string chunk = "PLAYLISTS 2 1\nOne|L1|L2\nTwo|L3\n";
   Track t = Track::Deserialize(chunk);
   Track dup = t.DuplicatePlaylistToNewTrack(1);
-  const Playlist *p = dup.GetPlaylist(0);
+  const Playlist* p = dup.GetPlaylist(0);
   ASSERT_NE(p, nullptr);
   EXPECT_EQ(p->name, "Two");
   EXPECT_EQ(p->lanes, std::vector<std::string>({"L3"}));
@@ -51,7 +49,7 @@ TEST(TrackPlaylistTest, ConsolidatePlaylistsToNewTrack) {
   std::string chunk = "PLAYLISTS 2 1\nOne|L1|L2\nTwo|L3\n";
   Track t = Track::Deserialize(chunk);
   Track cons = t.ConsolidatePlaylistsToNewTrack();
-  const Playlist *c = cons.GetPlaylist(0);
+  const Playlist* c = cons.GetPlaylist(0);
   ASSERT_NE(c, nullptr);
   EXPECT_EQ(c->name, "Consolidated");
   EXPECT_EQ(c->lanes, std::vector<std::string>({"L1", "L2", "L3"}));
@@ -64,12 +62,11 @@ TEST(TrackPlaylistTest, DeserializeBadHeader) {
 }
 
 TEST(TrackPlaylistTest, DeserializeCRLF) {
-  std::string chunk =
-      "PLAYLISTS 2 1\r\nOne|L1|L2\r\nTwo|L3\r\n";
+  std::string chunk = "PLAYLISTS 2 1\r\nOne|L1|L2\r\nTwo|L3\r\n";
   Track t = Track::Deserialize(chunk);
   std::string expected = "PLAYLISTS 2 1\nOne|L1|L2\nTwo|L3\n";
   EXPECT_EQ(t.Serialize(), expected);
-  const Playlist *p = t.GetPlaylist(1);
+  const Playlist* p = t.GetPlaylist(1);
   ASSERT_NE(p, nullptr);
   ASSERT_EQ(p->lanes.size(), 1u);
   EXPECT_EQ(p->lanes[0], "L3");

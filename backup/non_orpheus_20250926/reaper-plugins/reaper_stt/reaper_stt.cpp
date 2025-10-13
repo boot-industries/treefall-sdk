@@ -1,13 +1,13 @@
-#include <cstring>
-#include "stt_stubs.h"
 #include "../../sdk/reaper_plugin.h"
 #include "../../sdk/reaper_plugin_functions.h"
+#include "stt_engine.h"
+#include "stt_stubs.h"
+#include <algorithm>
+#include <cstring>
+#include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <algorithm>
-#include <mutex>
-#include "stt_engine.h"
 
 /*
   Simple speech-to-text helper using PCM_source_transfer_t blocks.
@@ -24,12 +24,14 @@ namespace {
 // Default stub implementation used when no real engine is provided.
 class StubEngine : public STTEngine {
 public:
-  std::string Transcribe(const ReaSample* samples,
-                         int nch, int frames, double samplerate) override
-  {
+  std::string Transcribe(const ReaSample* samples, int nch, int frames,
+                         double samplerate) override {
     // In real use, connect to an actual STT engine.
     // Here we return a placeholder string for demonstration.
-    (void)samples; (void)nch; (void)frames; (void)samplerate;
+    (void)samples;
+    (void)nch;
+    (void)frames;
+    (void)samplerate;
     return "hello world"; // dummy transcription
   }
 };
@@ -44,17 +46,14 @@ constexpr const char kApiReplaceWord[] = "API_STT_ReplaceWord";
 constexpr const char kApiSetEngine[] = "API_STT_SetEngine";
 bool g_api_registered = false;
 
-static std::string run_stt(const ReaSample* samples,
-                           int nch, int frames, double samplerate)
-{
+static std::string run_stt(const ReaSample* samples, int nch, int frames, double samplerate) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   return g_engine->Transcribe(samples, nch, frames, samplerate);
 }
 
 } // namespace
 
-void STT_SetEngine(STTEngine* engine)
-{
+void STT_SetEngine(STTEngine* engine) {
   std::lock_guard<std::mutex> lock(g_engine_mutex);
   g_engine = engine ? engine : &g_stub_engine;
 }
@@ -69,29 +68,27 @@ struct WordEntry {
 
 class TextLane {
 public:
-  void addWord(const std::string& word, double position)
-  {
+  void addWord(const std::string& word, double position) {
     std::lock_guard<std::mutex> lock(mutex_);
     words_.push_back({word, position});
   }
 
-  int findWord(const std::string& word)
-  {
+  int findWord(const std::string& word) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (size_t i = 0; i < words_.size(); ++i)
-      if (words_[i].word == word) return (int)i;
+      if (words_[i].word == word)
+        return (int)i;
     return -1;
   }
 
-  void replaceWord(const std::string& oldWord, const std::string& newWord)
-  {
+  void replaceWord(const std::string& oldWord, const std::string& newWord) {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto &w : words_)
-      if (w.word == oldWord) w.word = newWord;
+    for (auto& w : words_)
+      if (w.word == oldWord)
+        w.word = newWord;
   }
 
-  void clear()
-  {
+  void clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     words_.clear();
   }
@@ -106,20 +103,18 @@ static TextLane g_lane;
 // ----------------------------------------------------------------------
 // Feed a PCM block to STT and insert markers
 // ----------------------------------------------------------------------
-static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
-{
+static void feed_block_to_stt(PCM_source_transfer_t* block, double start_time) {
   const int frames = (block->samples_out > 0) ? block->samples_out : block->length;
-  if (frames <= 0) return;
+  if (frames <= 0)
+    return;
 
   std::string text = run_stt(block->samples, block->nch, frames, block->samplerate);
   std::istringstream iss(text);
   std::string word;
-  double word_dur = (block->samplerate > 0.0)
-                      ? static_cast<double>(frames) / block->samplerate
-                      : 0.0;
+  double word_dur =
+      (block->samplerate > 0.0) ? static_cast<double>(frames) / block->samplerate : 0.0;
   int word_index = 0;
-  while (iss >> word)
-  {
+  while (iss >> word) {
     double pos = start_time + word_index * word_dur;
     AddProjectMarker(nullptr, false, pos, pos, word.c_str(), -1);
     g_lane.addWord(word, pos);
@@ -130,9 +125,9 @@ static void feed_block_to_stt(PCM_source_transfer_t *block, double start_time)
 // ----------------------------------------------------------------------
 // Public helper to process a PCM_source
 // ----------------------------------------------------------------------
-void TranscribeSource(PCM_source *src)
-{
-  if (!src) return;
+void TranscribeSource(PCM_source* src) {
+  if (!src)
+    return;
   g_lane.clear();
   const int block_len = 4096;
   std::vector<ReaSample> buffer(block_len * src->GetNumChannels());
@@ -143,13 +138,12 @@ void TranscribeSource(PCM_source *src)
   block.samplerate = src->GetSampleRate();
   block.time_s = 0.0;
   double t = 0.0;
-  while (true)
-  {
+  while (true) {
     block.time_s = t;
     src->GetSamples(&block);
-    if (block.samples_out <= 0) break;
-    if (block.samples_out < block.length)
-    {
+    if (block.samples_out <= 0)
+      break;
+    if (block.samples_out < block.length) {
       const size_t valid = static_cast<size_t>(block.samples_out) * static_cast<size_t>(block.nch);
       const size_t total = static_cast<size_t>(block.length) * static_cast<size_t>(block.nch);
       std::fill(block.samples + valid, block.samples + total, ReaSample{});
@@ -162,22 +156,20 @@ void TranscribeSource(PCM_source *src)
 // ----------------------------------------------------------------------
 // Search/edit API
 // ----------------------------------------------------------------------
-int STT_FindWord(const char *word)
-{
+int STT_FindWord(const char* word) {
   return g_lane.findWord(word ? word : "");
 }
 
-void STT_ReplaceWord(const char *oldWord, const char *newWord)
-{
-  if (!oldWord || !newWord) return;
+void STT_ReplaceWord(const char* oldWord, const char* newWord) {
+  if (!oldWord || !newWord)
+    return;
   g_lane.replaceWord(oldWord, newWord);
 }
 
 extern "C" {
-REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t* rec)
-{
-  if (rec)
-  {
+REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
+                                                      reaper_plugin_info_t* rec) {
+  if (rec) {
     if (rec->caller_version != REAPER_PLUGIN_VERSION || !rec->Register || !rec->GetFunc)
       return 0;
     if (!REAPERAPI_LoadAPI(rec->GetFunc))
@@ -188,21 +180,18 @@ REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, r
     if (!plugin_register(kApiTranscribeSource, (void*)TranscribeSource))
       return 0;
 
-    if (!plugin_register(kApiFindWord, (void*)STT_FindWord))
-    {
+    if (!plugin_register(kApiFindWord, (void*)STT_FindWord)) {
       plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
       return 0;
     }
 
-    if (!plugin_register(kApiReplaceWord, (void*)STT_ReplaceWord))
-    {
+    if (!plugin_register(kApiReplaceWord, (void*)STT_ReplaceWord)) {
       plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
       plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
       return 0;
     }
 
-    if (!plugin_register(kApiSetEngine, (void*)STT_SetEngine))
-    {
+    if (!plugin_register(kApiSetEngine, (void*)STT_SetEngine)) {
       plugin_register("-API_STT_ReplaceWord", (void*)STT_ReplaceWord);
       plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
       plugin_register("-API_TranscribeSource", (void*)TranscribeSource);
@@ -213,8 +202,7 @@ REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, r
     return 1;
   }
 
-  if (g_api_registered && plugin_register)
-  {
+  if (g_api_registered && plugin_register) {
     plugin_register("-API_STT_SetEngine", (void*)STT_SetEngine);
     plugin_register("-API_STT_ReplaceWord", (void*)STT_ReplaceWord);
     plugin_register("-API_STT_FindWord", (void*)STT_FindWord);
@@ -227,4 +215,3 @@ REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, r
   return 0;
 }
 }
-

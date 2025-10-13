@@ -10,7 +10,7 @@ int main() {
   t.SetActiveTrackPlaylist(chorus);
 
   std::cout << "Playlists:\n";
-  t.EnumTrackPlaylists([](const Playlist &pl, bool active) {
+  t.EnumTrackPlaylists([](const Playlist& pl, bool active) {
     std::cout << (active ? "* " : "  ") << pl.name << "\n";
   });
 
@@ -24,4 +24,3 @@ int main() {
   std::cout << "Consolidated Track:\n" << cons.Serialize() << "\n";
   return 0;
 }
-

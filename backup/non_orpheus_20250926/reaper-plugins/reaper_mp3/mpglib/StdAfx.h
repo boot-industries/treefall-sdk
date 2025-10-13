@@ -10,26 +10,26 @@
 #pragma once
 #endif // _MSC_VER > 1000
 
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+#define WIN32_LEAN_AND_MEAN // Exclude rarely-used stuff from Windows headers
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "mpglib.h"
 
 #include "common.h"
-#include "tabinit.h"
 #include "dct64_i386.h"
 #include "decode_i386.h"
-#include "layer3.h"
-#include "layer2.h"
 #include "l2tables.h"
+#include "layer2.h"
+#include "layer3.h"
+#include "tabinit.h"
 
 #if 0
-#include <windows.h>
 #include "../../../pfc/profiler.h"
+#include <windows.h>
 #else
 #define profiler(x)
 #endif

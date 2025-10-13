@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <napi.h>
-#include <memory>
-#include <vector>
 #include <chrono>
+#include <memory>
+#include <napi.h>
+#include <vector>
 
 // Forward declare Orpheus types to avoid including full headers
 namespace orpheus::core {

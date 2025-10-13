@@ -2,22 +2,19 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sstream>
-#include <string>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
 
-namespace
-{
-reaper_atmos_render_frame_t makeFrame(int frames,
-                                      std::vector<ReaSample> &bedBuffer,
-                                      std::vector<ReaSample> &objectBuffer,
-                                      reaper_atmos_bed_channel_t &bed,
-                                      reaper_atmos_object_buffer_t &object)
-{
+namespace {
+reaper_atmos_render_frame_t makeFrame(int frames, std::vector<ReaSample>& bedBuffer,
+                                      std::vector<ReaSample>& objectBuffer,
+                                      reaper_atmos_bed_channel_t& bed,
+                                      reaper_atmos_object_buffer_t& object) {
   bedBuffer.assign(frames, 0.0);
   objectBuffer.assign(frames, 0.0);
 
@@ -42,28 +39,23 @@ reaper_atmos_render_frame_t makeFrame(int frames,
   return frame;
 }
 
-uint32_t readU32(std::istream &is)
-{
+uint32_t readU32(std::istream& is) {
   unsigned char b[4] = {};
-  is.read(reinterpret_cast<char *>(b), 4);
+  is.read(reinterpret_cast<char*>(b), 4);
   return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
          (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
 }
 
-uint16_t readU16(std::istream &is)
-{
+uint16_t readU16(std::istream& is) {
   unsigned char b[2] = {};
-  is.read(reinterpret_cast<char *>(b), 2);
+  is.read(reinterpret_cast<char*>(b), 2);
   return static_cast<uint16_t>(b[0]) | (static_cast<uint16_t>(b[1]) << 8);
 }
 
-std::vector<ReaSample> makeSamples(int channels, int frames)
-{
+std::vector<ReaSample> makeSamples(int channels, int frames) {
   std::vector<ReaSample> data(static_cast<size_t>(channels) * frames, 0.0);
-  for (int ch = 0; ch < channels; ++ch)
-  {
-    for (int i = 0; i < frames; ++i)
-    {
+  for (int ch = 0; ch < channels; ++ch) {
+    for (int i = 0; i < frames; ++i) {
       data[static_cast<size_t>(ch) * frames + i] = ch * 10.0 + i + 0.25;
     }
   }
@@ -71,8 +63,7 @@ std::vector<ReaSample> makeSamples(int channels, int frames)
 }
 } // namespace
 
-TEST(AtmosEngineTest, RoutesBlockIntoHostBuffers)
-{
+TEST(AtmosEngineTest, RoutesBlockIntoHostBuffers) {
   AtmosEngine engine;
   engine.clearRouting();
   engine.mapChannelToBed(0, 0);
@@ -113,8 +104,7 @@ TEST(AtmosEngineTest, RoutesBlockIntoHostBuffers)
   EXPECT_EQ(engine.getActiveObjectCount(), 1);
 }
 
-TEST(AtmosEngineTest, ExportBWFProducesWaveHeader)
-{
+TEST(AtmosEngineTest, ExportBWFProducesWaveHeader) {
   AtmosEngine engine;
   engine.clearRouting();
   engine.mapChannelToBed(0, 0);
@@ -174,8 +164,7 @@ TEST(AtmosEngineTest, ExportBWFProducesWaveHeader)
   fs::remove(path);
 }
 
-TEST(AtmosEngineTest, ExportADMContainsObjects)
-{
+TEST(AtmosEngineTest, ExportADMContainsObjects) {
   AtmosEngine engine;
   engine.clearRouting();
   engine.mapChannelToBed(0, 0);
@@ -213,14 +202,13 @@ TEST(AtmosEngineTest, ExportADMContainsObjects)
   fs::remove(path);
 }
 
-TEST(AtmosEngineTest, SpeakerFormatLifecycle)
-{
+TEST(AtmosEngineTest, SpeakerFormatLifecycle) {
   AtmosEngine engine;
   int original = engine.getSpeakerFormatCount();
   ASSERT_TRUE(engine.unregisterSpeakerFormat("5.1.4"));
   EXPECT_EQ(engine.getSpeakerFormatCount(), original - 1);
 
-  const char *channels[] = {"A", "B", nullptr};
+  const char* channels[] = {"A", "B", nullptr};
   reaper_atmos_speaker_format fmt{};
   fmt.name = "Custom";
   fmt.num_channels = 2;
@@ -228,4 +216,3 @@ TEST(AtmosEngineTest, SpeakerFormatLifecycle)
   engine.registerSpeakerFormat(&fmt);
   EXPECT_EQ(engine.getSpeakerFormatCount(), original);
 }
-

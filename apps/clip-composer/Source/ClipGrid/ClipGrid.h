@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <juce_gui_extra/juce_gui_extra.h>
 #include "ClipButton.h"
-#include <vector>
+#include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
+#include <vector>
 
 //==============================================================================
 /**
@@ -19,40 +19,41 @@
  * - Responsive sizing
  * - 2px gaps between buttons
  */
-class ClipGrid : public juce::Component
-{
+class ClipGrid : public juce::Component {
 public:
-    //==============================================================================
-    ClipGrid();
-    ~ClipGrid() override = default;
+  //==============================================================================
+  ClipGrid();
+  ~ClipGrid() override = default;
 
-    //==============================================================================
-    // Button access
-    ClipButton* getButton(int index);
-    int getButtonCount() const { return static_cast<int>(m_buttons.size()); }
+  //==============================================================================
+  // Button access
+  ClipButton* getButton(int index);
+  int getButtonCount() const {
+    return static_cast<int>(m_buttons.size());
+  }
 
-    //==============================================================================
-    // Callbacks for button events
-    std::function<void(int buttonIndex)> onButtonClicked;        // Left-click (trigger)
-    std::function<void(int buttonIndex)> onButtonRightClicked;   // Right-click (load)
+  //==============================================================================
+  // Callbacks for button events
+  std::function<void(int buttonIndex)> onButtonClicked;      // Left-click (trigger)
+  std::function<void(int buttonIndex)> onButtonRightClicked; // Right-click (load)
 
-    //==============================================================================
-    void paint(juce::Graphics& g) override;
-    void resized() override;
+  //==============================================================================
+  void paint(juce::Graphics& g) override;
+  void resized() override;
 
 private:
-    //==============================================================================
-    void createButtons();
-    void handleButtonLeftClick(int buttonIndex);
-    void handleButtonRightClick(int buttonIndex);
+  //==============================================================================
+  void createButtons();
+  void handleButtonLeftClick(int buttonIndex);
+  void handleButtonRightClick(int buttonIndex);
 
-    //==============================================================================
-    static constexpr int COLUMNS = 6;
-    static constexpr int ROWS = 8;
-    static constexpr int BUTTON_COUNT = COLUMNS * ROWS;  // 48
-    static constexpr int GAP = 2;
+  //==============================================================================
+  static constexpr int COLUMNS = 6;
+  static constexpr int ROWS = 8;
+  static constexpr int BUTTON_COUNT = COLUMNS * ROWS; // 48
+  static constexpr int GAP = 2;
 
-    std::vector<std::unique_ptr<ClipButton>> m_buttons;
+  std::vector<std::unique_ptr<ClipButton>> m_buttons;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

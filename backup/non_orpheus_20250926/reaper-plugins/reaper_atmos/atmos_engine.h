@@ -7,65 +7,59 @@
 #include <string>
 #include <vector>
 
-struct AtmosChannelDestination
-{
+struct AtmosChannelDestination {
   bool assigned = false;
   bool is_object = false;
   int index = -1; // bed channel index or object id
 };
 
-class AtmosEngine
-{
+class AtmosEngine {
 public:
   AtmosEngine();
 
-  void registerSpeakerFormat(const reaper_atmos_speaker_format *fmt);
-  bool unregisterSpeakerFormat(const char *name);
+  void registerSpeakerFormat(const reaper_atmos_speaker_format* fmt);
+  bool unregisterSpeakerFormat(const char* name);
   int getSpeakerFormatCount() const;
-  const reaper_atmos_speaker_format *getSpeakerFormat(int idx) const;
+  const reaper_atmos_speaker_format* getSpeakerFormat(int idx) const;
 
   void mapChannelToBed(int channel, int bedChannelIndex);
   void mapChannelToObject(int channel, int objectId);
   void clearRouting();
 
-  bool beginFrame(const reaper_atmos_render_frame_t &frame, std::string *error);
+  bool beginFrame(const reaper_atmos_render_frame_t& frame, std::string* error);
   void endFrame();
-  bool processBlock(const PCM_source_transfer_t &block, std::string *error);
+  bool processBlock(const PCM_source_transfer_t& block, std::string* error);
 
-  bool getRoutingState(reaper_atmos_routing_state_t *state) const;
+  bool getRoutingState(reaper_atmos_routing_state_t* state) const;
   int getActiveObjectCount() const;
 
-  void assignTrackObject(MediaTrack *track, int object_id);
-  void unassignTrackObject(MediaTrack *track);
-  int getTrackObject(MediaTrack *track) const;
+  void assignTrackObject(MediaTrack* track, int object_id);
+  void unassignTrackObject(MediaTrack* track);
+  int getTrackObject(MediaTrack* track) const;
 
-  bool exportADM(const std::string &path) const;
-  bool exportBWF(const std::string &path) const;
+  bool exportADM(const std::string& path) const;
+  bool exportBWF(const std::string& path) const;
 
 private:
-  struct SpeakerFormatStorage
-  {
+  struct SpeakerFormatStorage {
     reaper_atmos_speaker_format view{};
     std::string name;
     std::vector<std::string> channelNames;
-    std::vector<const char *> channelNamePtrs;
+    std::vector<const char*> channelNamePtrs;
   };
 
-  struct BedSlot
-  {
+  struct BedSlot {
     int channel_index = -1;
     std::string channel_name;
     reaper_atmos_buffer_t buffer{};
   };
 
-  struct ObjectSlot
-  {
+  struct ObjectSlot {
     int object_id = -1;
     reaper_atmos_buffer_t buffer{};
   };
 
-  struct FrameState
-  {
+  struct FrameState {
     bool hasFrame = false;
     double samplerate = 0.0;
     int block_length = 0;
@@ -75,8 +69,7 @@ private:
     std::map<int, size_t> objectLookup;
   };
 
-  struct FrameCapture
-  {
+  struct FrameCapture {
     bool valid = false;
     double samplerate = 0.0;
     int frames = 0;
@@ -88,10 +81,10 @@ private:
   };
 
   void ensureBuiltinFormatsLocked();
-  void addFormatLocked(const reaper_atmos_speaker_format &fmt);
+  void addFormatLocked(const reaper_atmos_speaker_format& fmt);
   void ensureChannelMapSize(int nch);
-  static bool writeBWFFile(const std::string &path, const FrameCapture &capture);
-  static bool writeADMFile(const std::string &path, const FrameCapture &capture);
+  static bool writeBWFFile(const std::string& path, const FrameCapture& capture);
+  static bool writeADMFile(const std::string& path, const FrameCapture& capture);
 
   mutable std::mutex mutex_;
   bool builtinFormatsLoaded_ = false;
@@ -99,6 +92,5 @@ private:
   std::vector<AtmosChannelDestination> channelMap_;
   FrameState frame_;
   FrameCapture capture_;
-  std::map<MediaTrack *, int> trackAssignments_;
+  std::map<MediaTrack*, int> trackAssignments_;
 };
-

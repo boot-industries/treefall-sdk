@@ -6,4 +6,3 @@
 
 double CalibrateRoundTripLatency();
 double GetRoundTripLatency();
-
