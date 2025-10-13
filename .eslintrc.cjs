@@ -31,7 +31,7 @@ module.exports = {
       },
     },
     {
-      files: ['packages/**/*.{js,jsx,cjs,mjs}'],
+      files: ['packages/**/*.{js,jsx,cjs,mjs}', 'scripts/**/*.{js,cjs,mjs}'],
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',

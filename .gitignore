@@ -50,6 +50,9 @@ out/
 *.wav
 *.pdf
 
+# Dependency graph output
+deps-graph.svg
+
 # Orpheus binary guard
 *.node
 *.wasm
