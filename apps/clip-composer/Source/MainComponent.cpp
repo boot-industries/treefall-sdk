@@ -43,7 +43,18 @@ MainComponent::MainComponent() {
   juce::MenuBarModel::setMacMainMenu(this);
 #endif
 
-  // TODO (Week 5-6): Initialize AudioEngine with SDK components
+  // Initialize audio engine with real SDK components
+  m_audioEngine = std::make_unique<AudioEngine>();
+  if (!m_audioEngine->initialize(48000)) {
+    DBG("MainComponent: Failed to initialize audio engine!");
+  } else {
+    if (m_audioEngine->start()) {
+      DBG("MainComponent: Audio engine started successfully");
+    } else {
+      DBG("MainComponent: Failed to start audio engine");
+    }
+  }
+
   // TODO (Month 3-4): Create RoutingPanel component
   // TODO (Month 5-6): Create WaveformDisplay component
 }
@@ -368,16 +379,18 @@ void MainComponent::onClipTriggered(int buttonIndex) {
 
   if (currentState == ClipButton::State::Playing) {
     // Stop the clip
+    if (m_audioEngine) {
+      m_audioEngine->stopClip(buttonIndex);
+    }
     button->setState(ClipButton::State::Loaded);
     DBG("Button " + juce::String(buttonIndex) + ": Stopped via keyboard/click");
-
-    // TODO (Week 5-6): Call AudioEngine->stopClip(buttonIndex)
   } else if (currentState == ClipButton::State::Loaded) {
     // Start the clip
+    if (m_audioEngine) {
+      m_audioEngine->startClip(buttonIndex);
+    }
     button->setState(ClipButton::State::Playing);
     DBG("Button " + juce::String(buttonIndex) + ": Started playing via keyboard/click");
-
-    // TODO (Week 5-6): Call AudioEngine->startClip(buttonIndex)
   }
 }
 
@@ -386,6 +399,30 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   bool success = m_sessionManager.loadClip(buttonIndex, filePath);
 
   if (success) {
+    // Load audio file into AudioEngine for playback
+    if (m_audioEngine) {
+      bool audioLoaded = m_audioEngine->loadClip(buttonIndex, filePath);
+      if (!audioLoaded) {
+        DBG("MainComponent: Failed to load audio into engine for button " << buttonIndex);
+      } else {
+        // Check for sample rate mismatch and warn user
+        auto metadata = m_audioEngine->getClipMetadata(buttonIndex);
+        if (metadata.has_value() && metadata->sample_rate != 48000) {
+          juce::AlertWindow::showMessageBoxAsync(
+              juce::AlertWindow::WarningIcon, "Sample Rate Mismatch",
+              "Warning: This audio file is " +
+                  juce::String(static_cast<int>(metadata->sample_rate)) +
+                  " Hz,\n"
+                  "but the engine is running at 48000 Hz.\n\n"
+                  "Audio will sound distorted or at the wrong speed.\n\n"
+                  "Workaround: Convert your audio files to 48 kHz using:\n"
+                  "• Audacity (File > Export > 48000 Hz)\n"
+                  "• ffmpeg: ffmpeg -i input.wav -ar 48000 output.wav",
+              "OK");
+        }
+      }
+    }
+
     // Update button visual state with real metadata
     updateButtonFromClip(buttonIndex);
 
@@ -439,34 +476,38 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
 void MainComponent::onStopAll() {
   DBG("MainComponent: Stop All pressed");
 
-  // Stop all currently playing clips
+  // Call AudioEngine to stop all clips (with fade-out)
+  if (m_audioEngine) {
+    m_audioEngine->stopAllClips();
+  }
+
+  // Update UI state for all playing clips
   for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
     auto button = m_clipGrid->getButton(i);
     if (button && button->getState() == ClipButton::State::Playing) {
-      // Stop this clip (SDK integration will add fade-out)
       button->setState(ClipButton::State::Loaded);
       DBG("MainComponent: Stopped clip on button " << i);
     }
   }
-
-  // TODO (Week 5-6): Call AudioEngine->stopAllClips() with fade-out
 }
 
 void MainComponent::onPanic() {
   DBG("MainComponent: PANIC pressed - immediate mute!");
 
-  // Immediately stop all clips (no fade)
+  // Call AudioEngine for immediate mute (no fade-out)
+  if (m_audioEngine) {
+    m_audioEngine->panicStop();
+  }
+
+  // Update UI state for all clips
   for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
     auto button = m_clipGrid->getButton(i);
     if (button && (button->getState() == ClipButton::State::Playing ||
                    button->getState() == ClipButton::State::Stopping)) {
-      // Immediate stop (SDK integration will mute instantly)
       button->setState(ClipButton::State::Loaded);
       DBG("MainComponent: PANIC stopped clip on button " << i);
     }
   }
-
-  // TODO (Week 5-6): Call AudioEngine->panicStop() for immediate mute
 }
 
 void MainComponent::onTabSelected(int tabIndex) {
@@ -494,7 +535,7 @@ void MainComponent::onTabSelected(int tabIndex) {
 //==============================================================================
 // Menu Bar Implementation
 juce::StringArray MainComponent::getMenuBarNames() {
-  return {"File", "Session"};
+  return {"File", "Session", "Audio"};
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
@@ -516,6 +557,11 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addSeparator();
     menu.addItem(11, "Stop All Clips");
     menu.addItem(12, "PANIC");
+  } else if (topLevelMenuIndex == 2) // Audio menu
+  {
+    menu.addItem(20, "Audio I/O Settings...");
+    menu.addSeparator();
+    menu.addItem(21, "Show Audio Engine Info");
   }
 
   return menu;
@@ -628,6 +674,39 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   case 12: // PANIC
     onPanic();
     break;
+
+  case 20: // Audio I/O Settings
+  {
+    juce::String info = "Audio Engine Status:\n\n";
+    if (m_audioEngine && m_audioEngine->isRunning()) {
+      info += "Status: Running\n";
+      info += "Sample Rate: 48000 Hz\n";
+      info += "Buffer Size: 1024 samples\n";
+      info += "Channels: 2 (Stereo)\n";
+      info += "Latency: ~21 ms\n\n";
+      info += "To change settings, restart the application.";
+    } else {
+      info += "Status: Not running\n";
+    }
+
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Audio I/O Settings", info,
+                                           "OK");
+    break;
+  }
+
+  case 21: // Show Audio Engine Info
+  {
+    juce::String info = "Orpheus Audio Engine\n\n";
+    info += "Driver: CoreAudio (macOS)\n";
+    info += "Real-time Processing: Active\n";
+    info += "SDK Version: M2 Infrastructure\n";
+    info += "Transport: Lock-Free\n";
+    info += "File Formats: WAV, AIFF, FLAC\n";
+
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Audio Engine Info", info,
+                                           "OK");
+    break;
+  }
 
   default:
     break;

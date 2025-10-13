@@ -34,25 +34,32 @@ bool AudioEngine::initialize(uint32_t sampleRate) {
   // Register callback for transport events
   m_transportController->setCallback(this);
 
-  // Create dummy audio driver for now
-  m_audioDriver = orpheus::createDummyAudioDriver();
+  // Create CoreAudio driver (macOS) for real audio output
+  m_audioDriver = orpheus::createCoreAudioDriver();
   if (!m_audioDriver) {
-    DBG("AudioEngine: Failed to create audio driver");
-    return false;
+    DBG("AudioEngine: Failed to create CoreAudio driver, falling back to dummy");
+    m_audioDriver = orpheus::createDummyAudioDriver();
+    if (!m_audioDriver) {
+      DBG("AudioEngine: Failed to create audio driver");
+      return false;
+    }
   }
 
   // Configure driver
   orpheus::AudioDriverConfig config;
   config.sample_rate = sampleRate;
-  config.buffer_size = 512;
-  config.num_inputs = 0;  // No input for now
-  config.num_outputs = 2; // Stereo output
+  config.buffer_size = 1024; // Larger buffer to prevent distortion
+  config.num_inputs = 0;     // No input for now
+  config.num_outputs = 2;    // Stereo output
 
   auto result = m_audioDriver->initialize(config);
   if (result != orpheus::SessionGraphError::OK) {
     DBG("AudioEngine: Failed to initialize audio driver");
     return false;
   }
+
+  // Log which driver we're actually using
+  DBG("AudioEngine: Using audio driver: " << m_audioDriver->getDriverName());
 
   m_initialized = true;
   DBG("AudioEngine: Initialized successfully (" << static_cast<int>(sampleRate) << " Hz)");
@@ -113,6 +120,20 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
   auto metadataResult = reader->open(filePath.toStdString());
   if (metadataResult.isOk()) {
     m_clipMetadata[buttonIndex] = metadataResult.value;
+    DBG("AudioEngine: Clip " << buttonIndex
+                             << " metadata: " << static_cast<int>(metadataResult.value.sample_rate)
+                             << " Hz, " << static_cast<int>(metadataResult.value.num_channels)
+                             << " ch, " << static_cast<int>(metadataResult.value.duration_samples)
+                             << " samples");
+
+    // Warn about sample rate mismatch
+    if (metadataResult.value.sample_rate != m_sampleRate) {
+      DBG("AudioEngine: WARNING - Sample rate mismatch! File is "
+          << static_cast<int>(metadataResult.value.sample_rate) << " Hz, engine is running at "
+          << static_cast<int>(m_sampleRate)
+          << " Hz. Audio will sound distorted. Please convert file to "
+          << static_cast<int>(m_sampleRate) << " Hz.");
+    }
   }
 
   DBG("AudioEngine: Loaded clip to button " << buttonIndex << ": " << filePath);
@@ -264,7 +285,24 @@ void AudioEngine::onBufferUnderrun(orpheus::TransportPosition position) {
 //==============================================================================
 void AudioEngine::processAudio(const float** input_buffers, float** output_buffers,
                                size_t num_channels, size_t num_frames) {
+  static int audioEngineCallCount = 0;
+  if (audioEngineCallCount < 3) {
+    // Write to file since stdout might not work
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "AudioEngine::processAudio() CALLED #%d: frames=%zu, transport=%p\n",
+              audioEngineCallCount, num_frames, (void*)m_transportController.get());
+      fclose(f);
+    }
+    audioEngineCallCount++;
+  }
+
   if (!m_transportController) {
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "ERROR: No transport controller!\n");
+      fclose(f);
+    }
     // No transport - output silence
     for (size_t ch = 0; ch < num_channels; ++ch) {
       if (output_buffers[ch])

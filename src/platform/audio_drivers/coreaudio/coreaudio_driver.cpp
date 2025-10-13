@@ -18,6 +18,13 @@ CoreAudioDriver::~CoreAudioDriver() {
 }
 
 SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
+  FILE* f = fopen("/tmp/coreaudio_init.log", "a");
+  if (f) {
+    fprintf(f, "CoreAudio: initialize() called, sample_rate=%u\n", config.sample_rate);
+    fflush(f);
+    fclose(f);
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (is_running_.load(std::memory_order_acquire)) {
@@ -285,6 +292,12 @@ uint32_t CoreAudioDriver::queryDeviceLatency(AudioDeviceID device_id) {
 }
 
 SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
+  FILE* diagFile = fopen("/tmp/coreaudio_init.log", "a");
+  if (diagFile) {
+    fprintf(diagFile, "CoreAudio: setupAudioUnit() called, device_id=%u\n", device_id);
+    fclose(diagFile);
+  }
+
   // Create AudioComponentDescription for HAL Output
   AudioComponentDescription desc = {};
   desc.componentType = kAudioUnitType_Output;
@@ -331,6 +344,24 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
     return SessionGraphError::InternalError;
   }
 
+  // CRITICAL FIX: Set the DEVICE's nominal sample rate to match our requested rate
+  // This must be done BEFORE setting the AudioUnit's stream format
+  Float64 requestedSampleRate = static_cast<Float64>(config_.sample_rate);
+  AudioObjectPropertyAddress deviceSRAddr = {kAudioDevicePropertyNominalSampleRate,
+                                             kAudioObjectPropertyScopeGlobal,
+                                             kAudioObjectPropertyElementMain};
+  status = AudioObjectSetPropertyData(device_id, &deviceSRAddr, 0, nullptr, sizeof(Float64),
+                                      &requestedSampleRate);
+  if (status != noErr) {
+    FILE* diagFile = fopen("/tmp/coreaudio_init.log", "a");
+    if (diagFile) {
+      fprintf(diagFile, "CoreAudio: WARNING - Failed to set device sample rate (status: %d)\n",
+              (int)status);
+      fclose(diagFile);
+    }
+    // Don't fail completely, but this will cause playback speed issues
+  }
+
   // Set stream format (planar float32)
   AudioStreamBasicDescription streamFormat = {};
   streamFormat.mSampleRate = config_.sample_rate;
@@ -373,6 +404,45 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
   status = AudioUnitInitialize(audio_unit_);
   if (status != noErr) {
     return SessionGraphError::InternalError;
+  }
+
+  // DIAGNOSTIC: Verify actual sample rate after initialization
+  AudioStreamBasicDescription actualFormat = {};
+  UInt32 formatSize = sizeof(actualFormat);
+  status = AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
+                                0, &actualFormat, &formatSize);
+
+  // Also query the DEVICE's nominal sample rate (not just the AudioUnit)
+  Float64 deviceSampleRate = 0.0;
+  UInt32 sizeOfSampleRate = sizeof(Float64);
+  AudioObjectPropertyAddress querySRAddr = {kAudioDevicePropertyNominalSampleRate,
+                                            kAudioObjectPropertyScopeGlobal,
+                                            kAudioObjectPropertyElementMain};
+  OSStatus deviceSRStatus = AudioObjectGetPropertyData(device_id, &querySRAddr, 0, nullptr,
+                                                       &sizeOfSampleRate, &deviceSampleRate);
+
+  FILE* f = fopen("/tmp/coreaudio_init.log", "a");
+  if (f) {
+    fprintf(f, "CoreAudio: Requested sample rate: %u Hz\n", config_.sample_rate);
+    if (status == noErr) {
+      fprintf(f, "CoreAudio: AudioUnit sample rate: %.1f Hz\n", actualFormat.mSampleRate);
+    } else {
+      fprintf(f, "CoreAudio: Failed to query AudioUnit sample rate (status: %d)\n", (int)status);
+    }
+    if (deviceSRStatus == noErr) {
+      fprintf(f, "CoreAudio: DEVICE nominal sample rate: %.1f Hz\n", deviceSampleRate);
+      if (deviceSampleRate != static_cast<double>(config_.sample_rate)) {
+        fprintf(f,
+                "CoreAudio: ***CRITICAL*** DEVICE RATE MISMATCH! Ratio: %.6f (this causes slow "
+                "playback!)\n",
+                static_cast<double>(config_.sample_rate) / deviceSampleRate);
+      }
+    } else {
+      fprintf(f, "CoreAudio: Failed to query device sample rate (status: %d)\n",
+              (int)deviceSRStatus);
+    }
+    fflush(f); // Ensure it's written immediately
+    fclose(f);
   }
 
   return SessionGraphError::OK;

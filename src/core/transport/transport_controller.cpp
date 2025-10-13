@@ -14,9 +14,6 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
   m_fadeOutSamples =
       static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) * static_cast<float>(sampleRate));
 
-  // Pre-allocate audio read buffer (avoid allocations in audio thread)
-  m_audioReadBuffer.resize(MAX_READ_BUFFER_SIZE);
-
   // Create and initialize routing matrix
   m_routingMatrix = createRoutingMatrix();
 
@@ -32,7 +29,13 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
 
   m_routingMatrix->initialize(routingConfig);
 
-  // Pre-allocate per-clip channel buffers (audio thread uses these)
+  // Pre-allocate per-clip read buffers (interleaved audio from files)
+  m_clipReadBuffers.resize(MAX_ACTIVE_CLIPS);
+  for (auto& buffer : m_clipReadBuffers) {
+    buffer.resize(MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS, 0.0f);
+  }
+
+  // Pre-allocate per-clip channel buffers (mono output for routing)
   m_clipChannelBuffers.resize(MAX_ACTIVE_CLIPS);
   for (auto& buffer : m_clipChannelBuffers) {
     buffer.resize(MAX_BUFFER_FRAMES, 0.0f);
@@ -179,6 +182,18 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   // Process pending commands from UI thread
   processCommands();
 
+  // DIAGNOSTIC: Write active clip count to file
+  static int callbackCount = 0;
+  if (callbackCount < 5) {
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "processAudio() #%d: numFrames=%zu, activeClips=%zu\n", callbackCount, numFrames,
+              m_activeClipCount);
+      fclose(f);
+    }
+    callbackCount++;
+  }
+
   // Routing matrix controls output channel count
   (void)numChannels;
 
@@ -194,8 +209,25 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
 
+    // DIAGNOSTIC: Write clip state to file
+    static int clipCheckCount = 0;
+    if (clipCheckCount < 3) {
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "Processing clip %zu: reader=%p, isOpen=%d\n", i, (void*)clip.audioReader,
+                clip.audioReader ? clip.audioReader->isOpen() : 0);
+        fclose(f);
+      }
+      clipCheckCount++;
+    }
+
     // Skip if no audio file registered
     if (!clip.audioReader || !clip.audioReader->isOpen()) {
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "SKIPPING clip %zu (no reader or not open)\n", i);
+        fclose(f);
+      }
       continue;
     }
 
@@ -208,29 +240,66 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     size_t framesToRead =
         static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
 
-    // Seek to current position (respecting trim IN point)
-    int64_t readPosition = clip.trimInSamples + clip.currentSample;
-    clip.audioReader->seek(readPosition);
+    // Note: We don't seek on every callback - the reader maintains its position
+    // The initial seek to trimInSamples happens in addActiveClip()
 
     // Read audio from file
     size_t numFileChannels = clip.numChannels;
 
+    // Use this clip's dedicated read buffer (no shared buffer conflicts!)
+    float* clipReadBuffer = m_clipReadBuffers[i].data();
+    size_t clipReadBufferSize = m_clipReadBuffers[i].size();
+
     // Check if read fits in pre-allocated buffer
     size_t samplesNeeded = framesToRead * numFileChannels;
-    if (samplesNeeded > m_audioReadBuffer.size()) {
+    if (samplesNeeded > clipReadBufferSize) {
       // Clip too large for buffer - skip (should not happen with reasonable buffer size)
       continue;
     }
 
-    // Read samples from audio file
-    auto readResult = clip.audioReader->readSamples(m_audioReadBuffer.data(), framesToRead);
+    // Read samples from audio file into THIS clip's buffer
+    auto readResult = clip.audioReader->readSamples(clipReadBuffer, framesToRead);
+
+    // DIAGNOSTIC: Write to file
+    static int callCount = 0;
+    if (callCount < 3) {
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "TransportController: framesToRead=%zu, readResult.isOk=%d\n", framesToRead,
+                readResult.isOk());
+        fclose(f);
+      }
+      callCount++;
+    }
 
     if (!readResult.isOk()) {
-      // Read error - skip this clip
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "ERROR: Read failed! Error code: %d\n", static_cast<int>(readResult.error));
+        fclose(f);
+      }
       continue;
     }
 
     size_t framesRead = readResult.value;
+
+    // DIAGNOSTIC: Print samples from multiple buffers to see when audio starts
+    static int sampleBufferCount = 0;
+    if (sampleBufferCount < 50 && framesRead > 0) { // Log first 50 buffers
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "BUFFER #%d: Read %zu frames, first 8 samples: ", sampleBufferCount, framesRead);
+        for (size_t s = 0; s < std::min(size_t(8), framesRead * numFileChannels); ++s) {
+          fprintf(f, "%.4f ", clipReadBuffer[s]);
+        }
+        fprintf(f, "\n");
+        fclose(f);
+      }
+      sampleBufferCount++;
+    }
+
+    // Advance clip position by actual frames read (not buffer size!)
+    clip.currentSample += static_cast<int64_t>(framesRead);
 
     // Output to this clip's channel buffer (mono sum for routing)
     float* clipChannelBuffer = m_clipChannelBuffers[i].data();
@@ -249,12 +318,46 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       float monoSample = 0.0f;
       for (size_t ch = 0; ch < numFileChannels; ++ch) {
         size_t srcIndex = frame * numFileChannels + ch;
-        monoSample += m_audioReadBuffer[srcIndex];
+        monoSample += clipReadBuffer[srcIndex];
       }
       monoSample /= static_cast<float>(numFileChannels); // Average channels
 
       clipChannelBuffer[frame] = monoSample * gain;
     }
+
+    // DIAGNOSTIC: Log clipChannelBuffer samples for first active clip
+    static int clipOutCount = 0;
+    if (clipOutCount < 10 && i == 0 && framesRead > 0) {
+      FILE* f = fopen("/tmp/audio_callback.txt", "a");
+      if (f) {
+        fprintf(f, "CLIP OUT #%d: First 8 samples from clipChannelBuffer[0]: ", clipOutCount);
+        for (size_t s = 0; s < std::min(size_t(8), framesRead); ++s) {
+          fprintf(f, "%.4f ", clipChannelBuffer[s]);
+        }
+        fprintf(f, "\n");
+        fclose(f);
+      }
+      clipOutCount++;
+    }
+  }
+
+  // DIAGNOSTIC: Log before routing
+  static int beforeRoutingCount = 0;
+  if (beforeRoutingCount < 3) {
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "BEFORE ROUTING: activeClips=%zu, clipChannelPointers=%p, outputBuffers=%p\n",
+              m_activeClipCount, (void*)m_clipChannelPointers.data(), (void*)outputBuffers);
+      if (m_activeClipCount > 0) {
+        fprintf(f, "  Clip 0 buffer first 8 samples: ");
+        for (size_t s = 0; s < 8; ++s) {
+          fprintf(f, "%.4f ", m_clipChannelBuffers[0][s]);
+        }
+        fprintf(f, "\n");
+      }
+      fclose(f);
+    }
+    beforeRoutingCount++;
   }
 
   // Process routing matrix: clips → groups → master output
@@ -265,9 +368,6 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   size_t i = 0;
   while (i < m_activeClipCount) {
     ActiveClip& clip = m_activeClips[i];
-
-    // Advance playback position
-    clip.currentSample += static_cast<int64_t>(numFrames);
 
     // Apply fade-out if stopping
     if (clip.isStopping) {
@@ -385,6 +485,15 @@ void TransportController::addActiveClip(ClipHandle handle) {
     }
   }
 
+  // DIAGNOSTIC: Write to file
+  FILE* f = fopen("/tmp/audio_callback.txt", "a");
+  if (f) {
+    fprintf(f, "addActiveClip(handle=%llu): reader=%p, isOpen=%d, channels=%d, frames=%lld\n",
+            (unsigned long long)handle, (void*)reader, reader ? reader->isOpen() : 0, numChannels,
+            (long long)totalFrames);
+    fclose(f);
+  }
+
   // If no audio file registered, we'll play silence (reader will be nullptr)
 
   // TODO: Get clip metadata from SessionGraph (trim points, etc.)
@@ -399,6 +508,11 @@ void TransportController::addActiveClip(ClipHandle handle) {
   clip.numChannels = numChannels;
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
+
+  // Seek to trim IN point once when starting (ALWAYS seek, even if trim is 0!)
+  if (reader) {
+    reader->seek(clip.trimInSamples);
+  }
 }
 
 void TransportController::removeActiveClip(ClipHandle handle) {

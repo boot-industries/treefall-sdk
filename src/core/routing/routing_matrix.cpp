@@ -539,6 +539,21 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   // ========================================================================
   // Step 2: Process channels → groups
   // ========================================================================
+
+  // DIAGNOSTIC: Log first time we process routing with channels
+  static int routingDebugCount = 0;
+  if (routingDebugCount < 3) {
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "ROUTING: num_channels=%d, num_groups=%d, num_frames=%d\n", m_config.num_channels,
+              m_config.num_groups, num_frames);
+      fprintf(f, "  Channel 0: group=%d, muted=%d, input[0]=%.4f\n", m_channels[0].group_index,
+              isChannelMuted(0), channel_inputs[0][0]);
+      fclose(f);
+    }
+    routingDebugCount++;
+  }
+
   for (uint8_t ch = 0; ch < m_config.num_channels; ++ch) {
     auto& channel = m_channels[ch];
     uint8_t group_idx = channel.group_index;
@@ -671,6 +686,21 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
         break; // Only count once per buffer
       }
     }
+  }
+
+  // DIAGNOSTIC: Log master output samples
+  static int masterOutCount = 0;
+  if (masterOutCount < 50 && m_config.num_outputs > 0) {
+    FILE* f = fopen("/tmp/audio_callback.txt", "a");
+    if (f) {
+      fprintf(f, "MASTER OUT #%d: First 8 samples L: ", masterOutCount);
+      for (uint32_t s = 0; s < std::min(uint32_t(8), num_frames); ++s) {
+        fprintf(f, "%.4f ", master_output[0][s]);
+      }
+      fprintf(f, "\n");
+      fclose(f);
+    }
+    masterOutCount++;
   }
 
   return SessionGraphError::OK;

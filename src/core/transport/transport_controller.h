@@ -125,17 +125,18 @@ private:
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
 
-  // Pre-allocated audio read buffer (audio thread only)
-  // Large enough for max frames * max channels (e.g., 2048 frames * 8 channels)
-  static constexpr size_t MAX_READ_BUFFER_SIZE = 2048 * 8;
-  std::vector<float> m_audioReadBuffer;
-
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
 
-  // Per-clip channel buffers (audio thread only, pre-allocated)
-  // Each active clip gets its own channel buffer for routing
+  // Per-clip buffers (audio thread only, pre-allocated)
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
+  static constexpr size_t MAX_FILE_CHANNELS = 8;
+
+  // Each clip gets its own read buffer (for interleaved audio from file)
+  std::vector<std::vector<float>>
+      m_clipReadBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS]
+
+  // Each clip gets its own channel buffer for routing (mono summed output)
   std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES]
   std::vector<float*> m_clipChannelPointers;            // Pointers for processRouting()
 };
