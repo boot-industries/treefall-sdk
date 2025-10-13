@@ -17,6 +17,7 @@ import {
 } from './types.js';
 import { ServiceDriver } from './drivers/service-driver.js';
 import { NativeDriver } from './drivers/native-driver.js';
+import { WASMDriver } from './drivers/wasm-driver.js';
 
 /**
  * Orpheus Client
@@ -55,6 +56,7 @@ export class OrpheusClient {
     this._config = {
       driverPreference: config.driverPreference || [
         DriverType.Native,
+        DriverType.WASM,
         DriverType.Service,
       ],
       drivers: config.drivers || {},
@@ -247,6 +249,9 @@ export class OrpheusClient {
     switch (type) {
       case DriverType.Native:
         return new NativeDriver(this._config.drivers.native);
+
+      case DriverType.WASM:
+        return new WASMDriver(this._config.drivers.wasm);
 
       case DriverType.Service:
         return new ServiceDriver(this._config.drivers.service);

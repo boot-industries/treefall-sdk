@@ -22,8 +22,10 @@ export interface CommandResponse {
  * Driver types supported by the client broker
  */
 export enum DriverType {
-  /** Direct N-API bindings (highest performance) */
+  /** Direct N-API bindings (highest performance, Node.js only) */
   Native = 'native',
+  /** WebAssembly in Web Worker (browser/universal) */
+  WASM = 'wasm',
   /** HTTP/WebSocket service (cross-process) */
   Service = 'service',
 }
@@ -143,6 +145,18 @@ export interface DriverConfig {
     /** Path to native addon (optional, auto-detected by default) */
     addonPath?: string;
   };
+
+  /** WASM driver configuration */
+  wasm?: {
+    /** Worker script URL */
+    workerUrl?: string;
+    /** Base URL for WASM artifacts */
+    baseUrl?: string;
+    /** SRI integrity manifest */
+    integrity?: unknown;
+    /** Command timeout in milliseconds */
+    timeout?: number;
+  };
 }
 
 /**
@@ -163,6 +177,7 @@ export interface ClientConfig {
   drivers?: {
     service?: DriverConfig['service'];
     native?: DriverConfig['native'];
+    wasm?: DriverConfig['wasm'];
   };
 
   /**

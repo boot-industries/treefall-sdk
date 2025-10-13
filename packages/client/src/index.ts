@@ -24,6 +24,7 @@ export {
 
 export { ServiceDriver } from './drivers/service-driver.js';
 export { NativeDriver } from './drivers/native-driver.js';
+export { WASMDriver } from './drivers/wasm-driver.js';
 
 // Re-export contract types for convenience
 export type {

@@ -63,6 +63,9 @@ importers:
       '@orpheus/engine-service':
         specifier: workspace:*
         version: link:../engine-service
+      '@orpheus/engine-wasm':
+        specifier: workspace:*
+        version: link:../engine-wasm
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -88,6 +91,9 @@ importers:
       typescript:
         specifier: ^5.5.3
         version: 5.9.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.19.20)
 
   packages/engine-native:
     dependencies:
@@ -147,6 +153,16 @@ importers:
       vitest:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@20.19.20)
+
+  packages/engine-wasm:
+    dependencies:
+      '@orpheus/contract':
+        specifier: workspace:*
+        version: link:../contract
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
 
   packages/react:
     dependencies:
