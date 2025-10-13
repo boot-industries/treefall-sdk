@@ -54,6 +54,8 @@ clang-tidy -p build
 
 ### JavaScript Workspace (Shmui)
 
+**Requirements:** Node.js 20+ (required by package engines)
+
 ```bash
 pnpm install                  # Bootstrap workspace
 pnpm --filter www dev         # Launch demo site (localhost:4000)
@@ -288,6 +290,11 @@ Regularly built and tested:
 - **Windows** — MSVC toolchains (x64)
 - **macOS** — Clang (x86_64 and arm64)
 - **Linux** — GCC and Clang
+
+**JavaScript/TypeScript Requirements:**
+
+- **Node.js** — 20+ (required by package engines in monorepo)
+- **pnpm** — 8.15.4 (managed via packageManager field)
 
 Other platforms may work but are not part of automated coverage.
 
