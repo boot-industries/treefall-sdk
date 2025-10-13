@@ -319,7 +319,7 @@ jobs:
       - name: Build packages
         env:
           NEXT_PUBLIC_APP_URL: https://ui.elevenlabs.io
-        run: pnpm run build
+        run: pnpm run build:ts
 
       - name: Build Contract
         working-directory: packages/contract

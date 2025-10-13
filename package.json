@@ -11,6 +11,7 @@
     "postinstall": "echo 'Workspace bootstrap complete.'",
     "prepare": "husky",
     "build": "pnpm -r build",
+    "build:ts": "pnpm -r --filter='!@orpheus/engine-native' build",
     "test": "pnpm run test:integration",
     "test:integration": "./tests/integration/run-tests.sh",
     "perf:validate": "node scripts/validate-performance.js",
