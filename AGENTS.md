@@ -309,9 +309,80 @@ ctest --test-dir build --output-on-failure
 
 - **README.md** — Repository overview, getting started, build instructions
 - **ARCHITECTURE.md** — Design rationale, component relationships
-- **ROADMAP.md** — Planned features, milestones, timeline
+- **ROADMAP.md** — Planned features, milestones, timeline (updated Oct 2025 with OCC-driven SDK enhancements)
 - **docs/ADAPTERS.md** — Available adapters, build flags, integration guides
-- **OCC021** — Orpheus Clip Composer product vision (flagship application)
+- **CLAUDE.md** — Claude Code development guide (includes OCC design work summary)
+
+### Orpheus Clip Composer (OCC) Design Documentation
+
+**Location:** `apps/clip-composer/docs/OCC/` (11 documents, ~5,300 lines)
+
+**Status:** ✅ Design phase complete, ready for implementation
+
+The OCC design package drives SDK evolution by identifying real-world requirements for professional audio workflows. All design work is complete and actionable.
+
+**Key Documents:**
+- **OCC021 - Product Vision** (authoritative) — Market positioning, competitive analysis (vs SpotOn €3k-5k, QLab $0-999, Ovation €8k-25k+)
+- **OCC026 - Milestone 1 MVP** — 6-month plan with deliverables, acceptance criteria
+- **OCC027 - API Contracts** — C++ interfaces between OCC and SDK (5 core interfaces)
+- **OCC029 - SDK Enhancement Recommendations** — Gap analysis, 5 critical modules, implementation strategy
+- **PROGRESS.md** — Complete design phase report, statistics, next steps
+
+**SDK Enhancements Required (Milestone M2):**
+
+The OCC design work identified 5 critical SDK modules needed for real-time audio playback:
+
+1. **Real-Time Transport Controller** (Months 1-2)
+   - Sample-accurate clip playback with start/stop control
+   - Lock-free audio thread, command queue, transport callbacks
+   - Interface: `ITransportController` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+2. **Audio File Reader Abstraction** (Months 1-2)
+   - Decode WAV/AIFF/FLAC using libsndfile (LGPL)
+   - Stream audio data, ring buffers, sample rate conversion
+   - Interface: `IAudioFileReader` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+3. **Platform Audio Driver Integration** (Months 1-2)
+   - CoreAudio (macOS), WASAPI (Windows), ASIO (Windows professional)
+   - Low-latency I/O (<5ms ASIO, <10ms WASAPI/CoreAudio)
+   - Interface: `IAudioDriver` (see `apps/clip-composer/docs/OCC/OCC029`)
+
+4. **Multi-Channel Routing Matrix** (Months 3-4)
+   - 4 Clip Groups → Master Output with gain smoothing
+   - Real-time control, mute/solo, per-clip routing
+   - Interface: `IRoutingMatrix` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+5. **Performance Monitor** (Months 4-5)
+   - Real-time diagnostics: CPU usage, buffer underruns, latency
+   - Thread-safe queries, memory tracking
+   - Interface: `IPerformanceMonitor` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+**Implementation Strategy:**
+- **Parallel development:** OCC uses stub implementations (Month 1) while SDK builds real modules
+- **Integration milestone:** Month 3 (SDK modules ready for OCC integration)
+- **Critical path:** SDK Months 1-4 (blocking for OCC MVP)
+- **Testing:** Unit tests (±1 sample accuracy), integration tests (16 clips), stress tests (24hr stability)
+
+**For AI Assistants Working on SDK:**
+- Read `apps/clip-composer/docs/OCC/OCC029` for complete module specifications with code examples
+- Read `apps/clip-composer/docs/OCC/OCC027` for exact interface signatures and thread safety guarantees
+- Follow `ROADMAP.md` Milestone M2 timeline (Months 1-6, 2025)
+- Maintain determinism: same input → same output across platforms
+- Target performance: <5ms latency (ASIO), <30% CPU (16 clips), >100hr MTBF
+
+**For AI Assistants Working on OCC Application:**
+- Read `apps/clip-composer/docs/OCC/OCC021` for product vision and market positioning
+- Read `apps/clip-composer/docs/OCC/OCC023` for component architecture (5 layers, threading model)
+- Read `apps/clip-composer/docs/OCC/OCC024` for user workflows (8 complete interaction flows)
+- Read `apps/clip-composer/docs/OCC/OCC026` for MVP timeline and feature scope
+- Use stub implementations from `apps/clip-composer/docs/OCC/OCC027` for parallel development
+
+**Design Decisions Made:**
+- UI Framework: JUCE (native performance, audio integration)
+- DSP Library: Rubber Band ($50/year) + SoundTouch (free fallback)
+- Session Format: JSON (human-readable, portable)
+- MVP Platforms: macOS + Windows (Linux deferred to v1.0)
+- Real-time Engine: CoreAudio + WASAPI (ASIO optional)
 
 ---
 

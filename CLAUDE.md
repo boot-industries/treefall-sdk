@@ -1,5 +1,7 @@
 # Orpheus SDK Development Guide for Claude Code
 
+**Workspace:** This repo inherits general conventions from `~/chrislyons/dev/CLAUDE.md`
+
 Professional audio SDK with host-neutral C++20 core for deterministic session, transport, and render management. This guide helps Claude Code maintain SDK quality while respecting core architectural principles.
 
 ## Core Principles (Non-Negotiable)
@@ -294,4 +296,81 @@ When resuming ORP068 implementation work, always check:
 
 ---
 
+## Orpheus Clip Composer (OCC) - Design Phase Complete (October 2025)
+
+**Status:** ✅ Design phase complete, ready for implementation
+
+The Orpheus Clip Composer design package is comprehensive and implementation-ready. This flagship application drives SDK evolution by identifying real-world requirements for professional audio workflows.
+
+### OCC Design Documentation
+
+**Location:** `apps/clip-composer/docs/OCC/` (11+ documents, ~5,300 lines)
+
+**Key Documents:**
+- `OCC021` - Product Vision (authoritative) - Market positioning, competitive analysis
+- `OCC026` - Milestone 1 MVP Definition - 6-month plan with deliverables
+- `OCC027` - API Contracts - C++ interfaces between OCC and SDK
+- `OCC029` - SDK Enhancement Recommendations - 5 critical modules required
+- `PROGRESS.md` - Complete design phase report
+
+**Quick Reference:**
+- Product vision: Broadcast/theater soundboard, €500-1,500 price point, vs SpotOn/QLab/Ovation
+- Technical: JUCE framework, Rubber Band DSP, JSON sessions, 960 clip buttons (10×12 grid, 8 tabs)
+- Performance: <5ms ASIO latency, <30% CPU with 16 clips, >100hr MTBF
+- Timeline: 6-month MVP (Months 1-6), v1.0 at 12 months, v2.0 at 18 months
+
+### SDK Enhancements Required for OCC MVP
+
+**5 Critical Modules (Milestone M2 - Real-Time Infrastructure):**
+
+1. **Real-Time Transport Controller** (Months 1-2)
+   - Sample-accurate clip playback, lock-free audio thread
+   - Interface: `ITransportController` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+2. **Audio File Reader** (Months 1-2)
+   - WAV/AIFF/FLAC decoding with libsndfile
+   - Interface: `IAudioFileReader` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+3. **Platform Audio Drivers** (Months 1-2)
+   - CoreAudio (macOS), ASIO/WASAPI (Windows)
+   - Interface: `IAudioDriver` (see `apps/clip-composer/docs/OCC/OCC029`)
+
+4. **Multi-Channel Routing Matrix** (Months 3-4)
+   - 4 Clip Groups → Master Output, gain smoothing
+   - Interface: `IRoutingMatrix` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+5. **Performance Monitor** (Months 4-5)
+   - CPU tracking, buffer underruns, latency reporting
+   - Interface: `IPerformanceMonitor` (see `apps/clip-composer/docs/OCC/OCC027`)
+
+**Implementation Strategy:**
+- Parallel development: OCC uses stub implementations while SDK builds real modules
+- Integration: Month 3 (SDK modules ready)
+- Critical path: SDK Months 1-4 (blocking for OCC)
+
+**Detailed Specifications:**
+- See `apps/clip-composer/docs/OCC/OCC029 SDK Enhancement Recommendations` for complete interface specs
+- See `apps/clip-composer/docs/OCC/OCC027 API Contracts` for thread safety guarantees and error handling
+- See `ROADMAP.md` Milestone M2 for timeline and success criteria
+
+### Working with OCC Documentation
+
+**For SDK Development:**
+- Read `apps/clip-composer/docs/OCC/OCC029` to understand required SDK modules
+- Read `apps/clip-composer/docs/OCC/OCC027` for exact interface signatures
+- Follow implementation phases (M2: Months 1-6)
+
+**For OCC Application Development:**
+- Read `apps/clip-composer/docs/OCC/OCC021` for product vision and market positioning
+- Read `apps/clip-composer/docs/OCC/OCC023` for component architecture (5 layers, threading model)
+- Read `apps/clip-composer/docs/OCC/OCC024` for user workflows (8 complete flows)
+- Read `apps/clip-composer/docs/OCC/OCC026` for MVP timeline and acceptance criteria
+
+**Design Governance:**
+- See `apps/clip-composer/docs/OCC/CLAUDE.md` for design documentation standards
+- See `apps/clip-composer/docs/OCC/README.md` for complete documentation index
+
+---
+
 **Remember:** Orpheus SDK is infrastructure for a sovereign audio ecosystem. We're building tools that professionals can rely on for decades, not chasing trends. When in doubt, favor simplicity, determinism, and user autonomy.
+- I'm expecting you to run all of ORP068 -- you don't need to check in with me so often.

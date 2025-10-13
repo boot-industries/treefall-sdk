@@ -80,6 +80,33 @@ if(WIN32 AND ORP_BUILD_SHARED_CORE)
   endforeach()
 endif()
 
+# M2: Real-time infrastructure modules
+if(ORPHEUS_ENABLE_REALTIME)
+  add_subdirectory(core/transport)
+  list(APPEND ORPHEUS_CORE_TARGETS orpheus_transport)
+
+  add_subdirectory(core/routing)
+  list(APPEND ORPHEUS_CORE_TARGETS orpheus_routing)
+
+  add_subdirectory(core/audio_io)
+  if(TARGET orpheus_audio_io)
+    list(APPEND ORPHEUS_CORE_TARGETS orpheus_audio_io)
+  endif()
+
+  # Platform audio drivers (CoreAudio, WASAPI, ASIO)
+  # Note: Dummy driver is built with orpheus_audio_io
+  add_subdirectory(platform/audio_drivers)
+  if(TARGET orpheus_audio_driver_coreaudio)
+    list(APPEND ORPHEUS_CORE_TARGETS orpheus_audio_driver_coreaudio)
+  endif()
+  if(TARGET orpheus_audio_driver_wasapi)
+    list(APPEND ORPHEUS_CORE_TARGETS orpheus_audio_driver_wasapi)
+  endif()
+  if(TARGET orpheus_audio_driver_asio)
+    list(APPEND ORPHEUS_CORE_TARGETS orpheus_audio_driver_asio)
+  endif()
+endif()
+
 add_library(orpheus_core INTERFACE)
 target_link_libraries(orpheus_core INTERFACE ${ORPHEUS_CORE_TARGETS})
 
