@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  pull_request_target:
+    branches: [main, develop]
   schedule:
     # Run weekly on Mondays at 8 AM UTC
     - cron: '0 8 * * 1'
@@ -79,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run OSV Scanner
-        uses: google/osv-scanner-action@v1
+        uses: google/osv-scanner-action@main
         continue-on-error: true
         with:
           scan-args: |-
@@ -145,11 +147,16 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout PR head (works for pull_request and pull_request_target)
+        uses: actions/checkout@v4
+        with:
+          # Ensure we checkout the PR head commit when running under pull_request_target
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
