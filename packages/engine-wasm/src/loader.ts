@@ -66,8 +66,8 @@ export async function loadWASM(
     );
   }
 
-  // Compile streaming for best performance
-  const wasmModule = await WebAssembly.compileStreaming(response);
+  // Get WASM bytes for Emscripten factory
+  const wasmBytes = await response.arrayBuffer();
 
   // Load JS glue code (dynamic import with SRI)
   const jsUrl = `${base}orpheus.js`;
@@ -84,7 +84,7 @@ export async function loadWASM(
   }
 
   const orpheusModule: OrpheusModule = await createModule({
-    wasmBinary: await WebAssembly.Module.exports(wasmModule),
+    wasmBinary: wasmBytes,
   });
 
   return orpheusModule;

@@ -39,7 +39,7 @@ import { ScrollArea } from "@/registry/elevenlabs-ui/ui/scroll-area"
  * - SessionChanged: Updates track count
  */
 export function OrpheusTrackManager() {
-  const { execute, loading, error } = useOrpheusCommand()
+  const { loading, error } = useOrpheusCommand()
   const { latestEvent } = useOrpheusEvents()
 
   const [trackCount, setTrackCount] = useState<number>(0)

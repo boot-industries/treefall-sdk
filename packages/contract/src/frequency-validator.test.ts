@@ -6,7 +6,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   EventFrequencyValidator,
   createThrottledEmitter,
-  type FrequencyViolation,
 } from './frequency-validator.js';
 import { Event, EVENT_FREQUENCY_LIMITS } from './v1.0.0-beta.js';
 
@@ -68,6 +67,10 @@ describe('EventFrequencyValidator', () => {
       expect(validator.canEmit(event1)).toBe(true);
       expect(validator.canEmit(event2)).toBe(false); // Violates limit
       expect(validator.canEmit(event3)).toBe(true);
+
+      // Use limit and minInterval to avoid unused variable warnings
+      expect(limit).toBe(30);
+      expect(minInterval).toBeCloseTo(33.33, 2);
     });
 
     it('should enforce RenderProgress frequency limit (10 Hz)', () => {
@@ -95,6 +98,10 @@ describe('EventFrequencyValidator', () => {
       expect(validator.canEmit(event1)).toBe(true);
       expect(validator.canEmit(event2)).toBe(false); // Violates limit
       expect(validator.canEmit(event3)).toBe(true);
+
+      // Use limit and minInterval to avoid unused variable warnings
+      expect(limit).toBe(10);
+      expect(minInterval).toBe(100);
     });
 
     it('should enforce Heartbeat frequency limit (0.1 Hz)', () => {
@@ -119,6 +126,10 @@ describe('EventFrequencyValidator', () => {
       expect(validator.canEmit(event1)).toBe(true);
       expect(validator.canEmit(event2)).toBe(false); // Violates limit
       expect(validator.canEmit(event3)).toBe(true);
+
+      // Use limit and minInterval to avoid unused variable warnings
+      expect(limit).toBe(0.1);
+      expect(minInterval).toBe(10000);
     });
 
     it('should track violations', () => {
