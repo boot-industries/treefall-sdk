@@ -22,7 +22,7 @@ enum class SessionGraphError : uint8_t {
   InvalidParameter = 2,
   NotReady = 3,
   NotSupported = 4,
-  NotInitialized = 5,  ///< Added for routing matrix
+  NotInitialized = 5, ///< Added for routing matrix
   InternalError = 255
 };
 

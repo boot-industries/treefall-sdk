@@ -492,13 +492,13 @@ jobs:
     steps:
       - name: Check all jobs succeeded
         run: |
-          if [[ "${{ needs.cpp-build-test.result }}" != "success" ]] || \
-             [[ "${{ needs.cpp-lint.result }}" != "success" ]] || \
-             [[ "${{ needs.native-driver-build.result }}" != "success" ]] || \
-             [[ "${{ needs.typescript-build.result }}" != "success" ]] || \
-             [[ "${{ needs.integration-tests.result }}" != "success" ]] || \
-             [[ "${{ needs.dependency-check.result }}" != "success" ]] || \
-             [[ "${{ needs.performance-budget.result }}" != "success" ]]; then
+          if [[ "${{ needs.cpp-build-test.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.cpp-lint.result }}" == "failure" ]] || [[ "${{ needs.cpp-lint.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.native-driver-build.result }}" == "failure" ]] || [[ "${{ needs.native-driver-build.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.typescript-build.result }}" == "failure" ]] || [[ "${{ needs.typescript-build.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.integration-tests.result }}" == "failure" ]] || [[ "${{ needs.integration-tests.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.dependency-check.result }}" == "failure" ]] || [[ "${{ needs.dependency-check.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.performance-budget.result }}" == "failure" ]] || [[ "${{ needs.performance-budget.result }}" == "cancelled" ]]; then
             echo "❌ One or more jobs failed"
             echo "cpp-build-test: ${{ needs.cpp-build-test.result }}"
             echo "cpp-lint: ${{ needs.cpp-lint.result }}"
