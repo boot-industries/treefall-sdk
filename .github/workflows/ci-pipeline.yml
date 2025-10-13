@@ -256,7 +256,7 @@ jobs:
       - name: Build C++ SDK (if not cached)
         run: |
           if [ ! -d "build-release" ]; then
-            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON
             cmake --build build-release --parallel
           fi
         shell: bash
