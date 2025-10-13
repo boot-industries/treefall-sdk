@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '18.20.4'
+  NODE_VERSION: '20'
   PNPM_VERSION: '8.15.4'
   CMAKE_VERSION: '3.27.x'
 

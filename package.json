@@ -49,6 +49,7 @@
       "@vercel/oidc": "2.0.2",
       "@orama/orama": "3.1.0",
       "lru-cache": "10.4.3",
+      "semver": "7.6.3",
       "rimraf": "5.0.5",
       "minimatch": "9.0.5",
       "commander": "11.1.0",
