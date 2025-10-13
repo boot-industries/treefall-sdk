@@ -8,9 +8,13 @@ option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
 option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
 option(ORPHEUS_ENABLE_APP_JUCE_HOST "Build the Orpheus JUCE demo host" OFF)
+option(ORPHEUS_ENABLE_APP_CLIP_COMPOSER "Build Orpheus Clip Composer application" OFF)
 option(ENABLE_LTO "Enable interprocedural optimization" OFF)
 option(ORP_BUILD_SHARED_CORE "Build Orpheus ABI libraries as shared" OFF)
 option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
+
+# M2: Real-time infrastructure options
+option(ORPHEUS_ENABLE_REALTIME "Build real-time playback engine (M2)" ON)
 
 if(DEFINED ORPHEUS_BUILD_SHARED)
   set(ORP_BUILD_SHARED_CORE ${ORPHEUS_BUILD_SHARED} CACHE BOOL "" FORCE)
@@ -98,6 +102,7 @@ endif()
 add_subdirectory(src)
 
 if(ORPHEUS_ENABLE_ADAPTER_REAPER)
+  message(WARNING "REAPER adapter is EXPERIMENTAL and may change without notice. Not recommended for production use. See adapters/reaper/README.md for details.")
   add_subdirectory(adapters/reaper)
 endif()
 
@@ -107,6 +112,10 @@ endif()
 
 if(ORPHEUS_ENABLE_APP_JUCE_HOST)
   add_subdirectory(apps/juce-demo-host)
+endif()
+
+if(ORPHEUS_ENABLE_APP_CLIP_COMPOSER)
+  add_subdirectory(apps/clip-composer)
 endif()
 
 include(CTest)
@@ -128,6 +137,48 @@ install(TARGETS orpheus_session orpheus_clipgrid orpheus_render
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
+
+# M2: Real-time infrastructure targets
+if(ORPHEUS_ENABLE_REALTIME)
+  install(TARGETS orpheus_transport orpheus_routing
+    EXPORT OrpheusSDKTargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+  if(TARGET orpheus_audio_io)
+    install(TARGETS orpheus_audio_io
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+
+  # Platform audio drivers
+  if(TARGET orpheus_audio_driver_coreaudio)
+    install(TARGETS orpheus_audio_driver_coreaudio
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+
+  if(TARGET orpheus_audio_driver_wasapi)
+    install(TARGETS orpheus_audio_driver_wasapi
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+
+  if(TARGET orpheus_audio_driver_asio)
+    install(TARGETS orpheus_audio_driver_asio
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+endif()
 
 install(TARGETS orpheus_core
   EXPORT OrpheusSDKTargets)

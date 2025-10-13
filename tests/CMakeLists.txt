@@ -76,6 +76,17 @@ endif()
 include(GoogleTest)
 gtest_discover_tests(orpheus_tests)
 
+# M2: Real-time infrastructure tests
+if(ORPHEUS_ENABLE_REALTIME)
+  add_subdirectory(transport)
+  if(TARGET orpheus_audio_io)
+    add_subdirectory(audio_io)
+  endif()
+  if(TARGET orpheus_routing)
+    add_subdirectory(routing)
+  endif()
+endif()
+
 set(FIND_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/find_package)
 set(FIND_PACKAGE_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/find_package_build)
 

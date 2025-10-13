@@ -11,6 +11,8 @@
     "postinstall": "echo 'Workspace bootstrap complete.'",
     "prepare": "husky install || echo 'Husky not installed'",
     "build": "pnpm -r build",
+    "test": "pnpm run test:integration",
+    "test:integration": "./tests/integration/run-tests.sh",
     "lint": "pnpm run lint:js && pnpm run lint:cpp",
     "lint:js": "pnpm -r --if-present lint",
     "lint:cpp": "scripts/lint-cpp.sh",

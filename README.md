@@ -63,6 +63,11 @@ project is organised around three pillars:
 
 - Host-agnostic APIs for session graphs, tempo maps, and clip grids.
 - ABI negotiation helpers that keep host/plugin compatibility deterministic.
+- **Real-time audio infrastructure** (Milestone M2) for sample-accurate playback:
+  - Lock-free transport controller with multi-clip support
+  - Audio file reader (WAV/AIFF/FLAC via libsndfile)
+  - Platform audio drivers (CoreAudio, WASAPI, ASIO)
+  - Network audio (AES67/RTP with PTP sync) - interoperable with Dante, Ravenna, Q-LAN
 - Click-track rendering utilities surfaced through the minhost adapter.
 - Optional JUCE-based demo host for hands-on exploration of the SDK.
 - Smoke tests and tooling that enforce cross-platform correctness.
@@ -116,6 +121,19 @@ Other platforms may work but are not part of automated coverage.
 
 Additional components are disabled unless explicitly requested during
 configuration:
+
+- **Real-time audio infrastructure** (M2 modules, enabled by default):
+
+  ```sh
+  # Disable if you only need offline rendering
+  cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
+  ```
+
+  Includes:
+  - `orpheus_transport` – Lock-free transport controller for clip playback
+  - `orpheus_audio_io` – Audio file reader and dummy driver (requires libsndfile)
+
+  **Install libsndfile:** `brew install libsndfile` (macOS) or `vcpkg install libsndfile` (Windows)
 
 - **JUCE demo application** – build an interactive host for session inspection:
 
@@ -195,6 +213,41 @@ To experiment with `clang-tidy` locally, configure a build with
 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and invoke `clang-tidy -p build` (or the
 LLVM `run-clang-tidy.py` helper) on the files you want to inspect.
 
+## Applications Built on Orpheus SDK
+
+The Orpheus SDK provides the foundation for a family of professional audio applications:
+
+### Orpheus Clip Composer (OCC)
+
+**Professional soundboard for broadcast, theater, and live performance**
+
+- **Status:** Design phase complete, implementation starting (6-month MVP)
+- **Features:** Clip triggering (960 buttons), waveform editing, multi-channel routing, iOS remote control
+- **Market:** Broadcast playout, theater sound design, live performance
+- **Documentation:** [`apps/clip-composer/docs/OCC/`](apps/clip-composer/docs/OCC/) – Complete design package (11 documents, ~5,300 lines)
+  - [`OCC021 Product Vision`](apps/clip-composer/docs/OCC/OCC021%20Orpheus%20Clip%20Composer%20-%20Product%20Vision.md) – Market positioning, competitive analysis
+  - [`OCC026 MVP Definition`](apps/clip-composer/docs/OCC/OCC026%20Milestone%201%20-%20MVP%20Definition%20v1.0.md) – 6-month plan with deliverables
+  - [`OCC029 SDK Enhancements`](apps/clip-composer/docs/OCC/OCC029%20SDK%20Enhancement%20Recommendations%20for%20Clip%20Composer%20v1.0.md) – Required SDK modules
+  - [`PROGRESS.md`](apps/clip-composer/docs/OCC/PROGRESS.md) – Design phase complete report
+
+**SDK Requirements:** Real-time transport, audio drivers (CoreAudio/ASIO/WASAPI), routing matrix, performance monitor
+
+### Orpheus Wave Finder
+
+**Harmonic calculator and frequency scope for audio analysis**
+
+- **Status:** Planned for v1.0 (Months 7-12)
+- **Features:** FFT analysis, harmonic detection, frequency visualization
+
+### Orpheus FX Engine
+
+**LLM-powered effects processing and creative workflows**
+
+- **Status:** Planned for v1.0 (Months 10-12)
+- **Features:** DSP integration, real-time parameter automation, LLM hooks
+
+---
+
 ## Documentation
 
 - [`docs/ADAPTERS.md`](docs/ADAPTERS.md) – adapter catalog, build flags, and
@@ -202,6 +255,9 @@ LLVM `run-clang-tidy.py` helper) on the files you want to inspect.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
+- [`apps/clip-composer/docs/OCC/`](apps/clip-composer/docs/OCC/) – Orpheus Clip Composer design documentation (complete)
+- [`AGENTS.md`](AGENTS.md) – coding assistant guidelines for AI tools
+- [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
 ## Contributing
 
