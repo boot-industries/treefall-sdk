@@ -37,7 +37,9 @@ public:
   std::function<void(int buttonIndex)> onButtonClicked;      // Left-click (trigger)
   std::function<void(int buttonIndex)> onButtonRightClicked; // Right-click (load)
   std::function<void(const juce::Array<juce::File>& files, int buttonIndex)>
-      onFilesDropped; // Drag & drop
+      onFilesDropped; // Drag & drop files
+  std::function<void(int sourceButtonIndex, int targetButtonIndex)>
+      onButtonDraggedToButton; // Drag clip to different button
 
   //==============================================================================
   void paint(juce::Graphics& g) override;

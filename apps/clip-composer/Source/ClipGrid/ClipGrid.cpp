@@ -18,6 +18,11 @@ void ClipGrid::createButtons() {
     // Wire up callbacks
     button->onClick = [this](int index) { handleButtonLeftClick(index); };
     button->onRightClick = [this](int index) { handleButtonRightClick(index); };
+    button->onDragToButton = [this](int sourceIndex, int targetIndex) {
+      if (onButtonDraggedToButton) {
+        onButtonDraggedToButton(sourceIndex, targetIndex);
+      }
+    };
 
     // All buttons start empty - clips will be loaded by SessionManager
     addAndMakeVisible(button.get());

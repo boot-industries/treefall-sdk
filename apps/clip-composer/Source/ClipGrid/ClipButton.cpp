@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipButton.h"
+#include "ClipGrid.h"
 
 //==============================================================================
 ClipButton::ClipButton(int buttonIndex) : m_buttonIndex(buttonIndex) {
@@ -375,12 +376,70 @@ void ClipButton::resized() {
 
 void ClipButton::mouseDown(const juce::MouseEvent& e) {
   if (e.mods.isLeftButtonDown()) {
-    // Left click - trigger clip
-    if (onClick)
-      onClick(m_buttonIndex);
+    // Record mouse down time and position for drag detection
+    m_mouseDownTime = juce::Time::getCurrentTime();
+    m_mouseDownPosition = e.getPosition();
+    m_isDragging = false;
   } else if (e.mods.isRightButtonDown()) {
     // Right click - context menu
     if (onRightClick)
       onRightClick(m_buttonIndex);
+  }
+}
+
+void ClipButton::mouseDrag(const juce::MouseEvent& e) {
+  if (!e.mods.isLeftButtonDown() || m_state == State::Empty)
+    return;
+
+  // Check if we've held long enough to start dragging
+  auto holdTime = juce::Time::getCurrentTime() - m_mouseDownTime;
+  if (holdTime.inMilliseconds() < DRAG_HOLD_TIME_MS)
+    return;
+
+  // Check if we've moved enough to consider it a drag
+  auto dragDistance = e.getPosition().getDistanceFrom(m_mouseDownPosition);
+  if (dragDistance < 10.0f && !m_isDragging)
+    return;
+
+  m_isDragging = true;
+
+  // Visual feedback: make button slightly transparent while dragging
+  setAlpha(0.6f);
+}
+
+void ClipButton::mouseUp(const juce::MouseEvent& e) {
+  // Restore full opacity
+  setAlpha(1.0f);
+
+  if (!e.mods.isLeftButtonDown())
+    return;
+
+  if (m_isDragging) {
+    // We were dragging - find target button under mouse
+    auto* grid = findParentComponentOfClass<ClipGrid>();
+    if (grid) {
+      // Convert to grid coordinates
+      auto posInGrid = grid->getLocalPoint(this, e.getPosition());
+
+      // Find which button we're over
+      for (int i = 0; i < grid->getButtonCount(); ++i) {
+        auto* targetButton = grid->getButton(i);
+        if (targetButton && targetButton != this && targetButton->getBounds().contains(posInGrid)) {
+          // Trigger drag callback
+          if (onDragToButton) {
+            onDragToButton(m_buttonIndex, i);
+          }
+          break;
+        }
+      }
+    }
+    m_isDragging = false;
+  } else {
+    // Short click - trigger clip
+    auto holdTime = juce::Time::getCurrentTime() - m_mouseDownTime;
+    if (holdTime.inMilliseconds() < DRAG_HOLD_TIME_MS) {
+      if (onClick)
+        onClick(m_buttonIndex);
+    }
   }
 }

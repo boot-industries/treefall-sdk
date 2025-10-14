@@ -29,6 +29,11 @@ MainComponent::MainComponent() {
     loadMultipleFiles(files, buttonIndex);
   };
 
+  // Wire up clip drag-to-reorder handler
+  m_clipGrid->onButtonDraggedToButton = [this](int sourceIndex, int targetIndex) {
+    onClipDraggedToButton(sourceIndex, targetIndex);
+  };
+
   // Make this component capture keyboard focus
   setWantsKeyboardFocus(true);
 
@@ -423,8 +428,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
         newColor = juce::Colour(0xff9b59b6);
         break; // Purple
       case 107:
-        newColor = juce::Colour(0xffe91e63);
-        break; // Pink
+        newColor = juce::Colour(0xffff69b4);
+        break; // Pink (HotPink - lighter)
       }
 
       // Update button color
@@ -553,6 +558,21 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Load Failed",
                                            "Could not load audio file:\n" + filePath, "OK");
   }
+}
+
+void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButtonIndex) {
+  DBG("MainComponent: Dragging clip from button " << sourceButtonIndex << " to button "
+                                                  << targetButtonIndex);
+
+  // Swap clips in SessionManager
+  m_sessionManager.swapClips(sourceButtonIndex, targetButtonIndex);
+
+  // Swap stop-others mode flags
+  std::swap(m_stopOthersOnPlay[sourceButtonIndex], m_stopOthersOnPlay[targetButtonIndex]);
+
+  // Update both buttons visually
+  updateButtonFromClip(sourceButtonIndex);
+  updateButtonFromClip(targetButtonIndex);
 }
 
 void MainComponent::updateButtonFromClip(int buttonIndex) {

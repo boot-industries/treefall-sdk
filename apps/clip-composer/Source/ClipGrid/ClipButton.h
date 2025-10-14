@@ -4,6 +4,9 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+// Forward declaration
+class ClipGrid;
+
 //==============================================================================
 /**
  * ClipButton - Individual clip trigger button
@@ -74,11 +77,14 @@ public:
   // Callbacks
   std::function<void(int buttonIndex)> onClick;
   std::function<void(int buttonIndex)> onRightClick;
+  std::function<void(int sourceButtonIndex, int targetButtonIndex)> onDragToButton;
 
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
   void mouseDown(const juce::MouseEvent& e) override;
+  void mouseDrag(const juce::MouseEvent& e) override;
+  void mouseUp(const juce::MouseEvent& e) override;
 
 private:
   //==============================================================================
@@ -105,6 +111,12 @@ private:
   bool m_fadeInEnabled = false;
   bool m_fadeOutEnabled = false;
   bool m_effectsEnabled = false;
+
+  // Drag state
+  juce::Time m_mouseDownTime;
+  juce::Point<int> m_mouseDownPosition;
+  bool m_isDragging = false;
+  static constexpr int DRAG_HOLD_TIME_MS = 300; // 300ms hold before drag starts
 
   // Visual constants
   static constexpr int BORDER_THICKNESS = 2;

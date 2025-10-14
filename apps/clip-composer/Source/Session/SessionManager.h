@@ -92,6 +92,11 @@ public:
   void removeClip(int buttonIndex);
 
   /**
+   * Swap clips between two buttons in current tab
+   */
+  void swapClips(int buttonIndex1, int buttonIndex2);
+
+  /**
    * Get clip data for a button in current tab
    *
    * @return ClipData if assigned, null ClipData if empty

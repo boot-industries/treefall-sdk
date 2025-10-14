@@ -51,6 +51,7 @@ private:
   void loadClipToButton(int buttonIndex, const juce::String& filePath);
   void loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex);
   void updateButtonFromClip(int buttonIndex);
+  void onClipDraggedToButton(int sourceButtonIndex, int targetButtonIndex);
   void onStopAll();
   void onPanic();
 

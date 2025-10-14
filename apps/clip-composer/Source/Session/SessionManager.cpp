@@ -74,6 +74,37 @@ void SessionManager::removeClip(int buttonIndex) {
   }
 }
 
+void SessionManager::swapClips(int buttonIndex1, int buttonIndex2) {
+  int key1 = makeKey(m_currentTab, buttonIndex1);
+  int key2 = makeKey(m_currentTab, buttonIndex2);
+
+  auto it1 = m_clips.find(key1);
+  auto it2 = m_clips.find(key2);
+
+  bool has1 = (it1 != m_clips.end());
+  bool has2 = (it2 != m_clips.end());
+
+  if (has1 && has2) {
+    // Both buttons have clips - swap them
+    std::swap(it1->second, it2->second);
+    DBG("SessionManager: Swapped clips between buttons " << buttonIndex1 << " and "
+                                                         << buttonIndex2);
+  } else if (has1 && !has2) {
+    // Only button 1 has a clip - move it to button 2
+    m_clips[key2] = it1->second;
+    m_clips.erase(it1);
+    DBG("SessionManager: Moved clip from button " << buttonIndex1 << " to " << buttonIndex2);
+  } else if (!has1 && has2) {
+    // Only button 2 has a clip - move it to button 1
+    m_clips[key1] = it2->second;
+    m_clips.erase(it2);
+    DBG("SessionManager: Moved clip from button " << buttonIndex2 << " to " << buttonIndex1);
+  } else {
+    // Neither button has a clip - nothing to swap
+    DBG("SessionManager: No clips to swap (both buttons empty)");
+  }
+}
+
 SessionManager::ClipData SessionManager::getClip(int buttonIndex) const {
   int key = makeKey(m_currentTab, buttonIndex);
   auto it = m_clips.find(key);
