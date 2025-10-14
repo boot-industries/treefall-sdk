@@ -139,14 +139,14 @@ void ClipButton::paint(juce::Graphics& g) {
   g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, BORDER_THICKNESS);
 
   if (m_state == State::Empty) {
-    // Button index (larger, more prominent)
+    // Button index (larger, more prominent) - 20% increase: 18 -> 21.6
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::FontOptions("Inter", 18.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions("Inter", 21.6f, juce::Font::bold));
     g.drawText(juce::String(m_buttonIndex + 1), bounds, juce::Justification::centred, false);
 
-    // "Empty" label (smaller, subtle)
+    // "Empty" label (smaller, subtle) - 20% increase: 9 -> 10.8
     g.setColour(juce::Colours::white.withAlpha(0.25f));
-    g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::plain));
+    g.setFont(juce::FontOptions("Inter", 10.8f, juce::Font::plain));
     auto emptyLabel = bounds.reduced(PADDING).removeFromBottom(14);
     g.drawText("empty", emptyLabel, juce::Justification::centred, false);
   } else {
@@ -163,15 +163,15 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   {
     auto topRow = contentArea.removeFromTop(16.0f);
 
-    // Button index (left, subtle)
+    // Button index (left, subtle) - 20% increase: 10 -> 12
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::FontOptions("Inter", 10.0f, juce::Font::plain));
+    g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
     g.drawText(juce::String(m_buttonIndex + 1), topRow, juce::Justification::topLeft, false);
 
-    // Keyboard shortcut (right, prominent)
+    // Keyboard shortcut (right, prominent) - 20% increase: 11 -> 13.2
     if (m_keyboardShortcut.isNotEmpty()) {
       g.setColour(juce::Colours::white.withAlpha(0.9f));
-      g.setFont(juce::FontOptions("Inter", 11.0f, juce::Font::bold));
+      g.setFont(juce::FontOptions("Inter", 13.2f, juce::Font::bold));
       g.drawText(m_keyboardShortcut, topRow, juce::Justification::topRight, false);
     }
 
@@ -185,15 +185,11 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
 
     g.setColour(juce::Colours::white);
-    g.setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions("Inter", 16.8f, juce::Font::bold)); // 20% increase: 14 -> 16.8
 
-    // Truncate name if too long
-    auto displayName = m_clipName;
-    if (displayName.length() > 22)
-      displayName = displayName.substring(0, 19) + "...";
-
-    g.drawText(displayName, nameArea, juce::Justification::centred,
-               true); // Allow word wrap
+    // Enable full text wrapping (no truncation)
+    g.drawText(m_clipName, nameArea, juce::Justification::centred,
+               true); // Enable word wrap for long names
 
     currentY = nameArea.getBottom();
   }
@@ -203,19 +199,19 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 28.0f,
                                              contentArea.getWidth(), 28.0f);
 
-    // Duration (left, prominent)
+    // Duration (left, prominent) - 20% increase: 11 -> 13.2
     if (m_durationSeconds > 0.0) {
       g.setColour(juce::Colours::white.withAlpha(0.9f));
-      g.setFont(juce::FontOptions("Inter", 11.0f, juce::Font::plain));
+      g.setFont(juce::FontOptions("Inter", 13.2f, juce::Font::plain));
       g.drawText(formatDuration(m_durationSeconds),
                  bottomArea.withTrimmedRight(bottomArea.getWidth() * 0.5f),
                  juce::Justification::centredLeft, false);
     }
 
-    // Beat offset (center, if present) - e.g., "//3+"
+    // Beat offset (center, if present) - e.g., "//3+" - 20% increase: 10 -> 12
     if (m_beatOffset.isNotEmpty()) {
       g.setColour(juce::Colour(0xffffaa00)); // Orange for timing info
-      g.setFont(juce::FontOptions("Inter", 10.0f, juce::Font::bold));
+      g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::bold));
       g.drawText("//" + m_beatOffset, bottomArea.withSizeKeepingCentre(60.0f, 14.0f),
                  juce::Justification::centred, false);
     }
@@ -235,9 +231,9 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
       g.setColour(groupColors[m_clipGroup].withAlpha(0.8f));
       g.fillRoundedRectangle(groupBadge, 3.0f);
 
-      // Draw group number
+      // Draw group number - 20% increase: 9 -> 10.8
       g.setColour(juce::Colours::white);
-      g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::bold));
+      g.setFont(juce::FontOptions("Inter", 10.8f, juce::Font::bold));
       g.drawText("G" + juce::String(m_clipGroup + 1), groupBadge, juce::Justification::centred,
                  false);
     }
@@ -245,14 +241,14 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
 
   // === PLAYING STATE INDICATOR ===
   if (m_state == State::Playing) {
-    // Play triangle icon (top-right corner, prominent)
-    auto playIconBounds = bounds.removeFromTop(20.0f).removeFromRight(20.0f).reduced(4.0f);
+    // Play triangle icon (top-right corner, prominent) - 20% increase: 20 -> 24, 10 -> 12
+    auto playIconBounds = bounds.removeFromTop(24.0f).removeFromRight(24.0f).reduced(4.0f);
 
     // Draw play triangle (pointing right)
     juce::Path playTriangle;
     float cx = playIconBounds.getCentreX();
     float cy = playIconBounds.getCentreY();
-    float size = 10.0f;
+    float size = 12.0f; // 20% increase: 10.0 -> 12.0
 
     playTriangle.addTriangle(cx - size * 0.3f, cy - size * 0.5f, // Top-left
                              cx - size * 0.3f, cy + size * 0.5f, // Bottom-left

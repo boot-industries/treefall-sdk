@@ -711,6 +711,11 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
 void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) {
   switch (menuItemID) {
   case 1: // New Session
+    // Stop all playing audio first
+    if (m_audioEngine) {
+      m_audioEngine->stopAllClips();
+    }
+
     m_sessionManager.clearSession();
     // Clear all buttons
     for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
