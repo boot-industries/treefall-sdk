@@ -19,7 +19,7 @@
  * - Responsive sizing
  * - 2px gaps between buttons
  */
-class ClipGrid : public juce::Component {
+class ClipGrid : public juce::Component, public juce::FileDragAndDropTarget {
 public:
   //==============================================================================
   ClipGrid();
@@ -36,10 +36,16 @@ public:
   // Callbacks for button events
   std::function<void(int buttonIndex)> onButtonClicked;      // Left-click (trigger)
   std::function<void(int buttonIndex)> onButtonRightClicked; // Right-click (load)
+  std::function<void(const juce::Array<juce::File>& files, int buttonIndex)>
+      onFilesDropped; // Drag & drop
 
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
+
+  // FileDragAndDropTarget overrides
+  bool isInterestedInFileDrag(const juce::StringArray& files) override;
+  void filesDropped(const juce::StringArray& files, int x, int y) override;
 
 private:
   //==============================================================================

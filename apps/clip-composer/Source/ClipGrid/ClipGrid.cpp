@@ -79,3 +79,55 @@ void ClipGrid::resized() {
     }
   }
 }
+
+//==============================================================================
+bool ClipGrid::isInterestedInFileDrag(const juce::StringArray& files) {
+  // Accept any audio files
+  for (const auto& file : files) {
+    if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff") ||
+        file.endsWithIgnoreCase(".aif") || file.endsWithIgnoreCase(".flac")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void ClipGrid::filesDropped(const juce::StringArray& files, int x, int y) {
+  // Find which button was dropped on
+  int targetButtonIndex = -1;
+
+  for (int i = 0; i < BUTTON_COUNT; ++i) {
+    auto button = getButton(i);
+    if (button && button->getBounds().contains(x, y)) {
+      targetButtonIndex = i;
+      break;
+    }
+  }
+
+  // If dropped on a button, load files starting from that button
+  // Otherwise, load starting from first empty button
+  if (targetButtonIndex < 0) {
+    targetButtonIndex = 0; // Default to first button
+  }
+
+  // Convert StringArray to Array<File>
+  juce::Array<juce::File> audioFiles;
+  for (const auto& filePath : files) {
+    juce::File file(filePath);
+    if (file.existsAsFile()) {
+      audioFiles.add(file);
+    }
+  }
+
+  if (audioFiles.isEmpty()) {
+    DBG("ClipGrid: No valid audio files dropped");
+    return;
+  }
+
+  DBG("ClipGrid: " << audioFiles.size() << " file(s) dropped on button " << targetButtonIndex);
+
+  // Forward to MainComponent via callback
+  if (onFilesDropped) {
+    onFilesDropped(audioFiles, targetButtonIndex);
+  }
+}

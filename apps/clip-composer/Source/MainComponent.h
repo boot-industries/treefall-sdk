@@ -49,6 +49,7 @@ private:
   void onClipRightClicked(int buttonIndex);
   void onClipTriggered(int buttonIndex); // Trigger clip (keyboard or mouse)
   void loadClipToButton(int buttonIndex, const juce::String& filePath);
+  void loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex);
   void updateButtonFromClip(int buttonIndex);
   void onStopAll();
   void onPanic();
@@ -78,6 +79,9 @@ private:
 
   // Custom Look and Feel (Inter font)
   InterLookAndFeel m_interLookAndFeel;
+
+  // Per-button "stop others on play" mode (bitset for 48 buttons)
+  std::array<bool, 48> m_stopOthersOnPlay = {};
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

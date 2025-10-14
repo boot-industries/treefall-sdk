@@ -244,10 +244,27 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
 
   // === PLAYING STATE INDICATOR ===
   if (m_state == State::Playing) {
-    // Pulsing play indicator (top-right corner)
-    auto playIndicator = bounds.removeFromTop(8.0f).removeFromRight(8.0f).reduced(2.0f);
-    g.setColour(juce::Colours::lime);
-    g.fillEllipse(playIndicator);
+    // Play triangle icon (top-right corner, prominent)
+    auto playIconBounds = bounds.removeFromTop(20.0f).removeFromRight(20.0f).reduced(4.0f);
+
+    // Draw play triangle (pointing right)
+    juce::Path playTriangle;
+    float cx = playIconBounds.getCentreX();
+    float cy = playIconBounds.getCentreY();
+    float size = 10.0f;
+
+    playTriangle.addTriangle(cx - size * 0.3f, cy - size * 0.5f, // Top-left
+                             cx - size * 0.3f, cy + size * 0.5f, // Bottom-left
+                             cx + size * 0.6f, cy                // Right point
+    );
+
+    // Bright green background circle
+    g.setColour(juce::Colour(0xff00ff00)); // Bright green
+    g.fillEllipse(playIconBounds);
+
+    // White play triangle
+    g.setColour(juce::Colours::white);
+    g.fillPath(playTriangle);
   }
 
   // === PROGRESS BAR ===

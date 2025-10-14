@@ -24,6 +24,11 @@ MainComponent::MainComponent() {
   // Wire up left-click handler for triggering clips
   m_clipGrid->onButtonClicked = [this](int buttonIndex) { onClipTriggered(buttonIndex); };
 
+  // Wire up drag & drop handler
+  m_clipGrid->onFilesDropped = [this](const juce::Array<juce::File>& files, int buttonIndex) {
+    loadMultipleFiles(files, buttonIndex);
+  };
+
   // Make this component capture keyboard focus
   setWantsKeyboardFocus(true);
 
@@ -335,6 +340,23 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     // Clip is loaded - show options
     auto clipData = m_sessionManager.getClip(buttonIndex);
     menu.addItem(1, "Load New Audio File...");
+    menu.addItem(6, "Load Multiple Audio Files...");
+    menu.addSeparator();
+
+    // Color submenu
+    juce::PopupMenu colorMenu;
+    colorMenu.addItem(100, "Red");
+    colorMenu.addItem(101, "Orange");
+    colorMenu.addItem(102, "Yellow");
+    colorMenu.addItem(103, "Green");
+    colorMenu.addItem(104, "Cyan");
+    colorMenu.addItem(105, "Blue");
+    colorMenu.addItem(106, "Purple");
+    colorMenu.addItem(107, "Pink");
+    menu.addSubMenu("Set Color", colorMenu);
+
+    menu.addSeparator();
+    menu.addItem(4, "Stop Others On Play", true, m_stopOthersOnPlay[buttonIndex]);
     menu.addSeparator();
     menu.addItem(2, "Remove Clip");
     menu.addSeparator();
@@ -342,6 +364,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   } else {
     // Empty button - only show load option
     menu.addItem(1, "Load Audio File...");
+    menu.addItem(6, "Load Multiple Audio Files...");
   }
 
   menu.showMenuAsync(juce::PopupMenu::Options(), [this, buttonIndex, hasClip](int result) {
@@ -359,6 +382,65 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       // Remove clip
       m_sessionManager.removeClip(buttonIndex);
       updateButtonFromClip(buttonIndex);
+    } else if (result == 4) {
+      // Toggle "stop others on play" mode
+      m_stopOthersOnPlay[buttonIndex] = !m_stopOthersOnPlay[buttonIndex];
+      DBG("Button " << buttonIndex << ": Stop others on play = "
+                    << (m_stopOthersOnPlay[buttonIndex] ? "ON" : "OFF"));
+    } else if (result == 6) {
+      // Load multiple audio files
+      juce::FileChooser chooser("Select Audio Files",
+                                juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+                                "*.wav;*.aiff;*.aif;*.flac");
+
+      if (chooser.browseForMultipleFilesToOpen()) {
+        auto files = chooser.getResults();
+        loadMultipleFiles(files, buttonIndex);
+      }
+    } else if (result >= 100 && result <= 107) {
+      // Color selection
+      juce::Colour newColor;
+      switch (result) {
+      case 100:
+        newColor = juce::Colour(0xffe74c3c);
+        break; // Red
+      case 101:
+        newColor = juce::Colour(0xfff39c12);
+        break; // Orange
+      case 102:
+        newColor = juce::Colour(0xfff1c40f);
+        break; // Yellow
+      case 103:
+        newColor = juce::Colour(0xff2ecc71);
+        break; // Green
+      case 104:
+        newColor = juce::Colour(0xff1abc9c);
+        break; // Cyan
+      case 105:
+        newColor = juce::Colour(0xff3498db);
+        break; // Blue
+      case 106:
+        newColor = juce::Colour(0xff9b59b6);
+        break; // Purple
+      case 107:
+        newColor = juce::Colour(0xffe91e63);
+        break; // Pink
+      }
+
+      // Update button color
+      auto button = m_clipGrid->getButton(buttonIndex);
+      if (button) {
+        button->setClipColor(newColor);
+      }
+
+      // Update session manager
+      if (m_sessionManager.hasClip(buttonIndex)) {
+        auto clipData = m_sessionManager.getClip(buttonIndex);
+        clipData.color = newColor;
+        // Note: SessionManager may need a setClipColor method, for now just update button
+      }
+
+      DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
     }
   });
 }
@@ -385,6 +467,24 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     button->setState(ClipButton::State::Loaded);
     DBG("Button " + juce::String(buttonIndex) + ": Stopped via keyboard/click");
   } else if (currentState == ClipButton::State::Loaded) {
+    // Check if "stop others on play" mode is enabled for this button
+    if (m_stopOthersOnPlay[buttonIndex]) {
+      // Stop all other playing clips
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        if (i != buttonIndex) {
+          auto otherButton = m_clipGrid->getButton(i);
+          if (otherButton && otherButton->getState() == ClipButton::State::Playing) {
+            if (m_audioEngine) {
+              m_audioEngine->stopClip(i);
+            }
+            otherButton->setState(ClipButton::State::Loaded);
+            DBG("Button " + juce::String(i) + ": Stopped by 'stop others' from button " +
+                juce::String(buttonIndex));
+          }
+        }
+      }
+    }
+
     // Start the clip
     if (m_audioEngine) {
       m_audioEngine->startClip(buttonIndex);
@@ -392,6 +492,27 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     button->setState(ClipButton::State::Playing);
     DBG("Button " + juce::String(buttonIndex) + ": Started playing via keyboard/click");
   }
+}
+
+void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex) {
+  // Load multiple files sequentially starting from startButtonIndex
+  // Files wrap by rows: if grid is 6 columns, files fill 0-5, 6-11, 12-17, etc.
+  int buttonIndex = startButtonIndex;
+  int totalButtons = m_clipGrid->getButtonCount();
+
+  for (const auto& file : files) {
+    if (buttonIndex >= totalButtons) {
+      DBG("MainComponent: Ran out of buttons loading files (stopped at button " << buttonIndex
+                                                                                << ")");
+      break;
+    }
+
+    loadClipToButton(buttonIndex, file.getFullPathName());
+    buttonIndex++;
+  }
+
+  DBG("MainComponent: Loaded " << files.size() << " files starting from button "
+                               << startButtonIndex);
 }
 
 void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePath) {
