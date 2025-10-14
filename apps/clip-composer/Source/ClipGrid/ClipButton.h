@@ -116,7 +116,7 @@ private:
   juce::Time m_mouseDownTime;
   juce::Point<int> m_mouseDownPosition;
   bool m_isDragging = false;
-  static constexpr int DRAG_HOLD_TIME_MS = 300; // 300ms hold before drag starts
+  static constexpr int DRAG_HOLD_TIME_MS = 240; // 240ms hold before drag starts
 
   // Visual constants
   static constexpr int BORDER_THICKNESS = 2;
