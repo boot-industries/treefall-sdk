@@ -584,6 +584,11 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
     // Get real clip metadata from SessionManager
     auto clipData = m_sessionManager.getClip(buttonIndex);
 
+    // Load clip into audio engine first
+    if (m_audioEngine) {
+      m_audioEngine->loadClip(buttonIndex, juce::String(clipData.filePath));
+    }
+
     // Update button with real data
     button->setState(ClipButton::State::Loaded);
     button->setClipName(juce::String(clipData.displayName));
