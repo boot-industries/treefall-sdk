@@ -57,8 +57,11 @@ if(TARGET Threads::Threads AND NOT WIN32)
 endif()
 
 if(APPLE)
-  # Force a single architecture slice and ensure libc++ is used across all builds.
-  set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+  # Use libc++ across all builds
+  # Note: CMAKE_OSX_ARCHITECTURES can be overridden via command line for universal builds
+  if(NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+  endif()
   add_compile_options(-stdlib=libc++)
   add_link_options(-stdlib=libc++)
 endif()
