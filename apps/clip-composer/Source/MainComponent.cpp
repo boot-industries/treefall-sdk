@@ -503,6 +503,16 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   metadata.numChannels = clipData.numChannels;
   metadata.durationSamples = clipData.durationSamples;
 
+  // Phase 2: Trim points
+  metadata.trimInSamples = clipData.trimInSamples;
+  metadata.trimOutSamples = clipData.trimOutSamples;
+
+  // Phase 3: Fade times
+  metadata.fadeInSeconds = clipData.fadeInSeconds;
+  metadata.fadeOutSeconds = clipData.fadeOutSeconds;
+  metadata.fadeInCurve = juce::String(clipData.fadeInCurve);
+  metadata.fadeOutCurve = juce::String(clipData.fadeOutCurve);
+
   dialog->setClipMetadata(metadata);
 
   // Set up callbacks
@@ -513,8 +523,20 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.color = edited.color;
     clipData.clipGroup = edited.clipGroup;
 
-    // TODO: Update SessionManager (needs a setClip() method)
-    // For now, we can update the button directly
+    // Phase 2: Trim points
+    clipData.trimInSamples = edited.trimInSamples;
+    clipData.trimOutSamples = edited.trimOutSamples;
+
+    // Phase 3: Fade times
+    clipData.fadeInSeconds = edited.fadeInSeconds;
+    clipData.fadeOutSeconds = edited.fadeOutSeconds;
+    clipData.fadeInCurve = edited.fadeInCurve.toStdString();
+    clipData.fadeOutCurve = edited.fadeOutCurve.toStdString();
+
+    // Persist to SessionManager
+    m_sessionManager.setClip(buttonIndex, clipData);
+
+    // Update button visual state
     auto button = m_clipGrid->getButton(buttonIndex);
     if (button) {
       button->setClipName(edited.displayName);
@@ -522,7 +544,11 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
       button->setClipGroup(edited.clipGroup);
     }
 
-    DBG("MainComponent: Updated clip metadata for button " << buttonIndex);
+    DBG("MainComponent: Updated clip metadata for button "
+        << buttonIndex << " - Trim: [" << clipData.trimInSamples << ", " << clipData.trimOutSamples
+        << "]"
+        << " Fade: [" << clipData.fadeInSeconds << "s " << clipData.fadeInCurve << ", "
+        << clipData.fadeOutSeconds << "s " << clipData.fadeOutCurve << "]");
 
     // Close dialog
     dialog->setVisible(false);
@@ -536,7 +562,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   };
 
   // Show dialog as modal
-  dialog->setSize(600, 500);
+  dialog->setSize(700, 800); // Expanded for Phases 2 & 3
   dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
   addAndMakeVisible(dialog);
   dialog->toFront(true);

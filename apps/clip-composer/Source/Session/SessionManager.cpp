@@ -65,6 +65,15 @@ bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
   return true;
 }
 
+void SessionManager::setClip(int buttonIndex, const ClipData& clipData) {
+  int key = makeKey(m_currentTab, buttonIndex);
+  m_clips[key] = clipData;
+
+  DBG("SessionManager: Updated clip metadata for tab " << m_currentTab << ", button " << buttonIndex
+                                                       << " - Name: " << clipData.displayName
+                                                       << ", Group: " << clipData.clipGroup);
+}
+
 void SessionManager::removeClip(int buttonIndex) {
   int key = makeKey(m_currentTab, buttonIndex);
   auto it = m_clips.find(key);
@@ -190,6 +199,18 @@ bool SessionManager::saveSession(const juce::File& file) {
     clipObj->setProperty("displayName", juce::var(clipData.displayName));
     clipObj->setProperty("clipGroup", juce::var(clipData.clipGroup));
 
+    // Phase 2: Trim points
+    clipObj->setProperty("trimInSamples",
+                         juce::var(static_cast<juce::int64>(clipData.trimInSamples)));
+    clipObj->setProperty("trimOutSamples",
+                         juce::var(static_cast<juce::int64>(clipData.trimOutSamples)));
+
+    // Phase 3: Fade times
+    clipObj->setProperty("fadeInSeconds", juce::var(clipData.fadeInSeconds));
+    clipObj->setProperty("fadeOutSeconds", juce::var(clipData.fadeOutSeconds));
+    clipObj->setProperty("fadeInCurve", juce::var(clipData.fadeInCurve));
+    clipObj->setProperty("fadeOutCurve", juce::var(clipData.fadeOutCurve));
+
     clipsArray.add(clipJson);
   }
 
@@ -258,7 +279,41 @@ bool SessionManager::loadSession(const juce::File& file) {
       m_currentTab = tabIndex;
 
       // Load clip (validates file and extracts metadata)
-      loadClip(buttonIndex, filePath);
+      if (loadClip(buttonIndex, filePath)) {
+        // Restore additional metadata from session
+        int key = makeKey(tabIndex, buttonIndex);
+        auto& clipData = m_clips[key];
+
+        // Restore display name and clip group
+        if (clipObj->hasProperty("displayName")) {
+          clipData.displayName = clipObj->getProperty("displayName").toString().toStdString();
+        }
+        if (clipObj->hasProperty("clipGroup")) {
+          clipData.clipGroup = static_cast<int>(clipObj->getProperty("clipGroup"));
+        }
+
+        // Phase 2: Restore trim points
+        if (clipObj->hasProperty("trimInSamples")) {
+          clipData.trimInSamples = static_cast<int64_t>(clipObj->getProperty("trimInSamples"));
+        }
+        if (clipObj->hasProperty("trimOutSamples")) {
+          clipData.trimOutSamples = static_cast<int64_t>(clipObj->getProperty("trimOutSamples"));
+        }
+
+        // Phase 3: Restore fade times
+        if (clipObj->hasProperty("fadeInSeconds")) {
+          clipData.fadeInSeconds = static_cast<double>(clipObj->getProperty("fadeInSeconds"));
+        }
+        if (clipObj->hasProperty("fadeOutSeconds")) {
+          clipData.fadeOutSeconds = static_cast<double>(clipObj->getProperty("fadeOutSeconds"));
+        }
+        if (clipObj->hasProperty("fadeInCurve")) {
+          clipData.fadeInCurve = clipObj->getProperty("fadeInCurve").toString().toStdString();
+        }
+        if (clipObj->hasProperty("fadeOutCurve")) {
+          clipData.fadeOutCurve = clipObj->getProperty("fadeOutCurve").toString().toStdString();
+        }
+      }
 
       // Restore original active tab
       m_currentTab = savedTab;

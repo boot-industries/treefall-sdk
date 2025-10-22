@@ -68,6 +68,17 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
     updateTrimInfoLabel();
   }
 
+  // Load waveform display
+  if (m_waveformDisplay && m_metadata.filePath.isNotEmpty()) {
+    juce::File audioFile(m_metadata.filePath);
+    if (audioFile.existsAsFile()) {
+      m_waveformDisplay->setAudioFile(audioFile);
+      m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples > 0
+                                                                     ? m_metadata.trimOutSamples
+                                                                     : m_metadata.durationSamples);
+    }
+  }
+
   // Phase 3: Initialize fade sliders
   if (m_fadeInSlider) {
     m_fadeInSlider->setValue(m_metadata.fadeInSeconds, juce::dontSendNotification);
@@ -221,8 +232,8 @@ void ClipEditDialog::buildPhase1UI() {
 }
 
 void ClipEditDialog::buildPhase2UI() {
-  // Waveform Display (simplified placeholder for now)
-  m_waveformDisplay = std::make_unique<juce::Component>();
+  // Waveform Display (real component)
+  m_waveformDisplay = std::make_unique<WaveformDisplay>();
   addAndMakeVisible(m_waveformDisplay.get());
 
   // Trim In Point
@@ -236,6 +247,10 @@ void ClipEditDialog::buildPhase2UI() {
   m_trimInSlider->onValueChange = [this]() {
     m_metadata.trimInSamples = static_cast<int64_t>(m_trimInSlider->getValue());
     updateTrimInfoLabel();
+    // Update waveform display markers
+    if (m_waveformDisplay) {
+      m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+    }
   };
   addAndMakeVisible(m_trimInSlider.get());
 
@@ -250,6 +265,10 @@ void ClipEditDialog::buildPhase2UI() {
   m_trimOutSlider->onValueChange = [this]() {
     m_metadata.trimOutSamples = static_cast<int64_t>(m_trimOutSlider->getValue());
     updateTrimInfoLabel();
+    // Update waveform display markers
+    if (m_waveformDisplay) {
+      m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+    }
   };
   addAndMakeVisible(m_trimOutSlider.get());
 
@@ -380,13 +399,10 @@ void ClipEditDialog::resized() {
   contentArea.removeFromTop(20); // Extra spacing before Phase 2
 
   // === PHASE 2: In/Out Points ===
-  // Waveform Display (placeholder)
+  // Waveform Display
   if (m_waveformDisplay) {
     auto waveformArea = contentArea.removeFromTop(100);
     m_waveformDisplay->setBounds(waveformArea);
-    // Draw simple waveform placeholder
-    auto& g = m_waveformDisplay->getLookAndFeel();
-    juce::ignoreUnused(g);
   }
   contentArea.removeFromTop(10);
 

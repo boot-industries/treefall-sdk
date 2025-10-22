@@ -40,6 +40,16 @@ public:
     int numChannels = 0;
     int64_t durationSamples = 0;
 
+    // Phase 2: Trim points (samples)
+    int64_t trimInSamples = 0;
+    int64_t trimOutSamples = 0;
+
+    // Phase 3: Fade times (seconds)
+    double fadeInSeconds = 0.0;
+    double fadeOutSeconds = 0.0;
+    std::string fadeInCurve = "Linear"; // Linear, EqualPower, Exponential
+    std::string fadeOutCurve = "Linear";
+
     bool isValid() const {
       return !filePath.empty();
     }
@@ -85,6 +95,14 @@ public:
    * @return true if file exists and metadata extracted
    */
   bool loadClip(int buttonIndex, const juce::String& filePath);
+
+  /**
+   * Update clip metadata for a button in current tab
+   *
+   * @param buttonIndex 0-47 for MVP (per tab)
+   * @param clipData Updated clip metadata
+   */
+  void setClip(int buttonIndex, const ClipData& clipData);
 
   /**
    * Remove clip from button in current tab

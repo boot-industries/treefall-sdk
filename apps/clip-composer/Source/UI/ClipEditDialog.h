@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "WaveformDisplay.h"
 #include <functional>
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -95,7 +96,7 @@ private:
   std::unique_ptr<juce::TextEditor> m_filePathEditor;
 
   // Phase 2: In/Out point controls
-  std::unique_ptr<juce::Component> m_waveformDisplay;
+  std::unique_ptr<WaveformDisplay> m_waveformDisplay;
   std::unique_ptr<juce::Label> m_trimInLabel;
   std::unique_ptr<juce::Slider> m_trimInSlider;
   std::unique_ptr<juce::Label> m_trimOutLabel;
