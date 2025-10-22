@@ -6,6 +6,7 @@
 #include "ClipGrid/ClipGrid.h"
 #include "Session/SessionManager.h"
 #include "Transport/TransportControls.h"
+#include "UI/ClipEditDialog.h"
 #include "UI/InterLookAndFeel.h"
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -47,7 +48,8 @@ private:
   //==============================================================================
   // Core Functionality
   void onClipRightClicked(int buttonIndex);
-  void onClipTriggered(int buttonIndex); // Trigger clip (keyboard or mouse)
+  void onClipTriggered(int buttonIndex);     // Trigger clip (keyboard or mouse)
+  void onClipDoubleClicked(int buttonIndex); // Edit clip metadata
   void loadClipToButton(int buttonIndex, const juce::String& filePath);
   void loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex);
   void updateButtonFromClip(int buttonIndex);

@@ -34,8 +34,9 @@ public:
 
   //==============================================================================
   // Callbacks for button events
-  std::function<void(int buttonIndex)> onButtonClicked;      // Left-click (trigger)
-  std::function<void(int buttonIndex)> onButtonRightClicked; // Right-click (load)
+  std::function<void(int buttonIndex)> onButtonClicked;       // Left-click (trigger)
+  std::function<void(int buttonIndex)> onButtonRightClicked;  // Right-click (load)
+  std::function<void(int buttonIndex)> onButtonDoubleClicked; // Double-click (edit)
   std::function<void(const juce::Array<juce::File>& files, int buttonIndex)>
       onFilesDropped; // Drag & drop files
   std::function<void(int sourceButtonIndex, int targetButtonIndex)>

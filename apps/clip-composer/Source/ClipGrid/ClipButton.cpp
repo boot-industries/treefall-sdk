@@ -178,42 +178,57 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     currentY = topRow.getBottom() + 2.0f;
   }
 
-  // === MIDDLE: Clip Name (primary focus) ===
+  // === MIDDLE: Clip Name + Duration (primary focus) ===
   {
     float nameHeight = contentArea.getHeight() * 0.5f;
     auto nameArea =
         juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
 
+    // Clip Name (larger, bold)
     g.setColour(juce::Colours::white);
-    g.setFont(juce::FontOptions("Inter", 16.8f, juce::Font::bold)); // 20% increase: 14 -> 16.8
+    g.setFont(juce::FontOptions("Inter", 14.4f, juce::Font::bold));
 
-    // Enable full text wrapping (no truncation)
-    g.drawText(m_clipName, nameArea, juce::Justification::centred,
-               true); // Enable word wrap for long names
+    // Reserve space for duration display below name
+    auto nameOnlyArea = nameArea.withTrimmedBottom(20.0f);
+    g.drawFittedText(m_clipName, nameOnlyArea.toNearestInt(), juce::Justification::centred,
+                     2, // Allow up to 2 lines for name
+                     0.9f);
+
+    // Duration / Time Remaining (most important metric!)
+    auto durationArea = nameArea.removeFromBottom(18.0f);
+    if (m_durationSeconds > 0.0) {
+      g.setFont(juce::FontOptions("Inter", 15.0f, juce::Font::bold));
+
+      if (m_state == State::Playing && m_playbackProgress > 0.0f) {
+        // Show elapsed / remaining during playback
+        double elapsed = m_durationSeconds * m_playbackProgress;
+        double remaining = m_durationSeconds - elapsed;
+        juce::String timeDisplay =
+            "▶ " + formatDuration(elapsed) + " / -" + formatDuration(remaining);
+        g.setColour(juce::Colour(0xff00ff00)); // Bright green during playback
+        g.drawText(timeDisplay, durationArea, juce::Justification::centred, false);
+      } else {
+        // Show total duration when stopped
+        g.setColour(juce::Colours::white.withAlpha(0.9f));
+        g.drawText(formatDuration(m_durationSeconds), durationArea, juce::Justification::centred,
+                   false);
+      }
+    }
 
     currentY = nameArea.getBottom();
   }
 
-  // === BOTTOM ROW: Duration + Beat Offset + Group ===
+  // === BOTTOM ROW: Beat Offset + Group ===
   {
-    auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 28.0f,
-                                             contentArea.getWidth(), 28.0f);
+    auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 24.0f,
+                                             contentArea.getWidth(), 24.0f);
 
-    // Duration (left, prominent) - 20% increase: 11 -> 13.2
-    if (m_durationSeconds > 0.0) {
-      g.setColour(juce::Colours::white.withAlpha(0.9f));
-      g.setFont(juce::FontOptions("Inter", 13.2f, juce::Font::plain));
-      g.drawText(formatDuration(m_durationSeconds),
-                 bottomArea.withTrimmedRight(bottomArea.getWidth() * 0.5f),
-                 juce::Justification::centredLeft, false);
-    }
-
-    // Beat offset (center, if present) - e.g., "//3+" - 20% increase: 10 -> 12
+    // Beat offset (left, if present) - e.g., "//3+"
     if (m_beatOffset.isNotEmpty()) {
       g.setColour(juce::Colour(0xffffaa00)); // Orange for timing info
       g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::bold));
-      g.drawText("//" + m_beatOffset, bottomArea.withSizeKeepingCentre(60.0f, 14.0f),
-                 juce::Justification::centred, false);
+      g.drawText("//" + m_beatOffset, bottomArea.withTrimmedRight(bottomArea.getWidth() * 0.7f),
+                 juce::Justification::centredLeft, false);
     }
 
     // Clip group indicator (right) - e.g., "G1", "G2"
@@ -225,13 +240,13 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
           juce::Colour(0xffe74c3c)  // Red - Group 3
       };
 
-      auto groupBadge = bottomArea.removeFromRight(24.0f).withTrimmedTop(8.0f).withHeight(16.0f);
+      auto groupBadge = bottomArea.removeFromRight(24.0f).withTrimmedTop(4.0f).withHeight(16.0f);
 
       // Draw group badge background
       g.setColour(groupColors[m_clipGroup].withAlpha(0.8f));
       g.fillRoundedRectangle(groupBadge, 3.0f);
 
-      // Draw group number - 20% increase: 9 -> 10.8
+      // Draw group number
       g.setColour(juce::Colours::white);
       g.setFont(juce::FontOptions("Inter", 10.8f, juce::Font::bold));
       g.drawText("G" + juce::String(m_clipGroup + 1), groupBadge, juce::Justification::centred,
@@ -431,11 +446,19 @@ void ClipButton::mouseUp(const juce::MouseEvent& e) {
     }
     m_isDragging = false;
   } else {
-    // Short click - trigger clip
+    // Short click - check for double-click
     auto holdTime = juce::Time::getCurrentTime() - m_mouseDownTime;
     if (holdTime.inMilliseconds() < DRAG_HOLD_TIME_MS) {
-      if (onClick)
-        onClick(m_buttonIndex);
+      // Check if this is a double-click
+      if (e.getNumberOfClicks() >= 2 && m_state != State::Empty) {
+        // Double-click on loaded clip - open edit dialog
+        if (onDoubleClick)
+          onDoubleClick(m_buttonIndex);
+      } else {
+        // Single click - trigger clip
+        if (onClick)
+          onClick(m_buttonIndex);
+      }
     }
   }
 }

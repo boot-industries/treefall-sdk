@@ -24,6 +24,9 @@ MainComponent::MainComponent() {
   // Wire up left-click handler for triggering clips
   m_clipGrid->onButtonClicked = [this](int buttonIndex) { onClipTriggered(buttonIndex); };
 
+  // Wire up double-click handler for editing clips
+  m_clipGrid->onButtonDoubleClicked = [this](int buttonIndex) { onClipDoubleClicked(buttonIndex); };
+
   // Wire up drag & drop handler
   m_clipGrid->onFilesDropped = [this](const juce::Array<juce::File>& files, int buttonIndex) {
     loadMultipleFiles(files, buttonIndex);
@@ -85,37 +88,13 @@ MainComponent::~MainComponent() {
 void MainComponent::paint(juce::Graphics& g) {
   // Dark background (professional broadcast look)
   g.fillAll(juce::Colour(0xff151515));
-
-  // Header bar area (top 60px)
-  g.setColour(juce::Colour(0xff252525));
-  g.fillRect(0, 0, getWidth(), 60);
-
-  // Title
-  g.setColour(juce::Colours::white);
-  g.setFont(juce::FontOptions("Inter", 24.0f, juce::Font::bold));
-  g.drawText("Clip Composer", 20, 0, 400, 60, juce::Justification::centredLeft, false);
-
-  // Version badge
-  g.setColour(juce::Colours::orange);
-  g.setFont(juce::FontOptions("Inter", 11.0f, juce::Font::bold));
-  g.drawText("MVP", 280, 0, 50, 60, juce::Justification::centredLeft, false);
-
-  // Status text (right side)
-  g.setColour(juce::Colours::lightgrey);
-  g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
-  g.drawText("48 Buttons | Week 3 | SDK Integration Pending", getWidth() - 350, 0, 330, 60,
-             juce::Justification::centredRight, false);
 }
 
 void MainComponent::resized() {
   grabKeyboardFocus(); // Ensure we get keyboard events
   auto bounds = getLocalBounds();
 
-  // Header bar (60px)
-  auto headerArea = bounds.removeFromTop(60);
-  juce::ignoreUnused(headerArea);
-
-  // Tab switcher below header (40px)
+  // Tab switcher at top (40px)
   auto tabArea = bounds.removeFromTop(40);
   if (m_tabSwitcher) {
     m_tabSwitcher->setBounds(tabArea.reduced(10, 0)); // 10px horizontal margin
@@ -499,6 +478,70 @@ void MainComponent::onClipTriggered(int buttonIndex) {
   }
 }
 
+void MainComponent::onClipDoubleClicked(int buttonIndex) {
+  DBG("MainComponent: Button " + juce::String(buttonIndex) + " double-clicked (edit dialog)");
+
+  // Check if clip is loaded
+  if (!m_sessionManager.hasClip(buttonIndex)) {
+    DBG("MainComponent: Button " + juce::String(buttonIndex) + " has no clip loaded");
+    return;
+  }
+
+  // Get clip metadata from SessionManager
+  auto clipData = m_sessionManager.getClip(buttonIndex);
+
+  // Create edit dialog
+  auto* dialog = new ClipEditDialog();
+
+  // Convert SessionManager::ClipData to ClipEditDialog::ClipMetadata
+  ClipEditDialog::ClipMetadata metadata;
+  metadata.displayName = juce::String(clipData.displayName);
+  metadata.filePath = juce::String(clipData.filePath);
+  metadata.color = clipData.color;
+  metadata.clipGroup = clipData.clipGroup;
+  metadata.sampleRate = clipData.sampleRate;
+  metadata.numChannels = clipData.numChannels;
+  metadata.durationSamples = clipData.durationSamples;
+
+  dialog->setClipMetadata(metadata);
+
+  // Set up callbacks
+  dialog->onOkClicked = [this, buttonIndex, dialog](const ClipEditDialog::ClipMetadata& edited) {
+    // Update SessionManager with edited metadata
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+    clipData.displayName = edited.displayName.toStdString();
+    clipData.color = edited.color;
+    clipData.clipGroup = edited.clipGroup;
+
+    // TODO: Update SessionManager (needs a setClip() method)
+    // For now, we can update the button directly
+    auto button = m_clipGrid->getButton(buttonIndex);
+    if (button) {
+      button->setClipName(edited.displayName);
+      button->setClipColor(edited.color);
+      button->setClipGroup(edited.clipGroup);
+    }
+
+    DBG("MainComponent: Updated clip metadata for button " << buttonIndex);
+
+    // Close dialog
+    dialog->setVisible(false);
+    delete dialog;
+  };
+
+  dialog->onCancelClicked = [dialog]() {
+    // Close dialog without saving
+    dialog->setVisible(false);
+    delete dialog;
+  };
+
+  // Show dialog as modal
+  dialog->setSize(600, 500);
+  dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
+  addAndMakeVisible(dialog);
+  dialog->toFront(true);
+}
+
 void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex) {
   // Load multiple files sequentially starting from startButtonIndex
   // Files wrap by rows: if grid is 6 columns, files fill 0-5, 6-11, 12-17, etc.
@@ -708,6 +751,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addItem(20, "Audio I/O Settings...");
     menu.addSeparator();
     menu.addItem(21, "Show Audio Engine Info");
+    menu.addSeparator();
+    menu.addItem(22, "Load Multiple Audio Files...");
   }
 
   return menu;
@@ -856,6 +901,20 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Audio Engine Info", info,
                                            "OK");
+    break;
+  }
+
+  case 22: // Load Multiple Audio Files
+  {
+    juce::FileChooser chooser("Select Audio Files",
+                              juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+                              "*.wav;*.aiff;*.aif;*.flac");
+
+    if (chooser.browseForMultipleFilesToOpen()) {
+      auto files = chooser.getResults();
+      // Start loading from first button in current tab
+      loadMultipleFiles(files, 0);
+    }
     break;
   }
 

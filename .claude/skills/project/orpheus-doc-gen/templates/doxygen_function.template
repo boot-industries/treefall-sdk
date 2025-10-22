@@ -1,0 +1,60 @@
+/**
+ * @brief [One-line description of what this function does]
+ *
+ * [Detailed description: explain behavior, algorithm, implementation notes.
+ * Include performance characteristics (O-notation), real-time safety considerations,
+ * and any important side effects or state changes.]
+ *
+ * @param[in] paramName Description of input parameter, including:
+ *                      - Valid range/constraints
+ *                      - Units (Hz, samples, dB, etc.)
+ *                      - nullptr handling (if pointer)
+ * @param[out] outParam Description of output parameter
+ * @param[in,out] inOutParam Description of input/output parameter
+ *
+ * @return Description of return value:
+ *         - What it represents
+ *         - Special values (e.g., -1 for error, nullptr for not found)
+ *         - Error codes and their meanings
+ *
+ * @pre Preconditions that must be true before calling:
+ *      - Object state requirements
+ *      - Parameter constraints
+ *      - Initialization requirements
+ *
+ * @post Postconditions guaranteed after successful execution:
+ *       - Object state changes
+ *       - Output guarantees
+ *       - Side effects
+ *
+ * @note Important usage notes:
+ *       - Performance characteristics
+ *       - Edge case behavior
+ *       - Related functions
+ *
+ * @warning Warnings about potential pitfalls or non-obvious behavior:
+ *          - Memory ownership
+ *          - Thread safety issues
+ *          - Resource management
+ *
+ * @thread_safety [Thread-safe / Not thread-safe / Audio-thread-safe]
+ * [Explanation: which operations are safe, which require external sync]
+ *
+ * @real_time [Yes / No]
+ * [If Yes: explain why (no allocs, no locks, bounded time)]
+ * [If No: explain why (allocates, blocks, unbounded)]
+ *
+ * @complexity Time: O(n), Space: O(1)
+ * [Worst-case time and space complexity]
+ *
+ * @example
+ * @code
+ * // Typical usage example
+ * AudioProcessor processor;
+ * float* outputs[2] = {leftBuffer, rightBuffer};
+ * processor.processBlock(outputs, 512, 48000);
+ * @endcode
+ *
+ * @see RelatedFunction() for related functionality
+ * @see OtherClass for alternative approach
+ */

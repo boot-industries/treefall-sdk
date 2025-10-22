@@ -18,6 +18,10 @@ void ClipGrid::createButtons() {
     // Wire up callbacks
     button->onClick = [this](int index) { handleButtonLeftClick(index); };
     button->onRightClick = [this](int index) { handleButtonRightClick(index); };
+    button->onDoubleClick = [this](int index) {
+      if (onButtonDoubleClicked)
+        onButtonDoubleClicked(index);
+    };
     button->onDragToButton = [this](int sourceIndex, int targetIndex) {
       if (onButtonDraggedToButton) {
         onButtonDraggedToButton(sourceIndex, targetIndex);
