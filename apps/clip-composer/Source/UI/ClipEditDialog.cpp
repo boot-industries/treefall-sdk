@@ -7,7 +7,13 @@ ClipEditDialog::ClipEditDialog() {
   // Build Phase 1 UI (basic metadata)
   buildPhase1UI();
 
-  setSize(600, 500);
+  // Build Phase 2 UI (In/Out points)
+  buildPhase2UI();
+
+  // Build Phase 3 UI (Fade times)
+  buildPhase3UI();
+
+  setSize(700, 800); // Expanded for all phases
 }
 
 //==============================================================================
@@ -45,6 +51,71 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
       m_colorComboBox->setSelectedId(8); // Pink
     else
       m_colorComboBox->setSelectedId(1); // Default to Red
+  }
+
+  // Phase 2: Initialize trim sliders based on audio file duration
+  if (m_trimInSlider && m_trimOutSlider) {
+    double maxSamples = static_cast<double>(m_metadata.durationSamples);
+    m_trimInSlider->setRange(0.0, maxSamples, 1.0);
+    m_trimOutSlider->setRange(0.0, maxSamples, 1.0);
+
+    m_trimInSlider->setValue(static_cast<double>(m_metadata.trimInSamples),
+                             juce::dontSendNotification);
+    m_trimOutSlider->setValue(
+        m_metadata.trimOutSamples > 0 ? static_cast<double>(m_metadata.trimOutSamples) : maxSamples,
+        juce::dontSendNotification);
+
+    updateTrimInfoLabel();
+  }
+
+  // Phase 3: Initialize fade sliders
+  if (m_fadeInSlider) {
+    m_fadeInSlider->setValue(m_metadata.fadeInSeconds, juce::dontSendNotification);
+  }
+  if (m_fadeOutSlider) {
+    m_fadeOutSlider->setValue(m_metadata.fadeOutSeconds, juce::dontSendNotification);
+  }
+
+  // Set fade curve combos
+  if (m_fadeInCurveCombo) {
+    if (m_metadata.fadeInCurve == "Linear")
+      m_fadeInCurveCombo->setSelectedId(1, juce::dontSendNotification);
+    else if (m_metadata.fadeInCurve == "EqualPower")
+      m_fadeInCurveCombo->setSelectedId(2, juce::dontSendNotification);
+    else if (m_metadata.fadeInCurve == "Exponential")
+      m_fadeInCurveCombo->setSelectedId(3, juce::dontSendNotification);
+  }
+
+  if (m_fadeOutCurveCombo) {
+    if (m_metadata.fadeOutCurve == "Linear")
+      m_fadeOutCurveCombo->setSelectedId(1, juce::dontSendNotification);
+    else if (m_metadata.fadeOutCurve == "EqualPower")
+      m_fadeOutCurveCombo->setSelectedId(2, juce::dontSendNotification);
+    else if (m_metadata.fadeOutCurve == "Exponential")
+      m_fadeOutCurveCombo->setSelectedId(3, juce::dontSendNotification);
+  }
+}
+
+void ClipEditDialog::updateTrimInfoLabel() {
+  if (!m_trimInfoLabel)
+    return;
+
+  int64_t trimmedSamples = m_metadata.trimOutSamples - m_metadata.trimInSamples;
+
+  if (trimmedSamples < 0) {
+    m_trimInfoLabel->setText("Invalid trim range", juce::dontSendNotification);
+    return;
+  }
+
+  if (m_metadata.sampleRate > 0) {
+    double durationSeconds = static_cast<double>(trimmedSamples) / m_metadata.sampleRate;
+    int totalSeconds = static_cast<int>(durationSeconds);
+    int minutes = totalSeconds / 60;
+    int seconds = totalSeconds % 60;
+
+    juce::String durationText =
+        juce::String::formatted("Trimmed Duration: %d:%02d", minutes, seconds);
+    m_trimInfoLabel->setText(durationText, juce::dontSendNotification);
   }
 }
 
@@ -150,11 +221,113 @@ void ClipEditDialog::buildPhase1UI() {
 }
 
 void ClipEditDialog::buildPhase2UI() {
-  // TODO: Add In/Out point controls with waveform display
+  // Waveform Display (simplified placeholder for now)
+  m_waveformDisplay = std::make_unique<juce::Component>();
+  addAndMakeVisible(m_waveformDisplay.get());
+
+  // Trim In Point
+  m_trimInLabel = std::make_unique<juce::Label>("trimInLabel", "Trim In (samples):");
+  m_trimInLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  addAndMakeVisible(m_trimInLabel.get());
+
+  m_trimInSlider =
+      std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+  m_trimInSlider->setRange(0.0, 1000000.0, 1.0); // Will be set dynamically based on file
+  m_trimInSlider->onValueChange = [this]() {
+    m_metadata.trimInSamples = static_cast<int64_t>(m_trimInSlider->getValue());
+    updateTrimInfoLabel();
+  };
+  addAndMakeVisible(m_trimInSlider.get());
+
+  // Trim Out Point
+  m_trimOutLabel = std::make_unique<juce::Label>("trimOutLabel", "Trim Out (samples):");
+  m_trimOutLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  addAndMakeVisible(m_trimOutLabel.get());
+
+  m_trimOutSlider =
+      std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+  m_trimOutSlider->setRange(0.0, 1000000.0, 1.0);
+  m_trimOutSlider->onValueChange = [this]() {
+    m_metadata.trimOutSamples = static_cast<int64_t>(m_trimOutSlider->getValue());
+    updateTrimInfoLabel();
+  };
+  addAndMakeVisible(m_trimOutSlider.get());
+
+  // Trim Info Label (shows duration in seconds)
+  m_trimInfoLabel = std::make_unique<juce::Label>("trimInfoLabel", "Duration: --:--");
+  m_trimInfoLabel->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+  m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+  addAndMakeVisible(m_trimInfoLabel.get());
 }
 
 void ClipEditDialog::buildPhase3UI() {
-  // TODO: Add Fade In/Out time sliders
+  // Fade In Section
+  m_fadeInLabel = std::make_unique<juce::Label>("fadeInLabel", "Fade In:");
+  m_fadeInLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  addAndMakeVisible(m_fadeInLabel.get());
+
+  m_fadeInSlider =
+      std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+  m_fadeInSlider->setRange(0.0, 3.0, 0.1); // 0.0s - 3.0s in 0.1s increments
+  m_fadeInSlider->setTextValueSuffix(" s");
+  m_fadeInSlider->onValueChange = [this]() {
+    m_metadata.fadeInSeconds = m_fadeInSlider->getValue();
+  };
+  addAndMakeVisible(m_fadeInSlider.get());
+
+  m_fadeInCurveCombo = std::make_unique<juce::ComboBox>();
+  m_fadeInCurveCombo->addItem("Linear", 1);
+  m_fadeInCurveCombo->addItem("Equal Power", 2);
+  m_fadeInCurveCombo->addItem("Exponential", 3);
+  m_fadeInCurveCombo->setSelectedId(1, juce::dontSendNotification);
+  m_fadeInCurveCombo->onChange = [this]() {
+    switch (m_fadeInCurveCombo->getSelectedId()) {
+    case 1:
+      m_metadata.fadeInCurve = "Linear";
+      break;
+    case 2:
+      m_metadata.fadeInCurve = "EqualPower";
+      break;
+    case 3:
+      m_metadata.fadeInCurve = "Exponential";
+      break;
+    }
+  };
+  addAndMakeVisible(m_fadeInCurveCombo.get());
+
+  // Fade Out Section
+  m_fadeOutLabel = std::make_unique<juce::Label>("fadeOutLabel", "Fade Out:");
+  m_fadeOutLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  addAndMakeVisible(m_fadeOutLabel.get());
+
+  m_fadeOutSlider =
+      std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+  m_fadeOutSlider->setRange(0.0, 3.0, 0.1); // 0.0s - 3.0s in 0.1s increments
+  m_fadeOutSlider->setTextValueSuffix(" s");
+  m_fadeOutSlider->onValueChange = [this]() {
+    m_metadata.fadeOutSeconds = m_fadeOutSlider->getValue();
+  };
+  addAndMakeVisible(m_fadeOutSlider.get());
+
+  m_fadeOutCurveCombo = std::make_unique<juce::ComboBox>();
+  m_fadeOutCurveCombo->addItem("Linear", 1);
+  m_fadeOutCurveCombo->addItem("Equal Power", 2);
+  m_fadeOutCurveCombo->addItem("Exponential", 3);
+  m_fadeOutCurveCombo->setSelectedId(1, juce::dontSendNotification);
+  m_fadeOutCurveCombo->onChange = [this]() {
+    switch (m_fadeOutCurveCombo->getSelectedId()) {
+    case 1:
+      m_metadata.fadeOutCurve = "Linear";
+      break;
+    case 2:
+      m_metadata.fadeOutCurve = "EqualPower";
+      break;
+    case 3:
+      m_metadata.fadeOutCurve = "Exponential";
+      break;
+    }
+  };
+  addAndMakeVisible(m_fadeOutCurveCombo.get());
 }
 
 //==============================================================================
@@ -181,31 +354,89 @@ void ClipEditDialog::resized() {
   // Content area with padding
   auto contentArea = bounds.reduced(20);
 
+  // === PHASE 1: Basic Metadata ===
   // Clip Name
   auto nameRow = contentArea.removeFromTop(60);
   m_nameLabel->setBounds(nameRow.removeFromTop(20));
   m_nameEditor->setBounds(nameRow.removeFromTop(30));
-
   contentArea.removeFromTop(10); // Spacing
 
   // File Path
   auto filePathRow = contentArea.removeFromTop(60);
   m_filePathLabel->setBounds(filePathRow.removeFromTop(20));
   m_filePathEditor->setBounds(filePathRow.removeFromTop(30));
-
   contentArea.removeFromTop(10); // Spacing
 
   // Color
   auto colorRow = contentArea.removeFromTop(50);
   m_colorLabel->setBounds(colorRow.removeFromLeft(150));
   m_colorComboBox->setBounds(colorRow.removeFromLeft(250));
-
   contentArea.removeFromTop(10); // Spacing
 
   // Clip Group
   auto groupRow = contentArea.removeFromTop(50);
   m_groupLabel->setBounds(groupRow.removeFromLeft(150));
   m_groupComboBox->setBounds(groupRow.removeFromLeft(250));
+  contentArea.removeFromTop(20); // Extra spacing before Phase 2
+
+  // === PHASE 2: In/Out Points ===
+  // Waveform Display (placeholder)
+  if (m_waveformDisplay) {
+    auto waveformArea = contentArea.removeFromTop(100);
+    m_waveformDisplay->setBounds(waveformArea);
+    // Draw simple waveform placeholder
+    auto& g = m_waveformDisplay->getLookAndFeel();
+    juce::ignoreUnused(g);
+  }
+  contentArea.removeFromTop(10);
+
+  // Trim In
+  if (m_trimInLabel && m_trimInSlider) {
+    auto trimInRow = contentArea.removeFromTop(50);
+    m_trimInLabel->setBounds(trimInRow.removeFromTop(20));
+    m_trimInSlider->setBounds(trimInRow.removeFromTop(25));
+  }
+  contentArea.removeFromTop(5);
+
+  // Trim Out
+  if (m_trimOutLabel && m_trimOutSlider) {
+    auto trimOutRow = contentArea.removeFromTop(50);
+    m_trimOutLabel->setBounds(trimOutRow.removeFromTop(20));
+    m_trimOutSlider->setBounds(trimOutRow.removeFromTop(25));
+  }
+  contentArea.removeFromTop(5);
+
+  // Trim Info Label
+  if (m_trimInfoLabel) {
+    auto trimInfoRow = contentArea.removeFromTop(25);
+    m_trimInfoLabel->setBounds(trimInfoRow);
+  }
+  contentArea.removeFromTop(20); // Extra spacing before Phase 3
+
+  // === PHASE 3: Fade Times ===
+  // Fade In
+  if (m_fadeInLabel && m_fadeInSlider && m_fadeInCurveCombo) {
+    auto fadeInRow = contentArea.removeFromTop(60);
+    m_fadeInLabel->setBounds(fadeInRow.removeFromTop(20));
+
+    auto fadeInControlRow = fadeInRow.removeFromTop(30);
+    m_fadeInSlider->setBounds(fadeInControlRow.removeFromLeft(fadeInControlRow.getWidth() - 160));
+    fadeInControlRow.removeFromLeft(10); // Spacing
+    m_fadeInCurveCombo->setBounds(fadeInControlRow);
+  }
+  contentArea.removeFromTop(10);
+
+  // Fade Out
+  if (m_fadeOutLabel && m_fadeOutSlider && m_fadeOutCurveCombo) {
+    auto fadeOutRow = contentArea.removeFromTop(60);
+    m_fadeOutLabel->setBounds(fadeOutRow.removeFromTop(20));
+
+    auto fadeOutControlRow = fadeOutRow.removeFromTop(30);
+    m_fadeOutSlider->setBounds(
+        fadeOutControlRow.removeFromLeft(fadeOutControlRow.getWidth() - 160));
+    fadeOutControlRow.removeFromLeft(10); // Spacing
+    m_fadeOutCurveCombo->setBounds(fadeOutControlRow);
+  }
 
   // Dialog buttons at bottom
   auto buttonArea = contentArea.removeFromBottom(40);

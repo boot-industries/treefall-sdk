@@ -73,9 +73,10 @@ public:
 
 private:
   //==============================================================================
-  void buildPhase1UI(); // File metadata
-  void buildPhase2UI(); // In/Out points
-  void buildPhase3UI(); // Fade times
+  void buildPhase1UI();       // File metadata
+  void buildPhase2UI();       // In/Out points
+  void buildPhase3UI();       // Fade times
+  void updateTrimInfoLabel(); // Update trim duration display
 
   //==============================================================================
   ClipMetadata m_metadata;
@@ -92,6 +93,23 @@ private:
 
   std::unique_ptr<juce::Label> m_filePathLabel;
   std::unique_ptr<juce::TextEditor> m_filePathEditor;
+
+  // Phase 2: In/Out point controls
+  std::unique_ptr<juce::Component> m_waveformDisplay;
+  std::unique_ptr<juce::Label> m_trimInLabel;
+  std::unique_ptr<juce::Slider> m_trimInSlider;
+  std::unique_ptr<juce::Label> m_trimOutLabel;
+  std::unique_ptr<juce::Slider> m_trimOutSlider;
+  std::unique_ptr<juce::Label> m_trimInfoLabel;
+
+  // Phase 3: Fade time controls
+  std::unique_ptr<juce::Label> m_fadeInLabel;
+  std::unique_ptr<juce::Slider> m_fadeInSlider;
+  std::unique_ptr<juce::ComboBox> m_fadeInCurveCombo;
+
+  std::unique_ptr<juce::Label> m_fadeOutLabel;
+  std::unique_ptr<juce::Slider> m_fadeOutSlider;
+  std::unique_ptr<juce::ComboBox> m_fadeOutCurveCombo;
 
   // Dialog buttons
   std::unique_ptr<juce::TextButton> m_okButton;
