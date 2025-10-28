@@ -3,9 +3,9 @@
 **Workspace:** This repo inherits general conventions from `~/chrislyons/dev/CLAUDE.md`
 
 **Location:** `/apps/clip-composer/`
-**Status:** Active Development
-**Framework:** JUCE 7.x
-**SDK:** Orpheus SDK (real-time infrastructure)
+**Status:** v0.1.0-alpha Released (October 22, 2025)
+**Framework:** JUCE 8.0.4
+**SDK:** Orpheus SDK M2 (real-time infrastructure)
 
 ---
 
@@ -14,6 +14,7 @@
 This guide helps developers build the **Orpheus Clip Composer** application—a professional soundboard for broadcast, theater, and live performance. This is an **application** that uses the Orpheus SDK as its audio engine foundation.
 
 **What this guide covers:**
+
 - Building and running Clip Composer
 - Integrating with Orpheus SDK modules
 - JUCE-specific patterns and conventions
@@ -21,6 +22,7 @@ This guide helps developers build the **Orpheus Clip Composer** application—a 
 - Threading model and real-time safety
 
 **What this guide does NOT cover:**
+
 - Orpheus SDK core development (see `/CLAUDE.md` at repository root)
 - Design specifications (see `docs/OCC/` for design documents)
 - SDK module implementation (see `/src/core/` and SDK documentation)
@@ -32,6 +34,7 @@ This guide helps developers build the **Orpheus Clip Composer** application—a 
 ### Prerequisites
 
 1. **Orpheus SDK built and tested:**
+
    ```bash
    cd /Users/chrislyons/dev/orpheus-sdk
    cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -109,6 +112,7 @@ Clip Composer follows a **5-layer architecture** (see `/docs/OCC/OCC023` for ful
 Clip Composer uses **3 threads** to maintain real-time performance:
 
 ### 1. Message Thread (UI Thread)
+
 - **Owner:** JUCE MessageManager
 - **Responsibilities:**
   - Handle UI events (button clicks, keyboard, mouse)
@@ -121,6 +125,7 @@ Clip Composer uses **3 threads** to maintain real-time performance:
   - Use lock-free commands to communicate with audio thread
 
 ### 2. Audio Thread (Real-Time Thread)
+
 - **Owner:** IAudioDriver (CoreAudio, ASIO, WASAPI)
 - **Responsibilities:**
   - Process audio in `processAudio()` callback (~10ms @ 512 samples)
@@ -135,6 +140,7 @@ Clip Composer uses **3 threads** to maintain real-time performance:
   - ✅ Use lock-free structures (atomic operations only)
 
 ### 3. File I/O Thread (Background Thread)
+
 - **Owner:** JUCE ThreadPool or custom worker
 - **Responsibilities:**
   - Pre-load audio files for waveform display
@@ -146,6 +152,7 @@ Clip Composer uses **3 threads** to maintain real-time performance:
   - Communicate with UI via callbacks on message thread
 
 **Thread Safety Verification:**
+
 - SDK provides lock-free primitives (see `ITransportController` implementation)
 - Use `juce::MessageManager::callAsync()` for UI updates from background threads
 - Never call JUCE UI components from audio thread
@@ -254,6 +261,7 @@ Clip Composer sessions use JSON for human readability and version control friend
 **Location:** `~/Documents/Orpheus Clip Composer/Sessions/`
 
 **Example structure:**
+
 ```json
 {
   "sessionMetadata": {
@@ -278,10 +286,10 @@ Clip Composer sessions use JSON for human readability and version control friend
   ],
   "routing": {
     "clipGroups": [
-      {"name": "Music", "gain": 0.0, "mute": false},
-      {"name": "SFX", "gain": -3.0, "mute": false},
-      {"name": "Voice", "gain": 0.0, "mute": false},
-      {"name": "Backup", "gain": -6.0, "mute": false}
+      { "name": "Music", "gain": 0.0, "mute": false },
+      { "name": "SFX", "gain": -3.0, "mute": false },
+      { "name": "Voice", "gain": 0.0, "mute": false },
+      { "name": "Backup", "gain": -6.0, "mute": false }
     ]
   }
 }
@@ -506,6 +514,7 @@ From `/docs/OCC/OCC026` (Milestone 1 MVP):
 - **MTBF:** >100 hours continuous operation
 
 **Optimization Guidelines:**
+
 - Pre-load audio files on background thread
 - Use lock-free structures for all UI↔Audio communication
 - Profile with Instruments (macOS) or Visual Studio Profiler (Windows)
@@ -518,16 +527,19 @@ From `/docs/OCC/OCC026` (Milestone 1 MVP):
 All design specifications live in `/docs/OCC/`:
 
 **Product & Vision:**
+
 - **OCC021** - Product Vision (authoritative) - Market positioning, competitive analysis
 - **OCC026** - MVP Definition - 6-month plan, acceptance criteria
 
 **Technical Specifications:**
+
 - **OCC027** - API Contracts - C++ interfaces between OCC and SDK
 - **OCC023** - Component Architecture - 5-layer architecture, threading model
 - **OCC022** - Clip Metadata Schema - Complete JSON schema
 - **OCC024** - User Interaction Flows - 8 complete workflows
 
 **Technology Decisions:**
+
 - **OCC025** - UI Framework Decision - JUCE vs Electron (JUCE recommended)
 - **OCC028** - DSP Library Evaluation - Rubber Band vs SoundTouch (Rubber Band recommended)
 - **OCC029** - SDK Enhancement Recommendations - Gap analysis, 5 critical modules
@@ -607,14 +619,17 @@ All design specifications live in `/docs/OCC/`:
 ### During Development (SDK Modules Pending)
 
 **IRoutingMatrix not ready yet (Month 3-4):**
+
 - **Workaround:** Use 1:1 clip-to-output routing (bypass groups)
 - **Impact:** Can't test group routing UI, but basic playback works
 
 **Platform drivers in progress (Month 2):**
+
 - **Workaround:** Use dummy audio driver for development
 - **Impact:** No real audio output, but logic verification works
 
 **IPerformanceMonitor not ready yet (Month 4-5):**
+
 - **Workaround:** Use JUCE's built-in CPU meter
 - **Impact:** No detailed diagnostics, but basic monitoring works
 
@@ -638,6 +653,7 @@ From `/docs/OCC/OCC026`:
 
 **Problem:** `fatal error: 'orpheus/transport_controller.h' file not found`
 **Solution:** Ensure SDK is built and CMake can find it:
+
 ```bash
 cd /Users/chrislyons/dev/orpheus-sdk
 cmake --build build
@@ -646,6 +662,7 @@ cmake --build build
 
 **Problem:** Linker errors with libsndfile
 **Solution:** Install libsndfile and rebuild SDK:
+
 ```bash
 brew install libsndfile  # macOS
 vcpkg install libsndfile  # Windows
@@ -653,6 +670,7 @@ vcpkg install libsndfile  # Windows
 
 **Problem:** JUCE modules not found
 **Solution:** Set `JUCE_PATH` environment variable or update CMakeLists.txt:
+
 ```cmake
 set(JUCE_PATH "/path/to/JUCE" CACHE PATH "JUCE framework location")
 ```
@@ -664,12 +682,14 @@ set(JUCE_PATH "/path/to/JUCE" CACHE PATH "JUCE framework location")
 
 **Problem:** High CPU usage (>50% with 8 clips)
 **Solution:** Profile with Instruments/Visual Studio, check for:
+
 - Waveform rendering on audio thread (should be background thread)
 - UI updates blocking audio thread (use `callAsync()`)
 - Inefficient file I/O (should be cached/pre-loaded)
 
 **Problem:** Clips not starting (startClip() fails)
 **Solution:** Check SDK error codes:
+
 ```cpp
 auto result = transportController->startClip(handle);
 if (result != orpheus::SessionGraphError::OK) {
@@ -687,18 +707,21 @@ if (result != orpheus::SessionGraphError::OK) {
 **Weekly Sync:** Fridays, 30 minutes
 
 **When to escalate to SDK team:**
+
 - SDK API doesn't match OCC027 interface spec
 - Performance issues in SDK modules (e.g., high CPU, buffer underruns)
 - Missing functionality needed for OCC MVP
 - Cross-platform bugs in SDK (macOS vs Windows)
 
 **What SDK team provides:**
+
 - Real-time audio infrastructure (Modules 1-5)
 - Test fixtures (sample sessions, audio files)
 - Integration examples (minimal playback code)
 - Performance benchmarks (CPU, latency, memory)
 
 **What OCC team provides:**
+
 - Real-world usage patterns (drives SDK API design)
 - Beta testing feedback (stability, performance, usability)
 - Integration test results (reports bugs/issues)
@@ -714,6 +737,7 @@ From `/docs/OCC/OCC030` Section 10.3:
 - **Month 6:** OCC MVP beta (10 users)
 
 **Definition of Done for MVP:**
+
 - [ ] 960 clips loaded and displayable
 - [ ] 16 simultaneous clips playing with routing
 - [ ] <5ms latency with ASIO driver
@@ -770,6 +794,7 @@ From `/docs/OCC/OCC030` Section 10.3:
 ## Quick Reference: Common Tasks
 
 ### Load and play a single clip:
+
 ```cpp
 auto reader = orpheus::createAudioFileReader();
 reader->open("/path/to/clip.wav");
@@ -782,17 +807,20 @@ driver->start(audioCallback);
 ```
 
 ### Stop all clips (panic button):
+
 ```cpp
 transportController->stopAllClips();
 ```
 
 ### Update waveform display:
+
 ```cpp
 waveformDisplay->setAudioFile(reader.get(), metadata);
 waveformDisplay->repaint();
 ```
 
 ### Save current session:
+
 ```cpp
 sessionManager->saveSession(juce::File("~/Documents/OCC/my_session.json"));
 ```
@@ -802,22 +830,26 @@ sessionManager->saveSession(juce::File("~/Documents/OCC/my_session.json"));
 ## Additional Resources
 
 **Orpheus SDK Documentation:**
+
 - `/CLAUDE.md` - SDK development guide (core principles)
 - `/README.md` - Repository overview, build instructions
 - `/ARCHITECTURE.md` - SDK design rationale
 - `/ROADMAP.md` - Milestones, timeline
 
 **OCC Design Documentation:**
+
 - `/docs/OCC/README.md` - Complete documentation index
 - `/docs/OCC/CLAUDE.md` - Design documentation standards
 - `/docs/OCC/PROGRESS.md` - Design phase completion report
 
 **JUCE Resources:**
+
 - https://juce.com/learn/documentation - Official JUCE docs
 - https://github.com/juce-framework/JUCE/tree/master/examples - Example projects
 - https://forum.juce.com/ - Community forum
 
 **External Libraries:**
+
 - libsndfile: https://libsndfile.github.io/libsndfile/
 - Rubber Band: https://breakfastquay.com/rubberband/ (v1.0 integration)
 
@@ -825,6 +857,7 @@ sessionManager->saveSession(juce::File("~/Documents/OCC/my_session.json"));
 
 **Remember:** Clip Composer is a professional tool for broadcast, theater, and live performance. Design for 24/7 reliability, ultra-low latency, and zero crashes. When in doubt, favor simplicity, determinism, and user autonomy over short-term convenience.
 
-**Last Updated:** October 12, 2025
-**Status:** Active Development (Month 1 - SDK Integration Phase)
-**Next Review:** Weekly sync with SDK team
+**Last Updated:** October 22, 2025
+**Status:** v0.1.0-alpha Released - v0.2.0 Planning In Progress
+**Release:** https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.1.0-alpha
+**Next Review:** After v0.2.0 feature planning or first beta feedback

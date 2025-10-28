@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://orpheus.sdk/schemas/v1.0.0-beta/commands/SaveSession.json",
+  "title": "SaveSession",
+  "description": "Serializes session to file or string",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "SaveSession"
+    },
+    "path": {
+      "type": "string",
+      "description": "File path to save session (optional, returns JSON string if omitted)"
+    },
+    "id": {
+      "type": "string",
+      "description": "Optional request ID for tracking"
+    }
+  },
+  "required": ["type"],
+  "additionalProperties": false
+}

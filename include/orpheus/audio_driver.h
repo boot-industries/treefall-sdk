@@ -73,4 +73,10 @@ public:
 /// @return New dummy audio driver instance
 std::unique_ptr<IAudioDriver> createDummyAudioDriver();
 
+/// Factory function for CoreAudio driver (macOS only)
+/// @return New CoreAudio driver instance
+#ifdef __APPLE__
+std::unique_ptr<IAudioDriver> createCoreAudioDriver();
+#endif
+
 } // namespace orpheus

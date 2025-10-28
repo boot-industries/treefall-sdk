@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://orpheus.sdk/schemas/v1.0.0-beta/events/RenderDone.json",
+  "title": "RenderDone",
+  "description": "Fired when render completes (once per render)",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "RenderDone"
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Event timestamp (milliseconds since epoch)"
+    },
+    "renderId": {
+      "type": "string",
+      "description": "Render operation identifier"
+    },
+    "outputPath": {
+      "type": "string",
+      "description": "Path to rendered output file"
+    },
+    "sampleRate": {
+      "type": "number",
+      "description": "Sample rate of rendered audio"
+    },
+    "channels": {
+      "type": "number",
+      "description": "Number of channels"
+    },
+    "duration": {
+      "type": "number",
+      "description": "Duration in seconds"
+    },
+    "sequenceId": {
+      "type": "number",
+      "description": "Monotonic sequence ID for ordering"
+    }
+  },
+  "required": ["type", "timestamp"],
+  "additionalProperties": false
+}

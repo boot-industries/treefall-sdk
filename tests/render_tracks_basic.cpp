@@ -23,8 +23,8 @@ namespace support = orpheus::tests::support;
 namespace {
 
 class ScratchDir {
- public:
-  explicit ScratchDir(const std::string &name) {
+public:
+  explicit ScratchDir(const std::string& name) {
     const fs::path base = fs::temp_directory_path();
     path_ = base / ("orpheus_render_tracks_basic_" + name);
     std::error_code ec;
@@ -37,16 +37,17 @@ class ScratchDir {
     fs::remove_all(path_, ec);
   }
 
-  const fs::path &path() const { return path_; }
+  const fs::path& path() const {
+    return path_;
+  }
 
- private:
+private:
   fs::path path_;
 };
 
 class FailureArtifactGuard {
- public:
-  explicit FailureArtifactGuard(std::vector<fs::path> files)
-      : files_(std::move(files)) {}
+public:
+  explicit FailureArtifactGuard(std::vector<fs::path> files) : files_(std::move(files)) {}
 
   ~FailureArtifactGuard() {
     if (!::testing::Test::HasFailure()) {
@@ -55,7 +56,7 @@ class FailureArtifactGuard {
     try {
       const fs::path artifact_dir = fs::current_path() / "tmp" / "render_failures";
       fs::create_directories(artifact_dir);
-      for (const auto &file : files_) {
+      for (const auto& file : files_) {
         if (file.empty() || !fs::exists(file)) {
           continue;
         }
@@ -63,21 +64,19 @@ class FailureArtifactGuard {
         std::error_code ec;
         fs::copy_file(file, target, fs::copy_options::overwrite_existing, ec);
         if (!ec) {
-          std::cout << "Saved render artifact: "
-                    << fs::absolute(target) << std::endl;
+          std::cout << "Saved render artifact: " << fs::absolute(target) << std::endl;
         }
       }
-    } catch (const std::exception &ex) {
+    } catch (const std::exception& ex) {
       std::cout << "Failed to stash render artifacts: " << ex.what() << std::endl;
     }
   }
 
- private:
+private:
   std::vector<fs::path> files_;
 };
 
-std::vector<std::int64_t> DecodeChannel(const support::ParsedWav &wav,
-                                        std::size_t channel) {
+std::vector<std::int64_t> DecodeChannel(const support::ParsedWav& wav, std::size_t channel) {
   const std::size_t bytes_per_sample = (wav.bits_per_sample + 7u) / 8u;
   if (wav.channels == 0 || bytes_per_sample == 0) {
     return {};
@@ -108,16 +107,14 @@ std::vector<std::int64_t> DecodeChannel(const support::ParsedWav &wav,
     const std::size_t offset = frame * frame_stride + channel * bytes_per_sample;
     if (wav.audio_format == 1u) {
       if (wav.bits_per_sample == 16u) {
-        const std::int16_t value = static_cast<std::int16_t>(
-            static_cast<std::uint16_t>(wav.data[offset]) |
-            (static_cast<std::uint16_t>(wav.data[offset + 1]) << 8));
+        const std::int16_t value =
+            static_cast<std::int16_t>(static_cast<std::uint16_t>(wav.data[offset]) |
+                                      (static_cast<std::uint16_t>(wav.data[offset + 1]) << 8));
         samples[frame] = static_cast<std::int64_t>(value);
       } else if (wav.bits_per_sample == 24u) {
         std::int32_t value = static_cast<std::int32_t>(wav.data[offset]) |
-                             (static_cast<std::int32_t>(wav.data[offset + 1])
-                              << 8) |
-                             (static_cast<std::int32_t>(wav.data[offset + 2])
-                              << 16);
+                             (static_cast<std::int32_t>(wav.data[offset + 1]) << 8) |
+                             (static_cast<std::int32_t>(wav.data[offset + 2]) << 16);
         if (value & 0x00800000) {
           value |= ~0x00FFFFFF;
         }
@@ -127,15 +124,14 @@ std::vector<std::int64_t> DecodeChannel(const support::ParsedWav &wav,
       float value = 0.0f;
       std::memcpy(&value, wav.data.data() + offset, sizeof(float));
       const double clamped = std::clamp(static_cast<double>(value), -1.0, 1.0);
-      samples[frame] =
-          RoundTiesToZero(clamped * static_cast<double>(1 << 15));
+      samples[frame] = RoundTiesToZero(clamped * static_cast<double>(1 << 15));
     }
   }
 
   return samples;
 }
 
-std::vector<float> DecodeChannelFloat32(const support::ParsedWav &wav, std::size_t channel) {
+std::vector<float> DecodeChannelFloat32(const support::ParsedWav& wav, std::size_t channel) {
   if (wav.audio_format != 3u || wav.bits_per_sample != 32u) {
     return {};
   }
@@ -160,8 +156,7 @@ std::vector<float> DecodeChannelFloat32(const support::ParsedWav &wav, std::size
   return samples;
 }
 
-double ComputeRms(const std::vector<std::int64_t> &samples,
-                  std::int64_t full_scale) {
+double ComputeRms(const std::vector<std::int64_t>& samples, std::int64_t full_scale) {
   if (samples.empty() || full_scale == 0) {
     return 0.0;
   }
@@ -175,8 +170,8 @@ double ComputeRms(const std::vector<std::int64_t> &samples,
   return std::sqrt(static_cast<double>(sum / denom));
 }
 
-double ComputeCorrelation(const std::vector<std::int64_t> &lhs,
-                          const std::vector<std::int64_t> &rhs) {
+double ComputeCorrelation(const std::vector<std::int64_t>& lhs,
+                          const std::vector<std::int64_t>& rhs) {
   if (lhs.size() != rhs.size() || lhs.empty()) {
     return 0.0;
   }
@@ -206,8 +201,7 @@ double ComputeCorrelation(const std::vector<std::int64_t> &lhs,
   return static_cast<double>(sum_lr / std::sqrt(sum_ll * sum_rr));
 }
 
-double ComputeMean(const std::vector<std::int64_t> &samples,
-                   std::int64_t full_scale) {
+double ComputeMean(const std::vector<std::int64_t>& samples, std::int64_t full_scale) {
   if (samples.empty() || full_scale == 0) {
     return 0.0;
   }
@@ -216,11 +210,10 @@ double ComputeMean(const std::vector<std::int64_t> &samples,
     sum += static_cast<long double>(sample);
   }
   const long double scale = static_cast<long double>(full_scale);
-  return static_cast<double>((sum / static_cast<long double>(samples.size())) /
-                             scale);
+  return static_cast<double>((sum / static_cast<long double>(samples.size())) / scale);
 }
 
-std::uint64_t HashChannelBytes(const support::ParsedWav &wav, std::size_t channel) {
+std::uint64_t HashChannelBytes(const support::ParsedWav& wav, std::size_t channel) {
   const std::size_t bytes_per_sample = (wav.bits_per_sample + 7u) / 8u;
   if (wav.channels == 0 || bytes_per_sample == 0) {
     return support::kFnv1a64Offset;
@@ -244,10 +237,8 @@ struct RenderContext {
   orpheus::core::render::RenderSpec spec;
 };
 
-RenderContext MakeBaseContext(const std::string &test_name,
-                              std::uint32_t sample_rate,
-                              std::uint16_t bit_depth,
-                              std::uint32_t channels) {
+RenderContext MakeBaseContext(const std::string& test_name, std::uint32_t sample_rate,
+                              std::uint16_t bit_depth, std::uint32_t channels) {
   (void)test_name;
   RenderContext ctx;
   ctx.session.name = "render_tracks_basic";
@@ -263,10 +254,10 @@ RenderContext MakeBaseContext(const std::string &test_name,
   return ctx;
 }
 
-}  // namespace
+} // namespace
 
 TEST(RenderTracksBasic, MonoSineHashAndMetrics) {
-  const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  const auto* test_info = ::testing::UnitTest::GetInstance()->current_test_info();
   ScratchDir scratch(test_info->name());
 
   auto ctx = MakeBaseContext(test_info->name(), 48000, 24, 1);
@@ -275,16 +266,14 @@ TEST(RenderTracksBasic, MonoSineHashAndMetrics) {
   orpheus::core::render::Clip clip;
   clip.start_beats = 0.0;
   clip.samples.push_back(
-      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz,
-                            440u, 0.5f));
+      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz, 440u, 0.5f));
 
   orpheus::core::render::Track track;
   track.name = "tone";
   track.clips.push_back(std::move(clip));
   ctx.tracks.push_back(std::move(track));
 
-  const auto outputs =
-      orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+  const auto outputs = orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
   ASSERT_EQ(outputs.size(), 1u);
   FailureArtifactGuard guard(outputs);
 
@@ -307,7 +296,7 @@ TEST(RenderTracksBasic, MonoSineHashAndMetrics) {
 }
 
 TEST(RenderTracksBasic, StereoSineImpulseHashesAndCorrelation) {
-  const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  const auto* test_info = ::testing::UnitTest::GetInstance()->current_test_info();
   ScratchDir scratch(test_info->name());
 
   auto ctx = MakeBaseContext(test_info->name(), 48000, 24, 2);
@@ -316,19 +305,16 @@ TEST(RenderTracksBasic, StereoSineImpulseHashesAndCorrelation) {
   orpheus::core::render::Clip clip;
   clip.start_beats = 0.0;
   clip.samples.push_back(
-      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz,
-                            440u, 0.5f));
+      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz, 440u, 0.5f));
   clip.samples.push_back(
-      support::GenerateImpulse(ctx.spec.sample_rate_hz,
-                               ctx.spec.sample_rate_hz / 2));
+      support::GenerateImpulse(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz / 2));
 
   orpheus::core::render::Track track;
   track.name = "stereo";
   track.clips.push_back(std::move(clip));
   ctx.tracks.push_back(std::move(track));
 
-  const auto outputs =
-      orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+  const auto outputs = orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
   ASSERT_EQ(outputs.size(), 1u);
   FailureArtifactGuard guard(outputs);
 
@@ -369,7 +355,7 @@ TEST(RenderTracksBasic, StereoSineImpulseHashesAndCorrelation) {
 }
 
 TEST(RenderTracksBasic, SineWithDcOffsetRemainsStable) {
-  const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  const auto* test_info = ::testing::UnitTest::GetInstance()->current_test_info();
   ScratchDir scratch(test_info->name());
 
   auto ctx = MakeBaseContext(test_info->name(), 48000, 24, 1);
@@ -378,13 +364,11 @@ TEST(RenderTracksBasic, SineWithDcOffsetRemainsStable) {
   orpheus::core::render::Clip sine_clip;
   sine_clip.start_beats = 0.0;
   sine_clip.samples.push_back(
-      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz,
-                            440u, 0.5f));
+      support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz, 440u, 0.5f));
 
   orpheus::core::render::Clip dc_clip;
   dc_clip.start_beats = 0.0;
-  dc_clip.samples.push_back(
-      support::GenerateDc(ctx.spec.sample_rate_hz, 3.0f / 8388608.0f));
+  dc_clip.samples.push_back(support::GenerateDc(ctx.spec.sample_rate_hz, 3.0f / 8388608.0f));
 
   orpheus::core::render::Track track;
   track.name = "tone_dc";
@@ -392,8 +376,7 @@ TEST(RenderTracksBasic, SineWithDcOffsetRemainsStable) {
   track.clips.push_back(std::move(dc_clip));
   ctx.tracks.push_back(std::move(track));
 
-  const auto outputs =
-      orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+  const auto outputs = orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
   ASSERT_EQ(outputs.size(), 1u);
   FailureArtifactGuard guard(outputs);
 
@@ -420,27 +403,25 @@ TEST(RenderTracksBasic, SineWithDcOffsetRemainsStable) {
 }
 
 TEST(RenderTracksBasic, Float32PreservesSubLsbContent) {
-  const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  const auto* test_info = ::testing::UnitTest::GetInstance()->current_test_info();
   ScratchDir scratch(test_info->name());
 
   auto ctx = MakeBaseContext(test_info->name(), 48000, 32, 1);
   ctx.spec.output_directory = scratch.path();
-  ctx.spec.dither = true;  // Float path should ignore dithering requests.
+  ctx.spec.dither = true; // Float path should ignore dithering requests.
 
   const float amplitude = std::ldexp(1.0f, -20);
 
   orpheus::core::render::Clip clip;
   clip.start_beats = 0.0;
-  clip.samples.push_back(
-      support::GenerateDc(ctx.spec.sample_rate_hz, amplitude));
+  clip.samples.push_back(support::GenerateDc(ctx.spec.sample_rate_hz, amplitude));
 
   orpheus::core::render::Track track;
   track.name = "float_dc";
   track.clips.push_back(std::move(clip));
   ctx.tracks.push_back(std::move(track));
 
-  const auto outputs =
-      orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+  const auto outputs = orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
   ASSERT_EQ(outputs.size(), 1u);
   FailureArtifactGuard guard(outputs);
 

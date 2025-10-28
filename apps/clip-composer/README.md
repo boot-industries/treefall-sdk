@@ -9,6 +9,7 @@
 ### Prerequisites
 
 1. **Orpheus SDK built:**
+
    ```bash
    cd /Users/chrislyons/dev/orpheus-sdk
    cmake -S . -B build && cmake --build build
@@ -23,12 +24,32 @@
    - Audio interface with ASIO (Windows) or CoreAudio (macOS) support
    - 8GB RAM minimum, 16GB recommended
 
-### Building (Coming Soon)
+### Building from Source
+
+**macOS (Debug build):**
 
 ```bash
-cd /Users/chrislyons/dev/orpheus-sdk/apps/clip-composer
-# CMake build will be added once initial implementation is complete
+cd /Users/chrislyons/dev/orpheus-sdk
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DORPHEUS_ENABLE_APP_CLIP_COMPOSER=ON
+cmake --build build
+open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app
 ```
+
+**Creating DMG Package:**
+
+```bash
+# Build the application
+cmake --build build
+
+# Create DMG (example for arm64)
+mkdir -p /tmp/occ-staging
+cp -R build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app /tmp/occ-staging/
+hdiutil create -volname "Orpheus Clip Composer" -srcfolder /tmp/occ-staging -ov -format UDZO OrpheusClipComposer-v0.1.0-arm64.dmg
+```
+
+**Download Pre-Built:**
+
+- [v0.1.0-alpha (arm64, macOS 12+)](https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.1.0-alpha) - 36MB DMG
 
 ---
 
@@ -41,6 +62,7 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - **Live performance** - Concert soundscapes, DJ sets, installations
 
 **Key Features (MVP - Month 6):**
+
 - 960 clip buttons (10×12 grid, 8 tabs)
 - 16 simultaneous clips playing
 - 4 Clip Groups with routing to Master Output
@@ -51,6 +73,7 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - Session save/load (JSON format)
 
 **Compare to:**
+
 - SpotOn (€1,200) - Broadcast playout, Windows-only
 - QLab (€700) - Theater cues, macOS-only
 - Ovation (€500) - Live performance, basic routing
@@ -61,21 +84,44 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 
 ## Project Status
 
-**Current Phase:** Month 1 - SDK Integration (October 2025)
+**Current Release:** v0.1.0-alpha (October 22, 2025)
+
+**Download:** [OrpheusClipComposer-v0.1.0-arm64.dmg](https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.1.0-alpha) (36MB)
+**Platform:** macOS 12+ (Apple Silicon only)
+**Build Type:** Debug (Release optimization pending)
+
+**What's Working:**
+
+- ✅ 48-button clip grid (6×8) with 8 tabs = 384 total clips
+- ✅ Real-time audio playback via CoreAudio
+- ✅ Drag & drop audio file loading (WAV, AIFF, FLAC)
+- ✅ Keyboard shortcuts for all 48 buttons (QWERTY layout)
+- ✅ Session save/load (JSON format with full metadata)
+- ✅ Transport controls (Stop All, Panic)
+- ✅ Clip editing: Name, color, clip group assignment
+- ✅ Waveform visualization with real-time trim markers
+- ✅ Fade In/Out times (0.0-3.0s) with curve selection
+- ✅ UI polish: Inter typeface, 20% larger fonts, 3-line text wrapping
+- ✅ Drag-to-reorder clips (240ms hold time)
+- ✅ Stop Others On Play mode (per-clip solo)
+
+**Known Limitations:**
+
+- ⚠️ Debug build only (Release has linker issues to fix)
+- ⚠️ Apple Silicon only (no Intel or universal binary yet)
+- ⚠️ Sample rate locked to 48kHz (auto-conversion coming)
+- ⚠️ Trim handles not interactive (slider-based only)
+- ⚠️ Fade curves stored but not applied during playback
 
 **Timeline:**
-- ✅ **Design Phase Complete** (September-October 2025) - 11 design docs, ~5,300 lines
-- 🔄 **Month 1-2:** SDK integration (basic clip playback)
-- ⏳ **Month 3-4:** Routing matrix implementation
-- ⏳ **Month 5-6:** Advanced features, beta testing
-- 🎯 **Month 6:** MVP release
 
-**SDK Status:** 90% ready (3/5 critical modules complete)
-- ✅ ITransportController (real-time clip playback)
-- ✅ IAudioFileReader (WAV/AIFF/FLAC decoding)
-- ✅ IAudioDriver (dummy driver complete, platform drivers in progress)
-- ⏳ IRoutingMatrix (4 Clip Groups → Master, Month 3-4)
-- ⏳ IPerformanceMonitor (CPU/latency diagnostics, Month 4-5)
+- ✅ **Phase 0:** Design & Documentation (Complete - Oct 12, 2025)
+- ✅ **Phase 1:** Project Setup & SDK Integration (Complete - Oct 13, 2025)
+- ✅ **Phase 2:** UI Enhancements & Edit Dialog Phase 1 (Complete - Oct 13-14, 2025)
+- ✅ **Phase 3:** Edit Dialog Phases 2 & 3 + Waveform Rendering (Complete - Oct 22, 2025)
+- ✅ **Phase 4:** Build & Release (Complete - Oct 22, 2025)
+- ⏳ **v0.2.0:** Optimization, fade curve integration, interactive trim handles (In Progress)
+- 🎯 **v1.0:** Recording, time-stretching, VST/AU hosting (6 months from Oct 2025)
 
 **See also:** `.claude/implementation_progress.md` for detailed task tracking
 
@@ -86,6 +132,7 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 Clip Composer is a **JUCE application** that uses the **Orpheus SDK** as its audio engine foundation.
 
 **5-Layer Architecture:**
+
 1. **UI Components** (JUCE) - ClipGrid, WaveformDisplay, TransportControls
 2. **Application Logic** - SessionManager, ClipManager, RoutingManager
 3. **SDK Integration** - ITransportController, IAudioFileReader, IRoutingMatrix
@@ -93,6 +140,7 @@ Clip Composer is a **JUCE application** that uses the **Orpheus SDK** as its aud
 5. **Platform I/O** - CoreAudio (macOS), ASIO/WASAPI (Windows)
 
 **Threading Model:**
+
 - **Message Thread:** UI events, session I/O, SDK callbacks
 - **Audio Thread:** Real-time processing (lock-free, no allocations)
 - **File I/O Thread:** Waveform pre-rendering, directory scanning
@@ -106,6 +154,7 @@ Clip Composer is a **JUCE application** that uses the **Orpheus SDK** as its aud
 All design specifications are in `docs/OCC/`:
 
 **Essential Reading:**
+
 - **OCC021** - Product Vision (authoritative) - Market positioning, competitive analysis
 - **OCC026** - MVP Definition - 6-month plan, deliverables, acceptance criteria
 - **OCC027** - API Contracts - C++ interfaces between OCC and SDK
@@ -118,6 +167,7 @@ All design specifications are in `docs/OCC/`:
 ## Development Guide
 
 **For developers building Clip Composer:**
+
 - Read **CLAUDE.md** in this directory - Comprehensive development guide
 - Read **`docs/OCC/`** design documents - Product specifications
 - Follow **threading model** - UI thread vs audio thread separation
@@ -125,6 +175,7 @@ All design specifications are in `docs/OCC/`:
 - Test with **dummy audio driver** first, then platform drivers
 
 **For SDK developers:**
+
 - Read **`/CLAUDE.md`** at repository root - SDK development principles
 - Implement modules from **`apps/clip-composer/docs/OCC/OCC029`** - SDK enhancement recommendations
 - Coordinate via **Slack `#orpheus-occ-integration`** - Weekly syncs
@@ -135,32 +186,35 @@ All design specifications are in `docs/OCC/`:
 
 From `docs/OCC/OCC026`:
 
-| Metric | Target | Hardware |
-|--------|--------|----------|
-| Latency | <5ms | ASIO driver @ 48kHz |
-| CPU Usage | <30% | Intel i5 8th gen, 16 clips |
-| Clip Capacity | 960 | 10×12 grid × 8 tabs |
-| Simultaneous Playback | 16 clips | 4 Clip Groups → Master |
-| File Formats | WAV, AIFF, FLAC | Via libsndfile |
-| Sample Rates | 44.1kHz, 48kHz, 96kHz | |
-| MTBF | >100 hours | Continuous operation |
+| Metric                | Target                | Hardware                   |
+| --------------------- | --------------------- | -------------------------- |
+| Latency               | <5ms                  | ASIO driver @ 48kHz        |
+| CPU Usage             | <30%                  | Intel i5 8th gen, 16 clips |
+| Clip Capacity         | 960                   | 10×12 grid × 8 tabs        |
+| Simultaneous Playback | 16 clips              | 4 Clip Groups → Master     |
+| File Formats          | WAV, AIFF, FLAC       | Via libsndfile             |
+| Sample Rates          | 44.1kHz, 48kHz, 96kHz |                            |
+| MTBF                  | >100 hours            | Continuous operation       |
 
 ---
 
 ## Testing Strategy
 
 ### Unit Tests (GoogleTest)
+
 - Session loading/saving
 - Clip metadata parsing
 - Routing configuration logic
 
 ### Integration Tests (OCC + SDK)
+
 - Clip playback via button triggers
 - Multi-clip routing
 - Transport callbacks
 - Performance under load (16 clips)
 
 ### Manual Testing
+
 - 960-clip load test (stress test)
 - 24-hour stability test (no crashes)
 - Cross-platform validation (macOS + Windows)
@@ -171,6 +225,7 @@ From `docs/OCC/OCC026`:
 ## Known Limitations
 
 ### MVP Scope (v1.0 features deferred)
+
 - ❌ No recording (playback only)
 - ❌ No VST3/AU plugin hosting
 - ❌ No time-stretching (Rubber Band integration in v1.0)
@@ -178,6 +233,7 @@ From `docs/OCC/OCC026`:
 - ❌ No network streaming (local files only)
 
 ### SDK Dependencies (in progress)
+
 - ⏳ Platform audio drivers (Month 2)
 - ⏳ Routing matrix (Month 3-4)
 - ⏳ Performance monitor (Month 4-5)
@@ -191,6 +247,7 @@ From `docs/OCC/OCC026`:
 Clip Composer is part of the Orpheus ecosystem and inherits the **MIT License** from the Orpheus SDK.
 
 **Dependencies:**
+
 - **JUCE Framework** - GPL or paid license (recommend JUCE Indie ~€800/year)
 - **libsndfile** - LGPL 2.1 (dynamic linking, compliant)
 - **Rubber Band** - AGPL or paid license (v1.0 feature, deferred)
@@ -204,6 +261,7 @@ Clip Composer is part of the Orpheus ecosystem and inherits the **MIT License** 
 **Weekly Sync:** Fridays, 30 minutes (OCC team + SDK team)
 
 **Questions?**
+
 - Read **CLAUDE.md** (development guide)
 - Check **`docs/OCC/`** (design documentation)
 - Ask on Slack channel
@@ -226,6 +284,6 @@ From `docs/OCC/OCC026`:
 
 ---
 
-**Status:** Active Development (Month 1 - SDK Integration)
-**Last Updated:** October 12, 2025
-**Next Milestone:** Basic clip playback working (Month 2)
+**Status:** v0.1.0-alpha Released (October 22, 2025)
+**Last Updated:** October 22, 2025
+**Next Milestone:** v0.2.0 planning - Release build optimization, fade curve integration

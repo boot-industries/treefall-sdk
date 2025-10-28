@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <orpheus/transport_controller.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/routing_matrix.h>
+#include <orpheus/transport_controller.h>
 
 #include <array>
 #include <atomic>
@@ -31,14 +31,46 @@ struct TransportCommand {
 /// Active clip state (in audio thread)
 struct ActiveClip {
   ClipHandle handle;
-  int64_t startSample;    // When clip started playing
-  int64_t currentSample;  // Current position within clip audio
-  int64_t trimInSamples;  // Trim IN point (from metadata)
-  int64_t trimOutSamples; // Trim OUT point (from metadata)
-  float fadeOutGain;      // 1.0 = normal, 0.0 = fully faded
-  bool isStopping;        // true if fade-out in progress
-  IAudioFileReader* audioReader; // Cached pointer to audio file reader (owned by m_audioFiles)
-  uint16_t numChannels;   // Number of channels in audio file
+  int64_t startSample;   // When clip started playing
+  int64_t currentSample; // Current position within clip audio
+
+  // Trim points (atomic for thread safety)
+  std::atomic<int64_t> trimInSamples{0};  // Trim IN point (from metadata)
+  std::atomic<int64_t> trimOutSamples{0}; // Trim OUT point (from metadata)
+
+  // Fade settings (atomic for thread safety)
+  std::atomic<double> fadeInSeconds{0.0};
+  std::atomic<double> fadeOutSeconds{0.0};
+  std::atomic<FadeCurve> fadeInCurve{FadeCurve::Linear};
+  std::atomic<FadeCurve> fadeOutCurve{FadeCurve::Linear};
+
+  // Cached fade sample counts (computed when fades are updated)
+  std::atomic<int64_t> fadeInSamples{0};
+  std::atomic<int64_t> fadeOutSamples{0};
+
+  // Gain control (atomic for thread safety)
+  std::atomic<float> gainDb{0.0f}; // Gain in decibels (0.0 = unity)
+
+  // Loop mode (atomic for thread safety)
+  std::atomic<bool> loopEnabled{false}; // true = loop indefinitely
+
+  float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
+  bool isStopping;         // true if fade-out in progress
+  int64_t fadeOutStartPos; // Sample position when fade-out started (for additive time)
+
+  // Restart crossfade state (broadcast-safe restart mechanism)
+  bool isRestarting; // true if restart crossfade in progress
+  int64_t
+      restartFadeFramesRemaining; // Frames remaining in restart fade-in (5ms @ 48kHz = 240 frames)
+
+  uint16_t numChannels; // Number of channels in audio file
+
+  // Thread-safe reader reference (captured from AudioFileEntry when clip starts)
+  // Using shared_ptr provides reference-counted lifetime management:
+  // - Audio thread holds reference until clip stops
+  // - Reader can't be destroyed while audio thread is still using it
+  // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
+  std::shared_ptr<IAudioFileReader> reader;
 };
 
 /// Transport controller implementation
@@ -56,6 +88,26 @@ public:
   bool isClipPlaying(ClipHandle handle) const override;
   TransportPosition getCurrentPosition() const override;
   void setCallback(ITransportCallback* callback) override;
+
+  // Clip metadata management
+  SessionGraphError updateClipTrimPoints(ClipHandle handle, int64_t trimInSamples,
+                                         int64_t trimOutSamples) override;
+  SessionGraphError updateClipFades(ClipHandle handle, double fadeInSeconds, double fadeOutSeconds,
+                                    FadeCurve fadeInCurve, FadeCurve fadeOutCurve) override;
+  SessionGraphError getClipTrimPoints(ClipHandle handle, int64_t& trimInSamples,
+                                      int64_t& trimOutSamples) const override;
+  SessionGraphError updateClipGain(ClipHandle handle, float gainDb) override;
+  SessionGraphError setClipLoopMode(ClipHandle handle, bool shouldLoop) override;
+  int64_t getClipPosition(ClipHandle handle) const override;
+  SessionGraphError setClipStopOthersMode(ClipHandle handle, bool enabled) override;
+  bool getClipStopOthersMode(ClipHandle handle) const override;
+  SessionGraphError updateClipMetadata(ClipHandle handle, const ClipMetadata& metadata) override;
+  std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const override;
+  void setSessionDefaults(const SessionDefaults& defaults) override;
+  SessionDefaults getSessionDefaults() const override;
+  bool isClipLooping(ClipHandle handle) const override;
+  SessionGraphError restartClip(ClipHandle handle) override;
+  SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
   /// Process audio (called from audio thread)
   /// @param outputBuffers Output buffers (one per channel)
@@ -90,10 +142,19 @@ private:
   /// Post callback to UI thread
   void postCallback(std::function<void()> callback);
 
+  /// Calculate fade gain based on curve type
+  /// @param normalizedPosition Position in fade (0.0 to 1.0)
+  /// @param curve Fade curve type
+  /// @return Gain value (0.0 to 1.0)
+  float calculateFadeGain(float normalizedPosition, FadeCurve curve) const;
+
   // Configuration
   core::SessionGraph* m_sessionGraph;
   uint32_t m_sampleRate;
   ITransportCallback* m_callback; // User-provided callback
+
+  // Session defaults (UI thread access, mutex protected)
+  SessionDefaults m_sessionDefaults;
 
   // Lock-free command queue (UI → Audio thread)
   static constexpr size_t MAX_COMMANDS = 256;
@@ -115,29 +176,44 @@ private:
 
   // Fade parameters
   static constexpr float FADE_OUT_DURATION_MS = 10.0f;
-  size_t m_fadeOutSamples; // Calculated from sample rate
+  static constexpr float RESTART_CROSSFADE_DURATION_MS =
+      5.0f;                         // Broadcast-safe restart crossfade (5ms)
+  size_t m_fadeOutSamples;          // Calculated from sample rate
+  size_t m_restartCrossfadeSamples; // Calculated from sample rate
 
   // Audio file registry (UI thread access, mutex protected)
   struct AudioFileEntry {
-    std::unique_ptr<orpheus::IAudioFileReader> reader;
+    std::shared_ptr<orpheus::IAudioFileReader> reader;
     AudioFileMetadata metadata;
+
+    // Persistent clip metadata (stored with audio file registration)
+    int64_t trimInSamples = 0;
+    int64_t trimOutSamples = 0; // 0 means use file duration
+    double fadeInSeconds = 0.0;
+    double fadeOutSeconds = 0.0;
+    FadeCurve fadeInCurve = FadeCurve::Linear;
+    FadeCurve fadeOutCurve = FadeCurve::Linear;
+    float gainDb = 0.0f;           // Gain in decibels (0.0 = unity)
+    bool loopEnabled = false;      // true = loop indefinitely
+    bool stopOthersOnPlay = false; // true = stop all other clips when this one starts
   };
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
 
-  // Pre-allocated audio read buffer (audio thread only)
-  // Large enough for max frames * max channels (e.g., 2048 frames * 8 channels)
-  static constexpr size_t MAX_READ_BUFFER_SIZE = 2048 * 8;
-  std::vector<float> m_audioReadBuffer;
-
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
 
-  // Per-clip channel buffers (audio thread only, pre-allocated)
-  // Each active clip gets its own channel buffer for routing
+  // Per-clip buffers (audio thread only, pre-allocated)
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
+  static constexpr size_t MAX_FILE_CHANNELS = 8;
+
+  // Each clip gets its own read buffer (for interleaved audio from file)
+  std::vector<std::vector<float>>
+      m_clipReadBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS]
+
+  // Each clip gets its own channel buffer for routing (mono summed output)
   std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES]
-  std::vector<float*> m_clipChannelPointers; // Pointers for processRouting()
+  std::vector<float*> m_clipChannelPointers;            // Pointers for processRouting()
 };
 
 } // namespace orpheus

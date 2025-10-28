@@ -6,10 +6,10 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstddef>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -60,7 +60,7 @@ struct CliGlobalOptions {
 
 std::string JsonEscape(std::string_view value);
 
-void PrintJsonError(const ErrorInfo &error) {
+void PrintJsonError(const ErrorInfo& error) {
   std::cout << "{\n";
   std::cout << "  \"error\": {\n";
   std::cout << "    \"code\": \"" << JsonEscape(error.code) << "\",\n";
@@ -82,19 +82,19 @@ void PrintJsonError(const ErrorInfo &error) {
   std::cout << "}" << std::endl;
 }
 
-void PrintError(const CliGlobalOptions &global, const ErrorInfo &error) {
+void PrintError(const CliGlobalOptions& global, const ErrorInfo& error) {
   if (global.json_output) {
     PrintJsonError(error);
   } else {
     std::cerr << error.message << std::endl;
-    for (const auto &detail : error.details) {
+    for (const auto& detail : error.details) {
       std::cerr << "  " << detail << std::endl;
     }
   }
 }
 
-bool ParseDouble(const std::string &text, double &value) {
-  char *end_ptr = nullptr;
+bool ParseDouble(const std::string& text, double& value) {
+  char* end_ptr = nullptr;
   errno = 0;
   value = std::strtod(text.c_str(), &end_ptr);
   if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
@@ -103,7 +103,7 @@ bool ParseDouble(const std::string &text, double &value) {
   return true;
 }
 
-bool ParseRangeArgument(const std::string &argument, TimelineRange &range, std::string &error) {
+bool ParseRangeArgument(const std::string& argument, TimelineRange& range, std::string& error) {
   auto colon = argument.find(':');
   double start_value = 0.0;
   double end_value = 0.0;
@@ -147,7 +147,7 @@ bool ParseRangeArgument(const std::string &argument, TimelineRange &range, std::
   return true;
 }
 
-std::vector<std::string> SplitCommaSeparated(const std::string &value) {
+std::vector<std::string> SplitCommaSeparated(const std::string& value) {
   std::vector<std::string> result;
   std::stringstream stream(value);
   std::string item;
@@ -166,32 +166,31 @@ std::string JsonEscape(std::string_view value) {
   escaped.reserve(value.size());
   for (char c : value) {
     switch (c) {
-      case '"':
-        escaped += "\\\"";
-        break;
-      case '\\':
-        escaped += "\\\\";
-        break;
-      case '\n':
-        escaped += "\\n";
-        break;
-      case '\r':
-        escaped += "\\r";
-        break;
-      case '\t':
-        escaped += "\\t";
-        break;
-      default:
-        if (static_cast<unsigned char>(c) < 0x20) {
-          std::ostringstream hex;
-          hex << "\\u" << std::uppercase << std::hex << std::setw(4)
-              << std::setfill('0')
-              << static_cast<int>(static_cast<unsigned char>(c));
-          escaped += hex.str();
-        } else {
-          escaped += c;
-        }
-        break;
+    case '"':
+      escaped += "\\\"";
+      break;
+    case '\\':
+      escaped += "\\\\";
+      break;
+    case '\n':
+      escaped += "\\n";
+      break;
+    case '\r':
+      escaped += "\\r";
+      break;
+    case '\t':
+      escaped += "\\t";
+      break;
+    default:
+      if (static_cast<unsigned char>(c) < 0x20) {
+        std::ostringstream hex;
+        hex << "\\u" << std::uppercase << std::hex << std::setw(4) << std::setfill('0')
+            << static_cast<int>(static_cast<unsigned char>(c));
+        escaped += hex.str();
+      } else {
+        escaped += c;
+      }
+      break;
     }
   }
   return escaped;
@@ -206,9 +205,9 @@ std::string FormatNumber(double value, int precision = 6) {
 }
 
 struct AbiContext {
-  const orpheus_session_api_v1 *session_api = nullptr;
-  const orpheus_clipgrid_api_v1 *clipgrid_api = nullptr;
-  const orpheus_render_api_v1 *render_api = nullptr;
+  const orpheus_session_api_v1* session_api = nullptr;
+  const orpheus_clipgrid_api_v1* clipgrid_api = nullptr;
+  const orpheus_render_api_v1* render_api = nullptr;
   uint32_t session_major = 0;
   uint32_t session_minor = 0;
   uint32_t clip_major = 0;
@@ -217,15 +216,14 @@ struct AbiContext {
   uint32_t render_minor = 0;
 };
 
-void PrintNegotiationSummary(const AbiContext &abi, bool verbose) {
+void PrintNegotiationSummary(const AbiContext& abi, bool verbose) {
   if (!verbose) {
     return;
   }
   std::cout << "ABI negotiation" << std::endl;
-  auto print_entry = [](const char *label, uint32_t major, uint32_t minor,
-                        bool ok) {
-    std::cout << "  " << std::left << std::setw(10) << label << " v" << major << "."
-              << minor << (ok ? " ✅" : " ❌") << std::endl;
+  auto print_entry = [](const char* label, uint32_t major, uint32_t minor, bool ok) {
+    std::cout << "  " << std::left << std::setw(10) << label << " v" << major << "." << minor
+              << (ok ? " ✅" : " ❌") << std::endl;
   };
   print_entry("session", abi.session_major, abi.session_minor,
               abi.session_api != nullptr && abi.session_major == ORPHEUS_ABI_MAJOR &&
@@ -238,21 +236,16 @@ void PrintNegotiationSummary(const AbiContext &abi, bool verbose) {
                   abi.render_minor == ORPHEUS_ABI_MINOR);
 }
 
-bool NegotiateApis(AbiContext &abi, bool verbose, ErrorInfo &error) {
-  abi.session_api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &abi.session_major,
-                                           &abi.session_minor);
-  abi.clipgrid_api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &abi.clip_major,
-                                             &abi.clip_minor);
-  abi.render_api = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &abi.render_major,
-                                         &abi.render_minor);
+bool NegotiateApis(AbiContext& abi, bool verbose, ErrorInfo& error) {
+  abi.session_api =
+      orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &abi.session_major, &abi.session_minor);
+  abi.clipgrid_api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &abi.clip_major, &abi.clip_minor);
+  abi.render_api = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &abi.render_major, &abi.render_minor);
   PrintNegotiationSummary(abi, verbose);
   if (!abi.session_api || !abi.clipgrid_api || !abi.render_api ||
-      abi.session_major != ORPHEUS_ABI_MAJOR ||
-      abi.clip_major != ORPHEUS_ABI_MAJOR ||
-      abi.render_major != ORPHEUS_ABI_MAJOR ||
-      abi.session_minor != ORPHEUS_ABI_MINOR ||
-      abi.clip_minor != ORPHEUS_ABI_MINOR ||
-      abi.render_minor != ORPHEUS_ABI_MINOR) {
+      abi.session_major != ORPHEUS_ABI_MAJOR || abi.clip_major != ORPHEUS_ABI_MAJOR ||
+      abi.render_major != ORPHEUS_ABI_MAJOR || abi.session_minor != ORPHEUS_ABI_MINOR ||
+      abi.clip_minor != ORPHEUS_ABI_MINOR || abi.render_minor != ORPHEUS_ABI_MINOR) {
     error.code = "abi.negotiation";
     error.message = "ABI negotiation failed";
     return false;
@@ -261,7 +254,7 @@ bool NegotiateApis(AbiContext &abi, bool verbose, ErrorInfo &error) {
 }
 
 struct SessionGuard {
-  const orpheus_session_api_v1 *api = nullptr;
+  const orpheus_session_api_v1* api = nullptr;
   orpheus_session_handle handle = nullptr;
 
   ~SessionGuard() {
@@ -292,15 +285,11 @@ struct SessionContext {
   double range_start_beats = 0.0;
   double range_end_beats = 0.0;
 
-  SessionGraph *session_impl() {
-    return guard.handle
-               ? reinterpret_cast<SessionGraph *>(guard.handle)
-               : nullptr;
+  SessionGraph* session_impl() {
+    return guard.handle ? reinterpret_cast<SessionGraph*>(guard.handle) : nullptr;
   }
-  const SessionGraph *session_impl() const {
-    return guard.handle
-               ? reinterpret_cast<const SessionGraph *>(guard.handle)
-               : nullptr;
+  const SessionGraph* session_impl() const {
+    return guard.handle ? reinterpret_cast<const SessionGraph*>(guard.handle) : nullptr;
   }
 };
 
@@ -310,8 +299,8 @@ bool ClipIntersectsRange(double clip_start, double clip_length, double start_bea
   return clip_end > start_beats && clip_start < end_beats;
 }
 
-bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
-                    bool verbose, ErrorInfo &error) {
+bool PrepareSession(const SessionLoadOptions& options, SessionContext& context, bool verbose,
+                    ErrorInfo& error) {
   if (options.session_path.empty()) {
     error.code = "cli.session";
     error.message = "--session is required";
@@ -324,7 +313,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
 
   try {
     context.graph = session_json::LoadSessionFromFile(options.session_path);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     error.code = "session.load";
     error.message = "Failed to load session JSON";
     error.details = {ex.what()};
@@ -359,7 +348,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   }
   context.guard = SessionGuard{context.abi.session_api, handle};
 
-  SessionGraph *session_impl = context.session_impl();
+  SessionGraph* session_impl = context.session_impl();
   session_impl->set_name(context.graph.name());
   session_impl->set_render_sample_rate(context.graph.render_sample_rate());
   session_impl->set_render_bit_depth(context.graph.render_bit_depth());
@@ -369,7 +358,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (options.render_sample_rate_override) {
     try {
       session_impl->set_render_sample_rate(*options.render_sample_rate_override);
-    } catch (const std::exception &ex) {
+    } catch (const std::exception& ex) {
       error.code = "session.render";
       error.message = "Invalid render sample rate";
       error.details = {ex.what()};
@@ -379,7 +368,7 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
   if (options.render_bit_depth_override) {
     try {
       session_impl->set_render_bit_depth(*options.render_bit_depth_override);
-    } catch (const std::exception &ex) {
+    } catch (const std::exception& ex) {
       error.code = "session.render";
       error.message = "Invalid render bit depth";
       error.details = {ex.what()};
@@ -404,40 +393,36 @@ bool PrepareSession(const SessionLoadOptions &options, SessionContext &context,
     selected_tracks.insert(options.track_filters.begin(), options.track_filters.end());
   }
 
-  for (const auto &track_ptr : context.graph.tracks()) {
+  for (const auto& track_ptr : context.graph.tracks()) {
     if (!selected_tracks.empty() && !selected_tracks.count(track_ptr->name())) {
       continue;
     }
 
     const orpheus_track_desc track_desc{track_ptr->name().c_str()};
     orpheus_track_handle track_handle = nullptr;
-    status =
-        context.abi.session_api->add_track(context.guard.handle, &track_desc, &track_handle);
+    status = context.abi.session_api->add_track(context.guard.handle, &track_desc, &track_handle);
     if (status != ORPHEUS_STATUS_OK) {
       error.code = "session.track";
       error.message = "Failed to add track";
-      error.details = {track_ptr->name(),
-                       std::string{orpheus_status_to_string(status)}};
+      error.details = {track_ptr->name(), std::string{orpheus_status_to_string(status)}};
       return false;
     }
     ++context.loaded_tracks;
     context.loaded_track_names.push_back(track_ptr->name());
 
-    for (const auto &clip_ptr : track_ptr->clips()) {
-      if (!ClipIntersectsRange(clip_ptr->start(), clip_ptr->length(), start_beats,
-                               end_beats)) {
+    for (const auto& clip_ptr : track_ptr->clips()) {
+      if (!ClipIntersectsRange(clip_ptr->start(), clip_ptr->length(), start_beats, end_beats)) {
         continue;
       }
       const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(), clip_ptr->start(),
                                         clip_ptr->length(), 0u};
       orpheus_clip_handle clip_handle = nullptr;
-      status = context.abi.clipgrid_api->add_clip(context.guard.handle, track_handle,
-                                                  &clip_desc, &clip_handle);
+      status = context.abi.clipgrid_api->add_clip(context.guard.handle, track_handle, &clip_desc,
+                                                  &clip_handle);
       if (status != ORPHEUS_STATUS_OK) {
         error.code = "session.clip";
         error.message = "Failed to add clip";
-        error.details = {clip_ptr->name(),
-                         std::string{orpheus_status_to_string(status)}};
+        error.details = {clip_ptr->name(), std::string{orpheus_status_to_string(status)}};
         return false;
       }
       ++context.loaded_clips;
@@ -491,8 +476,8 @@ std::string FormatBeats(double beats) {
   return stream.str();
 }
 
-void PrintSessionSummary(const SessionContext &context) {
-  const SessionGraph *session_impl = context.session_impl();
+void PrintSessionSummary(const SessionContext& context) {
+  const SessionGraph* session_impl = context.session_impl();
   std::cout << "Session: '" << context.graph.name() << "'" << std::endl;
   std::cout << "  tempo       : " << std::fixed << std::setprecision(2) << context.tempo_bpm
             << " bpm" << std::endl;
@@ -511,23 +496,18 @@ void PrintSessionSummary(const SessionContext &context) {
   }
 }
 
-void PrintAbiJson(const AbiContext &abi, std::size_t indent) {
+void PrintAbiJson(const AbiContext& abi, std::size_t indent) {
   const std::string base(indent, ' ');
   const std::string inner(indent + std::size_t{2}, ' ');
-  const bool session_ok = abi.session_api != nullptr &&
-                          abi.session_major == ORPHEUS_ABI_MAJOR &&
+  const bool session_ok = abi.session_api != nullptr && abi.session_major == ORPHEUS_ABI_MAJOR &&
                           abi.session_minor == ORPHEUS_ABI_MINOR;
-  const bool clip_ok = abi.clipgrid_api != nullptr &&
-                       abi.clip_major == ORPHEUS_ABI_MAJOR &&
+  const bool clip_ok = abi.clipgrid_api != nullptr && abi.clip_major == ORPHEUS_ABI_MAJOR &&
                        abi.clip_minor == ORPHEUS_ABI_MINOR;
-  const bool render_ok = abi.render_api != nullptr &&
-                         abi.render_major == ORPHEUS_ABI_MAJOR &&
+  const bool render_ok = abi.render_api != nullptr && abi.render_major == ORPHEUS_ABI_MAJOR &&
                          abi.render_minor == ORPHEUS_ABI_MINOR;
-  auto print_entry = [&](const char *label, uint32_t major, uint32_t minor,
-                         bool ok, bool last) {
-    std::cout << inner << "\"" << label << "\": {\"major\": " << major
-              << ", \"minor\": " << minor << ", \"ok\": "
-              << (ok ? "true" : "false") << "}";
+  auto print_entry = [&](const char* label, uint32_t major, uint32_t minor, bool ok, bool last) {
+    std::cout << inner << "\"" << label << "\": {\"major\": " << major << ", \"minor\": " << minor
+              << ", \"ok\": " << (ok ? "true" : "false") << "}";
     if (!last) {
       std::cout << ",";
     }
@@ -540,8 +520,8 @@ void PrintAbiJson(const AbiContext &abi, std::size_t indent) {
   std::cout << base << "}";
 }
 
-SessionLoadOptions MergeSessionOptions(const CliGlobalOptions &global,
-                                       const SessionLoadOptions &local) {
+SessionLoadOptions MergeSessionOptions(const CliGlobalOptions& global,
+                                       const SessionLoadOptions& local) {
   SessionLoadOptions merged = local;
   if (merged.session_path.empty() && global.session_path) {
     merged.session_path = *global.session_path;
@@ -562,8 +542,8 @@ SessionLoadOptions MergeSessionOptions(const CliGlobalOptions &global,
 }
 
 void PrintGlobalHelp() {
-  std::cout << "Orpheus Minhost (session ABI " << orpheus::ToString(orpheus::kSessionAbi)
-            << ")" << std::endl;
+  std::cout << "Orpheus Minhost (session ABI " << orpheus::ToString(orpheus::kSessionAbi) << ")"
+            << std::endl;
   std::cout << "Usage: orpheus_minhost [global options] <command> [options]\n";
   std::cout << "Global options:\n";
   std::cout << "  --json             Emit structured JSON summaries\n";
@@ -622,8 +602,8 @@ void PrintSimulateTransportHelp() {
   std::cout << "  --range   <start:end>  Duration in beats to simulate" << std::endl;
 }
 
-bool ParseUint32(const std::string &text, std::uint32_t &value) {
-  char *end_ptr = nullptr;
+bool ParseUint32(const std::string& text, std::uint32_t& value) {
+  char* end_ptr = nullptr;
   errno = 0;
   unsigned long parsed = std::strtoul(text.c_str(), &end_ptr, 10);
   if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
@@ -633,7 +613,7 @@ bool ParseUint32(const std::string &text, std::uint32_t &value) {
   return true;
 }
 
-bool ParseUint16(const std::string &text, std::uint16_t &value) {
+bool ParseUint16(const std::string& text, std::uint16_t& value) {
   std::uint32_t temp = 0;
   if (!ParseUint32(text, temp) || temp > std::numeric_limits<std::uint16_t>::max()) {
     return false;
@@ -642,10 +622,9 @@ bool ParseUint16(const std::string &text, std::uint16_t &value) {
   return true;
 }
 
-bool ParseSessionCommonArg(const std::vector<std::string> &args, std::size_t &index,
-                           SessionLoadOptions &options, bool &show_help,
-                           ErrorInfo &error) {
-  const std::string &arg = args[index];
+bool ParseSessionCommonArg(const std::vector<std::string>& args, std::size_t& index,
+                           SessionLoadOptions& options, bool& show_help, ErrorInfo& error) {
+  const std::string& arg = args[index];
   if (arg == "--session") {
     if (index + 1 >= args.size()) {
       error.code = "cli.args";
@@ -689,10 +668,10 @@ struct LoadCommandOptions {
   SessionLoadOptions session;
 };
 
-bool ParseLoadCommand(const std::vector<std::string> &args, LoadCommandOptions &options,
-                      bool &show_help, ErrorInfo &error) {
+bool ParseLoadCommand(const std::vector<std::string>& args, LoadCommandOptions& options,
+                      bool& show_help, ErrorInfo& error) {
   for (std::size_t i = 0; i < args.size(); ++i) {
-    const std::string &arg = args[i];
+    const std::string& arg = args[i];
     if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
       if (!error.message.empty()) {
         return false;
@@ -721,8 +700,7 @@ bool ParseLoadCommand(const std::vector<std::string> &args, LoadCommandOptions &
         return false;
       }
       std::uint16_t bd = 0;
-      if (!ParseUint16(args[++i], bd) ||
-          (bd != 16u && bd != 24u && bd != 32u)) {
+      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u && bd != 32u)) {
         error.code = "cli.args";
         error.message = "--bd must be 16, 24, or 32";
         return false;
@@ -737,7 +715,7 @@ bool ParseLoadCommand(const std::vector<std::string> &args, LoadCommandOptions &
   return true;
 }
 
-int RunLoadCommand(const CliGlobalOptions &global, const LoadCommandOptions &options) {
+int RunLoadCommand(const CliGlobalOptions& global, const LoadCommandOptions& options) {
   SessionLoadOptions session_options = MergeSessionOptions(global, options.session);
   SessionContext context;
   ErrorInfo error;
@@ -746,7 +724,7 @@ int RunLoadCommand(const CliGlobalOptions &global, const LoadCommandOptions &opt
     return 1;
   }
   if (global.json_output) {
-    const SessionGraph *session_impl = context.session_impl();
+    const SessionGraph* session_impl = context.session_impl();
     std::cout << "{\n";
     std::cout << "  \"command\": \"load\",\n";
     PrintAbiJson(context.abi, 2);
@@ -779,11 +757,10 @@ int RunLoadCommand(const CliGlobalOptions &global, const LoadCommandOptions &opt
     std::cout << "    \"clips\": " << context.loaded_clips << ",\n";
     if (session_impl) {
       std::cout << "    \"render_spec\": {\n";
-      std::cout << "      \"sample_rate\": " << session_impl->render_sample_rate()
-                << ",\n";
+      std::cout << "      \"sample_rate\": " << session_impl->render_sample_rate() << ",\n";
       std::cout << "      \"bit_depth\": " << session_impl->render_bit_depth() << ",\n";
-      std::cout << "      \"dither\": "
-                << (session_impl->render_dither() ? "true" : "false") << "\n";
+      std::cout << "      \"dither\": " << (session_impl->render_dither() ? "true" : "false")
+                << "\n";
       std::cout << "    }\n";
     } else {
       std::cout << "    \"render_spec\": null\n";
@@ -801,11 +778,11 @@ struct RenderTracksCommandOptions {
   fs::path output_directory;
 };
 
-bool ParseRenderTracksCommand(const std::vector<std::string> &args,
-                              RenderTracksCommandOptions &options, bool &show_help,
-                              ErrorInfo &error) {
+bool ParseRenderTracksCommand(const std::vector<std::string>& args,
+                              RenderTracksCommandOptions& options, bool& show_help,
+                              ErrorInfo& error) {
   for (std::size_t i = 0; i < args.size(); ++i) {
-    const std::string &arg = args[i];
+    const std::string& arg = args[i];
     if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
       if (!error.message.empty()) {
         return false;
@@ -843,8 +820,7 @@ bool ParseRenderTracksCommand(const std::vector<std::string> &args,
         return false;
       }
       std::uint16_t bd = 0;
-      if (!ParseUint16(args[++i], bd) ||
-          (bd != 16u && bd != 24u && bd != 32u)) {
+      if (!ParseUint16(args[++i], bd) || (bd != 16u && bd != 24u && bd != 32u)) {
         error.code = "cli.args";
         error.message = "--bd must be 16, 24, or 32";
         return false;
@@ -863,8 +839,8 @@ bool ParseRenderTracksCommand(const std::vector<std::string> &args,
   return true;
 }
 
-int RunRenderTracksCommand(const CliGlobalOptions &global,
-                           const RenderTracksCommandOptions &options) {
+int RunRenderTracksCommand(const CliGlobalOptions& global,
+                           const RenderTracksCommandOptions& options) {
   if (options.output_directory.empty()) {
     ErrorInfo error{"cli.args", "--out is required", {}};
     PrintError(global, error);
@@ -889,20 +865,18 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
   const auto status = context.abi.render_api->render_tracks(
       context.guard.handle, options.output_directory.string().c_str());
   if (status != ORPHEUS_STATUS_OK) {
-    ErrorInfo render_error{"render.tracks", "Track render failed",
-                           {std::string{orpheus_status_to_string(status)}}};
+    ErrorInfo render_error{
+        "render.tracks", "Track render failed", {std::string{orpheus_status_to_string(status)}}};
     PrintError(global, render_error);
     return 1;
   }
 
   std::vector<std::pair<std::string, fs::path>> stems;
-  const SessionGraph *session_impl = context.session_impl();
-  const std::uint32_t sample_rate =
-      session_impl ? session_impl->render_sample_rate() : 0u;
-  const std::uint16_t bit_depth =
-      session_impl ? session_impl->render_bit_depth() : 0u;
+  const SessionGraph* session_impl = context.session_impl();
+  const std::uint32_t sample_rate = session_impl ? session_impl->render_sample_rate() : 0u;
+  const std::uint16_t bit_depth = session_impl ? session_impl->render_bit_depth() : 0u;
   const bool dither = session_impl ? session_impl->render_dither() : false;
-  for (const auto &track_name : context.loaded_track_names) {
+  for (const auto& track_name : context.loaded_track_names) {
     const std::string filename = session_json::MakeRenderStemFilename(
         context.graph.name(), track_name, sample_rate, bit_depth);
     stems.emplace_back(track_name, options.output_directory / filename);
@@ -910,7 +884,7 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
 
   if (!global.json_output) {
     std::cout << "Rendered stems to " << options.output_directory << std::endl;
-    for (const auto &entry : stems) {
+    for (const auto& entry : stems) {
       std::cout << "  - " << entry.second << std::endl;
     }
   } else {
@@ -918,8 +892,8 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
     std::cout << "  \"command\": \"render-tracks\",\n";
     PrintAbiJson(context.abi, 2);
     std::cout << ",\n";
-    std::cout << "  \"output_directory\": \""
-              << JsonEscape(options.output_directory.string()) << "\",\n";
+    std::cout << "  \"output_directory\": \"" << JsonEscape(options.output_directory.string())
+              << "\",\n";
     if (session_impl) {
       std::cout << "  \"render_spec\": {\n";
       std::cout << "    \"sample_rate\": " << sample_rate << ",\n";
@@ -933,9 +907,8 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
     if (!stems.empty()) {
       std::cout << "\n";
       for (std::size_t i = 0; i < stems.size(); ++i) {
-        std::cout << "    {\"track\": \"" << JsonEscape(stems[i].first)
-                  << "\", \"path\": \"" << JsonEscape(stems[i].second.string())
-                  << "\"}";
+        std::cout << "    {\"track\": \"" << JsonEscape(stems[i].first) << "\", \"path\": \""
+                  << JsonEscape(stems[i].second.string()) << "\"}";
         if (i + 1 != stems.size()) {
           std::cout << ",\n";
         } else {
@@ -950,9 +923,6 @@ int RunRenderTracksCommand(const CliGlobalOptions &global,
   return 0;
 }
 
-
-
-
 struct ClickSpecOverrides {
   std::optional<double> tempo_bpm;
   std::optional<std::uint32_t> bars;
@@ -964,8 +934,8 @@ struct ClickSpecOverrides {
   std::optional<std::string> output_path;
 };
 
-bool ParseClickSpecOverrides(const fs::path &spec_path, ClickSpecOverrides &overrides,
-                             ErrorInfo &error) {
+bool ParseClickSpecOverrides(const fs::path& spec_path, ClickSpecOverrides& overrides,
+                             ErrorInfo& error) {
   std::ifstream stream(spec_path);
   if (!stream) {
     error.code = "spec.open";
@@ -979,34 +949,34 @@ bool ParseClickSpecOverrides(const fs::path &spec_path, ClickSpecOverrides &over
   try {
     json::JsonParser parser(text);
     const json::JsonValue root = parser.Parse();
-    const json::JsonValue &object = json::ExpectObject(root, "click spec");
-    if (auto it = object.object.find("tempo_bpm"); it != object.object.end() &&
-                                       it->second.type == json::JsonValue::Type::kNumber) {
+    const json::JsonValue& object = json::ExpectObject(root, "click spec");
+    if (auto it = object.object.find("tempo_bpm");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       overrides.tempo_bpm = it->second.number;
     }
-    if (auto it = object.object.find("bars"); it != object.object.end() &&
-                                    it->second.type == json::JsonValue::Type::kNumber) {
+    if (auto it = object.object.find("bars");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number < 0.0) {
         throw std::runtime_error("bars must be non-negative");
       }
       overrides.bars = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
-    if (auto it = object.object.find("sample_rate"); it != object.object.end() &&
-                                           it->second.type == json::JsonValue::Type::kNumber) {
+    if (auto it = object.object.find("sample_rate");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number <= 0.0) {
         throw std::runtime_error("sample_rate must be positive");
       }
       overrides.sample_rate = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
-    if (auto it = object.object.find("channels"); it != object.object.end() &&
-                                         it->second.type == json::JsonValue::Type::kNumber) {
+    if (auto it = object.object.find("channels");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       if (it->second.number <= 0.0) {
         throw std::runtime_error("channels must be positive");
       }
       overrides.channels = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
-    if (auto it = object.object.find("gain"); it != object.object.end() &&
-                                      it->second.type == json::JsonValue::Type::kNumber) {
+    if (auto it = object.object.find("gain");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       overrides.gain = it->second.number;
     }
     if (auto it = object.object.find("click_frequency_hz");
@@ -1017,11 +987,11 @@ bool ParseClickSpecOverrides(const fs::path &spec_path, ClickSpecOverrides &over
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
       overrides.click_duration_seconds = it->second.number;
     }
-    if (auto it = object.object.find("output_path"); it != object.object.end() &&
-                                            it->second.type == json::JsonValue::Type::kString) {
+    if (auto it = object.object.find("output_path");
+        it != object.object.end() && it->second.type == json::JsonValue::Type::kString) {
       overrides.output_path = it->second.string;
     }
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     error.code = "spec.parse";
     error.message = "Failed to parse click spec";
     error.details = {ex.what()};
@@ -1038,8 +1008,8 @@ struct RenderClickCommandOptions {
   std::optional<std::uint16_t> bit_depth_hint;
 };
 
-RenderClickCommandOptions MergeRenderClickOptions(
-    const CliGlobalOptions &global, const RenderClickCommandOptions &local) {
+RenderClickCommandOptions MergeRenderClickOptions(const CliGlobalOptions& global,
+                                                  const RenderClickCommandOptions& local) {
   RenderClickCommandOptions merged = local;
   merged.session = MergeSessionOptions(global, local.session);
   if (!merged.spec_path && global.spec_path) {
@@ -1057,11 +1027,11 @@ RenderClickCommandOptions MergeRenderClickOptions(
   return merged;
 }
 
-bool ParseRenderClickCommand(const std::vector<std::string> &args,
-                             RenderClickCommandOptions &options, bool &show_help,
-                             ErrorInfo &error) {
+bool ParseRenderClickCommand(const std::vector<std::string>& args,
+                             RenderClickCommandOptions& options, bool& show_help,
+                             ErrorInfo& error) {
   for (std::size_t i = 0; i < args.size(); ++i) {
-    const std::string &arg = args[i];
+    const std::string& arg = args[i];
     if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
       if (!error.message.empty()) {
         return false;
@@ -1131,8 +1101,7 @@ double BeatsToBars(double beats) {
   return beats / 4.0;
 }
 
-std::uint32_t ComputeBarsFromRange(const SessionContext &context,
-                                   const TimelineRange &range) {
+std::uint32_t ComputeBarsFromRange(const SessionContext& context, const TimelineRange& range) {
   double start = context.range_start_beats;
   double end = context.range_end_beats;
   if (range.specified) {
@@ -1151,8 +1120,8 @@ std::uint32_t ComputeBarsFromRange(const SessionContext &context,
   return static_cast<std::uint32_t>(std::ceil(bars));
 }
 
-int RunRenderClickCommand(const CliGlobalOptions &global,
-                          const RenderClickCommandOptions &options) {
+int RunRenderClickCommand(const CliGlobalOptions& global,
+                          const RenderClickCommandOptions& options) {
   RenderClickCommandOptions merged = MergeRenderClickOptions(global, options);
   SessionContext context;
   ErrorInfo error;
@@ -1209,15 +1178,13 @@ int RunRenderClickCommand(const CliGlobalOptions &global,
 
   const std::uint16_t bit_depth_hint = merged.bit_depth_hint.value_or(16u);
 
-  const auto output_path =
-      merged.output_path.value_or(fs::path(override_output.value_or("")));
+  const auto output_path = merged.output_path.value_or(fs::path(override_output.value_or("")));
 
   if (!output_path.empty()) {
-    const auto status =
-        context.abi.render_api->render_click(&spec, output_path.string().c_str());
+    const auto status = context.abi.render_api->render_click(&spec, output_path.string().c_str());
     if (status != ORPHEUS_STATUS_OK) {
-      ErrorInfo render_error{"render.click", "Render failed",
-                             {std::string{orpheus_status_to_string(status)}}};
+      ErrorInfo render_error{
+          "render.click", "Render failed", {std::string{orpheus_status_to_string(status)}}};
       PrintError(global, render_error);
       return 1;
     }
@@ -1243,14 +1210,12 @@ int RunRenderClickCommand(const CliGlobalOptions &global,
     std::cout << "    \"sample_rate\": " << spec.sample_rate << ",\n";
     std::cout << "    \"channels\": " << spec.channels << ",\n";
     std::cout << "    \"gain\": " << FormatNumber(spec.gain) << ",\n";
-    std::cout << "    \"click_frequency_hz\": " << FormatNumber(spec.click_frequency_hz)
-              << ",\n";
-    std::cout << "    \"click_duration_seconds\": "
-              << FormatNumber(spec.click_duration_seconds) << "\n";
+    std::cout << "    \"click_frequency_hz\": " << FormatNumber(spec.click_frequency_hz) << ",\n";
+    std::cout << "    \"click_duration_seconds\": " << FormatNumber(spec.click_duration_seconds)
+              << "\n";
     std::cout << "  },\n";
     if (!output_path.empty()) {
-      std::cout << "  \"output_path\": \"" << JsonEscape(output_path.string())
-                << "\",\n";
+      std::cout << "  \"output_path\": \"" << JsonEscape(output_path.string()) << "\",\n";
     } else {
       std::cout << "  \"output_path\": null,\n";
     }
@@ -1264,9 +1229,9 @@ struct SimulateTransportCommandOptions {
   SessionLoadOptions session;
 };
 
-bool ParseSimulateTransportCommand(const std::vector<std::string> &args,
-                                   SimulateTransportCommandOptions &options,
-                                   bool &show_help, ErrorInfo &error) {
+bool ParseSimulateTransportCommand(const std::vector<std::string>& args,
+                                   SimulateTransportCommandOptions& options, bool& show_help,
+                                   ErrorInfo& error) {
   for (std::size_t i = 0; i < args.size(); ++i) {
     if (ParseSessionCommonArg(args, i, options.session, show_help, error)) {
       if (!error.message.empty()) {
@@ -1296,28 +1261,28 @@ void RunTransportSimulation(double tempo_bpm, std::chrono::duration<double> dura
   }
 
   const double beat_duration_seconds = 60.0 / tempo_bpm;
-  const int total_beats =
-      static_cast<int>(std::ceil(duration.count() / beat_duration_seconds));
+  const int total_beats = static_cast<int>(std::ceil(duration.count() / beat_duration_seconds));
   auto start = std::chrono::steady_clock::now();
 
-  std::cout << "Simulating transport for " << std::fixed << std::setprecision(2)
-            << duration.count() << " seconds" << std::endl;
+  std::cout << "Simulating transport for " << std::fixed << std::setprecision(2) << duration.count()
+            << " seconds" << std::endl;
   for (int beat = 0; beat < total_beats; ++beat) {
     const double elapsed = beat * beat_duration_seconds;
     const auto delta = std::chrono::duration<double>(elapsed);
     const auto next_tick =
         start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(delta);
     std::this_thread::sleep_until(next_tick);
-    std::cout << "[transport] beat " << (beat + 1) << " at " << std::fixed
-              << std::setprecision(2) << elapsed << "s" << std::endl;
+    std::cout << "[transport] beat " << (beat + 1) << " at " << std::fixed << std::setprecision(2)
+              << elapsed << "s" << std::endl;
   }
 
-  std::this_thread::sleep_until(start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(duration));
+  std::this_thread::sleep_until(
+      start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(duration));
   std::cout << "[transport] simulation complete" << std::endl;
 }
 
-int RunSimulateTransportCommand(const CliGlobalOptions &global,
-                                const SimulateTransportCommandOptions &options) {
+int RunSimulateTransportCommand(const CliGlobalOptions& global,
+                                const SimulateTransportCommandOptions& options) {
   SessionLoadOptions session_options = MergeSessionOptions(global, options.session);
   session_options.require_tracks = false;
   SessionContext context;
@@ -1339,7 +1304,7 @@ int RunSimulateTransportCommand(const CliGlobalOptions &global,
   }
   double beats = end - start;
   if (beats <= 0.0) {
-    beats = 16.0;  // default 4 bars
+    beats = 16.0; // default 4 bars
   }
   double seconds = 0.0;
   if (context.tempo_bpm > 0.0) {
@@ -1366,8 +1331,8 @@ struct ParsedCommand {
   bool show_help = false;
 };
 
-bool ParseArguments(int argc, char **argv, CliGlobalOptions &global,
-                    ParsedCommand &command, ErrorInfo &error) {
+bool ParseArguments(int argc, char** argv, CliGlobalOptions& global, ParsedCommand& command,
+                    ErrorInfo& error) {
   std::vector<std::string> positional;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -1439,8 +1404,7 @@ bool ParseArguments(int argc, char **argv, CliGlobalOptions &global,
         return false;
       }
       std::uint16_t bd = 0;
-      if (!ParseUint16(argv[++i], bd) ||
-          (bd != 16u && bd != 24u && bd != 32u)) {
+      if (!ParseUint16(argv[++i], bd) || (bd != 16u && bd != 24u && bd != 32u)) {
         error.code = "cli.args";
         error.message = "--bd must be 16, 24, or 32";
         return false;
@@ -1475,7 +1439,7 @@ bool ParseArguments(int argc, char **argv, CliGlobalOptions &global,
   return true;
 }
 
-int Run(int argc, char **argv) {
+int Run(int argc, char** argv) {
   CliGlobalOptions global;
   ParsedCommand command;
   ErrorInfo parse_error;
@@ -1545,8 +1509,7 @@ int Run(int argc, char **argv) {
   }
   if (command.name == "simulate-transport") {
     SimulateTransportCommandOptions options;
-    if (!ParseSimulateTransportCommand(command.args, options, command.show_help,
-                                       error)) {
+    if (!ParseSimulateTransportCommand(command.args, options, command.show_help, error)) {
       if (command.show_help) {
         PrintSimulateTransportHelp();
         return 0;
@@ -1567,8 +1530,10 @@ int Run(int argc, char **argv) {
   return 1;
 }
 
-}  // namespace minhost
+} // namespace minhost
 
 #ifndef ORPHEUS_MINHOST_NO_ENTRYPOINT
-int main(int argc, char **argv) { return minhost::Run(argc, argv); }
+int main(int argc, char** argv) {
+  return minhost::Run(argc, argv);
+}
 #endif

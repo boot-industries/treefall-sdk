@@ -50,6 +50,9 @@ out/
 *.wav
 *.pdf
 
+# Dependency graph output
+deps-graph.svg
+
 # Orpheus binary guard
 *.node
 *.wasm
@@ -66,3 +69,13 @@ out/
 *.gif
 *.mp3
 *.wav
+
+# Code coverage
+build-coverage/
+coverage-report/
+coverage.info
+coverage_filtered.info
+*.gcov
+*.gcda
+*.gcno
+docs/api/

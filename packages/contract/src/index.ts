@@ -3,10 +3,14 @@
  *
  * Orpheus SDK contract schemas and TypeScript types for command/event communication.
  * This package defines the API boundary between drivers and client applications.
+ *
+ * **Default export: v0.1.0-alpha (for backwards compatibility)**
+ *
+ * For v1.0.0-beta, import from: `@orpheus/contract/v1.0.0-beta`
  */
 
 // ============================================================================
-// Command Types
+// Default exports (v0.1.0-alpha for backwards compat)
 // ============================================================================
 
 export interface LoadSessionCommand {

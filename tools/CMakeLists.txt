@@ -4,3 +4,4 @@ if(ORP_WITH_TESTS)
 endif()
 
 add_subdirectory(perf)
+add_subdirectory(cli)

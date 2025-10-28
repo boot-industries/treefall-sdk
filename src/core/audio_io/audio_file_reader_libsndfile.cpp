@@ -79,7 +79,10 @@ Result<AudioFileMetadata> AudioFileReaderLibsndfile::open(const std::string& fil
 }
 
 Result<size_t> AudioFileReaderLibsndfile::readSamples(float* buffer, size_t num_samples) {
-  std::lock_guard<std::mutex> lock(m_mutex);
+  // NOTE: NO MUTEX LOCK HERE - this is called from the audio thread
+  // We assume that each reader instance is only accessed from ONE audio thread
+  // and that open/close/seek are NOT called while audio is playing
+  // This is enforced by the TransportController design
 
   Result<size_t> result;
 
@@ -90,7 +93,7 @@ Result<size_t> AudioFileReaderLibsndfile::readSamples(float* buffer, size_t num_
     return result;
   }
 
-  // Read interleaved samples
+  // Read interleaved samples (libsndfile maintains internal state)
   sf_count_t read = sf_readf_float(m_file, buffer, static_cast<sf_count_t>(num_samples));
 
   if (read < 0) {
@@ -100,7 +103,7 @@ Result<size_t> AudioFileReaderLibsndfile::readSamples(float* buffer, size_t num_
     return result;
   }
 
-  // Update position
+  // Update position atomically
   int64_t new_position = m_current_position.load(std::memory_order_relaxed) + read;
   m_current_position.store(new_position, std::memory_order_release);
 

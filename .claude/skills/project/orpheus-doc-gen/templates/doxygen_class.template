@@ -1,0 +1,70 @@
+/**
+ * @class ClassName
+ * @brief [One-line description of class purpose]
+ *
+ * [Detailed description:
+ * - What problem does this class solve?
+ * - Key responsibilities
+ * - Design patterns used
+ * - Ownership and lifecycle
+ * - Thread safety model]
+ *
+ * **Design Rationale:**
+ * [Explain why this class exists, what alternatives were considered,
+ * and key design decisions]
+ *
+ * **Thread Safety:**
+ * [Explain thread safety guarantees:
+ * - Which methods are thread-safe
+ * - Which methods require external synchronization
+ * - Whether safe for audio thread use]
+ *
+ * **Real-Time Safety:**
+ * [Explain real-time characteristics:
+ * - Which methods are real-time safe
+ * - What allocations happen in constructor vs runtime
+ * - Bounded execution time guarantees]
+ *
+ * **Ownership and Lifecycle:**
+ * [Explain object lifetime management:
+ * - Who owns instances
+ * - Copy/move semantics
+ * - Resource management (RAII)]
+ *
+ * **Performance Characteristics:**
+ * - Construction: [O-notation, allocations]
+ * - Key operations: [O-notation for main methods]
+ * - Memory footprint: [Approximate size]
+ *
+ * @example Typical Usage
+ * @code
+ * // Create and configure
+ * AudioMixer mixer;
+ * mixer.setSampleRate(48000);
+ * mixer.setNumChannels(2);
+ *
+ * // Use in audio thread
+ * float* outputs[2];
+ * mixer.processBlock(outputs, 512, 48000);
+ * @endcode
+ *
+ * @example Advanced Usage
+ * @code
+ * // Multi-channel with dynamic gain
+ * AudioMixer mixer;
+ * mixer.setGain(0, 0.8f);   // Channel 0 at -2dB
+ * mixer.setGain(1, 1.0f);   // Channel 1 at 0dB
+ *
+ * // Process
+ * mixer.processBlock(outputs, numFrames, sampleRate);
+ * @endcode
+ *
+ * @note [Important implementation details]
+ * @warning [Potential pitfalls or common mistakes]
+ *
+ * @see RelatedClass for similar functionality
+ * @see AlternativeApproach for different design
+ *
+ * @invariant [Class invariants that always hold]
+ * [Example: "numChannels_ > 0 && numChannels_ <= kMaxChannels"]
+ */

@@ -1,0 +1,50 @@
+{
+  "sessionMetadata": {
+    "name": "Test Session",
+    "version": "1.0.0",
+    "createdDate": "2025-10-26T12:00:00Z",
+    "sampleRate": 48000
+  },
+  "clips": [
+    {
+      "name": "Intro Music",
+      "filePath": "/path/to/intro.wav",
+      "trimInSamples": 0,
+      "trimOutSamples": 240000,
+      "gain": 0.0,
+      "fadeInSeconds": 0.5,
+      "fadeOutSeconds": 1.0
+    },
+    {
+      "name": "SFX Hit",
+      "filePath": "/path/to/hit.wav",
+      "trimInSamples": 0,
+      "trimOutSamples": 48000,
+      "gain": -3.0,
+      "fadeInSeconds": 0.0,
+      "fadeOutSeconds": 0.2
+    },
+    {
+      "name": "Ambient Loop",
+      "filePath": "/path/to/ambient.wav",
+      "trimInSamples": 0,
+      "trimOutSamples": 480000,
+      "gain": -6.0,
+      "fadeInSeconds": 2.0,
+      "fadeOutSeconds": 2.0
+    }
+  ],
+  "tracks": [
+    {
+      "name": "Main",
+      "clips": []
+    },
+    {
+      "name": "SFX",
+      "clips": []
+    }
+  ],
+  "tempoMap": {
+    "tempo": 120.0
+  }
+}

@@ -16,11 +16,11 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            generator: "Unix Makefiles"
+            generator: 'Unix Makefiles'
           - os: windows-latest
-            generator: "Visual Studio 17 2022"
+            generator: 'Visual Studio 17 2022'
           - os: macos-latest
-            generator: "Unix Makefiles"
+            generator: 'Unix Makefiles'
 
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18.20.4'
+          node-version: '20'
 
       - name: Enable Corepack
         run: corepack enable
@@ -70,7 +70,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: packages/engine-native
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build TypeScript
         working-directory: packages/engine-native
@@ -86,7 +86,7 @@ jobs:
       - name: Build C++ SDK (if not cached)
         run: |
           if [ ! -d "build-release" ]; then
-            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON
             cmake --build build-release
           fi
         shell: bash
@@ -110,11 +110,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18.20.4'
+          node-version: '20'
 
       - name: Enable Corepack
         run: corepack enable
@@ -138,13 +138,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      
+
       - name: Lint TypeScript
         run: pnpm run lint:js
-      
+
       - name: Type check
         run: pnpm run type-check || echo "Type checking not configured yet"
-      
+
       - name: Build packages
         env:
           NEXT_PUBLIC_APP_URL: https://ui.elevenlabs.io
@@ -185,7 +185,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18.20.4'
+          node-version: '20'
 
       - name: Enable Corepack
         run: corepack enable
@@ -216,13 +216,13 @@ jobs:
   lint-cpp:
     name: Lint C++
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format-14
-      
+
       - name: Run clang-format
         run: |
           find src include -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \

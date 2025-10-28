@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "npm run build:native && npm run build:ts",
-    "build:native": "cmake-js compile",
+    "build:native": "cmake -S ../../ -B ../../build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON && cmake --build ../../build-release --parallel && cmake-js compile",
     "build:ts": "tsc",
     "clean": "cmake-js clean && rm -rf dist",
     "rebuild": "npm run clean && npm run build",

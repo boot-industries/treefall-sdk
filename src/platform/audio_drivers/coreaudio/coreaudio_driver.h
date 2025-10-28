@@ -39,8 +39,8 @@ public:
 private:
   /// Audio Unit render callback (invoked on audio thread)
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
-                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
-                                  UInt32 inNumberFrames, AudioBufferList* ioData);
+                                 const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
+                                 UInt32 inNumberFrames, AudioBufferList* ioData);
 
   /// Enumerate available audio devices
   /// @return Vector of device IDs
@@ -84,8 +84,8 @@ private:
   // Audio thread buffers (allocated once in initialize)
   std::vector<float*> input_buffers_;
   std::vector<float*> output_buffers_;
-  std::vector<float> input_storage_;   // Backing storage for input buffers
-  std::vector<float> output_storage_;  // Backing storage for output buffers
+  std::vector<float> input_storage_;  // Backing storage for input buffers
+  std::vector<float> output_storage_; // Backing storage for output buffers
 
   // Thread safety
   mutable std::mutex mutex_;

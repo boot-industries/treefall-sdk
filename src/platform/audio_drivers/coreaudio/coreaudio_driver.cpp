@@ -18,6 +18,13 @@ CoreAudioDriver::~CoreAudioDriver() {
 }
 
 SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
+  FILE* f = fopen("/tmp/coreaudio_init.log", "a");
+  if (f) {
+    fprintf(f, "CoreAudio: initialize() called, sample_rate=%u\n", config.sample_rate);
+    fflush(f);
+    fclose(f);
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (is_running_.load(std::memory_order_acquire)) {
@@ -104,7 +111,7 @@ SessionGraphError CoreAudioDriver::stop() {
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (!is_running_.load(std::memory_order_acquire)) {
-    return SessionGraphError::OK;  // Already stopped
+    return SessionGraphError::OK; // Already stopped
   }
 
   if (audio_unit_) {
@@ -135,8 +142,8 @@ uint32_t CoreAudioDriver::getLatencySamples() const {
 
 // Static audio callback
 OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
-                                          const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
-                                          UInt32 inNumberFrames, AudioBufferList* ioData) {
+                                         const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
+                                         UInt32 inNumberFrames, AudioBufferList* ioData) {
   (void)ioActionFlags;
   (void)inTimeStamp;
   (void)inBusNumber;
@@ -150,11 +157,12 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
 
   if (!driver->callback_) {
-    return noErr;  // No callback set, output silence
+    return noErr; // No callback set, output silence
   }
 
   // Clamp frames to our allocated buffer size
-  uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames), static_cast<uint32_t>(driver->config_.buffer_size));
+  uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames),
+                                        static_cast<uint32_t>(driver->config_.buffer_size));
   uint32_t num_channels = driver->config_.num_outputs;
 
   // Zero our output buffers before callback
@@ -163,7 +171,9 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
 
   // Invoke user callback (lock-free)
-  const float** input_ptrs = driver->input_buffers_.empty() ? nullptr : const_cast<const float**>(driver->input_buffers_.data());
+  const float** input_ptrs = driver->input_buffers_.empty()
+                                 ? nullptr
+                                 : const_cast<const float**>(driver->input_buffers_.data());
   float** output_ptrs = driver->output_buffers_.data();
 
   driver->callback_->processAudio(input_ptrs, output_ptrs, num_channels, frames_to_process);
@@ -182,12 +192,12 @@ std::vector<AudioDeviceID> CoreAudioDriver::enumerateDevices() {
   std::vector<AudioDeviceID> devices;
 
   AudioObjectPropertyAddress propertyAddress = {kAudioHardwarePropertyDevices,
-                                                 kAudioObjectPropertyScopeGlobal,
-                                                 kAudioObjectPropertyElementMain};
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
 
   UInt32 dataSize = 0;
-  OSStatus status =
-      AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0, nullptr, &dataSize);
+  OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0,
+                                                   nullptr, &dataSize);
 
   if (status != noErr || dataSize == 0) {
     return devices;
@@ -196,8 +206,8 @@ std::vector<AudioDeviceID> CoreAudioDriver::enumerateDevices() {
   UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
   devices.resize(deviceCount);
 
-  status =
-      AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, nullptr, &dataSize, devices.data());
+  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, nullptr,
+                                      &dataSize, devices.data());
 
   if (status != noErr) {
     devices.clear();
@@ -210,14 +220,14 @@ AudioDeviceID CoreAudioDriver::findDevice(const std::string& device_name) {
   // If no device name specified, use default output device
   if (device_name.empty()) {
     AudioObjectPropertyAddress propertyAddress = {kAudioHardwarePropertyDefaultOutputDevice,
-                                                   kAudioObjectPropertyScopeGlobal,
-                                                   kAudioObjectPropertyElementMain};
+                                                  kAudioObjectPropertyScopeGlobal,
+                                                  kAudioObjectPropertyElementMain};
 
     AudioDeviceID deviceID = 0;
     UInt32 dataSize = sizeof(AudioDeviceID);
 
-    OSStatus status =
-        AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, nullptr, &dataSize, &deviceID);
+    OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0,
+                                                 nullptr, &dataSize, &deviceID);
 
     if (status == noErr && deviceID != kAudioObjectUnknown) {
       return deviceID;
@@ -235,18 +245,19 @@ AudioDeviceID CoreAudioDriver::findDevice(const std::string& device_name) {
     }
   }
 
-  return 0;  // Not found
+  return 0; // Not found
 }
 
 std::string CoreAudioDriver::getDeviceName(AudioDeviceID device_id) {
   AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyDeviceNameCFString,
-                                                 kAudioObjectPropertyScopeGlobal,
-                                                 kAudioObjectPropertyElementMain};
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
 
   CFStringRef cfName = nullptr;
   UInt32 dataSize = sizeof(CFStringRef);
 
-  OSStatus status = AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &cfName);
+  OSStatus status =
+      AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &cfName);
 
   if (status != noErr || !cfName) {
     return "";
@@ -261,17 +272,19 @@ std::string CoreAudioDriver::getDeviceName(AudioDeviceID device_id) {
 }
 
 uint32_t CoreAudioDriver::queryDeviceLatency(AudioDeviceID device_id) {
-  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyLatency, kAudioObjectPropertyScopeGlobal,
-                                                 kAudioObjectPropertyElementMain};
+  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyLatency,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
 
   UInt32 latency = 0;
   UInt32 dataSize = sizeof(UInt32);
 
-  OSStatus status = AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &latency);
+  OSStatus status =
+      AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &latency);
 
   if (status != noErr) {
     // If we can't query latency, estimate based on buffer size
-    return config_.buffer_size * 2;  // Conservative estimate (double buffer)
+    return config_.buffer_size * 2; // Conservative estimate (double buffer)
   }
 
   // Add buffer size to device latency
@@ -279,6 +292,12 @@ uint32_t CoreAudioDriver::queryDeviceLatency(AudioDeviceID device_id) {
 }
 
 SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
+  FILE* diagFile = fopen("/tmp/coreaudio_init.log", "a");
+  if (diagFile) {
+    fprintf(diagFile, "CoreAudio: setupAudioUnit() called, device_id=%u\n", device_id);
+    fclose(diagFile);
+  }
+
   // Create AudioComponentDescription for HAL Output
   AudioComponentDescription desc = {};
   desc.componentType = kAudioUnitType_Output;
@@ -301,8 +320,8 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
 
   // Disable input (output only for now)
   UInt32 enableIO = 0;
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &enableIO,
-                                 sizeof(enableIO));
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
+                                kAudioUnitScope_Input, 1, &enableIO, sizeof(enableIO));
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
@@ -310,34 +329,53 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
 
   // Enable output
   enableIO = 1;
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &enableIO,
-                                 sizeof(enableIO));
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
+                                kAudioUnitScope_Output, 0, &enableIO, sizeof(enableIO));
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
   }
 
   // Set current device
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                                 &device_id, sizeof(AudioDeviceID));
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_CurrentDevice,
+                                kAudioUnitScope_Global, 0, &device_id, sizeof(AudioDeviceID));
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
+  }
+
+  // CRITICAL FIX: Set the DEVICE's nominal sample rate to match our requested rate
+  // This must be done BEFORE setting the AudioUnit's stream format
+  Float64 requestedSampleRate = static_cast<Float64>(config_.sample_rate);
+  AudioObjectPropertyAddress deviceSRAddr = {kAudioDevicePropertyNominalSampleRate,
+                                             kAudioObjectPropertyScopeGlobal,
+                                             kAudioObjectPropertyElementMain};
+  status = AudioObjectSetPropertyData(device_id, &deviceSRAddr, 0, nullptr, sizeof(Float64),
+                                      &requestedSampleRate);
+  if (status != noErr) {
+    FILE* diagFile = fopen("/tmp/coreaudio_init.log", "a");
+    if (diagFile) {
+      fprintf(diagFile, "CoreAudio: WARNING - Failed to set device sample rate (status: %d)\n",
+              (int)status);
+      fclose(diagFile);
+    }
+    // Don't fail completely, but this will cause playback speed issues
   }
 
   // Set stream format (planar float32)
   AudioStreamBasicDescription streamFormat = {};
   streamFormat.mSampleRate = config_.sample_rate;
   streamFormat.mFormatID = kAudioFormatLinearPCM;
-  streamFormat.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
+  streamFormat.mFormatFlags =
+      kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
   streamFormat.mBytesPerPacket = sizeof(float);
   streamFormat.mFramesPerPacket = 1;
   streamFormat.mBytesPerFrame = sizeof(float);
   streamFormat.mChannelsPerFrame = config_.num_outputs;
   streamFormat.mBitsPerChannel = 32;
 
-  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &streamFormat,
-                                 sizeof(streamFormat));
+  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
+                                0, &streamFormat, sizeof(streamFormat));
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
@@ -345,8 +383,8 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
 
   // Set buffer size (if supported)
   UInt32 bufferFrames = config_.buffer_size;
-  status = AudioUnitSetProperty(audio_unit_, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0,
-                                 &bufferFrames, sizeof(bufferFrames));
+  status = AudioUnitSetProperty(audio_unit_, kAudioDevicePropertyBufferFrameSize,
+                                kAudioUnitScope_Global, 0, &bufferFrames, sizeof(bufferFrames));
 
   // Note: Buffer size setting may fail on some devices, but continue anyway
 
@@ -355,8 +393,8 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
   callbackStruct.inputProc = &CoreAudioDriver::renderCallback;
   callbackStruct.inputProcRefCon = this;
 
-  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0,
-                                 &callbackStruct, sizeof(callbackStruct));
+  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_SetRenderCallback,
+                                kAudioUnitScope_Input, 0, &callbackStruct, sizeof(callbackStruct));
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
@@ -366,6 +404,45 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
   status = AudioUnitInitialize(audio_unit_);
   if (status != noErr) {
     return SessionGraphError::InternalError;
+  }
+
+  // DIAGNOSTIC: Verify actual sample rate after initialization
+  AudioStreamBasicDescription actualFormat = {};
+  UInt32 formatSize = sizeof(actualFormat);
+  status = AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
+                                0, &actualFormat, &formatSize);
+
+  // Also query the DEVICE's nominal sample rate (not just the AudioUnit)
+  Float64 deviceSampleRate = 0.0;
+  UInt32 sizeOfSampleRate = sizeof(Float64);
+  AudioObjectPropertyAddress querySRAddr = {kAudioDevicePropertyNominalSampleRate,
+                                            kAudioObjectPropertyScopeGlobal,
+                                            kAudioObjectPropertyElementMain};
+  OSStatus deviceSRStatus = AudioObjectGetPropertyData(device_id, &querySRAddr, 0, nullptr,
+                                                       &sizeOfSampleRate, &deviceSampleRate);
+
+  FILE* f = fopen("/tmp/coreaudio_init.log", "a");
+  if (f) {
+    fprintf(f, "CoreAudio: Requested sample rate: %u Hz\n", config_.sample_rate);
+    if (status == noErr) {
+      fprintf(f, "CoreAudio: AudioUnit sample rate: %.1f Hz\n", actualFormat.mSampleRate);
+    } else {
+      fprintf(f, "CoreAudio: Failed to query AudioUnit sample rate (status: %d)\n", (int)status);
+    }
+    if (deviceSRStatus == noErr) {
+      fprintf(f, "CoreAudio: DEVICE nominal sample rate: %.1f Hz\n", deviceSampleRate);
+      if (deviceSampleRate != static_cast<double>(config_.sample_rate)) {
+        fprintf(f,
+                "CoreAudio: ***CRITICAL*** DEVICE RATE MISMATCH! Ratio: %.6f (this causes slow "
+                "playback!)\n",
+                static_cast<double>(config_.sample_rate) / deviceSampleRate);
+      }
+    } else {
+      fprintf(f, "CoreAudio: Failed to query device sample rate (status: %d)\n",
+              (int)deviceSRStatus);
+    }
+    fflush(f); // Ensure it's written immediately
+    fclose(f);
   }
 
   return SessionGraphError::OK;
