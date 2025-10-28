@@ -36,7 +36,7 @@ struct PanelSnapshot {
   std::vector<PlaylistLaneSnapshot> playlist_lanes;
 };
 
-std::string BuildPanelText(const PanelSnapshot &snapshot);
-const char *PanelTitle();
+std::string BuildPanelText(const PanelSnapshot& snapshot);
+const char* PanelTitle();
 
-}  // namespace orpheus::reaper
+} // namespace orpheus::reaper

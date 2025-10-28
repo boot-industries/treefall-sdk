@@ -1,0 +1,24 @@
+=================================================================
+==12345==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010 at pc 0x000000400b12 bp 0x7ffd12345678 sp 0x7ffd12345670
+READ of size 4 at 0x602000000010 thread T0
+    #0 0x400b11 in SampleBuffer::read() /Users/user/orpheus-sdk/src/modules/m2/sample_buffer.cpp:89:15
+    #1 0x400c42 in TransportController::process() /Users/user/orpheus-sdk/src/modules/m1/transport_controller.cpp:134:20
+    #2 0x400d13 in main /Users/user/orpheus-sdk/tests/transport/transport_test.cpp:45:5
+    #3 0x7f1234567890 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x21b97)
+
+0x602000000010 is located 0 bytes inside of 256-byte region [0x602000000010,0x602000000110)
+freed by thread T0 here:
+    #0 0x7f1234567891 in operator delete(void*) (/usr/lib/x86_64-linux-gnu/libasan.so.4+0xe1ab7)
+    #1 0x400a22 in SampleBuffer::~SampleBuffer() /Users/user/orpheus-sdk/src/modules/m2/sample_buffer.cpp:67:3
+
+previously allocated by thread T0 here:
+    #0 0x7f1234567892 in operator new(unsigned long) (/usr/lib/x86_64-linux-gnu/libasan.so.4+0xe1a57)
+    #1 0x400931 in SampleBuffer::SampleBuffer(int) /Users/user/orpheus-sdk/src/modules/m2/sample_buffer.cpp:23:15
+
+SUMMARY: AddressSanitizer: heap-use-after-free /Users/user/orpheus-sdk/src/modules/m2/sample_buffer.cpp:89:15 in SampleBuffer::read()
+Shadow bytes around the buggy address:
+  0x0c047fff7fb0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x0c047fff7fc0: fa fa[fd]fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c047fff7fd0: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c047fff7fe0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+==12345==ABORTING

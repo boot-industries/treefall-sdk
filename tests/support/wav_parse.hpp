@@ -18,13 +18,13 @@ struct ParsedWav {
   std::vector<std::uint8_t> data;
 };
 
-inline ParsedWav ReadWav(const std::filesystem::path &path) {
+inline ParsedWav ReadWav(const std::filesystem::path& path) {
   std::ifstream stream(path, std::ios::binary);
   if (!stream) {
     throw std::runtime_error("Unable to open WAV: " + path.string());
   }
 
-  auto ReadBytes = [&](char *buffer, std::size_t count) {
+  auto ReadBytes = [&](char* buffer, std::size_t count) {
     stream.read(buffer, static_cast<std::streamsize>(count));
     if (!stream) {
       throw std::runtime_error("Failed to read WAV: " + path.string());
@@ -38,7 +38,7 @@ inline ParsedWav ReadWav(const std::filesystem::path &path) {
   }
 
   std::uint32_t riff_size = 0;
-  ReadBytes(reinterpret_cast<char *>(&riff_size), sizeof(riff_size));
+  ReadBytes(reinterpret_cast<char*>(&riff_size), sizeof(riff_size));
   (void)riff_size;
 
   char wave[4];
@@ -57,7 +57,7 @@ inline ParsedWav ReadWav(const std::filesystem::path &path) {
       throw std::runtime_error("Unexpected EOF in WAV: " + path.string());
     }
     std::uint32_t chunk_size = 0;
-    ReadBytes(reinterpret_cast<char *>(&chunk_size), sizeof(chunk_size));
+    ReadBytes(reinterpret_cast<char*>(&chunk_size), sizeof(chunk_size));
 
     if (std::string(chunk_id, sizeof(chunk_id)) == "fmt ") {
       std::vector<char> fmt(chunk_size);
@@ -65,20 +65,15 @@ inline ParsedWav ReadWav(const std::filesystem::path &path) {
       if (chunk_size < 16) {
         throw std::runtime_error("Unsupported fmt chunk size");
       }
-      result.audio_format = static_cast<std::uint16_t>(
-          static_cast<unsigned char>(fmt[0]) |
-          (static_cast<unsigned char>(fmt[1]) << 8));
-      result.channels = static_cast<std::uint16_t>(
-          static_cast<unsigned char>(fmt[2]) |
-          (static_cast<unsigned char>(fmt[3]) << 8));
+      result.audio_format = static_cast<std::uint16_t>(static_cast<unsigned char>(fmt[0]) |
+                                                       (static_cast<unsigned char>(fmt[1]) << 8));
+      result.channels = static_cast<std::uint16_t>(static_cast<unsigned char>(fmt[2]) |
+                                                   (static_cast<unsigned char>(fmt[3]) << 8));
       result.sample_rate = static_cast<std::uint32_t>(
-          static_cast<unsigned char>(fmt[4]) |
-          (static_cast<unsigned char>(fmt[5]) << 8) |
-          (static_cast<unsigned char>(fmt[6]) << 16) |
-          (static_cast<unsigned char>(fmt[7]) << 24));
+          static_cast<unsigned char>(fmt[4]) | (static_cast<unsigned char>(fmt[5]) << 8) |
+          (static_cast<unsigned char>(fmt[6]) << 16) | (static_cast<unsigned char>(fmt[7]) << 24));
       result.bits_per_sample = static_cast<std::uint16_t>(
-          static_cast<unsigned char>(fmt[14]) |
-          (static_cast<unsigned char>(fmt[15]) << 8));
+          static_cast<unsigned char>(fmt[14]) | (static_cast<unsigned char>(fmt[15]) << 8));
       have_fmt = true;
       if (chunk_size & 1u) {
         stream.ignore(1);
@@ -86,7 +81,7 @@ inline ParsedWav ReadWav(const std::filesystem::path &path) {
     } else if (std::string(chunk_id, sizeof(chunk_id)) == "data") {
       result.data.resize(chunk_size);
       if (chunk_size > 0) {
-        ReadBytes(reinterpret_cast<char *>(result.data.data()), chunk_size);
+        ReadBytes(reinterpret_cast<char*>(result.data.data()), chunk_size);
       }
       have_data = true;
       if (chunk_size & 1u) {
@@ -103,4 +98,4 @@ inline ParsedWav ReadWav(const std::filesystem::path &path) {
   return result;
 }
 
-}  // namespace orpheus::tests::support
+} // namespace orpheus::tests::support

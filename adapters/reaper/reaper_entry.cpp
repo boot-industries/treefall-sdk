@@ -3,8 +3,8 @@
 
 #include "json_io.h"
 #include "orpheus/abi.h"
-#include "orpheus/errors.h"
 #include "orpheus/adapters/reaper/entry.h"
+#include "orpheus/errors.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,37 +25,31 @@ orpheus::reaper::PanelSnapshot gSnapshot;
 std::string gPanelText;
 constexpr std::uint32_t kBeatsPerBar = 4;
 
-const orpheus_session_api_v1 *SessionAbi() {
+const orpheus_session_api_v1* SessionAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
-  const auto *api =
-      orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
-      minor != ORPHEUS_ABI_MINOR) {
+  const auto* api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;
 }
 
-const orpheus_clipgrid_api_v1 *ClipgridAbi() {
+const orpheus_clipgrid_api_v1* ClipgridAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
-  const auto *api =
-      orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
-      minor != ORPHEUS_ABI_MINOR) {
+  const auto* api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;
 }
 
-const orpheus_render_api_v1 *RenderAbi() {
+const orpheus_render_api_v1* RenderAbi() {
   uint32_t major = 0;
   uint32_t minor = 0;
-  const auto *api =
-      orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR ||
-      minor != ORPHEUS_ABI_MINOR) {
+  const auto* api = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
+  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
     return nullptr;
   }
   return api;
@@ -65,10 +59,12 @@ std::string StatusToString(orpheus_status status) {
   return std::string{orpheus_status_to_string(status)};
 }
 
-void RefreshPanelLocked() { gPanelText = orpheus::reaper::BuildPanelText(gSnapshot); }
+void RefreshPanelLocked() {
+  gPanelText = orpheus::reaper::BuildPanelText(gSnapshot);
+}
 
 struct SessionGuard {
-  const orpheus_session_api_v1 *abi{};
+  const orpheus_session_api_v1* abi{};
   orpheus_session_handle handle{};
   ~SessionGuard() {
     if (abi && handle) {
@@ -77,27 +73,23 @@ struct SessionGuard {
   }
 };
 
-orpheus_status PopulateSession(const SessionGraph &graph,
-                               orpheus_session_handle handle,
-                               const orpheus_session_api_v1 *session_abi,
-                               const orpheus_clipgrid_api_v1 *clipgrid_abi,
-                               std::size_t &clip_count) {
+orpheus_status PopulateSession(const SessionGraph& graph, orpheus_session_handle handle,
+                               const orpheus_session_api_v1* session_abi,
+                               const orpheus_clipgrid_api_v1* clipgrid_abi,
+                               std::size_t& clip_count) {
   clip_count = 0;
-  for (const auto &track_ptr : graph.tracks()) {
+  for (const auto& track_ptr : graph.tracks()) {
     orpheus_track_handle track_handle{};
     const orpheus_track_desc desc{track_ptr->name().c_str()};
     auto status = session_abi->add_track(handle, &desc, &track_handle);
     if (status != ORPHEUS_STATUS_OK) {
       return status;
     }
-    for (const auto &clip_ptr : track_ptr->clips()) {
-      const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(),
-                                        clip_ptr->start(),
-                                        clip_ptr->length(),
-                                        0u};
+    for (const auto& clip_ptr : track_ptr->clips()) {
+      const orpheus_clip_desc clip_desc{clip_ptr->name().c_str(), clip_ptr->start(),
+                                        clip_ptr->length(), 0u};
       orpheus_clip_handle clip_handle{};
-      status = clipgrid_abi->add_clip(handle, track_handle, &clip_desc,
-                                      &clip_handle);
+      status = clipgrid_abi->add_clip(handle, track_handle, &clip_desc, &clip_handle);
       if (status != ORPHEUS_STATUS_OK) {
         return status;
       }
@@ -107,9 +99,9 @@ orpheus_status PopulateSession(const SessionGraph &graph,
   return clipgrid_abi->commit(handle);
 }
 
-bool ImportSessionLocked(const std::string &path, std::string &error) {
-  const auto *session_abi = SessionAbi();
-  const auto *clipgrid_abi = ClipgridAbi();
+bool ImportSessionLocked(const std::string& path, std::string& error) {
+  const auto* session_abi = SessionAbi();
+  const auto* clipgrid_abi = ClipgridAbi();
   if (!session_abi || !clipgrid_abi) {
     error = "ABI tables unavailable";
     return false;
@@ -118,7 +110,7 @@ bool ImportSessionLocked(const std::string &path, std::string &error) {
   SessionGraph graph;
   try {
     graph = session_json::LoadSessionFromFile(path);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     error = ex.what();
     return false;
   }
@@ -149,11 +141,11 @@ bool ImportSessionLocked(const std::string &path, std::string &error) {
   gSnapshot.tempo_bpm = graph.tempo();
   gSnapshot.marker_sets.clear();
   gSnapshot.marker_sets.reserve(graph.marker_sets().size());
-  for (const auto &marker_set_ptr : graph.marker_sets()) {
+  for (const auto& marker_set_ptr : graph.marker_sets()) {
     MarkerSetSnapshot snapshot_set;
     snapshot_set.name = marker_set_ptr->name();
     snapshot_set.markers.reserve(marker_set_ptr->markers().size());
-    for (const auto &marker : marker_set_ptr->markers()) {
+    for (const auto& marker : marker_set_ptr->markers()) {
       PanelMarker snapshot_marker;
       snapshot_marker.name = marker.name;
       snapshot_marker.position_beats = marker.position_beats;
@@ -163,25 +155,23 @@ bool ImportSessionLocked(const std::string &path, std::string &error) {
   }
   gSnapshot.playlist_lanes.clear();
   gSnapshot.playlist_lanes.reserve(graph.playlist_lanes().size());
-  for (const auto &lane_ptr : graph.playlist_lanes()) {
+  for (const auto& lane_ptr : graph.playlist_lanes()) {
     PlaylistLaneSnapshot lane_snapshot;
     lane_snapshot.name = lane_ptr->name();
     lane_snapshot.is_active = lane_ptr->is_active();
     gSnapshot.playlist_lanes.push_back(std::move(lane_snapshot));
   }
-  const double total_beats =
-      std::max(0.0, graph.session_end_beats() - graph.session_start_beats());
+  const double total_beats = std::max(0.0, graph.session_end_beats() - graph.session_start_beats());
   const double bars_exact = total_beats / static_cast<double>(kBeatsPerBar);
   gSnapshot.bars = bars_exact <= 0.0
                        ? std::max<std::uint32_t>(1, gSnapshot.bars)
-                       : static_cast<std::uint32_t>(
-                             std::max(1.0, std::ceil(bars_exact)));
+                       : static_cast<std::uint32_t>(std::max(1.0, std::ceil(bars_exact)));
   gSnapshot.status_line.clear();
   return true;
 }
 
-bool RenderClickLocked(const std::string &path, std::string &error) {
-  const auto *render_abi = RenderAbi();
+bool RenderClickLocked(const std::string& path, std::string& error) {
+  const auto* render_abi = RenderAbi();
   if (!render_abi) {
     error = "Render ABI unavailable";
     return false;
@@ -210,18 +200,18 @@ void EnsurePanelInitialized() {
   }
 }
 
-}  // namespace
+} // namespace
 
-extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionName() {
+extern "C" REAPER_ORPHEUS_API const char* ReaperExtensionName() {
   return orpheus::reaper::PanelTitle();
 }
 
-extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionVersion() {
+extern "C" REAPER_ORPHEUS_API const char* ReaperExtensionVersion() {
   static std::string version = "ABI " + orpheus::ToString(orpheus::kSessionAbi);
   return version.c_str();
 }
 
-extern "C" REAPER_ORPHEUS_API const char *ReaperExtensionPanelText() {
+extern "C" REAPER_ORPHEUS_API const char* ReaperExtensionPanelText() {
   std::lock_guard lock(gStateMutex);
   EnsurePanelInitialized();
   return gPanelText.c_str();
@@ -234,7 +224,7 @@ extern "C" REAPER_ORPHEUS_API int OrpheusTogglePanel() {
   return 1;
 }
 
-extern "C" REAPER_ORPHEUS_API int OrpheusImportSession(const char *json_path) {
+extern "C" REAPER_ORPHEUS_API int OrpheusImportSession(const char* json_path) {
   if (json_path == nullptr) {
     return 0;
   }
@@ -248,7 +238,7 @@ extern "C" REAPER_ORPHEUS_API int OrpheusImportSession(const char *json_path) {
   return ok ? 1 : 0;
 }
 
-extern "C" REAPER_ORPHEUS_API int OrpheusRenderClickToFile(const char *output_path) {
+extern "C" REAPER_ORPHEUS_API int OrpheusRenderClickToFile(const char* output_path) {
   if (output_path == nullptr) {
     return 0;
   }

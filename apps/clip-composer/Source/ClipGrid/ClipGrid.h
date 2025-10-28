@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <juce_gui_extra/juce_gui_extra.h>
 #include "ClipButton.h"
-#include <vector>
+#include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
+#include <vector>
 
 //==============================================================================
 /**
@@ -18,41 +18,55 @@
  * - 6 columns × 8 rows
  * - Responsive sizing
  * - 2px gaps between buttons
+ * - Visual updates at 75fps (broadcast standard timing)
  */
-class ClipGrid : public juce::Component
-{
+class ClipGrid : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
 public:
-    //==============================================================================
-    ClipGrid();
-    ~ClipGrid() override = default;
+  //==============================================================================
+  ClipGrid();
+  ~ClipGrid() override = default;
 
-    //==============================================================================
-    // Button access
-    ClipButton* getButton(int index);
-    int getButtonCount() const { return static_cast<int>(m_buttons.size()); }
+  //==============================================================================
+  // Button access
+  ClipButton* getButton(int index);
+  int getButtonCount() const {
+    return static_cast<int>(m_buttons.size());
+  }
 
-    //==============================================================================
-    // Callbacks for button events
-    std::function<void(int buttonIndex)> onButtonClicked;        // Left-click (trigger)
-    std::function<void(int buttonIndex)> onButtonRightClicked;   // Right-click (load)
+  //==============================================================================
+  // Callbacks for button events
+  std::function<void(int buttonIndex)> onButtonClicked;       // Left-click (trigger)
+  std::function<void(int buttonIndex)> onButtonRightClicked;  // Right-click (load)
+  std::function<void(int buttonIndex)> onButtonDoubleClicked; // Double-click (edit)
+  std::function<void(const juce::Array<juce::File>& files, int buttonIndex)>
+      onFilesDropped; // Drag & drop files
+  std::function<void(int sourceButtonIndex, int targetButtonIndex)>
+      onButtonDraggedToButton; // Drag clip to different button
 
-    //==============================================================================
-    void paint(juce::Graphics& g) override;
-    void resized() override;
+  //==============================================================================
+  void paint(juce::Graphics& g) override;
+  void resized() override;
+
+  // FileDragAndDropTarget overrides
+  bool isInterestedInFileDrag(const juce::StringArray& files) override;
+  void filesDropped(const juce::StringArray& files, int x, int y) override;
 
 private:
-    //==============================================================================
-    void createButtons();
-    void handleButtonLeftClick(int buttonIndex);
-    void handleButtonRightClick(int buttonIndex);
+  //==============================================================================
+  void createButtons();
+  void handleButtonLeftClick(int buttonIndex);
+  void handleButtonRightClick(int buttonIndex);
 
-    //==============================================================================
-    static constexpr int COLUMNS = 6;
-    static constexpr int ROWS = 8;
-    static constexpr int BUTTON_COUNT = COLUMNS * ROWS;  // 48
-    static constexpr int GAP = 2;
+  // Timer callback for 75fps visual updates (broadcast standard)
+  void timerCallback() override;
 
-    std::vector<std::unique_ptr<ClipButton>> m_buttons;
+  //==============================================================================
+  static constexpr int COLUMNS = 6;
+  static constexpr int ROWS = 8;
+  static constexpr int BUTTON_COUNT = COLUMNS * ROWS; // 48
+  static constexpr int GAP = 2;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
+  std::vector<std::unique_ptr<ClipButton>> m_buttons;
+
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

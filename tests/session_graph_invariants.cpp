@@ -8,33 +8,35 @@
 namespace orpheus::core::tests {
 namespace {
 
-double ClipEnd(const Clip &clip) { return clip.start() + clip.length(); }
+double ClipEnd(const Clip& clip) {
+  return clip.start() + clip.length();
+}
 
-}  // namespace
+} // namespace
 
 TEST(SessionGraphInvariants, CommitSortsTracksAndClipsAndUpdatesRange) {
   SessionGraph session;
-  Track *second = session.add_track("Beta");
-  Track *first = session.add_track("Alpha");
+  Track* second = session.add_track("Beta");
+  Track* first = session.add_track("Alpha");
 
   ASSERT_NE(second, nullptr);
   ASSERT_NE(first, nullptr);
 
-  Clip *late = session.add_clip(*second, "zzz", 8.0, 2.0);
-  Clip *early = session.add_clip(*second, "aaa", 2.0, 1.0);
-  Clip *tied = session.add_clip(*second, "mmm", 3.0, 0.5);
+  Clip* late = session.add_clip(*second, "zzz", 8.0, 2.0);
+  Clip* early = session.add_clip(*second, "aaa", 2.0, 1.0);
+  Clip* tied = session.add_clip(*second, "mmm", 3.0, 0.5);
   ASSERT_NE(late, nullptr);
   ASSERT_NE(early, nullptr);
   ASSERT_NE(tied, nullptr);
 
   session.commit_clip_grid();
 
-  const auto &tracks = session.tracks();
+  const auto& tracks = session.tracks();
   ASSERT_EQ(tracks.size(), 2u);
   EXPECT_EQ(tracks[0]->name(), "Alpha");
   EXPECT_EQ(tracks[1]->name(), "Beta");
 
-  const auto &clips = tracks[1]->clips();
+  const auto& clips = tracks[1]->clips();
   ASSERT_EQ(clips.size(), 3u);
   EXPECT_EQ(clips[0]->name(), "aaa");
   EXPECT_EQ(clips[1]->name(), "mmm");
@@ -46,10 +48,10 @@ TEST(SessionGraphInvariants, CommitSortsTracksAndClipsAndUpdatesRange) {
 
 TEST(SessionGraphInvariants, CommitResetsRangeWhenEmpty) {
   SessionGraph session;
-  Track *track = session.add_track("Track");
+  Track* track = session.add_track("Track");
   ASSERT_NE(track, nullptr);
 
-  Clip *clip = session.add_clip(*track, "short", 1.0, 1.5);
+  Clip* clip = session.add_clip(*track, "short", 1.0, 1.5);
   ASSERT_NE(clip, nullptr);
 
   session.commit_clip_grid();
@@ -64,10 +66,10 @@ TEST(SessionGraphInvariants, CommitResetsRangeWhenEmpty) {
 
 TEST(SessionGraphInvariants, ClipLengthIsClampedToMinimum) {
   SessionGraph session;
-  Track *track = session.add_track("Track");
+  Track* track = session.add_track("Track");
   ASSERT_NE(track, nullptr);
 
-  Clip *clip = session.add_clip(*track, "Clip", 0.0, 0.0);
+  Clip* clip = session.add_clip(*track, "Clip", 0.0, 0.0);
   ASSERT_NE(clip, nullptr);
   EXPECT_GT(clip->length(), 0.0);
 
@@ -77,27 +79,25 @@ TEST(SessionGraphInvariants, ClipLengthIsClampedToMinimum) {
 
 TEST(SessionGraphInvariants, RejectsOverlappingClips) {
   SessionGraph session;
-  Track *track = session.add_track("Track");
+  Track* track = session.add_track("Track");
   ASSERT_NE(track, nullptr);
 
-  Clip *first = session.add_clip(*track, "one", 0.0, 4.0);
+  Clip* first = session.add_clip(*track, "one", 0.0, 4.0);
   ASSERT_NE(first, nullptr);
 
-  EXPECT_THROW(static_cast<void>(
-                   session.add_clip(*track, "two", 2.0, 4.0)),
-               std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(session.add_clip(*track, "two", 2.0, 4.0)), std::invalid_argument);
 
-  Clip *second = session.add_clip(*track, "two", 4.0, 4.0);
+  Clip* second = session.add_clip(*track, "two", 4.0, 4.0);
   ASSERT_NE(second, nullptr);
 
   EXPECT_THROW(session.set_clip_start(*second, 2.0), std::invalid_argument);
   EXPECT_DOUBLE_EQ(second->start(), 4.0);
 
-  Clip *third = session.add_clip(*track, "three", 12.0, 4.0);
+  Clip* third = session.add_clip(*track, "three", 12.0, 4.0);
   ASSERT_NE(third, nullptr);
 
   EXPECT_THROW(session.set_clip_length(*second, 10.0), std::invalid_argument);
   EXPECT_DOUBLE_EQ(second->length(), 4.0);
 }
 
-}  // namespace orpheus::core::tests
+} // namespace orpheus::core::tests

@@ -17,13 +17,17 @@
   },
   "peerDependencies": {
     "@orpheus/engine-service": "workspace:*",
-    "@orpheus/engine-native": "workspace:*"
+    "@orpheus/engine-native": "workspace:*",
+    "@orpheus/engine-wasm": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@orpheus/engine-service": {
       "optional": true
     },
     "@orpheus/engine-native": {
+      "optional": true
+    },
+    "@orpheus/engine-wasm": {
       "optional": true
     }
   },

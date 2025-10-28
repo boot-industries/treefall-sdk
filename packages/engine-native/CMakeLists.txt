@@ -50,6 +50,85 @@ link_directories(
   ${ORPHEUS_BUILD_DIR}/src
 )
 
+# Locate Orpheus SDK libraries
+find_library(ORPHEUS_SESSION_LIB NAMES orpheus_session liborpheus_session
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src
+    ${ORPHEUS_SDK_ROOT}/build-release/src
+  NO_DEFAULT_PATH
+)
+find_library(ORPHEUS_CLIPGRID_LIB NAMES orpheus_clipgrid liborpheus_clipgrid
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src
+    ${ORPHEUS_SDK_ROOT}/build-release/src
+  NO_DEFAULT_PATH
+)
+find_library(ORPHEUS_RENDER_LIB NAMES orpheus_render liborpheus_render
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src
+    ${ORPHEUS_SDK_ROOT}/build-release/src
+  NO_DEFAULT_PATH
+)
+
+# M2 Real-time infrastructure libraries (audio_io, transport, routing)
+find_library(ORPHEUS_AUDIO_IO_LIB NAMES orpheus_audio_io liborpheus_audio_io
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src/core/audio_io
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src/core/audio_io
+    ${ORPHEUS_SDK_ROOT}/build-release/src/core/audio_io
+  NO_DEFAULT_PATH
+)
+find_library(ORPHEUS_TRANSPORT_LIB NAMES orpheus_transport liborpheus_transport
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src/core/transport
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src/core/transport
+    ${ORPHEUS_SDK_ROOT}/build-release/src/core/transport
+  NO_DEFAULT_PATH
+)
+find_library(ORPHEUS_ROUTING_LIB NAMES orpheus_routing liborpheus_routing
+  PATHS
+    ${ORPHEUS_BUILD_DIR}/src/core/routing
+    ${ORPHEUS_BUILD_DIR}/src
+    ${ORPHEUS_BUILD_DIR}
+    ${ORPHEUS_SDK_ROOT}/build/src/core/routing
+    ${ORPHEUS_SDK_ROOT}/build-release/src/core/routing
+  NO_DEFAULT_PATH
+)
+
+if(NOT ORPHEUS_SESSION_LIB)
+  message(FATAL_ERROR "liborpheus_session not found. Build SDK first: cmake -S ${ORPHEUS_SDK_ROOT} -B ${ORPHEUS_BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} && cmake --build ${ORPHEUS_BUILD_DIR}")
+endif()
+if(NOT ORPHEUS_CLIPGRID_LIB)
+  message(FATAL_ERROR "liborpheus_clipgrid not found. Build SDK first: cmake -S ${ORPHEUS_SDK_ROOT} -B ${ORPHEUS_BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} && cmake --build ${ORPHEUS_BUILD_DIR}")
+endif()
+if(NOT ORPHEUS_RENDER_LIB)
+  message(FATAL_ERROR "liborpheus_render not found. Build SDK first: cmake -S ${ORPHEUS_SDK_ROOT} -B ${ORPHEUS_BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} && cmake --build ${ORPHEUS_BUILD_DIR}")
+endif()
+
+message(STATUS "Found Orpheus libraries:")
+message(STATUS "  orpheus_session: ${ORPHEUS_SESSION_LIB}")
+message(STATUS "  orpheus_clipgrid: ${ORPHEUS_CLIPGRID_LIB}")
+message(STATUS "  orpheus_render: ${ORPHEUS_RENDER_LIB}")
+if(ORPHEUS_AUDIO_IO_LIB)
+  message(STATUS "  orpheus_audio_io: ${ORPHEUS_AUDIO_IO_LIB}")
+endif()
+if(ORPHEUS_TRANSPORT_LIB)
+  message(STATUS "  orpheus_transport: ${ORPHEUS_TRANSPORT_LIB}")
+endif()
+if(ORPHEUS_ROUTING_LIB)
+  message(STATUS "  orpheus_routing: ${ORPHEUS_ROUTING_LIB}")
+endif()
+
 # Source files
 set(SOURCE_FILES
   src/binding.cpp
@@ -74,10 +153,21 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 # Link Orpheus SDK libraries
 target_link_libraries(${PROJECT_NAME}
-  orpheus_session
-  orpheus_clipgrid
-  orpheus_render
+  ${ORPHEUS_SESSION_LIB}
+  ${ORPHEUS_CLIPGRID_LIB}
+  ${ORPHEUS_RENDER_LIB}
 )
+
+# Link M2 real-time infrastructure libraries if available
+if(ORPHEUS_AUDIO_IO_LIB)
+  target_link_libraries(${PROJECT_NAME} ${ORPHEUS_AUDIO_IO_LIB})
+endif()
+if(ORPHEUS_TRANSPORT_LIB)
+  target_link_libraries(${PROJECT_NAME} ${ORPHEUS_TRANSPORT_LIB})
+endif()
+if(ORPHEUS_ROUTING_LIB)
+  target_link_libraries(${PROJECT_NAME} ${ORPHEUS_ROUTING_LIB})
+endif()
 
 # Platform-specific linking
 if(APPLE)

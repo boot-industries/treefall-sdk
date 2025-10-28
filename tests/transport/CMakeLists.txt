@@ -8,6 +8,7 @@ add_executable(transport_controller_test
 target_link_libraries(transport_controller_test
     PRIVATE
         orpheus_transport
+        orpheus_audio_io
         orpheus_session
         GTest::gtest
         GTest::gtest_main
@@ -22,6 +23,56 @@ target_include_directories(transport_controller_test
 add_test(
     NAME transport_controller_test
     COMMAND transport_controller_test
+)
+
+# Fade processing tests
+add_executable(fade_processing_test
+    fade_processing_test.cpp
+)
+
+target_link_libraries(fade_processing_test
+    PRIVATE
+        orpheus_transport
+        orpheus_audio_io
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(fade_processing_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+add_test(
+    NAME fade_processing_test
+    COMMAND fade_processing_test
+)
+
+# OUT point enforcement tests (ORP091, ORP093)
+add_executable(out_point_enforcement_test
+    out_point_enforcement_test.cpp
+)
+
+target_link_libraries(out_point_enforcement_test
+    PRIVATE
+        orpheus_transport
+        orpheus_audio_io
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(out_point_enforcement_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+add_test(
+    NAME out_point_enforcement_test
+    COMMAND out_point_enforcement_test
 )
 
 # Integration tests (requires orpheus_audio_io)

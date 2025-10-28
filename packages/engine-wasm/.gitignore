@@ -1,0 +1,15 @@
+# Build outputs
+dist/
+build/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Node
+node_modules/
+*.log
+
+# TypeScript
+*.tsbuildinfo

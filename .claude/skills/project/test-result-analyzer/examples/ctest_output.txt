@@ -1,0 +1,16 @@
+Test project /Users/user/orpheus-sdk/build
+    Start 1: FoundationTests
+1/47 Test  #1: FoundationTests ..................   Passed    0.05 sec
+    Start 2: TransportTests
+2/47 Test  #2: TransportTests ...................   Passed    0.12 sec
+    Start 3: AudioMixerTests
+3/47 Test  #3: AudioMixerTests ..................***Failed    0.08 sec
+    Start 4: SampleCounterTests
+4/47 Test  #4: SampleCounterTests ...............   Passed    0.03 sec
+
+98% tests passed, 1 tests failed out of 47
+
+Total Test time (real) =   3.21 sec
+
+The following tests FAILED:
+	  3 - AudioMixerTests (Failed)

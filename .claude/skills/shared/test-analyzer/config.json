@@ -1,0 +1,23 @@
+{
+  "project": "orpheus-sdk",
+  "test_frameworks": ["googletest", "ctest"],
+  "sanitizers": ["asan", "tsan", "ubsan"],
+  "coverage_tool": "lcov",
+  "coverage_threshold": 98.0,
+  "module_mapping": {
+    "m1": "Module 1 - Foundation (Transport, Clock)",
+    "m2": "Module 2 - Core (File Reader, Buffers)",
+    "m3": "Module 3 - Mixer (Audio Mixing)",
+    "m4": "Module 4 - Effects (DSP Processing)"
+  },
+  "test_output_paths": {
+    "ctest": "build/Testing/Temporary/LastTest.log",
+    "gtest": "build/test_output.txt",
+    "coverage": "build/coverage.info"
+  },
+  "quality_standards": {
+    "min_coverage": 98.0,
+    "max_warnings": 0,
+    "sanitizer_clean": true
+  }
+}

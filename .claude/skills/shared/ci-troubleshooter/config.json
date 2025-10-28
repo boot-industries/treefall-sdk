@@ -1,0 +1,100 @@
+{
+  "project": "orpheus-sdk",
+  "ci_platforms": ["github-actions"],
+  "error_patterns": [
+    {
+      "pattern": "heap-use-after-free",
+      "severity": "critical",
+      "category": "sanitizer",
+      "skill_reference": "rt.safety.auditor",
+      "suggestion": "Check object lifetimes and ownership. Likely cause: buffer accessed after deallocation.",
+      "fix_steps": [
+        "Review destructor order in containing class",
+        "Ensure buffer outlives all references",
+        "Consider using shared_ptr for shared ownership"
+      ]
+    },
+    {
+      "pattern": "data race",
+      "severity": "critical",
+      "category": "sanitizer",
+      "skill_reference": "rt.safety.auditor",
+      "suggestion": "Use atomics or lock-free structures for cross-thread communication.",
+      "fix_steps": [
+        "Replace mutex with std::atomic<T>",
+        "Use memory_order_acquire/release for producer-consumer",
+        "Verify no concurrent modification of shared state"
+      ]
+    },
+    {
+      "pattern": "CMake Error",
+      "severity": "error",
+      "category": "build",
+      "suggestion": "Check CMakeLists.txt syntax and dependencies",
+      "fix_steps": [
+        "Verify all find_package() calls succeed",
+        "Check target names and dependencies",
+        "Ensure CMake 3.20+ is installed"
+      ]
+    },
+    {
+      "pattern": "Coverage below threshold",
+      "severity": "warning",
+      "category": "quality",
+      "suggestion": "Add tests to reach 98% coverage target",
+      "fix_steps": [
+        "Run coverage report: cmake --build build --target coverage",
+        "Identify uncovered lines in report",
+        "Add unit tests for uncovered code paths"
+      ]
+    },
+    {
+      "pattern": "clang-format check failed",
+      "severity": "error",
+      "category": "style",
+      "suggestion": "Run clang-format on modified files",
+      "fix_steps": [
+        "Format all C++ files: find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i",
+        "Verify formatting: pnpm run lint:cpp",
+        "Commit formatted changes"
+      ]
+    },
+    {
+      "pattern": "undefined reference to",
+      "severity": "error",
+      "category": "linker",
+      "suggestion": "Missing library or object file in CMake target_link_libraries",
+      "fix_steps": [
+        "Check target_link_libraries() in CMakeLists.txt",
+        "Verify library is built before linking",
+        "Add missing dependency to target"
+      ]
+    }
+  ],
+  "platform_specific": {
+    "windows": {
+      "patterns": [
+        {
+          "pattern": "MSVC.*error C",
+          "suggestion": "MSVC-specific compilation error. Check Windows-specific code paths."
+        }
+      ]
+    },
+    "macos": {
+      "patterns": [
+        {
+          "pattern": "ld: symbol.*not found",
+          "suggestion": "Linker error on macOS. Check framework dependencies and -rpath settings."
+        }
+      ]
+    },
+    "linux": {
+      "patterns": [
+        {
+          "pattern": "cannot find -l",
+          "suggestion": "Missing library on Linux. Install required package or update LD_LIBRARY_PATH."
+        }
+      ]
+    }
+  }
+}

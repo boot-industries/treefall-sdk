@@ -9,10 +9,14 @@
   ],
   "scripts": {
     "postinstall": "echo 'Workspace bootstrap complete.'",
-    "prepare": "husky install || echo 'Husky not installed'",
+    "prepare": "husky",
     "build": "pnpm -r build",
+    "build:ts": "pnpm -r --filter='!@orpheus/engine-native' build",
     "test": "pnpm run test:integration",
     "test:integration": "./tests/integration/run-tests.sh",
+    "perf:validate": "node scripts/validate-performance.js",
+    "dep:check": "madge --circular --extensions ts,tsx,js,jsx packages/",
+    "dep:graph": "madge --image deps-graph.svg --extensions ts,tsx,js,jsx packages/",
     "lint": "pnpm run lint:js && pnpm run lint:cpp",
     "lint:js": "pnpm -r --if-present lint",
     "lint:cpp": "scripts/lint-cpp.sh",
@@ -26,12 +30,17 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.0",
     "@changesets/cli": "^2.26.2",
+    "@commitlint/cli": "^17.6.3",
+    "@commitlint/config-conventional": "^17.6.3",
     "@typescript-eslint/eslint-plugin": "^7.15.0",
     "@typescript-eslint/parser": "^7.15.0",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-typescript": "^3.6.1",
     "eslint-plugin-import": "^2.29.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.4",
+    "madge": "^8.0.0",
     "prettier": "^3.3.2"
   },
   "pnpm": {
@@ -41,10 +50,12 @@
       "@vercel/oidc": "2.0.2",
       "@orama/orama": "3.1.0",
       "lru-cache": "10.4.3",
+      "semver": "7.6.3",
       "rimraf": "5.0.5",
       "minimatch": "9.0.5",
       "commander": "11.1.0",
-      "marked": "12.0.2"
+      "marked": "12.0.2",
+      "cross-spawn": "7.0.6"
     },
     "patchedDependencies": {
       "minimatch@9.0.5": "patches/minimatch@9.0.5.patch"

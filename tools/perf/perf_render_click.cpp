@@ -3,8 +3,8 @@
 #include "orpheus/errors.h"
 
 #include <chrono>
-#include <filesystem>
 #include <cstdint>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -15,10 +15,8 @@ namespace fs = std::filesystem;
 int main() {
   uint32_t got_major = 0;
   uint32_t got_minor = 0;
-  const auto *render =
-      orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &got_major, &got_minor);
-  if (render == nullptr || got_major != ORPHEUS_ABI_MAJOR ||
-      got_minor != ORPHEUS_ABI_MINOR) {
+  const auto* render = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &got_major, &got_minor);
+  if (render == nullptr || got_major != ORPHEUS_ABI_MAJOR || got_minor != ORPHEUS_ABI_MINOR) {
     std::cerr << "render ABI unavailable" << std::endl;
     return 1;
   }
@@ -30,8 +28,7 @@ int main() {
   std::cout << "Orpheus render_click performance" << std::endl;
   for (const auto rate : sample_rates) {
     const fs::path output =
-        fs::temp_directory_path() /
-        ("orpheus_perf_" + std::to_string(rate) + ".wav");
+        fs::temp_directory_path() / ("orpheus_perf_" + std::to_string(rate) + ".wav");
 
     orpheus_render_click_spec spec{};
     spec.tempo_bpm = tempo;
@@ -46,16 +43,13 @@ int main() {
     const auto status = render->render_click(&spec, output.string().c_str());
     const auto end = std::chrono::steady_clock::now();
     if (status != ORPHEUS_STATUS_OK) {
-      std::cerr << "render_click failed: "
-                << orpheus_status_to_string(status) << std::endl;
+      std::cerr << "render_click failed: " << orpheus_status_to_string(status) << std::endl;
       return 1;
     }
 
-    const auto elapsed =
-        std::chrono::duration<double, std::milli>(end - start).count();
-    std::cout << "sample_rate=" << rate << "Hz took "
-              << std::fixed << std::setprecision(3) << elapsed << " ms"
-              << std::endl;
+    const auto elapsed = std::chrono::duration<double, std::milli>(end - start).count();
+    std::cout << "sample_rate=" << rate << "Hz took " << std::fixed << std::setprecision(3)
+              << elapsed << " ms" << std::endl;
 
     std::error_code ec;
     fs::remove(output, ec);

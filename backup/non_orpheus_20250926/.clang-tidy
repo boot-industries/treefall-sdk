@@ -1,8 +1,0 @@
-Checks: >
-  -*,bugprone-*,performance-*,readability-*,
-  -readability-identifier-length,
-  -bugprone-suspicious-include
-HeaderFilterRegex: '^sdk/.*'
-WarningsAsErrors: ''
-AnalyzeTemporaryDtors: false
-FormatStyle: file

@@ -19,15 +19,14 @@ std::filesystem::path MakeUniqueSpecPath() {
   static std::atomic<int> counter{0};
   const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
   const int id = counter.fetch_add(1);
-  std::string filename = "orpheus-minhost-json-" + std::to_string(now) + "-" +
-                         std::to_string(id) + ".json";
+  std::string filename =
+      "orpheus-minhost-json-" + std::to_string(now) + "-" + std::to_string(id) + ".json";
   return std::filesystem::temp_directory_path() / std::move(filename);
 }
 
 class TempJsonFile {
- public:
-  explicit TempJsonFile(std::string_view contents)
-      : path_(MakeUniqueSpecPath()) {
+public:
+  explicit TempJsonFile(std::string_view contents) : path_(MakeUniqueSpecPath()) {
     std::ofstream stream(path_);
     stream << contents;
     stream.close();
@@ -38,13 +37,15 @@ class TempJsonFile {
     std::filesystem::remove(path_, ec);
   }
 
-  const std::filesystem::path &path() const { return path_; }
+  const std::filesystem::path& path() const {
+    return path_;
+  }
 
- private:
+private:
   std::filesystem::path path_;
 };
 
-}  // namespace
+} // namespace
 
 TEST(JsonMinhostBridgeTests, ParsesTypicalSpec) {
   const std::string contents = R"JSON({

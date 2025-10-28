@@ -1,0 +1,138 @@
+{
+  "version": "1.0.0",
+  "repository": "orpheus-sdk",
+  "last_updated": "2025-10-18",
+  "skill_framework_version": "1.0.0",
+  "framework_reference": "/Users/chrislyons/dev/SKIL003.md",
+  "project_constraints": {
+    "real_time_safety": true,
+    "coverage_threshold": 98.0,
+    "zero_warnings": true,
+    "sanitizer_clean": true,
+    "deterministic": true,
+    "broadcast_safe": true
+  },
+  "skills": [
+    {
+      "name": "rt.safety.auditor",
+      "path": "./project/rt-safety-auditor",
+      "enabled": true,
+      "access_level": 1,
+      "owner": "Orpheus Team",
+      "review_cycle": "weekly",
+      "critical": true,
+      "description": "Analyze C++ code for real-time safety violations (heap allocations, locks, blocking I/O)",
+      "config": {
+        "banned_functions_file": "./project/rt-safety-auditor/reference/banned_functions.md",
+        "constraints_file": "./project/rt-safety-auditor/reference/rt_constraints.md",
+        "allowed_patterns_file": "./project/rt-safety-auditor/reference/allowed_patterns.md",
+        "audio_thread_pattern": ".*audioCallback.*|.*processBlock.*|.*process\\(.*|.*render.*",
+        "strict_mode": true,
+        "fail_on_violations": true
+      },
+      "trigger_patterns": [
+        "real-time",
+        "audio thread",
+        "process",
+        "callback",
+        "render",
+        "transport"
+      ],
+      "file_patterns": ["*_processor.cpp", "*_audio.cpp", "*Transport*.cpp", "*Render*.cpp"]
+    },
+    {
+      "name": "test.result.analyzer",
+      "path": "./project/test-result-analyzer",
+      "enabled": true,
+      "access_level": 1,
+      "owner": "Orpheus Team",
+      "review_cycle": "monthly",
+      "description": "Parse ctest and sanitizer output, summarize failures, identify root causes",
+      "config": {
+        "test_output_dir": "build/Testing/Temporary/",
+        "coverage_file": "build/coverage.info",
+        "coverage_threshold": 98.0,
+        "sanitizer_patterns_file": "./project/test-result-analyzer/reference/sanitizer_formats.md",
+        "test_formats_file": "./project/test-result-analyzer/reference/test_formats.md"
+      },
+      "trigger_patterns": [
+        "test",
+        "ctest",
+        "sanitizer",
+        "ASan",
+        "TSan",
+        "UBSan",
+        "coverage",
+        "failures"
+      ],
+      "file_patterns": ["Testing/Temporary/LastTest.log", "test_output.txt", "*_test.cpp"]
+    },
+    {
+      "name": "orpheus.doc.gen",
+      "path": "./project/orpheus-doc-gen",
+      "enabled": true,
+      "access_level": 2,
+      "owner": "Orpheus Team",
+      "review_cycle": "monthly",
+      "description": "Generate and maintain comprehensive documentation (Doxygen, progress reports, session notes)",
+      "config": {
+        "doxygen_style": "javadoc",
+        "min_doc_lines": 8000,
+        "include_rt_safety_notes": true,
+        "include_thread_safety": true,
+        "function_template": "./project/orpheus-doc-gen/templates/doxygen_function.template",
+        "class_template": "./project/orpheus-doc-gen/templates/doxygen_class.template",
+        "progress_template": "./project/orpheus-doc-gen/templates/progress_report.template.md",
+        "session_template": "./project/orpheus-doc-gen/templates/session_note.template.md"
+      },
+      "trigger_patterns": ["document", "Doxygen", "progress", "session report", "API docs"],
+      "file_patterns": ["*.h", "*.hpp", "progress.md", "SESSION_*.md"]
+    },
+    {
+      "name": "test.analyzer",
+      "path": "./shared/test-analyzer",
+      "enabled": true,
+      "access_level": 1,
+      "owner": "Platform Team",
+      "review_cycle": "quarterly",
+      "shared": true,
+      "description": "Shared cross-project test analysis skill",
+      "config_path": "./shared/test-analyzer/config.json"
+    },
+    {
+      "name": "ci.troubleshooter",
+      "path": "./shared/ci-troubleshooter",
+      "enabled": true,
+      "access_level": 1,
+      "owner": "Platform Team",
+      "review_cycle": "quarterly",
+      "shared": true,
+      "description": "Shared CI/CD troubleshooting skill",
+      "config_path": "./shared/ci-troubleshooter/config.json"
+    }
+  ],
+  "skill_relationships": {
+    "composes": {
+      "rt.safety.auditor": ["test.result.analyzer"],
+      "test.result.analyzer": ["ci.troubleshooter"],
+      "orpheus.doc.gen": ["rt.safety.auditor", "test.result.analyzer"]
+    },
+    "dependencies": {}
+  },
+  "quality_gates": {
+    "pre_merge": ["rt.safety.auditor"],
+    "post_test": ["test.result.analyzer"],
+    "documentation": ["orpheus.doc.gen"]
+  },
+  "metrics": {
+    "total_skills": 5,
+    "project_specific": 3,
+    "shared": 2,
+    "critical": 1,
+    "total_documentation_lines": 8500,
+    "reference_docs": 12,
+    "scripts": 1,
+    "templates": 2,
+    "examples": 9
+  }
+}

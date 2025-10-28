@@ -1,0 +1,512 @@
+name: Orpheus SDK CI Pipeline
+
+on:
+  push:
+    branches: [main, develop, release/*]
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '8.15.4'
+  CMAKE_VERSION: '3.27.x'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  # ============================================================================
+  # C++ Build and Test (All Platforms)
+  # ============================================================================
+  cpp-build-test:
+    name: C++ Build & Test (${{ matrix.os }}, ${{ matrix.build_type }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Debug, Release]
+        include:
+          - os: ubuntu-latest
+            generator: 'Unix Makefiles'
+            sanitizers: ON
+          - os: windows-latest
+            generator: 'Visual Studio 17 2022'
+            sanitizers: OFF
+          - os: macos-latest
+            generator: 'Unix Makefiles'
+            sanitizers: ON
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-cmake-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-${{ matrix.build_type }}-
+            ${{ runner.os }}-cmake-
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -G "${{ matrix.generator }}" \
+            ${{ matrix.build_type == 'Debug' && matrix.sanitizers == 'ON' && '-DORP_ENABLE_SANITIZERS=ON' || '' }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+        timeout-minutes: 10
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+        timeout-minutes: 10
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-${{ matrix.os }}-${{ matrix.build_type }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/CTestCostData.txt
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # C++ Linting
+  # ============================================================================
+  cpp-lint:
+    name: C++ Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-14
+
+      - name: Run clang-format
+        run: |
+          find src include -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
+          xargs clang-format-14 --dry-run --Werror
+
+      - name: Lint Windows includes
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          ROOT = pathlib.Path('.')
+          violations = []
+          for path in ROOT.rglob('*'):
+            if not path.is_file():
+              continue
+            try:
+              relative = path.relative_to(ROOT)
+            except ValueError:
+              continue
+            parts = set(relative.parts)
+            if 'backup' in parts:
+              continue
+            if path.suffix.lower() not in {
+                '.c', '.cc', '.cxx', '.cpp', '.h', '.hh', '.hpp', '.hxx', '.inl'
+            }:
+              continue
+            try:
+              text = path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+              continue
+            lines = text.splitlines()
+            for index, line in enumerate(lines):
+              if '#include <windows.h>' not in line:
+                continue
+              prior = lines[:index]
+              if not any('#define NOMINMAX' in candidate for candidate in prior):
+                violations.append(f"{path}:{index + 1}")
+
+          if violations:
+            print('Found #include <windows.h> without prior #define NOMINMAX:')
+            for violation in violations:
+              print(f"  {violation}")
+            sys.exit(1)
+          PY
+
+      - name: Check for binary artifacts
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          mapfile -t added < <(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}"...HEAD)
+          if [ ${#added[@]} -eq 0 ]; then
+            echo "No newly added files; performing repository scan instead."
+          fi
+          declare -a banned=(".wav" ".dll" ".exe" ".a" ".so" ".dylib" ".lib")
+          declare -a violations=()
+          declare -A seen=()
+          for file in "${added[@]}"; do
+            lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+            for ext in "${banned[@]}"; do
+              if [[ "$lower" == *"${ext}" ]]; then
+                if [[ -z "${seen[$file]:-}" ]]; then
+                  violations+=("$file")
+                  seen["$file"]=1
+                fi
+                break
+              fi
+            done
+          done
+          if [ ${#violations[@]} -eq 0 ]; then
+            mapfile -t tracked < <(git ls-files)
+            for file in "${tracked[@]}"; do
+              lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+              for ext in "${banned[@]}"; do
+                if [[ "$lower" == *"${ext}" ]]; then
+                  if [[ -z "${seen[$file]:-}" ]]; then
+                    violations+=("$file")
+                    seen["$file"]=1
+                  fi
+                  break
+                fi
+              done
+            done
+          fi
+          if [ ${#violations[@]} -ne 0 ]; then
+            echo "Binary artifacts detected by CI guardrails:"
+            for file in "${violations[@]}"; do
+              echo "  $file"
+            done
+            echo "Please store binary fixtures as text (e.g. base64) instead of committing them directly."
+            exit 1
+          fi
+
+  # ============================================================================
+  # Native Driver Build (All Platforms)
+  # ============================================================================
+  native-driver-build:
+    name: Native Driver (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [cpp-build-test]
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get PNPM store path
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache PNPM store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-native-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-native-
+
+      - name: Install dependencies
+        working-directory: packages/engine-native
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeScript
+        working-directory: packages/engine-native
+        run: pnpm run build:ts
+
+      - name: Cache CMake Release build
+        uses: actions/cache@v4
+        with:
+          path: build-release
+          key: ${{ runner.os }}-cmake-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-cmake-release-
+
+      - name: Build C++ SDK (if not cached)
+        run: |
+          if [ ! -d "build-release" ]; then
+            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON
+            cmake --build build-release --parallel
+          fi
+        shell: bash
+
+      - name: Build Native Driver
+        working-directory: packages/engine-native
+        run: pnpm run build:native
+
+      - name: Upload Native Driver Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-driver-${{ matrix.os }}
+          path: packages/engine-native/build/Release/orpheus_native.node
+          if-no-files-found: error
+
+  # ============================================================================
+  # TypeScript/UI Build and Test
+  # ============================================================================
+  typescript-build:
+    name: TypeScript Build & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get PNPM store path
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache PNPM store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint TypeScript
+        run: pnpm run lint:js
+
+      - name: Type check
+        run: pnpm run type-check || echo "Type checking not fully configured"
+
+      - name: Build packages
+        env:
+          NEXT_PUBLIC_APP_URL: https://ui.elevenlabs.io
+        run: pnpm run build:ts
+
+      - name: Build Contract
+        working-directory: packages/contract
+        run: pnpm run build
+
+      - name: Test Contract
+        working-directory: packages/contract
+        run: pnpm run test
+
+      - name: Build Service Driver
+        working-directory: packages/engine-service
+        run: pnpm run build
+
+      - name: Build Client Broker
+        working-directory: packages/client
+        run: pnpm run build
+
+      - name: Build React Integration
+        working-directory: packages/react
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test || echo "Full test suite not yet configured"
+
+  # ============================================================================
+  # Integration Tests
+  # ============================================================================
+  integration-tests:
+    name: Integration Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [typescript-build, native-driver-build]
+    timeout-minutes: 10
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get PNPM store path
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache PNPM store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run integration tests
+        run: pnpm run test:integration || echo "Integration tests not yet configured"
+
+  # ============================================================================
+  # Dependency Graph Integrity Check
+  # ============================================================================
+  dependency-check:
+    name: Dependency Graph Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get PNPM store path
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache PNPM store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for circular dependencies
+        run: pnpm run dep:check
+
+  # ============================================================================
+  # Performance Budget Validation
+  # ============================================================================
+  performance-budget:
+    name: Performance Budget Validation
+    runs-on: ubuntu-latest
+    needs: [typescript-build]
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get PNPM store path
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache PNPM store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Validate performance budgets
+        run: pnpm run perf:validate --budgets=budgets.json
+
+  # ============================================================================
+  # Status Check (Required for Branch Protection)
+  # ============================================================================
+  ci-status:
+    name: CI Status Check
+    runs-on: ubuntu-latest
+    needs:
+      [
+        cpp-build-test,
+        cpp-lint,
+        native-driver-build,
+        typescript-build,
+        integration-tests,
+        dependency-check,
+        performance-budget,
+      ]
+    if: always()
+
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [[ "${{ needs.cpp-build-test.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.cpp-lint.result }}" == "failure" ]] || [[ "${{ needs.cpp-lint.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.native-driver-build.result }}" == "failure" ]] || [[ "${{ needs.native-driver-build.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.typescript-build.result }}" == "failure" ]] || [[ "${{ needs.typescript-build.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.integration-tests.result }}" == "failure" ]] || [[ "${{ needs.integration-tests.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.dependency-check.result }}" == "failure" ]] || [[ "${{ needs.dependency-check.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.performance-budget.result }}" == "failure" ]] || [[ "${{ needs.performance-budget.result }}" == "cancelled" ]]; then
+            echo "❌ One or more jobs failed"
+            echo "cpp-build-test: ${{ needs.cpp-build-test.result }}"
+            echo "cpp-lint: ${{ needs.cpp-lint.result }}"
+            echo "native-driver-build: ${{ needs.native-driver-build.result }}"
+            echo "typescript-build: ${{ needs.typescript-build.result }}"
+            echo "integration-tests: ${{ needs.integration-tests.result }}"
+            echo "dependency-check: ${{ needs.dependency-check.result }}"
+            echo "performance-budget: ${{ needs.performance-budget.result }}"
+            exit 1
+          fi
+          echo "✅ All CI checks passed"

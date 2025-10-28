@@ -6,8 +6,8 @@
  * Provides zero-copy, low-latency access to Orpheus core features
  */
 
-#include <napi.h>
 #include "session_wrapper.h"
+#include <napi.h>
 
 /**
  * Module initialization

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://orpheus.sdk/schemas/v1.0.0-beta/events/TransportTick.json",
+  "title": "TransportTick",
+  "description": "Emits position and beat info during playback (≤30 Hz)",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "TransportTick"
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Event timestamp (milliseconds since epoch)"
+    },
+    "position": {
+      "type": "number",
+      "description": "Current position in samples",
+      "minimum": 0
+    },
+    "beat": {
+      "type": "number",
+      "description": "Current beat number"
+    },
+    "bar": {
+      "type": "number",
+      "description": "Current bar number"
+    },
+    "tempo": {
+      "type": "number",
+      "description": "Current tempo (BPM)",
+      "minimum": 1
+    },
+    "sequenceId": {
+      "type": "number",
+      "description": "Monotonic sequence ID for ordering"
+    }
+  },
+  "required": ["type", "timestamp", "position"],
+  "additionalProperties": false
+}
