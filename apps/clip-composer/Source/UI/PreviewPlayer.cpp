@@ -148,36 +148,22 @@ void PreviewPlayer::jumpTo(int64_t samplePosition) {
     return;
   }
 
-  // Click-to-jog: Start or restart playback from clicked position
-  // LIMITATION: Without SDK seekClip() API, we must stop/restart which causes brief audio gap
-  // This is acceptable for edit dialog preview (not used during live performance)
-
+  // Click-to-jog: Use SDK's seekClip() for gap-free, sample-accurate seeking
+  // This is SINGLE COMMAND per action (fixes transport spam issue)
   bool wasPlaying = m_audioEngine->isClipPlaying(m_buttonIndex);
 
-  // Strategy: Temporarily update trim IN to clicked position, start playback, then restore
-  // This allows "jog to position" without full SDK seek support
-  int64_t originalTrimIn = trimIn;
+  // Seek to target position (works whether playing or stopped)
+  bool seeked = m_audioEngine->seekClip(m_buttonIndex, samplePosition);
 
-  // Stop current playback (if playing)
-  if (wasPlaying) {
-    m_audioEngine->stopClip(m_buttonIndex);
-  }
+  if (seeked) {
+    // If not already playing, start playback from seeked position
+    if (!wasPlaying) {
+      m_audioEngine->startClip(m_buttonIndex);
+    }
 
-  // Update trim IN to clicked position (temporarily)
-  m_audioEngine->updateClipMetadata(m_buttonIndex, samplePosition, trimOut, m_fadeInSeconds,
-                                    m_fadeOutSeconds, m_fadeInCurve, m_fadeOutCurve);
-
-  // Start playback from clicked position
-  bool started = m_audioEngine->startClip(m_buttonIndex);
-
-  // Restore original trim IN point (so metadata is preserved)
-  m_audioEngine->updateClipMetadata(m_buttonIndex, originalTrimIn, trimOut, m_fadeInSeconds,
-                                    m_fadeOutSeconds, m_fadeInCurve, m_fadeOutCurve);
-
-  if (started) {
     startPositionTimer(); // Start polling position for playhead updates
     DBG("PreviewPlayer: Jogged to sample " << samplePosition << " (button " << m_buttonIndex
-                                           << ")");
+                                           << ", seamless gap-free seek)");
   } else {
     DBG("PreviewPlayer: Failed to jog to sample " << samplePosition << " (button " << m_buttonIndex
                                                   << ")");

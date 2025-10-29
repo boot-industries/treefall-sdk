@@ -121,16 +121,22 @@ pnpm --filter www dev  # localhost:4000
 
 **Resume:** Check `.claude/progress.md` + `docs/ORP/ORP068 Implementation Plan (v2.0).md`
 
-## OCC - Clip Composer (Design Complete ✅)
+## OCC - Clip Composer
 
-**Docs:** `apps/clip-composer/docs/OCC/` (11 docs, ~5,300 lines)
+**Status:** v0.2.0 Sprint Complete (OCC093) ✅
+**Docs:** `apps/clip-composer/docs/OCC/` (12 docs, ~6,000 lines)
 
-**Key:**
+**Recent Release:**
+
+- v0.1.0-alpha (October 22, 2025)
+- v0.2.0-alpha (pending QA - October 28, 2025)
+
+**Key Docs:**
 
 - `OCC021` - Product vision (broadcast/theater, €500-1,500)
 - `OCC026` - 6-month MVP plan
 - `OCC027` - API contracts
-- `OCC029` - 5 SDK modules required (transport, file reader, drivers, routing, perf monitor)
+- `OCC093` - v0.2.0 Sprint (6 UX fixes complete)
 
 **Timeline:** MVP at 6mo, v1.0 at 12mo
 
@@ -155,3 +161,5 @@ pnpm --filter www dev  # localhost:4000
 ---
 
 **DON'T USE OPEN TO RUN CLIP COMPOSER** - Always run launch script after build.
+
+- Application rebuilds should be performed manually by the user always.

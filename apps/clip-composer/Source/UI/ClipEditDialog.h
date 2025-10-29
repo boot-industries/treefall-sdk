@@ -12,6 +12,54 @@ class AudioEngine;
 
 //==============================================================================
 /**
+ * NudgeButton - Button with hold-to-repeat and acceleration
+ *
+ * Issue #7: Latchable IN/OUT navigation
+ * - Single click: Triggers action once
+ * - Hold: Repeats action with acceleration (500ms → 250ms → 100ms)
+ * - Compatible with Shift modifier for 15-tick jumps
+ */
+class NudgeButton : public juce::TextButton, private juce::Timer {
+public:
+  NudgeButton(const juce::String& buttonText) : juce::TextButton(buttonText) {}
+
+  void mouseDown(const juce::MouseEvent& e) override {
+    juce::TextButton::mouseDown(e);
+    startLatchTimer();
+  }
+
+  void mouseUp(const juce::MouseEvent& e) override {
+    juce::TextButton::mouseUp(e);
+    stopLatchTimer();
+  }
+
+private:
+  void startLatchTimer() {
+    m_latchInterval = 300; // Initial delay (faster than before)
+    startTimer(m_latchInterval);
+  }
+
+  void stopLatchTimer() {
+    stopTimer();
+    m_latchInterval = 300; // Reset for next time
+  }
+
+  void timerCallback() override {
+    triggerClick(); // Repeat click
+
+    // Accelerate FASTER: 300ms → 150ms → 75ms → 40ms (minimum)
+    // User requested: "should accelerate faster"
+    if (m_latchInterval > 40) {
+      m_latchInterval = std::max(40, m_latchInterval - 75);
+      startTimer(m_latchInterval);
+    }
+  }
+
+  int m_latchInterval = 300;
+};
+
+//==============================================================================
+/**
  * ClipEditDialog - Modal dialog for editing clip metadata
  *
  * ARCHITECTURE CHANGE (v0.2.0):
@@ -88,6 +136,7 @@ public:
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
+  bool keyStateChanged(bool isKeyDown) override;
 
 private:
   //==============================================================================
@@ -99,6 +148,10 @@ private:
                                    int sampleRate); // Convert samples to hh:mm:ss.tt
   int64_t timeStringToSamples(const juce::String& timeStr,
                               int sampleRate); // Convert hh:mm:ss.tt to samples
+
+  // Edit Law: Enforce playhead constraints when OUT point changes
+  // If OUT is set to <= playhead, jump playhead to IN and restart
+  void enforceOutPointEditLaw();
 
   //==============================================================================
   ClipMetadata m_metadata;
@@ -139,14 +192,14 @@ private:
   std::unique_ptr<PreviewPlayer> m_previewPlayer;
   std::unique_ptr<juce::Label> m_trimInLabel;
   std::unique_ptr<juce::TextEditor> m_trimInTimeEditor;
-  std::unique_ptr<juce::TextButton> m_trimInDecButton;
-  std::unique_ptr<juce::TextButton> m_trimInIncButton;
+  std::unique_ptr<NudgeButton> m_trimInDecButton; // Issue #7: Hold-to-repeat with acceleration
+  std::unique_ptr<NudgeButton> m_trimInIncButton; // Issue #7: Hold-to-repeat with acceleration
   std::unique_ptr<juce::TextButton> m_trimInHoldButton;
   std::unique_ptr<juce::TextButton> m_trimInClearButton;
   std::unique_ptr<juce::Label> m_trimOutLabel;
   std::unique_ptr<juce::TextEditor> m_trimOutTimeEditor;
-  std::unique_ptr<juce::TextButton> m_trimOutDecButton;
-  std::unique_ptr<juce::TextButton> m_trimOutIncButton;
+  std::unique_ptr<NudgeButton> m_trimOutDecButton; // Issue #7: Hold-to-repeat with acceleration
+  std::unique_ptr<NudgeButton> m_trimOutIncButton; // Issue #7: Hold-to-repeat with acceleration
   std::unique_ptr<juce::TextButton> m_trimOutHoldButton;
   std::unique_ptr<juce::TextButton> m_trimOutClearButton;
   std::unique_ptr<juce::Label> m_trimInfoLabel;
@@ -166,6 +219,50 @@ private:
   // Dialog buttons
   std::unique_ptr<juce::TextButton> m_okButton;
   std::unique_ptr<juce::TextButton> m_cancelButton;
+
+  // Keyboard nudge acceleration timers (matches NudgeButton behavior for [ ] ; ' keys)
+  class KeyboardNudgeTimer : public juce::Timer {
+  public:
+    std::function<void()> onNudge;
+
+    void startNudge(int initialInterval = 300) {
+      m_interval = initialInterval;
+      startTimer(m_interval);
+    }
+
+    void stopNudge() {
+      stopTimer();
+      m_interval = 300; // Reset for next time
+    }
+
+    bool isTimerRunning() const {
+      return juce::Timer::isTimerRunning();
+    }
+
+  private:
+    void timerCallback() override {
+      if (onNudge)
+        onNudge();
+
+      // Accelerate: 300ms → 150ms → 75ms → 40ms (matches NudgeButton behavior)
+      if (m_interval > 40) {
+        m_interval = std::max(40, m_interval - 75);
+        startTimer(m_interval);
+      }
+    }
+
+    int m_interval = 300;
+  };
+
+  KeyboardNudgeTimer m_nudgeInLeftTimer;
+  KeyboardNudgeTimer m_nudgeInRightTimer;
+  KeyboardNudgeTimer m_nudgeOutLeftTimer;
+  KeyboardNudgeTimer m_nudgeOutRightTimer;
+
+  int m_nudgeInLeftInterval = 300;
+  int m_nudgeInRightInterval = 300;
+  int m_nudgeOutLeftInterval = 300;
+  int m_nudgeOutRightInterval = 300;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipEditDialog)
 };

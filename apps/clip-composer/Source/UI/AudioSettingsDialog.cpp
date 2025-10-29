@@ -88,7 +88,7 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* engine) : m_audioEngine(en
                           juce::dontSendNotification);
   }
 
-  setSize(500, 280);
+  setSize(500, 300); // Increased height to prevent button clipping
 }
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
@@ -104,7 +104,7 @@ void AudioSettingsDialog::resized() {
   bounds.removeFromTop(40); // Skip title area
 
   auto labelWidth = 120;
-  auto rowHeight = 30;
+  auto rowHeight = 35; // Increased from 30 to give more vertical space
   auto spacing = 10;
 
   // Device row
@@ -131,11 +131,14 @@ void AudioSettingsDialog::resized() {
 
   bounds.removeFromTop(spacing * 2);
 
-  // Apply and Close buttons side-by-side
+  // Apply and Close buttons side-by-side with proper height, centered horizontally
   auto buttonRow = bounds.removeFromTop(rowHeight);
-  m_applyButton.setBounds(buttonRow.removeFromLeft(150));
-  buttonRow.removeFromLeft(10); // Spacing
-  m_closeButton.setBounds(buttonRow.removeFromLeft(100));
+  int totalButtonWidth = 150 + 10 + 100; // Apply width + spacing + Close width
+  int leftMargin = (buttonRow.getWidth() - totalButtonWidth) / 2;
+  buttonRow.removeFromLeft(leftMargin);                                 // Center the button group
+  m_applyButton.setBounds(buttonRow.removeFromLeft(150).reduced(0, 2)); // Slight vertical padding
+  buttonRow.removeFromLeft(10);                                         // Spacing
+  m_closeButton.setBounds(buttonRow.removeFromLeft(100).reduced(0, 2)); // Slight vertical padding
 
   bounds.removeFromTop(spacing);
 

@@ -43,6 +43,16 @@ public:
   std::function<void(int sourceButtonIndex, int targetButtonIndex)>
       onButtonDraggedToButton; // Drag clip to different button
 
+  // Callback to check if clip is playing (for 75fps visual sync)
+  std::function<bool(int)> isClipPlaying;
+
+  // Callback to check if clip exists (for 75fps state validation)
+  std::function<bool(int)> hasClip;
+
+  // Callback to get clip metadata (for 75fps state persistence)
+  std::function<void(int, bool&, bool&, bool&, bool&)>
+      getClipStates; // buttonIndex → (loop, fadeIn, fadeOut, stopOthers)
+
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;

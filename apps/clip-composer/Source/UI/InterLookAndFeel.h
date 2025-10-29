@@ -47,4 +47,18 @@ public:
   juce::Font getAlertWindowMessageFont() override {
     return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
   }
+
+  // Issue #12: Add vertical padding to popup menu items (8px total = 4px top + 4px bottom)
+  void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator,
+                                 int standardMenuItemHeight, int& idealWidth,
+                                 int& idealHeight) override {
+    // Call parent to get standard sizing
+    juce::LookAndFeel_V4::getIdealPopupMenuItemSize(text, isSeparator, standardMenuItemHeight,
+                                                    idealWidth, idealHeight);
+
+    // Add 8px vertical padding (4px top + 4px bottom) for better spacing
+    if (!isSeparator) {
+      idealHeight += 8;
+    }
+  }
 };

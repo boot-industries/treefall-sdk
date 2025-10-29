@@ -94,5 +94,8 @@ private:
   // Per-button loop mode (bitset for 48 buttons)
   std::array<bool, 48> m_loopEnabled = {};
 
+  // Single Edit Dialog tracking (ensures only one dialog open at a time)
+  ClipEditDialog* m_currentEditDialog = nullptr;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
