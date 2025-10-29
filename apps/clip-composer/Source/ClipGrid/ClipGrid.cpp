@@ -147,11 +147,63 @@ void ClipGrid::filesDropped(const juce::StringArray& files, int x, int y) {
 
 //==============================================================================
 void ClipGrid::timerCallback() {
-  // Repaint all buttons at 75fps (broadcast standard timing)
-  // This ensures visual indicators (play state, loop, fade, etc.) update smoothly
-  for (auto& button : m_buttons) {
-    if (button) {
-      button->repaint();
+  // Sync button states from AudioEngine at 75fps (broadcast standard timing)
+  // This ensures visual indicators (play state, loop, fade, etc.) chase at 75fps
+  for (int i = 0; i < BUTTON_COUNT; ++i) {
+    auto button = getButton(i);
+    if (!button)
+      continue;
+
+    // CRITICAL: Check if clip still exists (prevents orphaned play states)
+    if (hasClip) {
+      bool clipExists = hasClip(i);
+      auto currentState = button->getState();
+
+      // If clip was removed, ensure button goes to Empty state
+      if (!clipExists && currentState != ClipButton::State::Empty) {
+        button->setState(ClipButton::State::Empty);
+        button->clearClip(); // Clear visual indicators
+        button->repaint();
+        continue; // Skip to next button
+      }
+
+      // If no clip, skip playback state check
+      if (!clipExists)
+        continue;
     }
+
+    // Query AudioEngine for playback state (if callback is set)
+    if (isClipPlaying) {
+      bool playing = isClipPlaying(i);
+      auto currentState = button->getState();
+
+      // Update button state if it doesn't match AudioEngine state
+      if (playing && currentState != ClipButton::State::Playing) {
+        button->setState(ClipButton::State::Playing);
+      } else if (!playing && currentState == ClipButton::State::Playing) {
+        // Clip stopped (fade complete) - reset to Loaded (NOT Empty)
+        button->setState(ClipButton::State::Loaded);
+      }
+    }
+
+    // CRITICAL: Sync clip metadata indicators at 75fps (loop, fade, stop-others)
+    // This ensures clip states persist and follow clips during drag-to-reorder
+    if (getClipStates) {
+      bool loopEnabled = false;
+      bool fadeInEnabled = false;
+      bool fadeOutEnabled = false;
+      bool stopOthersEnabled = false;
+
+      getClipStates(i, loopEnabled, fadeInEnabled, fadeOutEnabled, stopOthersEnabled);
+
+      // Update button indicators (these are CLIP properties, not button properties)
+      button->setLoopEnabled(loopEnabled);
+      button->setFadeInEnabled(fadeInEnabled);
+      button->setFadeOutEnabled(fadeOutEnabled);
+      button->setStopOthersEnabled(stopOthersEnabled);
+    }
+
+    // Repaint button to update visual indicators (fade, loop, stop-others)
+    button->repaint();
   }
 }

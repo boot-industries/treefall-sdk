@@ -38,6 +38,34 @@ MainComponent::MainComponent() {
     onClipDraggedToButton(sourceIndex, targetIndex);
   };
 
+  // Wire up 75fps playback state sync
+  m_clipGrid->isClipPlaying = [this](int buttonIndex) -> bool {
+    if (m_audioEngine) {
+      return m_audioEngine->isClipPlaying(buttonIndex);
+    }
+    return false;
+  };
+
+  // Wire up 75fps clip existence check (prevents orphaned states)
+  m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
+    return m_sessionManager.hasClip(buttonIndex);
+  };
+
+  // Wire up 75fps clip state tracking (ensures fade, loop, stop-others persist)
+  m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
+                                     bool& fadeOutEnabled, bool& stopOthersEnabled) {
+    if (!m_sessionManager.hasClip(buttonIndex))
+      return;
+
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+
+    // Query clip metadata (these are CLIP properties, not button properties)
+    loopEnabled = m_loopEnabled[buttonIndex];
+    fadeInEnabled = (clipData.fadeInSeconds > 0.0);
+    fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
+    stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
+  };
+
   // Make this component capture keyboard focus
   setWantsKeyboardFocus(true);
 
@@ -164,8 +192,10 @@ void MainComponent::timerCallback() {
 
 //==============================================================================
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
-  // Tab switching: Cmd+1 through Cmd+8 (Mac) or Ctrl+1 through Ctrl+8 (Windows/Linux)
-  if (key.getModifiers().isCommandDown()) {
+  // Issue #10: Tab switching: Cmd+Shift+1 through Cmd+Shift+8
+  // (Edit Dialog overrides Cmd+Shift+[1-9,0] for fade times when it has focus)
+  if ((key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()) &&
+      key.getModifiers().isShiftDown()) {
     int keyCode = key.getKeyCode();
     if (keyCode >= '1' && keyCode <= '8') {
       int tabIndex = keyCode - '1'; // Convert '1'-'8' to 0-7
@@ -424,11 +454,30 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     } else if (result == 4) {
       // Toggle "stop others on play" mode
       m_stopOthersOnPlay[buttonIndex] = !m_stopOthersOnPlay[buttonIndex];
+
+      // CRITICAL: Persist to SessionManager
+      if (m_sessionManager.hasClip(buttonIndex)) {
+        auto clipData = m_sessionManager.getClip(buttonIndex);
+        clipData.stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
+        m_sessionManager.setClip(buttonIndex, clipData);
+      }
+
+      // Update button visual state
+      auto button = m_clipGrid->getButton(buttonIndex);
+      if (button) {
+        button->setStopOthersEnabled(m_stopOthersOnPlay[buttonIndex]);
+      }
+
       DBG("Button " << buttonIndex << ": Stop others on play = "
                     << (m_stopOthersOnPlay[buttonIndex] ? "ON" : "OFF"));
     } else if (result == 7 && hasClip) {
       // Toggle loop mode
       m_loopEnabled[buttonIndex] = !m_loopEnabled[buttonIndex];
+
+      // CRITICAL: Persist to SessionManager
+      auto clipData = m_sessionManager.getClip(buttonIndex);
+      clipData.loopEnabled = m_loopEnabled[buttonIndex];
+      m_sessionManager.setClip(buttonIndex, clipData);
 
       // Sync to AudioEngine (CRITICAL: Must update SDK loop state!)
       if (m_audioEngine) {
@@ -557,11 +606,21 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     return;
   }
 
+  // CRITICAL: Close any existing Edit Dialog before opening a new one
+  // This prevents multiple dialogs from stacking and causing state corruption
+  if (m_currentEditDialog != nullptr) {
+    DBG("MainComponent: Closing existing Edit Dialog before opening new one");
+    m_currentEditDialog->setVisible(false);
+    delete m_currentEditDialog;
+    m_currentEditDialog = nullptr;
+  }
+
   // Get clip metadata from SessionManager
   auto clipData = m_sessionManager.getClip(buttonIndex);
 
   // Create edit dialog (pass AudioEngine and buttonIndex for main grid clip control)
   auto* dialog = new ClipEditDialog(m_audioEngine.get(), buttonIndex);
+  m_currentEditDialog = dialog; // Track current dialog
 
   // Convert SessionManager::ClipData to ClipEditDialog::ClipMetadata
   ClipEditDialog::ClipMetadata metadata;
@@ -585,6 +644,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
 
   // Sprint 2: Loop state (sync from MainComponent's internal state)
   metadata.loopEnabled = m_loopEnabled[buttonIndex];
+  metadata.stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
 
   dialog->setClipMetadata(metadata);
 
@@ -605,6 +665,10 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.fadeOutSeconds = edited.fadeOutSeconds;
     clipData.fadeInCurve = edited.fadeInCurve.toStdString();
     clipData.fadeOutCurve = edited.fadeOutCurve.toStdString();
+
+    // CRITICAL: Persist loop and stopOthers state
+    clipData.loopEnabled = edited.loopEnabled;
+    clipData.stopOthersEnabled = edited.stopOthersEnabled;
 
     // Persist to SessionManager
     m_sessionManager.setClip(buttonIndex, clipData);
@@ -658,15 +722,17 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
         << " Fade: [" << clipData.fadeInSeconds << "s " << clipData.fadeInCurve << ", "
         << clipData.fadeOutSeconds << "s " << clipData.fadeOutCurve << "]");
 
-    // Close dialog
+    // Close dialog and clear reference
     dialog->setVisible(false);
     delete dialog;
+    m_currentEditDialog = nullptr; // Clear reference to allow new dialog
   };
 
-  dialog->onCancelClicked = [dialog]() {
+  dialog->onCancelClicked = [this, dialog]() {
     // Close dialog without saving
     dialog->setVisible(false);
     delete dialog;
+    m_currentEditDialog = nullptr; // Clear reference to allow new dialog
   };
 
   // Show dialog as modal
@@ -741,6 +807,24 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
   DBG("MainComponent: Dragging clip from button " << sourceButtonIndex << " to button "
                                                   << targetButtonIndex);
 
+  // CRITICAL: Check if either clip is currently playing BEFORE swapping
+  // Playback state is tied to button index in AudioEngine, so we must stop playback first
+  auto sourceButton = m_clipGrid->getButton(sourceButtonIndex);
+  auto targetButton = m_clipGrid->getButton(targetButtonIndex);
+
+  bool sourceWasPlaying = (sourceButton && sourceButton->getState() == ClipButton::State::Playing);
+  bool targetWasPlaying = (targetButton && targetButton->getState() == ClipButton::State::Playing);
+
+  // Stop both clips if playing (prevents orphaned playback state)
+  if (sourceWasPlaying && m_audioEngine) {
+    m_audioEngine->stopClip(sourceButtonIndex);
+    DBG("MainComponent: Stopped source clip (button " << sourceButtonIndex << ") before swap");
+  }
+  if (targetWasPlaying && m_audioEngine) {
+    m_audioEngine->stopClip(targetButtonIndex);
+    DBG("MainComponent: Stopped target clip (button " << targetButtonIndex << ") before swap");
+  }
+
   // Swap clips in SessionManager
   m_sessionManager.swapClips(sourceButtonIndex, targetButtonIndex);
 
@@ -750,9 +834,27 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
   // Swap loop mode flags
   std::swap(m_loopEnabled[sourceButtonIndex], m_loopEnabled[targetButtonIndex]);
 
-  // Update both buttons visually
+  // Update both buttons visually (this reloads clips into AudioEngine at new positions)
   updateButtonFromClip(sourceButtonIndex);
   updateButtonFromClip(targetButtonIndex);
+
+  // Restart clips at their NEW positions if they were playing
+  if (sourceWasPlaying && m_audioEngine && m_sessionManager.hasClip(targetButtonIndex)) {
+    m_audioEngine->startClip(targetButtonIndex);
+    if (targetButton) {
+      targetButton->setState(ClipButton::State::Playing);
+    }
+    DBG("MainComponent: Restarted source clip at new position (button " << targetButtonIndex
+                                                                        << ")");
+  }
+  if (targetWasPlaying && m_audioEngine && m_sessionManager.hasClip(sourceButtonIndex)) {
+    m_audioEngine->startClip(sourceButtonIndex);
+    if (sourceButton) {
+      sourceButton->setState(ClipButton::State::Playing);
+    }
+    DBG("MainComponent: Restarted target clip at new position (button " << sourceButtonIndex
+                                                                        << ")");
+  }
 }
 
 void MainComponent::updateButtonFromClip(int buttonIndex) {
@@ -767,7 +869,30 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
     // Load clip into audio engine first
     if (m_audioEngine) {
       m_audioEngine->loadClip(buttonIndex, juce::String(clipData.filePath));
+
+      // CRITICAL: Apply trim/fade metadata to AudioEngine
+      bool metadataApplied = m_audioEngine->updateClipMetadata(
+          buttonIndex, clipData.trimInSamples, clipData.trimOutSamples, clipData.fadeInSeconds,
+          clipData.fadeOutSeconds, juce::String(clipData.fadeInCurve),
+          juce::String(clipData.fadeOutCurve));
+
+      if (metadataApplied) {
+        DBG("MainComponent: Applied trim/fade metadata to AudioEngine for button " << buttonIndex);
+      } else {
+        DBG("MainComponent: Failed to apply trim/fade metadata to AudioEngine for button "
+            << buttonIndex);
+      }
+
+      // CRITICAL: Apply loop mode to AudioEngine
+      bool loopApplied = m_audioEngine->setClipLoopMode(buttonIndex, clipData.loopEnabled);
+      if (!loopApplied) {
+        DBG("MainComponent: Failed to apply loop mode to AudioEngine for button " << buttonIndex);
+      }
     }
+
+    // CRITICAL: Sync MainComponent's internal state arrays from SessionManager clipData
+    m_loopEnabled[buttonIndex] = clipData.loopEnabled;
+    m_stopOthersOnPlay[buttonIndex] = clipData.stopOthersEnabled;
 
     // Check if clip is currently playing and restore correct button state
     if (m_audioEngine && m_audioEngine->isClipPlaying(buttonIndex)) {
@@ -793,22 +918,22 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
     juce::String shortcut = getKeyboardShortcutForButton(buttonIndex);
     button->setKeyboardShortcut(shortcut);
 
-    // Restore loop state
+    // Restore loop state (from synced array)
     button->setLoopEnabled(m_loopEnabled[buttonIndex]);
 
-    // Set stop others indicator
+    // Set stop others indicator (from synced array)
     button->setStopOthersEnabled(m_stopOthersOnPlay[buttonIndex]);
 
     // Set fade indicators (show if fade duration > 0)
     button->setFadeInEnabled(clipData.fadeInSeconds > 0.0);
     button->setFadeOutEnabled(clipData.fadeOutSeconds > 0.0);
 
-    // TODO: Parse beat offset from clip name if it contains "//" notation
-    // For now, leave beat offset empty (will be set via edit dialogue later)
-
-    DBG("MainComponent: Updated button " << buttonIndex << " with clip: " << clipData.displayName
-                                         << " (" << clipData.sampleRate << " Hz, "
-                                         << clipData.numChannels << " ch)");
+    DBG("MainComponent: Updated button "
+        << buttonIndex << " with clip: " << clipData.displayName << " (" << clipData.sampleRate
+        << " Hz, " << clipData.numChannels
+        << " ch) - Loop: " << (clipData.loopEnabled ? "ON" : "OFF")
+        << ", StopOthers: " << (clipData.stopOthersEnabled ? "ON" : "OFF")
+        << ", Fades: IN=" << clipData.fadeInSeconds << "s, OUT=" << clipData.fadeOutSeconds << "s");
   } else {
     // Clear button
     button->clearClip();
@@ -892,6 +1017,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addSeparator();
     menu.addItem(11, "Stop All Clips");
     menu.addItem(12, "PANIC");
+    menu.addSeparator();
+    menu.addItem(13, "Keyboard Shortcuts...");
   } else if (topLevelMenuIndex == 2) // Audio menu
   {
     menu.addItem(20, "Audio I/O Settings...");
@@ -1000,14 +1127,36 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     break;
 
   case 10: // Clear All Clips
-    m_sessionManager.clearSession();
-    for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-      auto button = m_clipGrid->getButton(i);
-      if (button)
-        button->clearClip();
+  {
+    // Warn user before clearing all clips
+    bool confirmed =
+        juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, "Clear All Clips?",
+                                           "This will remove all clips from all tabs.\n\n"
+                                           "This action cannot be undone.\n\n"
+                                           "Are you sure?",
+                                           "Clear All", "Cancel");
+
+    if (confirmed) {
+      // Stop all playing audio first
+      if (m_audioEngine) {
+        m_audioEngine->stopAllClips();
+      }
+
+      m_sessionManager.clearSession();
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        auto button = m_clipGrid->getButton(i);
+        if (button)
+          button->clearClip();
+      }
+
+      // Clear internal state arrays
+      m_loopEnabled.fill(false);
+      m_stopOthersOnPlay.fill(false);
+
+      DBG("MainComponent: All clips cleared");
     }
-    DBG("MainComponent: All clips cleared");
     break;
+  }
 
   case 11: // Stop All Clips
     onStopAll();
@@ -1017,6 +1166,49 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     onPanic();
     break;
 
+  case 13: // Keyboard Shortcuts
+  {
+    juce::String shortcuts = "=== ORPHEUS CLIP COMPOSER - KEYBOARD SHORTCUTS ===\n\n";
+    shortcuts += "GLOBAL SHORTCUTS:\n";
+    shortcuts += "  Space ........... Stop All Clips (with fade)\n";
+    shortcuts += "  Esc ............. PANIC (immediate mute)\n";
+    shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
+    shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
+    shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
+    shortcuts += "  Z X C V B N ..... Trigger clips (Row 2)\n";
+    shortcuts += "  1-6, 7-0, -=, [];\\',.  Trigger clips (Rows 3-5)\n";
+    shortcuts += "  F1-F12 .......... Trigger clips (Rows 6-7)\n\n";
+    shortcuts += "EDIT DIALOG SHORTCUTS:\n";
+    shortcuts += "  Space ........... Toggle Play/Pause\n";
+    shortcuts += "  Enter ........... Save & Close (OK)\n";
+    shortcuts += "  Esc ............. Cancel & Close\n";
+    shortcuts += "  ? ............... Toggle Loop\n\n";
+    shortcuts += "TRIM POINTS:\n";
+    shortcuts += "  I ............... Set IN point (at playhead)\n";
+    shortcuts += "  O ............... Set OUT point (at playhead)\n";
+    shortcuts += "  [ ............... Nudge IN point left (-1 tick)\n";
+    shortcuts += "  ] ............... Nudge IN point right (+1 tick)\n";
+    shortcuts += "  Shift+[ ......... Nudge IN point left (-15 ticks)\n";
+    shortcuts += "  Shift+] ......... Nudge IN point right (+15 ticks)\n";
+    shortcuts += "  ; ............... Nudge OUT point left (-1 tick)\n";
+    shortcuts += "  ' ............... Nudge OUT point right (+1 tick)\n";
+    shortcuts += "  Shift+; ......... Nudge OUT point left (-15 ticks)\n";
+    shortcuts += "  Shift+' ......... Nudge OUT point right (+15 ticks)\n\n";
+    shortcuts += "WAVEFORM ZOOM:\n";
+    shortcuts += "  Cmd/Ctrl + Plus .. Zoom in (1x → 16x)\n";
+    shortcuts += "  Cmd/Ctrl + Minus . Zoom out (16x → 1x)\n\n";
+    shortcuts += "FADE TIMES (Edit Dialog only):\n";
+    shortcuts += "  Cmd/Ctrl+Shift+[1-9] ... Set OUT fade (0.1s-0.9s)\n";
+    shortcuts += "  Cmd/Ctrl+Shift+0 ....... Set OUT fade (1.0s)\n";
+    shortcuts += "  Cmd/Ctrl+Opt+Shift+[1-9]  Set IN fade (0.1s-0.9s)\n";
+    shortcuts += "  Cmd/Ctrl+Opt+Shift+0 .... Set IN fade (1.0s)\n\n";
+    shortcuts += "NOTE: Hold < > buttons in Edit Dialog for auto-repeat";
+
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Keyboard Shortcuts",
+                                           shortcuts, "OK");
+    break;
+  }
+
   case 20: // Audio I/O Settings
   {
     // Create and show Audio I/O Settings Dialog
@@ -1025,7 +1217,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
       dialog->setVisible(false);
       delete dialog;
     };
-    dialog->setSize(400, 220);
+    dialog->setSize(500, 300); // Match AudioSettingsDialog's preferred size
     dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
     addAndMakeVisible(dialog);
     dialog->toFront(true);

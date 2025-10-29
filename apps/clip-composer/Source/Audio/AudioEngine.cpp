@@ -375,6 +375,29 @@ int64_t AudioEngine::getClipPosition(int buttonIndex) const {
   return m_transportController->getClipPosition(handle);
 }
 
+bool AudioEngine::seekClip(int buttonIndex, int64_t position) {
+  if (buttonIndex < 0 || buttonIndex >= 48 || !m_transportController)
+    return false;
+
+  auto handle = m_clipHandles[buttonIndex];
+  if (handle == 0) {
+    DBG("AudioEngine: Cannot seek - no clip loaded at button " << buttonIndex);
+    return false;
+  }
+
+  // Use SDK's seekClip() API (ORP089 - gap-free, sample-accurate seek)
+  auto result = m_transportController->seekClip(handle, position);
+  if (result != orpheus::SessionGraphError::OK) {
+    DBG("AudioEngine: Failed to seek clip on button " << buttonIndex << " to position "
+                                                      << position);
+    return false;
+  }
+
+  DBG("AudioEngine: Seeked button " << buttonIndex << " to position " << position
+                                    << " (gap-free, sample-accurate)");
+  return true;
+}
+
 orpheus::PlaybackState AudioEngine::getClipState(int buttonIndex) const {
   if (buttonIndex < 0 || buttonIndex >= 48 || !m_transportController)
     return orpheus::PlaybackState::Stopped;

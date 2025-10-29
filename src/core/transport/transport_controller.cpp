@@ -27,7 +27,8 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
   routingConfig.num_outputs = 2;                 // Stereo output
   routingConfig.solo_mode = SoloMode::SIP;
   routingConfig.metering_mode = MeteringMode::Peak;
-  routingConfig.gain_smoothing_ms = 10.0f;
+  routingConfig.gain_smoothing_ms =
+      0.0f; // DISABLED: Fades handled at clip level, smoothing causes zigzag artifacts
   routingConfig.enable_metering = true;
   routingConfig.enable_clipping_protection =
       false; // DISABLED: Causes distortion with overlapping fades (professional users manage gain
@@ -199,6 +200,30 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     std::memset(m_clipChannelBuffers[i].data(), 0, numFrames * sizeof(float));
   }
 
+  // PRE-RENDER: Calculate fade-out gains for all stopping clips BEFORE rendering
+  // CRITICAL FIX: Must calculate BEFORE clip.currentSample advances to prevent timing offset
+  // This eliminates "zigzag" distortion when multiple clips stop simultaneously
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    ActiveClip& clip = m_activeClips[i];
+
+    if (clip.isStopping) {
+      int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
+
+      // If no fade-out configured, use default 10ms fade
+      if (fadeOutSampleCount == 0) {
+        fadeOutSampleCount = static_cast<int64_t>(m_fadeOutSamples);
+      }
+
+      // Calculate fade progress using CURRENT position (before advancing)
+      int64_t fadeProgress = clip.currentSample - clip.fadeOutStartPos;
+
+      // Calculate fade gain for this buffer
+      float fadePos = static_cast<float>(fadeProgress) / static_cast<float>(fadeOutSampleCount);
+      FadeCurve fadeOutCurve = clip.fadeOutCurve.load(std::memory_order_acquire);
+      clip.fadeOutGain = 1.0f - calculateFadeGain(fadePos, fadeOutCurve);
+    }
+  }
+
   // Render each active clip to its own channel buffer
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
@@ -307,11 +332,10 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       }
 
       // Apply stop fade-out if stopping
+      // NOTE: fadeOutGain is pre-computed in post-render loop (lines 361-386)
+      // based on total fade progress, NOT per-frame index
       if (clip.isStopping) {
-        float stopFadeGain = clip.fadeOutGain;
-        float fadeStep = 1.0f / static_cast<float>(m_fadeOutSamples);
-        stopFadeGain -= (fadeStep * static_cast<float>(frame));
-        gain *= std::max(0.0f, stopFadeGain); // Clamp to 0
+        gain *= std::max(0.0f, clip.fadeOutGain); // Use pre-computed fade gain
       }
 
       // Apply clip fade-in (first N samples from trim IN)
@@ -357,7 +381,7 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   while (i < m_activeClipCount) {
     ActiveClip& clip = m_activeClips[i];
 
-    // Apply fade-out if stopping (using clip's configured fade-out settings)
+    // Check if fade-out is complete (fadeOutGain was pre-computed in pre-render loop)
     if (clip.isStopping) {
       int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
 
@@ -378,11 +402,6 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
         removeActiveClip(clip.handle);
         continue; // Don't increment i, we just removed this clip
-      } else {
-        // Update fadeOutGain for rendering (will be applied in processAudio sample loop)
-        float fadePos = static_cast<float>(fadeProgress) / static_cast<float>(fadeOutSampleCount);
-        FadeCurve fadeOutCurve = clip.fadeOutCurve.load(std::memory_order_acquire);
-        clip.fadeOutGain = 1.0f - calculateFadeGain(fadePos, fadeOutCurve);
       }
     }
 

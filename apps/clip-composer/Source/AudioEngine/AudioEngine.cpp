@@ -51,8 +51,15 @@ bool AudioEngine::initialize(uint32_t sampleRate, uint16_t bufferSize) {
     return false;
   }
 
-  // Create dummy audio driver (for visual feedback without real audio interface)
+  // Create platform-specific audio driver (CoreAudio on macOS, dummy otherwise)
+#ifdef __APPLE__
+  m_audioDriver = orpheus::createCoreAudioDriver();
+  DBG("AudioEngine: Using CoreAudio driver (system default output)");
+#else
   m_audioDriver = orpheus::createDummyAudioDriver();
+  DBG("AudioEngine: Using dummy driver (no real audio on this platform yet)");
+#endif
+
   if (!m_audioDriver) {
     DBG("AudioEngine: Failed to create audio driver");
     return false;
@@ -97,7 +104,14 @@ bool AudioEngine::start() {
     return false;
   }
 
-  DBG("AudioEngine: Started (driver: " + juce::String(m_audioDriver->getDriverName()) + ")");
+  DBG("AudioEngine: Started successfully");
+  DBG("  Driver: " + juce::String(m_audioDriver->getDriverName()));
+  DBG("  Sample Rate: " + juce::String(m_audioDriver->getConfig().sample_rate) + " Hz");
+  DBG("  Buffer Size: " + juce::String(m_audioDriver->getConfig().buffer_size) + " samples");
+  DBG("  Latency: " + juce::String(m_audioDriver->getLatencySamples()) + " samples (~" +
+      juce::String(
+          m_audioDriver->getLatencySamples() * 1000.0 / m_audioDriver->getConfig().sample_rate, 1) +
+      " ms)");
   return true;
 }
 

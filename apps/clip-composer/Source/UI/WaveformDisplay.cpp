@@ -268,71 +268,35 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& event) {
   globalNormalized = std::clamp(globalNormalized, 0.0f, 1.0f);
   int64_t samplePosition = static_cast<int64_t>(globalNormalized * m_waveformData.totalSamples);
 
-  // INTERACTION MODEL (Two Modes):
+  // INTERACTION MODEL (v0.2.0 - Simplified Cmd-based):
   //
-  // DEFAULT MODE (Trackpad-friendly with Shift modifier):
-  // - Click = Jog playhead to position while staying in playback
-  // - Shift+LeftClick = Set IN point (flexible, no accidental changes)
-  // - Shift+RightClick = Set OUT point (flexible, no accidental changes)
-  // - Shift+Drag on handles = Move IN/OUT points precisely
+  // - Pure Leftclick = Jog playhead to position (Issue #3)
+  // - Cmd+Leftclick = Set IN point (Issue #6)
+  // - Cmd+Shift+Leftclick = Set OUT point (Issue #6)
+  // - Shift+Drag on handles = Move IN/OUT points precisely (existing, kept)
   //
-  // THREE-BUTTON MOUSE MODE (Optional global preference):
-  // - Left-click = Set IN point
-  // - Right-click = Set OUT point
-  // - Middle-click = Jog playhead to position while staying in playback
-  // - Shift+Drag on handles = Move IN/OUT points precisely
-  //
-  // RATIONALE: Default mode optimized for trackpads (most users) with Shift for safety.
-  // Optional SpotOn-style three-button mode for professional users with dedicated mice.
-  //
-  // TODO: Add global preference toggle for Three-Button Mouse Mode (Phase 2.2)
+  // RATIONALE: Pure leftclick for jogging is most intuitive and consistent.
+  // Command modifiers for IN/OUT prevent accidental changes during playback.
+  // This matches standard DAW behavior (Logic Pro, Pro Tools).
 
-  if (m_threeButtonMouseMode) {
-    // THREE-BUTTON MOUSE MODE: SpotOn-style workflow
-    if (event.mods.isLeftButtonDown() && !event.mods.isRightButtonDown() &&
-        !event.mods.isMiddleButtonDown()) {
-      // Left click: Set IN point
-      if (onLeftClick) {
-        onLeftClick(samplePosition);
-      }
-      DBG("WaveformDisplay: [3-Button Mode] Left click (IN) at sample " << samplePosition);
-    } else if (event.mods.isRightButtonDown()) {
-      // Right click: Set OUT point
-      if (onRightClick) {
-        onRightClick(samplePosition);
-      }
-      DBG("WaveformDisplay: [3-Button Mode] Right click (OUT) at sample " << samplePosition);
-    } else if (event.mods.isMiddleButtonDown()) {
-      // Middle click: Jog transport
-      if (onMiddleClick) {
-        onMiddleClick(samplePosition);
-      }
-      DBG("WaveformDisplay: [3-Button Mode] Middle click (Jog) at sample " << samplePosition);
+  if (event.mods.isCommandDown() && event.mods.isShiftDown()) {
+    // Cmd+Shift+Leftclick: Set OUT point
+    if (onRightClick) {
+      onRightClick(samplePosition);
     }
-  } else {
-    // DEFAULT MODE: Trackpad-friendly with Shift for IN/OUT
-    if (event.mods.isShiftDown()) {
-      // Shift+Click: Set IN/OUT points (flexible workflow)
-      if (event.mods.isLeftButtonDown() && !event.mods.isRightButtonDown()) {
-        // Shift+LeftClick: Set IN point
-        if (onLeftClick) {
-          onLeftClick(samplePosition);
-        }
-        DBG("WaveformDisplay: [Default Mode] Shift+LeftClick (IN) at sample " << samplePosition);
-      } else if (event.mods.isRightButtonDown()) {
-        // Shift+RightClick: Set OUT point
-        if (onRightClick) {
-          onRightClick(samplePosition);
-        }
-        DBG("WaveformDisplay: [Default Mode] Shift+RightClick (OUT) at sample " << samplePosition);
-      }
-    } else {
-      // Normal Click (no Shift): Jog transport
-      if (onMiddleClick) {
-        onMiddleClick(samplePosition);
-      }
-      DBG("WaveformDisplay: [Default Mode] Click (Jog) at sample " << samplePosition);
+    DBG("WaveformDisplay: Cmd+Shift+Click → Set OUT at sample " << samplePosition);
+  } else if (event.mods.isCommandDown()) {
+    // Cmd+Leftclick: Set IN point
+    if (onLeftClick) {
+      onLeftClick(samplePosition);
     }
+    DBG("WaveformDisplay: Cmd+Click → Set IN at sample " << samplePosition);
+  } else if (event.mods.isLeftButtonDown()) {
+    // Pure leftclick: Jog playhead (Issue #3 fix)
+    if (onMiddleClick) {
+      onMiddleClick(samplePosition);
+    }
+    DBG("WaveformDisplay: Leftclick → Jog to sample " << samplePosition);
   }
 }
 

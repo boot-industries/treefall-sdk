@@ -142,6 +142,14 @@ public:
   /// @return true if loop mode was set successfully
   bool setClipLoopMode(int buttonIndex, bool shouldLoop);
 
+  /// Seek main grid clip to arbitrary position (gap-free, sample-accurate)
+  /// @param buttonIndex Button index (0-47)
+  /// @param position Target position in samples (0-based file offset)
+  /// @return true if seek succeeded, false if clip not loaded or not playing
+  ///
+  /// Use case: OCC Edit Dialog waveform click-to-jog (seamless seek while playing)
+  bool seekClip(int buttonIndex, int64_t position);
+
   /// Get audio latency in samples (device + buffer)
   /// @return Total latency in samples
   uint32_t getLatencySamples() const;

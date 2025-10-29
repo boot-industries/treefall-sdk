@@ -857,7 +857,7 @@ sessionManager->saveSession(juce::File("~/Documents/OCC/my_session.json"));
 
 **Remember:** Clip Composer is a professional tool for broadcast, theater, and live performance. Design for 24/7 reliability, ultra-low latency, and zero crashes. When in doubt, favor simplicity, determinism, and user autonomy over short-term convenience.
 
-**Last Updated:** October 22, 2025
-**Status:** v0.1.0-alpha Released - v0.2.0 Planning In Progress
-**Release:** https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.1.0-alpha
-**Next Review:** After v0.2.0 feature planning or first beta feedback
+**Last Updated:** October 28, 2025
+**Status:** v0.2.0 Sprint Complete (OCC093)
+**Release:** v0.1.0-alpha (October 22, 2025)
+**Next Milestone:** v0.2.0 release (pending final QA)
