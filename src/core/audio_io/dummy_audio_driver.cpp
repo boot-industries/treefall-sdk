@@ -134,8 +134,8 @@ void DummyAudioDriver::audioThreadMain() {
       std::memset(buffer.data(), 0, buffer.size() * sizeof(float));
     }
 
-    // Call audio callback
-    if (m_callback) {
+    // Call audio callback (with safety check for shutdown race)
+    if (m_callback && m_running.load(std::memory_order_acquire)) {
       const float** input_ptrs = m_config.num_inputs > 0 ? m_input_ptrs.data() : nullptr;
 
       m_callback->processAudio(input_ptrs, m_output_ptrs.data(), m_config.num_outputs,

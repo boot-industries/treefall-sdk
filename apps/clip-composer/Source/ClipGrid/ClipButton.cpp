@@ -129,18 +129,19 @@ void ClipButton::paint(juce::Graphics& g) {
     break;
 
   case State::Loaded:
-    bgColor = m_clipColor.darker(0.6f); // Darkened clip color
+    bgColor = m_clipColor.withAlpha(0.9f); // 90% opacity clip color
     borderColor = m_clipColor.darker(0.2f);
     break;
 
   case State::Playing:
-    bgColor = m_clipColor.brighter(0.8f); // Very bright when playing
-    borderColor = juce::Colours::white;   // White border when playing
+    // Glowing pulsing border instead of bright fill (preserve clip color, only animate border)
+    bgColor = m_clipColor.withAlpha(0.9f); // Keep 90% opacity clip color
+    borderColor = juce::Colours::white;    // White glowing border
     break;
 
   case State::Stopping:
-    bgColor = m_clipColor;
-    borderColor = juce::Colours::orange; // Orange border during fade-out
+    bgColor = m_clipColor.withAlpha(0.9f); // 90% opacity
+    borderColor = juce::Colours::orange;   // Orange border during fade-out
     break;
   }
 
@@ -148,9 +149,26 @@ void ClipButton::paint(juce::Graphics& g) {
   g.setColour(bgColor);
   g.fillRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS);
 
-  // Draw border
-  g.setColour(borderColor);
-  g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, BORDER_THICKNESS);
+  // Draw border (animated for Playing state)
+  if (m_state == State::Playing) {
+    // Glowing pulsing border for playing state
+    // Use timestamp for pulsing animation
+    auto now = juce::Time::getMillisecondCounterHiRes();
+    float pulsePhase = std::fmod(now / 500.0, 1.0); // Fast pulse: 500ms cycle
+    float pulseAlpha = 0.6f + 0.4f * std::sin(pulsePhase * juce::MathConstants<float>::twoPi);
+
+    // Draw thick glowing border
+    g.setColour(borderColor.withAlpha(pulseAlpha));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS,
+                           5.0f); // Thick border for prominent glow
+
+    // Trigger repaint for animation (only when playing)
+    repaint();
+  } else {
+    // Normal border for other states
+    g.setColour(borderColor);
+    g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, BORDER_THICKNESS);
+  }
 
   if (m_state == State::Empty) {
     // Button index (larger, more prominent) - 20% increase: 18 -> 21.6
@@ -169,18 +187,44 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   auto contentArea = bounds.reduced(PADDING);
   float currentY = contentArea.getY();
 
+  // Determine text color based on background brightness
+  // Skew towards white/light text (dark mode app) - only use black on VERY light backgrounds
+  juce::Colour bgColor;
+  switch (m_state) {
+  case State::Loaded:
+    bgColor = m_clipColor.withAlpha(0.9f);
+    break;
+  case State::Playing:
+    bgColor = m_clipColor.withAlpha(0.9f);
+    break;
+  case State::Stopping:
+    bgColor = m_clipColor.withAlpha(0.9f);
+    break;
+  default:
+    bgColor = juce::Colours::darkgrey;
+    break;
+  }
+
+  // Use black text ONLY on extremely light backgrounds (>0.8), white otherwise
+  // This ensures readability while strongly favoring white text for dark mode aesthetic
+  float brightness = bgColor.getBrightness();
+  juce::Colour textColor =
+      brightness > 0.8f ? juce::Colours::black.withAlpha(0.95f) : juce::Colours::white;
+  juce::Colour subtleTextColor = textColor.withAlpha(0.6f);
+  juce::Colour prominentTextColor = textColor.withAlpha(0.95f);
+
   // === TOP ROW: Button Index + Keyboard Shortcut ===
   {
     auto topRow = contentArea.removeFromTop(16.0f);
 
     // Button index (left, subtle) - 20% increase: 10 -> 12
-    g.setColour(juce::Colours::white.withAlpha(0.5f));
+    g.setColour(subtleTextColor);
     g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
     g.drawText(juce::String(m_buttonIndex + 1), topRow, juce::Justification::topLeft, false);
 
     // Keyboard shortcut (right, prominent) - 20% increase: 11 -> 13.2
     if (m_keyboardShortcut.isNotEmpty()) {
-      g.setColour(juce::Colours::white.withAlpha(0.9f));
+      g.setColour(prominentTextColor);
       g.setFont(juce::FontOptions("Inter", 13.2f, juce::Font::bold));
       g.drawText(m_keyboardShortcut, topRow, juce::Justification::topRight, false);
     }
@@ -196,7 +240,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
 
     // Clip Name (PRIMARY - MUCH larger, bold, 3 lines)
-    g.setColour(juce::Colours::white);
+    g.setColour(textColor);
     g.setFont(juce::FontOptions("Inter", 18.0f, juce::Font::bold));
 
     // Reserve minimal space for duration
@@ -219,8 +263,8 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         g.setColour(juce::Colour(0xff00ff00).withAlpha(0.8f));
         g.drawText(timeDisplay, durationArea, juce::Justification::centred, false);
       } else {
-        // Show total duration when stopped
-        g.setColour(juce::Colours::white.withAlpha(0.5f)); // Very subtle
+        // Show total duration when stopped (use adaptive subtle color)
+        g.setColour(subtleTextColor);
         g.drawText(formatDuration(m_durationSeconds), durationArea, juce::Justification::centred,
                    false);
       }

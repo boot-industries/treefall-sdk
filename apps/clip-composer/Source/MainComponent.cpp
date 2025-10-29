@@ -405,17 +405,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     menu.addItem(6, "Load Multiple Audio Files...");
     menu.addSeparator();
 
-    // Color submenu
-    juce::PopupMenu colorMenu;
-    colorMenu.addItem(100, "Red");
-    colorMenu.addItem(101, "Orange");
-    colorMenu.addItem(102, "Yellow");
-    colorMenu.addItem(103, "Green");
-    colorMenu.addItem(104, "Cyan");
-    colorMenu.addItem(105, "Blue");
-    colorMenu.addItem(106, "Purple");
-    colorMenu.addItem(107, "Pink");
-    menu.addSubMenu("Set Color", colorMenu);
+    // Set Color - will show ColorSwatchPicker popup
+    menu.addItem(8, "Set Color...");
 
     menu.addSeparator();
     menu.addItem(4, "Stop Others On Play", true, m_stopOthersOnPlay[buttonIndex]);
@@ -500,50 +491,54 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
         auto files = chooser.getResults();
         loadMultipleFiles(files, buttonIndex);
       }
-    } else if (result >= 100 && result <= 107) {
-      // Color selection
-      juce::Colour newColor;
-      switch (result) {
-      case 100:
-        newColor = juce::Colour(0xffe74c3c);
-        break; // Red
-      case 101:
-        newColor = juce::Colour(0xfff39c12);
-        break; // Orange
-      case 102:
-        newColor = juce::Colour(0xfff1c40f);
-        break; // Yellow
-      case 103:
-        newColor = juce::Colour(0xff2ecc71);
-        break; // Green
-      case 104:
-        newColor = juce::Colour(0xff1abc9c);
-        break; // Cyan
-      case 105:
-        newColor = juce::Colour(0xff3498db);
-        break; // Blue
-      case 106:
-        newColor = juce::Colour(0xff9b59b6);
-        break; // Purple
-      case 107:
-        newColor = juce::Colour(0xffff69b4);
-        break; // Pink (HotPink - lighter)
-      }
+    } else if (result == 8 && hasClip) {
+      // Set Color - show ColorSwatchPicker popup
+      auto* colorGrid = new ColorSwatchGrid();
 
-      // Update button color
-      auto button = m_clipGrid->getButton(buttonIndex);
-      if (button) {
-        button->setClipColor(newColor);
-      }
-
-      // CRITICAL: Persist color to SessionManager (otherwise Edit Dialog will overwrite it)
+      // Set current color if clip has one
       if (m_sessionManager.hasClip(buttonIndex)) {
         auto clipData = m_sessionManager.getClip(buttonIndex);
-        clipData.color = newColor;
-        m_sessionManager.setClip(buttonIndex, clipData); // Persist to SessionManager
+        colorGrid->setSelectedColor(clipData.color);
       }
 
-      DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
+      // Color selection callback
+      colorGrid->onColorSelected = [this, buttonIndex](const juce::Colour& newColor) {
+        // Update button color
+        auto button = m_clipGrid->getButton(buttonIndex);
+        if (button) {
+          button->setClipColor(newColor);
+        }
+
+        // CRITICAL: Persist color to SessionManager (otherwise Edit Dialog will overwrite it)
+        if (m_sessionManager.hasClip(buttonIndex)) {
+          auto clipData = m_sessionManager.getClip(buttonIndex);
+          clipData.color = newColor;
+          m_sessionManager.setClip(buttonIndex, clipData);
+        }
+
+        DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
+      };
+
+      // Get button screen position to position popup hovering over it (centered)
+      auto button = m_clipGrid->getButton(buttonIndex);
+      juce::Rectangle<int> popupBounds;
+      if (button) {
+        auto buttonBounds = button->getScreenBounds();
+        int popupWidth = 284; // Tight fit for 4×12 grid
+        int popupHeight = 80; // 4 rows
+        // Center popup OVER the button (not below it)
+        int popupX = buttonBounds.getCentreX() - (popupWidth / 2);
+        int popupY = buttonBounds.getCentreY() - (popupHeight / 2); // Hover over button
+        popupBounds = juce::Rectangle<int>(popupX, popupY, popupWidth, popupHeight);
+      } else {
+        // Fallback: center on screen
+        popupBounds = juce::Rectangle<int>(getScreenX() + getWidth() / 2 - 142,
+                                           getScreenY() + getHeight() / 2 - 40, 284, 80);
+      }
+
+      // Show popup (CallOutBox takes ownership and deletes grid when closed)
+      juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(colorGrid),
+                                             popupBounds, nullptr);
     }
   });
 }
