@@ -37,6 +37,7 @@ set(CLIP_COMPOSER_SOURCES
   Source/UI/TabSwitcher.cpp
   Source/UI/AudioSettingsDialog.cpp
   Source/UI/ClipEditDialog.cpp
+  Source/UI/ColorSwatchPicker.cpp
   Source/UI/WaveformDisplay.cpp
   Source/UI/PreviewPlayer.cpp
   Source/Audio/AudioEngine.cpp

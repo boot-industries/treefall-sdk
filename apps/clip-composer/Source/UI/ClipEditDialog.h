@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "ColorSwatchPicker.h"
 #include "PreviewPlayer.h"
 #include "WaveformDisplay.h"
 #include <functional>
@@ -163,7 +164,7 @@ private:
   std::unique_ptr<juce::TextEditor> m_nameEditor;
 
   std::unique_ptr<juce::Label> m_colorLabel;
-  std::unique_ptr<juce::ComboBox> m_colorComboBox;
+  std::unique_ptr<ColorSwatchPicker> m_colorSwatchPicker;
 
   std::unique_ptr<juce::Label> m_groupLabel;
   std::unique_ptr<juce::ComboBox> m_groupComboBox;

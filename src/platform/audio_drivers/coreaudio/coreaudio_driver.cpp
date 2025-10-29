@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <sstream>
+#include <thread>
 
 namespace orpheus {
 
@@ -115,7 +117,16 @@ SessionGraphError CoreAudioDriver::stop() {
   }
 
   if (audio_unit_) {
+    // Stop AudioUnit (this is asynchronous - may still call callback briefly)
     AudioOutputUnitStop(audio_unit_);
+
+    // CRITICAL: AudioOutputUnitStop() does NOT block until audio thread exits!
+    // The render callback can still be invoked for a brief period after this returns.
+    // We must ensure the audio thread has fully exited before destroying resources.
+    //
+    // Solution: Sleep briefly to allow any in-flight callbacks to complete.
+    // This is a conservative approach - Apple doesn't provide a synchronous stop API.
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   is_running_.store(false, std::memory_order_release);
@@ -168,6 +179,12 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   // Zero our output buffers before callback
   for (uint32_t ch = 0; ch < num_channels; ++ch) {
     std::memset(driver->output_buffers_[ch], 0, frames_to_process * sizeof(float));
+  }
+
+  // CRITICAL: Check if we're still running before invoking callback
+  // This prevents use-after-free if callback is invoked during/after stop()
+  if (!driver->is_running_.load(std::memory_order_acquire)) {
+    return noErr; // Driver is stopping, output silence
   }
 
   // Invoke user callback (lock-free)

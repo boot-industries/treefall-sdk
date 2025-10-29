@@ -46,27 +46,9 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
   if (m_groupComboBox)
     m_groupComboBox->setSelectedId(m_metadata.clipGroup + 1, juce::dontSendNotification);
 
-  // Set color combo box based on metadata color
-  if (m_colorComboBox) {
-    // Map color to combo box item (simplified for now)
-    if (m_metadata.color == juce::Colour(0xffe74c3c))
-      m_colorComboBox->setSelectedId(1); // Red
-    else if (m_metadata.color == juce::Colour(0xfff39c12))
-      m_colorComboBox->setSelectedId(2); // Orange
-    else if (m_metadata.color == juce::Colour(0xfff1c40f))
-      m_colorComboBox->setSelectedId(3); // Yellow
-    else if (m_metadata.color == juce::Colour(0xff2ecc71))
-      m_colorComboBox->setSelectedId(4); // Green
-    else if (m_metadata.color == juce::Colour(0xff1abc9c))
-      m_colorComboBox->setSelectedId(5); // Cyan
-    else if (m_metadata.color == juce::Colour(0xff3498db))
-      m_colorComboBox->setSelectedId(6); // Blue
-    else if (m_metadata.color == juce::Colour(0xff9b59b6))
-      m_colorComboBox->setSelectedId(7); // Purple
-    else if (m_metadata.color == juce::Colour(0xffff69b4))
-      m_colorComboBox->setSelectedId(8); // Pink
-    else
-      m_colorComboBox->setSelectedId(1); // Default to Red
+  // Set color swatch picker based on metadata color
+  if (m_colorSwatchPicker) {
+    m_colorSwatchPicker->setSelectedColor(m_metadata.color);
   }
 
   // Update trim info label
@@ -364,6 +346,9 @@ void ClipEditDialog::buildPhase1UI() {
   m_nameEditor = std::make_unique<juce::TextEditor>();
   m_nameEditor->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::plain));
   m_nameEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
+  m_nameEditor->setMultiLine(false);                                // Single line only
+  m_nameEditor->setScrollBarThickness(0);                           // No scrollbar
+  m_nameEditor->setScrollToShowCursor(true);                        // Scroll to keep cursor visible
   m_nameEditor->onTextChange = [this]() { m_metadata.displayName = m_nameEditor->getText(); };
   m_nameEditor->setReturnKeyStartsNewLine(false); // Enter should NOT insert newline
   m_nameEditor->onReturnKey = [this]() {
@@ -390,48 +375,15 @@ void ClipEditDialog::buildPhase1UI() {
   m_colorLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_colorLabel.get());
 
-  m_colorComboBox = std::make_unique<juce::ComboBox>();
-  m_colorComboBox->addItem("Red", 1);
-  m_colorComboBox->addItem("Orange", 2);
-  m_colorComboBox->addItem("Yellow", 3);
-  m_colorComboBox->addItem("Green", 4);
-  m_colorComboBox->addItem("Cyan", 5);
-  m_colorComboBox->addItem("Blue", 6);
-  m_colorComboBox->addItem("Purple", 7);
-  m_colorComboBox->addItem("Pink", 8);
-  m_colorComboBox->onChange = [this]() {
-    int colorId = m_colorComboBox->getSelectedId();
-    switch (colorId) {
-    case 1:
-      m_metadata.color = juce::Colour(0xffe74c3c);
-      break; // Red
-    case 2:
-      m_metadata.color = juce::Colour(0xfff39c12);
-      break; // Orange
-    case 3:
-      m_metadata.color = juce::Colour(0xfff1c40f);
-      break; // Yellow
-    case 4:
-      m_metadata.color = juce::Colour(0xff2ecc71);
-      break; // Green
-    case 5:
-      m_metadata.color = juce::Colour(0xff1abc9c);
-      break; // Cyan
-    case 6:
-      m_metadata.color = juce::Colour(0xff3498db);
-      break; // Blue
-    case 7:
-      m_metadata.color = juce::Colour(0xff9b59b6);
-      break; // Purple
-    case 8:
-      m_metadata.color = juce::Colour(0xffff69b4);
-      break; // Pink
-    }
+  // Ableton-style color swatch picker
+  m_colorSwatchPicker = std::make_unique<ColorSwatchPicker>();
+  m_colorSwatchPicker->onColorSelected = [this](const juce::Colour& color) {
+    m_metadata.color = color;
   };
-  addAndMakeVisible(m_colorComboBox.get());
+  addAndMakeVisible(m_colorSwatchPicker.get());
 
   // Clip Group
-  m_groupLabel = std::make_unique<juce::Label>("groupLabel", "Clip Group:");
+  m_groupLabel = std::make_unique<juce::Label>("groupLabel", "Group:");
   m_groupLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_groupLabel.get());
 
@@ -655,7 +607,7 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_stopOthersButton.get());
 
-  m_transportPositionLabel = std::make_unique<juce::Label>("posLabel", "00:00:00");
+  m_transportPositionLabel = std::make_unique<juce::Label>("posLabel", "00:00:00.00");
   m_transportPositionLabel->setFont(
       juce::FontOptions("Inter", 32.0f, juce::Font::bold)); // Issue #11: Enlarged for readability
   m_transportPositionLabel->setJustificationType(juce::Justification::centred);
@@ -1085,8 +1037,11 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim Info Label (shows duration in seconds)
   m_trimInfoLabel = std::make_unique<juce::Label>("trimInfoLabel", "Duration: --:--");
-  m_trimInfoLabel->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
-  m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+  m_trimInfoLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+  m_trimInfoLabel->setColour(juce::Label::backgroundColourId, juce::Colour(0xff2a2a2a));
+  m_trimInfoLabel->setColour(juce::Label::outlineColourId, juce::Colour(0xff555555));
+  m_trimInfoLabel->setJustificationType(juce::Justification::centred);
   addAndMakeVisible(m_trimInfoLabel.get());
 
   // File Info Panel (SpotOn-style yellow background)
@@ -1335,11 +1290,11 @@ void ClipEditDialog::paint(juce::Graphics& g) {
   // Title text
   g.setColour(juce::Colours::white);
   g.setFont(juce::FontOptions("Inter", 20.0f, juce::Font::bold));
-  g.drawText("Edit Clip", 20, 0, 400, 50, juce::Justification::centredLeft, false);
+  g.drawText("Clip Edit", 20, 0, 400, 50, juce::Justification::centredLeft, false);
 }
 
 void ClipEditDialog::resized() {
-  // SpotOn-inspired professional grid layout
+  // Updated "Clip Edit" layout with reorganized sections
   const int GRID = 10; // 10px grid unit
   auto bounds = getLocalBounds();
 
@@ -1349,37 +1304,57 @@ void ClipEditDialog::resized() {
   // Content area with padding
   auto contentArea = bounds.reduced(GRID * 2);
 
-  // File Info Panel at very top (yellow background, SpotOn-style)
-  if (m_fileInfoPanel) {
-    m_fileInfoPanel->setBounds(contentArea.removeFromTop(GRID * 3));
+  // === CLIP NAME SECTION (at top, below header) ===
+  // Clip Name label
+  if (m_nameLabel) {
+    m_nameLabel->setBounds(contentArea.removeFromTop(GRID * 2));
   }
-  contentArea.removeFromTop(GRID); // Spacing
+  contentArea.removeFromTop(GRID / 2);
 
-  // === WAVEFORM SECTION (Prominent, SpotOn-style) ===
-  if (m_waveformDisplay) {
-    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 15)); // Larger waveform
-  }
-  contentArea.removeFromTop(GRID / 2); // Small spacing before zoom buttons
-
-  // === ZOOM CONTROLS (+/- buttons with level display, centered below waveform) ===
-  if (m_zoomOutButton && m_zoomLabel && m_zoomInButton) {
-    auto zoomRow = contentArea.removeFromTop(GRID * 3);
-    auto zoomCenter = zoomRow.withSizeKeepingCentre(GRID * 12, GRID * 3);
-
-    m_zoomOutButton->setBounds(zoomCenter.removeFromLeft(GRID * 3));
-    zoomCenter.removeFromLeft(GRID / 2);
-    m_zoomLabel->setBounds(zoomCenter.removeFromLeft(GRID * 5));
-    zoomCenter.removeFromLeft(GRID / 2);
-    m_zoomInButton->setBounds(zoomCenter.removeFromLeft(GRID * 3));
+  // Clip Name field (full width)
+  if (m_nameEditor) {
+    m_nameEditor->setBounds(contentArea.removeFromTop(GRID * 3));
   }
   contentArea.removeFromTop(GRID);
 
-  // === TRANSPORT BAR (Professional, SpotOn-inspired with icons) ===
+  // === FILE INFO PANEL + ZOOM CONTROLS (on same row) ===
+  auto headerRow = contentArea.removeFromTop(GRID * 3);
+
+  // File Info Panel (left side, takes most of the width)
+  if (m_fileInfoPanel) {
+    auto fileInfoArea = headerRow;
+    // Reserve space for zoom controls on the right
+    fileInfoArea.removeFromRight(GRID * 13); // Space for zoom controls + margin
+    m_fileInfoPanel->setBounds(fileInfoArea);
+  }
+
+  // Zoom controls (top-right corner with left margin)
+  if (m_zoomOutButton && m_zoomLabel && m_zoomInButton) {
+    auto zoomArea = headerRow.removeFromRight(GRID * 12);
+    zoomArea.removeFromLeft(GRID); // Left margin for spacing
+    m_zoomOutButton->setBounds(zoomArea.removeFromLeft(GRID * 3));
+    zoomArea.removeFromLeft(GRID / 2);
+    m_zoomLabel->setBounds(zoomArea.removeFromLeft(GRID * 4));
+    zoomArea.removeFromLeft(GRID / 2);
+    m_zoomInButton->setBounds(zoomArea.removeFromLeft(GRID * 3));
+  }
+
+  contentArea.removeFromTop(GRID); // Spacing
+
+  // === WAVEFORM SECTION ===
+  if (m_waveformDisplay) {
+    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 15));
+  }
+  contentArea.removeFromTop(GRID);
+
+  // === TRANSPORT BAR (centered playback controls + vertically centered time display) ===
   if (m_skipToStartButton && m_playButton && m_stopButton && m_skipToEndButton && m_loopButton &&
       m_transportPositionLabel) {
-    auto transportRow = contentArea.removeFromTop(GRID * 6); // Increased height for label
+    // Reserve space for transport section - will be centered between buttons and Duration
+    const int TRANSPORT_HEIGHT = GRID * 10; // Increased to accommodate centered time
+    auto transportRow = contentArea.removeFromTop(TRANSPORT_HEIGHT);
 
-    // Transport buttons (top row)
+    // Transport buttons (top)
     auto buttonRow = transportRow.removeFromTop(GRID * 4);
     auto transportCenter = buttonRow.withSizeKeepingCentre(GRID * 35, GRID * 4);
 
@@ -1391,7 +1366,7 @@ void ClipEditDialog::resized() {
     m_loopButton->setBounds(transportCenter.removeFromLeft(GRID * 6));
     transportCenter.removeFromLeft(GRID);
 
-    // Play button (►) - larger, prominent
+    // Play button (►)
     m_playButton->setBounds(transportCenter.removeFromLeft(GRID * 6));
     transportCenter.removeFromLeft(GRID);
 
@@ -1402,113 +1377,171 @@ void ClipEditDialog::resized() {
     // Skip to End button (►►)
     m_skipToEndButton->setBounds(transportCenter.removeFromLeft(GRID * 4));
 
-    // Add vertical margin between transport buttons and time counter
-    transportRow.removeFromTop(GRID);
-
-    // Transport position label (centered below buttons) - Issue #11: Enlarged to 50px height
-    auto labelRow =
-        transportRow.removeFromTop(GRID * 5); // Was GRID * 2 (20px), now 50px for larger text
-    m_transportPositionLabel->setBounds(
-        labelRow.withSizeKeepingCentre(GRID * 20, GRID * 5)); // Wider for larger text
+    // Transport position label (vertically centered - equidistant from buttons and Duration)
+    // Using remaining height, center the time display
+    auto labelRow = transportRow.withSizeKeepingCentre(GRID * 20, GRID * 5);
+    m_transportPositionLabel->setBounds(labelRow);
   }
   contentArea.removeFromTop(GRID);
 
-  // === TRIM SECTION (Grid-based, SpotOn-style) ===
-  auto trimSection = contentArea.removeFromTop(GRID * 12);
+  // === TRIM SECTION (with vertical margin between button rows) ===
+  auto trimSection = contentArea.removeFromTop(GRID * 13);
 
-  // Trim IN (left column)
-  auto trimInCol = trimSection.removeFromLeft(trimSection.getWidth() / 2 - GRID);
-  if (m_trimInLabel && m_trimInTimeEditor && m_trimInDecButton && m_trimInIncButton &&
-      m_trimInHoldButton && m_trimInClearButton) {
-    m_trimInLabel->setBounds(trimInCol.removeFromTop(GRID * 2));
-    trimInCol.removeFromTop(GRID / 2);
+  // Calculate layout constants
+  const int TIME_FIELD_WIDTH = GRID * 11;                           // Time input fields
+  const int BUTTON_WIDTH = GRID * 5;                                // SET/CLR buttons
+  const int NAV_BUTTON_WIDTH = GRID * 3;                            // < > buttons
+  const int DURATION_WIDTH = GRID * 20;                             // Duration display box
+  const int SECTION_SPACING = GRID * 2;                             // Space between sections
+  const int SECTION_WIDTH = TIME_FIELD_WIDTH + GRID + BUTTON_WIDTH; // Total width per trim section
 
-    auto trimInRow = trimInCol.removeFromTop(GRID * 3);
-    m_trimInTimeEditor->setBounds(trimInRow.removeFromLeft(GRID * 10));
-    trimInRow.removeFromLeft(GRID);
-    m_trimInDecButton->setBounds(trimInRow.removeFromLeft(GRID * 3));
-    m_trimInIncButton->setBounds(trimInRow.removeFromLeft(GRID * 3));
+  // Row 1: Labels (Trim In on left, Trim Out on right)
+  auto labelRow = trimSection.removeFromTop(GRID * 2);
+  if (m_trimInLabel && m_trimOutLabel) {
+    auto leftLabelArea = labelRow.removeFromLeft(SECTION_WIDTH);
+    m_trimInLabel->setBounds(leftLabelArea);
 
-    trimInCol.removeFromTop(GRID / 2);
-    auto trimInButtonRow = trimInCol.removeFromTop(GRID * 3);
-    m_trimInHoldButton->setBounds(
-        trimInButtonRow.removeFromLeft(GRID * 5)); // SET button first (visual priority)
-    trimInButtonRow.removeFromLeft(GRID);
-    m_trimInClearButton->setBounds(trimInButtonRow.removeFromLeft(GRID * 5));
+    auto rightLabelArea = labelRow.removeFromRight(SECTION_WIDTH);
+    m_trimOutLabel->setBounds(rightLabelArea);
+  }
+  trimSection.removeFromTop(GRID / 2);
+
+  // Row 2: Time fields + SET buttons (same row) + Duration (center, aligned with this row)
+  auto controlsRow = trimSection.removeFromTop(GRID * 3);
+
+  // === TRIM IN (left): Time field + SET button (to the right) ===
+  auto trimInArea = controlsRow.removeFromLeft(SECTION_WIDTH);
+
+  if (m_trimInTimeEditor && m_trimInHoldButton) {
+    m_trimInTimeEditor->setBounds(trimInArea.removeFromLeft(TIME_FIELD_WIDTH));
+    trimInArea.removeFromLeft(GRID);                                        // Spacing
+    m_trimInHoldButton->setBounds(trimInArea.removeFromLeft(BUTTON_WIDTH)); // SET to the right
   }
 
-  trimSection.removeFromLeft(GRID * 2); // Column spacing
+  controlsRow.removeFromLeft(SECTION_SPACING);
 
-  // Trim OUT (right column)
-  auto trimOutCol = trimSection;
-  if (m_trimOutLabel && m_trimOutTimeEditor && m_trimOutDecButton && m_trimOutIncButton &&
-      m_trimOutHoldButton && m_trimOutClearButton) {
-    m_trimOutLabel->setBounds(trimOutCol.removeFromTop(GRID * 2));
-    trimOutCol.removeFromTop(GRID / 2);
+  // === TRIM OUT (right): SET button (to the left) + Time field ===
+  auto trimOutArea = controlsRow.removeFromRight(SECTION_WIDTH);
 
-    auto trimOutRow = trimOutCol.removeFromTop(GRID * 3);
-    m_trimOutTimeEditor->setBounds(trimOutRow.removeFromLeft(GRID * 10));
-    trimOutRow.removeFromLeft(GRID);
-    m_trimOutDecButton->setBounds(trimOutRow.removeFromLeft(GRID * 3));
-    m_trimOutIncButton->setBounds(trimOutRow.removeFromLeft(GRID * 3));
-
-    trimOutCol.removeFromTop(GRID / 2);
-    auto trimOutButtonRow = trimOutCol.removeFromTop(GRID * 3);
-    m_trimOutHoldButton->setBounds(
-        trimOutButtonRow.removeFromLeft(GRID * 5)); // SET button first (visual priority)
-    trimOutButtonRow.removeFromLeft(GRID);
-    m_trimOutClearButton->setBounds(trimOutButtonRow.removeFromLeft(GRID * 5));
+  if (m_trimOutHoldButton && m_trimOutTimeEditor) {
+    m_trimOutTimeEditor->setBounds(trimOutArea.removeFromRight(TIME_FIELD_WIDTH));
+    trimOutArea.removeFromRight(GRID);                                         // Spacing
+    m_trimOutHoldButton->setBounds(trimOutArea.removeFromRight(BUTTON_WIDTH)); // SET to the left
   }
 
-  contentArea.removeFromTop(GRID);
-
-  // Duration label (centered)
+  // Duration display (vertically aligned with SET buttons - same baseline)
   if (m_trimInfoLabel) {
-    m_trimInfoLabel->setBounds(contentArea.removeFromTop(GRID * 2));
-  }
-  contentArea.removeFromTop(GRID * 2);
-
-  // === METADATA SECTION ===
-  // Clip Name
-  auto nameRow = contentArea.removeFromTop(GRID * 6);
-  m_nameLabel->setBounds(nameRow.removeFromTop(GRID * 2));
-  m_nameEditor->setBounds(nameRow.removeFromTop(GRID * 3));
-  contentArea.removeFromTop(GRID);
-
-  // Color and Group (inline)
-  auto metadataRow = contentArea.removeFromTop(GRID * 3);
-  m_colorLabel->setBounds(metadataRow.removeFromLeft(GRID * 6));
-  m_colorComboBox->setBounds(metadataRow.removeFromLeft(GRID * 12));
-  metadataRow.removeFromLeft(GRID * 2);
-  m_groupLabel->setBounds(metadataRow.removeFromLeft(GRID * 9));
-  m_groupComboBox->setBounds(metadataRow.removeFromLeft(GRID * 13));
-  contentArea.removeFromTop(GRID * 2);
-
-  // === FADE SECTION ===
-  auto fadeSection = contentArea.removeFromTop(GRID * 8);
-
-  // Fade IN (left column)
-  auto fadeInCol = fadeSection.removeFromLeft(fadeSection.getWidth() / 2 - GRID);
-  if (m_fadeInLabel && m_fadeInCombo && m_fadeInCurveCombo) {
-    m_fadeInLabel->setBounds(fadeInCol.removeFromTop(GRID * 2));
-    fadeInCol.removeFromTop(GRID / 2);
-    auto fadeInRow = fadeInCol.removeFromTop(GRID * 3);
-    m_fadeInCombo->setBounds(fadeInRow.removeFromLeft(GRID * 10));
-    fadeInRow.removeFromLeft(GRID);
-    m_fadeInCurveCombo->setBounds(fadeInRow);
+    m_trimInfoLabel->setBounds(controlsRow.withSizeKeepingCentre(DURATION_WIDTH, GRID * 3));
   }
 
-  fadeSection.removeFromLeft(GRID * 2);
+  trimSection.removeFromTop(GRID); // Vertical margin between rows
 
-  // Fade OUT (right column)
-  auto fadeOutCol = fadeSection;
-  if (m_fadeOutLabel && m_fadeOutCombo && m_fadeOutCurveCombo) {
-    m_fadeOutLabel->setBounds(fadeOutCol.removeFromTop(GRID * 2));
-    fadeOutCol.removeFromTop(GRID / 2);
-    auto fadeOutRow = fadeOutCol.removeFromTop(GRID * 3);
-    m_fadeOutCombo->setBounds(fadeOutRow.removeFromLeft(GRID * 10));
-    fadeOutRow.removeFromLeft(GRID);
-    m_fadeOutCurveCombo->setBounds(fadeOutRow);
+  // Row 3: Navigation buttons (< > to the left, CLR vertically aligned with SET)
+  auto navRow = trimSection.removeFromTop(GRID * 3);
+
+  // Trim In navigation (left side: < > buttons, then CLR aligned with SET above)
+  if (m_trimInDecButton && m_trimInIncButton && m_trimInClearButton) {
+    auto navLeft = navRow.removeFromLeft(SECTION_WIDTH);
+    // Place < > buttons first (below time field)
+    m_trimInDecButton->setBounds(navLeft.removeFromLeft(NAV_BUTTON_WIDTH));
+    navLeft.removeFromLeft(GRID);
+    m_trimInIncButton->setBounds(navLeft.removeFromLeft(NAV_BUTTON_WIDTH));
+    // Skip remaining space to align CLR with SET button above (which is at TIME_FIELD_WIDTH + GRID)
+    int currentX = NAV_BUTTON_WIDTH + GRID + NAV_BUTTON_WIDTH;
+    int setButtonX = TIME_FIELD_WIDTH + GRID;
+    int skipWidth = setButtonX - currentX;
+    navLeft.removeFromLeft(skipWidth);
+    m_trimInClearButton->setBounds(navLeft.removeFromLeft(BUTTON_WIDTH)); // CLR aligned with SET
+  }
+
+  navRow.removeFromLeft(SECTION_SPACING);
+
+  // Trim Out navigation (right side: < > buttons, then CLR aligned with SET above)
+  if (m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
+    auto navRight = navRow.removeFromRight(SECTION_WIDTH);
+    // Place buttons from right to left: Time field (skip), SET position (CLR here), space, >,
+    // space, < Row 2 layout: [........SET][GRID][.......TIME.......] Row 3 layout:
+    // [<][GRID][>][GRID][..CLR..] (aligned with SET)
+
+    // Skip time field width from the right
+    navRight.removeFromRight(TIME_FIELD_WIDTH);
+    navRight.removeFromRight(GRID);
+    // Place CLR aligned with SET button above
+    m_trimOutClearButton->setBounds(navRight.removeFromRight(BUTTON_WIDTH));
+    navRight.removeFromRight(GRID);
+    // Place > button
+    m_trimOutIncButton->setBounds(navRight.removeFromRight(NAV_BUTTON_WIDTH));
+    navRight.removeFromRight(GRID);
+    // Place < button
+    m_trimOutDecButton->setBounds(navRight.removeFromRight(NAV_BUTTON_WIDTH));
+  }
+
+  contentArea.removeFromTop(GRID * 2);
+
+  // === FADE SECTION (Equal width columns with consistent spacing) ===
+  auto fadeSection = contentArea.removeFromTop(GRID * 6);
+
+  // Calculate equal column widths
+  const int fadeColumnWidth = (fadeSection.getWidth() - GRID * 2) / 2; // 50% each with center gap
+  const int FADE_TIME_WIDTH = GRID * 7;                                // Time dropdown
+  const int FADE_CURVE_WIDTH = GRID * 12;                              // Curve dropdown
+
+  // Labels row (Fade In left, Fade Out right)
+  auto fadeLabelsRow = fadeSection.removeFromTop(GRID * 2);
+  if (m_fadeInLabel) {
+    auto fadeInLabelArea = fadeLabelsRow.removeFromLeft(fadeColumnWidth);
+    m_fadeInLabel->setBounds(fadeInLabelArea);
+  }
+  fadeLabelsRow.removeFromLeft(GRID * 2); // Center gap
+  if (m_fadeOutLabel) {
+    m_fadeOutLabel->setBounds(fadeLabelsRow); // Takes remaining width
+  }
+
+  fadeSection.removeFromTop(GRID / 2);
+
+  // Controls row (equal width columns)
+  auto fadeControlsRow = fadeSection.removeFromTop(GRID * 3);
+
+  // Fade IN controls (left column: time + curve)
+  auto fadeInArea = fadeControlsRow.removeFromLeft(fadeColumnWidth);
+  if (m_fadeInCombo && m_fadeInCurveCombo) {
+    m_fadeInCombo->setBounds(fadeInArea.removeFromLeft(FADE_TIME_WIDTH));
+    fadeInArea.removeFromLeft(GRID);
+    m_fadeInCurveCombo->setBounds(fadeInArea); // Takes remaining space
+  }
+
+  fadeControlsRow.removeFromLeft(GRID * 2); // Center gap
+
+  // Fade OUT controls (right column: time + curve, equal width to left)
+  if (m_fadeOutCombo && m_fadeOutCurveCombo) {
+    m_fadeOutCombo->setBounds(fadeControlsRow.removeFromLeft(FADE_TIME_WIDTH));
+    fadeControlsRow.removeFromLeft(GRID);
+    m_fadeOutCurveCombo->setBounds(fadeControlsRow); // Takes remaining space
+  }
+
+  contentArea.removeFromTop(GRID * 2);
+
+  // === COLOR + GROUP SECTION (flush on same row) ===
+  const int SPACING = GRID;
+  const int COLOR_LABEL_WIDTH = GRID * 5;
+  const int COLOR_PICKER_WIDTH = GRID * 18; // Compact button width (expandable)
+  const int GROUP_LABEL_WIDTH = GRID * 6;
+
+  auto colorGroupRow = contentArea.removeFromTop(GRID * 3);
+
+  // Color label + expandable color button
+  if (m_colorLabel && m_colorSwatchPicker) {
+    m_colorLabel->setBounds(colorGroupRow.removeFromLeft(COLOR_LABEL_WIDTH));
+    colorGroupRow.removeFromLeft(SPACING / 2);
+    m_colorSwatchPicker->setBounds(colorGroupRow.removeFromLeft(COLOR_PICKER_WIDTH));
+    colorGroupRow.removeFromLeft(SPACING);
+  }
+
+  // Group label + dropdown (flush with color controls)
+  if (m_groupLabel && m_groupComboBox) {
+    m_groupLabel->setBounds(colorGroupRow.removeFromLeft(GROUP_LABEL_WIDTH));
+    colorGroupRow.removeFromLeft(SPACING / 2);
+    m_groupComboBox->setBounds(colorGroupRow); // Takes remaining width
   }
 
   // Dialog buttons at bottom

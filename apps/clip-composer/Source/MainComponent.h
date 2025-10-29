@@ -8,6 +8,7 @@
 #include "Transport/TransportControls.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
+#include "UI/ColorSwatchPicker.h"
 #include "UI/InterLookAndFeel.h"
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>

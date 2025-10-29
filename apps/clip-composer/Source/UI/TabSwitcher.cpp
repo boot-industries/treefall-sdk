@@ -80,14 +80,6 @@ void TabSwitcher::paint(juce::Graphics& g) {
     g.setColour(textColor);
     g.setFont(juce::FontOptions("Inter", 15.0f, juce::Font::bold));
     g.drawText(m_tabLabels[i], tabBounds, juce::Justification::centred);
-
-    // Draw keyboard shortcut hint in top-right corner (subtle)
-    g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::plain));
-    g.setColour(textColor.withAlpha(0.4f));
-    juce::String shortcut("⌘");
-    shortcut << (i + 1);
-    auto shortcutArea = tabBounds.reduced(6, 4).removeFromTop(12).removeFromRight(18);
-    g.drawText(shortcut, shortcutArea, juce::Justification::centredRight);
   }
 }
 
