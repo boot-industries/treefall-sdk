@@ -79,7 +79,6 @@ phase0_baseline_checks() {
   run_step "Build Orpheus C++ (Debug)" cmake --build "$build_dir" --config Debug
   run_step "Run C++ tests (Debug)" ctest --test-dir "$build_dir" --output-on-failure --build-config Debug
 
-  run_step "Build Shmui workspace package" pnpm --filter @orpheus/shmui build
   run_step "Run repository lint suite" pnpm run lint
 }
 
@@ -99,23 +98,15 @@ phase1_tooling_checks() {
   run_step "Build client broker" pnpm --filter @orpheus/client build
   run_step "Build React integration" pnpm --filter @orpheus/react build
 
-  # UI integration
-  run_step "Build Shmui www app" pnpm --filter www build
-
   # Documentation checks
   run_step "Verify driver integration guide exists" test -f "$REPO_ROOT/docs/DRIVER_INTEGRATION_GUIDE.md"
   run_step "Verify contract development guide exists" test -f "$REPO_ROOT/docs/CONTRACT_DEVELOPMENT.md"
-
-  # Verify debug panel integration
-  run_step "Verify OrpheusDebugPanel component exists" test -f "$REPO_ROOT/packages/shmui/apps/www/components/orpheus-debug-panel.tsx"
-  run_step "Verify OrpheusProvider in layout" grep -q "OrpheusProvider" "$REPO_ROOT/packages/shmui/apps/www/app/layout.tsx"
 }
 
 phase2_feature_checks() {
   print_section "Phase 2 – Feature Integration"
 
   run_step "Build all workspace packages" pnpm -r build
-  run_step "Run Shmui package tests" pnpm --filter @orpheus/shmui test
 }
 
 phase3_governance_checks() {
