@@ -18,6 +18,25 @@ The Orpheus Documentation Generator skill automates creation and maintenance of 
 - Include real-time safety and thread safety annotations
 - Generate API reference documentation
 
+**CRITICAL - Documentation File Naming:**
+
+When creating new PREFIX-numbered documentation (ORP, OCC), files **MUST** follow this pattern:
+
+**Format:** `{PREFIX###} {Descriptive Title}.md`
+
+**Examples (CORRECT):**
+
+- `ORP082 Session Performance Report.md`
+- `OCC103 QA v020 Results.md`
+- `ORP098 Real-time Safety Audit Results.md`
+
+**Examples (WRONG - NEVER USE):**
+
+- ❌ `ORP082.md` (missing descriptive title)
+- ❌ `OCC-103-QA.md` (wrong separator format)
+
+See `~/chrislyons/dev/CLAUDE.md` for complete naming conventions.
+
 ## When to Use
 
 **Trigger Patterns:**
