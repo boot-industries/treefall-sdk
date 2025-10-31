@@ -155,4 +155,169 @@ if(TARGET orpheus_audio_io)
         NAME multi_clip_stress_test
         COMMAND multi_clip_stress_test
     )
+
+    # Clip gain tests (ORP099 Task 1.1)
+    add_executable(clip_gain_test
+        clip_gain_test.cpp
+    )
+
+    target_link_libraries(clip_gain_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found (needed because orpheus_audio_io is static)
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_gain_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_gain_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_gain_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_gain_test
+        COMMAND clip_gain_test
+    )
+
+    # Clip loop tests (ORP099 Task 1.2)
+    add_executable(clip_loop_test
+        clip_loop_test.cpp
+    )
+
+    target_link_libraries(clip_loop_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_loop_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_loop_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_loop_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_loop_test
+        COMMAND clip_loop_test
+    )
+
+    # Clip metadata tests (ORP099 Task 1.3)
+    add_executable(clip_metadata_test
+        clip_metadata_test.cpp
+    )
+
+    target_link_libraries(clip_metadata_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_metadata_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_metadata_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_metadata_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_metadata_test
+        COMMAND clip_metadata_test
+    )
+
+    # Clip restart tests
+    add_executable(clip_restart_test
+        clip_restart_test.cpp
+    )
+
+    target_link_libraries(clip_restart_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_restart_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_restart_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_restart_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_restart_test
+        COMMAND clip_restart_test
+    )
+
+    # Clip seek tests
+    add_executable(clip_seek_test
+        clip_seek_test.cpp
+    )
+
+    target_link_libraries(clip_seek_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_seek_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_seek_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_seek_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_seek_test
+        COMMAND clip_seek_test
+    )
 endif()
