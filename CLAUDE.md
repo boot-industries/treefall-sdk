@@ -107,6 +107,16 @@ For all commands, see `docs/repo-commands.html` (open in browser for full refere
 - Add network to core features
 - Modify CMake/CI for network access
 
+## Example Workflows
+
+### Debugging Audio Thread Issues
+
+1. Check threading model (Message/Audio/Background threads in `docs/ARCHITECTURE.md`)
+2. Verify no allocations in audio callback (`rt.safety.auditor` skill or manual review)
+3. Use ORP### docs for architecture decisions (`docs/orp/`)
+4. Test with multiple buffer sizes (128, 256, 512, 1024 samples)
+5. Run with sanitizers: `cmake -B build -DCMAKE_BUILD_TYPE=Debug && ctest --test-dir build`
+
 ## CI/CD (Phase 3 Complete ✅)
 
 **Pipeline:** Matrix builds (ubuntu/windows/macos × Debug/Release)
@@ -124,7 +134,7 @@ For all commands, see `docs/repo-commands.html` (open in browser for full refere
 - ✅ Phase 0-3 (Repo, Driver, UI, CI)
 - ⏳ Phase 4: Docs/productionization (0/14)
 
-**Resume:** Check `.claude/progress.md` + `docs/ORP/ORP068 Implementation Plan (v2.0).md`
+**Resume:** Check `.claude/implementation_progress.md` + `docs/ORP/ORP068 Implementation Plan (v2.0).md`
 
 ## OCC - Clip Composer
 
@@ -169,7 +179,7 @@ This repo supports multiple Claude Code instances for context isolation:
 **Documentation:**
 
 - Primary: `docs/orp/` (ORP prefix)
-- Progress: `.claude/progress.md`
+- Progress: `.claude/implementation_progress.md`
 - Architecture: `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`
 
 ### 2. Clip Composer Instance (Application Development)
@@ -245,6 +255,25 @@ claude-code
 - Use `~/dev/scripts/archive-old-docs.sh` to move docs older than 90 days
 - Archives preserve history without cluttering active context
 - Check `INDEX.md` in each prefix directory for document lists
+
+## File Boundaries
+
+### Never Read
+
+- `build-*/` (multiple build variant directories)
+- `apps/*/build/` (application-specific builds)
+- `apps/clip-composer/build/` (JUCE build artifacts)
+- `orpheus_clip_composer_app_artefacts/` (Tauri build outputs)
+- `Third-party/*/build/` (dependency builds)
+- `*.o`, `*.a`, `*.dylib`, `*.so` (compiled objects)
+
+### Read First
+
+- `.claude/implementation_progress.md` (current sprint status)
+- `docs/orp/ORP068 Implementation Plan (v2.0).md` (master plan)
+- `docs/ARCHITECTURE.md` (system design)
+- `docs/ROADMAP.md` (timeline)
+- This `CLAUDE.md` file (repo conventions)
 
 ## Token Efficiency Rules
 

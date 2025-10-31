@@ -19,7 +19,7 @@ endif()
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app
   PRODUCT_NAME "Orpheus Clip Composer"
-  VERSION 0.1.0
+  VERSION 0.2.0
   COMPANY_NAME "Orpheus"
   BUNDLE_ID "com.orpheus.clipcomposer"
   NEEDS_CURL FALSE
