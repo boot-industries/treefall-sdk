@@ -172,9 +172,10 @@ void ClipButton::paint(juce::Graphics& g) {
 
   if (m_state == State::Empty) {
     // Button index (larger, more prominent) - 20% increase: 18 -> 21.6
+    // Feature 4: Use consecutive numbering across tabs
     g.setColour(juce::Colours::white.withAlpha(0.5f));
     g.setFont(juce::FontOptions("Inter", 21.6f, juce::Font::bold));
-    g.drawText(juce::String(m_buttonIndex + 1), bounds, juce::Justification::centred, false);
+    g.drawText(juce::String(getDisplayNumber()), bounds, juce::Justification::centred, false);
 
     // No "Empty" text - just the button number on grey background is sufficient
   } else {
@@ -213,14 +214,32 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   juce::Colour subtleTextColor = textColor.withAlpha(0.6f);
   juce::Colour prominentTextColor = textColor.withAlpha(0.95f);
 
-  // === TOP ROW: Button Index + Keyboard Shortcut ===
+  // === TOP ROW: Button Index (white rounded box) + Keyboard Shortcut ===
   {
     auto topRow = contentArea.removeFromTop(16.0f);
 
-    // Button index (left, subtle) - 20% increase: 10 -> 12
-    g.setColour(subtleTextColor);
-    g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
-    g.drawText(juce::String(m_buttonIndex + 1), topRow, juce::Justification::topLeft, false);
+    // Button index in white rounded rectangle (Feature 3 - tighter margins)
+    // Feature 4: Use consecutive numbering across tabs
+    juce::String buttonNumber = juce::String(getDisplayNumber());
+    auto numberFont = juce::FontOptions("Inter", 12.0f, juce::Font::bold);
+    g.setFont(numberFont);
+
+    // Calculate text width using GlyphArrangement (replaces deprecated getStringWidth)
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText(juce::Font(numberFont), buttonNumber, 0.0f, 0.0f);
+    float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+    float boxWidth = textWidth + 6.0f; // Reduced padding: 8.0 -> 6.0
+    float boxHeight = 16.0f;
+
+    auto numberBox = topRow.removeFromLeft(boxWidth).withHeight(boxHeight);
+
+    // Draw white rounded rectangle background (tighter corner radius)
+    g.setColour(juce::Colours::white.withAlpha(0.95f));
+    g.fillRoundedRectangle(numberBox, 2.0f); // Reduced radius: 3.0 -> 2.0
+
+    // Draw black text
+    g.setColour(juce::Colours::black);
+    g.drawText(buttonNumber, numberBox, juce::Justification::centred, false);
 
     // Keyboard shortcut (right, prominent) - 20% increase: 11 -> 13.2
     if (m_keyboardShortcut.isNotEmpty()) {
@@ -309,31 +328,6 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     }
   }
 
-  // === PLAYING STATE INDICATOR ===
-  if (m_state == State::Playing) {
-    // Play triangle icon (top-right corner, prominent) - 20% increase: 20 -> 24, 10 -> 12
-    auto playIconBounds = bounds.removeFromTop(24.0f).removeFromRight(24.0f).reduced(4.0f);
-
-    // Draw play triangle (pointing right)
-    juce::Path playTriangle;
-    float cx = playIconBounds.getCentreX();
-    float cy = playIconBounds.getCentreY();
-    float size = 12.0f; // 20% increase: 10.0 -> 12.0
-
-    playTriangle.addTriangle(cx - size * 0.3f, cy - size * 0.5f, // Top-left
-                             cx - size * 0.3f, cy + size * 0.5f, // Bottom-left
-                             cx + size * 0.6f, cy                // Right point
-    );
-
-    // Bright green background circle
-    g.setColour(juce::Colour(0xff00ff00)); // Bright green
-    g.fillEllipse(playIconBounds);
-
-    // White play triangle
-    g.setColour(juce::Colours::white);
-    g.fillPath(playTriangle);
-  }
-
   // === PROGRESS BAR ===
   if ((m_state == State::Playing || m_state == State::Stopping) && m_playbackProgress > 0.0f) {
     // Draw progress bar at the very bottom of the button
@@ -352,113 +346,179 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     }
   }
 
-  // === STATUS ICONS ===
-  // Draw status icons in the middle-left area if any are enabled
-  if (m_loopEnabled || m_fadeInEnabled || m_fadeOutEnabled || m_effectsEnabled ||
-      m_stopOthersEnabled) {
-    auto iconArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getCentreY() - 8.0f,
-                                           contentArea.getWidth() * 0.3f, 16.0f);
-    drawStatusIcons(g, iconArea);
-  }
+  // === STATUS INDICATORS ===
+  // Draw status icons in bottom-left corner (Feature 2 - fixed grid layout)
+  // Order: [PLAY] [STOP OTHERS] [LOOP] [FADE IN] [FADE OUT] [SPEED]
+  // Grid is ALWAYS drawn - blank spaces shown for inactive states
+  auto indicatorArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 16.0f,
+                                              contentArea.getWidth(), 14.0f);
+  drawStatusIcons(g, indicatorArea);
 }
 
 void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bounds) {
-  // Draw small status icons horizontally
-  float iconSize = 12.0f;
-  float iconSpacing = 2.0f;
-  float currentX = bounds.getX();
+  // Feature 2: Icon-based status indicators in bottom-left corner (fixed grid)
+  // Order: [PLAY BOX] [STOP OTHERS] [LOOP] [FADE IN] [FADE OUT] [SPEED]
+  // PLAY icon matches clip number box design (green rounded rectangle)
 
-  // Loop icon (circular arrow)
-  if (m_loopEnabled) {
-    auto iconBounds = juce::Rectangle<float>(currentX, bounds.getY(), iconSize, iconSize);
+  constexpr float SMALL_ICON_SIZE = 14.0f;
+  constexpr float ICON_GAP = 4.0f; // Increased spacing
 
-    // Draw circular arrow (simplified as a circle with arrow tip)
-    g.setColour(juce::Colour(0xff00d4ff)); // Cyan
-    g.drawEllipse(iconBounds.reduced(2.0f), 1.5f);
+  float xPos = bounds.getX();
+  float yPos = bounds.getY();
 
-    // Arrow tip (small triangle)
-    juce::Path arrowTip;
-    arrowTip.addTriangle(iconBounds.getRight() - 3.0f, iconBounds.getY() + 2.0f,
-                         iconBounds.getRight() - 1.0f, iconBounds.getY() + 4.0f,
-                         iconBounds.getRight() - 3.0f, iconBounds.getY() + 6.0f);
-    g.fillPath(arrowTip);
+  // Position 0: PLAY icon (green rounded rectangle, matches clip number box size)
+  {
+    if (m_state == State::Playing) {
+      // Calculate box size (similar to clip number box in top-left)
+      float boxWidth = 24.0f;  // Slightly wider for visibility
+      float boxHeight = 16.0f; // Same height as clip number box
+      auto playBox = juce::Rectangle<float>(xPos, yPos, boxWidth, boxHeight);
 
-    currentX += iconSize + iconSpacing;
-  }
+      // Draw green rounded rectangle background (bright green)
+      g.setColour(juce::Colour(0xff00ff00)); // Bright green
+      g.fillRoundedRectangle(playBox, 2.0f); // Same radius as clip number box
 
-  // Fade in icon (ramp up)
-  if (m_fadeInEnabled) {
-    auto iconBounds = juce::Rectangle<float>(currentX, bounds.getY(), iconSize, iconSize);
+      // Draw white play triangle inside
+      juce::Path playTriangle;
+      float cx = playBox.getCentreX();
+      float cy = playBox.getCentreY();
+      float size = 7.0f; // Triangle size
 
-    g.setColour(juce::Colour(0xff00ff88)); // Green
-    juce::Path fadeIn;
-    fadeIn.startNewSubPath(iconBounds.getX() + 2.0f, iconBounds.getBottom() - 2.0f);
-    fadeIn.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getY() + 2.0f);
-    g.strokePath(fadeIn, juce::PathStrokeType(1.5f));
+      playTriangle.addTriangle(cx - size * 0.3f, cy - size * 0.5f, // Top-left
+                               cx - size * 0.3f, cy + size * 0.5f, // Bottom-left
+                               cx + size * 0.6f, cy                // Right point
+      );
 
-    currentX += iconSize + iconSpacing;
-  }
+      g.setColour(juce::Colours::white);
+      g.fillPath(playTriangle);
 
-  // Fade out icon (ramp down)
-  if (m_fadeOutEnabled) {
-    auto iconBounds = juce::Rectangle<float>(currentX, bounds.getY(), iconSize, iconSize);
-
-    g.setColour(juce::Colour(0xffff8800)); // Orange
-    juce::Path fadeOut;
-    fadeOut.startNewSubPath(iconBounds.getX() + 2.0f, iconBounds.getY() + 2.0f);
-    fadeOut.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getBottom() - 2.0f);
-    g.strokePath(fadeOut, juce::PathStrokeType(1.5f));
-
-    currentX += iconSize + iconSpacing;
-  }
-
-  // Effects icon (waveform with sparkle)
-  if (m_effectsEnabled) {
-    auto iconBounds = juce::Rectangle<float>(currentX, bounds.getY(), iconSize, iconSize);
-
-    g.setColour(juce::Colour(0xffff00ff)); // Magenta
-
-    // Draw wavy line
-    juce::Path wave;
-    float waveY = iconBounds.getCentreY();
-    wave.startNewSubPath(iconBounds.getX() + 2.0f, waveY);
-
-    for (float x = 2.0f; x < iconSize - 2.0f; x += 2.0f) {
-      float offset = (static_cast<int>(x / 2.0f) % 2 == 0) ? 2.0f : -2.0f;
-      wave.lineTo(iconBounds.getX() + x, waveY + offset);
+      xPos += boxWidth + ICON_GAP; // Advance past PLAY box
+    } else {
+      // Reserve space even when not playing (fixed grid)
+      xPos += 24.0f + ICON_GAP;
     }
-
-    g.strokePath(wave, juce::PathStrokeType(1.5f));
-
-    // Add a small star/sparkle
-    g.fillEllipse(iconBounds.getCentreX() - 1.0f, iconBounds.getY() + 2.0f, 2.0f, 2.0f);
-
-    currentX += iconSize + iconSpacing;
   }
 
-  // Stop Others icon (octagonal stop sign)
-  if (m_stopOthersEnabled) {
-    auto iconBounds = juce::Rectangle<float>(currentX, bounds.getY(), iconSize, iconSize);
+  // Position 1: STOP OTHERS icon (red hexagon, matches PLAY icon size)
+  {
+    if (m_stopOthersEnabled) {
+      // Match PLAY icon dimensions
+      float boxWidth = 24.0f;
+      float boxHeight = 16.0f;
+      auto stopBox = juce::Rectangle<float>(xPos, yPos, boxWidth, boxHeight);
 
-    g.setColour(juce::Colour(0xffff4444)); // Red
+      // Draw red hexagon (stop sign shape with flat bottom)
+      juce::Path hexagon;
+      float cx = stopBox.getCentreX();
+      float cy = stopBox.getCentreY();
+      float radius = 7.0f;
 
-    // Draw octagon (simplified as circle for now)
-    g.fillEllipse(iconBounds.reduced(1.0f));
+      // Create hexagon with 6 points, rotated so bottom is flat (like a stop sign)
+      // Start at 0 degrees (right side) for proper stop sign orientation
+      for (int i = 0; i < 6; ++i) {
+        float angle = (i / 6.0f) * juce::MathConstants<float>::twoPi;
+        float x = cx + radius * std::cos(angle);
+        float y = cy + radius * std::sin(angle);
 
-    // Draw "X" in white
-    g.setColour(juce::Colours::white);
-    float cx = iconBounds.getCentreX();
-    float cy = iconBounds.getCentreY();
-    float size = 4.0f;
+        if (i == 0)
+          hexagon.startNewSubPath(x, y);
+        else
+          hexagon.lineTo(x, y);
+      }
+      hexagon.closeSubPath();
 
-    juce::Path xMark;
-    xMark.startNewSubPath(cx - size, cy - size);
-    xMark.lineTo(cx + size, cy + size);
-    xMark.startNewSubPath(cx + size, cy - size);
-    xMark.lineTo(cx - size, cy + size);
-    g.strokePath(xMark, juce::PathStrokeType(1.5f));
+      // Fill with red
+      g.setColour(juce::Colour(0xffff0000)); // Bright red
+      g.fillPath(hexagon);
 
-    currentX += iconSize + iconSpacing;
+      // Thin white border
+      g.setColour(juce::Colours::white);
+      g.strokePath(hexagon, juce::PathStrokeType(1.0f));
+
+      xPos += boxWidth + ICON_GAP;
+    } else {
+      // Reserve space even when not enabled (fixed grid)
+      xPos += 24.0f + ICON_GAP;
+    }
+  }
+
+  // Position 2: LOOP icon
+  {
+    auto iconBounds = juce::Rectangle<float>(xPos, yPos, SMALL_ICON_SIZE, SMALL_ICON_SIZE);
+
+    if (m_loopEnabled) {
+      // Draw circular arrow (loop symbol)
+      juce::Path loopPath;
+      float cx = iconBounds.getCentreX();
+      float cy = iconBounds.getCentreY();
+      float radius = 5.0f;
+
+      // Draw circular arc (270 degrees)
+      loopPath.addCentredArc(cx, cy, radius, radius, 0.0f, juce::MathConstants<float>::pi * 0.5f,
+                             juce::MathConstants<float>::pi * 2.25f, true);
+
+      // Add arrow head
+      float arrowX = cx + radius * std::cos(juce::MathConstants<float>::pi * 2.25f);
+      float arrowY = cy + radius * std::sin(juce::MathConstants<float>::pi * 2.25f);
+      loopPath.lineTo(arrowX - 2.0f, arrowY - 2.0f);
+      loopPath.startNewSubPath(arrowX, arrowY);
+      loopPath.lineTo(arrowX + 2.0f, arrowY - 2.0f);
+
+      // Draw with white/yellow color
+      g.setColour(juce::Colour(0xffffff00).withAlpha(0.9f)); // Yellow
+      g.strokePath(loopPath, juce::PathStrokeType(1.5f));
+    }
+    // Else: blank space
+
+    xPos += SMALL_ICON_SIZE + ICON_GAP;
+  }
+
+  // Position 3: FADE IN icon
+  {
+    auto iconBounds = juce::Rectangle<float>(xPos, yPos, SMALL_ICON_SIZE, SMALL_ICON_SIZE);
+
+    if (m_fadeInEnabled) {
+      // Draw fade in ramp (ascending line)
+      juce::Path fadePath;
+      fadePath.startNewSubPath(iconBounds.getX() + 2.0f, iconBounds.getBottom() - 2.0f);
+      fadePath.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getY() + 2.0f);
+
+      // Draw with cyan color
+      g.setColour(juce::Colour(0xff00ffff).withAlpha(0.9f)); // Cyan
+      g.strokePath(fadePath, juce::PathStrokeType(2.0f));
+    }
+    // Else: blank space
+
+    xPos += SMALL_ICON_SIZE + ICON_GAP;
+  }
+
+  // Position 4: FADE OUT icon
+  {
+    auto iconBounds = juce::Rectangle<float>(xPos, yPos, SMALL_ICON_SIZE, SMALL_ICON_SIZE);
+
+    if (m_fadeOutEnabled) {
+      // Draw fade out ramp (descending line)
+      juce::Path fadePath;
+      fadePath.startNewSubPath(iconBounds.getX() + 2.0f, iconBounds.getY() + 2.0f);
+      fadePath.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getBottom() - 2.0f);
+
+      // Draw with orange color
+      g.setColour(juce::Colour(0xffff8800).withAlpha(0.9f)); // Orange
+      g.strokePath(fadePath, juce::PathStrokeType(2.0f));
+    }
+    // Else: blank space
+
+    xPos += SMALL_ICON_SIZE + ICON_GAP;
+  }
+
+  // Position 5: SPEED icon (placeholder - reserved for future)
+  {
+    auto iconBounds = juce::Rectangle<float>(xPos, yPos, SMALL_ICON_SIZE, SMALL_ICON_SIZE);
+
+    // Future: if (speedModifier != 100) { draw speed icon }
+    // For now: always blank
+
+    // xPos += SMALL_ICON_SIZE + ICON_GAP; // Uncomment if adding more icons
   }
 }
 
@@ -468,6 +528,16 @@ void ClipButton::resized() {
 
 void ClipButton::mouseDown(const juce::MouseEvent& e) {
   if (e.mods.isLeftButtonDown()) {
+    // Check for Ctrl+Opt+Cmd+LeftClick to open Edit Dialog directly (Feature 1)
+    // This bypasses the right-click menu and goes straight to the edit dialog
+    if (e.mods.isCommandDown() && e.mods.isCtrlDown() && e.mods.isAltDown()) {
+      // Only trigger if clip is loaded (Edit Dialog requires a clip)
+      if (m_state != State::Empty && onEditDialogRequested) {
+        onEditDialogRequested(m_buttonIndex);
+      }
+      return; // Don't process as drag or regular click
+    }
+
     // Record mouse down position for potential Cmd+Drag rearrangement
     m_mouseDownPosition = e.getPosition();
     m_isDragging = false;
@@ -480,7 +550,7 @@ void ClipButton::mouseDown(const juce::MouseEvent& e) {
         onClick(m_buttonIndex);
     }
   } else if (e.mods.isRightButtonDown()) {
-    // Right click - context menu
+    // Right click - context menu (works on both empty and loaded buttons)
     if (onRightClick)
       onRightClick(m_buttonIndex);
   }
@@ -529,15 +599,8 @@ void ClipButton::mouseUp(const juce::MouseEvent& e) {
       }
     }
     m_isDragging = false;
-  } else {
-    // Not dragging
-    // Check if this is a double-click (click already fired in mouseDown, so just handle
-    // double-click here)
-    if (e.getNumberOfClicks() >= 2 && m_state != State::Empty) {
-      // Double-click on loaded clip - open edit dialog
-      if (onDoubleClick)
-        onDoubleClick(m_buttonIndex);
-    }
-    // Single click already handled in mouseDown() for immediate response
   }
+  // Note: Double-click behavior intentionally removed
+  // Clip buttons prioritize single-click for PLAY/STOP at all times
+  // Use right-click menu or Ctrl+Opt+Cmd+Click to access Edit Dialog
 }

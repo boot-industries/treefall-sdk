@@ -140,6 +140,107 @@ pnpm --filter www dev  # localhost:4000
 
 **Timeline:** MVP at 6mo, v1.0 at 12mo
 
+## Multi-Instance Usage
+
+This repo supports multiple Claude Code instances for context isolation:
+
+### 1. SDK Instance (Core Library Development)
+
+**Working Directory:** `~/dev/orpheus-sdk` (repo root)
+
+**Focus Areas:**
+
+- C++ core library (`src/`, `include/`)
+- Cross-platform packages (`packages/*`)
+- Core transport, routing, session management
+- SDK-level tests and benchmarks
+
+**Active Skills:**
+
+- `rt.safety.auditor` - Real-time safety validation
+- `test.result.analyzer` - Test output analysis
+- `dependency.audit` - Build system health
+
+**Documentation:**
+
+- Primary: `docs/orp/` (ORP prefix)
+- Progress: `.claude/progress.md`
+- Architecture: `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`
+
+### 2. Clip Composer Instance (Application Development)
+
+**Working Directory:** `~/dev/orpheus-sdk/apps/clip-composer`
+
+**Focus Areas:**
+
+- Tauri desktop application
+- JUCE UI components
+- Application-specific features
+- End-user workflows
+
+**Active Skills:**
+
+- `orpheus.doc.gen` - OCC documentation generation
+- `test.analyzer` - Application test analysis
+- `ui.component.validator` - UI component validation
+
+**Documentation:**
+
+- Primary: `apps/clip-composer/docs/occ/` (OCC prefix)
+- Progress: `apps/clip-composer/.claude/implementation_progress.md`
+- App-specific: `apps/clip-composer/ARCHITECTURE.md`
+
+### Instance Isolation
+
+**Benefits:**
+
+- No config file collision (separate `.claude/` directories)
+- Context-appropriate skill loading
+- Clear documentation boundaries
+- Independent progress tracking
+
+**Usage:**
+
+```bash
+# SDK development (from repo root)
+cd ~/dev/orpheus-sdk
+claude-code
+
+# Clip Composer development (from app directory)
+cd ~/dev/orpheus-sdk/apps/clip-composer
+claude-code
+
+# Or use shortcut script:
+~/dev/orpheus-sdk/scripts/start-clip-composer-instance.sh
+```
+
+**When to Switch:**
+
+- **Use SDK instance** for core library changes, adapters, transport/routing/session work
+- **Use Clip Composer instance** for UI, app features, OCC-specific functionality
+- **Coordinate** when changes span both (e.g., new SDK API + UI integration)
+
+## Documentation Indexing
+
+**Active Documentation:**
+
+- `docs/orp/` - Active ORP (Orpheus) documentation
+- `apps/clip-composer/docs/occ/` - Active OCC (Clip Composer) documentation
+- Root-level docs (`docs/*.md`) - Architecture, guides, API references
+
+**Excluded from Indexing:**
+
+- `docs/orp/archive/**` - Archived ORP documents (180+ days old)
+- `apps/clip-composer/docs/occ/archive/**` - Archived OCC documents (180+ days old)
+- `docs/deprecated/**` - Deprecated documentation
+- `*.draft.md` - Draft documents not yet finalized
+
+**Archive Management:**
+
+- Use `~/dev/scripts/archive-old-docs.sh` to move docs older than 90 days
+- Archives preserve history without cluttering active context
+- Check `INDEX.md` in each prefix directory for document lists
+
 ## Token Efficiency Rules
 
 **Debugging:**
@@ -157,6 +258,28 @@ pnpm --filter www dev  # localhost:4000
 
 - `grep -rn 'symbol'` before `Read()`
 - Never read same file twice
+
+---
+
+## Skill Loading (Context-Aware)
+
+Skills are lazy-loaded based on file patterns to reduce context overhead:
+
+**Template-Based Skills** (from `~/dev/.claude/skill-templates/`):
+
+- **ci.troubleshooter** → `.github/workflows/**/*.yml` (lazy-loaded)
+- **test.analyzer** → `tests/**/*`, `**/*.test.cpp` (lazy-loaded)
+- **schema.linter** → `**/*.{json,yaml,yml}` (excludes build, node_modules) (lazy-loaded)
+- **dependency.audit** → `CMakeLists.txt`, `package.json`, `pnpm-lock.yaml` (triggers on change)
+- **doc.standards** → `docs/orp/**/*.md`, `apps/clip-composer/docs/occ/**/*.md` (lazy-loaded)
+
+**Skip Skills For:**
+
+- Quick edits (<5 min, single file changes)
+- Read-only exploration
+- Docs-only sessions without code changes
+
+**Config:** See `.claude/skills.json` for file pattern mappings and template references.
 
 ---
 

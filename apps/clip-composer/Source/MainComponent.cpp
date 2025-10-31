@@ -24,6 +24,11 @@ MainComponent::MainComponent() {
   // Wire up left-click handler for triggering clips
   m_clipGrid->onButtonClicked = [this](int buttonIndex) { onClipTriggered(buttonIndex); };
 
+  // Wire up Ctrl+Opt+Cmd+Click handler for edit dialog
+  m_clipGrid->onButtonEditDialogRequested = [this](int buttonIndex) {
+    onClipDoubleClicked(buttonIndex);
+  };
+
   // Double-click does nothing - right-click is the ONLY way to open edit dialog
   // m_clipGrid->onButtonDoubleClicked = [this](int buttonIndex) { onClipDoubleClicked(buttonIndex);
   // };
@@ -38,10 +43,11 @@ MainComponent::MainComponent() {
     onClipDraggedToButton(sourceIndex, targetIndex);
   };
 
-  // Wire up 75fps playback state sync
+  // Wire up 75fps playback state sync (uses global clip index for multi-tab isolation)
   m_clipGrid->isClipPlaying = [this](int buttonIndex) -> bool {
     if (m_audioEngine) {
-      return m_audioEngine->isClipPlaying(buttonIndex);
+      int globalClipIndex = getGlobalClipIndex(buttonIndex);
+      return m_audioEngine->isClipPlaying(globalClipIndex);
     }
     return false;
   };
@@ -58,12 +64,13 @@ MainComponent::MainComponent() {
       return;
 
     auto clipData = m_sessionManager.getClip(buttonIndex);
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
     // Query clip metadata (these are CLIP properties, not button properties)
-    loopEnabled = m_loopEnabled[buttonIndex];
+    loopEnabled = m_loopEnabled[globalClipIndex];
     fadeInEnabled = (clipData.fadeInSeconds > 0.0);
     fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
-    stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
+    stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
   };
 
   // Make this component capture keyboard focus
@@ -392,6 +399,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   juce::PopupMenu menu;
 
   bool hasClip = m_sessionManager.hasClip(buttonIndex);
+  int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
   if (hasClip) {
     // Clip is loaded - show options
@@ -409,8 +417,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     menu.addItem(8, "Set Color...");
 
     menu.addSeparator();
-    menu.addItem(4, "Stop Others On Play", true, m_stopOthersOnPlay[buttonIndex]);
-    menu.addItem(7, "Loop", true, m_loopEnabled[buttonIndex]);
+    menu.addItem(4, "Stop Others On Play", true, m_stopOthersOnPlay[globalClipIndex]);
+    menu.addItem(7, "Loop", true, m_loopEnabled[globalClipIndex]);
     menu.addSeparator();
     menu.addItem(2, "Remove Clip");
     menu.addSeparator();
@@ -424,7 +432,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   // Ensure menu uses Orpheus/Inter aesthetic (inherited from MainComponent's LookAndFeel)
   menu.setLookAndFeel(&m_interLookAndFeel);
 
-  menu.showMenuAsync(juce::PopupMenu::Options(), [this, buttonIndex, hasClip](int result) {
+  menu.showMenuAsync(juce::PopupMenu::Options(), [this, buttonIndex, hasClip,
+                                                  globalClipIndex](int result) {
     if (result == 5 && hasClip) {
       // Edit Clip - open edit dialog
       onClipDoubleClicked(buttonIndex);
@@ -444,43 +453,44 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       updateButtonFromClip(buttonIndex);
     } else if (result == 4) {
       // Toggle "stop others on play" mode
-      m_stopOthersOnPlay[buttonIndex] = !m_stopOthersOnPlay[buttonIndex];
+      m_stopOthersOnPlay[globalClipIndex] = !m_stopOthersOnPlay[globalClipIndex];
 
       // CRITICAL: Persist to SessionManager
       if (m_sessionManager.hasClip(buttonIndex)) {
         auto clipData = m_sessionManager.getClip(buttonIndex);
-        clipData.stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
+        clipData.stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
         m_sessionManager.setClip(buttonIndex, clipData);
       }
 
       // Update button visual state
       auto button = m_clipGrid->getButton(buttonIndex);
       if (button) {
-        button->setStopOthersEnabled(m_stopOthersOnPlay[buttonIndex]);
+        button->setStopOthersEnabled(m_stopOthersOnPlay[globalClipIndex]);
       }
 
-      DBG("Button " << buttonIndex << ": Stop others on play = "
-                    << (m_stopOthersOnPlay[buttonIndex] ? "ON" : "OFF"));
+      DBG("Button " << buttonIndex << " (global: " << globalClipIndex << "): Stop others on play = "
+                    << (m_stopOthersOnPlay[globalClipIndex] ? "ON" : "OFF"));
     } else if (result == 7 && hasClip) {
       // Toggle loop mode
-      m_loopEnabled[buttonIndex] = !m_loopEnabled[buttonIndex];
+      m_loopEnabled[globalClipIndex] = !m_loopEnabled[globalClipIndex];
 
       // CRITICAL: Persist to SessionManager
       auto clipData = m_sessionManager.getClip(buttonIndex);
-      clipData.loopEnabled = m_loopEnabled[buttonIndex];
+      clipData.loopEnabled = m_loopEnabled[globalClipIndex];
       m_sessionManager.setClip(buttonIndex, clipData);
 
       // Sync to AudioEngine (CRITICAL: Must update SDK loop state!)
       if (m_audioEngine) {
-        m_audioEngine->setClipLoopMode(buttonIndex, m_loopEnabled[buttonIndex]);
+        m_audioEngine->setClipLoopMode(globalClipIndex, m_loopEnabled[globalClipIndex]);
       }
 
       // Update button visual state
       auto button = m_clipGrid->getButton(buttonIndex);
       if (button) {
-        button->setLoopEnabled(m_loopEnabled[buttonIndex]);
+        button->setLoopEnabled(m_loopEnabled[globalClipIndex]);
       }
-      DBG("Button " << buttonIndex << ": Loop = " << (m_loopEnabled[buttonIndex] ? "ON" : "OFF"));
+      DBG("Button " << buttonIndex << " (global: " << globalClipIndex
+                    << "): Loop = " << (m_loopEnabled[globalClipIndex] ? "ON" : "OFF"));
     } else if (result == 6) {
       // Load multiple audio files
       juce::FileChooser chooser("Select Audio Files",
@@ -554,30 +564,36 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     return;
   }
 
+  // Calculate global clip index (tab-aware: 0-383 for 8 tabs × 48 buttons)
+  int globalClipIndex = getGlobalClipIndex(buttonIndex);
+
   // Toggle play/stop based on current state
   auto currentState = button->getState();
 
   if (currentState == ClipButton::State::Playing) {
     // Stop the clip
     if (m_audioEngine) {
-      m_audioEngine->stopClip(buttonIndex);
+      m_audioEngine->stopClip(globalClipIndex);
     }
     button->setState(ClipButton::State::Loaded);
-    DBG("Button " + juce::String(buttonIndex) + ": Stopped via keyboard/click");
+    DBG("Button " + juce::String(buttonIndex) + " (global: " + juce::String(globalClipIndex) +
+        "): Stopped via keyboard/click");
   } else if (currentState == ClipButton::State::Loaded) {
-    // Check if "stop others on play" mode is enabled for this button
-    if (m_stopOthersOnPlay[buttonIndex]) {
-      // Stop all other playing clips
+    // Check if "stop others on play" mode is enabled for this button (use global index)
+    if (m_stopOthersOnPlay[globalClipIndex]) {
+      // Stop all other playing clips ON THIS TAB
       for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
         if (i != buttonIndex) {
           auto otherButton = m_clipGrid->getButton(i);
           if (otherButton && otherButton->getState() == ClipButton::State::Playing) {
+            int otherGlobalIndex = getGlobalClipIndex(i);
             if (m_audioEngine) {
-              m_audioEngine->stopClip(i);
+              m_audioEngine->stopClip(otherGlobalIndex);
             }
             otherButton->setState(ClipButton::State::Loaded);
-            DBG("Button " + juce::String(i) + ": Stopped by 'stop others' from button " +
-                juce::String(buttonIndex));
+            DBG("Button " + juce::String(i) + " (global: " + juce::String(otherGlobalIndex) +
+                "): Stopped by 'stop others' from button " + juce::String(buttonIndex) +
+                " (global: " + juce::String(globalClipIndex) + ")");
           }
         }
       }
@@ -585,10 +601,11 @@ void MainComponent::onClipTriggered(int buttonIndex) {
 
     // Start the clip
     if (m_audioEngine) {
-      m_audioEngine->startClip(buttonIndex);
+      m_audioEngine->startClip(globalClipIndex);
     }
     button->setState(ClipButton::State::Playing);
-    DBG("Button " + juce::String(buttonIndex) + ": Started playing via keyboard/click");
+    DBG("Button " + juce::String(buttonIndex) + " (global: " + juce::String(globalClipIndex) +
+        "): Started playing via keyboard/click");
   }
 }
 
@@ -600,6 +617,9 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     DBG("MainComponent: Button " + juce::String(buttonIndex) + " has no clip loaded");
     return;
   }
+
+  // Calculate global clip index for multi-tab isolation
+  int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
   // CRITICAL: Close any existing Edit Dialog before opening a new one
   // This prevents multiple dialogs from stacking and causing state corruption
@@ -613,8 +633,8 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   // Get clip metadata from SessionManager
   auto clipData = m_sessionManager.getClip(buttonIndex);
 
-  // Create edit dialog (pass AudioEngine and buttonIndex for main grid clip control)
-  auto* dialog = new ClipEditDialog(m_audioEngine.get(), buttonIndex);
+  // Create edit dialog (pass AudioEngine and GLOBAL clip index for main grid clip control)
+  auto* dialog = new ClipEditDialog(m_audioEngine.get(), globalClipIndex);
   m_currentEditDialog = dialog; // Track current dialog
 
   // Convert SessionManager::ClipData to ClipEditDialog::ClipMetadata
@@ -637,14 +657,18 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   metadata.fadeInCurve = juce::String(clipData.fadeInCurve);
   metadata.fadeOutCurve = juce::String(clipData.fadeOutCurve);
 
-  // Sprint 2: Loop state (sync from MainComponent's internal state)
-  metadata.loopEnabled = m_loopEnabled[buttonIndex];
-  metadata.stopOthersEnabled = m_stopOthersOnPlay[buttonIndex];
+  // Feature 5: Gain
+  metadata.gainDb = clipData.gainDb;
+
+  // Sprint 2: Loop state (sync from MainComponent's internal state using global index)
+  metadata.loopEnabled = m_loopEnabled[globalClipIndex];
+  metadata.stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
 
   dialog->setClipMetadata(metadata);
 
   // Set up callbacks
-  dialog->onOkClicked = [this, buttonIndex, dialog](const ClipEditDialog::ClipMetadata& edited) {
+  dialog->onOkClicked = [this, buttonIndex, globalClipIndex,
+                         dialog](const ClipEditDialog::ClipMetadata& edited) {
     // Update SessionManager with edited metadata
     auto clipData = m_sessionManager.getClip(buttonIndex);
     clipData.displayName = edited.displayName.toStdString();
@@ -661,6 +685,9 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.fadeInCurve = edited.fadeInCurve.toStdString();
     clipData.fadeOutCurve = edited.fadeOutCurve.toStdString();
 
+    // Feature 5: Gain
+    clipData.gainDb = edited.gainDb;
+
     // CRITICAL: Persist loop and stopOthers state
     clipData.loopEnabled = edited.loopEnabled;
     clipData.stopOthersEnabled = edited.stopOthersEnabled;
@@ -668,30 +695,33 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     // Persist to SessionManager
     m_sessionManager.setClip(buttonIndex, clipData);
 
-    // Apply trim/fade metadata to AudioEngine
+    // Apply trim/fade metadata to AudioEngine (use global index for multi-tab isolation)
     if (m_audioEngine) {
       bool updated = m_audioEngine->updateClipMetadata(
-          buttonIndex, clipData.trimInSamples, clipData.trimOutSamples, clipData.fadeInSeconds,
+          globalClipIndex, clipData.trimInSamples, clipData.trimOutSamples, clipData.fadeInSeconds,
           clipData.fadeOutSeconds, juce::String(clipData.fadeInCurve),
           juce::String(clipData.fadeOutCurve));
 
       if (updated) {
-        DBG("MainComponent: Applied trim/fade metadata to AudioEngine for button " << buttonIndex);
+        DBG("MainComponent: Applied trim/fade metadata to AudioEngine for button "
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       } else {
         DBG("MainComponent: Failed to apply trim/fade metadata to AudioEngine for button "
-            << buttonIndex);
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       }
 
-      // Apply loop mode to AudioEngine (CRITICAL: Must apply loop state!)
-      bool loopUpdated = m_audioEngine->setClipLoopMode(buttonIndex, edited.loopEnabled);
+      // Apply loop mode to AudioEngine (CRITICAL: Must apply loop state using global index!)
+      bool loopUpdated = m_audioEngine->setClipLoopMode(globalClipIndex, edited.loopEnabled);
       if (loopUpdated) {
         // Sync MainComponent's internal loop state array
-        m_loopEnabled[buttonIndex] = edited.loopEnabled;
+        m_loopEnabled[globalClipIndex] = edited.loopEnabled;
 
         DBG("MainComponent: Applied loop mode to AudioEngine for button "
-            << buttonIndex << " = " << (edited.loopEnabled ? "enabled" : "disabled"));
+            << buttonIndex << " (global: " << globalClipIndex
+            << ") = " << (edited.loopEnabled ? "enabled" : "disabled"));
       } else {
-        DBG("MainComponent: Failed to apply loop mode to AudioEngine for button " << buttonIndex);
+        DBG("MainComponent: Failed to apply loop mode to AudioEngine for button "
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       }
     }
 
@@ -730,6 +760,23 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     m_currentEditDialog = nullptr; // Clear reference to allow new dialog
   };
 
+  // Real-time color update: Repaint button immediately when color changes (75fps)
+  dialog->onColorChanged = [this, buttonIndex](const juce::Colour& newColor) {
+    auto button = m_clipGrid->getButton(buttonIndex);
+    if (button) {
+      button->setClipColor(newColor); // Triggers immediate repaint (75fps grid refresh)
+    }
+
+    // CRITICAL: Persist color to SessionManager (prevents Edit Dialog from overwriting it)
+    if (m_sessionManager.hasClip(buttonIndex)) {
+      auto clipData = m_sessionManager.getClip(buttonIndex);
+      clipData.color = newColor;
+      m_sessionManager.setClip(buttonIndex, clipData);
+    }
+
+    DBG("Button " << buttonIndex << ": Color changed in real-time to " << newColor.toString());
+  };
+
   // Show dialog as modal
   dialog->setSize(700, 800); // Expanded for Phases 2 & 3
   dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
@@ -763,14 +810,18 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   bool success = m_sessionManager.loadClip(buttonIndex, filePath);
 
   if (success) {
-    // Load audio file into AudioEngine for playback
+    // Calculate global clip index for multi-tab isolation
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
+
+    // Load audio file into AudioEngine for playback (use global index)
     if (m_audioEngine) {
-      bool audioLoaded = m_audioEngine->loadClip(buttonIndex, filePath);
+      bool audioLoaded = m_audioEngine->loadClip(globalClipIndex, filePath);
       if (!audioLoaded) {
-        DBG("MainComponent: Failed to load audio into engine for button " << buttonIndex);
+        DBG("MainComponent: Failed to load audio into engine for button "
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       } else {
         // Check for sample rate mismatch and warn user
-        auto metadata = m_audioEngine->getClipMetadata(buttonIndex);
+        auto metadata = m_audioEngine->getClipMetadata(globalClipIndex);
         if (metadata.has_value() && metadata->sample_rate != 48000) {
           juce::AlertWindow::showMessageBoxAsync(
               juce::AlertWindow::WarningIcon, "Sample Rate Mismatch",
@@ -802,8 +853,12 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
   DBG("MainComponent: Dragging clip from button " << sourceButtonIndex << " to button "
                                                   << targetButtonIndex);
 
+  // Calculate global clip indices for multi-tab isolation
+  int sourceGlobalIndex = getGlobalClipIndex(sourceButtonIndex);
+  int targetGlobalIndex = getGlobalClipIndex(targetButtonIndex);
+
   // CRITICAL: Check if either clip is currently playing BEFORE swapping
-  // Playback state is tied to button index in AudioEngine, so we must stop playback first
+  // Playback state is tied to GLOBAL clip index in AudioEngine, so we must stop playback first
   auto sourceButton = m_clipGrid->getButton(sourceButtonIndex);
   auto targetButton = m_clipGrid->getButton(targetButtonIndex);
 
@@ -812,22 +867,24 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
 
   // Stop both clips if playing (prevents orphaned playback state)
   if (sourceWasPlaying && m_audioEngine) {
-    m_audioEngine->stopClip(sourceButtonIndex);
-    DBG("MainComponent: Stopped source clip (button " << sourceButtonIndex << ") before swap");
+    m_audioEngine->stopClip(sourceGlobalIndex);
+    DBG("MainComponent: Stopped source clip (button "
+        << sourceButtonIndex << ", global: " << sourceGlobalIndex << ") before swap");
   }
   if (targetWasPlaying && m_audioEngine) {
-    m_audioEngine->stopClip(targetButtonIndex);
-    DBG("MainComponent: Stopped target clip (button " << targetButtonIndex << ") before swap");
+    m_audioEngine->stopClip(targetGlobalIndex);
+    DBG("MainComponent: Stopped target clip (button "
+        << targetButtonIndex << ", global: " << targetGlobalIndex << ") before swap");
   }
 
   // Swap clips in SessionManager
   m_sessionManager.swapClips(sourceButtonIndex, targetButtonIndex);
 
-  // Swap stop-others mode flags
-  std::swap(m_stopOthersOnPlay[sourceButtonIndex], m_stopOthersOnPlay[targetButtonIndex]);
+  // Swap stop-others mode flags (use global indices)
+  std::swap(m_stopOthersOnPlay[sourceGlobalIndex], m_stopOthersOnPlay[targetGlobalIndex]);
 
-  // Swap loop mode flags
-  std::swap(m_loopEnabled[sourceButtonIndex], m_loopEnabled[targetButtonIndex]);
+  // Swap loop mode flags (use global indices)
+  std::swap(m_loopEnabled[sourceGlobalIndex], m_loopEnabled[targetGlobalIndex]);
 
   // Update both buttons visually (this reloads clips into AudioEngine at new positions)
   updateButtonFromClip(sourceButtonIndex);
@@ -835,20 +892,20 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
 
   // Restart clips at their NEW positions if they were playing
   if (sourceWasPlaying && m_audioEngine && m_sessionManager.hasClip(targetButtonIndex)) {
-    m_audioEngine->startClip(targetButtonIndex);
+    m_audioEngine->startClip(targetGlobalIndex);
     if (targetButton) {
       targetButton->setState(ClipButton::State::Playing);
     }
-    DBG("MainComponent: Restarted source clip at new position (button " << targetButtonIndex
-                                                                        << ")");
+    DBG("MainComponent: Restarted source clip at new position (button "
+        << targetButtonIndex << ", global: " << targetGlobalIndex << ")");
   }
   if (targetWasPlaying && m_audioEngine && m_sessionManager.hasClip(sourceButtonIndex)) {
-    m_audioEngine->startClip(sourceButtonIndex);
+    m_audioEngine->startClip(sourceGlobalIndex);
     if (sourceButton) {
       sourceButton->setState(ClipButton::State::Playing);
     }
-    DBG("MainComponent: Restarted target clip at new position (button " << sourceButtonIndex
-                                                                        << ")");
+    DBG("MainComponent: Restarted target clip at new position (button "
+        << sourceButtonIndex << ", global: " << sourceGlobalIndex << ")");
   }
 }
 
@@ -858,39 +915,45 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
     return;
 
   if (m_sessionManager.hasClip(buttonIndex)) {
+    // Calculate global clip index for multi-tab isolation
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
+
     // Get real clip metadata from SessionManager
     auto clipData = m_sessionManager.getClip(buttonIndex);
 
-    // Load clip into audio engine first
+    // Load clip into audio engine first (use global index)
     if (m_audioEngine) {
-      m_audioEngine->loadClip(buttonIndex, juce::String(clipData.filePath));
+      m_audioEngine->loadClip(globalClipIndex, juce::String(clipData.filePath));
 
-      // CRITICAL: Apply trim/fade metadata to AudioEngine
+      // CRITICAL: Apply trim/fade metadata to AudioEngine (use global index)
       bool metadataApplied = m_audioEngine->updateClipMetadata(
-          buttonIndex, clipData.trimInSamples, clipData.trimOutSamples, clipData.fadeInSeconds,
+          globalClipIndex, clipData.trimInSamples, clipData.trimOutSamples, clipData.fadeInSeconds,
           clipData.fadeOutSeconds, juce::String(clipData.fadeInCurve),
           juce::String(clipData.fadeOutCurve));
 
       if (metadataApplied) {
-        DBG("MainComponent: Applied trim/fade metadata to AudioEngine for button " << buttonIndex);
+        DBG("MainComponent: Applied trim/fade metadata to AudioEngine for button "
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       } else {
         DBG("MainComponent: Failed to apply trim/fade metadata to AudioEngine for button "
-            << buttonIndex);
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       }
 
-      // CRITICAL: Apply loop mode to AudioEngine
-      bool loopApplied = m_audioEngine->setClipLoopMode(buttonIndex, clipData.loopEnabled);
+      // CRITICAL: Apply loop mode to AudioEngine (use global index)
+      bool loopApplied = m_audioEngine->setClipLoopMode(globalClipIndex, clipData.loopEnabled);
       if (!loopApplied) {
-        DBG("MainComponent: Failed to apply loop mode to AudioEngine for button " << buttonIndex);
+        DBG("MainComponent: Failed to apply loop mode to AudioEngine for button "
+            << buttonIndex << " (global: " << globalClipIndex << ")");
       }
     }
 
-    // CRITICAL: Sync MainComponent's internal state arrays from SessionManager clipData
-    m_loopEnabled[buttonIndex] = clipData.loopEnabled;
-    m_stopOthersOnPlay[buttonIndex] = clipData.stopOthersEnabled;
+    // CRITICAL: Sync MainComponent's internal state arrays from SessionManager clipData (use global
+    // index)
+    m_loopEnabled[globalClipIndex] = clipData.loopEnabled;
+    m_stopOthersOnPlay[globalClipIndex] = clipData.stopOthersEnabled;
 
-    // Check if clip is currently playing and restore correct button state
-    if (m_audioEngine && m_audioEngine->isClipPlaying(buttonIndex)) {
+    // Check if clip is currently playing and restore correct button state (use global index)
+    if (m_audioEngine && m_audioEngine->isClipPlaying(globalClipIndex)) {
       button->setState(ClipButton::State::Playing);
     } else {
       button->setState(ClipButton::State::Loaded);
@@ -913,11 +976,11 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
     juce::String shortcut = getKeyboardShortcutForButton(buttonIndex);
     button->setKeyboardShortcut(shortcut);
 
-    // Restore loop state (from synced array)
-    button->setLoopEnabled(m_loopEnabled[buttonIndex]);
+    // Restore loop state (from synced array using global index)
+    button->setLoopEnabled(m_loopEnabled[globalClipIndex]);
 
-    // Set stop others indicator (from synced array)
-    button->setStopOthersEnabled(m_stopOthersOnPlay[buttonIndex]);
+    // Set stop others indicator (from synced array using global index)
+    button->setStopOthersEnabled(m_stopOthersOnPlay[globalClipIndex]);
 
     // Set fade indicators (show if fade duration > 0)
     button->setFadeInEnabled(clipData.fadeInSeconds > 0.0);
@@ -977,6 +1040,15 @@ void MainComponent::onTabSelected(int tabIndex) {
 
   // Update SessionManager's active tab
   m_sessionManager.setActiveTab(tabIndex);
+
+  // Feature 4: Update tab index on all buttons for consecutive numbering
+  // Tab 1 = clips 1-48, Tab 2 = clips 49-96, Tab 3 = clips 97-144, etc.
+  for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+    auto button = m_clipGrid->getButton(i);
+    if (button) {
+      button->setTabIndex(tabIndex);
+    }
+  }
 
   // Refresh all buttons from SessionManager for the new tab
   // This will restore colors, names, and playing states from AudioEngine

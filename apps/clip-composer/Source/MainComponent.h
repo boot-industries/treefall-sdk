@@ -70,6 +70,11 @@ private:
   int getButtonIndexFromKey(const juce::KeyPress& key) const;
   juce::String getKeyboardShortcutForButton(int buttonIndex) const;
 
+  // Global clip index calculation (buttonIndex 0-47 + current tab → 0-383)
+  int getGlobalClipIndex(int buttonIndex) const {
+    return m_sessionManager.getActiveTab() * 48 + buttonIndex;
+  }
+
   //==============================================================================
   // UI Components
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
@@ -89,11 +94,11 @@ private:
   // Custom Look and Feel (Inter font)
   InterLookAndFeel m_interLookAndFeel;
 
-  // Per-button "stop others on play" mode (bitset for 48 buttons)
-  std::array<bool, 48> m_stopOthersOnPlay = {};
+  // Per-button "stop others on play" mode (bitset for 384 clips: 48 buttons × 8 tabs)
+  std::array<bool, 384> m_stopOthersOnPlay = {};
 
-  // Per-button loop mode (bitset for 48 buttons)
-  std::array<bool, 48> m_loopEnabled = {};
+  // Per-button loop mode (bitset for 384 clips: 48 buttons × 8 tabs)
+  std::array<bool, 384> m_loopEnabled = {};
 
   // Single Edit Dialog tracking (ensures only one dialog open at a time)
   ClipEditDialog* m_currentEditDialog = nullptr;

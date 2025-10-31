@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "ColorSwatchPicker.h"
+#include <cmath>  // for std::abs
+#include <limits> // for std::numeric_limits
 
 //==============================================================================
 // ColorSwatchGrid implementation (popup grid)

@@ -31,7 +31,8 @@ struct TransportCommand {
 /// Active clip state (in audio thread)
 struct ActiveClip {
   ClipHandle handle;
-  int64_t startSample;   // When clip started playing
+  uint32_t voiceId;      // Unique voice instance ID (for multi-voice layering)
+  int64_t startSample;   // When clip started playing (transport time)
   int64_t currentSample; // Current position within clip audio
 
   // Trim points (atomic for thread safety)
@@ -62,6 +63,10 @@ struct ActiveClip {
   bool isRestarting; // true if restart crossfade in progress
   int64_t
       restartFadeFramesRemaining; // Frames remaining in restart fade-in (5ms @ 48kHz = 240 frames)
+
+  // ORP097 Bug 7 Fix: Track whether clip has looped to prevent fade-in/out at loop boundaries
+  bool
+      hasLoopedOnce; // true if clip has looped at least once (prevents re-applying start/end fades)
 
   uint16_t numChannels; // Number of channels in audio file
 
@@ -129,14 +134,29 @@ private:
   /// Process pending commands from UI thread
   void processCommands();
 
-  /// Find active clip by handle
+  /// Find active clip by handle (returns first instance found)
   /// @return Pointer to active clip, or nullptr if not found
+  /// @note For multi-voice: returns first matching instance, not necessarily oldest
   ActiveClip* findActiveClip(ClipHandle handle);
 
+  /// Count active voices for a given clip handle
+  /// @return Number of instances currently playing (0-MAX_VOICES_PER_CLIP)
+  size_t countActiveVoices(ClipHandle handle) const;
+
+  /// Find oldest active voice for a given clip handle
+  /// @return Pointer to oldest voice, or nullptr if none found
+  ActiveClip* findOldestVoice(ClipHandle handle);
+
   /// Add a clip to active list (audio thread only)
+  /// @note For multi-voice: creates new voice instance with unique voiceId
   void addActiveClip(ClipHandle handle);
 
+  /// Remove a specific voice instance from active list (audio thread only)
+  /// @param voiceId Specific voice instance to remove
+  void removeActiveVoice(uint32_t voiceId);
+
   /// Remove a clip from active list (audio thread only)
+  /// @note Deprecated: Use removeActiveVoice() for multi-voice
   void removeActiveClip(ClipHandle handle);
 
   /// Post callback to UI thread
@@ -166,6 +186,10 @@ private:
   static constexpr size_t MAX_ACTIVE_CLIPS = 32;
   std::array<ActiveClip, MAX_ACTIVE_CLIPS> m_activeClips;
   size_t m_activeClipCount{0};
+
+  // Multi-voice management
+  static constexpr size_t MAX_VOICES_PER_CLIP = 4; // Provision for 4 voices (OCC uses 2)
+  uint32_t m_nextVoiceId{1};                       // Incrementing voice ID counter (0 = invalid)
 
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};

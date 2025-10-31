@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "description": "Orpheus SDK skills configuration with template references",
+  "templates": {
+    "ci-troubleshooter": {
+      "source": "~/dev/.claude/skill-templates/ci-troubleshooter",
+      "enabled": true,
+      "filePatterns": [".github/workflows/**/*.yml"],
+      "lazyLoad": true
+    },
+    "test-analyzer": {
+      "source": "~/dev/.claude/skill-templates/test-analyzer",
+      "enabled": true,
+      "filePatterns": ["tests/**/*", "**/*.test.cpp"],
+      "lazyLoad": true
+    },
+    "schema-linter": {
+      "source": "~/dev/.claude/skill-templates/schema-linter",
+      "enabled": true,
+      "filePatterns": ["**/*.{json,yaml,yml}"],
+      "excludePatterns": ["build/**", "node_modules/**"],
+      "lazyLoad": true
+    },
+    "dependency-audit": {
+      "source": "~/dev/.claude/skill-templates/dependency-audit",
+      "enabled": true,
+      "filePatterns": ["CMakeLists.txt", "package.json", "pnpm-lock.yaml"],
+      "triggerOnChange": true
+    },
+    "doc-standards": {
+      "source": "~/dev/.claude/skill-templates/doc-standards",
+      "enabled": true,
+      "filePatterns": ["docs/orp/**/*.md", "apps/clip-composer/docs/occ/**/*.md"],
+      "lazyLoad": true
+    }
+  },
+  "projectSkills": {
+    "location": ".claude/skills/project",
+    "description": "Project-specific skills for real-time audio processing and SDK development"
+  }
+}

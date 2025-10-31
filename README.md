@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+
 # Orpheus SDK
 
 Orpheus is a professional audio SDK that combines a host-neutral C++20 core
@@ -168,6 +169,76 @@ sessions.
    The site uses mocked data by default so it can run without external network
    access.
 
+## Development Workflow
+
+### Multi-Instance Development
+
+This repository supports running multiple Claude Code instances simultaneously for focused development:
+
+#### SDK Instance (Core Library Development)
+
+**Working Directory:** `~/dev/orpheus-sdk` (repository root)
+
+**Focus:** C++ core library, cross-platform packages, SDK-level infrastructure
+
+**Start Instance:**
+
+```bash
+cd ~/dev/orpheus-sdk
+claude-code
+```
+
+**Use For:**
+
+- Core library changes (`src/`, `include/`)
+- Transport, routing, session management
+- SDK-level tests and benchmarks
+- Cross-platform compatibility
+- Documentation in `docs/orp/`
+
+#### Clip Composer Instance (Application Development)
+
+**Working Directory:** `~/dev/orpheus-sdk/apps/clip-composer`
+
+**Focus:** Tauri desktop application, JUCE UI components, end-user features
+
+**Start Instance:**
+
+```bash
+cd ~/dev/orpheus-sdk/apps/clip-composer
+claude-code
+
+# Or use the shortcut script:
+~/dev/orpheus-sdk/scripts/start-clip-composer-instance.sh
+```
+
+**Use For:**
+
+- Application-specific features
+- UI components and workflows
+- OCC-specific functionality
+- Documentation in `apps/clip-composer/docs/occ/`
+
+#### When to Use Which Instance
+
+| Task                         | Instance      | Reason                    |
+| ---------------------------- | ------------- | ------------------------- |
+| Fix transport controller bug | SDK           | Core library modification |
+| Add new clip button feature  | Clip Composer | Application UI change     |
+| Update audio driver          | SDK           | Platform infrastructure   |
+| Implement session dialog     | Clip Composer | Application-specific UI   |
+| Add routing matrix test      | SDK           | Core library testing      |
+| Fix waveform display         | Clip Composer | Application UI component  |
+
+#### Instance Isolation Benefits
+
+- **No config collision** – Separate `.claude/` directories
+- **Context-appropriate skills** – Different tool sets per instance
+- **Clear documentation boundaries** – ORP vs OCC prefixes
+- **Independent progress tracking** – Separate implementation logs
+
+**See also:** `CLAUDE.md` Multi-Instance Usage section for complete documentation
+
 ## Demo Workflows
 
 ### Standalone Demo Host
@@ -250,12 +321,40 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 
 ## Documentation
 
+### PREFIX Registry
+
+**ORP Docs (SDK):**
+**PREFIX:** ORP
+**Next Doc:** ORP098.md
+**Location:** `docs/orp/`
+
+**Discovery command:**
+
+```bash
+ls -1 docs/orp/ | grep -E "^ORP[0-9]{3,4}\.(md|mdx)$" | sort
+```
+
+**OCC Docs (Clip Composer):**
+**PREFIX:** OCC
+**Next Doc:** OCC096.md
+**Location:** `apps/clip-composer/docs/occ/`
+
+**Discovery command:**
+
+```bash
+ls -1 apps/clip-composer/docs/occ/ | grep -E "^OCC[0-9]{3,4}\.(md|mdx)$" | sort
+```
+
+Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see `~/chrislyons/dev/CLAUDE.md` for full conventions.
+
+### Reference Documentation
+
 - [`docs/ADAPTERS.md`](docs/ADAPTERS.md) – adapter catalog, build flags, and
   host-specific notes.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
-- [`apps/clip-composer/docs/OCC/`](apps/clip-composer/docs/OCC/) – Orpheus Clip Composer design documentation (complete)
+- [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – Orpheus Clip Composer design documentation (complete)
 - [`AGENTS.md`](AGENTS.md) – coding assistant guidelines for AI tools
 - [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
@@ -269,4 +368,3 @@ pnpm lint/test scripts pass locally before submitting.
 ## License
 
 This project is released under the [MIT License](LICENSE).
-

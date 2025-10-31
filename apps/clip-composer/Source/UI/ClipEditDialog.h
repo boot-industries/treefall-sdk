@@ -101,6 +101,9 @@ public:
     juce::String fadeInCurve = "Linear"; // Linear, EqualPower, Exponential
     juce::String fadeOutCurve = "Linear";
 
+    // Gain (Feature 5: -30dB to +10dB, default 0dB)
+    double gainDb = 0.0;
+
     // Phase 4: Beat mapping
     double detectedBPM = 0.0;
     bool beatgridEnabled = false;
@@ -132,6 +135,7 @@ public:
   // Callbacks
   std::function<void(const ClipMetadata&)> onOkClicked;
   std::function<void()> onCancelClicked;
+  std::function<void(const juce::Colour&)> onColorChanged; // Real-time color update (75fps repaint)
 
   //==============================================================================
   void paint(juce::Graphics& g) override;
@@ -207,6 +211,11 @@ private:
 
   // File info panel
   std::unique_ptr<juce::Label> m_fileInfoPanel;
+
+  // Gain control (Feature 5: -30dB to +10dB)
+  std::unique_ptr<juce::Label> m_gainLabel;
+  std::unique_ptr<juce::Slider> m_gainSlider;
+  std::unique_ptr<juce::Label> m_gainValueLabel;
 
   // Phase 3: Fade time controls
   std::unique_ptr<juce::Label> m_fadeInLabel;
