@@ -2,91 +2,160 @@
 
 # Orpheus SDK
 
-Orpheus is a professional audio SDK that combines a host-neutral C++20 core
-with optional adapter layers and UI prototypes. The repository contains the
-deterministic session/transport engine, thin integrations for host software, and
-a JavaScript workspace ("Shmui") for visualising session data without relying on
-third-party cloud services.
+**Professional audio SDK for broadcast, live performance, and DAW applications**
+
+Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
+
+**Current Release:** v1.0.0-rc.1 (2025-10-31)
 
 ## ⚡ Quick Start
 
-**New contributor?** Get up and running in under 5 minutes:
+**New to Orpheus SDK?** Get up and running in under 5 minutes:
 
 ```bash
-# Clone and bootstrap (installs deps, builds core, runs tests)
+# Clone repository
 git clone https://github.com/orpheus-sdk/orpheus-sdk.git
 cd orpheus-sdk
-./scripts/bootstrap-dev.sh
 
-# Start the UI development server
-pnpm --filter @orpheus/shmui dev
-# Visit http://localhost:4000
+# Build SDK (Debug with AddressSanitizer)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j8
+
+# Run tests (32 tests, should complete in ~2 seconds)
+ctest --test-dir build --output-on-failure
 ```
 
-**Prerequisites:** Node.js 18+, PNPM 8+, CMake 3.22+, C++20 compiler
-**Troubleshooting:** See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
-**Full guide:** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+**Prerequisites:**
+
+- CMake 3.22+
+- C++20 compiler (MSVC 2019+, Clang 13+, GCC 11+)
+- libsndfile (audio file I/O): `brew install libsndfile` (macOS) or `vcpkg install libsndfile` (Windows)
+
+**Next Steps:**
+
+- **Integrate SDK:** See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+- **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
+- **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
+- [What's New in v1.0](#whats-new-in-v10)
 - [Core Capabilities](#core-capabilities)
 - [Repository Layout](#repository-layout)
 - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
   - [C++ Toolchain](#c-toolchain)
   - [Optional Targets](#optional-targets)
-  - [JavaScript Workspace](#javascript-workspace)
+  - [Running Tests](#running-tests)
 - [Demo Workflows](#demo-workflows)
   - [Standalone Demo Host](#standalone-demo-host)
   - [Render a Click Track](#render-a-click-track)
+- [Applications Built on Orpheus SDK](#applications-built-on-orpheus-sdk)
 - [Tooling & Quality](#tooling--quality)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
+## What's New in v1.0
+
+Orpheus SDK v1.0 introduces comprehensive clip playback control and metadata persistence:
+
+### 🎚️ Gain Control API
+
+```cpp
+// Per-clip gain adjustment (-96 to +12 dB)
+transport->updateClipGain(handle, -6.0f);  // Half amplitude
+```
+
+### 🔁 Loop Mode API
+
+```cpp
+// Seamless clip looping (no fade-out at boundary)
+transport->setClipLoopMode(handle, true);
+```
+
+### 💾 Persistent Metadata
+
+```cpp
+// Batch update all clip settings (survives stop/start cycles)
+ClipMetadata metadata;
+metadata.trimInSamples = 1000;
+metadata.gainDb = -6.0f;
+metadata.loopEnabled = true;
+transport->updateClipMetadata(handle, metadata);
+```
+
+### ⚡ Seamless Restart & Seek
+
+```cpp
+// Gap-free restart from IN point (sample-accurate)
+transport->restartClip(handle);
+
+// Sample-accurate seek for waveform scrubbing
+transport->seekClip(handle, position);
+```
+
+**See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
+**Migration:** [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for upgrade guide
+
+---
+
 ## Overview
 
-The Orpheus SDK targets hosts that need deterministic session negotiation and
-render pipelines while remaining portable across Windows, macOS, and Linux. The
-project is organised around three pillars:
+The Orpheus SDK provides deterministic session/transport control for professional audio applications. Built for broadcast and live performance with 24/7 reliability.
 
-1. **Core library** – `src/` + `include/` expose ABI negotiation, session graph
-   modelling, and clip-grid utilities.
-2. **Adapters** – thin CMake targets (minhost CLI, REAPER extension) that opt in
-   to the features their host requires.
-3. **Shmui UI workspace** – a Next.js/Turbopack playground that renders
-   transport state and session timelines using local, mock data sources.
+**Key Design Principles:**
+
+1. **Host-neutral Core** – C++20 library works across DAWs, plugins, and standalone apps
+2. **Real-time Safe** – Zero allocations on audio thread, lock-free command processing
+3. **Sample-accurate** – ±0 sample tolerance for transport operations
+4. **Deterministic** – Same input → same output, always (bit-identical)
 
 ## Core Capabilities
 
-- Host-agnostic APIs for session graphs, tempo maps, and clip grids.
-- ABI negotiation helpers that keep host/plugin compatibility deterministic.
-- **Real-time audio infrastructure** (Milestone M2) for sample-accurate playback:
-  - Lock-free transport controller with multi-clip support
-  - Audio file reader (WAV/AIFF/FLAC via libsndfile)
-  - Platform audio drivers (CoreAudio, WASAPI, ASIO)
-  - Network audio (AES67/RTP with PTP sync) - interoperable with Dante, Ravenna, Q-LAN
-- Click-track rendering utilities surfaced through the minhost adapter.
-- Optional JUCE-based demo host for hands-on exploration of the SDK.
-- Smoke tests and tooling that enforce cross-platform correctness.
+### Transport & Playback
+
+- **Multi-clip transport** – Simultaneous clip playback (tested with 16 clips)
+- **Gain control** – Per-clip gain adjustment (-96 to +12 dB)
+- **Loop mode** – Seamless clip looping with boundary enforcement
+- **Trim points** – Sample-accurate IN/OUT boundaries
+- **Fade curves** – Linear, EqualPower, Exponential
+- **Restart/Seek** – Gap-free position control (±0 samples)
+
+### Audio I/O
+
+- **Audio file reader** – WAV/AIFF/FLAC via libsndfile
+- **Platform drivers** – CoreAudio (macOS), WASAPI/ASIO (Windows)
+- **Dummy driver** – Testing and offline rendering
+
+### Routing & Mixing
+
+- **Routing matrix** – 4 Clip Groups → Master (or custom topologies)
+- **Multi-channel** – Support for 2-32 channel configurations
+
+### Developer Tools
+
+- **Session graphs** – Tempo maps, clip grids, metadata storage
+- **ABI negotiation** – Deterministic host/plugin compatibility
+- **Click-track rendering** – Via minhost CLI adapter
+- **Comprehensive tests** – 32 unit tests, AddressSanitizer clean
 
 ## Repository Layout
 
 ```
-├── adapters/        # Host integrations (minhost CLI, optional REAPER shim)
-├── apps/            # Standalone JUCE demo host
-├── cmake/           # Helper modules and warning policies
-├── docs/            # Architecture notes, roadmaps, adapter guides
-├── include/         # Public headers for the Orpheus core library
-├── packages/
-│   ├── engine-native/  # Placeholder for language bindings around the core
-│   └── shmui/          # TypeScript workspace for UI demos (Next.js/Turbo)
-├── src/             # Core library implementation
-├── tests/           # GoogleTest smoke and conformance coverage
-└── backup/          # Quarantined legacy SDK content (read-only)
+├── adapters/           # Host integrations (minhost CLI, REAPER extension)
+├── apps/               # Applications (Clip Composer, demo host)
+├── cmake/              # CMake helper modules and compiler policies
+├── docs/               # Architecture, roadmaps, API reference, ORP documents
+├── include/            # Public C++ headers (install these with your app)
+├── packages/           # Cross-platform TypeScript packages (contract, client, React)
+├── src/                # Core library implementation (C++20)
+│   ├── core/           # Transport, routing, audio I/O, session
+│   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
+├── tests/              # GoogleTest unit tests (32 tests, 100% passing)
+└── CHANGELOG.md        # Release notes and version history
 ```
 
 ## Supported Platforms
@@ -147,27 +216,29 @@ configuration:
   [`docs/ADAPTERS.md`](docs/ADAPTERS.md) for the full list of flags and host
   requirements.
 
-### JavaScript Workspace
+### Running Tests
 
-The `packages/shmui` directory houses a pnpm workspace used for UI prototypes
-and documentation tooling. It is optional but useful for visualising Orpheus
-sessions.
+Run all tests with detailed output:
 
-1. Enable pnpm (via [`corepack`](https://nodejs.org/api/corepack.html) or a local
-   installation) and bootstrap the workspace:
+```bash
+# All tests (32 tests, ~2 seconds)
+ctest --test-dir build --output-on-failure
 
-   ```sh
-   pnpm install
-   ```
+# Specific test suite
+./build/tests/transport/clip_gain_test        # Gain control tests
+./build/tests/transport/clip_loop_test        # Loop mode tests
+./build/tests/transport/clip_metadata_test    # Metadata persistence tests
 
-2. Launch the Shmui demo site (Next.js on port 4000):
+# 16-clip stress test (60 seconds runtime)
+./build/tests/transport/multi_clip_stress_test
+```
 
-   ```sh
-   pnpm --filter www dev
-   ```
+**Test Coverage:**
 
-   The site uses mocked data by default so it can run without external network
-   access.
+- **Gain control:** 11/11 tests passing
+- **Loop mode:** 11/11 tests passing
+- **Metadata persistence:** 10/10 tests passing
+- **Integration:** 16-clip stress test (60s, no memory leaks)
 
 ## Development Workflow
 
