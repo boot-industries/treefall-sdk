@@ -1,285 +1,165 @@
 # Orpheus SDK - Claude Development Documentation
 
-This directory contains development notes, progress tracking, and session reports for AI-assisted development of the Orpheus SDK.
+This directory contains development notes and session reports for AI-assisted development of the Orpheus SDK.
 
 ---
 
 ## Quick Navigation
 
-### Active Documents (ORP068)
+### Archived Documents
 
-- **[progress.md](progress.md)** - ✅ ORP068 implementation tracking (Phase 3 complete, 55/104 tasks)
-- **[orp070-progress.md](orp070-progress.md)** - ORP070 OCC MVP Sprint progress tracking
-- **[m2_implementation_progress.md](m2_implementation_progress.md)** - M2 Real-Time Infrastructure progress
-
-### Session Reports
-
-- **[SESSION_2025-10-12.md](SESSION_2025-10-12.md)** - Complete extended session report (~3,200 lines implemented)
-- **[session-notes.md](session-notes.md)** - Historical session notes archive
-
-### Validation Reports
-
-- **[VALIDATION_COMPLETE.md](VALIDATION_COMPLETE.md)** - ✅ Latest validation status (Oct 12, 2025)
-- **[DEBUG_REPORT.md](DEBUG_REPORT.md)** - Comprehensive validation report
+- **[archive/progress.md](archive/progress.md)** - ⚠️ ARCHIVED: ORP068 implementation tracking (historical)
 
 ### Project Documentation
 
 - **[../CLAUDE.md](../CLAUDE.md)** - Claude Code development guide (for AI assistants)
-- **[../AGENTS.md](../AGENTS.md)** - General AI coding assistant guidelines
-- **[../ROADMAP.md](../ROADMAP.md)** - Project milestones and timeline
 - **[../docs/ORP/](../docs/ORP/)** - Orpheus Reference Plans (ORP) index
 - **[../apps/clip-composer/docs/OCC/](../apps/clip-composer/docs/OCC/)** - Orpheus Clip Composer design docs
+- **[../docs/repo-commands.html](../docs/repo-commands.html)** - Command reference (build, test, git)
 
 ---
 
-## Latest Status (October 13, 2025)
+## Current Development Model (October 31, 2025)
 
-### ORP068 SDK Integration Plan v2.0
+### Sprint-Based Development
 
-**Status:** ✅ Phase 3 Complete (52.9% overall - 55/104 tasks)
+The project now uses **sprint-level ORP documents** for focused feature work, rather than large phase-based tracking.
 
-**Phase Progress:**
+**Recent Sprints:**
 
-- ✅ **Phase 0:** Repository consolidation (15/15 tasks, 100%)
-- ✅ **Phase 1:** Driver development (23/23 tasks, 100%)
-- ✅ **Phase 2:** Expanded contract + UI (11/11 tasks, 100%)
-- ✅ **Phase 3:** CI/CD infrastructure (6/6 tasks, 100%) **JUST COMPLETED** 🎉
-- ⏳ **Phase 4:** Documentation & productionization (0/14 tasks)
+- **ORP093** (✅ Complete) - SDK Sprint: Trim Point Boundary Enforcement
+- **ORP094** (✅ Complete) - Implementation Report for ORP093
+- **ORP095-ORP097** - Recent feature work
 
-**Phase 3 Achievements:**
+**Next Available:** ORP098
 
-- Unified CI pipeline (7 parallel jobs, matrix builds across 3 OS × 2 build types)
-- Performance budget enforcement (bundle size validation with 15% tolerance)
-- Chaos testing (nightly failure scenario testing)
-- Dependency graph integrity (783 files scanned, no circular dependencies)
-- Security auditing (NPM audit, OSV scanner, SBOM generation)
-- Pre-merge validation (Husky hooks, lint-staged, commitlint, PR template)
+**Documentation:** See `docs/ORP/INDEX.md` for complete ORP catalog
 
-**Key Deliverables:**
+### OCC (Clip Composer) Development
 
-- @orpheus/contract (JSON schema system)
-- @orpheus/engine-service (Node.js service driver)
-- @orpheus/engine-native (N-API native driver)
-- @orpheus/engine-wasm (WASM driver with SRI security)
-- @orpheus/client (unified client broker)
-- @orpheus/react (React integration hooks)
+**Latest Release:** v0.2.0-alpha (October 28, 2025)
 
-**Next Phase:**
+**Recent Work:**
 
-- Phase 4: Documentation cleanup, release preparation, changelog generation
+- Clip Edit Dialog improvements
+- Button UI enhancements
+- Documentation consolidation
+- Removal of deprecated shmui package
 
-**Progress Tracking:** See [progress.md](progress.md) for detailed task breakdown
+**OCC Docs:** `apps/clip-composer/docs/OCC/` (12 documents)
 
----
+### Repository Cleanup
 
-### ORP070 OCC MVP Sprint
+**Recent Maintenance:**
 
-**Status:** Active (Parallel with ORP068)
-**Focus:** Real-time audio infrastructure for Orpheus Clip Composer
-
-**Scope:**
-
-- Phase 1: Platform audio drivers (CoreAudio, WASAPI) + real audio mixing (Months 1-2)
-- Phase 2: Multi-channel routing matrix (4 Clip Groups → Master) (Months 3-4)
-- Phase 3: Performance monitor, optimization, stability testing (Months 5-6)
-
-**Progress Tracking:** See [orp070-progress.md](orp070-progress.md)
-
----
-
-### M2 Real-Time Infrastructure (Legacy)
-
-**Status:** ✅ Foundation Complete (Phase 1, Modules 1-2-4)
-
-**Implemented:**
-
-- Module 1: Transport Controller (15 tests ✅)
-- Module 2: Audio File Reader (5 tests ✅)
-- Module 4: Dummy Audio Driver (11 tests ✅)
-- Integration: Full pipeline verified (6 tests ✅)
-
-**Test Coverage:** 46/47 passing (98%)
+- Removed shmui references (deprecated ElevenLabs UI fork)
+- Consolidated documentation (removed duplicates)
+- Added command reference pages
+- Updated validation scripts
 
 ---
 
 ## Document Guide
 
-### For Resuming Work on ORP068
+### For Starting New Work
 
-1. Read **[progress.md](progress.md)** for current phase and tasks
-2. Check **[../docs/ORP/ORP068 Implementation Plan (v2.0).md](<../docs/ORP/ORP068%20Implementation%20Plan%20(v2.0).md>)** for full plan
-3. Review recent commits: `git log --oneline -10`
-4. Check CI status on active PRs
-
-### For Resuming Work on ORP070
-
-1. Read **[orp070-progress.md](orp070-progress.md)** for current sprint status
-2. Check **[../docs/ORP/ORP070 OCC MVP Sprint.md](../docs/ORP/ORP070%20OCC%20MVP%20Sprint.md)** for detailed plan
-3. Review **[../apps/clip-composer/docs/OCC/OCC027 API Contracts.md](../apps/clip-composer/docs/OCC/OCC027%20API%20Contracts.md)** for interface specs
+1. Check **[../docs/ORP/INDEX.md](../docs/ORP/INDEX.md)** for next available ORP number (currently ORP098)
+2. Review recent commits: `git log --oneline -10`
+3. Check current branch: `git branch --show-current`
+4. Review **[../CLAUDE.md](../CLAUDE.md)** for repository conventions
 
 ### For Understanding Architecture
 
-1. See **[../ARCHITECTURE.md](../ARCHITECTURE.md)** for system overview
-2. Read **[../docs/DRIVER_ARCHITECTURE.md](../docs/DRIVER_ARCHITECTURE.md)** for driver details
-3. Check **[../docs/CONTRACT_DEVELOPMENT.md](../docs/CONTRACT_DEVELOPMENT.md)** for contract guide
-4. Review public headers in `../include/orpheus/`
+1. **[../CLAUDE.md](../CLAUDE.md)** - Core principles, build commands, development rules
+2. **[../docs/repo-commands.html](../docs/repo-commands.html)** - Complete command reference
+3. **[../include/orpheus/](../include/orpheus/)** - Public API headers
+4. **[../docs/ORP/](../docs/ORP/)** - Feature specifications and design docs
 
-### For Code Context
+### For OCC (Clip Composer) Work
 
-1. Session reports contain full implementation narrative
-2. Progress docs track phase-by-phase status
-3. Validation reports verify correctness
-4. ORP documents provide authoritative requirements
+1. **[../apps/clip-composer/docs/OCC/](../apps/clip-composer/docs/OCC/)** - Application documentation
+2. **[../apps/clip-composer/CLAUDE.md](../apps/clip-composer/CLAUDE.md)** - App-specific conventions (if exists)
+3. Use separate Claude instance from `apps/clip-composer/` directory for context isolation
 
 ---
 
-## File Descriptions
+## Key Files
 
-### progress.md
+### .claude/scratch/
 
-**Purpose:** ORP068 implementation tracking (primary progress document)
+**Purpose:** Temporary notes and drafts (git-ignored)
+**Contents:** Ephemeral session notes, experimental work, debugging artifacts
+**Cleanup:** Delete freely - not tracked in git
+
+### .claude/archive/
+
+**Purpose:** Historical documentation (preserved but not actively referenced)
 **Contents:**
 
-- Phase-by-phase status (0-4)
-- Task completion tracking (55/104)
-- Phase summaries with validation results
-- Key files, commands, and recent commits
-- Critical path overview
-- Notes for AI assistants
-  **Update Frequency:** After each major milestone or phase completion
+- `progress.md` - ORP068 phase-based tracking (archived)
+- Other deprecated progress tracking files
 
-### orp070-progress.md
+### docs/ORP/
 
-**Purpose:** ORP070 OCC MVP Sprint tracking
-**Contents:**
+**Purpose:** Authoritative feature specifications
+**Contents:** Sprint-level design documents (ORP093+)
+**Index:** See `docs/ORP/INDEX.md`
 
-- Sprint phase breakdown
-- Module implementation status
-- Interface specifications
-- Integration checkpoints
-- Performance targets
-  **Update Frequency:** Weekly during active sprint work
+### apps/clip-composer/docs/OCC/
 
-### m2_implementation_progress.md
-
-**Purpose:** Detailed progress tracking for Milestone M2 (legacy, superseded by ORP070)
-**Contents:**
-
-- Phase-by-phase task lists
-- Module status (completed/pending)
-- File inventory
-- Session accomplishments
-  **Update Frequency:** Archived (see orp070-progress.md for current work)
-
-### SESSION_2025-10-12.md
-
-**Purpose:** Complete narrative of extended session work (M2 foundation)
-**Contents:**
-
-- Executive summary
-- Module implementation details
-- Integration architecture
-- Test results
-- File inventory
-- Technical highlights
-  **Length:** ~3,000 lines
-  **Use Case:** Historical reference for M2 foundation work
-
-### VALIDATION_COMPLETE.md
-
-**Purpose:** Sign-off document confirming validation checks passed
-**Contents:**
-
-- Test results summary
-- Code quality verification
-- Documentation completeness
-- Known limitations
-- Final assessment
-  **Update Frequency:** After major validation checkpoints
-
-### DEBUG_REPORT.md
-
-**Purpose:** Comprehensive validation and debugging report
-**Contents:**
-
-- Test results breakdown
-- Code quality checks
-- Architecture validation
-- Performance characteristics
-- Security checks
-  **Use Case:** Verifying correctness before moving forward
+**Purpose:** Clip Composer application documentation
+**Contents:** UI design, architecture, API contracts
+**Count:** 12 active documents
 
 ---
 
 ## Development Workflow
 
-### Starting a New Session (ORP068)
+### Starting New Work
 
-1. Check `progress.md` for current phase and next tasks
-2. Review PR status on GitHub (phase-3-complete branch)
-3. Check CI pipeline status
-4. Reference ORP068 implementation plan for task details
-5. Update progress.md as you work
+1. Review recent commits: `git log --oneline -10`
+2. Check current branch: `git branch --show-current`
+3. Identify next ORP number from `docs/ORP/INDEX.md`
+4. Create feature branch if needed
+5. Review `CLAUDE.md` for build/test commands
 
-### Starting a New Session (ORP070)
+### During Development
 
-1. Check `orp070-progress.md` for current sprint phase
-2. Review ORP070 OCC MVP Sprint document for requirements
-3. Check OCC API contracts for interface specs
-4. Update orp070-progress.md as you work
+1. Follow conventions in `CLAUDE.md`
+2. Run tests frequently: `ctest --test-dir build --output-on-failure`
+3. Check linting: See `docs/repo-commands.html` for commands
+4. Document decisions in ORP documents
+5. Update `docs/ORP/INDEX.md` when creating new ORPs
 
-### Completing a Session
+### Completing Work
 
-1. Run all tests: `ctest --test-dir build`
-2. Check linting: `pnpm run lint:js && pnpm run lint:cpp`
-3. Update progress document with accomplishments
-4. Create session report (if significant work done)
-5. Commit and push changes
-
-### Before Moving to Next Phase (ORP068)
-
-1. Ensure all phase tasks complete
-2. Verify CI pipeline passing
-3. Update documentation (CLAUDE.md, docs/ORP/README.md)
-4. Create PR with comprehensive summary
-5. Update progress.md with phase completion
+1. Ensure all tests pass
+2. Run linting/formatting checks
+3. Create ORP document if significant feature
+4. Commit with conventional commit format
+5. Create PR with clear description
 
 ---
 
-## Metrics (As of Oct 13, 2025)
+## Quick Stats (October 31, 2025)
 
-### ORP068 Progress
+### Repository Health
 
-```
-Phase 0:              15/15 tasks (100%) ✅
-Phase 1:              23/23 tasks (100%) ✅
-Phase 2:              11/11 tasks (100%) ✅
-Phase 3:              6/6 tasks (100%) ✅
-Phase 4:              0/14 tasks (0%)
-Overall:              55/104 tasks (52.9%)
-```
+- **Build Status:** Passing (C++ Debug/Release)
+- **Test Coverage:** 98%+ (GoogleTest suite)
+- **Linting:** Zero errors (clang-format + ESLint)
+- **Platform Support:** macOS, Linux (Ubuntu), Windows (planned)
 
-### Code Quality
+### Recent Releases
 
-```
-Tests:                All passing (C++ + TypeScript)
-Linting:              Zero errors (C++ clang-format + TypeScript ESLint)
-Security:             0 high severity vulnerabilities
-Performance:          Bundle sizes within budget
-Dependencies:         No circular dependencies (783 files scanned)
-CI Status:            All checks passing (21+ jobs)
-```
+- **SDK:** v0.2.2 (Trim boundary enforcement - Oct 28, 2025)
+- **OCC:** v0.2.0-alpha (Clip Edit improvements - Oct 28, 2025)
 
-### Package Ecosystem
+### Documentation
 
-```
-Published Packages:   @orpheus/contract, @orpheus/engine-service,
-                      @orpheus/engine-native, @orpheus/engine-wasm,
-                      @orpheus/client, @orpheus/react
-Architecture:         Multi-driver (Service, Native, WASM)
-Contract Version:     v1.0.0-beta (11 commands, 8 events)
-Build Targets:        ubuntu/windows/macos × Debug/Release
-```
+- **ORP Documents:** 19 active (ORP082-ORP097), 18 archived (ORP061-ORP081)
+- **OCC Documents:** 12 active
+- **Next ORP:** ORP098
 
 ---
 
@@ -608,153 +488,126 @@ All skills follow the [SKIL003 framework](/Users/chrislyons/dev/SKIL003.md):
 
 ---
 
-## Common Tasks
+## Common Commands
 
-### Check ORP068 Status
+For complete command reference with click-to-copy, see `docs/repo-commands.html`
+
+### Build & Test
 
 ```bash
-cat .claude/progress.md | head -20
+# Build SDK (Debug)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build
+
+# Run all tests
+ctest --test-dir build --output-on-failure
+
+# Run specific test
+ctest --test-dir build -R TransportControllerTest --output-on-failure
 ```
 
-### Check ORP070 Status
+### Code Quality
 
 ```bash
-cat .claude/orp070-progress.md | head -50
-```
+# Check C++ formatting
+clang-format --dry-run --Werror src/**/*.cpp include/**/*.h
 
-### Run All Tests
-
-```bash
-cd build && ctest --output-on-failure
-```
-
-### Run Linting
-
-```bash
+# Run linting (if pnpm project exists)
 pnpm run lint:js
 pnpm run lint:cpp
 ```
 
-### Run Performance Validation
+### Git & GitHub
 
 ```bash
-pnpm run perf:validate
-```
+# Recent work
+git log --oneline -10
 
-### Check Dependency Graph
+# Current branch
+git branch --show-current
 
-```bash
-pnpm run dep:check
-```
-
-### Run Security Audit
-
-```bash
-pnpm audit --audit-level=high
-```
-
-### View CI Status
-
-```bash
-gh pr view --web  # Opens current PR in browser
-gh pr checks      # Shows CI check status
+# View PR in browser
+gh pr view --web
 ```
 
 ---
 
-## Documentation Philosophy
-
-### Progress Documents (progress.md, orp070-progress.md)
-
-**Purpose:** Living task tracker for active work
-**Audience:** Current developer, AI assistants
-**Style:** Structured lists, status indicators, phase summaries
-**Update:** Continuously during development
-
-### Session Reports
-
-**Purpose:** Historical record of what was built
-**Audience:** Future developers, code reviewers
-**Style:** Narrative, technical, comprehensive
-**Update:** After significant work (not every commit)
-
-### Validation Reports
-
-**Purpose:** Checkpoint verification
-**Audience:** Project leads, maintainers
-**Style:** Systematic checks, pass/fail
-**Update:** Before major phase transitions
+## Documentation Types
 
 ### ORP Documents (Orpheus Reference Plans)
 
-**Purpose:** Authoritative implementation plans
-**Audience:** All team members
-**Style:** Structured requirements, acceptance criteria
-**Update:** Major revisions only (v1.0, v2.0, etc.)
+**Purpose:** Sprint-level feature specifications
+**Location:** `docs/ORP/`
+**Naming:** `ORP[number] [optional-title].md` (e.g., ORP093.md, ORP094.md)
+**Index:** See `docs/ORP/INDEX.md` for catalog
+**Style:** Problem statement, technical requirements, acceptance criteria
+**Update:** Create new ORP for each significant feature or architectural change
+
+### OCC Documents (Clip Composer Design Docs)
+
+**Purpose:** Application-specific documentation
+**Location:** `apps/clip-composer/docs/OCC/`
+**Naming:** `OCC[number] [optional-title].md`
+**Style:** UI/UX specs, implementation notes, user workflows
+
+### Scratch Notes
+
+**Purpose:** Temporary session notes (git-ignored)
+**Location:** `.claude/scratch/`
+**Cleanup:** Delete freely - ephemeral content only
 
 ---
 
 ## Notes for AI Assistants
 
-### To Resume ORP068 Work:
+### Starting a Session
 
-1. **Always read [progress.md](progress.md) first** - current phase and tasks
-2. **Check [../docs/ORP/ORP068 Implementation Plan (v2.0).md](<../docs/ORP/ORP068%20Implementation%20Plan%20(v2.0).md>)** - full plan
-3. **Review git log** - `git log --oneline -10` for recent commits
-4. **Update docs as you work** - keep progress.md synchronized
+1. **Review recent work:** `git log --oneline -10`
+2. **Check current branch:** `git branch --show-current`
+3. **Read CLAUDE.md** for repository conventions and build commands
+4. **Check ORP INDEX** (`docs/ORP/INDEX.md`) for next available number
 
-### To Resume ORP070 Work:
+### During Development
 
-1. **Always read [orp070-progress.md](orp070-progress.md) first** - current sprint status
-2. **Check [../docs/ORP/ORP070 OCC MVP Sprint.md](../docs/ORP/ORP070%20OCC%20MVP%20Sprint.md)** - sprint plan
-3. **Review [../apps/clip-composer/docs/OCC/OCC027 API Contracts.md](../apps/clip-composer/docs/OCC/OCC027%20API%20Contracts.md)** - interface specs
-4. **Update orp070-progress.md as you work**
+1. Follow patterns in CLAUDE.md (offline-first, deterministic, host-neutral)
+2. Run tests frequently
+3. Document significant work in new ORP documents
+4. Update `docs/ORP/INDEX.md` when creating new ORPs
 
-### When Implementing New Features:
+### Before Creating a PR
 
-1. Follow existing patterns in session reports and progress docs
-2. Document architectural decisions in progress.md
-3. Update CLAUDE.md if new tools/workflows added
-4. Add tests (aim for 98%+ coverage)
-5. Verify with validation checklist
-6. Create session report for significant work
-
-### Before Creating a PR:
-
-1. Ensure all tests pass locally
-2. Run linting and fix all errors
-3. Update progress.md with completion status
-4. Update relevant documentation (CLAUDE.md, docs/ORP/README.md)
-5. Write comprehensive PR description with context
+1. All tests pass: `ctest --test-dir build --output-on-failure`
+2. Linting clean: Check `docs/repo-commands.html` for commands
+3. Create ORP document if feature warrants it
+4. Conventional commit format
+5. Comprehensive PR description
 
 ---
 
-## Contact & References
+## Repository Structure
 
 **Project Root:** `/Users/chrislyons/dev/orpheus-sdk`
-**Main Docs:** `../docs/`
-**ORP Docs:** `../docs/ORP/`
-**OCC Design Docs:** `../apps/clip-composer/docs/OCC/`
-**Build Dir:** `../build/`
 
-**Key Files:**
+**Key Directories:**
 
-- `../README.md` - Project overview
-- `../ROADMAP.md` - Milestones and timeline
-- `../CLAUDE.md` - Claude Code development guide
-- `../AGENTS.md` - AI assistant coding guidelines
-- `../CMakeLists.txt` - Build configuration
-- `../budgets.json` - Performance budgets
-- `.github/workflows/ci-pipeline.yml` - Unified CI configuration
+- `src/`, `include/` - Core SDK (C++20)
+- `apps/` - Applications (Clip Composer, etc.)
+- `adapters/` - Host integrations (REAPER, minhost)
+- `tests/` - GoogleTest suite
+- `docs/` - Architecture and feature specs
+- `build/` - CMake build artifacts (git-ignored)
 
-**Active Branches:**
+**Essential Files:**
 
-- `main` - Production-ready code
-- `phase-3-complete` - ORP068 Phase 3 work (active PR)
+- `CLAUDE.md` - Development guide (must-read)
+- `docs/repo-commands.html` - Command reference
+- `CMakeLists.txt` - Build configuration
+- `docs/ORP/INDEX.md` - ORP document catalog
+
+**Main Branch:** `main` (production-ready code)
 
 ---
 
-**Last Updated:** October 13, 2025
-**ORP068 Status:** Phase 3 Complete (55/104 tasks, 52.9%)
-**ORP070 Status:** Active Sprint
-**Next Update:** After Phase 4 completion or ORP070 milestone
+**Last Updated:** October 31, 2025
+**Current State:** Sprint-based development (ORP093+)
+**SDK Version:** v0.2.2
+**OCC Version:** v0.2.0-alpha
