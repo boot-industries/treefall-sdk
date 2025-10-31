@@ -17,7 +17,6 @@ Professional audio SDK with host-neutral C++20 core for deterministic session, t
 ├── src/, include/       # Core SDK (C++20) - deterministic, portable
 ├── adapters/            # Host integrations (REAPER, minhost, realtime_engine, clip_grid)
 ├── apps/                # Applications (Clip Composer, Wave Finder, FX Engine)
-├── packages/shmui/      # UI demos (Next.js/React, local-mocked)
 ├── tests/               # GoogleTest suite
 └── docs/                # Architecture, roadmap, adapter guides
 ```
@@ -77,7 +76,6 @@ For all commands, see `docs/repo-commands.html` (open in browser for full refere
 | Core     | `src/`, `include/` | `SessionGraph.cpp`       |
 | Adapters | `adapters/`        | `reaper_adapter.cpp`     |
 | Apps     | `apps/`            | `orpheus_clip_composer/` |
-| UI demos | `packages/shmui/`  | `DemoSession.tsx`        |
 | Docs     | `docs/`            | `ARCHITECTURE.md`        |
 
 ## Decision Framework

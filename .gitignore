@@ -82,3 +82,6 @@ docs/api/
 
 # Claude Code scratch space (temporary notes, not tracked)
 .claude/scratch/
+
+# User backups
+~/Archives/
