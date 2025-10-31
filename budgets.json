@@ -2,11 +2,6 @@
   "version": "1.0",
   "budgets": {
     "bundleSize": {
-      "@orpheus/shmui": {
-        "max": 1572864,
-        "warn": 1468006,
-        "description": "UI bundle (1.5 MB max, warn at 1.4 MB)"
-      },
       "@orpheus/engine-wasm": {
         "max": 5242880,
         "warn": 4718592,
