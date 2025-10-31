@@ -1,7 +1,7 @@
 # OCC Documentation Index
 
 **Prefix:** OCC (Orpheus Clip Composer)
-**Next Available Number:** OCC102
+**Next Available Number:** OCC104
 
 ## Active Documentation
 
@@ -22,9 +22,11 @@ Current, frequently-referenced documents:
 - [OCC100](./OCC100.md) — Performance Requirements (targets, optimization)
 - [OCC101](./OCC101.md) — Troubleshooting Guide (common issues, solutions)
 
-### Recent Sprints
+### Recent Sprints & Releases
 
-- [OCC093](./OCC093%20v020%20Sprint.md) — v0.2.0 Sprint (6 UX fixes complete)
+- [OCC102](./OCC102.md) — v0.2.0 Release & v0.2.1 Planning Track
+- [OCC103](./OCC103%20QA%20v020%20Results.md) — QA Test Results for v0.2.0
+- [OCC093](./OCC093%20v020%20Sprint%20-%20Completion%20Report.md) — v0.2.0 Sprint Completion Report (6 UX fixes)
 - [OCC094](./OCC094.md) — Clip Edit Dialog Layout Redesign
 - [OCC095](./OCC095.md) — ColorSwatchPicker Crash Fix
 
@@ -59,8 +61,8 @@ View archived docs: `ls -1 apps/clip-composer/docs/occ/archive/`
 
 ## Creating New Documents
 
-1. Use next available number: **OCC102**
-2. Follow naming pattern: `OCC102 Title Here.md` or `OCC102.md`
+1. Use next available number: **OCC104**
+2. Follow naming pattern: `OCC### Descriptive Title.md` (MUST include descriptive title)
 3. Use IEEE citation style for references
 4. Update this INDEX.md with the new document
 5. Increment "Next Available Number" above
