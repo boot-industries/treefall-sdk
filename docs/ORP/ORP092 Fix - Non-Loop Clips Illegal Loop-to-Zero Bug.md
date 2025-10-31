@@ -1,7 +1,7 @@
-# ORP092: ORP091 Fix - Non-Loop Clips Illegal Loop-to-Zero Bug
+# ORP092: Fix - Non-Loop Clips Illegal Loop-to-Zero Bug
 
 **Date:** October 27, 2025
-**Sprint:** ORP091 Critical Bug Fix
+**Sprint:** Critical Bug Fix found in ORP091
 **Status:** ✅ COMPLETE
 **Severity:** CRITICAL (P0) - Blocking OCC v0.3.0 Release
 

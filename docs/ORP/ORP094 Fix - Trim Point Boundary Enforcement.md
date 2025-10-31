@@ -1,7 +1,7 @@
-# ORP094: ORP093 Fix - Trim Point Boundary Enforcement Implementation
+# ORP094: Fix - Trim Point Boundary Enforcement Implementation
 
 **Date:** October 28, 2025
-**Sprint:** ORP093 Critical Bug Fix
+**Sprint:** Critical Bug Fix found in ORP093
 **Status:** ✅ COMPLETE
 **Severity:** CRITICAL (P0) - User-Facing Bug
 
