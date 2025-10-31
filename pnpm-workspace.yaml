@@ -1,6 +1,2 @@
 packages:
   - packages/*
-  - packages/shmui
-  - packages/shmui/*
-  - packages/shmui/apps/*
-  - packages/shmui/packages/*
