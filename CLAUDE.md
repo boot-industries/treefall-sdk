@@ -22,25 +22,32 @@ Professional audio SDK with host-neutral C++20 core for deterministic session, t
 └── docs/                # Architecture, roadmap, adapter guides
 ```
 
-## Build Commands
+## Quick Command Reference
 
-### C++ Core
+**Full command list:** `docs/repo-commands.html` (click-to-copy commands for build, test, git, diagnostics)
+
+### Common Commands
+
+**Build:**
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
-ctest --test-dir build --output-on-failure
-
-# Optional: JUCE demo
-cmake -S . -B build -DORPHEUS_ENABLE_APP_JUCE_HOST=ON
 ```
 
-### JavaScript (Node 20+)
+**Test:**
 
 ```bash
-pnpm install
-pnpm --filter www dev  # localhost:4000
+ctest --test-dir build --output-on-failure
 ```
+
+**Run Clip Composer:**
+
+```bash
+./scripts/relaunch-occ.sh
+```
+
+For all commands, see `docs/repo-commands.html` (open in browser for full reference with click-to-copy)
 
 ## Audio Code Rules
 
