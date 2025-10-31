@@ -415,11 +415,10 @@ From `docs/occ/OCC030` Section 10.3:
 - `/ARCHITECTURE.md` - SDK design rationale
 - `/ROADMAP.md` - Milestones, timeline
 
-**OCC Design Documentation:**
+**OCC Documentation:**
 
-- `/docs/occ/README.md` - Complete documentation index
-- `/docs/occ/CLAUDE.md` - Design documentation standards
-- `/docs/occ/PROGRESS.md` - Design phase completion report
+- `docs/occ/INDEX.md` - OCC documentation catalog (OCC001-OCC101)
+- `PROGRESS.md` - Implementation progress tracking (app root)
 
 **JUCE Resources:**
 

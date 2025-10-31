@@ -32,8 +32,9 @@ For complete list, see: `ls -1 apps/clip-composer/docs/occ/OCC*.md`
 
 See also:
 
-- [PROGRESS.md](./PROGRESS.md) — Current implementation status
-- [README.md](./README.md) — OCC documentation overview
+- [PROGRESS.md](../../PROGRESS.md) — Current implementation status (app root)
+- [README.md](../../README.md) — Public-facing overview (app root)
+- [CLAUDE.md](../../CLAUDE.md) — Development guide (app root)
 
 ## Archived Documentation
 

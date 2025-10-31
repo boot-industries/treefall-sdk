@@ -84,11 +84,12 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 
 ## Project Status
 
-**Current Release:** v0.1.0-alpha (October 22, 2025)
+**Current Release:** v0.2.0-alpha (October 28, 2025)
 
-**Download:** [OrpheusClipComposer-v0.1.0-arm64.dmg](https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.1.0-alpha) (36MB)
+**Download:** [OrpheusClipComposer-v0.2.0-arm64.dmg](https://github.com/chrislyons/orpheus-sdk/releases/tag/v0.2.0-alpha) (TBD)
 **Platform:** macOS 12+ (Apple Silicon only)
 **Build Type:** Debug (Release optimization pending)
+**Sprint Report:** See `docs/OCC/OCC093 v020 Sprint - Completion Report.md`
 
 **What's Working:**
 
@@ -104,14 +105,21 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ✅ UI polish: Inter typeface, 20% larger fonts, 3-line text wrapping
 - ✅ Drag-to-reorder clips (240ms hold time)
 - ✅ Stop Others On Play mode (per-clip solo)
+- ✅ **v0.2.0:** Smooth Stop Others fade-out (no distortion)
+- ✅ **v0.2.0:** 75fps button state tracking (real-time visual sync)
+- ✅ **v0.2.0:** Gap-free click-to-jog seeking (single command)
+- ✅ **v0.2.0:** Trim point edit laws (playhead constraint enforcement)
+- ✅ **v0.2.0:** `[` `]` keyboard shortcuts restart playback
+- ✅ **v0.2.0:** Edit Dialog time counter spacing fix
 
 **Known Limitations:**
 
-- ⚠️ Debug build only (Release has linker issues to fix)
+- ⚠️ Debug build only (Release optimization pending)
 - ⚠️ Apple Silicon only (no Intel or universal binary yet)
 - ⚠️ Sample rate locked to 48kHz (auto-conversion coming)
 - ⚠️ Trim handles not interactive (slider-based only)
 - ⚠️ Fade curves stored but not applied during playback
+- ⚠️ No audio device selection UI (uses system default)
 
 **Timeline:**
 
@@ -119,11 +127,12 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ✅ **Phase 1:** Project Setup & SDK Integration (Complete - Oct 13, 2025)
 - ✅ **Phase 2:** UI Enhancements & Edit Dialog Phase 1 (Complete - Oct 13-14, 2025)
 - ✅ **Phase 3:** Edit Dialog Phases 2 & 3 + Waveform Rendering (Complete - Oct 22, 2025)
-- ✅ **Phase 4:** Build & Release (Complete - Oct 22, 2025)
-- ⏳ **v0.2.0:** Optimization, fade curve integration, interactive trim handles (In Progress)
-- 🎯 **v1.0:** Recording, time-stretching, VST/AU hosting (6 months from Oct 2025)
+- ✅ **Phase 4:** Build & Release v0.1.0 (Complete - Oct 22, 2025)
+- ✅ **v0.2.0:** UX Fixes Sprint - 6 Critical Issues (Complete - Oct 28, 2025)
+- ⏳ **v0.3.0:** Audio device selection, latch acceleration, modal styling (In Planning)
+- 🎯 **v1.0 MVP:** 960 clips, routing, remote control, beta testing (6 months from Oct 2025)
 
-**See also:** `.claude/implementation_progress.md` for detailed task tracking
+**See also:** `docs/OCC/OCC093 v020 Sprint - Completion Report.md` for v0.2.0 details
 
 ---
 
@@ -284,6 +293,6 @@ From `docs/OCC/OCC026`:
 
 ---
 
-**Status:** v0.1.0-alpha Released (October 22, 2025)
-**Last Updated:** October 22, 2025
-**Next Milestone:** v0.2.0 planning - Release build optimization, fade curve integration
+**Status:** v0.2.0-alpha Complete (October 28, 2025)
+**Last Updated:** October 28, 2025
+**Next Milestone:** v0.3.0 planning - Audio device selection, latch acceleration tuning, modal styling

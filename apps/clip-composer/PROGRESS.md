@@ -21,14 +21,14 @@
 
 **v0.2.0 Sprint (OCC093) Complete!** ✅
 
-Implemented 6 critical UX/functionality enhancements:
+Implemented 6 critical UX fixes:
 
-1. ✅ Multi-tab transport isolation (critical bug fix)
-2. ✅ Real-time color updates for clip buttons
-3. ✅ Ctrl+Opt+Cmd+Click shortcut for Edit Dialog
-4. ✅ STOP OTHERS icon rotation (hexagon → stop sign)
-5. ✅ Icon refinements for clip buttons
-6. ✅ Clip Edit Dialog spacing and Shift nudge bug fix
+1. ✅ Stop Others fade distortion fix (smooth fade-outs, no zigzag)
+2. ✅ 75fps button state tracking (real-time visual sync)
+3. ✅ Edit Dialog time counter collision fix (vertical spacing)
+4. ✅ `[` `]` keyboard shortcuts restart playback
+5. ✅ Transport spam fix (single command per action, gap-free seeking)
+6. ✅ Trim point edit laws (playhead constraint enforcement)
 
 **Next Steps:**
 
@@ -58,12 +58,12 @@ Implemented 6 critical UX/functionality enhancements:
 
 **Enhancements:**
 
-- Multi-tab transport isolation (prevents tab interference)
-- Real-time color updates (immediate visual feedback)
-- Enhanced keyboard shortcuts (Edit Dialog access)
-- Improved icon design (better visual clarity)
-- UI polish (spacing, button sizing)
-- Bug fixes (Shift nudge, metadata persistence)
+- Stop Others fade distortion fix (smooth, no zigzag)
+- 75fps button state tracking (real-time visual sync)
+- Edit Dialog time counter collision fix (10px vertical spacing)
+- `[` `]` keyboard shortcuts restart playback (consistent with mouse buttons)
+- Transport spam fix (single command per jog, gap-free seeking via SDK)
+- Trim point edit laws (playhead constraint enforcement on all trim edits)
 
 **Status:** Development complete, pending QA
 
@@ -454,7 +454,7 @@ Implemented 6 critical UX/functionality enhancements:
 **To Resume:**
 
 - Say "Continue with OCC development" or "Pick up where we left off"
-- Reference this file: `apps/clip-composer/.claude/implementation_progress.md`
+- Reference this file: `apps/clip-composer/PROGRESS.md`
 - Check git status from clip-composer directory
 
 **Key Constraints:**
