@@ -50,6 +50,9 @@ public:
     std::string fadeInCurve = "Linear"; // Linear, EqualPower, Exponential
     std::string fadeOutCurve = "Linear";
 
+    // Gain (Feature 5: -30dB to +10dB, default 0dB)
+    double gainDb = 0.0;
+
     // Playback modes
     bool loopEnabled = false;
     bool stopOthersEnabled = false; // Phase 2.1: Stop all other clips when this one plays

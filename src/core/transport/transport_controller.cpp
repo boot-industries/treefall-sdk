@@ -66,10 +66,8 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Check if already playing
-  if (isClipPlaying(handle)) {
-    return SessionGraphError::OK; // Already playing, no-op
-  }
+  // Multi-voice: Always allow starting (audio thread will handle max voice limits)
+  // This enables rapid re-fire for layering same clip over itself
 
   // Post command to audio thread
   size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
@@ -145,20 +143,28 @@ SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
 }
 
 PlaybackState TransportController::getClipState(ClipHandle handle) const {
-  // This is called from UI thread, but we're reading audio thread state
-  // We rely on the fact that checking a clip in the array is atomic enough
-  // for our purposes (worst case: we're one frame behind)
+  // Multi-voice: Check ALL voices for this handle
+  // Return Playing if ANY voice is playing, Stopping if ALL are stopping, Stopped if none found
+
+  bool hasAnyVoice = false;
+  bool allStopping = true;
 
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
-      if (m_activeClips[i].isStopping) {
-        return PlaybackState::Stopping;
+      hasAnyVoice = true;
+      if (!m_activeClips[i].isStopping) {
+        // At least one voice is still playing (not stopping)
+        return PlaybackState::Playing;
       }
-      return PlaybackState::Playing;
+      // This voice is stopping, continue checking others
     }
   }
 
-  return PlaybackState::Stopped;
+  if (hasAnyVoice && allStopping) {
+    return PlaybackState::Stopping; // All voices are stopping
+  }
+
+  return PlaybackState::Stopped; // No voices found
 }
 
 bool TransportController::isClipPlaying(ClipHandle handle) const {
@@ -259,6 +265,9 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         if (clip.reader) {
           clip.reader->seek(trimIn);
         }
+
+        // ORP097 Bug 7 Fix: Mark that clip has looped
+        clip.hasLoopedOnce = true;
       } else {
         // Non-loop mode: skip rendering, will be stopped by post-render check
         continue;
@@ -338,20 +347,24 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         gain *= std::max(0.0f, clip.fadeOutGain); // Use pre-computed fade gain
       }
 
-      // Apply clip fade-in (first N samples from trim IN)
-      int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
-      if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
-        float fadeInPos = static_cast<float>(relativePos) / static_cast<float>(fadeInSampleCount);
-        gain *= calculateFadeGain(fadeInPos, fadeInCurveType);
-      }
+      // ORP097 Bug 7 Fix: Only apply clip fade-in/out on FIRST playthrough (not on loops)
+      // Loops should be seamless with no fade processing at boundaries
+      if (!clip.hasLoopedOnce) {
+        // Apply clip fade-in (first N samples from trim IN)
+        int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
+        if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
+          float fadeInPos = static_cast<float>(relativePos) / static_cast<float>(fadeInSampleCount);
+          gain *= calculateFadeGain(fadeInPos, fadeInCurveType);
+        }
 
-      // Apply clip fade-out (last N samples before trim OUT)
-      int64_t trimmedDuration = trimOut - trimIn;
-      if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
-        int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
-        float fadeOutPos =
-            static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
-        gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
+        // Apply clip fade-out (last N samples before trim OUT)
+        int64_t trimmedDuration = trimOut - trimIn;
+        if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
+          int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
+          float fadeOutPos =
+              static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
+          gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
+        }
       }
 
       // Mix all file channels to mono for routing
@@ -370,6 +383,16 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     // Previously this was at line 341 (before fade loop), causing fade timing to be off by one
     // buffer
     clip.currentSample += static_cast<int64_t>(framesRead);
+  }
+
+  // Multi-voice fix: Advance position for clips WITHOUT readers (test clips, stopped clips)
+  // This ensures fade-outs complete properly even when no audio is being rendered
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    ActiveClip& clip = m_activeClips[i];
+    if (!clip.reader || !clip.reader->isOpen()) {
+      // Clip has no reader - advance position by buffer size so fades can complete
+      clip.currentSample += static_cast<int64_t>(numFrames);
+    }
   }
 
   // Process routing matrix: clips → groups → master output
@@ -418,6 +441,9 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
           clip.reader->seek(trimIn);
         }
         clip.currentSample = trimIn;
+
+        // ORP097 Bug 7 Fix: Mark that clip has looped (prevents fade-in/out on subsequent loops)
+        clip.hasLoopedOnce = true;
 
         // Post loop callback
         postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
@@ -485,21 +511,26 @@ void TransportController::processCommands() {
     const TransportCommand& cmd = m_commands[readIndex];
 
     switch (cmd.type) {
-    case TransportCommand::Type::Start:
+    case TransportCommand::Type::Start: {
+      // Multi-voice: Always add new voice instance (removes oldest if at max capacity)
+      // This allows rapid re-fire to layer same clip over itself (up to MAX_VOICES_PER_CLIP)
       addActiveClip(cmd.handle);
       postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
         if (m_callback) {
           m_callback->onClipStarted(handle, pos);
         }
       });
-      break;
+    } break;
 
     case TransportCommand::Type::Stop: {
-      ActiveClip* clip = findActiveClip(cmd.handle);
-      if (clip) {
-        clip->isStopping = true;
-        clip->fadeOutGain = 1.0f;
-        clip->fadeOutStartPos = clip->currentSample; // Record position when fade-out started
+      // Multi-voice: Stop ALL voice instances for this handle
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle == cmd.handle && !m_activeClips[i].isStopping) {
+          m_activeClips[i].isStopping = true;
+          m_activeClips[i].fadeOutGain = 1.0f;
+          m_activeClips[i].fadeOutStartPos =
+              m_activeClips[i].currentSample; // Record position when fade-out started
+        }
       }
     } break;
 
@@ -524,6 +555,7 @@ void TransportController::processCommands() {
 }
 
 ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
+  // Multi-voice: Returns first matching instance (not necessarily oldest)
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
       return &m_activeClips[i];
@@ -532,9 +564,56 @@ ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
   return nullptr;
 }
 
+size_t TransportController::countActiveVoices(ClipHandle handle) const {
+  size_t count = 0;
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    if (m_activeClips[i].handle == handle) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+ActiveClip* TransportController::findOldestVoice(ClipHandle handle) {
+  ActiveClip* oldest = nullptr;
+  int64_t oldestStartSample = INT64_MAX;
+
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    if (m_activeClips[i].handle == handle) {
+      // Find voice with earliest start time (oldest)
+      if (m_activeClips[i].startSample < oldestStartSample) {
+        oldestStartSample = m_activeClips[i].startSample;
+        oldest = &m_activeClips[i];
+      }
+    }
+  }
+
+  return oldest;
+}
+
 void TransportController::addActiveClip(ClipHandle handle) {
+  // Multi-voice: Check if we need to remove oldest voice to make room
+  size_t currentVoiceCount = countActiveVoices(handle);
+  if (currentVoiceCount >= MAX_VOICES_PER_CLIP) {
+    // At max capacity - remove oldest voice instance for this clip
+    ActiveClip* oldest = findOldestVoice(handle);
+    if (oldest) {
+      uint32_t oldestVoiceId = oldest->voiceId;
+
+      // Post callback that voice was stopped (for UI tracking)
+      // Note: Callback reports handle, not specific voiceId (UI tracks per-handle, not per-voice)
+      postCallback([this, handle, pos = getCurrentPosition()]() {
+        if (m_callback) {
+          m_callback->onClipStopped(handle, pos);
+        }
+      });
+
+      removeActiveVoice(oldestVoiceId);
+    }
+  }
+
   if (m_activeClipCount >= MAX_ACTIVE_CLIPS) {
-    // TODO: Report error (too many active clips)
+    // TODO: Report error (too many active clips globally)
     return;
   }
 
@@ -605,6 +684,7 @@ void TransportController::addActiveClip(ClipHandle handle) {
   // Initialize clip with persistent metadata from storage
   ActiveClip& clip = m_activeClips[m_activeClipCount++];
   clip.handle = handle;
+  clip.voiceId = m_nextVoiceId++; // Multi-voice: Assign unique voice ID
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
   clip.currentSample =
       trimInSamples; // CRITICAL: Start from IN point (Clip Edit Law #1: Playback MUST >= IN)
@@ -643,6 +723,9 @@ void TransportController::addActiveClip(ClipHandle handle) {
   clip.isRestarting = false;
   clip.restartFadeFramesRemaining = 0;
 
+  // ORP097 Bug 7 Fix: Initialize loop state (start with false - first playthrough gets fades)
+  clip.hasLoopedOnce = false;
+
   // Seek to trim IN point once when starting (ALWAYS seek, even if trim is 0!)
   if (reader) {
     int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
@@ -650,9 +733,9 @@ void TransportController::addActiveClip(ClipHandle handle) {
   }
 }
 
-void TransportController::removeActiveClip(ClipHandle handle) {
+void TransportController::removeActiveVoice(uint32_t voiceId) {
   for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
+    if (m_activeClips[i].voiceId == voiceId) {
       // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
       // can't be copied)
       if (i < m_activeClipCount - 1) {
@@ -660,6 +743,7 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         ActiveClip& src = m_activeClips[m_activeClipCount - 1];
 
         dest.handle = src.handle;
+        dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
@@ -686,7 +770,56 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         dest.fadeOutStartPos = src.fadeOutStartPos;
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
-        dest.reader = src.reader; // Copy shared_ptr (atomic refcount increment)
+        dest.hasLoopedOnce = src.hasLoopedOnce;
+        dest.reader = src.reader;
+        dest.numChannels = src.numChannels;
+      }
+      --m_activeClipCount;
+      return;
+    }
+  }
+}
+
+void TransportController::removeActiveClip(ClipHandle handle) {
+  // Multi-voice: This removes FIRST instance found (deprecated - use removeActiveVoice)
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    if (m_activeClips[i].handle == handle) {
+      // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
+      // can't be copied)
+      if (i < m_activeClipCount - 1) {
+        ActiveClip& dest = m_activeClips[i];
+        ActiveClip& src = m_activeClips[m_activeClipCount - 1];
+
+        dest.handle = src.handle;
+        dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startSample = src.startSample;
+        dest.currentSample = src.currentSample;
+        dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
+        dest.trimOutSamples.store(src.trimOutSamples.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
+        dest.fadeInSeconds.store(src.fadeInSeconds.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
+        dest.fadeOutSeconds.store(src.fadeOutSeconds.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
+        dest.fadeInCurve.store(src.fadeInCurve.load(std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+        dest.fadeOutCurve.store(src.fadeOutCurve.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+        dest.fadeInSamples.store(src.fadeInSamples.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
+        dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
+        dest.gainDb.store(src.gainDb.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+        dest.fadeOutGain = src.fadeOutGain;
+        dest.isStopping = src.isStopping;
+        dest.fadeOutStartPos = src.fadeOutStartPos;
+        dest.isRestarting = src.isRestarting;
+        dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
+        dest.hasLoopedOnce = src.hasLoopedOnce; // ORP097 Bug 7 Fix
+        dest.reader = src.reader;               // Copy shared_ptr (atomic refcount increment)
         dest.numChannels = src.numChannels;
       }
       --m_activeClipCount;
@@ -978,16 +1111,23 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
 }
 
 int64_t TransportController::getClipPosition(ClipHandle handle) const {
-  // Thread-safe query from any thread
-  // Audio thread writes currentSample, UI thread reads (relaxed ordering is safe for progress
-  // queries)
+  // Multi-voice: Return position of newest voice (most recently started)
+  // This provides the most relevant position for UI display (latest click)
+
+  int64_t newestPosition = -1;
+  int64_t newestStartSample = INT64_MIN;
+
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
-      return m_activeClips[i].currentSample; // Returns position relative to file start
+      // Find voice with latest start time (newest)
+      if (m_activeClips[i].startSample > newestStartSample) {
+        newestStartSample = m_activeClips[i].startSample;
+        newestPosition = m_activeClips[i].currentSample;
+      }
     }
   }
 
-  return -1; // Clip not playing
+  return newestPosition; // Returns -1 if no voices found
 }
 
 SessionGraphError TransportController::setClipStopOthersMode(ClipHandle handle, bool enabled) {
@@ -1178,6 +1318,9 @@ bool TransportController::isClipLooping(ClipHandle handle) const {
 }
 
 SessionGraphError TransportController::restartClip(ClipHandle handle) {
+  // Multi-voice: Restart ALL voices for this handle back to trim IN point
+  // Consistent with stopClip() which stops all voices
+
   // Validate handle
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
@@ -1192,39 +1335,45 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
     }
   }
 
-  // Find active clip (if playing)
-  ActiveClip* activeClip = nullptr;
+  // Find all active voices for this handle
+  bool foundAnyVoice = false;
+  int64_t trimIn = 0;
+
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
-      activeClip = &m_activeClips[i];
-      break;
+      foundAnyVoice = true;
+      ActiveClip& clip = m_activeClips[i];
+
+      // CRITICAL: Broadcast-safe restart with crossfade (eliminates clicks)
+      // Reset position to trim IN point (sample-accurate, atomic)
+      trimIn = clip.trimInSamples.load(std::memory_order_acquire);
+      clip.currentSample = trimIn;
+
+      // Reset reader to trim IN point (seek operation)
+      if (clip.reader) {
+        clip.reader->seek(trimIn);
+      }
+
+      // Enable restart crossfade (5ms fade-in to eliminate clicks)
+      // The audio thread will apply a linear fade-in over the next N samples
+      clip.isRestarting = true;
+      clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
+
+      // Cancel any fade-out in progress
+      clip.isStopping = false;
+      clip.fadeOutGain = 1.0f;
+
+      // Reset loop state for fade re-application
+      clip.hasLoopedOnce = false;
     }
   }
 
-  if (activeClip == nullptr) {
-    // Clip not playing - just start it normally
+  if (!foundAnyVoice) {
+    // No voices playing - start clip normally
     return startClip(handle);
   }
 
-  // CRITICAL: Broadcast-safe restart with crossfade (eliminates clicks)
-  // Reset position to trim IN point (sample-accurate, atomic)
-  int64_t trimIn = activeClip->trimInSamples.load(std::memory_order_acquire);
-  activeClip->currentSample = trimIn;
-
-  // Reset reader to trim IN point (seek operation)
-  if (activeClip->reader) {
-    activeClip->reader->seek(trimIn);
-  }
-
-  // Enable restart crossfade (5ms fade-in to eliminate clicks)
-  // The audio thread will apply a linear fade-in over the next N samples
-  activeClip->isRestarting = true;
-  activeClip->restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
-
-  // Reset fade-in state (apply fade-in from metadata)
-  // Note: We don't modify isStopping or fadeOutGain - clip continues playing
-
-  // Post callback to UI thread
+  // Post callback to UI thread (use trimIn from last voice)
   postCallback([this, handle, trimIn]() {
     if (m_callback) {
       TransportPosition pos;
@@ -1239,6 +1388,9 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
 }
 
 SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t position) {
+  // Multi-voice: Seek ALL voices for this handle to the same position
+  // Consistent with stopClip() and restartClip() which affect all voices
+
   // Validate handle
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
@@ -1255,29 +1407,29 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     fileLength = it->second.metadata.duration_samples;
   }
 
-  // Find active clip (can only seek while playing)
-  ActiveClip* activeClip = nullptr;
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      activeClip = &m_activeClips[i];
-      break;
-    }
-  }
-
-  if (activeClip == nullptr) {
-    // Clip not playing - cannot seek
-    return SessionGraphError::NotReady;
-  }
-
   // Clamp position to file bounds [0, fileLength]
   int64_t clampedPosition = std::clamp(position, int64_t(0), fileLength);
 
-  // Atomic position update (sample-accurate)
-  activeClip->currentSample = clampedPosition;
+  // Find all active voices for this handle and seek them
+  bool foundAnyVoice = false;
+  for (size_t i = 0; i < m_activeClipCount; ++i) {
+    if (m_activeClips[i].handle == handle) {
+      foundAnyVoice = true;
+      ActiveClip& clip = m_activeClips[i];
 
-  // Seek reader to new position
-  if (activeClip->reader) {
-    activeClip->reader->seek(clampedPosition);
+      // Atomic position update (sample-accurate)
+      clip.currentSample = clampedPosition;
+
+      // Seek reader to new position
+      if (clip.reader) {
+        clip.reader->seek(clampedPosition);
+      }
+    }
+  }
+
+  if (!foundAnyVoice) {
+    // No voices playing - cannot seek
+    return SessionGraphError::NotReady;
   }
 
   // Post seek callback to UI thread

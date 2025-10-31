@@ -74,11 +74,26 @@ public:
     return m_buttonIndex;
   }
 
+  // Tab management (for consecutive numbering across tabs - Feature 4)
+  void setTabIndex(int tabIndex) {
+    m_tabIndex = tabIndex;
+    repaint();
+  }
+  int getTabIndex() const {
+    return m_tabIndex;
+  }
+
+  // Get display number (consecutive across all tabs)
+  // Tab 1 = 1-48, Tab 2 = 49-96, Tab 3 = 97-144, etc.
+  int getDisplayNumber() const {
+    return (m_tabIndex * 48) + m_buttonIndex + 1;
+  }
+
   //==============================================================================
   // Callbacks
   std::function<void(int buttonIndex)> onClick;
   std::function<void(int buttonIndex)> onRightClick;
-  std::function<void(int buttonIndex)> onDoubleClick;
+  std::function<void(int buttonIndex)> onEditDialogRequested; // Ctrl+Opt+Cmd+Click shortcut
   std::function<void(int sourceButtonIndex, int targetButtonIndex)> onDragToButton;
 
   //==============================================================================
@@ -97,6 +112,7 @@ private:
 
   //==============================================================================
   int m_buttonIndex;
+  int m_tabIndex = 0; // Current tab index (for consecutive numbering - Feature 4)
   State m_state = State::Empty;
   juce::String m_clipName;
   juce::Colour m_clipColor = juce::Colours::darkgrey;
