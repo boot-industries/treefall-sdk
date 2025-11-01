@@ -8,7 +8,7 @@ namespace orpheus {
 
 AudioFileReaderLibsndfile::AudioFileReaderLibsndfile() : m_file(nullptr) {
   std::memset(&m_info, 0, sizeof(m_info));
-  std::memset(&m_metadata, 0, sizeof(m_metadata));
+  // m_metadata is default-initialized (contains std::string, cannot use memset)
 }
 
 AudioFileReaderLibsndfile::~AudioFileReaderLibsndfile() {
