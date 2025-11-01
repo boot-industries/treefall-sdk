@@ -88,6 +88,7 @@ jobs:
             -G "${{ matrix.generator }}" \
             ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE_TOOLCHAIN_FILE={0}', env.CMAKE_TOOLCHAIN_FILE) || '' }} \
             ${{ matrix.build_type == 'Debug' && matrix.sanitizers == 'ON' && '-DORP_ENABLE_SANITIZERS=ON' || '' }}
+        shell: bash
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
