@@ -49,6 +49,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(WIN32)
   set(CMAKE_THREAD_PREFER_PTHREAD OFF)
   set(THREADS_PREFER_PTHREAD_FLAG OFF)
+  # Suppress CRT secure warnings for standard C functions
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
 find_package(Threads REQUIRED)
