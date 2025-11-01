@@ -856,6 +856,12 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
 
   // Create audio file reader (convert unique_ptr to shared_ptr for thread-safe lifetime)
   auto uniqueReader = createAudioFileReader();
+
+  // Check if audio file reader is available (may be nullptr if libsndfile not installed)
+  if (!uniqueReader) {
+    return SessionGraphError::NotReady; // Audio file reading not available
+  }
+
   auto result = uniqueReader->open(file_path);
 
   if (!result.isOk()) {
