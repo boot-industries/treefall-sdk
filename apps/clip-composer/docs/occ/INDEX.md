@@ -1,7 +1,7 @@
 # OCC Documentation Index
 
 **Prefix:** OCC (Orpheus Clip Composer)
-**Next Available Number:** OCC104
+**Next Available Number:** OCC105
 
 ## Active Documentation
 
@@ -24,7 +24,7 @@ Current, frequently-referenced documents:
 
 ### Recent Sprints & Releases
 
-- [OCC102](./OCC102.md) — v0.2.0 Release & v0.2.1 Planning Track
+- [OCC104](./OCC104%20v021%20Sprint%20Plan.md) — v0.2.1 Sprint Plan (12 sprints, 6 weeks)
 - [OCC103](./OCC103%20QA%20v020%20Results.md) — QA Test Results for v0.2.0
 - [OCC093](./OCC093%20v020%20Sprint%20-%20Completion%20Report.md) — v0.2.0 Sprint Completion Report (6 UX fixes)
 - [OCC094](./OCC094.md) — Clip Edit Dialog Layout Redesign
