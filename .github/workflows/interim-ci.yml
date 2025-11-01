@@ -36,7 +36,6 @@ jobs:
       - name: Install libsndfile (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install pkgconfiglite
           vcpkg install libsndfile:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
         shell: bash
@@ -90,7 +89,6 @@ jobs:
       - name: Install libsndfile (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install pkgconfiglite
           vcpkg install libsndfile:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
         shell: bash
