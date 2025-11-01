@@ -215,10 +215,6 @@ private:
   std::atomic<underlying_type> storage_;
 };
 
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
-
 /**
  * @brief Oscillator waveforms.
  */
@@ -468,5 +464,9 @@ private:
   AtomicBool phase_sync_pending_{false};
   AtomicDouble requested_phase_;
 };
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 } // namespace orpheus::dsp
