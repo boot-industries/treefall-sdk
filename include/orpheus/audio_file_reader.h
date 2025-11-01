@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <orpheus/transport_controller.h> // For SessionGraphError
+#include <stdexcept>
 #include <string>
 
 namespace orpheus {
