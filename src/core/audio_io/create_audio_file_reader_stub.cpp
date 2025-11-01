@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
-#include <memory>
+#include <orpheus/audio_file_reader.h>
 
 namespace orpheus {
-
-// Forward-declare interface to avoid header dependency
-struct IAudioFileReader;
 
 // Fallback factory implementation when libsndfile is not available
 // This ensures the symbol exists for linking even when SNDFILE_FOUND is false
@@ -13,7 +10,7 @@ struct IAudioFileReader;
 std::unique_ptr<IAudioFileReader> createAudioFileReader() {
   // Return nullptr to indicate audio file reading is not available
   // Callers should check for nullptr before using
-  return std::unique_ptr<IAudioFileReader>(nullptr);
+  return nullptr;
 }
 
 } // namespace orpheus
