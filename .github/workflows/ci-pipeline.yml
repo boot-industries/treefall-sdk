@@ -51,6 +51,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install libsndfile (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+
+      - name: Install libsndfile (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install libsndfile
+
+      - name: Install libsndfile (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install pkgconfiglite
+          vcpkg install libsndfile:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+        shell: bash
+
       - name: Install CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
@@ -70,6 +86,7 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -G "${{ matrix.generator }}" \
+            ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE_TOOLCHAIN_FILE={0}', env.CMAKE_TOOLCHAIN_FILE) || '' }} \
             ${{ matrix.build_type == 'Debug' && matrix.sanitizers == 'ON' && '-DORP_ENABLE_SANITIZERS=ON' || '' }}
 
       - name: Build
@@ -216,6 +233,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install libsndfile (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+
+      - name: Install libsndfile (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install libsndfile
+
+      - name: Install libsndfile (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install pkgconfiglite
+          vcpkg install libsndfile:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+        shell: bash
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -256,7 +289,11 @@ jobs:
       - name: Build C++ SDK (if not cached)
         run: |
           if [ ! -d "build-release" ]; then
-            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON
+            TOOLCHAIN_ARG=""
+            if [ -n "${CMAKE_TOOLCHAIN_FILE:-}" ]; then
+              TOOLCHAIN_ARG="-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE"
+            fi
+            cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DORPHEUS_ENABLE_REALTIME=ON $TOOLCHAIN_ARG
             cmake --build build-release --parallel
           fi
         shell: bash
