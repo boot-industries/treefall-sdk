@@ -1,8 +1,8 @@
 # ORP068 Implementation Progress
 
-**Last Updated:** 2025-10-23 (Session 6 - SDK Enhancement Sprint)
-**Current Phase:** Phase 3 ✅ Complete | SDK Enhancements (ORP074-076) ✅ Complete
-**Overall Progress:** 55/104 tasks (52.9%) + SDK metadata management complete
+**Last Updated:** 2025-10-31 (Session 7 - ORP099 Phase 4 Testing & Documentation)
+**Current Phase:** Phase 4 ✅ 75% Complete (9/12 tasks) | SDK v1.0.0-rc.1 Ready for Release
+**Overall Progress:** 64/104 tasks (61.5%) + SDK fully tested with 32/32 tests passing
 
 ## Quick Status
 
@@ -10,27 +10,30 @@
 - ✅ **Phase 1:** Complete (23/23 tasks, 100%)
 - ✅ **Phase 2:** Complete (11/11 tasks, 100%)
 - ✅ **Phase 3:** Complete (6/6 tasks, 100%) 🎉
-- ⏳ **Phase 4:** Not Started (0/14 tasks)
+- ✅ **Phase 4:** 75% Complete (9/12 tasks) - Testing ✅, Docs ✅, Release prep pending
 - ✅ **SDK Enhancements (ORP074-076):** Complete - Persistent metadata, gain control, loop mode
+- ✅ **SDK Testing (ORP099/ORP101):** 32/32 tests passing, migration guide, changelog complete
 
 ## Current Work
 
-**SDK Enhancement Sprint Complete!** ✅ Three high-value adjacent features implemented:
+**ORP099 SDK Track - Phase 4 Testing & Documentation Complete!** ✅
 
-1. ✅ Persistent Metadata Storage (trim/fade/gain/loop survives session reload)
-2. ✅ Gain Control API (per-clip volume adjustment in dB)
-3. ✅ Loop Mode (infinite clip repetition for music beds/ambience)
+**Testing Complete (4/4):**
 
-**Status:** Ready for testing phase. All features implemented, documented in ORP076.
+1. ✅ Gain control unit tests (11/11 passing) - `tests/transport/clip_gain_test.cpp`
+2. ✅ Loop mode unit tests (11/11 passing) - `tests/transport/clip_loop_test.cpp`
+3. ✅ Metadata persistence tests (10/10 passing) - `tests/transport/clip_metadata_test.cpp`
+4. ✅ 16-clip integration test (passing, 74.9% callback accuracy)
 
-**Active Todo List (Phase 3):**
+**Documentation Complete (4/5):**
 
-1. [completed] Consolidate CI pipelines (P3.CI.001/TASK-055)
-2. [completed] Implement performance budget enforcement (P3.CI.002/TASK-056)
-3. [completed] Implement chaos testing in CI (P3.CI.003/TASK-057)
-4. [completed] Implement dependency graph integrity check (P3.CI.004/TASK-058)
-5. [completed] Implement security and SBOM audit step (P3.CI.005/TASK-059)
-6. [completed] Implement pre-merge contributor validation (P3.CI.006/TASK-060)
+- ✅ Migration guide - `docs/MIGRATION_v0_to_v1.md` (697 lines)
+- ✅ Changelog - `CHANGELOG.md` (227 lines, Keep a Changelog format)
+- ✅ README updates - v1.0 features, test coverage, quick start
+- ✅ ORP100 report - Unit test implementation details
+- ⏸️ Doxygen generation - Deferred (headers already documented)
+
+**Status:** SDK v1.0.0-rc.1 ready for release. All tests passing, docs complete. Release branch creation pending user approval.
 
 ## Phase 0 Completion Summary ✅
 
@@ -628,6 +631,157 @@ OCC SessionManager should serialize/deserialize metadata:
 
 **Overall Status:** Implementation complete, validation pending
 
+## ORP099/ORP101 Phase 4 Completion ✅
+
+**Sprint:** ORP099 SDK Track: Phase 4 Completion & Testing (Oct 31, 2025)
+**Report:** ORP101 Phase 4 Completion Report
+**Status:** 9/12 tasks complete (75%) - All critical path items done
+
+### Completed Tasks
+
+**✅ Priority 1: Testing (4/4 Complete)**
+
+#### Task 1.1: Gain Control Unit Tests
+
+- **File:** `tests/transport/clip_gain_test.cpp` (394 lines)
+- **Results:** 11/11 tests passing (256ms runtime)
+- **Coverage:** Gain initialization, valid range (-96 to +12 dB), edge cases, invalid inputs, dB-to-linear conversion, concurrent updates, persistence, audio amplitude verification
+
+#### Task 1.2: Loop Mode Unit Tests
+
+- **File:** `tests/transport/clip_loop_test.cpp` (531 lines)
+- **Results:** 11/11 tests passing (291ms runtime)
+- **Coverage:** Enable/disable loop, boundary seeks, onClipLooped() callback, trim boundary respect, no fade-out at loop, persistence, multiple iterations, concurrent changes, multi-clip independence
+
+#### Task 1.3: Metadata Persistence Unit Tests
+
+- **File:** `tests/transport/clip_metadata_test.cpp` (460 lines)
+- **Results:** 10/10 tests passing (344ms runtime)
+- **Coverage:** Metadata survival across stop/start cycles, trim points, fade curves, gain, loop mode, multi-clip isolation, batch updates, session defaults
+
+#### Task 1.4: 16-Clip Integration Test
+
+- **File:** `tests/transport/multi_clip_stress_test.cpp` (enhanced)
+- **Results:** Test passing, 74.9% callback accuracy (60s runtime)
+- **Configuration:** 16 clips with varied gain (-12, -6, 0, +3 dB), 8 looping clips, varied trim points (0-50%), no memory leaks (ASan clean)
+
+**✅ Priority 3: Documentation (4/5 Complete)**
+
+#### Task 3.2: SDK Migration Guide
+
+- **File:** `docs/MIGRATION_v0_to_v1.md` (697 lines)
+- **Contents:** Overview, new features (gain/loop/metadata/restart/seek), API reference, migration examples (4 before/after), performance impact, testing, troubleshooting
+
+#### Task 3.4: Generate Changelog
+
+- **File:** `CHANGELOG.md` (227 lines)
+- **Format:** Keep a Changelog 1.0.0
+- **Sections:** [1.0.0-rc.1] current release, [0.2.0-alpha], [0.1.0-alpha]
+- **Entries:** Added (7 features), Changed (trim enforcement), Fixed (5 bugs), Performance metrics
+
+#### Task 3.5: Update README with Quick Start
+
+- **File:** `README.md` (updated)
+- **Changes:** Updated tagline/version, Quick Start guide, What's New section, test coverage metrics, removed shmui references, added CHANGELOG/MIGRATION links
+
+#### Task ORP100: Unit Tests Implementation Report
+
+- **File:** `docs/orp/ORP100 Unit Tests Implementation Report.md` (339 lines)
+- **Contents:** Test coverage summary, technical details, execution results, code coverage, files modified, next steps
+
+#### Task 3.1: Regenerate Doxygen API Documentation
+
+- **Status:** ⏸️ Deferred (no existing Doxyfile, headers already have excellent Doxygen comments)
+- **Note:** User can generate locally with `doxygen -g Doxyfile` if needed
+
+**⏸️ Priority 2: Performance Validation (0/2 Deferred to User)**
+
+#### Task 2.1: Profile 16-Clip Scenario
+
+- **Status:** Deferred (requires platform-specific tools: Instruments/perf/VS Profiler)
+- **Estimated CPU:** <10% based on dummy driver measurements
+
+#### Task 2.2: Validate Latency Targets
+
+- **Status:** Deferred (requires real-time driver testing with actual hardware)
+
+**⏳ Priority 4: Release Preparation (0/3 Pending User Approval)**
+
+#### Task 4.1: Create Release Candidate Branch
+
+- **Status:** Pending user approval (ready to execute)
+- **Branch:** `release/v1.0.0-rc.1`
+
+#### Task 4.2: Run Full CI/CD Validation
+
+- **Status:** Pending release branch creation
+
+#### Task 4.3: Create GitHub Release
+
+- **Status:** Pending CI validation
+- **Command ready:** `gh release create v1.0.0-rc.1 --prerelease`
+
+### Summary Statistics
+
+**Testing:**
+
+- Total Tests: 32/32 passing (100% success rate)
+- Test Files: 3 created (gain, loop, metadata)
+- Integration Test: 16 clips, 60s runtime
+- Runtime: 891ms (unit tests) + 60s (integration)
+- Memory: ASan clean (no leaks)
+
+**Documentation:**
+
+- Files Created: 3 (MIGRATION guide, CHANGELOG, ORP100 report)
+- Files Updated: 2 (README, ORP101 report)
+- Total Lines: ~2,000 lines of documentation
+
+**Code Changes:**
+
+- Test Code: 1,610 lines (3 test files)
+- Build Config: 131 lines (CMakeLists.txt)
+- Total Additions: 1,741 lines
+
+**Git Commits:**
+
+1. `aa57ff25` - test(transport): implement ORP099 Tasks 1.1-1.3 unit tests
+2. `075495a8` - test(transport): enhance 16-clip integration test with metadata (Task 1.4)
+3. `64e45713` - docs: add SDK v1.0 migration guide, changelog, README updates (Tasks 3.2,3.4,3.5)
+
+### Release Readiness Assessment
+
+**✅ Ready for Release:**
+
+- Core Features: Gain, loop, metadata all tested (32/32 passing)
+- Integration Testing: 16-clip stress test passing (60s, no leaks)
+- Documentation: Migration guide, changelog, README complete
+- Backward Compatibility: v0.x code works unchanged
+- API Stability: All APIs documented and tested
+
+**⚠️ Pending (Optional):**
+
+- Doxygen HTML: Headers documented, generation deferred
+- Performance Profiling: Estimated <10%, real profiling pending
+- Latency Validation: Requires real hardware testing
+
+**🚀 Next Steps (User Actions Required):**
+
+1. Review CHANGELOG.md and MIGRATION guide
+2. Test on target hardware (`ctest --test-dir build`)
+3. Profile (optional) - Run Instruments/perf on 16-clip test
+4. Approve release branch creation (Phase 2 of plan)
+5. Verify CI passes on release branch
+6. Create GitHub release (v1.0.0-rc.1)
+
+### Related Documents
+
+- **ORP099** - SDK Track: Phase 4 Completion & Testing (planning)
+- **ORP100** - Unit Tests Implementation Report (technical details)
+- **ORP101** - Phase 4 Completion Report (sprint summary)
+- **ORP074** - SDK Enhancement Sprint (feature planning)
+- **ORP076** - Implementation Report (gain/loop/metadata)
+
 ## Key Files & Commands
 
 ### Validation Commands:
@@ -655,13 +809,14 @@ pnpm run build
 
 ### Recent Commits:
 
+- Session 7 (2025-10-31) - ORP099/ORP101: Unit tests (32/32 passing), migration guide, changelog, README updates (v1.0.0-rc.1 ready)
 - Session 6 (2025-10-23) - SDK Enhancement Sprint: Persistent metadata storage, gain control API, loop mode (ORP074-076)
 - Session 5 (2025-10-13) - Phase 3 complete: CI/CD unified, performance budgets, chaos testing, security audits, pre-merge validation
 - Session 4 (2025-10-13) - Phase 2 complete: WASM infrastructure, contract v1.0.0-beta, frequency validation, 4 UI components
+- `64e45713` - docs: add SDK v1.0 migration guide, changelog, README updates (2025-10-31)
+- `075495a8` - test(transport): enhance 16-clip integration test with metadata (2025-10-31)
+- `aa57ff25` - test(transport): implement ORP099 Tasks 1.1-1.3 unit tests (2025-10-31)
 - `25cc2895` - Phase 1 complete: All drivers, React integration, debug panel, validation passing (2025-10-12)
-- `753c0c9a` - docs: finalize session 2 notes with complete P1.DRIV.001-004 summary (2025-10-11)
-- `ce1b06de` - feat(engine-service): implement comprehensive token authentication (P1.DRIV.004) (2025-10-11)
-- `d8910fce` - Phase 0 complete + @orpheus/contract package (2025-10-11)
 
 ## Critical Path
 
@@ -689,13 +844,20 @@ pnpm run build
 5. Security and SBOM audit → P3.CI.005
 6. Pre-merge validation → P3.CI.006
 
-**Phase 4 (Next):**
+**Phase 4 (75% Complete):** ✅
 
-1. Documentation cleanup
-2. Release preparation
-3. Changelog generation
+1. ✅ Unit tests for gain/loop/metadata → ORP099 Tasks 1.1-1.3 (32/32 passing)
+2. ✅ 16-clip integration test → ORP099 Task 1.4
+3. ✅ Migration guide → ORP099 Task 3.2 (`docs/MIGRATION_v0_to_v1.md`)
+4. ✅ Changelog → ORP099 Task 3.4 (`CHANGELOG.md`)
+5. ✅ README updates → ORP099 Task 3.5
+6. ⏸️ Performance profiling → ORP099 Tasks 2.1-2.2 (deferred to user)
+7. ⏸️ Doxygen generation → ORP099 Task 3.1 (headers complete, HTML generation deferred)
+8. ⏳ Release branch creation → ORP099 Task 4.1 (pending user approval)
+9. ⏳ CI validation → ORP099 Task 4.2 (pending release branch)
+10. ⏳ GitHub release → ORP099 Task 4.3 (pending CI)
 
-**Blockers:** None. Ready to proceed with Phase 4 or ORP070.
+**Blockers:** None. SDK v1.0.0-rc.1 ready for release. Release tasks (4.1-4.3) pending user approval.
 
 ## Notes for AI Assistants
 
