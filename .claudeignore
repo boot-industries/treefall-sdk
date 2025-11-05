@@ -1,6 +1,10 @@
+# Terminal logs (token waste)
+terminal-logs/
+
 # Archive directories
 docs/*/archive/
 .claude/archive/
+archive/
 
 # Dependencies
 node_modules/
