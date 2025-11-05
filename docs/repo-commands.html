@@ -222,7 +222,7 @@
     <div class="container">
         <h1>Orpheus SDK - Command Reference</h1>
         <p class="subtitle">Quick reference for common development tasks</p>
-        <p class="last-updated">Last updated: 2025-10-31</p>
+        <p class="last-updated">Last updated: 2025-11-03</p>
         </div>
 
         <div class="warning">
@@ -266,12 +266,22 @@
                 <tr class="section-row" data-section="build">
                     <td class="job">Build Clip Composer</td>
                     <td><code class="command">cmake --build build --target orpheus_clip_composer_app</code></td>
-                    <td class="description">Build only the Clip Composer application</td>
+                    <td class="description">Build only the Clip Composer application (Debug)</td>
+                </tr>
+                <tr class="section-row" data-section="build">
+                    <td class="job">Build Clip Composer (Release)</td>
+                    <td><code class="command">cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release --target orpheus_clip_composer_app</code></td>
+                    <td class="description">Build optimized Release version of Clip Composer</td>
                 </tr>
                 <tr class="section-row" data-section="build">
                     <td class="job">Clean build</td>
                     <td><code class="command">rm -rf build && cmake -S . -B build && cmake --build build</code></td>
                     <td class="description">Full clean rebuild (use when build is corrupted)</td>
+                </tr>
+                <tr class="section-row" data-section="build">
+                    <td class="job">Clean build Clip Composer</td>
+                    <td><code class="command">rm -rf build/apps/clip-composer && cmake --build build --target orpheus_clip_composer_app</code></td>
+                    <td class="description">Clean rebuild only Clip Composer (preserves SDK build)</td>
                 </tr>
 
                 <!-- Test Commands -->
@@ -293,6 +303,16 @@
                     <td><code class="command">ctest --test-dir build -R TestName --output-on-failure</code></td>
                     <td class="description">Run only tests matching TestName pattern</td>
                 </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run Clip Composer tests</td>
+                    <td><code class="command">ctest --test-dir build -R ClipComposer --output-on-failure</code></td>
+                    <td class="description">Run only Clip Composer-specific tests</td>
+                </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run OCC integration tests</td>
+                    <td><code class="command">ctest --test-dir build -R OCC_Integration --output-on-failure</code></td>
+                    <td class="description">Run OCC integration tests with SDK</td>
+                </tr>
 
                 <!-- Run Commands -->
                 <tr class="section-header collapsed" data-section="run" tabindex="0">
@@ -304,9 +324,64 @@
                     <td class="description">Launch Clip Composer (macOS Debug build)</td>
                 </tr>
                 <tr class="section-row hidden" data-section="run">
+                    <td class="job">Run Clip Composer (Release)</td>
+                    <td><code class="command">open build-release/apps/clip-composer/orpheus_clip_composer_app_artefacts/Release/OrpheusClipComposer.app</code></td>
+                    <td class="description">Launch Clip Composer (macOS Release build)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="run">
                     <td class="job">Relaunch Clip Composer (clean)</td>
                     <td><code class="command">./scripts/relaunch-occ.sh</code></td>
-                    <td class="description">Clear cache, rebuild, and relaunch Clip Composer (development workflow)</td>
+                    <td class="description">Clear cache, rebuild, and relaunch Clip Composer (recommended development workflow)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="run">
+                    <td class="job">Start OCC instance</td>
+                    <td><code class="command">cd ~/dev/orpheus-sdk/apps/clip-composer && claude-code</code></td>
+                    <td class="description">Start isolated Claude Code instance for OCC development</td>
+                </tr>
+
+                <!-- Clip Composer Workflow -->
+                <tr class="section-header collapsed" data-section="occ" tabindex="0">
+                    <td colspan="3">Clip Composer (OCC) Workflow</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">Full OCC rebuild & launch</td>
+                    <td><code class="command">./scripts/relaunch-occ.sh</code></td>
+                    <td class="description">Recommended workflow: clean, rebuild, launch OCC</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">Quick OCC rebuild</td>
+                    <td><code class="command">cmake --build build --target orpheus_clip_composer_app && open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app</code></td>
+                    <td class="description">Fast rebuild and launch (no cache clear)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">View OCC logs</td>
+                    <td><code class="command">tail -f ~/Library/Logs/OrpheusClipComposer/*.log</code></td>
+                    <td class="description">Monitor OCC application logs in real-time</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">Clear OCC preferences</td>
+                    <td><code class="command">rm -rf ~/Library/Application\ Support/OrpheusClipComposer/</code></td>
+                    <td class="description">Reset OCC to default settings (removes sessions)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">OCC development instance</td>
+                    <td><code class="command">cd ~/dev/orpheus-sdk/apps/clip-composer && claude-code</code></td>
+                    <td class="description">Start isolated Claude Code instance for OCC work</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">View OCC docs index</td>
+                    <td><code class="command">cat apps/clip-composer/docs/occ/INDEX.md</code></td>
+                    <td class="description">Browse complete OCC documentation catalog</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">Check OCC version</td>
+                    <td><code class="command">grep -A 3 "PROJECT_VERSION" apps/clip-composer/CMakeLists.txt</code></td>
+                    <td class="description">Show current OCC version from CMake config</td>
+                </tr>
+                <tr class="section-row hidden" data-section="occ">
+                    <td class="job">OCC v0.2.0 QA checklist</td>
+                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC104*.md</code></td>
+                    <td class="description">View v0.2.0 sprint plan and QA checklist</td>
                 </tr>
 
                 <!-- Git Commands -->
@@ -369,9 +444,29 @@
                     <td class="description">List all Clip Composer design documents</td>
                 </tr>
                 <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View progress</td>
-                    <td><code class="command">cat apps/clip-composer/PROGRESS.md</code></td>
+                    <td class="job">View OCC progress</td>
+                    <td><code class="command">cat apps/clip-composer/.claude/implementation_progress.md</code></td>
                     <td class="description">View Clip Composer implementation progress</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View OCC architecture</td>
+                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC023*.md</code></td>
+                    <td class="description">View OCC Component Architecture document</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View OCC API contracts</td>
+                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC027*.md</code></td>
+                    <td class="description">View OCC API Contracts and SDK integration</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">List OCC session reports</td>
+                    <td><code class="command">ls -lt apps/clip-composer/docs/occ/OCC*Session*.md | head -5</code></td>
+                    <td class="description">Show 5 most recent OCC session reports</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View OCC README</td>
+                    <td><code class="command">cat apps/clip-composer/CLAUDE.md</code></td>
+                    <td class="description">View Clip Composer development guide</td>
                 </tr>
 
                 <!-- Diagnostics -->
@@ -392,6 +487,26 @@
                     <td class="job">List build targets</td>
                     <td><code class="command">cmake --build build --target help</code></td>
                     <td class="description">Show all available build targets</td>
+                </tr>
+                <tr class="section-row hidden" data-section="diagnostics">
+                    <td class="job">Check OCC build artifacts</td>
+                    <td><code class="command">ls -lh build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/</code></td>
+                    <td class="description">List OCC Debug build artifacts and app bundle</td>
+                </tr>
+                <tr class="section-row hidden" data-section="diagnostics">
+                    <td class="job">Verify OCC app bundle</td>
+                    <td><code class="command">file build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></td>
+                    <td class="description">Check OCC executable type and architecture</td>
+                </tr>
+                <tr class="section-row hidden" data-section="diagnostics">
+                    <td class="job">Check OCC dependencies</td>
+                    <td><code class="command">otool -L build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></td>
+                    <td class="description">List dynamic library dependencies for OCC (macOS)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="diagnostics">
+                    <td class="job">View OCC build log</td>
+                    <td><code class="command">cmake --build build --target orpheus_clip_composer_app 2>&1 | tee occ-build.log</code></td>
+                    <td class="description">Build OCC and save output to log file</td>
                 </tr>
             </tbody>
         </table>

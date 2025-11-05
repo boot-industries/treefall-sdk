@@ -150,13 +150,14 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 ├── cmake/              # CMake helper modules and compiler policies
 ├── docs/               # Architecture, roadmaps, API reference, ORP documents
 ├── include/            # Public C++ headers (install these with your app)
-├── packages/           # Cross-platform TypeScript packages (contract, client, React)
 ├── src/                # Core library implementation (C++20)
 │   ├── core/           # Transport, routing, audio I/O, session
 │   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
-├── tests/              # GoogleTest unit tests (32 tests, 100% passing)
+├── tests/              # GoogleTest unit tests (58 tests, 100% passing)
 └── CHANGELOG.md        # Release notes and version history
 ```
+
+**Note:** TypeScript packages previously in `packages/` have been archived. See [`docs/DECISION_PACKAGES.md`](docs/DECISION_PACKAGES.md) for rationale (C++ SDK focus).
 
 ## Supported Platforms
 
@@ -344,8 +345,7 @@ graph instead of writing audio.
 - **Sanitizers** – AddressSanitizer and UBSan are enabled automatically for
   Debug builds on non-MSVC toolchains.
 - **Formatting & linting** – GitHub Actions runs `clang-format` against the C++
-  sources and executes the workspace linting scripts for TypeScript (see
-  `package.json`). A project-wide `.clang-tidy` configuration is available for
+  sources. A project-wide `.clang-tidy` configuration is available for
   local static analysis, but it is not currently a required CI gate.
 - **Continuous Integration** – GitHub Actions builds and tests the C++ targets
   on Linux, macOS, and Windows, verifies sanitizer builds, and checks for
@@ -433,8 +433,7 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 
 Issues and pull requests are welcome. Please discuss substantial changes in an
 issue before opening a PR so design goals remain aligned. Follow the existing
-code style (`.clang-format`, `.clang-tidy`) and ensure both `ctest` and relevant
-pnpm lint/test scripts pass locally before submitting.
+code style (`.clang-format`, `.clang-tidy`) and ensure `ctest` passes locally before submitting.
 
 ## License
 
