@@ -9,9 +9,10 @@
 
 ## Executive Summary
 
-- **Root Cause:** Incomplete cleanup of TypeScript CI jobs after package archival (2025-11-05)
+- **Root Cause #1:** Incomplete cleanup of TypeScript CI jobs after package archival (2025-11-05)
+- **Root Cause #2:** CMake build cache poisoning (cached builds without libsndfile support)
 - **Affected Platforms:** macOS, Windows, Ubuntu (all platforms on interim-ci.yml workflow)
-- **Fix:** Remove obsolete `interim-ci.yml` workflow, update `package.json`
+- **Fix:** Remove obsolete `interim-ci.yml` workflow, update `package.json`, remove CMake build cache
 - **Status:** Implemented and ready for verification
 
 ---
@@ -63,7 +64,7 @@ CI builds failed on macOS and Windows platforms across multiple PRs over several
    - Line 7-8: `"workspaces": ["packages/*"]` ❌
    - Lines 10-28: Multiple scripts referencing packages ❌
 
-### Root Cause Identified
+### Root Cause #1: Incomplete Package Archival
 
 **The DECISION_PACKAGES.md implementation checklist was incomplete:**
 
@@ -79,6 +80,48 @@ CI builds failed on macOS and Windows platforms across multiple PRs over several
 ```
 
 The critical missing step was **"Removed TypeScript CI jobs from .github/workflows/"**, leaving `interim-ci.yml` attempting to build non-existent packages.
+
+### Root Cause #2: CMake Build Cache Poisoning
+
+**After fixing Root Cause #1, tests still failed with `SessionGraphError::NotReady` (error code 03).**
+
+Investigation revealed:
+
+1. **Test Failure Pattern:**
+   ```
+   Expected equality of these values:
+     regResult
+       Which is: 1-byte object <03>
+     SessionGraphError::OK
+       Which is: 1-byte object <00>
+   Failed to register test clip
+   ```
+
+2. **Error Code 03 = `SessionGraphError::NotReady`**
+   - Returned by `TransportController::registerClipAudio()` when audio file reader creation fails
+   - Line 864-866 in `transport_controller.cpp`:
+     ```cpp
+     // Check if audio file reader is available (may be nullptr if libsndfile not installed)
+     if (!uniqueReader) {
+       return SessionGraphError::NotReady; // Audio file reading not available
+     }
+     ```
+
+3. **Cache Poisoning Mechanism:**
+   - `.github/workflows/ci-pipeline.yml` lines 74-81 cached the entire `build/` directory
+   - Cache key: `${{ runner.os }}-cmake-${{ matrix.build_type }}-${{ hashFiles(...) }}`
+   - **Problem:** Cache key doesn't include dependency state (libsndfile presence)
+   - If cache was created when libsndfile failed to install, it persists even after libsndfile is installed
+   - CMakeCache.txt in cached build contains: `libsndfile: NOT FOUND`
+   - Subsequent builds restore this cached configuration, skipping dependency detection
+
+4. **Why This Happened:**
+   - Libsndfile installation steps run **before** cache restoration
+   - Cache restoration happens **before** CMake configuration
+   - Cached build directory contains stale CMakeCache.txt
+   - CMake skips re-detection when cache is restored (assumes configuration is valid)
+
+**Solution:** Remove CMake build cache entirely to force fresh configuration on every run.
 
 ---
 
@@ -128,7 +171,34 @@ The workflow had 5 jobs:
 **Action:** Deleted entirely
 **Rationale:** Entire workflow was for TypeScript packages (archived 2025-11-05)
 
-#### 2. Updated package.json
+#### 2. Removed CMake Build Cache
+
+**File:** `.github/workflows/ci-pipeline.yml`
+**Lines Removed:** 74-81 (Cache CMake build step)
+**Rationale:** Cache was poisoned with stale libsndfile detection results
+
+**Before:**
+```yaml
+- name: Cache CMake build
+  uses: actions/cache@v4
+  with:
+    path: build
+    key: ${{ runner.os }}-cmake-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.h') }}
+    restore-keys: |
+      ${{ runner.os }}-cmake-${{ matrix.build_type }}-
+      ${{ runner.os }}-cmake-
+```
+
+**After:** (removed - CMake will configure fresh on every run)
+
+**Impact:**
+- ✅ Ensures libsndfile detection runs on every build
+- ✅ Prevents cache poisoning from dependency installation failures
+- ⚠️ Slightly longer CI times (~30s per job, acceptable trade-off for reliability)
+
+**Note:** The `ci.yml` workflow does not have caching and was unaffected.
+
+#### 3. Updated package.json
 
 **File:** `package.json`
 **Changes:**
@@ -263,6 +333,13 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
    - Mark checklist items with commit SHAs when completed
    - Document expected CI impact for major changes
 
+4. **CI Caching Best Practices**
+   - **Don't cache build directories** - cache only immutable artifacts (dependencies, tools)
+   - Cache keys must include dependency state (e.g., hash of installed package versions)
+   - Use cache versioning: `v1-${{ runner.os }}-deps-...` (bump v1→v2 to invalidate)
+   - Prefer rebuilding over cache poisoning - CI time < debugging time
+   - Test cache invalidation during dependency updates
+
 ### Monitoring
 
 **Add to Sprint Review Checklist:**
@@ -321,13 +398,27 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
 
 3. **Infrastructure issues can mask code bugs**
    - Initial assumption: "macOS/Windows infrastructure problem"
-   - Reality: "Workflow referencing deleted code"
+   - Reality: "Workflow referencing deleted code" + "cache poisoning"
    - Always verify assumptions with evidence
 
 4. **Git history is a safety net**
    - interim-ci.yml preserved in git history (can restore if needed)
    - Packages can be restored from git history (see DECISION_PACKAGES.md)
    - Deletion is reversible when git is used properly
+
+5. **Cache poisoning is insidious**
+   - Cached build artifacts can persist stale configuration
+   - CMakeCache.txt contains dependency detection results
+   - Cache keys must reflect ALL inputs (code + dependencies + environment)
+   - When in doubt, don't cache build directories - only dependencies
+   - "Works on my machine" + "Works in fresh container" + "Fails in CI" = cache poisoning
+
+6. **Test failures reveal underlying issues**
+   - 8 tests failing with same error code (NotReady) = systematic problem
+   - Error code 03 led to transport_controller.cpp:865
+   - Which led to libsndfile detection failure
+   - Which led to cache poisoning discovery
+   - Follow the error codes, not assumptions
 
 ---
 
