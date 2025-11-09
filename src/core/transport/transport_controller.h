@@ -50,7 +50,8 @@ struct ActiveClip {
   std::atomic<int64_t> fadeOutSamples{0};
 
   // Gain control (atomic for thread safety)
-  std::atomic<float> gainDb{0.0f}; // Gain in decibels (0.0 = unity)
+  std::atomic<float> gainDb{0.0f};     // Gain in decibels (0.0 = unity)
+  std::atomic<float> gainLinear{1.0f}; // Cached linear gain (precomputed from gainDb)
 
   // Loop mode (atomic for thread safety)
   std::atomic<bool> loopEnabled{false}; // true = loop indefinitely

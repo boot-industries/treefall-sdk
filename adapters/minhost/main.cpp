@@ -3,6 +3,7 @@
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
 #include "orpheus/json.hpp"
+#include "../shared/session_guard.h"
 
 #include <algorithm>
 #include <cctype>
@@ -253,16 +254,8 @@ bool NegotiateApis(AbiContext& abi, bool verbose, ErrorInfo& error) {
   return true;
 }
 
-struct SessionGuard {
-  const orpheus_session_api_v1* api = nullptr;
-  orpheus_session_handle handle = nullptr;
-
-  ~SessionGuard() {
-    if (api && handle) {
-      api->destroy(handle);
-    }
-  }
-};
+// SessionGuard now in ../shared/session_guard.h (DRY principle)
+using orpheus::adapters::SessionGuard;
 
 struct SessionLoadOptions {
   std::string session_path;

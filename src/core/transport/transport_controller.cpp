@@ -313,9 +313,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     // Output to this clip's channel buffer (mono sum for routing)
     float* clipChannelBuffer = m_clipChannelBuffers[i].data();
 
-    // Load clip gain (atomic read for thread safety)
-    float clipGainDb = clip.gainDb.load(std::memory_order_acquire);
-    float clipGainLinear = std::pow(10.0f, clipGainDb / 20.0f); // Convert dB to linear
+    // Load precomputed linear gain (atomic read, no pow() call in audio thread!)
+    float clipGainLinear = clip.gainLinear.load(std::memory_order_acquire);
 
     for (size_t frame = 0; frame < framesRead; ++frame) {
       // Calculate base gain (starts at 1.0)
@@ -710,6 +709,10 @@ void TransportController::addActiveClip(ClipHandle handle) {
   // Initialize gain from persistent storage
   clip.gainDb.store(gainDb, std::memory_order_release);
 
+  // Precompute and cache linear gain (avoid pow() in audio thread)
+  float gainLinear = std::pow(10.0f, gainDb / 20.0f);
+  clip.gainLinear.store(gainLinear, std::memory_order_release);
+
   // Initialize loop mode from persistent storage
   clip.loopEnabled.store(loopEnabled, std::memory_order_release);
 
@@ -1071,6 +1074,9 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
     return SessionGraphError::InvalidParameter;
   }
 
+  // Precompute linear gain (once, on UI thread)
+  float gainLinear = std::pow(10.0f, gainDb / 20.0f);
+
   // Store gain persistently in AudioFileEntry
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
@@ -1082,9 +1088,11 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   }
 
   // Update gain for any active clips with this handle (takes effect immediately)
+  // Store both dB and precomputed linear values atomically
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
       m_activeClips[i].gainDb.store(gainDb, std::memory_order_release);
+      m_activeClips[i].gainLinear.store(gainLinear, std::memory_order_release);
     }
   }
 

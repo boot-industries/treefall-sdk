@@ -149,8 +149,9 @@ private:
                        std::atomic<float>& rms);
   bool detectClipping(float* buffer, size_t num_frames);
 
-  // Configuration
-  RoutingConfig m_config;
+  // Configuration (lock-free double-buffer pattern)
+  RoutingConfig m_config_buffers[2];
+  std::atomic<int> m_active_config_idx{0}; // 0 or 1, for lock-free reads
   std::atomic<bool> m_initialized{false};
 
   // Channel and group states
@@ -169,9 +170,6 @@ private:
 
   // Callback
   IRoutingCallback* m_callback;
-
-  // Thread safety
-  mutable std::mutex m_config_mutex;
 
   // Audio processing buffers (pre-allocated)
   std::vector<std::vector<float>> m_group_buffers; // [num_groups][max_buffer_size]
