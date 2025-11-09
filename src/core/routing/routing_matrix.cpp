@@ -32,8 +32,6 @@ RoutingMatrix::~RoutingMatrix() {
 // ============================================================================
 
 SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
-  std::lock_guard<std::mutex> lock(m_config_mutex);
-
   // Validate configuration
   if (config.num_channels == 0 || config.num_channels > 64) {
     return SessionGraphError::InvalidParameter;
@@ -51,8 +49,10 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     cleanupGroups();
   }
 
-  // Store configuration
-  m_config = config;
+  // Store configuration (lock-free: write to inactive buffer, then atomic swap)
+  int write_idx = 1 - m_active_config_idx.load(std::memory_order_acquire);
+  m_config_buffers[write_idx] = config;
+  m_active_config_idx.store(write_idx, std::memory_order_release);
 
   // Initialize channels
   initializeChannels();
@@ -90,8 +90,9 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
 }
 
 RoutingConfig RoutingMatrix::getConfig() const {
-  std::lock_guard<std::mutex> lock(m_config_mutex);
-  return m_config;
+  // Lock-free read from active config buffer
+  int read_idx = m_active_config_idx.load(std::memory_order_acquire);
+  return m_config_buffers[read_idx];
 }
 
 void RoutingMatrix::setCallback(IRoutingCallback* callback) {
@@ -529,37 +530,28 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     return SessionGraphError::InvalidParameter;
   }
 
+  // Get active config (lock-free read)
+  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& config = m_config_buffers[config_idx];
+
   // ========================================================================
   // Step 1: Clear group buffers
   // ========================================================================
-  for (uint8_t grp = 0; grp < m_config.num_groups; ++grp) {
+  for (uint8_t grp = 0; grp < config.num_groups; ++grp) {
     std::memset(m_group_buffers[grp].data(), 0, num_frames * sizeof(float));
   }
 
   // ========================================================================
   // Step 2: Process channels → groups
   // ========================================================================
+  // Note: Use Instruments/perf for audio thread profiling, not file I/O
 
-  // DIAGNOSTIC: Log first time we process routing with channels
-  static int routingDebugCount = 0;
-  if (routingDebugCount < 3) {
-    FILE* f = fopen("/tmp/audio_callback.txt", "a");
-    if (f) {
-      fprintf(f, "ROUTING: num_channels=%d, num_groups=%d, num_frames=%d\n", m_config.num_channels,
-              m_config.num_groups, num_frames);
-      fprintf(f, "  Channel 0: group=%d, muted=%d, input[0]=%.4f\n", m_channels[0].group_index,
-              isChannelMuted(0), channel_inputs[0][0]);
-      fclose(f);
-    }
-    routingDebugCount++;
-  }
-
-  for (uint8_t ch = 0; ch < m_config.num_channels; ++ch) {
+  for (uint8_t ch = 0; ch < config.num_channels; ++ch) {
     auto& channel = m_channels[ch];
     uint8_t group_idx = channel.group_index;
 
     // Skip if unassigned or group index invalid
-    if (group_idx == UNASSIGNED_GROUP || group_idx >= m_config.num_groups) {
+    if (group_idx == UNASSIGNED_GROUP || group_idx >= config.num_groups) {
       continue;
     }
 
@@ -599,7 +591,7 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     }
 
     // Update channel meters (if enabled)
-    if (m_config.enable_metering) {
+    if (config.enable_metering) {
       processMetering(group_buffer, num_frames, channel.peak_level, channel.rms_level);
       if (detectClipping(group_buffer, num_frames)) {
         channel.clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -611,11 +603,11 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   // Step 3: Process groups → master
   // ========================================================================
   // Clear master output first
-  for (uint8_t out = 0; out < m_config.num_outputs; ++out) {
+  for (uint8_t out = 0; out < config.num_outputs; ++out) {
     std::memset(master_output[out], 0, num_frames * sizeof(float));
   }
 
-  for (uint8_t grp = 0; grp < m_config.num_groups; ++grp) {
+  for (uint8_t grp = 0; grp < config.num_groups; ++grp) {
     auto& group = m_groups[grp];
 
     // Check if group is effectively muted
@@ -638,13 +630,13 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
       sample *= group_gain;
 
       // Sum into master output (stereo: same to both L/R for now)
-      for (uint8_t out = 0; out < std::min(m_config.num_outputs, (uint8_t)2); ++out) {
+      for (uint8_t out = 0; out < std::min(config.num_outputs, (uint8_t)2); ++out) {
         master_output[out][frame] += sample;
       }
     }
 
     // Update group meters (if enabled)
-    if (m_config.enable_metering) {
+    if (config.enable_metering) {
       processMetering(group_buffer, num_frames, group.peak_level, group.rms_level);
       if (detectClipping(group_buffer, num_frames)) {
         group.clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -667,7 +659,7 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     }
 
     // Apply master gain to all output channels
-    for (uint8_t out = 0; out < m_config.num_outputs; ++out) {
+    for (uint8_t out = 0; out < config.num_outputs; ++out) {
       master_output[out][frame] *= master_gain;
     }
   }
@@ -675,32 +667,17 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   // ========================================================================
   // Step 5: Update master meters (if enabled)
   // ========================================================================
-  if (m_config.enable_metering) {
+  if (config.enable_metering) {
     // Meter master left channel (or average of all channels)
     processMetering(master_output[0], num_frames, m_master_peak, m_master_rms);
 
     // Check for clipping on any master channel
-    for (uint8_t out = 0; out < m_config.num_outputs; ++out) {
+    for (uint8_t out = 0; out < config.num_outputs; ++out) {
       if (detectClipping(master_output[out], num_frames)) {
         m_master_clip_count.fetch_add(1, std::memory_order_relaxed);
         break; // Only count once per buffer
       }
     }
-  }
-
-  // DIAGNOSTIC: Log master output samples
-  static int masterOutCount = 0;
-  if (masterOutCount < 50 && m_config.num_outputs > 0) {
-    FILE* f = fopen("/tmp/audio_callback.txt", "a");
-    if (f) {
-      fprintf(f, "MASTER OUT #%d: First 8 samples L: ", masterOutCount);
-      for (uint32_t s = 0; s < std::min(uint32_t(8), num_frames); ++s) {
-        fprintf(f, "%.4f ", master_output[0][s]);
-      }
-      fprintf(f, "\n");
-      fclose(f);
-    }
-    masterOutCount++;
   }
 
   return SessionGraphError::OK;
@@ -714,19 +691,23 @@ void RoutingMatrix::initializeChannels() {
   // TODO: Get sample rate from config
   uint32_t sample_rate = 48000;
 
-  m_channels.clear();
-  m_channels.reserve(m_config.num_channels);
+  // Get active config (lock-free read)
+  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& config = m_config_buffers[config_idx];
 
-  for (uint8_t i = 0; i < m_config.num_channels; ++i) {
+  m_channels.clear();
+  m_channels.reserve(config.num_channels);
+
+  for (uint8_t i = 0; i < config.num_channels; ++i) {
     ChannelState channel;
     channel.group_index = 0; // Default to group 0
-    channel.gain_smoother = new GainSmoother(sample_rate, m_config.gain_smoothing_ms);
+    channel.gain_smoother = new GainSmoother(sample_rate, config.gain_smoothing_ms);
     channel.gain_smoother->reset(1.0f); // Unity gain
 
-    channel.pan_left = new GainSmoother(sample_rate, m_config.gain_smoothing_ms);
+    channel.pan_left = new GainSmoother(sample_rate, config.gain_smoothing_ms);
     channel.pan_left->reset(0.707f); // -3 dB (constant-power center)
 
-    channel.pan_right = new GainSmoother(sample_rate, m_config.gain_smoothing_ms);
+    channel.pan_right = new GainSmoother(sample_rate, config.gain_smoothing_ms);
     channel.pan_right->reset(0.707f); // -3 dB
 
     channel.mute.store(false, std::memory_order_release);
@@ -753,12 +734,16 @@ void RoutingMatrix::initializeGroups() {
   // TODO: Get sample rate from config
   uint32_t sample_rate = 48000;
 
-  m_groups.clear();
-  m_groups.reserve(m_config.num_groups);
+  // Get active config (lock-free read)
+  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& config = m_config_buffers[config_idx];
 
-  for (uint8_t i = 0; i < m_config.num_groups; ++i) {
+  m_groups.clear();
+  m_groups.reserve(config.num_groups);
+
+  for (uint8_t i = 0; i < config.num_groups; ++i) {
     GroupState group;
-    group.gain_smoother = new GainSmoother(sample_rate, m_config.gain_smoothing_ms);
+    group.gain_smoother = new GainSmoother(sample_rate, config.gain_smoothing_ms);
     group.gain_smoother->reset(1.0f); // Unity gain
 
     group.mute.store(false, std::memory_order_release);

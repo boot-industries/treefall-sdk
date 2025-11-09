@@ -5,6 +5,7 @@
 #include "orpheus/abi.h"
 #include "orpheus/adapters/reaper/entry.h"
 #include "orpheus/errors.h"
+#include "../shared/session_guard.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,15 +64,8 @@ void RefreshPanelLocked() {
   gPanelText = orpheus::reaper::BuildPanelText(gSnapshot);
 }
 
-struct SessionGuard {
-  const orpheus_session_api_v1* abi{};
-  orpheus_session_handle handle{};
-  ~SessionGuard() {
-    if (abi && handle) {
-      abi->destroy(handle);
-    }
-  }
-};
+// SessionGuard now in ../shared/session_guard.h (DRY principle)
+using orpheus::adapters::SessionGuard;
 
 orpheus_status PopulateSession(const SessionGraph& graph, orpheus_session_handle handle,
                                const orpheus_session_api_v1* session_abi,
