@@ -601,16 +601,6 @@ Multi-channel audio routing with flexible matrix architecture:
 
 **Status:** Planned for OCC v0.3.0-alpha
 
-### Network Audio (AES67/RTP)
-
-Standards-based network audio with PTP sync:
-
-- **AES67** – Audio-over-IP (interoperable with Dante, Ravenna, Q-LAN)
-- **RTP** – Real-Time Protocol for audio streaming
-- **PTP** – Precision Time Protocol for clock sync
-
-**Status:** Planned for v1.0
-
 ### Performance Monitoring
 
 Real-time diagnostics for production environments:
