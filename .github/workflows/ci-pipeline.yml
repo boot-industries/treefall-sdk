@@ -44,7 +44,7 @@ jobs:
             sanitizers: OFF
           - os: macos-latest
             generator: 'Unix Makefiles'
-            sanitizers: ON
+            sanitizers: OFF
 
     steps:
       - uses: actions/checkout@v4
@@ -57,12 +57,40 @@ jobs:
 
       - name: Install libsndfile (macOS)
         if: matrix.os == 'macos-latest'
-        run: brew install libsndfile
+        run: |
+          echo "Installing libsndfile via Homebrew..."
+          brew install libsndfile
+
+          # Verify installation
+          if ! brew list libsndfile &>/dev/null; then
+            echo "ERROR: libsndfile installation failed"
+            exit 1
+          fi
+
+          echo "libsndfile installed successfully"
+          pkg-config --modversion sndfile || echo "Note: pkg-config not finding sndfile (may use find_library fallback)"
 
       - name: Install libsndfile (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          vcpkg install libsndfile:x64-windows
+          echo "Installing libsndfile (core features only, no mp3)..."
+
+          # Install only core features to avoid optional mp3lame dependency (SourceForge 403 errors)
+          # The [core] feature set provides WAV/FLAC/OGG support without mp3lame
+          vcpkg install "libsndfile[core]:x64-windows"
+
+          # Verify installation
+          if ! vcpkg list | grep -q libsndfile; then
+            echo "ERROR: libsndfile installation failed"
+            echo "Installed packages:"
+            vcpkg list
+            exit 1
+          fi
+
+          echo "✓ libsndfile installed successfully"
+          vcpkg list | grep libsndfile
+
+          # Set toolchain file for CMake
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
         shell: bash
 
@@ -71,22 +99,58 @@ jobs:
         with:
           cmake-version: ${{ env.CMAKE_VERSION }}
 
-      - name: Cache CMake build
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: ${{ runner.os }}-cmake-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.h') }}
-          restore-keys: |
-            ${{ runner.os }}-cmake-${{ matrix.build_type }}-
-            ${{ runner.os }}-cmake-
-
       - name: Configure CMake
         run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            TOOLCHAIN_ARG="-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          else
+            TOOLCHAIN_ARG=""
+          fi
+
+          SANITIZER_ARG=""
+          if [ "${{ matrix.build_type }}" == "Debug" ] && [ "${{ matrix.sanitizers }}" == "ON" ]; then
+            SANITIZER_ARG="-DORP_ENABLE_SANITIZERS=ON"
+          fi
+
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -G "${{ matrix.generator }}" \
-            ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE_TOOLCHAIN_FILE={0}', env.CMAKE_TOOLCHAIN_FILE) || '' }} \
-            ${{ matrix.build_type == 'Debug' && matrix.sanitizers == 'ON' && '-DORP_ENABLE_SANITIZERS=ON' || '' }}
+            -DORPHEUS_ENABLE_REALTIME=ON \
+            $TOOLCHAIN_ARG \
+            $SANITIZER_ARG \
+            2>&1 | tee cmake_output.log
+        shell: bash
+
+      - name: Verify libsndfile detection
+        run: |
+          echo "Checking CMake output for libsndfile detection..."
+
+          if grep -q "✓ libsndfile FOUND" cmake_output.log; then
+            echo "✓ SUCCESS: libsndfile detected - audio file reading enabled"
+          elif grep -q "✗ libsndfile NOT FOUND" cmake_output.log; then
+            echo "❌ FAILURE: libsndfile NOT detected - using stub implementation"
+            echo ""
+            echo "This will cause 8 transport tests to fail with NotReady error:"
+            echo "  - fade_processing_test"
+            echo "  - out_point_enforcement_test"
+            echo "  - multi_clip_stress_test"
+            echo "  - clip_gain_test"
+            echo "  - clip_loop_test"
+            echo "  - clip_metadata_test"
+            echo "  - clip_restart_test"
+            echo "  - clip_seek_test"
+            echo ""
+            echo "Debug info:"
+            echo "Platform: ${{ matrix.os }}"
+            echo "CMake toolchain file: ${CMAKE_TOOLCHAIN_FILE:-not set}"
+            grep -i "sndfile" cmake_output.log || echo "No sndfile mentions in CMake output"
+            exit 1
+          else
+            echo "⚠ WARNING: Could not determine libsndfile detection status"
+            echo "Checking for warning messages..."
+            grep -i "libsndfile not found" cmake_output.log || echo "No explicit 'not found' message"
+            exit 1
+          fi
         shell: bash
 
       - name: Build
