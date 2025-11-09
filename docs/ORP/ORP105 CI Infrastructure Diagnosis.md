@@ -11,8 +11,10 @@
 
 - **Root Cause #1:** Incomplete cleanup of TypeScript CI jobs after package archival (2025-11-05)
 - **Root Cause #2:** CMake build cache poisoning (cached builds without libsndfile support)
+- **Root Cause #3:** Integration test script referencing archived TypeScript packages
+- **Root Cause #4:** Insufficient libsndfile installation verification in CI workflows
 - **Affected Platforms:** macOS, Windows, Ubuntu (all platforms on interim-ci.yml workflow)
-- **Fix:** Remove obsolete `interim-ci.yml` workflow, update `package.json`, remove CMake build cache
+- **Fix:** Remove obsolete workflow, update package.json, remove CMake cache, fix integration tests, add libsndfile verification
 - **Status:** Implemented and ready for verification
 
 ---
@@ -123,6 +125,64 @@ Investigation revealed:
 
 **Solution:** Remove CMake build cache entirely to force fresh configuration on every run.
 
+### Root Cause #3: Integration Test Script Referencing Archived Packages
+
+**After fixing Root Causes #1 and #2, `pnpm test` failed immediately.**
+
+Investigation revealed:
+
+1. **package.json Line 9:** `"test": "./tests/integration/run-tests.sh"`
+2. **tests/integration/run-tests.sh Lines 19-23:**
+   ```bash
+   if [ ! -d "packages/contract/dist" ] || \
+      [ ! -d "packages/client/dist" ] || \
+      [ ! -d "packages/react/dist" ]; then
+     echo "⚠ Warning: Some packages not built. Building now..."
+     pnpm run build  # ← FAILS: "build" script removed from package.json
+   fi
+   ```
+
+3. **Failure Mode:**
+   - Script checks for TypeScript package dist directories (archived 2025-11-05)
+   - Directories don't exist (as expected)
+   - Script tries to run `pnpm run build` to build them
+   - Build script was removed in package.json cleanup (Root Cause #1 fix)
+   - Result: "Missing script: build" error
+
+4. **Additional Issues:**
+   - tests/integration/smoke.test.mjs imports archived TypeScript packages
+   - Lines 19, 31, 43: Import from `packages/contract/dist`, `packages/client/dist`, `packages/react/dist`
+   - These tests are for TypeScript SDK functionality, not C++ SDK
+
+**Solution:** Rewrite `tests/integration/run-tests.sh` to run C++ SDK tests only (via ctest).
+
+### Root Cause #4: Insufficient libsndfile Installation Verification
+
+**After all previous fixes, tests might still fail if libsndfile installation is silently failing.**
+
+Potential failure modes:
+
+1. **macOS (Homebrew):**
+   - `brew install libsndfile` succeeds but pkg-config not configured
+   - CMake `pkg_check_modules(SNDFILE sndfile)` fails
+   - Fallback `find_library()` might also fail if homebrew paths not in CMAKE_PREFIX_PATH
+
+2. **Windows (vcpkg):**
+   - `vcpkg install libsndfile:x64-windows` fails silently
+   - vcpkg might not be initialized correctly
+   - CMake toolchain file not loaded or incorrect path
+   - Result: CMake can't find libsndfile even though it's "installed"
+
+3. **CMake Detection:**
+   - No verification step after CMake configuration
+   - Stub implementation silently used (create_audio_file_reader_stub.cpp)
+   - Tests compile and link successfully but fail at runtime with NotReady
+
+**Solution:** Add explicit verification steps:
+- Check libsndfile installation succeeded on each platform
+- Verify CMake detected libsndfile (check build files for audio_file_reader_libsndfile.cpp vs stub)
+- Fail CI early if libsndfile not detected (don't wait for test failures)
+
 ---
 
 ## Technical Details
@@ -198,7 +258,51 @@ The workflow had 5 jobs:
 
 **Note:** The `ci.yml` workflow does not have caching and was unaffected.
 
-#### 3. Updated package.json
+#### 3. Fixed Integration Test Script
+
+**File:** `tests/integration/run-tests.sh`
+**Changes:** Complete rewrite to work with C++ SDK
+
+**Before:**
+```bash
+# Ensure packages are built
+echo "Step 1: Verifying package builds..."
+if [ ! -d "packages/contract/dist" ] || \
+   [ ! -d "packages/client/dist" ] || \
+   [ ! -d "packages/react/dist" ]; then
+  echo "⚠ Warning: Some packages not built. Building now..."
+  pnpm run build
+else
+  echo "✓ Package builds verified"
+fi
+
+echo ""
+echo "Step 2: Running smoke tests..."
+node --test tests/integration/smoke.test.mjs
+```
+
+**After:**
+```bash
+# Check if build directory exists
+if [ ! -d "build" ]; then
+  echo "⚠ Error: Build directory not found"
+  echo "Please run: cmake -S . -B build && cmake --build build"
+  exit 1
+fi
+
+# Run C++ tests via CTest
+echo "Running C++ SDK tests..."
+ctest --test-dir build --output-on-failure
+```
+
+**Impact:**
+- ✅ Removes references to archived TypeScript packages
+- ✅ Runs C++ SDK tests directly via ctest
+- ✅ `pnpm test` now works (calls C++ tests, not TypeScript builds)
+
+**Note:** `tests/integration/smoke.test.mjs` remains in the repository but is not executed (archived TypeScript package tests).
+
+#### 4. Updated package.json
 
 **File:** `package.json`
 **Changes:**
@@ -218,6 +322,81 @@ The workflow had 5 jobs:
 - `test` (integration tests - C++ SDK)
 - `lint`, `lint:cpp` (C++ formatting)
 - `format`, `format:cpp` (C++ formatting)
+
+#### 5. Added libsndfile Installation Verification
+
+**File:** `.github/workflows/ci-pipeline.yml`
+**Changes:** Added explicit verification for libsndfile installation and detection
+
+**macOS Installation (Lines 58-71):**
+```yaml
+- name: Install libsndfile (macOS)
+  if: matrix.os == 'macos-latest'
+  run: |
+    echo "Installing libsndfile via Homebrew..."
+    brew install libsndfile
+
+    # Verify installation
+    if ! brew list libsndfile &>/dev/null; then
+      echo "ERROR: libsndfile installation failed"
+      exit 1
+    fi
+
+    echo "libsndfile installed successfully"
+    pkg-config --modversion sndfile || echo "Note: pkg-config not finding sndfile (may use find_library fallback)"
+```
+
+**Windows Installation (Lines 73-79):**
+```yaml
+- name: Install libsndfile (Windows)
+  if: matrix.os == 'windows-latest'
+  run: |
+    echo "Installing libsndfile via vcpkg..."
+    vcpkg install libsndfile:x64-windows --debug
+
+    # Verify installation
+    if ! vcpkg list | grep -q libsndfile; then
+      echo "ERROR: libsndfile installation failed"
+      exit 1
+    fi
+
+    echo "libsndfile installed successfully"
+    vcpkg list | grep libsndfile
+
+    # Set toolchain file for CMake
+    echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+  shell: bash
+```
+
+**CMake Detection Verification (Lines 106-124 - new step):**
+```yaml
+- name: Verify libsndfile detection
+  run: |
+    echo "Checking CMake configuration for libsndfile..."
+    if grep -q "libsndfile not found" build/CMakeFiles/CMakeOutput.log 2>/dev/null || \
+       grep -q "libsndfile not found" build/CMakeFiles/CMakeError.log 2>/dev/null; then
+      echo "WARNING: libsndfile may not have been detected correctly"
+    fi
+
+    # Check if audio_file_reader_libsndfile.cpp is being compiled
+    if [ -f "build/CMakeFiles/orpheus_audio_io.dir/DependInfo.cmake" ]; then
+      if grep -q "audio_file_reader_libsndfile.cpp" build/CMakeFiles/orpheus_audio_io.dir/DependInfo.cmake; then
+        echo "✓ libsndfile detected - audio file reading enabled"
+      else
+        echo "⚠ libsndfile NOT detected - audio file reading disabled (stub implementation)"
+        echo "This will cause transport tests to fail with NotReady error"
+        exit 1
+      fi
+    fi
+  shell: bash
+```
+
+**Impact:**
+- ✅ Fails fast if libsndfile installation fails (before build)
+- ✅ Fails fast if CMake doesn't detect libsndfile (before build)
+- ✅ Prevents silent fallback to stub implementation
+- ✅ Clearer error messages for debugging
+- ✅ `--debug` flag on vcpkg provides verbose output for troubleshooting
 
 **Before:**
 ```json

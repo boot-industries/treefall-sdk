@@ -57,12 +57,35 @@ jobs:
 
       - name: Install libsndfile (macOS)
         if: matrix.os == 'macos-latest'
-        run: brew install libsndfile
+        run: |
+          echo "Installing libsndfile via Homebrew..."
+          brew install libsndfile
+
+          # Verify installation
+          if ! brew list libsndfile &>/dev/null; then
+            echo "ERROR: libsndfile installation failed"
+            exit 1
+          fi
+
+          echo "libsndfile installed successfully"
+          pkg-config --modversion sndfile || echo "Note: pkg-config not finding sndfile (may use find_library fallback)"
 
       - name: Install libsndfile (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          vcpkg install libsndfile:x64-windows
+          echo "Installing libsndfile via vcpkg..."
+          vcpkg install libsndfile:x64-windows --debug
+
+          # Verify installation
+          if ! vcpkg list | grep -q libsndfile; then
+            echo "ERROR: libsndfile installation failed"
+            exit 1
+          fi
+
+          echo "libsndfile installed successfully"
+          vcpkg list | grep libsndfile
+
+          # Set toolchain file for CMake
           echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
         shell: bash
 
@@ -78,6 +101,26 @@ jobs:
             -G "${{ matrix.generator }}" \
             ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE_TOOLCHAIN_FILE={0}', env.CMAKE_TOOLCHAIN_FILE) || '' }} \
             ${{ matrix.build_type == 'Debug' && matrix.sanitizers == 'ON' && '-DORP_ENABLE_SANITIZERS=ON' || '' }}
+        shell: bash
+
+      - name: Verify libsndfile detection
+        run: |
+          echo "Checking CMake configuration for libsndfile..."
+          if grep -q "libsndfile not found" build/CMakeFiles/CMakeOutput.log 2>/dev/null || \
+             grep -q "libsndfile not found" build/CMakeFiles/CMakeError.log 2>/dev/null; then
+            echo "WARNING: libsndfile may not have been detected correctly"
+          fi
+
+          # Check if audio_file_reader_libsndfile.cpp is being compiled
+          if [ -f "build/CMakeFiles/orpheus_audio_io.dir/DependInfo.cmake" ]; then
+            if grep -q "audio_file_reader_libsndfile.cpp" build/CMakeFiles/orpheus_audio_io.dir/DependInfo.cmake; then
+              echo "✓ libsndfile detected - audio file reading enabled"
+            else
+              echo "⚠ libsndfile NOT detected - audio file reading disabled (stub implementation)"
+              echo "This will cause transport tests to fail with NotReady error"
+              exit 1
+            fi
+          fi
         shell: bash
 
       - name: Build
