@@ -93,7 +93,7 @@ From ORP106's use case matrix:
 | **Use Case** | Multi-clip broadcast soundboard | Harmonic synthesis tool |
 | **Session Management** | YES (save/load complex sessions) | NO (plugin parameters only) |
 | **Multi-Stream** | YES (16+ clips simultaneously) | NO (7 oscillators, single output) |
-| **Network Audio** | YES (AES67/Dante planned) | NO (standard I/O) |
+| **Network Audio Compatibility** | YES (via manufacturer drivers) | NO (standard I/O) |
 | **Deterministic** | YES (broadcast-safe) | NO (real-time synthesis) |
 | **Transport Control** | YES (sample-accurate cues) | NO (immediate MIDI) |
 | **Complexity** | High (routing matrix, transport) | Low (simple signal flow) |
