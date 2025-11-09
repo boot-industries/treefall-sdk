@@ -2,6 +2,7 @@
 #include "../../src/core/routing/gain_smoother.h"
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <gtest/gtest.h>
 #include <thread>

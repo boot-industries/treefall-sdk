@@ -1,31 +1,16 @@
 {
   "packageManager": "pnpm@8.15.4",
-  "name": "orpheus-monorepo",
+  "name": "orpheus-sdk",
   "private": true,
   "version": "0.0.0",
-  "description": "Monorepo workspace for the Orpheus project.",
-  "workspaces": [
-    "packages/*"
-  ],
+  "description": "C++ SDK for professional audio applications.",
   "scripts": {
-    "postinstall": "echo 'Workspace bootstrap complete.'",
     "prepare": "husky",
-    "build": "pnpm -r build",
-    "build:ts": "pnpm -r --filter='!@orpheus/engine-native' build",
-    "test": "pnpm run test:integration",
-    "test:integration": "./tests/integration/run-tests.sh",
-    "perf:validate": "node scripts/validate-performance.js",
-    "dep:check": "madge --circular --extensions ts,tsx,js,jsx packages/",
-    "dep:graph": "madge --image deps-graph.svg --extensions ts,tsx,js,jsx packages/",
-    "lint": "pnpm run lint:js && pnpm run lint:cpp",
-    "lint:js": "pnpm -r --if-present lint",
+    "test": "./tests/integration/run-tests.sh",
+    "lint": "pnpm run lint:cpp",
     "lint:cpp": "scripts/lint-cpp.sh",
-    "format": "pnpm run format:js && pnpm run format:cpp",
-    "format:js": "pnpm -r --if-present format:write",
-    "format:cpp": "find src include -name '*.cpp' -o -name '*.h' -o -name '*.hpp' | xargs clang-format -i",
-    "changeset": "changeset",
-    "changeset:version": "changeset version",
-    "changeset:publish": "changeset publish"
+    "format": "pnpm run format:cpp",
+    "format:cpp": "find src include -name '*.cpp' -o -name '*.h' -o -name '*.hpp' | xargs clang-format -i"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.0",

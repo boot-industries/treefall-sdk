@@ -6,6 +6,11 @@
 #include <cmath>
 #include <cstring>
 
+// MSVC and some platforms don't define M_PI_2 by default
+#ifndef M_PI_2
+#define M_PI_2 1.57079632679489661923
+#endif
+
 namespace orpheus {
 
 TransportController::TransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate)
