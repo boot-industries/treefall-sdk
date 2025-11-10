@@ -617,9 +617,9 @@ Real-time diagnostics for production environments:
 
 ### Getting Started
 
-- [Quick Start Guide](docs/QUICK_START.md) – Build SDK in <10 minutes
-- [Transport Integration Guide](docs/integration/TRANSPORT_INTEGRATION.md) – Comprehensive `ITransportController` usage
-- [Cross-Platform Development Guide](docs/platform/CROSS_PLATFORM.md) – Platform-specific considerations
+- [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) – Basic integration guide
+- [docs/DRIVER_INTEGRATION_GUIDE.md](docs/DRIVER_INTEGRATION_GUIDE.md) – Platform driver integration
 
 ### Implementation Plans
 
@@ -641,5 +641,5 @@ Real-time diagnostics for production environments:
 
 **Document Status:** Authoritative
 **Maintained By:** SDK Core Team
-**Next Review:** After ORP077 completion
-**Last Updated:** October 26, 2025
+**Next Review:** After v1.0.0 stable release
+**Last Updated:** November 9, 2025
