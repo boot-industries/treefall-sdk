@@ -680,6 +680,31 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     }
   }
 
+  // ========================================================================
+  // Step 6: Apply clipping protection (soft limiter + hard clip)
+  // ========================================================================
+  // OCC109 v0.2.2: Fix "Stop All" distortion when 32 clips fade out simultaneously
+  // Soft limiter prevents audible distortion when summed gains exceed 0dBFS
+  if (config.enable_clipping_protection) {
+    for (uint8_t out = 0; out < config.num_outputs; ++out) {
+      for (uint32_t frame = 0; frame < num_frames; ++frame) {
+        float sample = master_output[out][frame];
+
+        // Soft-knee limiter using tanh (smooth compression near ±1.0)
+        // tanh(x) naturally compresses values approaching ±infinity to ±1.0
+        // Scale factor 0.9 provides headroom and prevents hard clipping
+        if (std::abs(sample) > 0.9f) {
+          sample = std::tanh(sample * 0.9f) / 0.9f;
+        }
+
+        // Hard clip as safety (broadcast-safe, never exceeds ±1.0)
+        sample = std::max(-1.0f, std::min(1.0f, sample));
+
+        master_output[out][frame] = sample;
+      }
+    }
+  }
+
   return SessionGraphError::OK;
 }
 

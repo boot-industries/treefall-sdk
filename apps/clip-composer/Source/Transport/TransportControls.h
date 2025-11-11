@@ -33,6 +33,10 @@ public:
   // Update latency display (call periodically from MainComponent)
   void setLatencyInfo(double latencyMs, int bufferSize, int sampleRate);
 
+  // Update CPU/Memory display (call periodically from MainComponent at 1Hz)
+  // OCC109 v0.2.2: Real-time performance monitoring
+  void setPerformanceInfo(float cpuPercent, int memoryMB);
+
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
@@ -42,6 +46,8 @@ private:
   std::unique_ptr<juce::TextButton> m_stopAllButton;
   std::unique_ptr<juce::TextButton> m_panicButton;
   std::unique_ptr<juce::Label> m_latencyLabel;
+  std::unique_ptr<juce::Label> m_cpuLabel;    // OCC109 v0.2.2: CPU usage display
+  std::unique_ptr<juce::Label> m_memoryLabel; // OCC109 v0.2.2: Memory usage display
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportControls)
 };

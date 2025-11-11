@@ -36,8 +36,8 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
       0.0f; // DISABLED: Fades handled at clip level, smoothing causes zigzag artifacts
   routingConfig.enable_metering = true;
   routingConfig.enable_clipping_protection =
-      false; // DISABLED: Causes distortion with overlapping fades (professional users manage gain
-             // staging)
+      true; // OCC109 v0.2.2: ENABLED to fix "Stop All" distortion with 32 simultaneous fade-outs
+            // Soft-knee tanh limiter prevents audible clipping without quality loss
 
   m_routingMatrix->initialize(routingConfig);
 
