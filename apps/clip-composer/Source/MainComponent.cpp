@@ -194,6 +194,11 @@ void MainComponent::timerCallback() {
     double latencyMs = ((latencySamples / 2.0) / static_cast<double>(sampleRate)) * 1000.0;
 
     m_transportControls->setLatencyInfo(latencyMs, bufferSize, sampleRate);
+
+    // OCC109 v0.2.2: Update CPU and memory display (1Hz refresh rate)
+    float cpuPercent = juce::SystemStats::getCpuUsage() * 100.0f;
+    int memoryMB = static_cast<int>(juce::SystemStats::getMemoryUsageInMegabytes());
+    m_transportControls->setPerformanceInfo(cpuPercent, memoryMB);
   }
 }
 

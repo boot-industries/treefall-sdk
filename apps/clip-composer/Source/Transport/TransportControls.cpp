@@ -30,6 +30,20 @@ TransportControls::TransportControls() {
   m_latencyLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
   m_latencyLabel->setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(m_latencyLabel.get());
+
+  // OCC109 v0.2.2: Create CPU usage label
+  m_cpuLabel = std::make_unique<juce::Label>("CPU", "CPU: --");
+  m_cpuLabel->setFont(juce::FontOptions(12.0f, juce::Font::plain));
+  m_cpuLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+  m_cpuLabel->setJustificationType(juce::Justification::centredLeft);
+  addAndMakeVisible(m_cpuLabel.get());
+
+  // OCC109 v0.2.2: Create memory usage label
+  m_memoryLabel = std::make_unique<juce::Label>("Memory", "MEM: --");
+  m_memoryLabel->setFont(juce::FontOptions(12.0f, juce::Font::plain));
+  m_memoryLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+  m_memoryLabel->setJustificationType(juce::Justification::centredLeft);
+  addAndMakeVisible(m_memoryLabel.get());
 }
 
 //==============================================================================
@@ -62,6 +76,21 @@ void TransportControls::resized() {
   stopBounds = stopBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
   m_stopAllButton->setBounds(stopBounds);
 
+  // OCC109 v0.2.2: Performance labels (right side, before buttons)
+  bounds.removeFromRight(gap);
+
+  // Memory label
+  auto memoryBounds = bounds.removeFromRight(90);
+  memoryBounds = memoryBounds.withSizeKeepingCentre(90, buttonHeight);
+  m_memoryLabel->setBounds(memoryBounds);
+
+  bounds.removeFromRight(gap);
+
+  // CPU label
+  auto cpuBounds = bounds.removeFromRight(80);
+  cpuBounds = cpuBounds.withSizeKeepingCentre(80, buttonHeight);
+  m_cpuLabel->setBounds(cpuBounds);
+
   // Latency label (left side)
   auto latencyBounds = bounds.removeFromLeft(200);
   latencyBounds = latencyBounds.withSizeKeepingCentre(200, buttonHeight);
@@ -84,4 +113,36 @@ void TransportControls::setLatencyInfo(double latencyMs, int bufferSize, int sam
 
   m_latencyLabel->setText(text, juce::dontSendNotification);
   m_latencyLabel->setColour(juce::Label::textColourId, color);
+}
+
+void TransportControls::setPerformanceInfo(float cpuPercent, int memoryMB) {
+  // OCC109 v0.2.2: Update CPU usage display
+  juce::String cpuText = juce::String::formatted("CPU: %.0f%%", cpuPercent);
+  m_cpuLabel->setText(cpuText, juce::dontSendNotification);
+
+  // Color-code CPU usage (green < 50%, orange < 80%, red >= 80%)
+  juce::Colour cpuColor;
+  if (cpuPercent < 50.0f) {
+    cpuColor = juce::Colours::lightgreen;
+  } else if (cpuPercent < 80.0f) {
+    cpuColor = juce::Colours::orange;
+  } else {
+    cpuColor = juce::Colours::red;
+  }
+  m_cpuLabel->setColour(juce::Label::textColourId, cpuColor);
+
+  // OCC109 v0.2.2: Update memory usage display
+  juce::String memoryText = juce::String::formatted("MEM: %d MB", memoryMB);
+  m_memoryLabel->setText(memoryText, juce::dontSendNotification);
+
+  // Color-code memory usage (green < 200MB, orange < 500MB, red >= 500MB)
+  juce::Colour memColor;
+  if (memoryMB < 200) {
+    memColor = juce::Colours::lightgreen;
+  } else if (memoryMB < 500) {
+    memColor = juce::Colours::orange;
+  } else {
+    memColor = juce::Colours::red;
+  }
+  m_memoryLabel->setColour(juce::Label::textColourId, memColor);
 }
