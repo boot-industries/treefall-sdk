@@ -2,6 +2,7 @@
 #include "orpheus/performance_monitor.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -52,7 +53,7 @@ public:
     // Calculate uptime
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(now - m_startTime);
-    metrics.uptimeSeconds = duration.count() / 1'000'000.0;
+    metrics.uptimeSeconds = static_cast<double>(duration.count()) / 1'000'000.0;
 
     return metrics;
   }
@@ -123,7 +124,7 @@ public:
     }
 
     // Update timing histogram
-    float callbackMs = callbackDurationUs / 1000.0f;
+    float callbackMs = static_cast<float>(callbackDurationUs) / 1000.0f;
     for (size_t i = 0; i < kHistogramBuckets.size(); ++i) {
       if (callbackMs <= kHistogramBuckets[i]) {
         m_histogramCounts[i].fetch_add(1, std::memory_order_relaxed);
