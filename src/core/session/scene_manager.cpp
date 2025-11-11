@@ -2,6 +2,7 @@
 #include "orpheus/scene_manager.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -369,7 +370,7 @@ public:
       writeJsonToFile(jsonValue, filePath);
 
       return SessionGraphError::OK;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
       // File I/O error
       return SessionGraphError::InternalError;
     }
@@ -408,7 +409,7 @@ public:
       scenes_[scene.sceneId] = scene;
 
       return scene.sceneId;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
       // JSON parse error or file I/O error
       return "";
     }
