@@ -343,6 +343,13 @@ void ClipEditDialog::enforceOutPointEditLaw() {
   }
 }
 
+void ClipEditDialog::restartPlayback() {
+  // Restart playback from current IN point (used for edit law enforcement)
+  if (m_previewPlayer && m_previewPlayer->isPlaying()) {
+    m_previewPlayer->play(); // play() restarts from IN point
+  }
+}
+
 //==============================================================================
 void ClipEditDialog::buildPhase1UI() {
   // Clip Name
@@ -779,7 +786,10 @@ void ClipEditDialog::buildPhase2UI() {
   m_trimInTimeEditor->onReturnKey = [this]() {
     int64_t newInPoint = timeStringToSamples(m_trimInTimeEditor->getText(), m_metadata.sampleRate);
 
-    // Validate: IN must be < OUT
+    // CRITICAL: Constrain to valid range [0, OUT-1]
+    if (newInPoint < 0) {
+      newInPoint = 0;
+    }
     if (newInPoint >= m_metadata.trimOutSamples) {
       newInPoint = std::max(int64_t(0), m_metadata.trimOutSamples - (m_metadata.sampleRate / 75));
     }
@@ -793,13 +803,13 @@ void ClipEditDialog::buildPhase2UI() {
       m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
     }
 
-    // CRITICAL: If playhead is now before new IN point, clamp it forward to IN
+    // EDIT LAW #3: If playhead is now before new IN point, restart from IN
     if (m_previewPlayer && m_previewPlayer->isPlaying()) {
       int64_t currentPos = m_previewPlayer->getCurrentPosition();
       if (currentPos < m_metadata.trimInSamples) {
-        m_previewPlayer->jumpTo(m_metadata.trimInSamples);
-        DBG("ClipEditDialog: Playhead was before new IN point - clamped to "
-            << m_metadata.trimInSamples);
+        m_previewPlayer->play(); // Restart from new IN point (edit law #3)
+        DBG("ClipEditDialog: Time editor edit law enforced - playhead < IN ("
+            << currentPos << " < " << m_metadata.trimInSamples << "), restarted from IN");
       }
     }
   };
@@ -923,10 +933,12 @@ void ClipEditDialog::buildPhase2UI() {
     int64_t newOutPoint =
         timeStringToSamples(m_trimOutTimeEditor->getText(), m_metadata.sampleRate);
 
-    // Validate: OUT must be > IN
+    // CRITICAL: Constrain to valid range [IN+1, duration]
     if (newOutPoint <= m_metadata.trimInSamples) {
-      newOutPoint = std::min(m_metadata.durationSamples,
-                             m_metadata.trimInSamples + (m_metadata.sampleRate / 75));
+      newOutPoint = m_metadata.trimInSamples + (m_metadata.sampleRate / 75);
+    }
+    if (newOutPoint > m_metadata.durationSamples) {
+      newOutPoint = m_metadata.durationSamples;
     }
 
     m_metadata.trimOutSamples = newOutPoint;
@@ -1876,6 +1888,9 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       bool currentShift = juce::ModifierKeys::currentModifiers.isShiftDown();
       int64_t jumpAmount = currentShift ? (15 * tickInSamples) : tickInSamples;
 
+      // Get current playhead position before changing IN point
+      int64_t oldInPoint = m_metadata.trimInSamples;
+
       m_metadata.trimInSamples = std::max(int64_t(0), m_metadata.trimInSamples - jumpAmount);
       if (m_metadata.trimInSamples >= m_metadata.trimOutSamples) {
         m_metadata.trimInSamples = std::max(int64_t(0), m_metadata.trimOutSamples - tickInSamples);
@@ -1886,8 +1901,13 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+        // EDIT LAW #3: If IN moved, and playhead is now < IN, restart from IN
         if (m_previewPlayer->isPlaying()) {
-          m_previewPlayer->play();
+          int64_t currentPos = m_previewPlayer->getCurrentPosition();
+          if (currentPos < m_metadata.trimInSamples) {
+            m_previewPlayer->play(); // Restart from new IN point
+            DBG("ClipEditDialog: , key edit law enforced - playhead < IN, restarted");
+          }
         }
       }
     };
@@ -1932,8 +1952,13 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+        // EDIT LAW #3: If IN moved forward past playhead, restart from new IN
         if (m_previewPlayer->isPlaying()) {
-          m_previewPlayer->play();
+          int64_t currentPos = m_previewPlayer->getCurrentPosition();
+          if (currentPos < m_metadata.trimInSamples) {
+            m_previewPlayer->play(); // Restart from new IN point
+            DBG("ClipEditDialog: . key edit law enforced - playhead < IN, restarted");
+          }
         }
       }
     };

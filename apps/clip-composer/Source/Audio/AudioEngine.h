@@ -292,10 +292,11 @@ private:
   std::unique_ptr<orpheus::IAudioDriver> m_audioDriver;
 
   // Clip handle mapping (buttonIndex → ClipHandle)
-  std::array<orpheus::ClipHandle, 48> m_clipHandles; // MVP: 48 buttons
+  // 8 tabs × 48 buttons per tab = 384 total clips
+  std::array<orpheus::ClipHandle, 384> m_clipHandles;
 
   // Clip metadata cache (for UI queries)
-  std::array<std::optional<orpheus::AudioFileMetadata>, 48> m_clipMetadata;
+  std::array<std::optional<orpheus::AudioFileMetadata>, 384> m_clipMetadata;
 
   // Cue Buss management (ClipHandles 10001+)
   std::vector<orpheus::ClipHandle> m_cueBussHandles; // Active Cue Busses
