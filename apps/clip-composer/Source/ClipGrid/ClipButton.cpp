@@ -75,28 +75,43 @@ void ClipButton::setPlaybackProgress(float progress) {
 }
 
 void ClipButton::setLoopEnabled(bool enabled) {
-  m_loopEnabled = enabled;
-  repaint();
+  if (m_loopEnabled != enabled) {
+    m_loopEnabled = enabled;
+    repaint(); // CRITICAL: Trigger repaint immediately
+    DBG("ClipButton " << m_buttonIndex << ": Loop icon = " << (enabled ? "ON" : "OFF"));
+  }
 }
 
 void ClipButton::setFadeInEnabled(bool enabled) {
-  m_fadeInEnabled = enabled;
-  repaint();
+  if (m_fadeInEnabled != enabled) {
+    m_fadeInEnabled = enabled;
+    repaint(); // CRITICAL: Trigger repaint immediately
+    DBG("ClipButton " << m_buttonIndex << ": Fade-in icon = " << (enabled ? "ON" : "OFF"));
+  }
 }
 
 void ClipButton::setFadeOutEnabled(bool enabled) {
-  m_fadeOutEnabled = enabled;
-  repaint();
+  if (m_fadeOutEnabled != enabled) {
+    m_fadeOutEnabled = enabled;
+    repaint(); // CRITICAL: Trigger repaint immediately
+    DBG("ClipButton " << m_buttonIndex << ": Fade-out icon = " << (enabled ? "ON" : "OFF"));
+  }
 }
 
 void ClipButton::setEffectsEnabled(bool enabled) {
-  m_effectsEnabled = enabled;
-  repaint();
+  if (m_effectsEnabled != enabled) {
+    m_effectsEnabled = enabled;
+    repaint(); // CRITICAL: Trigger repaint immediately
+    DBG("ClipButton " << m_buttonIndex << ": Effects icon = " << (enabled ? "ON" : "OFF"));
+  }
 }
 
 void ClipButton::setStopOthersEnabled(bool enabled) {
-  m_stopOthersEnabled = enabled;
-  repaint();
+  if (m_stopOthersEnabled != enabled) {
+    m_stopOthersEnabled = enabled;
+    repaint(); // CRITICAL: Trigger repaint immediately
+    DBG("ClipButton " << m_buttonIndex << ": Stop-others icon = " << (enabled ? "ON" : "OFF"));
+  }
 }
 
 //==============================================================================
