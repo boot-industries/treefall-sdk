@@ -83,14 +83,9 @@ public:
     return histogram;
   }
 
-  /// Called by audio thread to update metrics
-  /// @param callbackDurationUs Audio callback duration in microseconds
-  /// @param bufferDurationUs Buffer duration in microseconds
-  /// @param activeClips Number of currently active clips
-  /// @param sampleRate Sample rate in Hz
-  /// @param bufferSize Buffer size in samples
-  void updateMetrics(uint64_t callbackDurationUs, uint64_t bufferDurationUs, uint32_t activeClips,
-                     uint32_t sampleRate, uint32_t bufferSize) {
+  void recordAudioCallback(uint64_t callbackDurationUs, uint64_t bufferDurationUs,
+                           uint32_t activeClips, uint32_t sampleRate,
+                           uint32_t bufferSize) override {
     // Update total samples processed
     m_totalSamplesProcessed.fetch_add(bufferSize, std::memory_order_relaxed);
 
@@ -137,8 +132,7 @@ public:
     }
   }
 
-  /// Called by audio thread when an underrun occurs
-  void reportUnderrun() {
+  void reportUnderrun() override {
     m_underrunCount.fetch_add(1, std::memory_order_relaxed);
   }
 

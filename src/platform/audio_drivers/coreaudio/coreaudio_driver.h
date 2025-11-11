@@ -12,6 +12,9 @@
 
 namespace orpheus {
 
+// Forward declaration
+class IPerformanceMonitor;
+
 /// CoreAudio driver implementation for macOS
 ///
 /// Provides low-latency audio I/O using AudioUnit (HAL Output).
@@ -35,6 +38,11 @@ public:
   const AudioDriverConfig& getConfig() const override;
   std::string getDriverName() const override;
   uint32_t getLatencySamples() const override;
+
+  /// Set performance monitor for audio metrics tracking
+  /// @param monitor Performance monitor instance (can be nullptr to disable)
+  /// @note Thread-safe: Can be called before or after start()
+  void setPerformanceMonitor(IPerformanceMonitor* monitor);
 
 private:
   /// Audio Unit render callback (invoked on audio thread)
@@ -80,6 +88,9 @@ private:
 
   // Callback
   IAudioCallback* callback_{nullptr};
+
+  // Performance monitoring (optional)
+  IPerformanceMonitor* performance_monitor_{nullptr};
 
   // Audio thread buffers (allocated once in initialize)
   std::vector<float*> input_buffers_;
