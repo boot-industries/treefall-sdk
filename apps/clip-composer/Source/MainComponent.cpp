@@ -2,6 +2,10 @@
 
 #include "MainComponent.h"
 
+#if JUCE_MAC
+#include <mach/mach.h>
+#endif
+
 //==============================================================================
 MainComponent::MainComponent() {
   // Set Inter font as default for all components
@@ -196,9 +200,29 @@ void MainComponent::timerCallback() {
     m_transportControls->setLatencyInfo(latencyMs, bufferSize, sampleRate);
 
     // OCC109 v0.2.2: Update CPU and memory display (1Hz refresh rate)
-    float cpuPercent = juce::SystemStats::getCpuUsage() * 100.0f;
-    int memoryMB = static_cast<int>(juce::SystemStats::getMemoryUsageInMegabytes());
-    m_transportControls->setPerformanceInfo(cpuPercent, memoryMB);
+    // CRITICAL: JUCE doesn't provide getCpuUsage() or getMemoryUsageInMegabytes()
+    // Use platform-specific APIs instead
+#if JUCE_MAC
+    // Get process memory usage via macOS mach API
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) ==
+        KERN_SUCCESS) {
+      int memoryMB = static_cast<int>(info.resident_size / (1024 * 1024));
+
+      // CPU: Placeholder until SDK IPerformanceMonitor integration in v0.3.0
+      // SDK will provide per-thread CPU metrics for audio vs UI threads
+      float cpuPercent = 0.0f; // TODO: Integrate SDK PerformanceMonitor (ORP110 Feature 3)
+
+      m_transportControls->setPerformanceInfo(cpuPercent, memoryMB);
+    } else {
+      // Fallback if mach API fails
+      m_transportControls->setPerformanceInfo(0.0f, 0);
+    }
+#else
+    // Non-macOS platforms: Placeholder
+    m_transportControls->setPerformanceInfo(0.0f, 0);
+#endif
   }
 }
 
