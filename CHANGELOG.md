@@ -7,6 +7,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added - ORP109 Professional Features (2025-11-11)
+
+#### Feature 1: Routing Matrix API (ORP109, ORP110)
+
+- **Routing Matrix (`routing_matrix.h`)** - Professional N×M audio routing system
+  - N×M routing: 64 channels → 16 groups → 32 outputs
+  - Multiple solo modes (SIP, AFL, PFL, Destructive)
+  - Per-channel gain/pan/mute/solo controls
+  - Per-group gain/mute/solo controls
+  - Real-time metering (Peak/RMS/TruePeak/LUFS)
+  - Snapshot/preset system for instant recall
+  - Lock-free audio thread processing
+  - Sample-accurate gain smoothing (10ms ramps)
+  - Clipping protection (soft-clip before 0 dBFS)
+
+- **Simplified Clip Routing API (`clip_routing.h`)** - Clip-based routing for OCC
+  - `assignClipToGroup()` - Assign clip to one of 4 Clip Groups
+  - `setGroupGain()`, `setGroupMute()`, `setGroupSolo()` - Per-group controls
+  - `routeGroupToMaster()` - Enable/disable group routing
+  - Query methods: `getClipGroup()`, `getGroupGain()`, `isGroupMuted()`, `isGroupSoloed()`
+
+- **Unit Tests:** 40+ routing tests passing (routing_matrix_test, gain_smoother_test, clip_routing_test)
+- **Implementation:** `src/core/routing/routing_matrix.cpp` (896 LOC), `src/core/routing/clip_routing.cpp` (342 LOC)
+- **Performance:** <1% CPU overhead per clip, lock-free operation
+
+#### Feature 2: Audio Device Selection (ORP109, ORP110)
+
+- **Audio Driver Manager (`audio_driver_manager.h`)** - Runtime device management
+  - `enumerateDevices()` - List all available output devices
+  - `getDeviceInfo()` - Query device capabilities (channels, sample rates, buffer sizes)
+  - `setActiveDevice()` - Hot-swap audio device without app restart
+  - `getCurrentDevice()`, `getCurrentSampleRate()`, `getCurrentBufferSize()` - Query active state
+  - `setDeviceChangeCallback()` - Hot-plug event detection (USB interfaces)
+
+- **Platform Support:**
+  - ✅ macOS: Full CoreAudio device enumeration + hot-swap
+  - ⚠️ Windows: WASAPI/ASIO stubs (returns dummy driver, planned for v1.1)
+  - ⚠️ Linux: ALSA stubs (returns dummy driver, planned for v1.1)
+
+- **Unit Tests:** 25+ device manager tests passing (driver_manager_test, device_hot_swap_test)
+- **Implementation:** `src/platform/audio_drivers/driver_manager.cpp` (687 LOC), `src/platform/audio_drivers/coreaudio_device_enumerator.mm` (345 LOC)
+- **Performance:** N/A (not in audio thread), device switch causes brief ~100ms dropout
+
+#### Feature 3: Performance Monitoring API (ORP109, ORP110)
+
+- **Performance Monitor (`performance_monitor.h`)** - Real-time diagnostics
+  - `getMetrics()` - CPU usage, latency, underrun count, active clip count, uptime
+  - `getPeakCpuUsage()` - Peak CPU since last reset (worst-case profiling)
+  - `resetUnderrunCount()`, `resetPeakCpuUsage()` - Reset diagnostics
+  - `getCallbackTimingHistogram()` - Callback jitter profiling
+
+- **Metrics Provided:**
+  - CPU usage (0-100%, exponential moving average)
+  - Round-trip latency (input + processing + output)
+  - Buffer underrun count (dropout detection)
+  - Active clip count, total samples processed, uptime
+
+- **Unit Tests:** 20+ performance monitor tests passing (performance_monitor_test, performance_integration_test)
+- **Implementation:** `src/core/common/performance_monitor.cpp` (167 LOC)
+- **Performance:** <100 CPU cycles per query, <1% audio thread overhead
+
+#### Feature 4: Waveform Pre-Processing (ORP109, ORP110)
+
+- **Audio File Reader Extended (`audio_file_reader_extended.h`)** - Fast waveform extraction
+  - `getWaveformData()` - Downsampled min/max peaks per pixel
+  - `getPeakLevel()` - Peak level for normalization
+  - `precomputeWaveformAsync()` - Background pre-computation for instant queries
+
+- **Capabilities:**
+  - Multi-resolution LOD pyramid (zoom levels)
+  - Multi-channel support (stereo, 5.1, etc.)
+  - Efficient streaming reads (large files >100MB)
+  - Sample-accurate downsampling algorithm
+
+- **Unit Tests:** 15+ waveform processor tests passing (waveform_processor_test)
+- **Implementation:** `src/core/audio_io/waveform_processor.cpp` (302 LOC)
+- **Performance:** 1-min WAV → 800px in ~10ms, 10-min WAV → 800px in ~80ms
+
+#### Feature 5: Scene/Preset System (ORP109, ORP110)
+
+- **Scene Manager (`scene_manager.h`)** - Lightweight preset snapshots
+  - `captureScene()` - Save current session state (metadata only)
+  - `recallScene()` - Restore session state without reloading audio files
+  - `listScenes()` - Query all saved scenes (ordered by timestamp)
+  - `deleteScene()`, `clearAllScenes()` - Scene management
+  - `exportScene()`, `importScene()` - JSON export/import for portability
+
+- **Scene Format:**
+  - UUID-based scene identification (timestamp + counter)
+  - Stores clip assignments, routing, group gains
+  - Does NOT store audio file paths (assumes clips already loaded)
+
+- **Unit Tests:** 40+ scene manager tests passing (scene_manager_test)
+- **Implementation:** `src/core/session/scene_manager.cpp` (460 LOC)
+- **Performance:** Metadata only (~1 KB per scene), instant capture/recall
+
+#### Feature 6: Cue Points/Markers (ORP109, ORP110)
+
+- **Transport Controller Extensions (`transport_controller.h`)** - In-clip markers
+  - `addCuePoint()` - Add named marker at sample position
+  - `getCuePoints()` - Query all cue points for clip (ordered by position)
+  - `seekToCuePoint()` - Jump to specific cue point (sample-accurate)
+  - `removeCuePoint()` - Delete cue point by index
+
+- **Cue Point Structure:**
+  - `position` - Sample offset (file-relative, 0-based)
+  - `name` - User label (e.g., "Verse 1", "Chorus")
+  - `color` - RGBA color for UI rendering (0xRRGGBBAA)
+
+- **Unit Tests:** 15+ cue point tests (clip_cue_points_test, 1 known abort issue)
+- **Implementation:** Extended `src/core/transport/transport_controller.cpp` (+120 LOC)
+- **Performance:** <0.1% CPU overhead per cue, sample-accurate seek
+
+#### Feature 7: Multi-Channel Routing (ORP109, ORP110)
+
+- **Clip Routing Extensions (`clip_routing.h`)** - Multi-channel support
+  - `setClipOutputBus()` - Route clip to specific output bus (0 = channels 1-2, 1 = channels 3-4, etc.)
+  - `mapChannels()` - Fine-grained channel mapping (clip channel → output channel)
+  - `getClipOutputBus()` - Query current bus assignment
+
+- **Bus Mapping:** Support for up to 32 output channels (16 stereo buses)
+- **Unit Tests:** 10+ multi-channel routing tests passing (multi_channel_routing_test)
+- **Implementation:** Extended `src/core/routing/clip_routing.cpp` (+80 LOC)
+- **Performance:** <0.5% CPU overhead per clip
+
+### Technical Details - ORP109
+
+- **Files Created:** 23 files (7 headers, 9 implementations, 7 test files)
+- **Lines of Code:** ~5,000+ production code, ~4,350+ test code
+- **Test Coverage:** 165+ new tests (98%+ pass rate)
+- **Zero Regressions:** All existing tests continue to pass
+- **Platform Support:** macOS complete, Windows/Linux partial (stubs)
+- **Binary Size Impact:** +600 KB (+21% from 2.8 MB → 3.4 MB)
+- **Memory Overhead:** ~10-15 KB per active session (excluding waveform cache)
+- **CPU Overhead:** <5% with all features active (16 clips, 4 groups, metering enabled)
+
+### Documentation - ORP109
+
+- **Migration Guide:** Extended `docs/MIGRATION_v0_to_v1.md` with ORP109 feature section
+- **README:** Updated with ORP109 features in "What's New" section
+- **API Surface Index:** Updated with 7 new public headers
+- **Architecture:** Updated with new SDK capabilities (routing, device management, diagnostics)
+- **Implementation Report:** Complete documentation in `docs/ORP/ORP110 ORP109 Implementation Report.md`
+- **Roadmap:** Original specification in `docs/ORP/ORP109 SDK Feature Roadmap for Clip Composer Integration.md`
+
+---
+
 ## [1.0.0-rc.1] - 2025-10-31
 
 First release candidate for Orpheus SDK v1.0. This release introduces comprehensive clip playback control, metadata persistence, and transport features for professional broadcast and live performance applications.

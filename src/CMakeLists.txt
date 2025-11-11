@@ -7,11 +7,13 @@ endif()
 add_library(orpheus_core_runtime OBJECT
   core/common/errors.cpp
   core/common/json_parser.cpp
+  core/common/performance_monitor.cpp
   core/adm/entity_graph.cpp
   core/render/pcm.cpp
   orpheus/render_tracks.cpp
   core/session/session_graph.cpp
   core/session/json_io.cpp
+  core/session/scene_manager.cpp
   core/otio/reconform_plan.cpp
   dsp/oscillator.cpp
 )

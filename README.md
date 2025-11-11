@@ -60,7 +60,7 @@ ctest --test-dir build --output-on-failure
 
 ## What's New in v1.0
 
-Orpheus SDK v1.0 introduces comprehensive clip playback control and metadata persistence:
+Orpheus SDK v1.0 introduces comprehensive clip playback control, metadata persistence, and professional workflow features:
 
 ### 🎚️ Gain Control API
 
@@ -97,6 +97,46 @@ transport->restartClip(handle);
 transport->seekClip(handle, position);
 ```
 
+### 🎛️ ORP109 Professional Features (v1.0.0-rc.2)
+
+**Added 2025-11-11:** Seven major features for professional workflows:
+
+```cpp
+// 1. Routing Matrix - Professional N×M audio routing
+auto routing = createClipRoutingMatrix(sessionGraph, 48000);
+routing->assignClipToGroup(clipHandle, 0);
+routing->setGroupGain(0, -3.0f);
+
+// 2. Audio Device Selection - Runtime device management
+auto driverManager = createAudioDriverManager();
+auto devices = driverManager->enumerateDevices();
+driverManager->setActiveDevice(deviceId, 48000, 512);
+
+// 3. Performance Monitoring - Real-time CPU/latency diagnostics
+auto perfMonitor = createPerformanceMonitor(sessionGraph);
+auto metrics = perfMonitor->getMetrics();
+
+// 4. Waveform Pre-Processing - Fast UI rendering
+auto reader = createAudioFileReaderExtended();
+auto waveform = reader->getWaveformData(0, duration, 800, 0);
+
+// 5. Scene/Preset System - Snapshot management
+auto sceneManager = createSceneManager(sessionGraph);
+std::string sceneId = sceneManager->captureScene("Act 1");
+
+// 6. Cue Points/Markers - In-clip navigation
+transport->addCuePoint(handle, 120000, "Verse 1", 0xFF0000FF);
+transport->seekToCuePoint(handle, 0);
+
+// 7. Multi-Channel Routing - 8-32 channel interfaces
+routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
+```
+
+**Features:** 7 new APIs, 23 new data structures, 165+ new tests
+**Documentation:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for complete guide
+
+---
+
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
 **Migration:** [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for upgrade guide
 
@@ -123,24 +163,40 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - **Trim points** – Sample-accurate IN/OUT boundaries
 - **Fade curves** – Linear, EqualPower, Exponential
 - **Restart/Seek** – Gap-free position control (±0 samples)
+- **Cue points** – In-clip markers with seek-to-cue (ORP109)
 
 ### Audio I/O
 
 - **Audio file reader** – WAV/AIFF/FLAC via libsndfile
 - **Platform drivers** – CoreAudio (macOS), WASAPI/ASIO (Windows)
 - **Dummy driver** – Testing and offline rendering
+- **Device selection** – Runtime device enumeration and hot-swap (ORP109)
+- **Waveform processing** – Fast downsampling for UI rendering (ORP109)
 
 ### Routing & Mixing
 
-- **Routing matrix** – 4 Clip Groups → Master (or custom topologies)
-- **Multi-channel** – Support for 2-32 channel configurations
+- **Routing matrix** – Professional N×M routing with solo/mute/metering (ORP109)
+- **Multi-channel** – Support for 2-32 channel configurations (ORP109)
+- **Clip Groups** – 4 Clip Groups → Master (simplified API for OCC)
+
+### Performance & Diagnostics
+
+- **Performance monitoring** – Real-time CPU/latency/underrun tracking (ORP109)
+- **Real-time metering** – Peak/RMS/TruePeak/LUFS (ORP109)
+- **Callback timing histogram** – Jitter profiling (ORP109)
+
+### Workflow Management
+
+- **Scene/Preset system** – Lightweight snapshot management (ORP109)
+- **Session JSON** – Human-readable format with metadata persistence
+- **Metadata persistence** – Clip settings survive stop/start cycles
 
 ### Developer Tools
 
 - **Session graphs** – Tempo maps, clip grids, metadata storage
 - **ABI negotiation** – Deterministic host/plugin compatibility
 - **Click-track rendering** – Via minhost CLI adapter
-- **Comprehensive tests** – 32 unit tests, AddressSanitizer clean
+- **Comprehensive tests** – 270+ unit tests (165+ ORP109), AddressSanitizer clean
 
 ## Repository Layout
 

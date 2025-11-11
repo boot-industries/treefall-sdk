@@ -3,6 +3,7 @@
 add_library(orpheus_routing STATIC
     routing_matrix.cpp
     gain_smoother.cpp
+    clip_routing.cpp
 )
 
 target_compile_features(orpheus_routing PUBLIC cxx_std_20)

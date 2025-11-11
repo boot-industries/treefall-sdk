@@ -320,4 +320,38 @@ if(TARGET orpheus_audio_io)
         NAME clip_seek_test
         COMMAND clip_seek_test
     )
+
+    # Clip cue points tests (ORP109 Feature 6)
+    add_executable(clip_cue_points_test
+        clip_cue_points_test.cpp
+    )
+
+    target_link_libraries(clip_cue_points_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_cue_points_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_cue_points_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_cue_points_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    add_test(
+        NAME clip_cue_points_test
+        COMMAND clip_cue_points_test
+    )
 endif()
