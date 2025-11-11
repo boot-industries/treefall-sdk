@@ -1901,14 +1901,9 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW #3: If IN moved, and playhead is now < IN, restart from IN
-        if (m_previewPlayer->isPlaying()) {
-          int64_t currentPos = m_previewPlayer->getCurrentPosition();
-          if (currentPos < m_metadata.trimInSamples) {
-            m_previewPlayer->play(); // Restart from new IN point
-            DBG("ClipEditDialog: , key edit law enforced - playhead < IN, restarted");
-          }
-        }
+        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+        restartPlayback();
+        DBG("ClipEditDialog: , key - trim IN changed, restarted from IN");
       }
     };
 
@@ -1952,14 +1947,9 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW #3: If IN moved forward past playhead, restart from new IN
-        if (m_previewPlayer->isPlaying()) {
-          int64_t currentPos = m_previewPlayer->getCurrentPosition();
-          if (currentPos < m_metadata.trimInSamples) {
-            m_previewPlayer->play(); // Restart from new IN point
-            DBG("ClipEditDialog: . key edit law enforced - playhead < IN, restarted");
-          }
-        }
+        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+        restartPlayback();
+        DBG("ClipEditDialog: . key - trim IN changed, restarted from IN");
       }
     };
 
@@ -1999,7 +1989,9 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        enforceOutPointEditLaw();
+        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+        restartPlayback();
+        DBG("ClipEditDialog: ; key - trim OUT changed, restarted from IN");
       }
     };
 
@@ -2043,6 +2035,9 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+        restartPlayback();
+        DBG("ClipEditDialog: ' key - trim OUT changed, restarted from IN");
       }
     };
 

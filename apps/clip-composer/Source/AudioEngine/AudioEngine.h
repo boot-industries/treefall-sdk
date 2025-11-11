@@ -12,6 +12,7 @@ class IAudioFileReader;
 class IAudioDriver;
 class ITransportCallback;
 class IAudioCallback;
+class IPerformanceMonitor;
 using ClipHandle = uint32_t; // Handle type for clips and Cue Busses
 } // namespace orpheus
 
@@ -233,11 +234,18 @@ public:
   /**
    * Get current CPU usage percentage
    *
-   * @return CPU usage 0.0-100.0 (requires IPerformanceMonitor in Month 4-5)
+   * @return CPU usage 0.0-100.0 (from IPerformanceMonitor)
    *
    * Returns 0.0 if performance monitor not available.
    */
   float getCpuUsage() const;
+
+  /**
+   * Get performance monitor (for direct access to metrics)
+   *
+   * @return Pointer to performance monitor (may be nullptr if not initialized)
+   */
+  orpheus::IPerformanceMonitor* getPerformanceMonitor() const;
 
 private:
   //==============================================================================
@@ -245,8 +253,8 @@ private:
   std::unique_ptr<orpheus::ITransportController> m_transportController;
   std::unique_ptr<orpheus::IAudioDriver> m_audioDriver;
   std::unique_ptr<AudioEngineCallback> m_audioCallback;
-  // std::unique_ptr<orpheus::IRoutingMatrix> m_routingMatrix;  // Month 3-4
-  // std::unique_ptr<orpheus::IPerformanceMonitor> m_perfMonitor;  // Month 4-5
+  std::unique_ptr<orpheus::IPerformanceMonitor> m_perfMonitor;
+  // std::unique_ptr<orpheus::IRoutingMatrix> m_routingMatrix;  // Month 3-4 (ORP110 Feature 1)
 
   // Configuration
   uint32_t m_sampleRate = 0;

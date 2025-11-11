@@ -2,7 +2,15 @@
 
 #include "AudioEngine.h"
 #include <orpheus/audio_driver.h>
+#include <orpheus/performance_monitor.h>
 #include <orpheus/transport_controller.h>
+
+// Platform-specific driver headers (for performance monitor integration)
+#ifdef __APPLE__
+namespace orpheus {
+class CoreAudioDriver;
+} // namespace orpheus
+#endif
 
 //==============================================================================
 // Audio callback adapter: SDK's IAudioCallback implemented for TransportController
@@ -78,6 +86,14 @@ bool AudioEngine::initialize(uint32_t sampleRate, uint16_t bufferSize) {
     return false;
   }
 
+  // Create performance monitor (for CPU/latency tracking)
+  m_perfMonitor = orpheus::createPerformanceMonitor(nullptr); // No session graph yet
+  if (!m_perfMonitor) {
+    DBG("AudioEngine: Warning - Failed to create performance monitor (metrics unavailable)");
+  } else {
+    DBG("AudioEngine: Performance monitor created");
+  }
+
   m_initialized = true;
   DBG("AudioEngine: Initialized (" + juce::String(sampleRate) + " Hz, " + juce::String(bufferSize) +
       " samples)");
@@ -97,6 +113,20 @@ bool AudioEngine::start() {
 
   // Create audio callback adapter
   m_audioCallback = std::make_unique<AudioEngineCallback>(m_transportController.get());
+
+  // Attach performance monitor to audio driver (if available)
+  // Note: CoreAudioDriver supports this via dynamic_cast, other drivers may not
+  if (m_perfMonitor) {
+// Try to attach performance monitor to CoreAudio driver
+// This is platform-specific, so we need to cast to the concrete type
+#ifdef __APPLE__
+    auto* coreAudioDriver = dynamic_cast<orpheus::CoreAudioDriver*>(m_audioDriver.get());
+    if (coreAudioDriver) {
+      coreAudioDriver->setPerformanceMonitor(m_perfMonitor.get());
+      DBG("AudioEngine: Performance monitor attached to CoreAudio driver");
+    }
+#endif
+  }
 
   auto result = m_audioDriver->start(m_audioCallback.get());
   if (result != orpheus::SessionGraphError::OK) {
@@ -212,8 +242,15 @@ bool AudioEngine::isClipPlaying(int buttonIndex) const {
 }
 
 float AudioEngine::getCpuUsage() const {
-  // TODO (Month 4-5): Get from IPerformanceMonitor
-  return 0.0f;
+  if (!m_perfMonitor)
+    return 0.0f;
+
+  auto metrics = m_perfMonitor->getMetrics();
+  return metrics.cpuUsagePercent;
+}
+
+orpheus::IPerformanceMonitor* AudioEngine::getPerformanceMonitor() const {
+  return m_perfMonitor.get();
 }
 
 //==============================================================================

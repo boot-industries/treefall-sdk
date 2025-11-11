@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "coreaudio_driver.h"
 
+#include <orpheus/performance_monitor.h>
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -151,6 +153,11 @@ uint32_t CoreAudioDriver::getLatencySamples() const {
   return latency_samples_.load(std::memory_order_acquire);
 }
 
+void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  performance_monitor_ = monitor;
+}
+
 // Static audio callback
 OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                          const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
@@ -187,13 +194,32 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     return noErr; // Driver is stopping, output silence
   }
 
-  // Invoke user callback (lock-free)
+  // Invoke user callback (lock-free) - measure timing for performance monitoring
   const float** input_ptrs = driver->input_buffers_.empty()
                                  ? nullptr
                                  : const_cast<const float**>(driver->input_buffers_.data());
   float** output_ptrs = driver->output_buffers_.data();
 
+  // Measure audio callback execution time
+  auto callback_start = std::chrono::high_resolution_clock::now();
   driver->callback_->processAudio(input_ptrs, output_ptrs, num_channels, frames_to_process);
+  auto callback_end = std::chrono::high_resolution_clock::now();
+
+  // Report performance metrics if monitor is available
+  if (driver->performance_monitor_) {
+    auto duration_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(callback_end - callback_start);
+    uint64_t callback_duration_us = static_cast<uint64_t>(duration_us.count());
+    uint64_t buffer_duration_us =
+        (static_cast<uint64_t>(frames_to_process) * 1'000'000) / driver->config_.sample_rate;
+
+    // TODO: Get active clip count from transport controller (for now, use 0)
+    uint32_t active_clips = 0;
+
+    driver->performance_monitor_->recordAudioCallback(callback_duration_us, buffer_duration_us,
+                                                      active_clips, driver->config_.sample_rate,
+                                                      frames_to_process);
+  }
 
   // Copy planar output buffers to CoreAudio non-interleaved buffers
   for (uint32_t ch = 0; ch < num_channels && ch < ioData->mNumberBuffers; ++ch) {

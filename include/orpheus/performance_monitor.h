@@ -96,6 +96,43 @@ public:
   /// @note Example buckets: 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms+
   /// @note Histogram is accumulated over the lifetime of the monitor
   virtual std::vector<std::pair<float, uint32_t>> getCallbackTimingHistogram() const = 0;
+
+  /// Record audio callback performance (called by audio driver)
+  ///
+  /// This method should be called by the audio driver after each audio callback
+  /// to update performance metrics. It measures CPU usage as a percentage of
+  /// available time (callbackDuration / bufferDuration * 100).
+  ///
+  /// @param callbackDurationUs Audio callback execution time in microseconds
+  /// @param bufferDurationUs Audio buffer duration in microseconds
+  /// @param activeClips Number of currently active clips
+  /// @param sampleRate Sample rate in Hz
+  /// @param bufferSize Buffer size in samples
+  ///
+  /// @note Thread-safe: Should be called from audio thread
+  /// @note Performance: <100 CPU cycles (atomic operations only, no locks)
+  /// @note This is the preferred way to measure audio CPU (deadline-based, not wall-clock)
+  ///
+  /// @code
+  /// auto start = std::chrono::high_resolution_clock::now();
+  /// callback->processAudio(inputs, outputs, channels, frames);
+  /// auto end = std::chrono::high_resolution_clock::now();
+  /// uint64_t durationUs = std::chrono::duration_cast<std::chrono::microseconds>(end -
+  /// start).count(); uint64_t bufferUs = (frames * 1'000'000) / sampleRate;
+  /// monitor->recordAudioCallback(durationUs, bufferUs, activeClips, sampleRate, frames);
+  /// @endcode
+  virtual void recordAudioCallback(uint64_t callbackDurationUs, uint64_t bufferDurationUs,
+                                   uint32_t activeClips, uint32_t sampleRate,
+                                   uint32_t bufferSize) = 0;
+
+  /// Report audio buffer underrun (called by audio driver)
+  ///
+  /// This method should be called whenever the audio driver detects a buffer
+  /// underrun (dropout). This increments the underrun counter returned by getMetrics().
+  ///
+  /// @note Thread-safe: Should be called from audio thread
+  /// @note Performance: <10 CPU cycles (single atomic increment)
+  virtual void reportUnderrun() = 0;
 };
 
 /// Create performance monitor instance
