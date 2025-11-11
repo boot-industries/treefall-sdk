@@ -158,6 +158,9 @@ private:
   // If OUT is set to <= playhead, jump playhead to IN and restart
   void enforceOutPointEditLaw();
 
+  // Restart playback from current IN point (for edit law enforcement)
+  void restartPlayback();
+
   //==============================================================================
   ClipMetadata m_metadata;
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
