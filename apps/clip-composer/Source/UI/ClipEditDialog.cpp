@@ -500,6 +500,13 @@ void ClipEditDialog::buildPhase2UI() {
     if (m_previewPlayer) {
       // Play button ALWAYS restarts from IN point (that's its purpose)
       m_previewPlayer->play();
+
+      // CRITICAL: Immediately update waveform playhead to IN point (don't wait for 75fps timer)
+      // This ensures visual feedback is instant when PLAY is pressed
+      if (m_waveformDisplay) {
+        m_waveformDisplay->setPlayheadPosition(m_metadata.trimInSamples);
+      }
+
       DBG("ClipEditDialog: Play button - restarted from IN point");
     }
   };
@@ -1791,13 +1798,16 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
           std::clamp(currentPos, int64_t(0), m_metadata.trimOutSamples - tickInSamples);
       updateTrimInfoLabel();
 
-      // CRITICAL: ONLY update waveform, which triggers onTrimPointsChanged callback
-      // That callback handles preview player update and restart (prevents double restart)
       if (m_waveformDisplay) {
         m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
       }
 
-      DBG("ClipEditDialog: 'I' key - Set IN point to sample " << m_metadata.trimInSamples);
+      // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+      m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+      restartPlayback();
+
+      DBG("ClipEditDialog: 'I' key - Set IN point to sample " << m_metadata.trimInSamples
+                                                              << ", restarted from IN");
     }
     return true;
   }
@@ -1810,13 +1820,16 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
                                              m_metadata.durationSamples);
       updateTrimInfoLabel();
 
-      // CRITICAL: ONLY update waveform, which triggers onTrimPointsChanged callback
-      // That callback handles preview player update (prevents double call)
       if (m_waveformDisplay) {
         m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
       }
 
-      DBG("ClipEditDialog: 'O' key - Set OUT point to sample " << m_metadata.trimOutSamples);
+      // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+      m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+      restartPlayback();
+
+      DBG("ClipEditDialog: 'O' key - Set OUT point to sample " << m_metadata.trimOutSamples
+                                                               << ", restarted from IN");
     }
     return true;
   }
