@@ -55,6 +55,10 @@ public:
       getClipStates; // buttonIndex → (loop, fadeIn, fadeOut, stopOthers)
 
   //==============================================================================
+  // Timer management for performance optimization
+  void setHasActiveClips(bool hasActive);
+
+  //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
 
@@ -78,6 +82,8 @@ private:
   static constexpr int GAP = 2;
 
   std::vector<std::unique_ptr<ClipButton>> m_buttons;
+
+  bool m_hasActiveClips = false; // Track if any clips are playing
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };
