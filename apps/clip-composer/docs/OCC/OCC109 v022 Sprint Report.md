@@ -27,6 +27,7 @@ Implemented 2 critical features deferred from v0.2.1:
 **Development Environment:** CCW Cloud (Web-based Claude Code)
 
 **Development Strategy:**
+
 - **Core SDK changes:** routing_matrix.cpp, transport_controller.cpp
 - **Application UI changes:** TransportControls.h/cpp, MainComponent.cpp
 
@@ -118,16 +119,18 @@ if (config.enable_clipping_protection) {
 
 **Color-Coded Thresholds:**
 
-| Metric | Green       | Orange        | Red          |
-| ------ | ----------- | ------------- | ------------ |
-| CPU    | < 50%       | 50% - 80%     | ≥ 80%        |
-| Memory | < 200MB     | 200MB - 500MB | ≥ 500MB      |
-| Latency| < 10ms      | 10ms - 20ms   | ≥ 20ms (existing) |
+| Metric  | Green   | Orange        | Red               |
+| ------- | ------- | ------------- | ----------------- |
+| CPU     | < 50%   | 50% - 80%     | ≥ 80%             |
+| Memory  | < 200MB | 200MB - 500MB | ≥ 500MB           |
+| Latency | < 10ms  | 10ms - 20ms   | ≥ 20ms (existing) |
 
-**JUCE System APIs Used:**
+**System APIs Used:**
 
-- `juce::SystemStats::getCpuUsage()` - Returns 0.0 - 1.0 (converted to percentage)
-- `juce::SystemStats::getMemoryUsageInMegabytes()` - Returns app memory in MB
+- `mach_task_basic_info` (macOS) - Returns app resident memory in bytes via `task_info()`
+- CPU usage: Placeholder (pending SDK IPerformanceMonitor integration in v0.3.0)
+
+**Note:** JUCE 8.0.4 does not provide `getCpuUsage()` or `getMemoryUsageInMegabytes()`. We use platform-specific macOS APIs for memory tracking and defer CPU tracking to SDK integration.
 
 **Testing:**
 
@@ -210,11 +213,11 @@ if (config.enable_clipping_protection) {
 
 ### Limitation 1: CPU Usage Measurement
 
-**Issue:** `juce::SystemStats::getCpuUsage()` reports process-wide CPU, not audio thread CPU.
+**Issue:** CPU monitoring not yet implemented (placeholder shows 0%).
 
-**Impact:** Display shows total app CPU (UI thread + audio thread combined).
+**Impact:** Users cannot see real-time CPU usage in the UI status bar.
 
-**Future Fix:** Integrate SDK Performance Monitoring API (ORP110 Feature 3) for per-thread CPU.
+**Future Fix:** Integrate SDK IPerformanceMonitor API (ORP110 Feature 3) for per-thread CPU metrics (audio vs UI).
 
 **Target:** v0.3.0
 
