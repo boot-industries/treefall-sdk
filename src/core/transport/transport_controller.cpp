@@ -1465,6 +1465,98 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
   return SessionGraphError::OK;
 }
 
+int TransportController::addCuePoint(ClipHandle handle, int64_t position, const std::string& name,
+                                     uint32_t color) {
+  if (handle == 0) {
+    return -1; // Invalid handle
+  }
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return -1; // Clip not registered
+  }
+
+  // Clamp position to valid range [0, fileDuration]
+  int64_t fileDuration = it->second.metadata.duration_samples;
+  int64_t clampedPosition = std::clamp(position, int64_t(0), fileDuration);
+
+  // Create cue point
+  CuePoint cue;
+  cue.position = clampedPosition;
+  cue.name = name;
+  cue.color = color;
+
+  // Add to vector and keep sorted by position
+  auto& cuePoints = it->second.cuePoints;
+  auto insertPos = std::lower_bound(
+      cuePoints.begin(), cuePoints.end(), cue,
+      [](const CuePoint& a, const CuePoint& b) { return a.position < b.position; });
+
+  cuePoints.insert(insertPos, cue);
+
+  // Return index of inserted cue point
+  return static_cast<int>(std::distance(cuePoints.begin(), insertPos));
+}
+
+std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return {}; // Return empty vector if clip not found
+  }
+
+  return it->second.cuePoints; // Return copy of cue points
+}
+
+SessionGraphError TransportController::seekToCuePoint(ClipHandle handle, uint32_t cueIndex) {
+  if (handle == 0) {
+    return SessionGraphError::InvalidHandle;
+  }
+
+  // Get cue point position
+  int64_t cuePosition = 0;
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it == m_audioFiles.end()) {
+      return SessionGraphError::ClipNotRegistered;
+    }
+
+    const auto& cuePoints = it->second.cuePoints;
+    if (cueIndex >= cuePoints.size()) {
+      return SessionGraphError::InvalidParameter; // Cue index out of range
+    }
+
+    cuePosition = cuePoints[cueIndex].position;
+  }
+
+  // Use existing seekClip() to perform the seek
+  return seekClip(handle, cuePosition);
+}
+
+SessionGraphError TransportController::removeCuePoint(ClipHandle handle, uint32_t cueIndex) {
+  if (handle == 0) {
+    return SessionGraphError::InvalidHandle;
+  }
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+
+  auto& cuePoints = it->second.cuePoints;
+  if (cueIndex >= cuePoints.size()) {
+    return SessionGraphError::InvalidParameter; // Cue index out of range
+  }
+
+  // Remove cue point at index (subsequent indices shift down)
+  cuePoints.erase(cuePoints.begin() + cueIndex);
+
+  return SessionGraphError::OK;
+}
+
 // Factory function
 std::unique_ptr<ITransportController> createTransportController(core::SessionGraph* sessionGraph,
                                                                 uint32_t sampleRate) {

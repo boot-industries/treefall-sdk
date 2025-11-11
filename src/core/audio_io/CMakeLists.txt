@@ -27,7 +27,8 @@ set(ORPHEUS_AUDIO_IO_SOURCES
 
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_IO_SOURCES audio_file_reader_libsndfile.cpp)
-    message(STATUS "✓ libsndfile FOUND - audio file reading enabled")
+    list(APPEND ORPHEUS_AUDIO_IO_SOURCES waveform_processor.cpp)
+    message(STATUS "✓ libsndfile FOUND - audio file reading enabled (with waveform processing)")
 else()
     # Provide stub implementation when libsndfile is not available
     # This ensures createAudioFileReader() symbol exists for linking

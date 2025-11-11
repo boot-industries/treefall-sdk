@@ -15,6 +15,39 @@ option(ORPHEUS_ENABLE_ASIO "Build ASIO driver (Windows, requires ASIO SDK)" OFF)
 
 # Note: Dummy driver is built in core/audio_io alongside audio file reader
 
+# Audio Driver Manager (platform-agnostic device enumeration and management)
+add_library(orpheus_audio_driver_manager STATIC
+    driver_manager.cpp
+)
+
+target_include_directories(orpheus_audio_driver_manager
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+target_link_libraries(orpheus_audio_driver_manager
+    PUBLIC
+        orpheus_session  # For SessionGraphError
+)
+
+# Link platform-specific frameworks
+if(APPLE)
+    target_link_libraries(orpheus_audio_driver_manager
+        PRIVATE
+            "-framework CoreAudio"
+    )
+endif()
+
+target_compile_features(orpheus_audio_driver_manager PUBLIC cxx_std_20)
+set_target_properties(orpheus_audio_driver_manager PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+orpheus_enable_warnings(orpheus_audio_driver_manager)
+
+message(STATUS "Orpheus: Audio Driver Manager enabled")
+
 # CoreAudio driver (macOS)
 if(ORPHEUS_ENABLE_COREAUDIO)
     add_library(orpheus_audio_driver_coreaudio STATIC
@@ -127,6 +160,7 @@ add_library(orpheus_audio_drivers INTERFACE)
 
 target_link_libraries(orpheus_audio_drivers
     INTERFACE
+        orpheus_audio_driver_manager
         $<$<BOOL:${ORPHEUS_ENABLE_COREAUDIO}>:orpheus_audio_driver_coreaudio>
         $<$<BOOL:${ORPHEUS_ENABLE_WASAPI}>:orpheus_audio_driver_wasapi>
         $<$<BOOL:${ORPHEUS_ENABLE_ASIO}>:orpheus_audio_driver_asio>

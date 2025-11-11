@@ -1,23 +1,20 @@
 # ORP Documentation Index
 
-**Prefix:** ORP (Orpheus SDK)  
-**Next Available Number:** ORP098
+**Prefix:** ORP (Orpheus SDK)
+**Next Available Number:** ORP111
 
 ## Active Documentation
 
 Current, frequently-referenced documents. See individual files for full titles.
 
-Recent documents (ORP090-ORP097):
+Recent documents (ORP090-ORP110):
 
 - [ORP068](./ORP068.md) — Implementation Plan (v2.0) - Current roadmap
-- [ORP090](./ORP090.md)
-- [ORP091](./ORP091.md)
-- [ORP092](./ORP092.md)
-- [ORP093](./ORP093.md)
-- [ORP094](./ORP094.md)
-- [ORP095](./ORP095.md)
-- [ORP096](./ORP096.md)
-- [ORP097](./ORP097.md)
+- [ORP099](./ORP099.md) — SDK Track Phase 4 Completion and Testing
+- [ORP100](./ORP100.md) — Unit Tests Implementation Report
+- [ORP101](./ORP101.md) — Phase 4 Completion Report
+- [ORP109](./ORP109 SDK Feature Roadmap for Clip Composer Integration.md) — SDK Feature Roadmap for Clip Composer Integration
+- [ORP110](./ORP110 ORP109 Implementation Report.md) — ORP109 Implementation Report (7 features complete)
 
 For complete list, see: `ls -1 docs/orp/ORP*.md`
 
@@ -44,7 +41,7 @@ View archived docs: `ls -1 docs/orp/archive/`
 
 ## Creating New Documents
 
-1. Use next available number: **ORP098**
+1. Use next available number: **ORP111**
 2. Follow naming pattern: `ORP098 Title Here.md` or `ORP098.md`
 3. Use IEEE citation style for references
 4. Update this INDEX.md with the new document

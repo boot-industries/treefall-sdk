@@ -81,6 +81,14 @@ struct SessionDefaults {
   // Note: Default color is OCC-specific and stored in SessionManager
 };
 
+/// Cue point marker within a clip
+/// Used for navigation and precise positioning within audio files
+struct CuePoint {
+  int64_t position; ///< Position in samples (file offset, 0-based)
+  std::string name; ///< User label (e.g., "Verse 1", "Chorus")
+  uint32_t color;   ///< RGBA color for UI rendering (0xRRGGBBAA format)
+};
+
 /// Callback interface for transport events
 /// All callbacks are invoked on the UI thread (NOT audio thread)
 class ITransportCallback {
@@ -469,6 +477,96 @@ public:
   ///
   /// @see restartClip(), startClip(), getClipPosition()
   virtual SessionGraphError seekClip(ClipHandle handle, int64_t position) = 0;
+
+  /// Add cue point to clip
+  ///
+  /// Cue points are markers within a clip for precise navigation (e.g., "Verse 1", "Chorus").
+  /// Cue points are stored sorted by position for efficient seeking.
+  ///
+  /// @param handle Clip handle (must be registered via registerClipAudio)
+  /// @param position Position in samples (0-based file offset)
+  /// @param name User label (e.g., "Verse 1", "Intro", "Vocal Entry")
+  /// @param color RGBA color for UI rendering (0xRRGGBBAA format)
+  /// @return Index of added cue point (0-based), or -1 on error
+  ///
+  /// @note Thread-safe: Can be called from UI thread
+  /// @note Cue points persist across stop/start cycles
+  /// @note Position is validated against file duration (clamped to [0, fileDuration])
+  /// @note Duplicate positions are allowed (multiple markers at same position)
+  ///
+  /// @code
+  /// // Add cue point at 5 seconds with blue color
+  /// int64_t position = 5 * sampleRate;
+  /// int cueIndex = transport->addCuePoint(handle, position, "Verse 1", 0x0000FFFF);
+  /// @endcode
+  ///
+  /// @see getCuePoints(), seekToCuePoint(), removeCuePoint()
+  virtual int addCuePoint(ClipHandle handle, int64_t position, const std::string& name,
+                          uint32_t color) = 0;
+
+  /// Get all cue points for clip
+  ///
+  /// Returns cue points sorted by position (ascending order).
+  ///
+  /// @param handle Clip handle
+  /// @return Vector of cue points (ordered by position), or empty vector if clip not found
+  ///
+  /// @note Thread-safe: Can be called from any thread
+  /// @note Returns copy of cue points (not references)
+  ///
+  /// @code
+  /// auto cuePoints = transport->getCuePoints(handle);
+  /// for (const auto& cue : cuePoints) {
+  ///   std::cout << cue.name << " at " << cue.position << " samples" << std::endl;
+  /// }
+  /// @endcode
+  ///
+  /// @see addCuePoint(), seekToCuePoint()
+  virtual std::vector<CuePoint> getCuePoints(ClipHandle handle) const = 0;
+
+  /// Seek to specific cue point
+  ///
+  /// Seeks clip to the position of the specified cue point (by index).
+  /// Uses seekClip() internally for sample-accurate seeking.
+  ///
+  /// @param handle Clip handle
+  /// @param cueIndex Index in cue points array (0-based)
+  /// @return SessionGraphError::OK on success, error code otherwise
+  ///
+  /// @note Thread-safe: Can be called from UI thread
+  /// @note Clip must be playing to seek (returns NotReady if stopped)
+  /// @note Returns InvalidParameter if cueIndex is out of range
+  ///
+  /// @code
+  /// // Seek to first cue point (e.g., keyboard shortcut Cmd+1)
+  /// auto result = transport->seekToCuePoint(handle, 0);
+  /// if (result != SessionGraphError::OK) {
+  ///   showError("Cue point not found");
+  /// }
+  /// @endcode
+  ///
+  /// @see seekClip(), getCuePoints(), addCuePoint()
+  virtual SessionGraphError seekToCuePoint(ClipHandle handle, uint32_t cueIndex) = 0;
+
+  /// Remove cue point
+  ///
+  /// Removes cue point at specified index. Subsequent indices are shifted down.
+  ///
+  /// @param handle Clip handle
+  /// @param cueIndex Index to remove (0-based)
+  /// @return SessionGraphError::OK on success, error code otherwise
+  ///
+  /// @note Thread-safe: Can be called from UI thread
+  /// @note Returns InvalidParameter if cueIndex is out of range
+  /// @note Indices shift: removing cue 1 makes cue 2 become cue 1
+  ///
+  /// @code
+  /// // Remove second cue point (index 1)
+  /// auto result = transport->removeCuePoint(handle, 1);
+  /// @endcode
+  ///
+  /// @see addCuePoint(), getCuePoints()
+  virtual SessionGraphError removeCuePoint(ClipHandle handle, uint32_t cueIndex) = 0;
 };
 
 /// Create a transport controller instance

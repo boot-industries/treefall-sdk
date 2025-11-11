@@ -40,6 +40,33 @@ if(SNDFILE_FOUND)
     )
 
     add_test(NAME audio_file_reader_test COMMAND audio_file_reader_test)
+
+    # Waveform processor tests (requires libsndfile)
+    add_executable(waveform_processor_test
+        waveform_processor_test.cpp
+    )
+
+    target_link_libraries(waveform_processor_test
+        PRIVATE
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+            ${SNDFILE_LIBRARIES}
+    )
+
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(waveform_processor_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+    endif()
+
+    target_include_directories(waveform_processor_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${SNDFILE_INCLUDE_DIRS}
+    )
+
+    add_test(NAME waveform_processor_test COMMAND waveform_processor_test)
 endif()
 
 # Dummy driver tests
@@ -94,3 +121,79 @@ if(ORPHEUS_ENABLE_COREAUDIO)
 
     add_test(NAME coreaudio_driver_test COMMAND coreaudio_driver_test)
 endif()
+
+# Audio Driver Manager tests
+add_executable(driver_manager_test
+    driver_manager_test.cpp
+)
+
+target_link_libraries(driver_manager_test
+    PRIVATE
+        orpheus_audio_driver_manager
+        orpheus_audio_io  # For dummy driver
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+# If CoreAudio is enabled, link it for hot-swap tests
+if(ORPHEUS_ENABLE_COREAUDIO)
+    target_link_libraries(driver_manager_test PRIVATE
+        orpheus_audio_driver_coreaudio
+        "-framework CoreFoundation"
+    )
+endif()
+
+# If libsndfile is found, link it (needed because orpheus_audio_io is static)
+if(SNDFILE_FOUND)
+    target_link_libraries(driver_manager_test PRIVATE ${SNDFILE_LIBRARIES})
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(driver_manager_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+    endif()
+endif()
+
+target_include_directories(driver_manager_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+add_test(NAME driver_manager_test COMMAND driver_manager_test)
+
+# Device hot-swap integration tests
+add_executable(device_hot_swap_test
+    device_hot_swap_test.cpp
+)
+
+target_link_libraries(device_hot_swap_test
+    PRIVATE
+        orpheus_audio_driver_manager
+        orpheus_audio_io  # For dummy driver
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+# If CoreAudio is enabled, link it for hot-swap tests
+if(ORPHEUS_ENABLE_COREAUDIO)
+    target_link_libraries(device_hot_swap_test PRIVATE
+        orpheus_audio_driver_coreaudio
+        "-framework CoreFoundation"
+    )
+endif()
+
+# If libsndfile is found, link it (needed because orpheus_audio_io is static)
+if(SNDFILE_FOUND)
+    target_link_libraries(device_hot_swap_test PRIVATE ${SNDFILE_LIBRARIES})
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(device_hot_swap_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+    endif()
+endif()
+
+target_include_directories(device_hot_swap_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+add_test(NAME device_hot_swap_test COMMAND device_hot_swap_test)

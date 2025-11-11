@@ -115,6 +115,13 @@ public:
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
+  // Cue point management
+  int addCuePoint(ClipHandle handle, int64_t position, const std::string& name,
+                  uint32_t color) override;
+  std::vector<CuePoint> getCuePoints(ClipHandle handle) const override;
+  SessionGraphError seekToCuePoint(ClipHandle handle, uint32_t cueIndex) override;
+  SessionGraphError removeCuePoint(ClipHandle handle, uint32_t cueIndex) override;
+
   /// Process audio (called from audio thread)
   /// @param outputBuffers Output buffers (one per channel)
   /// @param numChannels Number of output channels
@@ -221,6 +228,9 @@ private:
     float gainDb = 0.0f;           // Gain in decibels (0.0 = unity)
     bool loopEnabled = false;      // true = loop indefinitely
     bool stopOthersOnPlay = false; // true = stop all other clips when this one starts
+
+    // Cue points (stored sorted by position)
+    std::vector<CuePoint> cuePoints;
   };
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
