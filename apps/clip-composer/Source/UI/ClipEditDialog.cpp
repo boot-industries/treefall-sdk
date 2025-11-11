@@ -665,21 +665,16 @@ void ClipEditDialog::buildPhase2UI() {
     m_metadata.trimInSamples = newInPoint;
     updateTrimInfoLabel();
 
-    // CRITICAL: ONLY update waveform, which triggers onTrimPointsChanged callback
-    // That callback handles preview player update (prevents double restart)
     m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
 
-    // Enforce edit law: If playhead < new IN, jump to IN and restart
-    if (m_previewPlayer && m_previewPlayer->isPlaying()) {
-      int64_t currentPos = m_previewPlayer->getCurrentPosition();
-      if (currentPos < m_metadata.trimInSamples) {
-        m_previewPlayer->play(); // Restarts from new IN point
-        DBG("ClipEditDialog: IN point edit law enforced - playhead was < IN ("
-            << currentPos << " < " << m_metadata.trimInSamples << "), restarted from IN");
-      }
+    // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+    if (m_previewPlayer) {
+      m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+      restartPlayback();
     }
 
-    DBG("ClipEditDialog: Cmd+Click - Set IN point to sample " << newInPoint);
+    DBG("ClipEditDialog: Cmd+Click - Set IN point to sample " << newInPoint
+                                                              << ", restarted from IN");
   };
 
   m_waveformDisplay->onRightClick = [this](int64_t samples) {
@@ -694,14 +689,16 @@ void ClipEditDialog::buildPhase2UI() {
     m_metadata.trimOutSamples = newOutPoint;
     updateTrimInfoLabel();
 
-    // CRITICAL: ONLY update waveform, which triggers onTrimPointsChanged callback
-    // That callback handles preview player update (prevents double restart)
     m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
 
-    // Enforce edit law: If playhead >= new OUT, jump to IN and restart
-    enforceOutPointEditLaw();
+    // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+    if (m_previewPlayer) {
+      m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+      restartPlayback();
+    }
 
-    DBG("ClipEditDialog: Cmd+Shift+Click - Set OUT point to sample " << newOutPoint);
+    DBG("ClipEditDialog: Cmd+Shift+Click - Set OUT point to sample " << newOutPoint
+                                                                     << ", restarted from IN");
   };
 
   m_waveformDisplay->onMiddleClick = [this](int64_t samples) {
@@ -723,9 +720,12 @@ void ClipEditDialog::buildPhase2UI() {
     m_metadata.trimOutSamples = outSamples;
     updateTrimInfoLabel();
 
-    // Update preview player trim points
+    // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
     if (m_previewPlayer) {
       m_previewPlayer->setTrimPoints(inSamples, outSamples);
+      restartPlayback();
+      DBG("ClipEditDialog: Handle drag - trim points changed to ["
+          << inSamples << ", " << outSamples << "], restarted from IN");
     }
   };
 

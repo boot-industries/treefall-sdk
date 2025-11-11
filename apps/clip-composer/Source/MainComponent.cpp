@@ -228,6 +228,24 @@ void MainComponent::timerCallback() {
 
 //==============================================================================
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+  // CRITICAL: Suspend main grid hotkeys when Clip Edit dialog is open
+  // Edit Dialog key commands must take priority to prevent misfires during editing
+  if (m_currentEditDialog != nullptr && m_currentEditDialog->isVisible()) {
+    // Edit Dialog is open - do NOT process main grid hotkeys
+    // Exception: Allow Cmd+Shift+Tab switching even when dialog is open (power user feature)
+    if ((key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()) &&
+        key.getModifiers().isShiftDown()) {
+      int keyCode = key.getKeyCode();
+      if (keyCode >= '1' && keyCode <= '8') {
+        int tabIndex = keyCode - '1'; // Convert '1'-'8' to 0-7
+        m_tabSwitcher->setActiveTab(tabIndex);
+        return true;
+      }
+    }
+    // All other keys are handled by Edit Dialog - do NOT process here
+    return false;
+  }
+
   // Issue #10: Tab switching: Cmd+Shift+1 through Cmd+Shift+8
   // (Edit Dialog overrides Cmd+Shift+[1-9,0] for fade times when it has focus)
   if ((key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()) &&
