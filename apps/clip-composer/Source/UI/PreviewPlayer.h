@@ -94,6 +94,10 @@ public:
   /// Called when playback stops (reached end or manual stop)
   std::function<void()> onPlaybackStopped;
 
+  /// Called when playback state changes (for syncing Edit Dialog with main grid visuals)
+  /// @param isPlaying True if playback started, false if stopped
+  std::function<void(bool isPlaying)> onPlayStateChanged;
+
 private:
   //==============================================================================
   // Main grid clip control (view controller pattern)

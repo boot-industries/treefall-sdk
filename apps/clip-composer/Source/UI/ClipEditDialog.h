@@ -131,6 +131,11 @@ public:
     return m_metadata;
   }
 
+  // Get preview player for external state synchronization (Edit Dialog ↔ main grid)
+  PreviewPlayer* getPreviewPlayer() const {
+    return m_previewPlayer.get();
+  }
+
   //==============================================================================
   // Callbacks
   std::function<void(const ClipMetadata&)> onOkClicked;
