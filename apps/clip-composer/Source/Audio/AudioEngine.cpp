@@ -101,7 +101,7 @@ bool AudioEngine::isRunning() const {
 
 //==============================================================================
 bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
   // Generate clip handle (buttonIndex + 1, since 0 is invalid)
@@ -147,13 +147,13 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
 }
 
 std::optional<orpheus::AudioFileMetadata> AudioEngine::getClipMetadata(int buttonIndex) const {
-  if (buttonIndex >= 0 && buttonIndex < 384)
+  if (buttonIndex >= 0 && buttonIndex < AudioEngine::MAX_CLIP_BUTTONS)
     return m_clipMetadata[buttonIndex];
   return std::nullopt;
 }
 
 void AudioEngine::unloadClip(int buttonIndex) {
-  if (buttonIndex < 0 || buttonIndex >= 384)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS)
     return;
 
   // Stop if playing
@@ -172,7 +172,7 @@ bool AudioEngine::updateClipMetadata(int buttonIndex, int64_t trimInSamples, int
                                      double fadeInSeconds, double fadeOutSeconds,
                                      const juce::String& fadeInCurve,
                                      const juce::String& fadeOutCurve) {
-  if (buttonIndex < 0 || buttonIndex >= 384)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -245,7 +245,7 @@ bool AudioEngine::updateClipMetadata(int buttonIndex, int64_t trimInSamples, int
 
 //==============================================================================
 bool AudioEngine::startClip(int buttonIndex) {
-  if (buttonIndex < 0 || buttonIndex >= 384)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -284,7 +284,7 @@ bool AudioEngine::startClip(int buttonIndex) {
 }
 
 bool AudioEngine::stopClip(int buttonIndex) {
-  if (buttonIndex < 0 || buttonIndex >= 384)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -320,7 +320,7 @@ void AudioEngine::panicStop() {
 
 //==============================================================================
 bool AudioEngine::isClipPlaying(int buttonIndex) const {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -331,7 +331,7 @@ bool AudioEngine::isClipPlaying(int buttonIndex) const {
 }
 
 bool AudioEngine::isClipLooping(int buttonIndex) const {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -343,7 +343,7 @@ bool AudioEngine::isClipLooping(int buttonIndex) const {
 }
 
 bool AudioEngine::setClipLoopMode(int buttonIndex, bool shouldLoop) {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -364,7 +364,7 @@ bool AudioEngine::setClipLoopMode(int buttonIndex, bool shouldLoop) {
 }
 
 int64_t AudioEngine::getClipPosition(int buttonIndex) const {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return -1;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -376,7 +376,7 @@ int64_t AudioEngine::getClipPosition(int buttonIndex) const {
 }
 
 bool AudioEngine::seekClip(int buttonIndex, int64_t position) {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -399,7 +399,7 @@ bool AudioEngine::seekClip(int buttonIndex, int64_t position) {
 }
 
 orpheus::PlaybackState AudioEngine::getClipState(int buttonIndex) const {
-  if (buttonIndex < 0 || buttonIndex >= 384 || !m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return orpheus::PlaybackState::Stopped;
 
   auto handle = m_clipHandles[buttonIndex];
@@ -810,13 +810,13 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
 
 //==============================================================================
 orpheus::ClipHandle AudioEngine::getClipHandle(int buttonIndex) const {
-  if (buttonIndex >= 0 && buttonIndex < 384)
+  if (buttonIndex >= 0 && buttonIndex < AudioEngine::MAX_CLIP_BUTTONS)
     return m_clipHandles[buttonIndex];
   return 0;
 }
 
 int AudioEngine::getButtonIndexFromHandle(orpheus::ClipHandle handle) const {
-  for (int i = 0; i < 384; ++i) {
+  for (int i = 0; i < AudioEngine::MAX_CLIP_BUTTONS; ++i) {
     if (m_clipHandles[i] == handle)
       return i;
   }

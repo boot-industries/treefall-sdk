@@ -12,7 +12,7 @@
  * TabSwitcher - Horizontal tab selector for switching between clip pages
  *
  * Provides 8 tabs, each representing a page of 48 clips (6×8 grid).
- * Total capacity: 8 × 48 = 384 clips
+ * Total capacity: 8 × 48 = MAX_CLIP_BUTTONS clips
  *
  * Features:
  * - Visual feedback for active tab

@@ -38,6 +38,12 @@ class TransportController;
 class AudioEngine : public orpheus::ITransportCallback, public orpheus::IAudioCallback {
 public:
   //==============================================================================
+  // Constants
+
+  /// Maximum number of clip buttons (8 tabs × 48 buttons per tab)
+  static constexpr int MAX_CLIP_BUTTONS = 384;
+
+  //==============================================================================
   AudioEngine();
   ~AudioEngine() override;
 
@@ -292,11 +298,11 @@ private:
   std::unique_ptr<orpheus::IAudioDriver> m_audioDriver;
 
   // Clip handle mapping (buttonIndex → ClipHandle)
-  // 8 tabs × 48 buttons per tab = 384 total clips
-  std::array<orpheus::ClipHandle, 384> m_clipHandles;
+  // 8 tabs × 48 buttons per tab = MAX_CLIP_BUTTONS total clips
+  std::array<orpheus::ClipHandle, MAX_CLIP_BUTTONS> m_clipHandles;
 
   // Clip metadata cache (for UI queries)
-  std::array<std::optional<orpheus::AudioFileMetadata>, 384> m_clipMetadata;
+  std::array<std::optional<orpheus::AudioFileMetadata>, MAX_CLIP_BUTTONS> m_clipMetadata;
 
   // Cue Buss management (ClipHandles 10001+)
   std::vector<orpheus::ClipHandle> m_cueBussHandles; // Active Cue Busses
