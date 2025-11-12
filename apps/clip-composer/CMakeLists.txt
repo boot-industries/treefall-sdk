@@ -116,3 +116,26 @@ set_target_properties(orpheus_clip_composer_app PROPERTIES
 # which enables -Werror. We'll re-enable once JUCE issues are resolved or we upgrade.
 # include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 # orpheus_enable_warnings(orpheus_clip_composer_app)
+
+#==============================================================================
+# Testing Infrastructure (Sprint A4)
+#==============================================================================
+
+# Enable CTest
+enable_testing()
+
+# Fetch GoogleTest if testing is enabled
+if(NOT TARGET GTest::gtest)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+    GIT_SHALLOW TRUE
+  )
+  # For Windows: Prevent overriding the parent project's compiler/linker settings
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+endif()
+
+# Add tests subdirectory
+add_subdirectory(tests)
