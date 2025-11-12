@@ -38,6 +38,10 @@ public:
   // Set playhead position (in samples) - updates transport bar
   void setPlayheadPosition(int64_t samplePosition);
 
+  // Set audition region (for 2s end audition visual feedback)
+  void setAuditionRegion(int64_t startSample, int64_t endSample);
+  void clearAuditionRegion();
+
   // Zoom controls (5 levels: 1x, 2x, 4x, 8x, 16x)
   void setZoomLevel(int level,
                     float center = 0.5f); // 0=1x, 1=2x, 2=4x, 3=8x, 4=16x, center=0-1 normalized
@@ -83,6 +87,7 @@ private:
   void generateWaveformData(const juce::File& audioFile);
   void drawWaveform(juce::Graphics& g, const juce::Rectangle<float>& bounds);
   void drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+  void drawAuditionHighlight(juce::Graphics& g, const juce::Rectangle<float>& bounds);
   void drawTimeScale(juce::Graphics& g, const juce::Rectangle<float>& bounds);
 
   //==============================================================================
@@ -91,6 +96,11 @@ private:
   int64_t m_trimOutSamples = 0;
   int64_t m_playheadPosition = 0;
   std::atomic<bool> m_isLoading{false};
+
+  // Audition region (for 2s end audition visual feedback)
+  bool m_auditionActive = false;
+  int64_t m_auditionStart = 0;
+  int64_t m_auditionEnd = 0;
 
   // Waveform caching (prevent constant reloading)
   juce::String m_cachedFilePath;                        // Path of currently cached waveform

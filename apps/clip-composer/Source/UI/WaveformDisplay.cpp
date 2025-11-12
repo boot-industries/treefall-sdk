@@ -119,6 +119,20 @@ void WaveformDisplay::setPlayheadPosition(int64_t samplePosition) {
   repaint();
 }
 
+void WaveformDisplay::setAuditionRegion(int64_t startSample, int64_t endSample) {
+  m_auditionActive = true;
+  m_auditionStart = startSample;
+  m_auditionEnd = endSample;
+  DBG("WaveformDisplay: Audition region set to [" << startSample << ", " << endSample << "]");
+  repaint();
+}
+
+void WaveformDisplay::clearAuditionRegion() {
+  m_auditionActive = false;
+  DBG("WaveformDisplay: Audition region cleared");
+  repaint();
+}
+
 void WaveformDisplay::setZoomLevel(int level, float centerNormalized) {
   m_zoomLevel = std::clamp(level, 0, 4); // 0-4 for 5 levels
 
@@ -192,6 +206,7 @@ void WaveformDisplay::paint(juce::Graphics& g) {
     juce::ScopedLock lock(m_dataLock);
     if (m_waveformData.isValid) {
       drawWaveform(g, waveformArea);
+      drawAuditionHighlight(g, waveformArea); // Draw audition highlight behind trim markers
       drawTrimMarkers(g, waveformArea);
       drawTimeScale(g, timeScaleArea);
     } else {
@@ -518,6 +533,55 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
   // Draw center line
   g.setColour(juce::Colours::white.withAlpha(0.2f));
   g.drawLine(waveformBounds.getX(), midY, waveformBounds.getRight(), midY, 1.0f);
+}
+
+void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
+                                            const juce::Rectangle<float>& bounds) {
+  // Only draw if audition is active
+  if (!m_auditionActive || m_waveformData.totalSamples == 0)
+    return;
+
+  // Account for dB scale offset
+  const float scaleWidth = 40.0f;
+  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  const float width = waveformBounds.getWidth();
+
+  // Calculate visible range based on zoom level
+  float visibleWidth = 1.0f / m_zoomFactor;
+  float startFraction = m_zoomCenter - (visibleWidth / 2.0f);
+  float endFraction = m_zoomCenter + (visibleWidth / 2.0f);
+  startFraction = std::clamp(startFraction, 0.0f, 1.0f);
+  endFraction = std::clamp(endFraction, 0.0f, 1.0f);
+
+  // Calculate audition region positions in normalized space [0, 1]
+  float auditionStartNormalized = m_auditionStart / static_cast<float>(m_waveformData.totalSamples);
+  float auditionEndNormalized = m_auditionEnd / static_cast<float>(m_waveformData.totalSamples);
+
+  // Clamp playhead to audition region for proper rendering
+  float playheadNormalized =
+      std::clamp(m_playheadPosition / static_cast<float>(m_waveformData.totalSamples),
+                 auditionStartNormalized, auditionEndNormalized);
+
+  // Map to zoomed viewport coordinates
+  float auditionStartX =
+      waveformBounds.getX() +
+      ((auditionStartNormalized - startFraction) / (endFraction - startFraction)) * width;
+  float playheadX = waveformBounds.getX() +
+                    ((playheadNormalized - startFraction) / (endFraction - startFraction)) * width;
+  float auditionEndX =
+      waveformBounds.getX() +
+      ((auditionEndNormalized - startFraction) / (endFraction - startFraction)) * width;
+
+  // Draw yellow highlight from playhead to OUT (remaining audition region)
+  // This shows the span that will play before reaching OUT
+  g.setColour(juce::Colour(0xffffff00).withAlpha(0.15f)); // Yellow, semi-transparent
+  float highlightStart = playheadX;
+  float highlightEnd = auditionEndX;
+
+  if (highlightEnd > highlightStart) {
+    g.fillRect(highlightStart, waveformBounds.getY(), highlightEnd - highlightStart,
+               waveformBounds.getHeight());
+  }
 }
 
 void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds) {

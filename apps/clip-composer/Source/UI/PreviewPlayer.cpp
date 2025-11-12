@@ -117,11 +117,6 @@ void PreviewPlayer::play() {
   if (started) {
     startPositionTimer(); // Start polling position for playhead updates
     DBG("PreviewPlayer: Started main grid clip (button " << m_buttonIndex << ")");
-
-    // Notify MainComponent to sync grid button visual state
-    if (onPlayStateChanged) {
-      onPlayStateChanged(true);
-    }
   } else {
     DBG("PreviewPlayer: Failed to start main grid clip (button " << m_buttonIndex << ")");
   }
@@ -137,11 +132,6 @@ void PreviewPlayer::stop() {
   // Notify UI that playback stopped
   if (onPlaybackStopped) {
     onPlaybackStopped();
-  }
-
-  // Notify MainComponent to sync grid button visual state
-  if (onPlayStateChanged) {
-    onPlayStateChanged(false);
   }
 
   DBG("PreviewPlayer: Stopped main grid clip (button " << m_buttonIndex << ")");
@@ -207,9 +197,14 @@ void PreviewPlayer::stopPositionTimer() {
 }
 
 void PreviewPlayer::timerCallback() {
+  // CRITICAL: Always poll SDK state - timer runs continuously when Edit Dialog is open
+  // This ensures playhead tracks play state regardless of trigger source:
+  // 1. Main grid keyboard/click
+  // 2. SPACE bar (stop/play)
+  // 3. Edit Dialog PLAY/STOP buttons
+
   if (!isPlaying()) {
-    // Timer is running but clip stopped - stop timer
-    stopTimer();
+    // Clip stopped - do not update playhead position
     return;
   }
 

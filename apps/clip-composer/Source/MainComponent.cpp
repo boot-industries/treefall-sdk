@@ -654,6 +654,12 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     DBG("Button " + juce::String(buttonIndex) + " (global: " + juce::String(globalClipIndex) +
         "): Started playing via keyboard/click");
   }
+
+  // CRITICAL: Restore keyboard focus to Edit Dialog if it's open
+  // Edit Dialog should always have keyboard priority when visible
+  if (m_currentEditDialog != nullptr && m_currentEditDialog->isVisible()) {
+    m_currentEditDialog->grabKeyboardFocus();
+  }
 }
 
 void MainComponent::onClipDoubleClicked(int buttonIndex) {
@@ -824,26 +830,12 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     DBG("Button " << buttonIndex << ": Color changed in real-time to " << newColor.toString());
   };
 
-  // CRITICAL: Sync play/stop visual states between Edit Dialog and main grid
-  // Edit Dialog preview player controls the SAME clip (via buttonIndex)
-  // When Edit Dialog play/stop buttons are pressed, main grid button must update visually
-  if (auto* previewPlayer = dialog->getPreviewPlayer()) {
-    previewPlayer->onPlayStateChanged = [this, buttonIndex](bool isPlaying) {
-      auto button = m_clipGrid->getButton(buttonIndex);
-      if (button) {
-        // Sync visual state: playing → Playing, stopped → Loaded
-        button->setState(isPlaying ? ClipButton::State::Playing : ClipButton::State::Loaded);
-        DBG("MainComponent: Synced grid button "
-            << buttonIndex << " visual state: " << (isPlaying ? "Playing" : "Loaded"));
-      }
-    };
-  }
-
   // Show dialog as modal
   dialog->setSize(700, 800); // Expanded for Phases 2 & 3
   dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
   addAndMakeVisible(dialog);
   dialog->toFront(true);
+  dialog->grabKeyboardFocus(); // CRITICAL: Grab focus to ensure keyboard commands work immediately
 }
 
 void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex) {
