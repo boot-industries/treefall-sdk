@@ -6,9 +6,13 @@
 ClipGrid::ClipGrid() {
   createButtons();
 
-  // CRITICAL: Don't start timer until clips are active (performance optimization)
-  // Timer will be started automatically when first clip plays
-  // This reduces idle CPU from 107% to <10%
+  // CRITICAL: Start timer immediately for atomic state synchronization
+  // Timer runs continuously at 75fps to sync button states with SDK
+  // This ensures buttons reflect playback from ANY source:
+  // - Main grid keyboard/click
+  // - Edit Dialog play/stop
+  // - SPACE bar (stop all)
+  startTimer(13); // 75 FPS (13ms interval)
 }
 
 //==============================================================================
@@ -165,10 +169,11 @@ void ClipGrid::filesDropped(const juce::StringArray& files, int x, int y) {
 
 //==============================================================================
 void ClipGrid::timerCallback() {
-  bool anyClipsPlaying = false;
-
   // Sync button states from AudioEngine at 75fps (broadcast standard timing)
-  // This ensures visual indicators (play state, loop, fade, etc.) chase at 75fps
+  // Timer runs continuously to ensure atomic state synchronization from ANY source:
+  // - Main grid keyboard/click
+  // - Edit Dialog play/stop
+  // - SPACE bar (stop all)
   for (int i = 0; i < BUTTON_COUNT; ++i) {
     auto button = getButton(i);
     if (!button)
@@ -192,16 +197,12 @@ void ClipGrid::timerCallback() {
         continue;
     }
 
-    // Query AudioEngine for playback state (if callback is set)
+    // Query AudioEngine for atomic playback state
     if (isClipPlaying) {
       bool playing = isClipPlaying(i);
-      if (playing) {
-        anyClipsPlaying = true; // Track if ANY clips are playing
-      }
-
       auto currentState = button->getState();
 
-      // Update button state if it doesn't match AudioEngine state
+      // Update button state if it doesn't match SDK atomic state
       if (playing && currentState != ClipButton::State::Playing) {
         button->setState(ClipButton::State::Playing);
       } else if (!playing && currentState == ClipButton::State::Playing) {
@@ -230,24 +231,4 @@ void ClipGrid::timerCallback() {
     // Repaint button to update visual indicators (fade, loop, stop-others)
     button->repaint();
   }
-
-  // CRITICAL: Auto-stop timer if no clips are playing (performance optimization)
-  // This reduces CPU from 107% to <10% when idle
-  if (!anyClipsPlaying && m_hasActiveClips) {
-    setHasActiveClips(false);
-  }
 }
-
-// NOTE FOR USER: MainComponent needs to call clipGrid->setHasActiveClips(true)
-// when starting clips. Add this to MainComponent::onClipTriggered():
-//
-//   if (currentState == ClipButton::State::Loaded) {
-//     // Start the clip
-//     if (m_audioEngine) {
-//       m_audioEngine->startClip(globalClipIndex);
-//       m_clipGrid->setHasActiveClips(true);  // Start 75fps timer
-//     }
-//     // ... rest of code
-//   }
-//
-// The timer will auto-stop when all clips stop (detected in timerCallback).

@@ -136,6 +136,11 @@ public:
     return m_previewPlayer.get();
   }
 
+  // Get which clip this dialog is controlling (global clip index 0-383)
+  int getClipIndex() const {
+    return m_buttonIndex;
+  }
+
   //==============================================================================
   // Callbacks
   std::function<void(const ClipMetadata&)> onOkClicked;
@@ -281,6 +286,9 @@ private:
   int m_nudgeInRightInterval = 300;
   int m_nudgeOutLeftInterval = 300;
   int m_nudgeOutRightInterval = 300;
+
+  // Track previous position for audition highlight clearing (detect backward jumps)
+  int64_t m_previousPlayheadPosition = 0;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipEditDialog)
 };

@@ -8,6 +8,13 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
   // Create preview player with AudioEngine reference and buttonIndex (controls main grid clip)
   m_previewPlayer = std::make_unique<PreviewPlayer>(m_audioEngine, m_buttonIndex);
 
+  // CRITICAL: Start position timer immediately (runs continuously while Edit Dialog is open)
+  // Timer will automatically track playback state from ANY source:
+  // - Main grid keyboard/click
+  // - SPACE bar (stop/play)
+  // - Edit Dialog PLAY/STOP buttons
+  m_previewPlayer->startPositionTimer();
+
   // Build Phase 1 UI (basic metadata)
   buildPhase1UI();
 
@@ -564,22 +571,27 @@ void ClipEditDialog::buildPhase2UI() {
                                juce::Colour(0xff4a4a4a));
   m_skipToEndButton->onClick = [this]() {
     if (m_previewPlayer) {
-      // Issue #9: Jump to 5 seconds before OUT point (keep play/pause state)
+      // Issue #9: Jump to 2 seconds before OUT point (keep play/pause state)
       bool wasPlaying = m_previewPlayer->isPlaying();
 
-      // Calculate target: 5 seconds before OUT, or IN if clip < 5s
-      int64_t fiveSecondsInSamples = 5 * m_metadata.sampleRate;
+      // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+      int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
       int64_t targetPosition =
-          std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - fiveSecondsInSamples);
+          std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
 
       m_previewPlayer->jumpTo(targetPosition);
+
+      // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+      if (m_waveformDisplay) {
+        m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+      }
 
       // If was playing, resume playing; if paused, stay paused
       if (wasPlaying && !m_previewPlayer->isPlaying()) {
         m_previewPlayer->play();
       }
 
-      DBG("ClipEditDialog: Skip to end (5s before OUT) - " << (wasPlaying ? "resumed" : "paused"));
+      DBG("ClipEditDialog: Skip to end (2s before OUT) - " << (wasPlaying ? "resumed" : "paused"));
     }
   };
   addAndMakeVisible(m_skipToEndButton.get());
@@ -657,10 +669,27 @@ void ClipEditDialog::buildPhase2UI() {
       // Update waveform playhead
       if (m_waveformDisplay) {
         m_waveformDisplay->setPlayheadPosition(samplePosition);
+
+        // Clear audition highlight when:
+        // 1. Playhead reaches OUT (end of audition)
+        // 2. Playhead jumps backward (loop restart detected)
+        bool reachedOut = (samplePosition >= m_metadata.trimOutSamples);
+        bool loopJump =
+            (samplePosition < m_previousPlayheadPosition - 1000); // Backward jump > 1000 samples
+
+        if (reachedOut || loopJump) {
+          m_waveformDisplay->clearAuditionRegion();
+        }
+
+        m_previousPlayheadPosition = samplePosition;
       }
     };
 
     m_previewPlayer->onPlaybackStopped = [this]() {
+      // Clear audition region when playback stops
+      if (m_waveformDisplay) {
+        m_waveformDisplay->clearAuditionRegion();
+      }
       DBG("ClipEditDialog: Preview playback stopped (reached end or manual stop)");
     };
   }
@@ -716,10 +745,16 @@ void ClipEditDialog::buildPhase2UI() {
   m_waveformDisplay->onMiddleClick = [this](int64_t samples) {
     // Click-to-jog: Jump transport to clicked position
     // CRITICAL: Clamp to [IN, OUT] bounds to prevent playhead from escaping trim range
+    // FEATURE: jumpTo() automatically starts playback if clip is stopped (seamless UX)
     if (m_previewPlayer) {
       int64_t clampedSamples =
           std::clamp(samples, m_metadata.trimInSamples, m_metadata.trimOutSamples);
+
+      // jumpTo() handles both cases:
+      // - If playing: Seeks to position (gap-free)
+      // - If stopped: Seeks to position AND starts playback
       m_previewPlayer->jumpTo(clampedSamples);
+
       DBG("ClipEditDialog: Click-to-jog - jumped to sample "
           << clampedSamples << " (clamped from " << samples << " to [" << m_metadata.trimInSamples
           << ", " << m_metadata.trimOutSamples << "])");
@@ -1721,8 +1756,7 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
   }
 
   // ? key (Shift+/): Toggle Loop (Issue #4)
-  if (key == juce::KeyPress('?') ||
-      (key == juce::KeyPress('/') && key.getModifiers().isShiftDown())) {
+  if (key.getTextCharacter() == '?') {
     if (m_loopButton) {
       bool newState = !m_loopButton->getToggleState();
       m_loopButton->setToggleState(newState, juce::sendNotification);
@@ -1731,6 +1765,62 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
         m_previewPlayer->setLoopEnabled(newState);
       }
       DBG("ClipEditDialog: ? key - Loop " << (newState ? "enabled" : "disabled"));
+    }
+    return true;
+  }
+
+  // R key: Zoom Out
+  if (key.getTextCharacter() == 'r' || key.getTextCharacter() == 'R') {
+    if (m_waveformDisplay) {
+      int currentLevel = m_waveformDisplay->getZoomLevel();
+      if (currentLevel > 0) {
+        // Calculate playhead position for zoom center
+        float playheadNormalized = 0.5f; // Default to center
+        if (m_previewPlayer && m_metadata.durationSamples > 0) {
+          int64_t playheadPos = m_previewPlayer->getCurrentPosition();
+          playheadNormalized = static_cast<float>(playheadPos) / m_metadata.durationSamples;
+        }
+        m_waveformDisplay->setZoomLevel(currentLevel - 1, playheadNormalized);
+        updateZoomLabel();
+        DBG("ClipEditDialog: R key - Zoom out to level " << (currentLevel - 1));
+      }
+    }
+    return true;
+  }
+
+  // T key: Zoom In
+  if (key.getTextCharacter() == 't' || key.getTextCharacter() == 'T') {
+    if (m_waveformDisplay) {
+      int currentLevel = m_waveformDisplay->getZoomLevel();
+      if (currentLevel < 4) { // Max zoom level is 4 (16x)
+        // Calculate playhead position for zoom center
+        float playheadNormalized = 0.5f; // Default to center
+        if (m_previewPlayer && m_metadata.durationSamples > 0) {
+          int64_t playheadPos = m_previewPlayer->getCurrentPosition();
+          playheadNormalized = static_cast<float>(playheadPos) / m_metadata.durationSamples;
+        }
+        m_waveformDisplay->setZoomLevel(currentLevel + 1, playheadNormalized);
+        updateZoomLabel();
+        DBG("ClipEditDialog: T key - Zoom in to level " << (currentLevel + 1));
+      }
+    }
+    return true;
+  }
+
+  // LEFT ARROW key: Skip to Start (|<<)
+  if (key == juce::KeyPress::leftKey) {
+    if (m_skipToStartButton) {
+      m_skipToStartButton->triggerClick();
+      DBG("ClipEditDialog: Left Arrow - Skip to start");
+    }
+    return true;
+  }
+
+  // RIGHT ARROW key: Skip to End (>>|)
+  if (key == juce::KeyPress::rightKey) {
+    if (m_skipToEndButton) {
+      m_skipToEndButton->triggerClick();
+      DBG("ClipEditDialog: Right Arrow - Skip to end");
     }
     return true;
   }
@@ -2010,9 +2100,28 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
-        restartPlayback();
-        DBG("ClipEditDialog: ; key - trim OUT changed, restarted from IN");
+
+        // 2s end audition (like >>|): Jump to OUT - 2s and start playing
+        bool wasPlaying = m_previewPlayer->isPlaying();
+
+        // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+        int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
+        int64_t targetPosition =
+            std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
+
+        m_previewPlayer->jumpTo(targetPosition);
+
+        // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+        if (m_waveformDisplay) {
+          m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+        }
+
+        // If was playing, resume playing; if paused, stay paused
+        if (wasPlaying && !m_previewPlayer->isPlaying()) {
+          m_previewPlayer->play();
+        }
+
+        DBG("ClipEditDialog: ; key - trim OUT changed, 2s end audition");
       }
     };
 
@@ -2056,9 +2165,28 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
-        restartPlayback();
-        DBG("ClipEditDialog: ' key - trim OUT changed, restarted from IN");
+
+        // 2s end audition (like >>|): Jump to OUT - 2s and start playing
+        bool wasPlaying = m_previewPlayer->isPlaying();
+
+        // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+        int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
+        int64_t targetPosition =
+            std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
+
+        m_previewPlayer->jumpTo(targetPosition);
+
+        // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+        if (m_waveformDisplay) {
+          m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+        }
+
+        // If was playing, resume playing; if paused, stay paused
+        if (wasPlaying && !m_previewPlayer->isPlaying()) {
+          m_previewPlayer->play();
+        }
+
+        DBG("ClipEditDialog: ' key - trim OUT changed, 2s end audition");
       }
     };
 
