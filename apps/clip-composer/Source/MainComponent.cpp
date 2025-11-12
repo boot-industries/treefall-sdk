@@ -11,7 +11,7 @@ MainComponent::MainComponent() {
   // Set Inter font as default for all components
   setLookAndFeel(&m_interLookAndFeel);
 
-  // Create tab switcher (8 tabs for 384 total clips)
+  // Create tab switcher (8 tabs for MAX_CLIP_BUTTONS total clips)
   m_tabSwitcher = std::make_unique<TabSwitcher>();
   addAndMakeVisible(m_tabSwitcher.get());
 

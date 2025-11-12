@@ -94,11 +94,11 @@ private:
   // Custom Look and Feel (Inter font)
   InterLookAndFeel m_interLookAndFeel;
 
-  // Per-button "stop others on play" mode (bitset for 384 clips: 48 buttons × 8 tabs)
-  std::array<bool, 384> m_stopOthersOnPlay = {};
+  // Per-button "stop others on play" mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
+  std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_stopOthersOnPlay = {};
 
-  // Per-button loop mode (bitset for 384 clips: 48 buttons × 8 tabs)
-  std::array<bool, 384> m_loopEnabled = {};
+  // Per-button loop mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
+  std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_loopEnabled = {};
 
   // Single Edit Dialog tracking (ensures only one dialog open at a time)
   ClipEditDialog* m_currentEditDialog = nullptr;
