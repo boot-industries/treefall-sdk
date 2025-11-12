@@ -117,6 +117,11 @@ void PreviewPlayer::play() {
   if (started) {
     startPositionTimer(); // Start polling position for playhead updates
     DBG("PreviewPlayer: Started main grid clip (button " << m_buttonIndex << ")");
+
+    // Notify MainComponent to sync grid button visual state
+    if (onPlayStateChanged) {
+      onPlayStateChanged(true);
+    }
   } else {
     DBG("PreviewPlayer: Failed to start main grid clip (button " << m_buttonIndex << ")");
   }
@@ -132,6 +137,11 @@ void PreviewPlayer::stop() {
   // Notify UI that playback stopped
   if (onPlaybackStopped) {
     onPlaybackStopped();
+  }
+
+  // Notify MainComponent to sync grid button visual state
+  if (onPlayStateChanged) {
+    onPlayStateChanged(false);
   }
 
   DBG("PreviewPlayer: Stopped main grid clip (button " << m_buttonIndex << ")");

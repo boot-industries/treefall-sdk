@@ -439,3 +439,5 @@ From `docs/occ/OCC030` Section 10.3:
 **Status:** v0.2.0 Sprint Complete (OCC093)
 **Release:** v0.1.0-alpha (October 22, 2025)
 **Next Milestone:** v0.2.0 release (pending final QA)
+
+- Use @"docs/occ/OCC110 SDK Integration Guide - Transport State and Loop Features.md" as a reference document for Clip Composer's Orpheus SDK integrations.

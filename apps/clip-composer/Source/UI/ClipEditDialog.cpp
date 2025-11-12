@@ -507,7 +507,12 @@ void ClipEditDialog::buildPhase2UI() {
         m_waveformDisplay->setPlayheadPosition(m_metadata.trimInSamples);
       }
 
-      DBG("ClipEditDialog: Play button - restarted from IN point");
+      // CRITICAL: Force 75fps timer to start for playhead updates
+      // AudioEngine::isClipPlaying() stub returns false, causing timer to stop immediately
+      // In edit mode, we ALWAYS want visual feedback regardless of audio engine state
+      m_previewPlayer->startPositionTimer();
+
+      DBG("ClipEditDialog: Play button - restarted from IN point, forced timer start");
     }
   };
   addAndMakeVisible(m_playButton.get());
@@ -895,13 +900,16 @@ void ClipEditDialog::buildPhase2UI() {
       m_metadata.trimInSamples = currentPos;
       updateTrimInfoLabel();
 
-      // CRITICAL: ONLY update waveform, which will trigger onTrimPointsChanged callback
-      // That callback handles preview player update (prevents double restart)
       if (m_waveformDisplay) {
         m_waveformDisplay->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
       }
 
-      DBG("ClipEditDialog: SET - Set IN point to current position " << currentPos);
+      // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
+      m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
+      restartPlayback();
+
+      DBG("ClipEditDialog: SET - Set IN point to current position " << currentPos
+                                                                    << ", restarted from IN");
     }
   };
   addAndMakeVisible(m_trimInHoldButton.get());
