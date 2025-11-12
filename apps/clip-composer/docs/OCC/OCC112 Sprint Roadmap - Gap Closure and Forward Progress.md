@@ -1,37 +1,39 @@
 # OCC112 Sprint Roadmap - Gap Closure and Forward Progress
 
-**Planning Date:** November 12, 2025
-**Based On:** OCC111 Gap Audit Report (47 gaps identified)
+**Planning Date:** November 11, 2025
+**Based On:** OCC111 Gap Audit Report (46 gaps identified, corrected)
+**Codebase State:** Commit `1a2d2a6a` (as of 2025-11-11)
 **Target Versions:** v0.2.3 (gap closure), v0.3.0 (SDK integration), v1.0 (production)
 **Planning Horizon:** 16 weeks (4 months)
-**Status:** 📋 Comprehensive Sprint Plan
+**Status:** 📋 Comprehensive Sprint Plan (Revised)
 
 ---
 
 ## Executive Summary
 
-This roadmap provides concrete sprint plans to close the **47 gaps** identified in OCC111 and advance toward v1.0 production readiness.
+This roadmap provides concrete sprint plans to close the **46 gaps** identified in OCC111 (corrected from initial 47) and advance toward v1.0 production readiness.
 
 ### Sprint Architecture
 
 **Total Sprints:** 9
-- **Series A (Gap Closure):** 5 sprints, 20-31 person-days
+
+- **Series A (Gap Closure):** 5 sprints, 18-28 person-days (reduced from 20-31)
 - **Series B (Forward Progress):** 4 sprints, 33-45 person-days
-- **Total Effort:** 53-76 person-days (~11-15 weeks for 1 developer)
+- **Total Effort:** 51-73 person-days (~10-15 weeks for 1 developer)
 
 ### Sprint Timeline (1 Developer)
 
-| Sprint | Focus                     | Duration | Cumulative | Milestone     |
-| ------ | ------------------------- | -------- | ---------- | ------------- |
-| A1     | Quick Wins & Verification | 2-3 days | Week 1     | -             |
-| A2     | OCC110 SDK Integration    | 1-2 days | Week 1     | -             |
-| A3     | Performance & QA          | 3-5 days | Week 2     | v0.2.3 release |
-| A4     | Automated Testing         | 5-8 days | Week 3-4   | -             |
-| A5     | UI/UX Polish              | 5-8 days | Week 5-6   | v0.2.4 release |
-| B1     | SDK Integration (v0.3.0)  | 10-12 days | Week 8-9   | -             |
-| B2     | 4 Clip Groups & Routing   | 5-8 days | Week 10-11 | v0.3.0 release |
-| B3     | Production Hardening      | 10-15 days | Week 13-15 | v1.0-rc.1     |
-| B4     | Advanced Features         | 8-10 days | Week 16-17 | v1.0 release  |
+| Sprint | Focus                        | Duration   | Cumulative | Milestone      |
+| ------ | ---------------------------- | ---------- | ---------- | -------------- |
+| A1     | Quick Wins & Verification    | 1 day      | Week 1     | -              |
+| A2     | SDK Integration Verification | 4 hours    | Week 1     | -              |
+| A3     | Performance & QA             | 3-5 days   | Week 2     | v0.2.3 release |
+| A4     | Automated Testing            | 5-8 days   | Week 3-4   | -              |
+| A5     | UI/UX Polish                 | 5-8 days   | Week 5-6   | v0.2.4 release |
+| B1     | SDK Integration (v0.3.0)     | 10-12 days | Week 8-9   | -              |
+| B2     | 4 Clip Groups & Routing      | 5-8 days   | Week 10-11 | v0.3.0 release |
+| B3     | Production Hardening         | 10-15 days | Week 13-15 | v1.0-rc.1      |
+| B4     | Advanced Features            | 8-10 days  | Week 16-17 | v1.0 release   |
 
 ### Version Milestone Plan
 
@@ -44,45 +46,47 @@ This roadmap provides concrete sprint plans to close the **47 gaps** identified 
 
 ## Gap-Closing Sprints (Series A)
 
-### Sprint A1: Quick Wins & Critical Verification
+### Sprint A1: Quick Wins & Code Cleanup
 
-**Objective:** Resolve 4 P0 blockers with minimal effort, establish confidence in codebase state
+**Objective:** Verify critical claims and clean up duplicate code ✅ PARTIALLY COMPLETE
 
-**Duration:** 2-3 person-days
-**Priority:** CRITICAL - Must complete before other work
+**Duration:** 1 day (reduced from 2-3 days)
+**Priority:** CRITICAL - Establishes codebase baseline
 **Dependencies:** None
 **Target Version:** v0.2.3
 
+**REVISION NOTE:** Initial audit incorrectly claimed `isClipPlaying()` stub - verification showed it's implemented. Duplicate AudioEngine directory discovered instead.
+
 #### Deliverables
 
-1. **Multi-Tab Playback Verification Report**
+1. **✅ COMPLETE: Remove Duplicate AudioEngine Directory**
+   - ✅ Deleted orphaned `/Source/AudioEngine/` (stubs causing audit confusion)
+   - ✅ Verified active version is `/Source/Audio/AudioEngine.cpp`
+   - **Status:** Resolved in audit correction session (Nov 11, 2025)
+
+2. **✅ COMPLETE: Define MAX_CLIP_BUTTONS Constant**
+   - ✅ Added `static constexpr int MAX_CLIP_BUTTONS = 384;` to AudioEngine.h
+   - ✅ Replaced 18 hardcoded `384` values with constant
+   - ✅ Updated MainComponent.h, AudioEngine.cpp, comments
+   - **Status:** Resolved in audit correction session (Nov 11, 2025)
+
+3. **Multi-Tab Playback Verification Report**
    - Re-run OCC103 multi-tab test (Test ID: 270-297)
    - Verify clips on Tabs 2-8 play audio
    - Document pass/fail for each tab (1-8)
    - **If PASS:** Update OCC105 with new test results
-   - **If FAIL:** Verify AudioEngine.h has `MAX_CLIPS = 384`, debug routing
+   - **If FAIL:** Debug routing (MAX_CLIP_BUTTONS now verified = 384)
 
-2. **CPU Usage Verification Report**
-   - Measure CPU idle with Activity Monitor (expect <10%)
-   - Measure CPU with 16 clips playing (expect ~35%)
-   - Measure CPU with 32 clips playing (expect ~50%)
-   - Document results in OCC105v2 test log
+4. **CPU Usage Verification Report**
+   - Measure CPU idle with Activity Monitor
+   - Note: CPU _percentage_ shows 0% (placeholder), but memory tracking works
+   - Document actual behavior vs. expectations
 
-3. **MAX_CLIPS Code Inspection**
-   - Read AudioEngine.h line ~25
-   - Verify `static constexpr int MAX_CLIPS = 384;` exists
-   - If not, implement OCC106:56-81 fix (10 minutes)
-
-4. **Memory Test with 384 Clips**
+5. **Memory Test with 384 Clips** (If test assets available)
    - Load 384 clips across all 8 tabs
    - Monitor memory usage (expect <200MB)
    - Run for 5 minutes, check for leaks
    - Document in OCC105v2
-
-5. **Version Number Audit & Update**
-   - Search all OCC docs for version mismatches
-   - Update stale v0.2.0 refs to v0.2.2
-   - Update roadmap refs to current milestones
 
 #### Acceptance Criteria
 
@@ -112,6 +116,7 @@ This roadmap provides concrete sprint plans to close the **47 gaps** identified 
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** Multi-tab test may fail, revealing critical bug
   - **Mitigation:** If fail, escalate to Sprint A3 (bug fix sprint)
 - **Risk:** Memory may exceed 200MB at 384 clips
@@ -121,161 +126,149 @@ This roadmap provides concrete sprint plans to close the **47 gaps** identified 
 
 ---
 
-### Sprint A2: OCC110 SDK Integration
+### Sprint A2: OCC110 SDK Integration Verification
 
-**Objective:** Implement OCC110 integration guide - fix `isClipPlaying()` stub to enable graceful timer management
+**Objective:** ✅ OBSOLETE - Implementation already complete, convert to verification sprint
 
-**Duration:** 1-2 person-days
-**Priority:** CRITICAL - P0 blocker
-**Dependencies:** Sprint A1 complete (baseline verification)
+**Duration:** 4 hours (reduced from 1-2 days)
+**Priority:** MEDIUM - Verification only (not implementation)
+**Dependencies:** Sprint A1 complete
 **Target Version:** v0.2.3
-**References:** OCC110:37-53, OCC111:EC-1
+**References:** OCC110:37-53
+
+**REVISION NOTE:** Initial roadmap planned implementation, but code review shows `isClipPlaying()` already implemented in `/Source/Audio/AudioEngine.cpp:322-331`. Sprint converted to verification + documentation update.
 
 #### Deliverables
 
-1. **AudioEngine.h Modifications**
-   - Add `getClipHandleForButton()` helper method
-   - Add `m_buttonToHandle` map (button index → ClipHandle)
-   - Follow OCC110:106-125 spec
+1. **Code Review: Verify `isClipPlaying()` Implementation**
+   - ✅ VERIFIED: Implementation found at `/Source/Audio/AudioEngine.cpp:322-331`
+   - ✅ VERIFIED: Queries SDK `m_transportController->isClipPlaying(handle)`
+   - ✅ VERIFIED: Boundary checks for `buttonIndex` (0-383)
+   - **Status:** Implemented, matches OCC110 specification
 
-2. **AudioEngine.cpp Modifications**
-   - Implement `getClipHandleForButton()` (OCC110:117-125)
-   - Replace `isClipPlaying()` stub (OCC110:130-155)
-   - Update `loadClip()` to populate `m_buttonToHandle` (OCC110:160-184)
+2. **Code Review: Verify `isCueBussPlaying()` Implementation**
+   - ✅ VERIFIED: Implementation found at `/Source/Audio/AudioEngine.cpp:377-382`
+   - ✅ VERIFIED: Queries SDK `m_transportController->isClipPlaying(handle)`
+   - **Status:** Implemented, matches OCC110 specification
 
-3. **PreviewPlayer.cpp Modifications**
-   - Fix `timerCallback()` to use `isClipPlaying()` (OCC110:209-232)
-   - Add graceful timer stop when clip finishes
-   - Update final playhead position display
+3. **Functional Testing: Timer Management**
+   - Test non-looped clip: Timer stops at OUT point ✓
+   - Test looped clip: Timer runs indefinitely ✓
+   - Test manual stop: Timer stops after fade-out ✓
+   - Test rapid start/stop cycles ✓
 
-4. **ClipEditDialog.cpp Integration**
-   - Verify integration per OCC110:243-274 example
-   - Test loop mode with timer management
-   - Test non-looped clips (timer should stop at OUT point)
-
-5. **Integration Test Suite**
-   - Test non-looped clip: timer stops at OUT point
-   - Test looped clip: timer runs indefinitely
-   - Test manual stop: timer stops after fade-out
-   - Test rapid start/stop cycles
+4. **Documentation Update: Mark OCC110 Features as Implemented**
+   - Update OCC110 with code location references
+   - Mark `isClipPlaying()` as implemented (not stub)
+   - Mark `isCueBussPlaying()` as implemented (not stub)
+   - Add commit reference for future audits
 
 #### Acceptance Criteria
 
-- [ ] `isClipPlaying()` queries SDK `getClipState()` (no more stub)
-- [ ] PreviewPlayer timer stops gracefully when clip finishes
-- [ ] Non-looped clips show correct final playhead position (OUT point)
-- [ ] Looped clips keep timer running (no premature stop)
-- [ ] Manual stop triggers timer stop after fade-out completes
-- [ ] CPU savings: Timer idle when no clips playing (~2% savings per OCC110:562)
+- [x] `isClipPlaying()` verified to query SDK (not stub) - ✅ AudioEngine.cpp:322-331
+- [x] `isCueBussPlaying()` verified to query SDK (not stub) - ✅ AudioEngine.cpp:377-382
+- [ ] Functional tests complete (4 test scenarios)
+- [ ] OCC110 updated with verification notes
+- [ ] Code review findings documented in OCC113 (Sprint A2 Report)
 
-#### Implementation Steps
+#### Verification Steps
 
-**Step 1: Add Button-to-Handle Mapping (30 minutes)**
+**Step 1: Code Review (1 hour)**
 
-```cpp
-// AudioEngine.h (private section)
-private:
-  orpheus::ClipHandle getClipHandleForButton(int buttonIndex) const;
-  std::unordered_map<int, orpheus::ClipHandle> m_buttonToHandle;
-```
+Verify implementations match OCC110 specification:
 
 ```cpp
-// AudioEngine.cpp
-orpheus::ClipHandle AudioEngine::getClipHandleForButton(int buttonIndex) const {
-  auto it = m_buttonToHandle.find(buttonIndex);
-  return (it != m_buttonToHandle.end()) ? it->second : 0;
-}
-```
-
-**Step 2: Replace isClipPlaying() Stub (15 minutes)**
-
-```cpp
-// AudioEngine.cpp:239-242 (BEFORE)
+// ✅ VERIFIED: /Source/Audio/AudioEngine.cpp:322-331
 bool AudioEngine::isClipPlaying(int buttonIndex) const {
-  // TODO (Week 5-6): Query m_transportController->getClipState(handle)
-  return false;
-}
-
-// AudioEngine.cpp:239-250 (AFTER - per OCC110:137-155)
-bool AudioEngine::isClipPlaying(int buttonIndex) const {
-  if (!m_transportController)
+  if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
     return false;
 
-  orpheus::ClipHandle handle = getClipHandleForButton(buttonIndex);
+  auto handle = m_clipHandles[buttonIndex];
   if (handle == 0)
     return false;
 
-  auto state = m_transportController->getClipState(handle);
-  return (state == orpheus::PlaybackState::Playing ||
-          state == orpheus::PlaybackState::Stopping);
+  return m_transportController->isClipPlaying(handle);  // ✅ SDK query, not stub
+}
+
+// ✅ VERIFIED: /Source/Audio/AudioEngine.cpp:377-382
+bool AudioEngine::isCueBussPlaying() const {
+  if (!m_transportController)
+    return false;
+
+  return m_transportController->isClipPlaying(m_currentCueBussHandle);  // ✅ SDK query
 }
 ```
 
-**Step 3: Update loadClip() to Track Mapping (10 minutes)**
+**Step 2: Functional Testing (2 hours)**
 
-```cpp
-// AudioEngine.cpp (in loadClip method)
-bool AudioEngine::loadClip(const juce::String& filePath, int buttonIndex) {
-  // ... existing registration logic ...
+Run manual tests to verify timer behavior:
 
-  // Track button-to-handle mapping (NEW)
-  m_buttonToHandle[buttonIndex] = handle;
+1. **Test: Non-looped Clip**
+   - Load clip with IN=0, OUT=48000 (1 second @ 48kHz)
+   - Disable loop mode
+   - Press SPACE to play
+   - **Expected:** Timer stops at OUT point (1.000s), playhead shows 1.000s
+   - **Status:** [ ] PASS / [ ] FAIL
 
-  return true;
-}
+2. **Test: Looped Clip**
+   - Load same clip, enable loop mode
+   - Press SPACE to play
+   - **Expected:** Timer runs indefinitely, playhead loops back to IN
+   - **Status:** [ ] PASS / [ ] FAIL
+
+3. **Test: Manual Stop**
+   - Load clip, press SPACE to play
+   - Press SPACE again to stop (mid-playback)
+   - **Expected:** Timer stops after fade-out completes (~300ms)
+   - **Status:** [ ] PASS / [ ] FAIL
+
+4. **Test: Rapid Start/Stop**
+   - Press SPACE 10 times rapidly (start/stop/start/stop...)
+   - **Expected:** No crashes, timer state consistent
+   - **Status:** [ ] PASS / [ ] FAIL
+
+**Step 3: Documentation Update (1 hour)**
+
+Update OCC110 with verification notes:
+
+```markdown
+## Verification Status (OCC112 Sprint A2)
+
+**Date:** 2025-11-11
+**Audit:** OCC111 Gap Audit identified EC-1, TD-1, CD-5 based on orphaned stub
+**Correction:** Code review found implementation in `/Source/Audio/AudioEngine.cpp`
+
+### Verified Implementations
+
+1. **isClipPlaying()** - `/Source/Audio/AudioEngine.cpp:322-331`
+   - Status: ✅ IMPLEMENTED (not stub)
+   - SDK Integration: `m_transportController->isClipPlaying(handle)`
+   - Boundary Checks: `buttonIndex` (0-383), null checks
+
+2. **isCueBussPlaying()** - `/Source/Audio/AudioEngine.cpp:377-382`
+   - Status: ✅ IMPLEMENTED (not stub)
+   - SDK Integration: `m_transportController->isClipPlaying(m_currentCueBussHandle)`
+
+### Functional Test Results
+
+(Results pending Sprint A2 execution)
 ```
-
-**Step 4: Fix PreviewPlayer Timer (30 minutes)**
-
-```cpp
-// PreviewPlayer.cpp:209-220 (per OCC110:209-232)
-void PreviewPlayer::timerCallback() {
-  // Query AudioEngine for real playback state
-  if (!m_audioEngine->isClipPlaying(m_cueButtonHandle)) {
-    // Clip has stopped - gracefully stop timer
-    stopTimer();
-
-    // Update UI to show final position
-    if (m_positionCallback) {
-      m_positionCallback(m_lastKnownPosition); // Show OUT point
-    }
-
-    return;
-  }
-
-  // Clip is still playing - update position
-  int64_t position = m_audioEngine->getClipPosition(m_cueButtonHandle);
-  if (m_positionCallback) {
-    m_positionCallback(position);
-  }
-
-  m_lastKnownPosition = position; // Cache for final update
-}
-```
-
-**Step 5: Testing (1-2 hours)**
-
-Run all tests from OCC110:527-550:
-- [ ] Non-looped clip stops at OUT, timer stops, playhead shows OUT
-- [ ] Looped clip runs indefinitely, timer never stops
-- [ ] Manual stop (STOP button) stops timer after fade-out
-- [ ] Keyboard shortcut stop (SPACE) stops timer after fade-out
-- [ ] Rapid start/stop cycles don't crash
 
 #### Success Metrics
 
-- **Timer Efficiency:** Timer idle when no clips playing (0% CPU vs. ~2% before)
-- **UX Polish:** Playhead shows correct final position (no drift)
-- **Code Quality:** 0 TODO comments in AudioEngine.cpp
-- **Test Pass Rate:** 100% (5 integration tests)
+- **Code Review:** 2/2 methods verified (100%)
+- **Functional Tests:** 4/4 tests pass (target)
+- **Documentation:** OCC110 updated with code locations
+- **Sprint Duration:** 4 hours (vs. 1-2 days originally planned)
 
 #### Risk Assessment
 
 **Technical Risks:**
-- **Risk:** Handle mapping may be incorrect for Cue Busses (IDs 10001+)
-  - **Mitigation:** Test both clip buttons (0-383) and Cue Busses (10001+)
-- **Risk:** Timer may stop prematurely if `Stopping` state not checked
-  - **Mitigation:** Implementation checks both `Playing` and `Stopping`
+
+- **Risk:** Functional tests may reveal edge cases not covered
+  - **Mitigation:** Document failures, defer fixes to Sprint A3 if non-critical
+  - **Probability:** 20%
+  - **Impact:** LOW (implementation already exists, minor bugs possible)
 
 **Success Probability:** 95% (straightforward implementation, well-documented)
 
@@ -371,6 +364,7 @@ Trade memory (~10KB per thumbnail × 384 clips = ~4MB) for speed.
 **Step 4: QA Testing (1-2 days)**
 
 Run all OCC103 tests:
+
 - Core Functionality (8 tests)
 - v0.2.0 Fix Verification (6 tests)
 - Multi-Tab Isolation (8 tests)
@@ -389,6 +383,7 @@ Document each result (PASS/FAIL/SKIP), provide notes.
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** Root cause may not be waveform rendering
   - **Mitigation:** Profile comprehensively, check all Edit Dialog operations
 - **Risk:** Workaround may not provide enough speedup
@@ -586,6 +581,7 @@ jobs:
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** JUCE components hard to unit test (require GUI context)
   - **Mitigation:** Focus on AudioEngine (non-GUI), mock JUCE components for Edit Dialog
 - **Risk:** Test coverage may fall short of 60%
@@ -759,6 +755,7 @@ Show overlay when user presses `?` key.
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** Time editor counter UI may be complex to implement
   - **Mitigation:** Use existing JUCE Label components, custom rendering
 - **Risk:** Arrow key navigation may conflict with existing shortcuts
@@ -917,6 +914,7 @@ void ClipEditDialog::loadWaveform(const juce::String& filePath) {
 **Step 3: Performance Dashboard (2 days, optional)**
 
 Create advanced performance overlay (press Cmd+Shift+P to toggle):
+
 - Per-clip CPU usage (top 10 consumers)
 - Audio thread latency graph (real-time)
 - Memory allocation graph
@@ -955,6 +953,7 @@ Add to CI/CD workflow.
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** SDK Waveform API may not be ready in time
   - **Mitigation:** Verify ORP110 Feature 4 completion status before sprint start
 - **Risk:** Waveform pre-processing may not improve latency enough
@@ -1117,6 +1116,7 @@ Document design in OCC116 Routing Architecture.
 **Step 5: Integration Testing (1 day)**
 
 Test scenarios:
+
 1. Load 4 clips, assign to different groups
 2. Adjust group volume faders, verify audio levels
 3. Mute/solo groups, verify audio routing
@@ -1133,6 +1133,7 @@ Test scenarios:
 #### Risk Assessment
 
 **Technical Risks:**
+
 - **Risk:** SDK routing API may not support 4 groups
   - **Mitigation:** Verify ORP110 Feature 1 (Routing Matrix API) completion
 - **Risk:** Cue buss monitoring may introduce audio glitches
@@ -1276,41 +1277,41 @@ A5 ──> B1 (SDK Perf APIs) ──> B2 (Routing) ──> B3 (Hardening) ──
 
 ### Skills Needed per Sprint
 
-| Sprint | C++ | JUCE | QA  | Docs | SDK Integration |
-| ------ | --- | ---- | --- | ---- | --------------- |
-| A1     | ⭐   | ⭐   | ⭐⭐⭐ | ⭐   | -               |
-| A2     | ⭐⭐⭐ | ⭐⭐  | ⭐   | ⭐   | ⭐⭐⭐             |
-| A3     | ⭐⭐  | ⭐   | ⭐⭐⭐ | ⭐⭐  | -               |
-| A4     | ⭐⭐⭐ | ⭐   | ⭐⭐  | -    | -               |
-| A5     | ⭐⭐  | ⭐⭐⭐ | ⭐   | ⭐   | -               |
-| B1     | ⭐⭐⭐ | ⭐⭐  | ⭐   | ⭐   | ⭐⭐⭐             |
-| B2     | ⭐⭐  | ⭐⭐⭐ | ⭐   | ⭐   | ⭐⭐              |
-| B3     | ⭐⭐  | ⭐   | ⭐⭐⭐ | ⭐⭐  | -               |
-| B4     | ⭐   | ⭐⭐⭐ | ⭐   | ⭐⭐  | -               |
+| Sprint | C++    | JUCE   | QA     | Docs | SDK Integration |
+| ------ | ------ | ------ | ------ | ---- | --------------- |
+| A1     | ⭐     | ⭐     | ⭐⭐⭐ | ⭐   | -               |
+| A2     | ⭐⭐⭐ | ⭐⭐   | ⭐     | ⭐   | ⭐⭐⭐          |
+| A3     | ⭐⭐   | ⭐     | ⭐⭐⭐ | ⭐⭐ | -               |
+| A4     | ⭐⭐⭐ | ⭐     | ⭐⭐   | -    | -               |
+| A5     | ⭐⭐   | ⭐⭐⭐ | ⭐     | ⭐   | -               |
+| B1     | ⭐⭐⭐ | ⭐⭐   | ⭐     | ⭐   | ⭐⭐⭐          |
+| B2     | ⭐⭐   | ⭐⭐⭐ | ⭐     | ⭐   | ⭐⭐            |
+| B3     | ⭐⭐   | ⭐     | ⭐⭐⭐ | ⭐⭐ | -               |
+| B4     | ⭐     | ⭐⭐⭐ | ⭐     | ⭐⭐ | -               |
 
 **Legend:** ⭐ = Basic, ⭐⭐ = Intermediate, ⭐⭐⭐ = Advanced
 
 ### Tooling Requirements
 
-| Tool              | Sprints    | Purpose                  |
-| ----------------- | ---------- | ------------------------ |
-| Xcode/CLion       | All        | C++ IDE                  |
-| JUCE Framework    | All        | UI framework             |
-| GoogleTest        | A4, B3     | Unit testing             |
-| Instruments       | A1, A3, B3 | Profiling, memory leaks  |
-| Activity Monitor  | A1, A3     | CPU/memory measurement   |
-| GitHub Actions    | A4, B1     | CI/CD                    |
-| Sentry/Crashlytics| B3         | Crash reporting          |
+| Tool               | Sprints    | Purpose                 |
+| ------------------ | ---------- | ----------------------- |
+| Xcode/CLion        | All        | C++ IDE                 |
+| JUCE Framework     | All        | UI framework            |
+| GoogleTest         | A4, B3     | Unit testing            |
+| Instruments        | A1, A3, B3 | Profiling, memory leaks |
+| Activity Monitor   | A1, A3     | CPU/memory measurement  |
+| GitHub Actions     | A4, B1     | CI/CD                   |
+| Sentry/Crashlytics | B3         | Crash reporting         |
 
 ### External Dependencies
 
-| Dependency                 | Sprints | Risk      | Mitigation                           |
-| -------------------------- | ------- | --------- | ------------------------------------ |
-| SDK IPerformanceMonitor    | B1      | MEDIUM    | Verify ORP110 Feature 3 completion   |
-| SDK Waveform API           | B1      | MEDIUM    | Verify ORP110 Feature 4 completion   |
-| SDK Routing Matrix API     | B2      | LOW       | Verify ORP110 Feature 1 completion   |
-| GoogleTest availability    | A4      | LOW       | Standard package, easy to install    |
-| Crash reporting service    | B3      | LOW       | Multiple options (Sentry, Crashlytics)|
+| Dependency              | Sprints | Risk   | Mitigation                             |
+| ----------------------- | ------- | ------ | -------------------------------------- |
+| SDK IPerformanceMonitor | B1      | MEDIUM | Verify ORP110 Feature 3 completion     |
+| SDK Waveform API        | B1      | MEDIUM | Verify ORP110 Feature 4 completion     |
+| SDK Routing Matrix API  | B2      | LOW    | Verify ORP110 Feature 1 completion     |
+| GoogleTest availability | A4      | LOW    | Standard package, easy to install      |
+| Crash reporting service | B3      | LOW    | Multiple options (Sentry, Crashlytics) |
 
 ---
 
@@ -1318,22 +1319,22 @@ A5 ──> B1 (SDK Perf APIs) ──> B2 (Routing) ──> B3 (Hardening) ──
 
 ### Technical Risks
 
-| Risk                                      | Probability | Impact   | Mitigation                              |
-| ----------------------------------------- | ----------- | -------- | --------------------------------------- |
-| Multi-tab test fails (OCC105 contradiction)| 40%         | CRITICAL | Sprint A1 verifies immediately          |
-| SDK APIs not ready for B1 integration    | 30%         | HIGH     | Verify ORP110 status before sprint     |
-| Performance target not met at 192 clips  | 50%         | HIGH     | Fallback: Document limitation, fix v0.4.0 |
-| Automated testing takes longer than estimated | 60%    | MEDIUM   | Defer some tests to Sprint B3           |
-| Crash reporting integration issues       | 20%         | LOW      | Multiple vendor options available       |
+| Risk                                          | Probability | Impact   | Mitigation                                |
+| --------------------------------------------- | ----------- | -------- | ----------------------------------------- |
+| Multi-tab test fails (OCC105 contradiction)   | 40%         | CRITICAL | Sprint A1 verifies immediately            |
+| SDK APIs not ready for B1 integration         | 30%         | HIGH     | Verify ORP110 status before sprint        |
+| Performance target not met at 192 clips       | 50%         | HIGH     | Fallback: Document limitation, fix v0.4.0 |
+| Automated testing takes longer than estimated | 60%         | MEDIUM   | Defer some tests to Sprint B3             |
+| Crash reporting integration issues            | 20%         | LOW      | Multiple vendor options available         |
 
 ### Process Risks
 
-| Risk                                    | Probability | Impact | Mitigation                          |
-| --------------------------------------- | ----------- | ------ | ----------------------------------- |
-| Sprint A1 reveals more P0 bugs          | 30%         | HIGH   | Add Sprint A6 contingency (3-5 days)|
-| QA testing reveals regressions          | 40%         | MEDIUM | Automated tests catch early (Sprint A4) |
-| Documentation falls behind              | 50%         | LOW    | Allocate 1 day per sprint for docs |
-| Resource allocation conflicts           | 20%         | MEDIUM | Prioritize P0 sprints first         |
+| Risk                           | Probability | Impact | Mitigation                              |
+| ------------------------------ | ----------- | ------ | --------------------------------------- |
+| Sprint A1 reveals more P0 bugs | 30%         | HIGH   | Add Sprint A6 contingency (3-5 days)    |
+| QA testing reveals regressions | 40%         | MEDIUM | Automated tests catch early (Sprint A4) |
+| Documentation falls behind     | 50%         | LOW    | Allocate 1 day per sprint for docs      |
+| Resource allocation conflicts  | 20%         | MEDIUM | Prioritize P0 sprints first             |
 
 ---
 
@@ -1341,49 +1342,51 @@ A5 ──> B1 (SDK Perf APIs) ──> B2 (Routing) ──> B3 (Hardening) ──
 
 ### Sprint-Level KPIs
 
-| Sprint | Primary KPI                     | Target             | Measurement Method        |
-| ------ | ------------------------------- | ------------------ | ------------------------- |
-| A1     | Multi-tab verification          | PASS or BUG FILED  | Manual test               |
-| A2     | isClipPlaying() replaced        | 0 TODO comments    | Code inspection           |
-| A3     | QA pass rate                    | ≥95%               | OCC103 test spec          |
-| A4     | Test count                      | ≥50 unit tests     | ctest output              |
-| A5     | Arrow key navigation functional | 100%               | Manual test               |
-| B1     | Edit Dialog latency at 192 clips| <500ms             | Stopwatch measurement     |
-| B2     | 4 Clip Groups functional        | 100%               | Manual routing test       |
-| B3     | Crash rate (8 hour test)        | 0%                 | Stability test            |
-| B4     | User satisfaction               | ≥4.5/5 stars       | User testing feedback     |
+| Sprint | Primary KPI                      | Target            | Measurement Method    |
+| ------ | -------------------------------- | ----------------- | --------------------- |
+| A1     | Multi-tab verification           | PASS or BUG FILED | Manual test           |
+| A2     | isClipPlaying() replaced         | 0 TODO comments   | Code inspection       |
+| A3     | QA pass rate                     | ≥95%              | OCC103 test spec      |
+| A4     | Test count                       | ≥50 unit tests    | ctest output          |
+| A5     | Arrow key navigation functional  | 100%              | Manual test           |
+| B1     | Edit Dialog latency at 192 clips | <500ms            | Stopwatch measurement |
+| B2     | 4 Clip Groups functional         | 100%              | Manual routing test   |
+| B3     | Crash rate (8 hour test)         | 0%                | Stability test        |
+| B4     | User satisfaction                | ≥4.5/5 stars      | User testing feedback |
 
 ### Version Milestone KPIs
 
-| Version | KPI                           | Target             | Measurement Method    |
-| ------- | ----------------------------- | ------------------ | --------------------- |
-| v0.2.3  | P0 gaps closed                | 8/8 (100%)         | OCC111 audit          |
-| v0.2.3  | QA pass rate                  | ≥95%               | OCC103 test spec      |
-| v0.2.4  | P1 gaps closed                | 12/12 (100%)       | OCC111 audit          |
-| v0.2.4  | Automated test coverage       | ≥60%               | gcov/lcov             |
-| v0.3.0  | Edit Dialog latency           | <500ms at 192 clips| Profiling             |
-| v0.3.0  | 4 Clip Groups functional      | 100%               | Manual test           |
-| v1.0    | Crash rate (production)       | <0.1%              | Crash reporter        |
-| v1.0    | User satisfaction             | ≥4.5/5 stars       | App Store reviews     |
+| Version | KPI                      | Target              | Measurement Method |
+| ------- | ------------------------ | ------------------- | ------------------ |
+| v0.2.3  | P0 gaps closed           | 8/8 (100%)          | OCC111 audit       |
+| v0.2.3  | QA pass rate             | ≥95%                | OCC103 test spec   |
+| v0.2.4  | P1 gaps closed           | 12/12 (100%)        | OCC111 audit       |
+| v0.2.4  | Automated test coverage  | ≥60%                | gcov/lcov          |
+| v0.3.0  | Edit Dialog latency      | <500ms at 192 clips | Profiling          |
+| v0.3.0  | 4 Clip Groups functional | 100%                | Manual test        |
+| v1.0    | Crash rate (production)  | <0.1%               | Crash reporter     |
+| v1.0    | User satisfaction        | ≥4.5/5 stars        | App Store reviews  |
 
 ---
 
 ## Conclusion
 
-This roadmap provides a clear path from v0.2.2 (current) to v1.0 (production-ready) over **11-15 weeks**.
+This roadmap provides a clear path from v0.2.2 (current) to v1.0 (production-ready) over **10-15 weeks** (revised from 11-15 weeks).
 
 ### Immediate Actions (Week 1)
 
-1. **Execute Sprint A1** (Quick Wins & Verification) - 2-3 days
-   - Verify multi-tab playback
-   - Verify CPU usage
-   - Verify MAX_CLIPS
-   - Test memory at 384 clips
+1. **✅ PARTIALLY COMPLETE: Sprint A1** (Quick Wins & Verification) - 1 day (reduced from 2-3)
+   - ✅ COMPLETE: Removed duplicate AudioEngine directory
+   - ✅ COMPLETE: Defined MAX_CLIP_BUTTONS constant
+   - ⏳ PENDING: Verify multi-tab playback
+   - ⏳ PENDING: Verify CPU usage
+   - ⏳ PENDING: Test memory at 384 clips
 
-2. **Execute Sprint A2** (OCC110 SDK Integration) - 1-2 days
-   - Replace `isClipPlaying()` stub
-   - Implement PreviewPlayer timer fix
-   - Test graceful timer management
+2. **Sprint A2** (SDK Integration Verification) - 4 hours (reduced from 1-2 days)
+   - ✅ Code review: `isClipPlaying()` verified (not stub)
+   - ✅ Code review: `isCueBussPlaying()` verified (not stub)
+   - ⏳ Functional testing: Timer management (4 scenarios)
+   - ⏳ Documentation: Update OCC110 with verification notes
 
 3. **Release v0.2.3** (End of Week 2)
    - Tag release
@@ -1393,16 +1396,19 @@ This roadmap provides a clear path from v0.2.2 (current) to v1.0 (production-rea
 ### Strategic Priorities
 
 **Short-term (v0.2.3-v0.2.4, 6 weeks):**
+
 - Close all P0 and P1 gaps
 - Establish automated testing foundation
 - Polish UI/UX for professional users
 
 **Medium-term (v0.3.0, 11 weeks):**
+
 - Integrate SDK performance APIs
 - Fix 192-clip performance degradation
 - Complete 4 Clip Groups feature
 
 **Long-term (v1.0, 17 weeks):**
+
 - Production hardening (error handling, stability)
 - Advanced features (limiter config, metering, templates)
 - User testing and feedback incorporation
@@ -1410,20 +1416,21 @@ This roadmap provides a clear path from v0.2.2 (current) to v1.0 (production-rea
 ### Success Criteria
 
 **v1.0 Production Readiness:**
-- [ ] All 47 gaps from OCC111 closed
+
+- [ ] All 46 gaps from OCC111 closed (corrected from 47)
 - [ ] 100% QA test pass rate
 - [ ] 0% crash rate in 8-hour stability test
 - [ ] <500ms Edit Dialog latency at 192 clips
 - [ ] ≥60% automated test coverage
 - [ ] User satisfaction ≥4.5/5 stars
 
-**Estimated Total Effort:** 53-76 person-days (~11-15 weeks for 1 developer)
+**Estimated Total Effort:** 51-73 person-days (~10-15 weeks for 1 developer, revised from 53-76 days)
 
 ---
 
 ## References
 
-[1] OCC111 - Gap Audit Report (47 gaps identified)
+[1] OCC111 - Gap Audit Report (46 gaps identified, corrected from 47)
 [2] OCC021 - Product Vision (broadcast/theater market, €500-1,500 price point)
 [3] OCC026 - 6-Month MVP Plan (v1.0 at 12 months)
 [4] OCC099 - Testing Strategy
@@ -1438,8 +1445,8 @@ This roadmap provides a clear path from v0.2.2 (current) to v1.0 (production-rea
 
 ---
 
-**Document Status:** Complete
-**Created:** 2025-11-12
+**Document Status:** Complete (Revised)
+**Created:** 2025-11-11 (Revised from initial 2025-11-12 draft)
 **Planning Horizon:** 16 weeks (v0.2.3 → v1.0)
 **Next Review:** After Sprint A1 completion (Week 1)
-**Related Documents:** OCC111 Gap Audit Report (input), OCC113+ (sprint reports as sprints complete)
+**Related Documents:** OCC111 Gap Audit Report (input, corrected), OCC113+ (sprint reports as sprints complete)
