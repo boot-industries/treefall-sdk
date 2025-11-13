@@ -8,6 +8,13 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
   // Create preview player with AudioEngine reference and buttonIndex (controls main grid clip)
   m_previewPlayer = std::make_unique<PreviewPlayer>(m_audioEngine, m_buttonIndex);
 
+  // CRITICAL: Start position timer immediately (runs continuously while Edit Dialog is open)
+  // Timer will automatically track playback state from ANY source:
+  // - Main grid keyboard/click
+  // - SPACE bar (stop/play)
+  // - Edit Dialog PLAY/STOP buttons
+  m_previewPlayer->startPositionTimer();
+
   // Build Phase 1 UI (basic metadata)
   buildPhase1UI();
 
@@ -366,10 +373,10 @@ void ClipEditDialog::buildPhase1UI() {
   m_nameEditor->onTextChange = [this]() { m_metadata.displayName = m_nameEditor->getText(); };
   m_nameEditor->setReturnKeyStartsNewLine(false); // Enter should NOT insert newline
   m_nameEditor->onReturnKey = [this]() {
-    // Enter key = Save & Close (trigger OK button)
-    if (m_okButton) {
-      m_okButton->triggerClick();
-    }
+    // Enter key = Confirm value and blur field (remove focus)
+    // This allows user to confirm text without closing dialog
+    m_nameEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Name editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_nameEditor.get());
 
@@ -534,7 +541,22 @@ void ClipEditDialog::buildPhase2UI() {
                           juce::Colour(0xffe74c3c)); // Red
   m_stopButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0xffc0392b));
   m_stopButton->onClick = [this]() {
-    if (m_previewPlayer) {
+    if (!m_previewPlayer)
+      return;
+
+    // Simple logic: If already stopped, reset playhead to IN. Otherwise, stop.
+    if (!m_previewPlayer->isPlaying()) {
+      // Already stopped - reset playhead to IN point (remains stopped)
+      int64_t trimIn = m_metadata.trimInSamples;
+
+      // Update waveform display only (don't start playback)
+      if (m_waveformDisplay) {
+        m_waveformDisplay->setPlayheadPosition(trimIn);
+      }
+
+      DBG("ClipEditDialog: STOP while stopped - reset playhead to IN (" << trimIn << " samples)");
+    } else {
+      // Playing - stop playback
       m_previewPlayer->stop();
       DBG("ClipEditDialog: Preview playback stopped");
     }
@@ -564,22 +586,27 @@ void ClipEditDialog::buildPhase2UI() {
                                juce::Colour(0xff4a4a4a));
   m_skipToEndButton->onClick = [this]() {
     if (m_previewPlayer) {
-      // Issue #9: Jump to 5 seconds before OUT point (keep play/pause state)
+      // Issue #9: Jump to 2 seconds before OUT point (keep play/pause state)
       bool wasPlaying = m_previewPlayer->isPlaying();
 
-      // Calculate target: 5 seconds before OUT, or IN if clip < 5s
-      int64_t fiveSecondsInSamples = 5 * m_metadata.sampleRate;
+      // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+      int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
       int64_t targetPosition =
-          std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - fiveSecondsInSamples);
+          std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
 
       m_previewPlayer->jumpTo(targetPosition);
+
+      // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+      if (m_waveformDisplay) {
+        m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+      }
 
       // If was playing, resume playing; if paused, stay paused
       if (wasPlaying && !m_previewPlayer->isPlaying()) {
         m_previewPlayer->play();
       }
 
-      DBG("ClipEditDialog: Skip to end (5s before OUT) - " << (wasPlaying ? "resumed" : "paused"));
+      DBG("ClipEditDialog: Skip to end (2s before OUT) - " << (wasPlaying ? "resumed" : "paused"));
     }
   };
   addAndMakeVisible(m_skipToEndButton.get());
@@ -657,10 +684,27 @@ void ClipEditDialog::buildPhase2UI() {
       // Update waveform playhead
       if (m_waveformDisplay) {
         m_waveformDisplay->setPlayheadPosition(samplePosition);
+
+        // Clear audition highlight when:
+        // 1. Playhead reaches OUT (end of audition)
+        // 2. Playhead jumps backward (loop restart detected)
+        bool reachedOut = (samplePosition >= m_metadata.trimOutSamples);
+        bool loopJump =
+            (samplePosition < m_previousPlayheadPosition - 1000); // Backward jump > 1000 samples
+
+        if (reachedOut || loopJump) {
+          m_waveformDisplay->clearAuditionRegion();
+        }
+
+        m_previousPlayheadPosition = samplePosition;
       }
     };
 
     m_previewPlayer->onPlaybackStopped = [this]() {
+      // Clear audition region when playback stops
+      if (m_waveformDisplay) {
+        m_waveformDisplay->clearAuditionRegion();
+      }
       DBG("ClipEditDialog: Preview playback stopped (reached end or manual stop)");
     };
   }
@@ -824,6 +868,10 @@ void ClipEditDialog::buildPhase2UI() {
             << currentPos << " < " << m_metadata.trimInSamples << "), restarted from IN");
       }
     }
+
+    // Clear focus after confirming value
+    m_trimInTimeEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Trim IN time editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_trimInTimeEditor.get());
 
@@ -970,6 +1018,10 @@ void ClipEditDialog::buildPhase2UI() {
       // CRITICAL: Enforce OUT point edit law (if playhead >= OUT, jump to IN and restart)
       enforceOutPointEditLaw();
     }
+
+    // Clear focus after confirming value
+    m_trimOutTimeEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Trim OUT time editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_trimOutTimeEditor.get());
 
@@ -1667,49 +1719,59 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
     return true;
   }
 
-  // TAB key: Custom focus order (Name → Trim IN → Trim OUT only)
+  // TAB key: Always cycles through three text fields (Name → IN → OUT → Name)
+  // Works regardless of what has focus currently
   if (key == juce::KeyPress::tabKey) {
-    // Determine current focus
     auto* focused = juce::Component::getCurrentlyFocusedComponent();
 
     if (focused == m_nameEditor.get()) {
       // Name → Trim IN
-      if (m_trimInTimeEditor) {
-        m_trimInTimeEditor->grabKeyboardFocus();
-      }
+      m_trimInTimeEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Name → Trim IN");
     } else if (focused == m_trimInTimeEditor.get()) {
       // Trim IN → Trim OUT
-      if (m_trimOutTimeEditor) {
-        m_trimOutTimeEditor->grabKeyboardFocus();
-      }
+      m_trimOutTimeEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Trim IN → Trim OUT");
     } else if (focused == m_trimOutTimeEditor.get()) {
       // Trim OUT → Name (cycle back)
-      if (m_nameEditor) {
-        m_nameEditor->grabKeyboardFocus();
-      }
+      m_nameEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Trim OUT → Name");
     } else {
-      // Nothing focused or other control focused → start at Name
-      if (m_nameEditor) {
-        m_nameEditor->grabKeyboardFocus();
-      }
+      // Nothing focused or other control → start at Name
+      // This allows TAB to work from anywhere in dialog
+      m_nameEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Other → Name (cycle start)");
     }
     return true; // Consume Tab key
   }
 
-  // ENTER key: Submit dialog (OK) - only if not in text editor
+  // ENTER key: Two-stage behavior
+  // Stage 1: In text field → blur field (remove focus)
+  // Stage 2: No text field focused → trigger OK button
+  // CRITICAL SAFETY: Prevent accidental triggering of show-critical controls (CLEAR, etc.)
   if (key == juce::KeyPress::returnKey ||
       key == juce::KeyPress(juce::KeyPress::returnKey, juce::ModifierKeys(), 0)) {
-    // Check if we're in a text editor (they handle Enter themselves)
     auto* focused = juce::Component::getCurrentlyFocusedComponent();
+
+    // Case 1: Text editor has focus - let it handle Enter (confirms text, blurs field)
     if (focused == m_nameEditor.get() || focused == m_trimInTimeEditor.get() ||
         focused == m_trimOutTimeEditor.get()) {
-      // Let text editor handle Enter (will trigger OK via onReturnKey callback)
+      // Let text editor handle Enter (will blur via onReturnKey callback)
       return false;
     }
 
-    // Otherwise, trigger OK button directly
-    if (onOkClicked)
+    // Case 2: Dangerous component has focus - block Enter completely
+    // CRITICAL: Prevent accidental CLEAR button triggers
+    if (focused == m_trimInClearButton.get() || focused == m_trimOutClearButton.get()) {
+      DBG("ClipEditDialog: ENTER blocked - dangerous component has focus");
+      return true; // Consume Enter key without action
+    }
+
+    // Case 3: Safe to trigger OK (either nothing focused or safe component focused)
+    if (onOkClicked) {
       onOkClicked(m_metadata);
+      DBG("ClipEditDialog: ENTER - triggered OK button");
+    }
     return true;
   }
 
@@ -1721,8 +1783,7 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
   }
 
   // ? key (Shift+/): Toggle Loop (Issue #4)
-  if (key == juce::KeyPress('?') ||
-      (key == juce::KeyPress('/') && key.getModifiers().isShiftDown())) {
+  if (key.getTextCharacter() == '?') {
     if (m_loopButton) {
       bool newState = !m_loopButton->getToggleState();
       m_loopButton->setToggleState(newState, juce::sendNotification);
@@ -1731,6 +1792,62 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
         m_previewPlayer->setLoopEnabled(newState);
       }
       DBG("ClipEditDialog: ? key - Loop " << (newState ? "enabled" : "disabled"));
+    }
+    return true;
+  }
+
+  // R key: Zoom Out
+  if (key.getTextCharacter() == 'r' || key.getTextCharacter() == 'R') {
+    if (m_waveformDisplay) {
+      int currentLevel = m_waveformDisplay->getZoomLevel();
+      if (currentLevel > 0) {
+        // Calculate playhead position for zoom center
+        float playheadNormalized = 0.5f; // Default to center
+        if (m_previewPlayer && m_metadata.durationSamples > 0) {
+          int64_t playheadPos = m_previewPlayer->getCurrentPosition();
+          playheadNormalized = static_cast<float>(playheadPos) / m_metadata.durationSamples;
+        }
+        m_waveformDisplay->setZoomLevel(currentLevel - 1, playheadNormalized);
+        updateZoomLabel();
+        DBG("ClipEditDialog: R key - Zoom out to level " << (currentLevel - 1));
+      }
+    }
+    return true;
+  }
+
+  // T key: Zoom In
+  if (key.getTextCharacter() == 't' || key.getTextCharacter() == 'T') {
+    if (m_waveformDisplay) {
+      int currentLevel = m_waveformDisplay->getZoomLevel();
+      if (currentLevel < 4) { // Max zoom level is 4 (16x)
+        // Calculate playhead position for zoom center
+        float playheadNormalized = 0.5f; // Default to center
+        if (m_previewPlayer && m_metadata.durationSamples > 0) {
+          int64_t playheadPos = m_previewPlayer->getCurrentPosition();
+          playheadNormalized = static_cast<float>(playheadPos) / m_metadata.durationSamples;
+        }
+        m_waveformDisplay->setZoomLevel(currentLevel + 1, playheadNormalized);
+        updateZoomLabel();
+        DBG("ClipEditDialog: T key - Zoom in to level " << (currentLevel + 1));
+      }
+    }
+    return true;
+  }
+
+  // LEFT ARROW key: Skip to Start (|<<)
+  if (key == juce::KeyPress::leftKey) {
+    if (m_skipToStartButton) {
+      m_skipToStartButton->triggerClick();
+      DBG("ClipEditDialog: Left Arrow - Skip to start");
+    }
+    return true;
+  }
+
+  // RIGHT ARROW key: Skip to End (>>|)
+  if (key == juce::KeyPress::rightKey) {
+    if (m_skipToEndButton) {
+      m_skipToEndButton->triggerClick();
+      DBG("ClipEditDialog: Right Arrow - Skip to end");
     }
     return true;
   }
@@ -2010,9 +2127,28 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
-        restartPlayback();
-        DBG("ClipEditDialog: ; key - trim OUT changed, restarted from IN");
+
+        // 2s end audition (like >>|): Jump to OUT - 2s and start playing
+        bool wasPlaying = m_previewPlayer->isPlaying();
+
+        // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+        int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
+        int64_t targetPosition =
+            std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
+
+        m_previewPlayer->jumpTo(targetPosition);
+
+        // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+        if (m_waveformDisplay) {
+          m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+        }
+
+        // If was playing, resume playing; if paused, stay paused
+        if (wasPlaying && !m_previewPlayer->isPlaying()) {
+          m_previewPlayer->play();
+        }
+
+        DBG("ClipEditDialog: ; key - trim OUT changed, 2s end audition");
       }
     };
 
@@ -2056,9 +2192,28 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
       }
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples);
-        // EDIT LAW: ANY trim command restarts playback from IN (unconditional)
-        restartPlayback();
-        DBG("ClipEditDialog: ' key - trim OUT changed, restarted from IN");
+
+        // 2s end audition (like >>|): Jump to OUT - 2s and start playing
+        bool wasPlaying = m_previewPlayer->isPlaying();
+
+        // Calculate target: 2 seconds before OUT, or IN if clip < 2s
+        int64_t twoSecondsInSamples = 2 * m_metadata.sampleRate;
+        int64_t targetPosition =
+            std::max(m_metadata.trimInSamples, m_metadata.trimOutSamples - twoSecondsInSamples);
+
+        m_previewPlayer->jumpTo(targetPosition);
+
+        // Set audition region for visual feedback (yellow highlight from playhead to OUT)
+        if (m_waveformDisplay) {
+          m_waveformDisplay->setAuditionRegion(targetPosition, m_metadata.trimOutSamples);
+        }
+
+        // If was playing, resume playing; if paused, stay paused
+        if (wasPlaying && !m_previewPlayer->isPlaying()) {
+          m_previewPlayer->play();
+        }
+
+        DBG("ClipEditDialog: ' key - trim OUT changed, 2s end audition");
       }
     };
 

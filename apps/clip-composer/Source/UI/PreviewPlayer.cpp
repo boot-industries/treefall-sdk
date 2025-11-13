@@ -162,21 +162,45 @@ void PreviewPlayer::jumpTo(int64_t samplePosition) {
   // This is SINGLE COMMAND per action (fixes transport spam issue)
   bool wasPlaying = m_audioEngine->isClipPlaying(m_buttonIndex);
 
-  // Seek to target position (works whether playing or stopped)
-  bool seeked = m_audioEngine->seekClip(m_buttonIndex, samplePosition);
+  if (wasPlaying) {
+    // Clip is playing - seek to new position (gap-free, sample-accurate)
+    bool seeked = m_audioEngine->seekClip(m_buttonIndex, samplePosition);
 
-  if (seeked) {
-    // If not already playing, start playback from seeked position
-    if (!wasPlaying) {
-      m_audioEngine->startClip(m_buttonIndex);
+    if (seeked) {
+      startPositionTimer(); // Start polling position for playhead updates
+      DBG("PreviewPlayer: Jogged to sample " << samplePosition << " (button " << m_buttonIndex
+                                             << ", seamless gap-free seek)");
+    } else {
+      DBG("PreviewPlayer: Failed to seek to sample " << samplePosition << " (button "
+                                                     << m_buttonIndex << ")");
     }
-
-    startPositionTimer(); // Start polling position for playhead updates
-    DBG("PreviewPlayer: Jogged to sample " << samplePosition << " (button " << m_buttonIndex
-                                           << ", seamless gap-free seek)");
   } else {
-    DBG("PreviewPlayer: Failed to jog to sample " << samplePosition << " (button " << m_buttonIndex
-                                                  << ")");
+    // Clip is stopped - start playback from clicked position
+    // Strategy: Start clip normally, then immediately seek to clicked position
+    bool started = m_audioEngine->startClip(m_buttonIndex);
+
+    if (started) {
+      // Seek to clicked position (gap-free, sample-accurate)
+      bool seeked = m_audioEngine->seekClip(m_buttonIndex, samplePosition);
+
+      startPositionTimer(); // Start polling position for playhead updates
+
+      if (seeked) {
+        DBG("PreviewPlayer: Started and seeked to sample " << samplePosition << " (button "
+                                                           << m_buttonIndex << ", click-to-start)");
+      } else {
+        DBG("PreviewPlayer: Started but seek failed - playing from IN (button " << m_buttonIndex
+                                                                                << ")");
+      }
+
+      // Notify MainComponent to sync grid button visual state
+      if (onPlayStateChanged) {
+        onPlayStateChanged(true);
+      }
+    } else {
+      DBG("PreviewPlayer: Failed to start clip from sample " << samplePosition << " (button "
+                                                             << m_buttonIndex << ")");
+    }
   }
 }
 
@@ -207,9 +231,14 @@ void PreviewPlayer::stopPositionTimer() {
 }
 
 void PreviewPlayer::timerCallback() {
+  // CRITICAL: Always poll SDK state - timer runs continuously when Edit Dialog is open
+  // This ensures playhead tracks play state regardless of trigger source:
+  // 1. Main grid keyboard/click
+  // 2. SPACE bar (stop/play)
+  // 3. Edit Dialog PLAY/STOP buttons
+
   if (!isPlaying()) {
-    // Timer is running but clip stopped - stop timer
-    stopTimer();
+    // Clip stopped - do not update playhead position
     return;
   }
 
