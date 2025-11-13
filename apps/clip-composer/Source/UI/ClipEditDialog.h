@@ -282,5 +282,8 @@ private:
   int m_nudgeOutLeftInterval = 300;
   int m_nudgeOutRightInterval = 300;
 
+  // Audition highlight tracking (for detecting loop restarts)
+  int64_t m_previousPlayheadPosition = 0; // Track backward jumps to clear audition highlight
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipEditDialog)
 };

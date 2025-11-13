@@ -59,6 +59,17 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
     m_clipChannelPointers[i] = m_clipChannelBuffers[i].data();
   }
 
+  // Initialize session defaults with sane values
+  // CRITICAL: Without this, registerClipAudio() copies garbage from uninitialized memory
+  // This caused button 28 overmodulation (garbage gainDb) and zigzag distortion (garbage fades)
+  m_sessionDefaults.fadeInSeconds = 0.0;
+  m_sessionDefaults.fadeOutSeconds = 0.0;
+  m_sessionDefaults.fadeInCurve = FadeCurve::Linear;
+  m_sessionDefaults.fadeOutCurve = FadeCurve::Linear;
+  m_sessionDefaults.loopEnabled = false;
+  m_sessionDefaults.stopOthersOnPlay = false;
+  m_sessionDefaults.gainDb = 0.0f; // Unity gain (0dB = no amplification)
+
   // TODO: m_sessionGraph will be used for querying clip metadata (trim points, routing, etc.)
   (void)m_sessionGraph; // Suppress unused warning for now
 }
@@ -271,7 +282,7 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
           clip.reader->seek(trimIn);
         }
 
-        // ORP097 Bug 7 Fix: Mark that clip has looped
+        // Mark that clip has looped (prevents fade IN on subsequent wraps)
         clip.hasLoopedOnce = true;
       } else {
         // Non-loop mode: skip rendering, will be stopped by post-render check
@@ -361,9 +372,13 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
           gain *= calculateFadeGain(fadeInPos, fadeInCurveType);
         }
 
-        // Apply clip fade-out (last N samples before trim OUT)
+        // Apply clip fade-out ONLY if loop is DISABLED
+        // Loop mode: Skip fade OUT at boundary (instant wrap to IN)
+        // Non-loop mode: Apply fade OUT at end (natural one-shot ending)
+        bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
         int64_t trimmedDuration = trimOut - trimIn;
-        if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
+        if (!shouldLoop && fadeOutSampleCount > 0 &&
+            relativePos >= (trimmedDuration - fadeOutSampleCount)) {
           int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
           float fadeOutPos =
               static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
@@ -890,6 +905,26 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   entry.stopOthersOnPlay = m_sessionDefaults.stopOthersOnPlay;
   entry.gainDb = m_sessionDefaults.gainDb;
 
+  // DIAGNOSTIC LOGGING (TEMPORARY - 2025-11-12)
+  // TODO: REMOVE THIS SECTION ONCE GAIN INITIALIZATION BUG IS CONFIRMED FIXED
+  // This was added to debug "Stash of Brass" overmodulation issue caused by uninitialized
+  // m_sessionDefaults.gainDb. Logs clip registration to verify 0dB gain is applied correctly.
+  // Safe to remove after v0.2.1 release or after 2-3 weeks of stable operation.
+  std::string filename = file_path.substr(file_path.find_last_of("/\\") + 1);
+  if (filename.find("Stash") != std::string::npos || filename.find("Strong") != std::string::npos) {
+    fprintf(stderr,
+            "TransportController::registerClipAudio() - DIAGNOSTIC for '%s':\n"
+            "  Handle: %llu\n"
+            "  Sample Rate: %u Hz (SDK is running at %u Hz)\n"
+            "  Channels: %u\n"
+            "  Duration: %lld samples\n"
+            "  gainDb from m_sessionDefaults: %.2f dB\n"
+            "  Computed gainLinear: %.4f\n",
+            filename.c_str(), (unsigned long long)handle, result.value.sample_rate, m_sampleRate,
+            result.value.num_channels, (long long)result.value.duration_samples, entry.gainDb,
+            std::pow(10.0f, entry.gainDb / 20.0f));
+  }
+
   // Trim points default to full file duration
   entry.trimInSamples = 0;
   entry.trimOutSamples = result.value.duration_samples;
@@ -1382,8 +1417,9 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
       clip.isStopping = false;
       clip.fadeOutGain = 1.0f;
 
-      // Reset loop state for fade re-application
-      clip.hasLoopedOnce = false;
+      // DO NOT reset hasLoopedOnce for user restart - restart should NOT trigger fade-in
+      // Keep hasLoopedOnce=true to prevent fade re-application (only 5ms click-prevention
+      // crossfade)
     }
   }
 

@@ -90,32 +90,52 @@ void WaveformDisplay::setTrimPoints(int64_t trimInSamples, int64_t trimOutSample
 void WaveformDisplay::setPlayheadPosition(int64_t samplePosition) {
   m_playheadPosition = samplePosition;
 
-  // Paginated playhead chase (scroll viewport when playhead reaches edges)
-  if (m_zoomFactor > 1.0f && m_waveformData.totalSamples > 0 && samplePosition > 0) {
+  // PAGINATION MODE: Viewport stays fixed UNLESS playhead escapes visible area
+  // When playhead escapes, viewport "pages" to position playhead at 10% from left
+  // This gives playhead 80% of play area (10% → 90%) before next pagination
+  if (m_zoomFactor >= 2.0f && m_waveformData.totalSamples > 0 && samplePosition > 0) {
     float playheadNormalized = samplePosition / static_cast<float>(m_waveformData.totalSamples);
-    float visibleWidth = 1.0f / m_zoomFactor; // Fixed zoom window size
+    float visibleWidth = 1.0f / m_zoomFactor;
+
+    // Calculate current viewport bounds
     float startFraction = m_zoomCenter - (visibleWidth / 2.0f);
     float endFraction = m_zoomCenter + (visibleWidth / 2.0f);
-
-    // Clamp viewport to boundaries
     startFraction = std::clamp(startFraction, 0.0f, 1.0f);
     endFraction = std::clamp(endFraction, 0.0f, 1.0f);
 
-    // Check if playhead is approaching edges (within 10% margin) - then scroll viewport
-    float distanceFromStart = playheadNormalized - startFraction;
-    float distanceFromEnd = endFraction - playheadNormalized;
-    float edgeThreshold = visibleWidth * 0.15f; // 15% margin for smooth pagination
+    // Calculate pagination trigger points (10% from left, 90% from left == 10% from right)
+    float leftEdge = startFraction + (visibleWidth * 0.10f);  // 10% from left edge
+    float rightEdge = startFraction + (visibleWidth * 0.90f); // 90% from left (10% from right)
 
-    if (distanceFromEnd < edgeThreshold && endFraction < 1.0f) {
-      // Playhead approaching right edge - scroll viewport right (page forward)
-      m_zoomCenter =
-          std::min(1.0f - (visibleWidth / 2.0f), playheadNormalized + (visibleWidth / 4.0f));
-    } else if (distanceFromStart < edgeThreshold && startFraction > 0.0f) {
-      // Playhead approaching left edge - scroll viewport left (page backward)
-      m_zoomCenter = std::max((visibleWidth / 2.0f), playheadNormalized - (visibleWidth / 4.0f));
+    // Check if playhead escaped pagination zone
+    if (playheadNormalized < leftEdge || playheadNormalized > rightEdge) {
+      // Playhead escaped - page viewport to position playhead at 10% from left
+      // New zoom center = playheadNormalized + 40% of visible width
+      // (since center is 50% and we want playhead at 10%, we need center at playhead + 40%)
+      m_zoomCenter = playheadNormalized + (visibleWidth * 0.40f);
+
+      // Clamp zoom center to keep viewport within boundaries
+      float halfWidth = visibleWidth / 2.0f;
+      m_zoomCenter = std::clamp(m_zoomCenter, halfWidth, 1.0f - halfWidth);
+
+      DBG("WaveformDisplay: Playhead escaped pagination zone, paging to " << m_zoomCenter);
     }
   }
 
+  repaint();
+}
+
+void WaveformDisplay::setAuditionRegion(int64_t startSample, int64_t endSample) {
+  m_auditionActive = true;
+  m_auditionStart = startSample;
+  m_auditionEnd = endSample;
+  DBG("WaveformDisplay: Audition region set to [" << startSample << ", " << endSample << "]");
+  repaint();
+}
+
+void WaveformDisplay::clearAuditionRegion() {
+  m_auditionActive = false;
+  DBG("WaveformDisplay: Audition region cleared");
   repaint();
 }
 
@@ -192,6 +212,7 @@ void WaveformDisplay::paint(juce::Graphics& g) {
     juce::ScopedLock lock(m_dataLock);
     if (m_waveformData.isValid) {
       drawWaveform(g, waveformArea);
+      drawAuditionHighlight(g, waveformArea); // Draw audition highlight behind trim markers
       drawTrimMarkers(g, waveformArea);
       drawTimeScale(g, timeScaleArea);
     } else {
@@ -583,7 +604,7 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
   }
 
   // Draw playhead (transport position bar) - YELLOW, thicker (SpotOn standard)
-  if (m_playheadPosition > 0) {
+  if (m_playheadPosition >= 0) {
     float playheadNormalized = m_playheadPosition / static_cast<float>(m_waveformData.totalSamples);
 
     // Only draw if playhead is in visible range
@@ -595,6 +616,54 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
       g.drawLine(playheadX, waveformBounds.getY(), playheadX, waveformBounds.getBottom(),
                  3.0f); // Thicker (3.0f)
     }
+  }
+}
+
+void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
+                                            const juce::Rectangle<float>& bounds) {
+  // Only draw if audition is active
+  if (!m_auditionActive || m_waveformData.totalSamples == 0)
+    return;
+
+  // Account for dB scale offset
+  const float scaleWidth = 40.0f;
+  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  const float width = waveformBounds.getWidth();
+
+  // Calculate visible range based on zoom level
+  float visibleWidth = 1.0f / m_zoomFactor;
+  float startFraction = m_zoomCenter - (visibleWidth / 2.0f);
+  float endFraction = m_zoomCenter + (visibleWidth / 2.0f);
+  startFraction = std::clamp(startFraction, 0.0f, 1.0f);
+  endFraction = std::clamp(endFraction, 0.0f, 1.0f);
+
+  // Calculate audition region positions in normalized space [0, 1]
+  float auditionStartNormalized = m_auditionStart / static_cast<float>(m_waveformData.totalSamples);
+  float auditionEndNormalized = m_auditionEnd / static_cast<float>(m_waveformData.totalSamples);
+
+  // Clamp playhead to audition region for proper rendering
+  float playheadNormalized =
+      std::clamp(m_playheadPosition / static_cast<float>(m_waveformData.totalSamples),
+                 auditionStartNormalized, auditionEndNormalized);
+
+  // Map to zoomed viewport coordinates
+  float auditionStartX =
+      waveformBounds.getX() +
+      ((auditionStartNormalized - startFraction) / (endFraction - startFraction)) * width;
+  float playheadX = waveformBounds.getX() +
+                    ((playheadNormalized - startFraction) / (endFraction - startFraction)) * width;
+  float auditionEndX =
+      waveformBounds.getX() +
+      ((auditionEndNormalized - startFraction) / (endFraction - startFraction)) * width;
+
+  // Draw yellow highlight from playhead to OUT (remaining audition region)
+  g.setColour(juce::Colour(0xffffff00).withAlpha(0.15f)); // Yellow, semi-transparent
+  float highlightStart = playheadX;
+  float highlightEnd = auditionEndX;
+
+  if (highlightEnd > highlightStart) {
+    g.fillRect(highlightStart, waveformBounds.getY(), highlightEnd - highlightStart,
+               waveformBounds.getHeight());
   }
 }
 

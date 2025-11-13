@@ -654,6 +654,12 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     DBG("Button " + juce::String(buttonIndex) + " (global: " + juce::String(globalClipIndex) +
         "): Started playing via keyboard/click");
   }
+
+  // CRITICAL: Restore keyboard focus to Edit Dialog if it's open
+  // Edit Dialog should always have keyboard priority when visible
+  if (m_currentEditDialog != nullptr && m_currentEditDialog->isVisible()) {
+    m_currentEditDialog->grabKeyboardFocus();
+  }
 }
 
 void MainComponent::onClipDoubleClicked(int buttonIndex) {
@@ -780,6 +786,10 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
       button->setClipGroup(edited.clipGroup);
       button->setLoopEnabled(edited.loopEnabled); // CRITICAL: Sync loop visual state
 
+      // CRITICAL: Sync fade indicator visual state (not handled by 75fps polling)
+      button->setFadeInEnabled(edited.fadeInSeconds > 0.0);
+      button->setFadeOutEnabled(edited.fadeOutSeconds > 0.0);
+
       // Update duration with trimmed values
       if (edited.sampleRate > 0) {
         int64_t trimmedSamples = edited.trimOutSamples - edited.trimInSamples;
@@ -844,6 +854,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
   addAndMakeVisible(dialog);
   dialog->toFront(true);
+  dialog->grabKeyboardFocus(); // CRITICAL: Grab focus to ensure keyboard commands work immediately
 }
 
 void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex) {
