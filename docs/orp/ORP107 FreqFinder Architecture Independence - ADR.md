@@ -23,6 +23,7 @@
 FreqFinder was initially listed in Orpheus SDK roadmap documents as a planned application, creating potential confusion about whether it would integrate with the SDK core (like Clip Composer) or remain architecturally independent.
 
 **ORP106** provided an assessment framework to evaluate whether applications should use:
+
 - **JUCE-only** (simple, lightweight)
 - **JUCE UI + Orpheus SDK audio core** (complex, feature-rich)
 
@@ -35,6 +36,7 @@ FreqFinder's development team provided a comprehensive response in **FRQ004** (F
 ### FreqFinder's Requirements
 
 **What FreqFinder does:**
+
 - Real-time oscillator synthesis (7 sine wave generators)
 - FFT analysis (8192-point harmonic detection)
 - MIDI input handling (note-on sets frequency)
@@ -42,6 +44,7 @@ FreqFinder's development team provided a comprehensive response in **FRQ004** (F
 - Educational/mixing workflow tool
 
 **What FreqFinder does NOT need:**
+
 - ❌ Multi-stream session management (single tone generator)
 - ❌ Network audio support (standard device I/O sufficient)
 - ❌ Deterministic rendering (real-time synthesis only)
@@ -52,6 +55,7 @@ FreqFinder's development team provided a comprehensive response in **FRQ004** (F
 ### Why JUCE-Only is Appropriate
 
 **JUCE provides everything FreqFinder needs:**
+
 - ✅ `juce::dsp::FFT` - Real-time FFT analysis
 - ✅ `juce::dsp::Oscillator` - Sine wave synthesis
 - ✅ `juce::MidiMessage` - MIDI input handling
@@ -59,6 +63,7 @@ FreqFinder's development team provided a comprehensive response in **FRQ004** (F
 - ✅ `AudioDeviceManager` - Standard audio I/O
 
 **Orpheus SDK would add complexity without value:**
+
 - SessionGraph - Not needed (no multi-clip coordination)
 - TransportController - Not needed (no playback transport)
 - RoutingMatrix - Not needed (simple 7-oscillator sum)
@@ -69,15 +74,15 @@ FreqFinder's development team provided a comprehensive response in **FRQ004** (F
 
 From ORP106's use case matrix:
 
-| Use Case | Recommendation | FreqFinder Match |
-|----------|----------------|------------------|
-| **Simple file analyzer** | JUCE-only sufficient | ✅ (synthesis, not file) |
-| **Live input analyzer** | JUCE-only sufficient | ✅ **MATCH** |
-| **Multi-stream analyzer** | JUCE + SDK recommended | ❌ (single stream) |
-| **Network audio analyzer** | SDK required | ❌ (not required) |
-| **Session-aware analyzer** | SDK required | ❌ (no sessions) |
-| **Deterministic analysis** | JUCE + SDK recommended | ❌ (real-time only) |
-| **Broadcast-safe analyzer** | JUCE + SDK recommended | ❌ (not broadcast) |
+| Use Case                    | Recommendation         | FreqFinder Match         |
+| --------------------------- | ---------------------- | ------------------------ |
+| **Simple file analyzer**    | JUCE-only sufficient   | ✅ (synthesis, not file) |
+| **Live input analyzer**     | JUCE-only sufficient   | ✅ **MATCH**             |
+| **Multi-stream analyzer**   | JUCE + SDK recommended | ❌ (single stream)       |
+| **Network audio analyzer**  | SDK required           | ❌ (not required)        |
+| **Session-aware analyzer**  | SDK required           | ❌ (no sessions)         |
+| **Deterministic analysis**  | JUCE + SDK recommended | ❌ (real-time only)      |
+| **Broadcast-safe analyzer** | JUCE + SDK recommended | ❌ (not broadcast)       |
 
 **Verdict:** FreqFinder maps to **"JUCE-only sufficient"** use cases.
 
@@ -87,16 +92,16 @@ From ORP106's use case matrix:
 
 ### Why Different Architectures Make Sense
 
-| Aspect | Clip Composer (OCC) | FreqFinder |
-|--------|---------------------|------------|
-| **Architecture** | JUCE UI + SDK audio core | JUCE-only |
-| **Use Case** | Multi-clip broadcast soundboard | Harmonic synthesis tool |
-| **Session Management** | YES (save/load complex sessions) | NO (plugin parameters only) |
-| **Multi-Stream** | YES (16+ clips simultaneously) | NO (7 oscillators, single output) |
-| **Network Audio Compatibility** | YES (via manufacturer drivers) | NO (standard I/O) |
-| **Deterministic** | YES (broadcast-safe) | NO (real-time synthesis) |
-| **Transport Control** | YES (sample-accurate cues) | NO (immediate MIDI) |
-| **Complexity** | High (routing matrix, transport) | Low (simple signal flow) |
+| Aspect                          | Clip Composer (OCC)              | FreqFinder                        |
+| ------------------------------- | -------------------------------- | --------------------------------- |
+| **Architecture**                | JUCE UI + SDK audio core         | JUCE-only                         |
+| **Use Case**                    | Multi-clip broadcast soundboard  | Harmonic synthesis tool           |
+| **Session Management**          | YES (save/load complex sessions) | NO (plugin parameters only)       |
+| **Multi-Stream**                | YES (16+ clips simultaneously)   | NO (7 oscillators, single output) |
+| **Network Audio Compatibility** | YES (via manufacturer drivers)   | NO (standard I/O)                 |
+| **Deterministic**               | YES (broadcast-safe)             | NO (real-time synthesis)          |
+| **Transport Control**           | YES (sample-accurate cues)       | NO (immediate MIDI)               |
+| **Complexity**                  | High (routing matrix, transport) | Low (simple signal flow)          |
 
 **Key Insight:** Different tools, different requirements, different architectures. **Both decisions are correct.**
 
@@ -107,20 +112,24 @@ From ORP106's use case matrix:
 ### Positive
 
 ✅ **Faster development** - Phases 1-2 complete (~2,500 lines C++20)
+
 - JUCE is well-documented, widely adopted
 - No SDK learning curve required
 - Straightforward codebase
 
 ✅ **Lower maintenance burden**
+
 - No SDK release cycle dependency
 - Simpler codebase to maintain
 - Independent release schedule
 
 ✅ **Smaller binary size** - ~50-100 MB (vs ~100-200 MB with SDK)
+
 - Better download/install experience
 - Lower disk footprint
 
 ✅ **Appropriate complexity**
+
 - Architecture matches problem scope
 - No over-engineering
 - Easier onboarding for contributors
@@ -128,6 +137,7 @@ From ORP106's use case matrix:
 ### Neutral
 
 ⚪ **Brand association without technical coupling**
+
 - FreqFinder is an "Orpheus SDK Application" (brand)
 - But architecturally independent
 - Users see cohesive ecosystem, developers see independent codebases
@@ -135,14 +145,17 @@ From ORP106's use case matrix:
 ### Trade-offs
 
 ⚠️ **No session compatibility with OCC**
+
 - Users cannot "open OCC session in FreqFinder"
 - But: No use case requires this (FreqFinder generates tones, OCC plays clips)
 
 ⚠️ **No network audio support**
+
 - Cannot analyze AES67/Dante streams
 - But: Not a FreqFinder requirement (sidechain planned for Phase 4 is simple local input)
 
 ⚠️ **Migration effort if requirements change**
+
 - If FreqFinder v2.0 needs SDK features (multi-stream analysis, network audio)
 - Migration estimated at 2-4 weeks for experienced developer
 - But: Feasible if needed, not locked into JUCE-only forever
@@ -154,6 +167,7 @@ From ORP106's use case matrix:
 **Hypothetical scenario:** FreqFinder v2.0 adds network audio analysis (AES67 streams)
 
 **Migration steps:**
+
 1. Add Orpheus SDK to CMakeLists.txt (`FetchContent` or submodule)
 2. Replace `AudioDeviceManager` with SDK's AES67 network driver
 3. Add `SessionGraph` if multi-stream session management needed
@@ -169,12 +183,14 @@ From ORP106's use case matrix:
 ## Implementation Status
 
 **FreqFinder v0.2.1:**
+
 - ✅ Phase 1 complete - Oscillator synthesis (7 sine waves)
 - ✅ Phase 2 complete - FFT analysis (8192-point)
 - ⏳ Phase 3 in progress - Visualization polish
 - 📋 Phase 4 planned - Sidechain input (simple local input, no network audio)
 
 **Dependencies:**
+
 ```cmake
 # From FreqFinder's CMakeLists.txt
 FetchContent_Declare(
@@ -224,6 +240,7 @@ First-party applications:
 ### Workflow Integration (Optional)
 
 **Potential use case:**
+
 1. Engineer uses **Clip Composer** for broadcast audio playout
 2. Engineer uses **FreqFinder** to:
    - Generate reference tones at specific frequencies
@@ -233,6 +250,7 @@ First-party applications:
 **Key point:** Tools work **alongside** each other, not **integrated** with each other.
 
 **Analogy:** Adobe Creative Cloud
+
 - Photoshop + Illustrator share brand/ecosystem
 - But have independent architectures
 - Users leverage both in workflows without technical integration
@@ -246,6 +264,7 @@ This decision establishes precedent for future Orpheus applications.
 **Decision Framework (from ORP106):**
 
 For each new app, evaluate:
+
 1. **Multi-stream session management needed?** → SDK helpful
 2. **Network audio (AES67/Dante) required?** → SDK required
 3. **Deterministic rendering needed?** → SDK helpful
@@ -253,11 +272,13 @@ For each new app, evaluate:
 5. **Session compatibility with OCC?** → SDK required
 
 **If most answers are NO:**
+
 - Use JUCE-only (FreqFinder pattern)
 - Faster development, simpler codebase
 - Maintain brand association without technical coupling
 
 **If most answers are YES:**
+
 - Use JUCE + SDK (OCC pattern)
 - Leverage SDK's session management and transport
 - Maintain ecosystem consistency
@@ -267,12 +288,14 @@ For each new app, evaluate:
 ## References
 
 **External Documents (FreqFinder repo):**
+
 - FRQ001: FreqFinder Product Specification v0.2.1
 - FRQ003: Prototype Implementation and Float Multiplier Migration
 - FRQ004: FreqFinder and Orpheus SDK Relationship Assessment (comprehensive analysis)
 - IMPLEMENTATION.md: FreqFinder Implementation Progress (Phases 1-2)
 
 **Orpheus SDK Documents:**
+
 - ORP106: Wave Finder Architecture Assessment - JUCE vs SDK Integration (assessment framework)
 - ORP068: Implementation Plan (v2.0) - Orpheus SDK roadmap
 - ROADMAP.md: Orpheus ecosystem applications
@@ -299,6 +322,7 @@ The "Orpheus SDK Applications" family is a **brand ecosystem**, not a **technica
 - **Future apps** will decide based on ORP106 framework
 
 This architectural flexibility enables:
+
 - Faster development for simple tools
 - Appropriate complexity for each use case
 - Unified brand without monolithic architecture
