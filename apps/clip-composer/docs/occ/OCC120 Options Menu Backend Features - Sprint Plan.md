@@ -21,6 +21,7 @@ Analysis of SpotOn Manual Section 07 (Options Menu) identifying backend requirem
 ## 1. Feature Overview
 
 The Options Menu provides application-level settings and feature toggles:
+
 - UI preferences (hints, fonts, button images)
 - Feature enable/disable flags (GPI, MIDI, hotkeys, Master/Slave links, etc.)
 - Display options (session startup, button highlighting, track history)
@@ -37,6 +38,7 @@ The Options Menu provides application-level settings and feature toggles:
 ### 2.1 Settings Management System
 
 **Core Requirements:**
+
 - Hierarchical settings organization
 - Type-safe value storage
 - Default value management
@@ -45,6 +47,7 @@ The Options Menu provides application-level settings and feature toggles:
 - Import/export capabilities
 
 **Implementation:**
+
 ```typescript
 interface SettingsCategory {
   display: DisplaySettings;
@@ -74,16 +77,16 @@ interface InputSettings {
   mouseLeftFunction: 'play_toggle' | 'play';
   mouseRightFunction: 'menu' | 'stop';
   mouseCenterFunction: 'pause' | 'skip_playlist' | 'menu';
-  playClickDebounce: number;          // 0, 50, 100, 150, 200, 250 ms
+  playClickDebounce: number; // 0, 50, 100, 150, 200, 250 ms
   quickSelectEnabled: boolean;
 }
 
 interface AudioSettings {
-  gainOffset: 0 | -10;                // dB
-  fadeDepth: 20 | 30 | 40 | 50 | 60;  // dB
-  autoTrimThreshold: number;           // -20 to -50 dBFS
-  autoTrimMargin: number;              // 0, 20, 40, 60, 80 ms
-  defaultFadeOutTime: number;          // 0, 0.1-1.0, or custom seconds
+  gainOffset: 0 | -10; // dB
+  fadeDepth: 20 | 30 | 40 | 50 | 60; // dB
+  autoTrimThreshold: number; // -20 to -50 dBFS
+  autoTrimMargin: number; // 0, 20, 40, 60, 80 ms
+  defaultFadeOutTime: number; // 0, 0.1-1.0, or custom seconds
 }
 
 interface FeatureFlags {
@@ -206,7 +209,7 @@ class SettingsService {
   async updateSetting<K extends keyof SettingsCategory>(
     category: K,
     key: keyof SettingsCategory[K],
-    value: any
+    value: any,
   ): Promise<void> {
     // Validate value
     this.validateSetting(category, key, value);
@@ -221,11 +224,7 @@ class SettingsService {
     this.notifyChange(category, key, value);
   }
 
-  onSettingChange(
-    category: string,
-    key: string,
-    callback: Function
-  ): () => void {
+  onSettingChange(category: string, key: string, callback: Function): () => void {
     const listenerId = `${category}.${key}`;
     if (!this.listeners.has(listenerId)) {
       this.listeners.set(listenerId, []);
@@ -323,34 +322,40 @@ interface ResetTracksPlayedResponse {
 ## 4. Key Integration Points
 
 ### 4.1 Display Settings Integration
+
 - Button rendering respects image/text/font settings
 - Session startup behavior
 - Window focus management
 - Track history visualization
 
 ### 4.2 Input Settings Integration
+
 - Mouse button event handlers
 - Touchscreen debounce timing
 - Quick select status bar toggle
 
 ### 4.3 Audio Settings Integration
+
 - Global gain offset applied to all outputs
 - Default fade times for new tracks
 - Auto-trim threshold/margin for waveform analysis
 
 ### 4.4 Feature Flags Integration
+
 - Enable/disable subsystems (GPI, MIDI, hotkeys, etc.)
 - Master/Slave links global enable (from OCC119)
 - Search menu visibility (from OCC118)
 - Advanced editing warnings
 
 ### 4.5 MIDI Settings Integration
+
 - MIDI input/output enable (from OCC116)
 - Velocity-to-gain mapping
 - Network master mode
 - Loopback testing
 
 ### 4.6 Step to Next Integration
+
 - Sequential playback mode
 - Active button highlighting
 - Skip logic for muted/PlayNext buttons
@@ -361,9 +366,11 @@ interface ResetTracksPlayedResponse {
 ## 5. Implementation Priorities
 
 ### Phase 1: Core Settings Infrastructure (Sprint 1)
+
 **Priority:** P0
 
 **Tasks:**
+
 1. Create settings database schema
 2. Implement SettingsService
 3. Add settings API endpoints
@@ -372,9 +379,11 @@ interface ResetTracksPlayedResponse {
 **Estimated Effort:** 12-16 hours
 
 ### Phase 2: Display & Input Settings (Sprint 2)
+
 **Priority:** P0
 
 **Tasks:**
+
 1. Implement display setting handlers
 2. Add input setting handlers
 3. Integrate with button rendering
@@ -383,9 +392,11 @@ interface ResetTracksPlayedResponse {
 **Estimated Effort:** 8-12 hours
 
 ### Phase 3: Audio & Feature Flags (Sprint 2)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Implement audio settings handlers
 2. Add feature flag system
 3. Integrate with audio engine
@@ -394,9 +405,11 @@ interface ResetTracksPlayedResponse {
 **Estimated Effort:** 8-12 hours
 
 ### Phase 4: MIDI & Advanced Settings (Sprint 3)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Implement MIDI settings handlers
 2. Add advanced settings
 3. Integrate Step to Next mode
@@ -445,11 +458,13 @@ describe('SettingsService', () => {
 **Total Estimated Effort:** 40-56 hours
 
 **Critical Path:**
+
 1. Core settings infrastructure → Display/Input settings
 2. Feature flags → Integration with existing systems
 3. MIDI settings → Advanced features
 
 **Key Deliverables:**
+
 - Settings database schema
 - Settings management service
 - Settings API endpoints
@@ -463,6 +478,7 @@ describe('SettingsService', () => {
 **Source:** SpotOn Manual - Section 07 - Options Menu
 
 **Key Pages:**
+
 - Page 1: Options menu overview
 - Pages 2-3: Display settings
 - Pages 4-5: Button images, tracks played

@@ -22,12 +22,14 @@ This sprint implements the Engineering Menu backend features for Clip Composer, 
 ### 1. Global Properties System (5 points)
 
 **Backend Components:**
+
 - Property schema definition and validation
 - Multi-page property management
 - Default value restoration system
 - Property persistence layer
 
 **Data Models:**
+
 ```typescript
 interface PropertyPage {
   id: string;
@@ -46,6 +48,7 @@ interface Property {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/properties` - Retrieve all properties
 - `GET /api/engineering/properties/:page` - Get specific page
 - `PUT /api/engineering/properties/:id` - Update property value
@@ -54,12 +57,14 @@ interface Property {
 ### 2. PBus Port Settings (3 points)
 
 **Backend Components:**
+
 - Serial port communication handler
 - PBus protocol parser/encoder
 - Baud rate configuration (9600/19200/38400)
 - Address range management (1-200)
 
 **Data Models:**
+
 ```typescript
 interface PBusConfig {
   portNumber: number; // 1-16
@@ -72,6 +77,7 @@ interface PBusConfig {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/pbus` - Get PBus configuration
 - `PUT /api/engineering/pbus` - Update PBus settings
 - `POST /api/engineering/pbus/test` - Test PBus connection
@@ -79,6 +85,7 @@ interface PBusConfig {
 ### 3. DTMF Decoder (5 points)
 
 **Backend Components:**
+
 - Audio input stream processor
 - DTMF tone detection algorithm (Goertzel)
 - Frequency pair validation (697-1633 Hz)
@@ -86,6 +93,7 @@ interface PBusConfig {
 - Debug logging system
 
 **Data Models:**
+
 ```typescript
 interface DTMFConfig {
   inputSource: string; // Audio device ID
@@ -110,6 +118,7 @@ interface DTMFDetection {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/dtmf` - Get DTMF configuration
 - `PUT /api/engineering/dtmf` - Update DTMF settings
 - `GET /api/engineering/dtmf/status` - Get current detection status
@@ -118,6 +127,7 @@ interface DTMFDetection {
 ### 4. Int/Ext Timecode System (8 points)
 
 **Backend Components:**
+
 - LTC (Longitudinal Timecode) decoder
 - SMPTE format handler (25/30/29.97 fps)
 - Button elapsed time calculator
@@ -125,6 +135,7 @@ interface DTMFDetection {
 - Timecode chase engine for AutoPlay
 
 **Data Models:**
+
 ```typescript
 interface TimecodeConfig {
   source: 'external' | 'button' | 'internal';
@@ -153,6 +164,7 @@ interface Timecode {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/timecode` - Get timecode configuration
 - `PUT /api/engineering/timecode` - Update timecode settings
 - `GET /api/engineering/timecode/current` - Get current timecode value
@@ -163,12 +175,14 @@ interface Timecode {
 ### 5. Timecode Trigger List (5 points)
 
 **Backend Components:**
+
 - Trigger list management (up to 320 entries)
 - EDL (Edit Decision List) parser
 - Timecode comparison engine
 - Trigger state machine (armed/playing/elapsed)
 
 **Data Models:**
+
 ```typescript
 interface TimecodeTrigger {
   id: string;
@@ -189,6 +203,7 @@ interface EDLEntry {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/timecode-triggers` - Get all triggers
 - `POST /api/engineering/timecode-triggers` - Add trigger
 - `PUT /api/engineering/timecode-triggers/:id` - Update trigger
@@ -199,12 +214,14 @@ interface EDLEntry {
 ### 6. Network Target (3 points)
 
 **Backend Components:**
+
 - UDP/TCP network protocol handler
 - Master/Slave synchronization
 - IP address lookup service
 - MIDI message relay over network
 
 **Data Models:**
+
 ```typescript
 interface NetworkConfig {
   mode: 'master' | 'slave' | 'none';
@@ -216,6 +233,7 @@ interface NetworkConfig {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/network` - Get network configuration
 - `PUT /api/engineering/network` - Update network settings
 - `POST /api/engineering/network/lookup` - Lookup IP address by hostname
@@ -224,11 +242,13 @@ interface NetworkConfig {
 ### 7. Session Management Features (3 points)
 
 **Backend Components:**
+
 - Remote file location scanner
 - Session file lock management
 - Menu disable/enable system
 
 **Data Models:**
+
 ```typescript
 interface SessionConfig {
   tryRemoteFilename: boolean;
@@ -238,6 +258,7 @@ interface SessionConfig {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/session` - Get session configuration
 - `PUT /api/engineering/session` - Update session settings
 - `POST /api/engineering/session/lock-files` - Lock all session files
@@ -246,12 +267,14 @@ interface SessionConfig {
 ### 8. Playout Logs (4 points)
 
 **Backend Components:**
+
 - Playout event logger
 - XML log generator
 - Delayed backup system
 - Log rotation and archival
 
 **Data Models:**
+
 ```typescript
 interface PlayoutLogEntry {
   timestamp: Date;
@@ -272,6 +295,7 @@ interface PlayoutLogConfig {
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/playout-logs` - Get log configuration
 - `PUT /api/engineering/playout-logs` - Update log settings
 - `GET /api/engineering/playout-logs/entries` - Get log entries
@@ -280,35 +304,45 @@ interface PlayoutLogConfig {
 ### 9. Miscellaneous Settings (3 points)
 
 **Backend Components:**
+
 - NumLock state controller
 - Embedded track name handler
 - Button numbering scheme manager
 - Clipboard file copy integration
 
 **Data Models:**
+
 ```typescript
 interface MiscConfig {
   numLockOn: boolean;
   ignoreEmbeddedTrackNames: boolean;
-  buttonNumberingScheme: 'normal' | 'paged-rows' | 'paged-columns' |
-                          'paged-rows-columns' | 'paged-columns-rows' |
-                          'paged-2-blocks' | 'normal-column-row';
+  buttonNumberingScheme:
+    | 'normal'
+    | 'paged-rows'
+    | 'paged-columns'
+    | 'paged-rows-columns'
+    | 'paged-columns-rows'
+    | 'paged-2-blocks'
+    | 'normal-column-row';
   autoCopyFileToClipboard: boolean;
 }
 ```
 
 **API Endpoints:**
+
 - `GET /api/engineering/misc` - Get misc configuration
 - `PUT /api/engineering/misc` - Update misc settings
 
 ### 10. System Utilities (2 points)
 
 **Backend Components:**
+
 - Recent lists manager
 - MIDI message filter
 - Sample frequency validator
 
 **API Endpoints:**
+
 - `POST /api/engineering/clear-recent-lists` - Clear all recent lists
 - `GET /api/engineering/sample-frequency-limit` - Get limit
 - `PUT /api/engineering/sample-frequency-limit` - Update limit (44.1/48/96 kHz)
@@ -481,12 +515,14 @@ CREATE INDEX idx_timecode_triggers_button ON timecode_triggers(button_number);
 ### Phase 1: Core Infrastructure (Week 1)
 
 **Tasks:**
+
 1. Set up engineering configuration database tables
 2. Implement property management system
 3. Create base API route structure
 4. Develop configuration persistence layer
 
 **Deliverables:**
+
 - Database migrations
 - Property CRUD operations
 - Configuration storage service
@@ -494,12 +530,14 @@ CREATE INDEX idx_timecode_triggers_button ON timecode_triggers(button_number);
 ### Phase 2: Audio Processing (Week 2)
 
 **Tasks:**
+
 1. Implement DTMF decoder with Goertzel algorithm
 2. Build LTC timecode decoder
 3. Create audio input routing system
 4. Develop signal level monitoring
 
 **Deliverables:**
+
 - DTMF detection engine
 - Timecode parsing service
 - Audio routing configuration
@@ -507,12 +545,14 @@ CREATE INDEX idx_timecode_triggers_button ON timecode_triggers(button_number);
 ### Phase 3: Network & Integration (Week 3)
 
 **Tasks:**
+
 1. Implement network communication protocols
 2. Build timecode trigger system
 3. Create playout logging infrastructure
 4. Integrate with existing clip management
 
 **Deliverables:**
+
 - Network master/slave synchronization
 - Timecode chase engine
 - Playout log generation
@@ -562,14 +602,12 @@ describe('TimecodeDecoder', () => {
 ```typescript
 describe('Engineering API', () => {
   it('should update PBus configuration', async () => {
-    const response = await request(app)
-      .put('/api/engineering/pbus')
-      .send({
-        portNumber: 1,
-        baudRate: 38400,
-        baseAddress: 10,
-        addressCount: 200
-      });
+    const response = await request(app).put('/api/engineering/pbus').send({
+      portNumber: 1,
+      baudRate: 38400,
+      baseAddress: 10,
+      addressCount: 200,
+    });
     expect(response.status).toBe(200);
     expect(response.body.baudRate).toBe(38400);
   });
@@ -634,13 +672,13 @@ describe('Performance', () => {
 
 ## Performance Requirements
 
-| Feature | Requirement | Target |
-|---------|------------|--------|
-| DTMF Detection Latency | <25ms | Real-time audio processing |
-| Timecode Decode Latency | <10ms | Frame-accurate triggering |
-| Network Message Latency | <5ms | Synchronized playback |
-| Trigger Check Performance | <10ms | 1000+ triggers |
-| Playout Log Write | <1ms | No audio disruption |
+| Feature                   | Requirement | Target                     |
+| ------------------------- | ----------- | -------------------------- |
+| DTMF Detection Latency    | <25ms       | Real-time audio processing |
+| Timecode Decode Latency   | <10ms       | Frame-accurate triggering  |
+| Network Message Latency   | <5ms        | Synchronized playback      |
+| Trigger Check Performance | <10ms       | 1000+ triggers             |
+| Playout Log Write         | <1ms        | No audio disruption        |
 
 ## Dependencies
 
@@ -663,16 +701,19 @@ describe('Performance', () => {
 ## Rollout Plan
 
 ### Week 1: Infrastructure
+
 - Deploy database schema
 - Roll out property management API
 - Configure logging and monitoring
 
 ### Week 2: Audio Features
+
 - Deploy DTMF decoder service
 - Activate timecode processing
 - Enable audio input routing
 
 ### Week 3: Integration
+
 - Activate network synchronization
 - Enable playout logging
 - Deploy timecode triggers
@@ -691,13 +732,13 @@ describe('Performance', () => {
 
 ## Risk Mitigation
 
-| Risk | Mitigation Strategy |
-|------|-------------------|
-| Audio processing latency | Optimize algorithms, use worker threads |
-| Network synchronization drift | Implement clock sync, adjust for latency |
-| DTMF false positives | Strict validation, configurable thresholds |
-| Timecode decode errors | Multiple format support, error recovery |
-| File system performance | Cache remote lookups, async operations |
+| Risk                          | Mitigation Strategy                        |
+| ----------------------------- | ------------------------------------------ |
+| Audio processing latency      | Optimize algorithms, use worker threads    |
+| Network synchronization drift | Implement clock sync, adjust for latency   |
+| DTMF false positives          | Strict validation, configurable thresholds |
+| Timecode decode errors        | Multiple format support, error recovery    |
+| File system performance       | Cache remote lookups, async operations     |
 
 ## Documentation Deliverables
 

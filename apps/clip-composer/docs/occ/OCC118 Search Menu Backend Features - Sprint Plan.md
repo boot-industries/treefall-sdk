@@ -36,6 +36,7 @@ Analysis of SpotOn Manual Section 05 (Search Menu) identifying backend features 
 ### 1.1 Search Menu Purpose
 
 The Search Menu provides:
+
 - Quick access to 1000 most recent files loaded into SpotOn
 - Real-time text-based search/filtering
 - Multiple sorting options (name, date)
@@ -46,14 +47,14 @@ The Search Menu provides:
 
 ### 1.2 Core Features Identified
 
-| Feature | Description | Backend Complexity |
-|---------|-------------|-------------------|
-| Recent Files List | Track 1000 most recent loaded files | Medium |
-| Real-time Search | Filter files by text search | Low |
-| Multi-criteria Sorting | Sort by name or date | Low |
-| Remote Files Support | Include/exclude remote locations | Medium |
-| WAV Metadata Parsing | Extract copyright/comment fields | Medium |
-| Track Preview | Route preview to assigned output | Medium |
+| Feature                | Description                         | Backend Complexity |
+| ---------------------- | ----------------------------------- | ------------------ |
+| Recent Files List      | Track 1000 most recent loaded files | Medium             |
+| Real-time Search       | Filter files by text search         | Low                |
+| Multi-criteria Sorting | Sort by name or date                | Low                |
+| Remote Files Support   | Include/exclude remote locations    | Medium             |
+| WAV Metadata Parsing   | Extract copyright/comment fields    | Medium             |
+| Track Preview          | Route preview to assigned output    | Medium             |
 
 ---
 
@@ -62,6 +63,7 @@ The Search Menu provides:
 ### 2.1 Recent Files Tracking System
 
 **Requirements:**
+
 - Maintain circular buffer of 1000 most recent files
 - Track load timestamp for recency sorting
 - Store both disk filename and display name
@@ -70,32 +72,34 @@ The Search Menu provides:
 - Efficient querying (O(n) for search, O(n log n) for sort)
 
 **Implementation Approach:**
+
 ```typescript
 interface RecentFileEntry {
-  id: string;                    // UUID
-  diskFilename: string;          // Original filename on disk
-  displayName: string;           // User-defined display name (if altered)
-  filePath: string;              // Full absolute path
-  loadedAt: Date;                // Timestamp when loaded
-  isRemote: boolean;             // Remote vs local location
-  fileSize: number;              // Bytes
-  duration: number;              // Samples
-  sampleRate: number;            // Hz
-  channels: number;              // Channel count
-  format: string;                // WAV, MP3, etc.
-  metadata?: WavMetadata;        // Optional WAV metadata
+  id: string; // UUID
+  diskFilename: string; // Original filename on disk
+  displayName: string; // User-defined display name (if altered)
+  filePath: string; // Full absolute path
+  loadedAt: Date; // Timestamp when loaded
+  isRemote: boolean; // Remote vs local location
+  fileSize: number; // Bytes
+  duration: number; // Samples
+  sampleRate: number; // Hz
+  channels: number; // Channel count
+  format: string; // WAV, MP3, etc.
+  metadata?: WavMetadata; // Optional WAV metadata
 }
 
 interface WavMetadata {
-  copyright?: string;            // Copyright field
-  comment?: string;              // Comment field
-  artist?: string;               // Artist field
-  creationDate?: Date;           // Creation date
-  [key: string]: any;            // Other RIFF/BWF fields
+  copyright?: string; // Copyright field
+  comment?: string; // Comment field
+  artist?: string; // Artist field
+  creationDate?: Date; // Creation date
+  [key: string]: any; // Other RIFF/BWF fields
 }
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE recent_files (
   id TEXT PRIMARY KEY,
@@ -131,6 +135,7 @@ END;
 ### 2.2 Search and Filter Engine
 
 **Requirements:**
+
 - Case-insensitive substring search
 - Real-time filtering (< 50ms response)
 - Search across display names only (not full path)
@@ -138,18 +143,19 @@ END;
 - Result ranking by relevance
 
 **Implementation:**
+
 ```typescript
 interface SearchCriteria {
-  query: string;                 // Search text
-  includeRemote: boolean;        // Include remote files
+  query: string; // Search text
+  includeRemote: boolean; // Include remote files
   highlightWithComments: boolean; // Highlight files with comments
   highlightWithCopyright: boolean; // Highlight files with copyright
-  sortBy: 'name' | 'date';       // Sort order
+  sortBy: 'name' | 'date'; // Sort order
 }
 
 interface SearchResult {
   file: RecentFileEntry;
-  matchScore: number;            // Relevance score (0-1)
+  matchScore: number; // Relevance score (0-1)
   matchIndices: [number, number][]; // Match positions for highlighting
   displayColor: 'default' | 'red' | 'blue'; // Text color in UI
 }
@@ -169,6 +175,7 @@ class RecentFileSearchEngine {
 ### 2.3 WAV Metadata Parser
 
 **Requirements:**
+
 - Parse RIFF/BWF metadata chunks
 - Extract standard fields (copyright, comment, artist, date)
 - Cache metadata to avoid re-parsing
@@ -176,11 +183,12 @@ class RecentFileSearchEngine {
 - Support WAV files only (per manual)
 
 **Implementation:**
+
 ```typescript
 interface RiffChunk {
-  id: string;                    // FourCC chunk ID
-  size: number;                  // Chunk size
-  data: Buffer;                  // Chunk data
+  id: string; // FourCC chunk ID
+  size: number; // Chunk size
+  data: Buffer; // Chunk data
 }
 
 class WavMetadataParser {
@@ -192,12 +200,12 @@ class WavMetadataParser {
 
 // Standard RIFF INFO chunk fields
 const INFO_CHUNK_FIELDS = {
-  'ICOP': 'copyright',           // Copyright
-  'ICMT': 'comment',             // Comment
-  'IART': 'artist',              // Artist
-  'ICRD': 'creationDate',        // Creation date
-  'IGNR': 'genre',               // Genre
-  'INAM': 'title',               // Title
+  ICOP: 'copyright', // Copyright
+  ICMT: 'comment', // Comment
+  IART: 'artist', // Artist
+  ICRD: 'creationDate', // Creation date
+  IGNR: 'genre', // Genre
+  INAM: 'title', // Title
   // ... other standard fields
 };
 ```
@@ -205,6 +213,7 @@ const INFO_CHUNK_FIELDS = {
 ### 2.4 Track Preview System
 
 **Requirements:**
+
 - Route preview to designated preview output
 - Support double-click to play, right-click to stop
 - Stop preview when search window closes
@@ -212,11 +221,12 @@ const INFO_CHUNK_FIELDS = {
 - Handle preview conflicts (only one preview at a time)
 
 **Implementation:**
+
 ```typescript
 interface PreviewRequest {
-  fileId: string;                // Recent file ID
-  outputId: string;              // Preview output assignment
-  startPosition?: number;        // Optional start position (samples)
+  fileId: string; // Recent file ID
+  outputId: string; // Preview output assignment
+  startPosition?: number; // Optional start position (samples)
 }
 
 class TrackPreviewService {
@@ -245,6 +255,7 @@ class TrackPreviewService {
 ### 2.5 Remote File Handling
 
 **Requirements:**
+
 - Detect remote vs local file paths
 - Optional inclusion via "Try Remote Files" toggle
 - Display remote files in distinct color (red)
@@ -252,6 +263,7 @@ class TrackPreviewService {
 - Handle network timeouts gracefully
 
 **Implementation:**
+
 ```typescript
 class RemoteFileDetector {
   isRemotePath(path: string): boolean {
@@ -267,46 +279,42 @@ class RemoteFileDetector {
 }
 
 interface RemoteFileOptions {
-  includeRemote: boolean;        // Include remote files in search
-  timeout: number;               // Network timeout (ms)
-  retryAttempts: number;         // Retry count for failed access
+  includeRemote: boolean; // Include remote files in search
+  timeout: number; // Network timeout (ms)
+  retryAttempts: number; // Retry count for failed access
 }
 ```
 
 ### 2.6 Drag-and-Drop Integration
 
 **Requirements:**
+
 - Support drag from search list to main window buttons
 - Support Alt+Drop for automatic Top/Tail
 - Provide file metadata for drop operation
 - Coordinate with Edit Menu Top/Tail feature (OCC117)
 
 **Implementation:**
+
 ```typescript
 interface DragPayload {
-  fileId: string;                // Recent file ID
-  filePath: string;              // Full path for loading
-  displayName: string;           // Display name
-  autoTopTail: boolean;          // Alt key pressed during drop
+  fileId: string; // Recent file ID
+  filePath: string; // Full path for loading
+  displayName: string; // Display name
+  autoTopTail: boolean; // Alt key pressed during drop
 }
 
 class SearchDragDropService {
-  createDragPayload(
-    file: RecentFileEntry,
-    modifiers: { alt: boolean }
-  ): DragPayload {
+  createDragPayload(file: RecentFileEntry, modifiers: { alt: boolean }): DragPayload {
     return {
       fileId: file.id,
       filePath: file.filePath,
       displayName: file.displayName,
-      autoTopTail: modifiers.alt
+      autoTopTail: modifiers.alt,
     };
   }
 
-  async handleDrop(
-    payload: DragPayload,
-    targetButtonId: string
-  ): Promise<void> {
+  async handleDrop(payload: DragPayload, targetButtonId: string): Promise<void> {
     // 1. Load file from path
     // 2. Apply Top/Tail if requested
     // 3. Assign to target button
@@ -350,7 +358,7 @@ interface WavMetadata {
   description?: string;
   originator?: string;
   originatorReference?: string;
-  timeReference?: number;        // Samples since midnight
+  timeReference?: number; // Samples since midnight
   codingHistory?: string;
 }
 
@@ -371,8 +379,8 @@ interface PreviewState {
   activeFileId: string | null;
   outputId: string | null;
   isPlaying: boolean;
-  position: number;              // Current position (samples)
-  duration: number;              // Total duration (samples)
+  position: number; // Current position (samples)
+  duration: number; // Total duration (samples)
 }
 ```
 
@@ -446,13 +454,13 @@ CREATE INDEX idx_metadata_cache_modified ON wav_metadata_cache(file_modified_at)
 // GET /api/search/recent-files
 // Get recent files with optional search/filter
 interface GetRecentFilesRequest {
-  query?: string;                // Optional search query
-  sortBy?: 'name' | 'date';      // Sort order (default: 'name')
-  includeRemote?: boolean;       // Include remote files (default: false)
-  highlightComments?: boolean;   // Highlight files with comments (default: false)
-  highlightCopyright?: boolean;  // Highlight files with copyright (default: false)
-  limit?: number;                // Max results (default: 1000)
-  offset?: number;               // Pagination offset (default: 0)
+  query?: string; // Optional search query
+  sortBy?: 'name' | 'date'; // Sort order (default: 'name')
+  includeRemote?: boolean; // Include remote files (default: false)
+  highlightComments?: boolean; // Highlight files with comments (default: false)
+  highlightCopyright?: boolean; // Highlight files with copyright (default: false)
+  limit?: number; // Max results (default: 1000)
+  offset?: number; // Pagination offset (default: 0)
 }
 
 interface GetRecentFilesResponse {
@@ -466,12 +474,12 @@ interface GetRecentFilesResponse {
 // Add a file to recent files history
 interface AddRecentFileRequest {
   filePath: string;
-  displayName?: string;          // Optional display name
+  displayName?: string; // Optional display name
 }
 
 interface AddRecentFileResponse {
   file: RecentFileEntry;
-  isNew: boolean;                // Whether this is a new entry
+  isNew: boolean; // Whether this is a new entry
 }
 
 // GET /api/search/recent-files/:id
@@ -490,7 +498,7 @@ interface DeleteRecentFileResponse {
 // Get metadata for a specific file
 interface GetMetadataResponse {
   metadata: WavMetadata;
-  cached: boolean;               // Whether from cache
+  cached: boolean; // Whether from cache
   parsedAt: Date;
 }
 
@@ -498,8 +506,8 @@ interface GetMetadataResponse {
 // Start track preview
 interface StartPreviewRequest {
   fileId: string;
-  outputId: string;              // Preview output assignment
-  startPosition?: number;        // Optional start position
+  outputId: string; // Preview output assignment
+  startPosition?: number; // Optional start position
 }
 
 interface StartPreviewResponse {
@@ -529,7 +537,7 @@ interface ValidateRemoteRequest {
 interface ValidateRemoteResponse {
   isAccessible: boolean;
   error?: string;
-  latency?: number;              // Network latency (ms)
+  latency?: number; // Network latency (ms)
 }
 ```
 
@@ -567,7 +575,7 @@ interface RecentFilesUpdate {
   event: 'recent-files:update';
   data: {
     added?: RecentFileEntry[];
-    removed?: string[];          // File IDs
+    removed?: string[]; // File IDs
     total: number;
   };
 }
@@ -624,7 +632,7 @@ interface PreviewStore {
 
   // Derived state
   get isActive(): boolean;
-  get progress(): number;        // 0-1
+  get progress(): number; // 0-1
 }
 ```
 
@@ -658,6 +666,7 @@ interface RecentFilesStore {
 **Priority:** P0 (Critical)
 
 **Tasks:**
+
 1. Implement `RecentFileEntry` data model
 2. Create `recent_files` database schema
 3. Implement recent files circular buffer (1000 limit)
@@ -666,6 +675,7 @@ interface RecentFilesStore {
 6. Add database indices for performance
 
 **Deliverables:**
+
 - Recent files database table
 - Basic API endpoints for CRUD
 - Automatic tracking when files loaded
@@ -679,6 +689,7 @@ interface RecentFilesStore {
 **Priority:** P0 (Critical)
 
 **Tasks:**
+
 1. Implement case-insensitive search engine
 2. Add sorting by name (alphanumeric)
 3. Add sorting by date (most recent first)
@@ -687,6 +698,7 @@ interface RecentFilesStore {
 6. Optimize search performance (< 50ms)
 
 **Deliverables:**
+
 - Search API endpoint with filtering
 - Sorting options
 - Result ranking and highlighting
@@ -700,6 +712,7 @@ interface RecentFilesStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement RIFF chunk parser
 2. Extract copyright field from INFO chunk
 3. Extract comment field from INFO chunk
@@ -708,6 +721,7 @@ interface RecentFilesStore {
 6. Add metadata to recent files entries
 
 **Deliverables:**
+
 - WAV metadata parser service
 - Metadata cache database
 - Metadata API endpoint
@@ -721,6 +735,7 @@ interface RecentFilesStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement comment field detection
 2. Implement copyright field detection
 3. Add display color logic (blue for comments)
@@ -729,6 +744,7 @@ interface RecentFilesStore {
 6. Display metadata in status bar
 
 **Deliverables:**
+
 - Highlighting options in search
 - Color-coded results
 - Status bar metadata display
@@ -742,6 +758,7 @@ interface RecentFilesStore {
 **Priority:** P2 (Medium)
 
 **Tasks:**
+
 1. Implement remote path detection (UNC, network drives)
 2. Add "Try Remote Files" option
 3. Implement remote file validation
@@ -750,6 +767,7 @@ interface RecentFilesStore {
 6. Handle remote access errors gracefully
 
 **Deliverables:**
+
 - Remote file detection
 - Remote validation API
 - Red text display for remote files
@@ -763,6 +781,7 @@ interface RecentFilesStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement preview audio player service
 2. Add preview output routing (from Global menu)
 3. Implement double-click to play
@@ -772,6 +791,7 @@ interface RecentFilesStore {
 7. Handle preview conflicts (one at a time)
 
 **Deliverables:**
+
 - Preview player service
 - Preview API endpoints
 - Preview state management
@@ -785,6 +805,7 @@ interface RecentFilesStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement drag payload creation
 2. Add Alt+Drop detection for Top/Tail
 3. Integrate with Edit Menu Top/Tail (OCC117)
@@ -793,6 +814,7 @@ interface RecentFilesStore {
 6. Add drag-and-drop error handling
 
 **Deliverables:**
+
 - Drag-and-drop service
 - Alt+Drop Top/Tail integration
 - Drop handling on main window
@@ -806,6 +828,7 @@ interface RecentFilesStore {
 **Priority:** P2 (Medium)
 
 **Tasks:**
+
 1. Optimize search query performance
 2. Add database query caching
 3. Implement metadata cache cleanup
@@ -814,6 +837,7 @@ interface RecentFilesStore {
 6. Profile and fix performance bottlenecks
 
 **Deliverables:**
+
 - < 50ms search response time
 - Efficient database queries
 - Optimized sorting
@@ -830,6 +854,7 @@ interface RecentFilesStore {
 Efficiently maintain a 1000-file circular buffer with fast insertion and querying.
 
 **Solution:**
+
 - Use database trigger to automatically prune oldest entries
 - Maintain indices on `loaded_at` for efficient sorting
 - Use batch operations for insertions
@@ -859,6 +884,7 @@ END;
 Provide < 50ms search response for 1000 files with real-time filtering.
 
 **Solution:**
+
 - Use SQLite FTS5 (full-text search) for efficient text queries
 - Implement client-side filtering for small result sets
 - Add debouncing to search input (200-300ms)
@@ -883,6 +909,7 @@ const debouncedSearch = debounce(async (query: string) => {
 Parsing WAV metadata on-demand can be slow for large files.
 
 **Solution:**
+
 - Parse metadata once when file added to recent list
 - Cache metadata in database as JSON
 - Invalidate cache if file modified timestamp changes
@@ -916,6 +943,7 @@ class MetadataCache {
 Validating remote file access can be slow and unreliable.
 
 **Solution:**
+
 - Implement aggressive timeouts (2-5 seconds)
 - Cache accessibility status with TTL
 - Show stale results while validating in background
@@ -926,15 +954,12 @@ interface AccessibilityCache {
   [filePath: string]: {
     isAccessible: boolean;
     lastChecked: Date;
-    ttl: number;                 // Time-to-live (ms)
+    ttl: number; // Time-to-live (ms)
   };
 }
 
 class RemoteFileValidator {
-  async validate(
-    filePath: string,
-    useCache: boolean = true
-  ): Promise<boolean> {
+  async validate(filePath: string, useCache: boolean = true): Promise<boolean> {
     if (useCache) {
       const cached = this.cache.get(filePath);
       if (cached && !this.isExpired(cached)) {
@@ -961,6 +986,7 @@ class RemoteFileValidator {
 Coordinating preview output assignment from Global menu (OCC119+) with preview playback.
 
 **Solution:**
+
 - Create preview service abstraction
 - Query Global menu for current preview output
 - Handle output assignment changes during preview
@@ -973,7 +999,7 @@ class PreviewService {
     const outputId = await this.globalMenu.getPreviewOutput();
 
     // Validate output availability
-    if (!await this.audioEngine.isOutputAvailable(outputId)) {
+    if (!(await this.audioEngine.isOutputAvailable(outputId))) {
       throw new Error('Preview output not available');
     }
 
@@ -996,6 +1022,7 @@ class PreviewService {
 Coordinating drag-and-drop with Alt key modifier for automatic Top/Tail processing.
 
 **Solution:**
+
 - Capture keyboard modifiers during drag operation
 - Include modifiers in drag payload
 - Call Top/Tail service before loading (from OCC117)
@@ -1003,25 +1030,19 @@ Coordinating drag-and-drop with Alt key modifier for automatic Top/Tail processi
 
 ```typescript
 class SearchDragDropService {
-  handleDragStart(
-    file: RecentFileEntry,
-    event: DragEvent
-  ): DragPayload {
+  handleDragStart(file: RecentFileEntry, event: DragEvent): DragPayload {
     const payload: DragPayload = {
       fileId: file.id,
       filePath: file.filePath,
       displayName: file.displayName,
-      autoTopTail: event.altKey  // Capture Alt key state
+      autoTopTail: event.altKey, // Capture Alt key state
     };
 
     event.dataTransfer.setData('application/occ-file', JSON.stringify(payload));
     return payload;
   }
 
-  async handleDrop(
-    payload: DragPayload,
-    targetButtonId: string
-  ): Promise<void> {
+  async handleDrop(payload: DragPayload, targetButtonId: string): Promise<void> {
     let filePath = payload.filePath;
 
     // Apply Top/Tail if Alt key was pressed
@@ -1045,11 +1066,13 @@ class SearchDragDropService {
 ### 8.1 File Menu Integration (OCC115)
 
 **Dependencies:**
+
 - File loading events trigger recent files updates
 - Display name from File|Load File dialog
 - File metadata extraction on load
 
 **Integration Tasks:**
+
 - Hook into file load events
 - Extract display name from load dialog
 - Add file to recent list automatically
@@ -1059,10 +1082,12 @@ class SearchDragDropService {
 ### 8.2 Edit Menu Integration (OCC117)
 
 **Dependencies:**
+
 - Top/Tail processing for Alt+Drop
 - Edit metadata affecting WAV metadata display
 
 **Integration Tasks:**
+
 - Call Top/Tail service on Alt+Drop
 - Update metadata cache after edits
 - Coordinate Top/Tail settings
@@ -1072,10 +1097,12 @@ class SearchDragDropService {
 ### 8.3 Global Menu Integration (Future - OCC119+)
 
 **Dependencies:**
+
 - Preview output assignment
 - Global preferences for search behavior
 
 **Integration Tasks:**
+
 - Query preview output from Global menu
 - Respect global search preferences
 - Handle output assignment changes
@@ -1085,11 +1112,13 @@ class SearchDragDropService {
 ### 8.4 Main Window Button Integration
 
 **Dependencies:**
+
 - Drag-and-drop target handling
 - Button assignment after drop
 - Button state updates
 
 **Integration Tasks:**
+
 - Implement drop zones on buttons
 - Handle file assignment
 - Update button state after drop
@@ -1099,10 +1128,12 @@ class SearchDragDropService {
 ### 8.5 Display Menu Integration (OCC117)
 
 **Dependencies:**
+
 - File location display in status bar
 - Metadata display in status bar
 
 **Integration Tasks:**
+
 - Show full file path in status bar
 - Display metadata (comments) in status bar
 - Coordinate status bar updates
@@ -1242,33 +1273,33 @@ describe('Search Performance', () => {
 
 ### 11.1 Performance Metrics
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Search response time | < 50ms | P95 latency |
-| Metadata parsing | < 100ms/file | Average time |
-| Recent files load | < 200ms | Initial load |
-| Preview start latency | < 500ms | Time to first audio |
+| Metric                | Target       | Measurement         |
+| --------------------- | ------------ | ------------------- |
+| Search response time  | < 50ms       | P95 latency         |
+| Metadata parsing      | < 100ms/file | Average time        |
+| Recent files load     | < 200ms      | Initial load        |
+| Preview start latency | < 500ms      | Time to first audio |
 
 ### 11.2 Functional Metrics
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Recent files capacity | 1000 files | Max entries |
-| Search accuracy | 100% | Substring matches |
-| Metadata extraction | > 95% | Success rate |
-| Remote file validation | > 90% | Success rate |
+| Metric                 | Target     | Measurement       |
+| ---------------------- | ---------- | ----------------- |
+| Recent files capacity  | 1000 files | Max entries       |
+| Search accuracy        | 100%       | Substring matches |
+| Metadata extraction    | > 95%      | Success rate      |
+| Remote file validation | > 90%      | Success rate      |
 
 ---
 
 ## 12. Risk Assessment
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Remote file timeouts | High | Medium | Aggressive timeouts, caching |
-| Metadata parsing errors | Medium | Low | Graceful degradation, error handling |
-| Search performance degradation | Low | High | Indexing, FTS5, profiling |
-| Preview output unavailable | Medium | Medium | Validation, fallback output |
-| Circular buffer corruption | Low | High | Database constraints, testing |
+| Risk                           | Probability | Impact | Mitigation                           |
+| ------------------------------ | ----------- | ------ | ------------------------------------ |
+| Remote file timeouts           | High        | Medium | Aggressive timeouts, caching         |
+| Metadata parsing errors        | Medium      | Low    | Graceful degradation, error handling |
+| Search performance degradation | Low         | High   | Indexing, FTS5, profiling            |
+| Preview output unavailable     | Medium      | Medium | Validation, fallback output          |
+| Circular buffer corruption     | Low         | High   | Database constraints, testing        |
 
 ---
 
@@ -1313,17 +1344,17 @@ describe('Search Performance', () => {
 
 ### Estimated Total Effort
 
-| Phase | Effort (hours) | Priority |
-|-------|----------------|----------|
-| Phase 1: Core Search Infrastructure | 16-20 | P0 |
-| Phase 2: Search and Sorting | 12-16 | P0 |
-| Phase 3: WAV Metadata Parsing | 20-24 | P1 |
-| Phase 4: Metadata Highlighting | 8-12 | P1 |
-| Phase 5: Remote File Support | 12-16 | P2 |
-| Phase 6: Track Preview | 16-20 | P1 |
-| Phase 7: Drag-and-Drop Integration | 12-16 | P1 |
-| Phase 8: Performance Optimization | 8-12 | P2 |
-| **Total** | **104-136 hours** | - |
+| Phase                               | Effort (hours)    | Priority |
+| ----------------------------------- | ----------------- | -------- |
+| Phase 1: Core Search Infrastructure | 16-20             | P0       |
+| Phase 2: Search and Sorting         | 12-16             | P0       |
+| Phase 3: WAV Metadata Parsing       | 20-24             | P1       |
+| Phase 4: Metadata Highlighting      | 8-12              | P1       |
+| Phase 5: Remote File Support        | 12-16             | P2       |
+| Phase 6: Track Preview              | 16-20             | P1       |
+| Phase 7: Drag-and-Drop Integration  | 12-16             | P1       |
+| Phase 8: Performance Optimization   | 8-12              | P2       |
+| **Total**                           | **104-136 hours** | -        |
 
 ### Critical Path
 
@@ -1347,6 +1378,7 @@ describe('Search Performance', () => {
 **Source:** SpotOn Manual - Section 05 - Search Menu
 
 **Key Features:**
+
 - Page 1: Recent file search window, 1000 file limit, real-time search
 - Page 2: Sorting options, remote files (red text), metadata highlighting (blue text)
 - Page 3: Track preview (double-click play, right-click stop), preview output routing

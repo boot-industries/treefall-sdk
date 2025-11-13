@@ -12,6 +12,7 @@
 This document provides a comprehensive audit of Clip Composer's current backend infrastructure ahead of the SpotOn Manual sequential analysis. While OCC has made significant progress on frontend operations (playback, clip editing, UI), **backend systems for session management, file organization, logging, diagnostics, and application preferences are minimal or non-existent**.
 
 **Key Finding:** OCC currently has:
+
 - ✅ Basic session format (JSON) defined
 - ✅ Minimal audio settings persistence (sample rate, buffer size, device)
 - ❌ No comprehensive preferences system
@@ -53,6 +54,7 @@ apps/clip-composer/
 ```
 
 **Observations:**
+
 - **Strong frontend**: ClipGrid, TransportControls, WaveformDisplay, ClipEditDialog
 - **Weak backend**: SessionManager is minimal, no preferences system, no logging framework
 - **No backend services**: No file watchers, no auto-save, no diagnostics
@@ -64,6 +66,7 @@ apps/clip-composer/
 ### 2.1 Session Management (SessionManager.h/cpp)
 
 **What Exists:**
+
 - `SessionManager` class with basic clip metadata storage
 - JSON session format (`.occSession`)
 - `loadSession()` / `saveSession()` methods
@@ -74,6 +77,7 @@ apps/clip-composer/
   - `trimIn/Out`, `fadeIn/Out`, `gainDb`, `loopEnabled`
 
 **What's Missing:**
+
 - ❌ Auto-save (no timer, no `.autosave` files)
 - ❌ Backup rotation (no `.backup` files)
 - ❌ Recent files list (no MRU tracking)
@@ -84,6 +88,7 @@ apps/clip-composer/
 - ❌ File path resolution (no handling for moved/renamed audio files)
 
 **Reference Documents:**
+
 - `OCC097 Session Format and Loading.md` (comprehensive spec, but not fully implemented)
 - `OCC096 SDK Integration Patterns.md` (threading model, SDK calls)
 
@@ -92,6 +97,7 @@ apps/clip-composer/
 ### 2.2 Preferences/Settings System
 
 **What Exists:**
+
 - `AudioSettingsDialog` saves **audio-only** preferences to JUCE PropertiesFile:
   - `audioDevice`, `sampleRate`, `bufferSize`
   - Stored in: `~/Library/Application Support/OrpheusClipComposer.settings` (macOS)
@@ -100,6 +106,7 @@ apps/clip-composer/
   - **BUT**: These are session-specific, not application-wide
 
 **What's Missing:**
+
 - ❌ **Application-wide preferences** (separate from session files)
 - ❌ UI theme settings (dark/light mode)
 - ❌ Default session directory
@@ -117,12 +124,14 @@ apps/clip-composer/
 ### 2.3 Logging and Diagnostics
 
 **What Exists:**
+
 - **JUCE `DBG()` macros** scattered throughout code
   - Example: `AudioSettingsDialog.cpp:291` - "Saved settings"
   - Output: Console-only (stdout/stderr)
 - **No structured logging framework**
 
 **What's Missing:**
+
 - ❌ Log file rotation (no persistent logs)
 - ❌ Log levels (DEBUG, INFO, WARN, ERROR, FATAL)
 - ❌ Component-specific logging (Audio, Session, UI, Transport)
@@ -139,12 +148,14 @@ apps/clip-composer/
 ### 2.4 File Organization
 
 **What Exists:**
+
 - **Default session directory** defined in OCC097:
   - `~/Documents/Orpheus Clip Composer/Sessions/`
   - **BUT**: Not enforced in code, just a spec
 - **No file browser/organizer**
 
 **What's Missing:**
+
 - ❌ Recent files list (MRU)
 - ❌ Favorite sessions (bookmarks)
 - ❌ Session folders/categories
@@ -161,9 +172,11 @@ apps/clip-composer/
 ### 2.5 Search and Filter Infrastructure
 
 **What Exists:**
+
 - **Nothing** (no search features at all)
 
 **What's Missing:**
+
 - ❌ Session search (find by name, date, author)
 - ❌ Clip search (find clips by filename, metadata)
 - ❌ Global search (search across all sessions)
@@ -177,6 +190,7 @@ apps/clip-composer/
 ### 2.6 Engineering and Admin Tools
 
 **What Exists:**
+
 - **Performance metrics** (partial):
   - `AudioEngine` measures CPU usage atomically (OCC096 Pattern 6)
   - Exposed via `getCpuUsageMicroseconds()` (not shown in UI yet)
@@ -185,6 +199,7 @@ apps/clip-composer/
   - Displays calculated latency in milliseconds
 
 **What's Missing:**
+
 - ❌ **Performance overlay** (no CPU/RAM/buffer status in UI)
 - ❌ **Buffer underrun counter** (SDK reports underruns, but no UI display)
 - ❌ **Audio driver diagnostics** (no "Test Audio Device" tool)
@@ -202,6 +217,7 @@ apps/clip-composer/
 ### 3.1 Threading Model (from OCC096)
 
 OCC follows a **3-thread model**:
+
 1. **Message Thread** (JUCE main thread)
    - UI updates, session load/save, file I/O
 2. **Audio Thread** (real-time, lock-free)
@@ -210,6 +226,7 @@ OCC follows a **3-thread model**:
    - Waveform rendering, file imports
 
 **Constraints:**
+
 - ✅ No audio thread allocations
 - ✅ No audio thread locks
 - ✅ No audio thread I/O
@@ -222,6 +239,7 @@ OCC follows a **3-thread model**:
 ### 3.2 Session Format (from OCC097)
 
 **Current Schema (v1.0.0):**
+
 ```json
 {
   "sessionMetadata": {
@@ -235,6 +253,7 @@ OCC follows a **3-thread model**:
 ```
 
 **Observations:**
+
 - ✅ JSON format (human-readable, version-control friendly)
 - ✅ UTF-8 encoding
 - ✅ `.occSession` extension
@@ -246,12 +265,14 @@ OCC follows a **3-thread model**:
 ### 3.3 SDK Integration (from OCC096, AudioEngine.h)
 
 **Current Integration:**
+
 - `AudioEngine` owns `TransportController` and `IAudioDriver`
 - Clip loading via `IAudioFileReader`
 - Callbacks posted to UI thread via `ITransportCallback`
 - Lock-free commands for playback control
 
 **Backend Implications:**
+
 - Session save/load must query `AudioEngine` for current state (e.g., sample rate, buffer size)
 - Auto-save must **not** block audio thread
 - Preferences must coordinate with `AudioEngine` for device settings
@@ -263,6 +284,7 @@ OCC follows a **3-thread model**:
 ### 4.1 OCC097 Session Format Specification
 
 **What OCC097 Specifies:**
+
 - ✅ Complete JSON schema (implemented in `SessionManager`)
 - ✅ Loading flow (10-step process in OCC097:164-226)
 - ✅ Saving flow (6-step process in OCC097:328-428)
@@ -278,6 +300,7 @@ OCC follows a **3-thread model**:
 ### 4.2 OCC096 SDK Integration Patterns
 
 **What OCC096 Describes:**
+
 - ✅ Threading model (followed in `AudioEngine`, `SessionManager`)
 - ✅ Playback control patterns (Pattern 1, 2, 4)
 - ✅ Waveform rendering (Pattern 5)
@@ -292,6 +315,7 @@ OCC follows a **3-thread model**:
 ### 4.3 OCC111 Gap Audit Report
 
 **Key Findings from OCC111:**
+
 - **v0.2.2 missed tasks** include:
   - Auto-save implementation
   - Recent files list
@@ -305,10 +329,12 @@ OCC follows a **3-thread model**:
 ### 4.4 OCC112 Sprint Roadmap
 
 **OCC112 Recommendations:**
+
 - Gap closure sprints (A1-A6)
 - Forward progress sprints (B1-B4)
 
 **Backend-Relevant Sprints:**
+
 - **Sprint A2:** Preferences & Settings Manager
 - **Sprint A3:** Auto-Save & Backup
 - **Sprint A5:** Performance Monitoring UI
@@ -322,6 +348,7 @@ OCC follows a **3-thread model**:
 ### 5.1 SPT020 Functional Enhancements Report
 
 **Key SpotOn Features Identified:**
+
 1. **Track Preview** (file browser with real-time preview)
 2. **AutoPlay Mode** (jukebox mode for continuous playback)
 3. **Button Customization** (master/slave linking, batch operations)
@@ -330,6 +357,7 @@ OCC follows a **3-thread model**:
 6. **GPI Functionality** (external hardware triggers, emulation options)
 
 **OCC Status:**
+
 - ✅ **Track Preview:** Partially implemented (PreviewPlayer.h/cpp exists)
 - ❌ **AutoPlay Mode:** Not implemented
 - ✅ **Button Customization:** Basic (color, name), no batch operations
@@ -345,34 +373,34 @@ OCC follows a **3-thread model**:
 
 ### 6.1 Critical Gaps (Must Address)
 
-| Gap | SpotOn Has? | OCC Has? | Impact |
-|-----|-------------|----------|--------|
-| **Auto-save/Backup** | ✅ Yes | ❌ No | Data loss risk in 24/7 operation |
-| **Logging Framework** | ✅ Yes | ❌ No | Impossible to debug production issues |
-| **Performance Monitoring UI** | ✅ Yes | ❌ No | Operators blind to system health |
-| **Recent Files List** | ✅ Yes | ❌ No | Slow workflow for frequent users |
-| **Session Validation** | ✅ Yes | ❌ No | Corrupted sessions crash app |
+| Gap                           | SpotOn Has? | OCC Has? | Impact                                |
+| ----------------------------- | ----------- | -------- | ------------------------------------- |
+| **Auto-save/Backup**          | ✅ Yes      | ❌ No    | Data loss risk in 24/7 operation      |
+| **Logging Framework**         | ✅ Yes      | ❌ No    | Impossible to debug production issues |
+| **Performance Monitoring UI** | ✅ Yes      | ❌ No    | Operators blind to system health      |
+| **Recent Files List**         | ✅ Yes      | ❌ No    | Slow workflow for frequent users      |
+| **Session Validation**        | ✅ Yes      | ❌ No    | Corrupted sessions crash app          |
 
 ---
 
 ### 6.2 High-Priority Gaps (Should Address)
 
-| Gap | SpotOn Has? | OCC Has? | Impact |
-|-----|-------------|----------|--------|
-| **Application Preferences** | ✅ Yes | ⚠️ Partial | Users can't customize UI, hotkeys, defaults |
-| **File Organization** | ✅ Yes | ❌ No | Hard to manage hundreds of sessions |
-| **Search/Filter** | ✅ Yes | ❌ No | Inefficient navigation in large libraries |
-| **Diagnostics Panel** | ✅ Yes | ❌ No | Support requests lack context |
+| Gap                         | SpotOn Has? | OCC Has?   | Impact                                      |
+| --------------------------- | ----------- | ---------- | ------------------------------------------- |
+| **Application Preferences** | ✅ Yes      | ⚠️ Partial | Users can't customize UI, hotkeys, defaults |
+| **File Organization**       | ✅ Yes      | ❌ No      | Hard to manage hundreds of sessions         |
+| **Search/Filter**           | ✅ Yes      | ❌ No      | Inefficient navigation in large libraries   |
+| **Diagnostics Panel**       | ✅ Yes      | ❌ No      | Support requests lack context               |
 
 ---
 
 ### 6.3 Nice-to-Have Gaps (Future)
 
-| Gap | SpotOn Has? | OCC Has? | Impact |
-|-----|-------------|----------|--------|
-| **Session Templates** | ✅ Yes | ❌ No | Slow setup for recurring events |
-| **Audio File Library** | ✅ Yes | ❌ No | No centralized file management |
-| **GPI Integration** | ✅ Yes | ❌ No | Legacy hardware users excluded |
+| Gap                    | SpotOn Has? | OCC Has? | Impact                          |
+| ---------------------- | ----------- | -------- | ------------------------------- |
+| **Session Templates**  | ✅ Yes      | ❌ No    | Slow setup for recurring events |
+| **Audio File Library** | ✅ Yes      | ❌ No    | No centralized file management  |
+| **GPI Integration**    | ✅ Yes      | ❌ No    | Legacy hardware users excluded  |
 
 ---
 
@@ -437,11 +465,13 @@ As we proceed through SpotOn Manual sections 01-10, focus on:
 ### 8.1 Current State Assessment
 
 **Strengths:**
+
 - ✅ Strong frontend (ClipGrid, TransportControls, WaveformDisplay)
 - ✅ Solid SDK integration (AudioEngine, real-time safety)
 - ✅ Basic session format (JSON, extensible)
 
 **Weaknesses:**
+
 - ❌ **Minimal backend infrastructure**
 - ❌ **No logging/diagnostics framework**
 - ❌ **No auto-save/backup**
@@ -453,10 +483,12 @@ As we proceed through SpotOn Manual sections 01-10, focus on:
 ### 8.2 Readiness for Production
 
 **Current OCC Status:** **Alpha/Beta**
+
 - Suitable for single-user, short sessions
 - **NOT production-ready** for broadcast/theater (24/7 operation)
 
 **Blockers for Production:**
+
 1. **Data safety:** No auto-save, no backups → data loss risk
 2. **Observability:** No logging, no diagnostics → blind to failures
 3. **Usability:** No recent files, no search → inefficient workflow

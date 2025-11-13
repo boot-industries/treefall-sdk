@@ -20,23 +20,24 @@ This document presents a comprehensive sprint plan for implementing Display Menu
 
 ### 1.1 Core Features Identified
 
-| Feature | SpotOn Has? | OCC Has? | Priority |
-|---------|-------------|----------|----------|
-| **Grid Layout Configuration** | ✅ Yes (1-160 buttons/page, 8 pages) | ⚠️ Partial (Fixed 48/page, 8 pages) | MEDIUM |
-| **Page Name Customization** | ✅ Yes (Edit/Reset, right-click) | ❌ No | LOW |
-| **Display Size Settings** | ✅ Yes (Tab/Status/Bevel/Trigger sizes) | ❌ No | LOW |
-| **Display Mode Toggles** | ✅ Yes (HotKey/MIDI text, elapsed time) | ⚠️ Partial | MEDIUM |
-| **Level Meters with Logging** | ✅ Yes (4 outputs, play history) | ❌ No | HIGH |
-| **Undo/Redo System** | ✅ Yes (Multi-level, Ctrl+Z/Y) | ❌ No | HIGH |
-| **Paste Special** | ✅ Yes (Selective parameters, AutoFill) | ❌ No | HIGH |
-| **Page Operations** | ✅ Yes (Cut/Copy/Paste/Swap/Clear) | ❌ No | MEDIUM |
-| **Fill/Clear Buttons** | ✅ Yes (Range operations) | ❌ No | MEDIUM |
+| Feature                       | SpotOn Has?                             | OCC Has?                            | Priority |
+| ----------------------------- | --------------------------------------- | ----------------------------------- | -------- |
+| **Grid Layout Configuration** | ✅ Yes (1-160 buttons/page, 8 pages)    | ⚠️ Partial (Fixed 48/page, 8 pages) | MEDIUM   |
+| **Page Name Customization**   | ✅ Yes (Edit/Reset, right-click)        | ❌ No                               | LOW      |
+| **Display Size Settings**     | ✅ Yes (Tab/Status/Bevel/Trigger sizes) | ❌ No                               | LOW      |
+| **Display Mode Toggles**      | ✅ Yes (HotKey/MIDI text, elapsed time) | ⚠️ Partial                          | MEDIUM   |
+| **Level Meters with Logging** | ✅ Yes (4 outputs, play history)        | ❌ No                               | HIGH     |
+| **Undo/Redo System**          | ✅ Yes (Multi-level, Ctrl+Z/Y)          | ❌ No                               | HIGH     |
+| **Paste Special**             | ✅ Yes (Selective parameters, AutoFill) | ❌ No                               | HIGH     |
+| **Page Operations**           | ✅ Yes (Cut/Copy/Paste/Swap/Clear)      | ❌ No                               | MEDIUM   |
+| **Fill/Clear Buttons**        | ✅ Yes (Range operations)               | ❌ No                               | MEDIUM   |
 
 ---
 
 ### 1.2 Key Insights
 
 **SpotOn's Strengths:**
+
 1. **UI Flexibility:** Grid layout (1-160 buttons/page), touchscreen sizes
 2. **Editing Workflow:** Paste Special with selective parameters, AutoFill MIDI notes
 3. **Undo/Redo:** Multi-level command history (shows count: "Undo (3)")
@@ -44,6 +45,7 @@ This document presents a comprehensive sprint plan for implementing Display Menu
 5. **Display Modes:** HotKey/MIDI text toggle, elapsed vs. countdown time
 
 **OCC's Gaps:**
+
 - ❌ **No undo/redo system** (destructive edits, no history)
 - ❌ **No paste special** (can't selectively copy parameters)
 - ⚠️ **Basic clipboard** (no page copy/paste, no swap)
@@ -56,6 +58,7 @@ This document presents a comprehensive sprint plan for implementing Display Menu
 ## 2. Sprint Breakdown
 
 ### Sprint 15: Display Preferences System (MEDIUM)
+
 **Complexity:** Small (S)
 **Estimated Duration:** 3-5 days
 **Priority:** MEDIUM
@@ -68,6 +71,7 @@ This document presents a comprehensive sprint plan for implementing Display Menu
 Store application-wide display settings in preferences:
 
 **Features:**
+
 - Page tab height (Small/Medium/Large)
 - Status bar height (Small/Medium/Large)
 - Bevel edge width (None/5%/10%/15%/20%)
@@ -77,6 +81,7 @@ Store application-wide display settings in preferences:
 - Level meter display mode (Horizontal vs Vertical)
 
 **Implementation:**
+
 ```cpp
 // New class: DisplayPreferences
 class DisplayPreferences {
@@ -157,6 +162,7 @@ private:
 Add Display menu with configuration dialogs:
 
 **Menu Structure:**
+
 ```
 Display
 ├── Layout...                    (Future: Grid layout editor)
@@ -188,6 +194,7 @@ Display
 Allow users to customize page names (session-specific):
 
 **Implementation:**
+
 ```cpp
 // In SessionManager.h
 struct SessionData {
@@ -228,6 +235,7 @@ private:
 Toggle between countdown (time remaining) and count-up (elapsed time):
 
 **Implementation:**
+
 ```cpp
 // In ClipButton::paint()
 void ClipButton::paint(juce::Graphics& g) {
@@ -287,6 +295,7 @@ juce::String ClipButton::getTimeDisplayString() const {
 ---
 
 ### Sprint 16: Undo/Redo System (HIGH)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** HIGH
@@ -299,6 +308,7 @@ juce::String ClipButton::getTimeDisplayString() const {
 Implement undo/redo using Command pattern:
 
 **Features:**
+
 - Multi-level undo/redo stack (configurable max depth)
 - Show undo count in menu ("Undo (3)")
 - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
@@ -306,6 +316,7 @@ Implement undo/redo using Command pattern:
 - Command types: ClipEdit, ClipDelete, PageCopy, PasteSpecial, FillButtons, ClearButtons
 
 **Implementation:**
+
 ```cpp
 // New class: UndoManager
 class Command {
@@ -354,6 +365,7 @@ private:
 Implement commands for common operations:
 
 **Implementation:**
+
 ```cpp
 // Command: Edit Clip Properties
 class EditClipCommand : public Command {
@@ -479,6 +491,7 @@ private:
 Add Undo/Redo to Edit menu:
 
 **Menu Structure:**
+
 ```
 Edit
 ├── ↶ Undo (3)          Ctrl+Z
@@ -497,6 +510,7 @@ Edit
 ```
 
 **Implementation:**
+
 ```cpp
 // In MainComponent
 void MainComponent::createEditMenu() {
@@ -556,6 +570,7 @@ void MainComponent::handleEditMenuResult(int result) {
 ---
 
 ### Sprint 17: Paste Special System (HIGH)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** HIGH
@@ -568,6 +583,7 @@ void MainComponent::handleEditMenuResult(int result) {
 Selective parameter copying from clipboard:
 
 **Features:**
+
 - Parameter selection checkboxes (Levels, Fades, External Triggers, Misc)
 - Paste scope: Individual, Global, Current Page, Range, Output-specific
 - AutoFill for MIDI notes (sequential assignment)
@@ -575,6 +591,7 @@ Selective parameter copying from clipboard:
 - Confirmation dialog before apply
 
 **Implementation:**
+
 ```cpp
 // New class: PasteSpecialDialog
 struct PasteSpecialOptions {
@@ -701,6 +718,7 @@ private:
 Automatically assign sequential MIDI notes:
 
 **Implementation:**
+
 ```cpp
 // In PasteSpecialCommand::execute()
 void PasteSpecialCommand::execute() {
@@ -746,6 +764,7 @@ void PasteSpecialCommand::execute() {
 Show summary before applying Paste Special:
 
 **Implementation:**
+
 ```cpp
 void PasteSpecialDialog::onOkButtonClicked() {
     // Build summary string
@@ -827,6 +846,7 @@ void PasteSpecialDialog::onOkButtonClicked() {
 ---
 
 ### Sprint 18: Page Operations and Bulk Edits (MEDIUM)
+
 **Complexity:** Medium (M)
 **Estimated Duration:** 1-2 weeks
 **Priority:** MEDIUM
@@ -839,6 +859,7 @@ void PasteSpecialDialog::onOkButtonClicked() {
 Copy/paste/swap entire pages:
 
 **Features:**
+
 - Cut Page (copy + clear current page)
 - Copy Page (copy current page to clipboard)
 - Paste Page (paste clipboard onto current page)
@@ -846,6 +867,7 @@ Copy/paste/swap entire pages:
 - Clear Page (clear all buttons on current page, with confirmation)
 
 **Implementation:**
+
 ```cpp
 // In SessionManager
 class SessionManager {
@@ -913,6 +935,7 @@ void SessionManager::swapPage(int pageIndex) {
 Load same audio file into range of buttons:
 
 **Implementation:**
+
 ```cpp
 // New dialog: FillButtonsDialog
 class FillButtonsDialog : public juce::Component {
@@ -979,6 +1002,7 @@ void FillButtonsDialog::onOkClicked() {
 Clear range of buttons:
 
 **Implementation:**
+
 ```cpp
 // New dialog: ClearButtonsDialog
 class ClearButtonsDialog : public juce::Component {
@@ -1050,7 +1074,7 @@ void ClearButtonsDialog::onOkClicked() {
 - Implement page clipboard (std::optional<std::array<ClipData, 48>>)
 - Implement Cut/Copy/Paste/Swap/Clear commands
 - Implement FillButtonsDialog and ClearButtonsDialog
-- File chooser for Fill Buttons (*.wav, *.aiff, *.mp3, *.flac)
+- File chooser for Fill Buttons (_.wav, _.aiff, _.mp3, _.flac)
 - Range validation (1..320, start <= end)
 - Confirmation dialogs before destructive operations
 - Integrate with UndoManager
@@ -1059,6 +1083,7 @@ void ClearButtonsDialog::onOkClicked() {
 ---
 
 ### Sprint 19: Level Meters and Play History (HIGH)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** HIGH
@@ -1071,6 +1096,7 @@ void ClearButtonsDialog::onOkClicked() {
 Display signal levels on first 4 outputs with clip tracking:
 
 **Features:**
+
 - Horizontal or vertical display mode
 - Show up to 3 buttons per output (color-coded: Green=1, Yellow=2, Red=3+)
 - Stop buttons per output (enable/disable toggle)
@@ -1080,6 +1106,7 @@ Display signal levels on first 4 outputs with clip tracking:
 - Keyboard shortcut: Ctrl+L
 
 **Implementation:**
+
 ```cpp
 // New class: LevelMetersWindow
 class LevelMetersWindow : public juce::Component,
@@ -1178,6 +1205,7 @@ void LevelMetersWindow::paintHorizontalMode(juce::Graphics& g) {
 Track last 100 played tracks per output with timestamps:
 
 **Implementation:**
+
 ```cpp
 // New class: PlayHistoryLogger
 class PlayHistoryLogger {
@@ -1231,6 +1259,7 @@ void PlayHistoryLogger::logPlay(int outputIndex, int buttonIndex,
 Show timestamped play log for specific output:
 
 **Implementation:**
+
 ```cpp
 // New dialog: PlayHistoryDialog
 class PlayHistoryDialog : public juce::Component {
@@ -1307,12 +1336,14 @@ void PlayHistoryDialog::updateLogDisplay() {
 ## 3. Deferred Features (Lower Priority)
 
 ### Sprint 20: Grid Layout Configuration (LOW - Phase 3)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** LOW (Phase 3)
 **Rationale:** OCC's fixed 8x6 grid (48 buttons/page) is sufficient for MVP
 
 **Features (if implemented):**
+
 - Interactive grid layout editor (drag to configure)
 - Variable button counts (1-160 buttons/page)
 - Dynamic page count (based on total buttons / buttons per page)
@@ -1325,6 +1356,7 @@ void PlayHistoryDialog::updateLogDisplay() {
 ## 4. Implementation Roadmap
 
 ### Phase 1: Display Preferences and Editing Foundation (Weeks 1-4)
+
 **Focus:** UI configuration, undo/redo infrastructure
 
 1. **Sprint 15:** Display Preferences System (1 week)
@@ -1337,6 +1369,7 @@ void PlayHistoryDialog::updateLogDisplay() {
    - Edit menu integration
 
 ### Phase 2: Advanced Editing and Paste Special (Weeks 5-8)
+
 **Focus:** Selective parameter copying, bulk operations
 
 3. **Sprint 17:** Paste Special System (2-3 weeks)
@@ -1349,6 +1382,7 @@ void PlayHistoryDialog::updateLogDisplay() {
    - Fill/Clear Buttons
 
 ### Phase 3: Monitoring and Diagnostics (Weeks 9-11)
+
 **Focus:** Output monitoring, play history logging
 
 5. **Sprint 19:** Level Meters and Play History (2-3 weeks)
@@ -1357,6 +1391,7 @@ void PlayHistoryDialog::updateLogDisplay() {
    - Timestamped play log per output
 
 ### Phase 4: Advanced Layout (Future)
+
 **Focus:** Grid layout customization
 
 6. **Sprint 20:** Grid Layout Configuration (Deferred)
@@ -1370,6 +1405,7 @@ void PlayHistoryDialog::updateLogDisplay() {
 All Display/Edit Menu features respect OCC's threading model:
 
 **Message Thread:**
+
 - Display preferences dialogs
 - Undo/Redo command execution
 - Paste Special dialogs
@@ -1377,15 +1413,18 @@ All Display/Edit Menu features respect OCC's threading model:
 - Level meters UI updates (100ms timer)
 
 **Audio Thread:**
+
 - Level meter data collection (output levels, playing buttons)
 - Play history logging (non-blocking, lock-free queue)
 
 **Background Threads:**
+
 - None required for Display/Edit features
 
 ### 5.2 Persistence
 
 **Application-Wide Preferences (NOT session-specific):**
+
 - Page tab height (Small/Medium/Large)
 - Status bar height (Small/Medium/Large)
 - Bevel edge width (None/5%/10%/15%/20%)
@@ -1395,11 +1434,13 @@ All Display/Edit Menu features respect OCC's threading model:
 - Level meter display mode (Horizontal vs Vertical)
 
 **Session-Specific Settings:**
+
 - Page names (8 custom names per session)
 - Undo/Redo stack (cleared on session load/new)
 - Page clipboard (cleared on session load/new)
 
 **Transient State (NOT persisted):**
+
 - Button clipboard (single button copy/paste)
 - Paste Special options (dialog state)
 - Level meters window position/size
@@ -1407,6 +1448,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 5.3 Cross-Platform Compatibility
 
 **Platform-Specific Considerations:**
+
 - Keyboard shortcuts (Ctrl vs Cmd on macOS)
 - PropertiesFile location (platform-specific app data folder)
 - File chooser dialogs (native vs JUCE)
@@ -1414,6 +1456,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 5.4 Performance
 
 **Critical Metrics:**
+
 - Undo/Redo latency: <50ms (command execution + UI update)
 - Paste Special: <100ms for 320 buttons (bulk operation)
 - Level meters update rate: 10 FPS (100ms timer, non-blocking)
@@ -1426,6 +1469,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 6.1 Unit Tests
 
 **Test Coverage:**
+
 - `DisplayPreferences` save/load
 - `UndoManager` push/pop/clear
 - `PasteSpecialOptions` parameter application
@@ -1434,6 +1478,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 6.2 Integration Tests
 
 **Test Scenarios:**
+
 - Edit clip → Undo → Redo (verify state restoration)
 - Paste Special with AutoFill MIDI (verify sequential assignment)
 - Copy Page → Paste Page (verify 48 buttons copied)
@@ -1444,6 +1489,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 6.3 Manual Testing
 
 **Test Cases:**
+
 - Change page tab height → Restart app (verify persistence)
 - Undo 50 edits → Redo 50 edits (verify stack depth limit)
 - Paste Special to range of buttons on specific output (verify filtering)
@@ -1457,6 +1503,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 7.1 User Documentation
 
 **Topics:**
+
 - Display preferences (page tab height, status bar height, bevel width, etc.)
 - Page name customization (Edit/Reset, caret character for line breaks)
 - Undo/Redo keyboard shortcuts (Ctrl+Z, Ctrl+Y)
@@ -1469,6 +1516,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 7.2 Developer Documentation
 
 **Topics:**
+
 - Command pattern implementation (base class, concrete commands)
 - Undo/Redo stack management (max depth, trimming)
 - Paste Special parameter selection (options struct)
@@ -1494,6 +1542,7 @@ All Display/Edit Menu features respect OCC's threading model:
 ### 8.3 AudioEngine API Extensions
 
 **New Methods Required:**
+
 ```cpp
 // In AudioEngine.h
 std::vector<int> getPlayingButtonsOnOutput(int outputIndex) const;
