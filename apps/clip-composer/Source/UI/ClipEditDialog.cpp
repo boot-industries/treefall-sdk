@@ -373,10 +373,10 @@ void ClipEditDialog::buildPhase1UI() {
   m_nameEditor->onTextChange = [this]() { m_metadata.displayName = m_nameEditor->getText(); };
   m_nameEditor->setReturnKeyStartsNewLine(false); // Enter should NOT insert newline
   m_nameEditor->onReturnKey = [this]() {
-    // Enter key = Save & Close (trigger OK button)
-    if (m_okButton) {
-      m_okButton->triggerClick();
-    }
+    // Enter key = Confirm value and blur field (remove focus)
+    // This allows user to confirm text without closing dialog
+    m_nameEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Name editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_nameEditor.get());
 
@@ -541,7 +541,22 @@ void ClipEditDialog::buildPhase2UI() {
                           juce::Colour(0xffe74c3c)); // Red
   m_stopButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0xffc0392b));
   m_stopButton->onClick = [this]() {
-    if (m_previewPlayer) {
+    if (!m_previewPlayer)
+      return;
+
+    // Simple logic: If already stopped, reset playhead to IN. Otherwise, stop.
+    if (!m_previewPlayer->isPlaying()) {
+      // Already stopped - reset playhead to IN point (remains stopped)
+      int64_t trimIn = m_metadata.trimInSamples;
+
+      // Update waveform display only (don't start playback)
+      if (m_waveformDisplay) {
+        m_waveformDisplay->setPlayheadPosition(trimIn);
+      }
+
+      DBG("ClipEditDialog: STOP while stopped - reset playhead to IN (" << trimIn << " samples)");
+    } else {
+      // Playing - stop playback
       m_previewPlayer->stop();
       DBG("ClipEditDialog: Preview playback stopped");
     }
@@ -859,6 +874,10 @@ void ClipEditDialog::buildPhase2UI() {
             << currentPos << " < " << m_metadata.trimInSamples << "), restarted from IN");
       }
     }
+
+    // Clear focus after confirming value
+    m_trimInTimeEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Trim IN time editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_trimInTimeEditor.get());
 
@@ -1005,6 +1024,10 @@ void ClipEditDialog::buildPhase2UI() {
       // CRITICAL: Enforce OUT point edit law (if playhead >= OUT, jump to IN and restart)
       enforceOutPointEditLaw();
     }
+
+    // Clear focus after confirming value
+    m_trimOutTimeEditor->giveAwayKeyboardFocus();
+    DBG("ClipEditDialog: Trim OUT time editor confirmed, focus cleared");
   };
   addAndMakeVisible(m_trimOutTimeEditor.get());
 
@@ -1702,49 +1725,59 @@ bool ClipEditDialog::keyPressed(const juce::KeyPress& key) {
     return true;
   }
 
-  // TAB key: Custom focus order (Name → Trim IN → Trim OUT only)
+  // TAB key: Always cycles through three text fields (Name → IN → OUT → Name)
+  // Works regardless of what has focus currently
   if (key == juce::KeyPress::tabKey) {
-    // Determine current focus
     auto* focused = juce::Component::getCurrentlyFocusedComponent();
 
     if (focused == m_nameEditor.get()) {
       // Name → Trim IN
-      if (m_trimInTimeEditor) {
-        m_trimInTimeEditor->grabKeyboardFocus();
-      }
+      m_trimInTimeEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Name → Trim IN");
     } else if (focused == m_trimInTimeEditor.get()) {
       // Trim IN → Trim OUT
-      if (m_trimOutTimeEditor) {
-        m_trimOutTimeEditor->grabKeyboardFocus();
-      }
+      m_trimOutTimeEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Trim IN → Trim OUT");
     } else if (focused == m_trimOutTimeEditor.get()) {
       // Trim OUT → Name (cycle back)
-      if (m_nameEditor) {
-        m_nameEditor->grabKeyboardFocus();
-      }
+      m_nameEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Trim OUT → Name");
     } else {
-      // Nothing focused or other control focused → start at Name
-      if (m_nameEditor) {
-        m_nameEditor->grabKeyboardFocus();
-      }
+      // Nothing focused or other control → start at Name
+      // This allows TAB to work from anywhere in dialog
+      m_nameEditor->grabKeyboardFocus();
+      DBG("ClipEditDialog: TAB - Other → Name (cycle start)");
     }
     return true; // Consume Tab key
   }
 
-  // ENTER key: Submit dialog (OK) - only if not in text editor
+  // ENTER key: Two-stage behavior
+  // Stage 1: In text field → blur field (remove focus)
+  // Stage 2: No text field focused → trigger OK button
+  // CRITICAL SAFETY: Prevent accidental triggering of show-critical controls (CLEAR, etc.)
   if (key == juce::KeyPress::returnKey ||
       key == juce::KeyPress(juce::KeyPress::returnKey, juce::ModifierKeys(), 0)) {
-    // Check if we're in a text editor (they handle Enter themselves)
     auto* focused = juce::Component::getCurrentlyFocusedComponent();
+
+    // Case 1: Text editor has focus - let it handle Enter (confirms text, blurs field)
     if (focused == m_nameEditor.get() || focused == m_trimInTimeEditor.get() ||
         focused == m_trimOutTimeEditor.get()) {
-      // Let text editor handle Enter (will trigger OK via onReturnKey callback)
+      // Let text editor handle Enter (will blur via onReturnKey callback)
       return false;
     }
 
-    // Otherwise, trigger OK button directly
-    if (onOkClicked)
+    // Case 2: Dangerous component has focus - block Enter completely
+    // CRITICAL: Prevent accidental CLEAR button triggers
+    if (focused == m_trimInClearButton.get() || focused == m_trimOutClearButton.get()) {
+      DBG("ClipEditDialog: ENTER blocked - dangerous component has focus");
+      return true; // Consume Enter key without action
+    }
+
+    // Case 3: Safe to trigger OK (either nothing focused or safe component focused)
+    if (onOkClicked) {
       onOkClicked(m_metadata);
+      DBG("ClipEditDialog: ENTER - triggered OK button");
+    }
     return true;
   }
 

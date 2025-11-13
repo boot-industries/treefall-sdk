@@ -441,3 +441,4 @@ From `docs/occ/OCC030` Section 10.3:
 **Next Milestone:** v0.2.0 release (pending final QA)
 
 - Use @"docs/occ/OCC110 SDK Integration Guide - Transport State and Loop Features.md" as a reference document for Clip Composer's Orpheus SDK integrations.
+- Use ./scripts/relaunch-occ.sh to relaunch Clip Composer.
