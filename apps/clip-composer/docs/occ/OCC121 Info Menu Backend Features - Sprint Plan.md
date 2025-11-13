@@ -21,6 +21,7 @@ Analysis of SpotOn Manual Section 08 (Info Menu) identifying backend requirement
 ## 1. Feature Overview
 
 The Info Menu provides information display and activity logging:
+
 - **Session Notes:** Free-text notepad saved with session file
 - **Status:** System information display (version, session, audio config)
 - **Playout Logs:** Comprehensive track playback logging for royalty reporting
@@ -36,17 +37,19 @@ The Info Menu provides information display and activity logging:
 ### 2.1 Session Notes System
 
 **Requirements:**
+
 - Free-text notepad associated with session
 - Auto-show on session load (if notes exist and option enabled)
 - Clear notes functionality
 - Save with session file
 
 **Implementation:**
+
 ```typescript
 interface SessionNotes {
   sessionId: string;
-  content: string;                    // Free text
-  autoShow: boolean;                  // Show on session load
+  content: string; // Free text
+  autoShow: boolean; // Show on session load
   lastModified: Date;
 }
 
@@ -55,10 +58,7 @@ class SessionNotesService {
     // Load notes for session
   }
 
-  async updateNotes(
-    sessionId: string,
-    content: string
-  ): Promise<void> {
+  async updateNotes(sessionId: string, content: string): Promise<void> {
     // Update notes content
   }
 
@@ -66,16 +66,14 @@ class SessionNotesService {
     // Clear notes content
   }
 
-  async setAutoShow(
-    sessionId: string,
-    autoShow: boolean
-  ): Promise<void> {
+  async setAutoShow(sessionId: string, autoShow: boolean): Promise<void> {
     // Set auto-show preference
   }
 }
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE session_notes (
   session_id TEXT PRIMARY KEY,
@@ -89,6 +87,7 @@ CREATE TABLE session_notes (
 ### 2.2 System Status Aggregation
 
 **Requirements:**
+
 - Collect and display system information
 - Version information
 - Session metadata (start time, duration)
@@ -97,6 +96,7 @@ CREATE TABLE session_notes (
 - Copy to clipboard (full or selection)
 
 **Implementation:**
+
 ```typescript
 interface SystemStatus {
   application: ApplicationInfo;
@@ -123,7 +123,7 @@ interface SystemInfo {
 
 interface SessionInfo {
   startTime: Date;
-  duration: number;                   // Seconds
+  duration: number; // Seconds
   currentSessionFile: string;
 }
 
@@ -136,8 +136,8 @@ interface AudioInfo {
   channelCount: number;
   channelPatching: string;
   frequencyEffects: string[];
-  fadeLimit: number;                  // dB
-  voiceOverFadeDepth: number;         // dB
+  fadeLimit: number; // dB
+  voiceOverFadeDepth: number; // dB
 }
 
 interface DisplayInfo {
@@ -149,9 +149,9 @@ interface DisplayInfo {
 }
 
 interface PerformanceInfo {
-  minLoadTime: number;                // ms
-  maxLoadTime: number;                // ms
-  avgLoadTime: number;                // ms
+  minLoadTime: number; // ms
+  maxLoadTime: number; // ms
+  avgLoadTime: number; // ms
 }
 
 class SystemStatusService {
@@ -162,14 +162,11 @@ class SystemStatusService {
       session: await this.getSessionInfo(),
       audio: await this.getAudioInfo(),
       display: await this.getDisplayInfo(),
-      performance: await this.getPerformanceInfo()
+      performance: await this.getPerformanceInfo(),
     };
   }
 
-  async exportToClipboard(
-    status: SystemStatus,
-    selection?: string
-  ): Promise<void> {
+  async exportToClipboard(status: SystemStatus, selection?: string): Promise<void> {
     const text = selection || this.formatStatus(status);
     await navigator.clipboard.writeText(text);
   }
@@ -179,6 +176,7 @@ class SystemStatusService {
 ### 2.3 Playout Logging System
 
 **Requirements:**
+
 - Log every track playback with comprehensive metadata
 - Track trigger source (mouse, hotkey, GPI, MIDI, etc.)
 - Record start time, duration, track metadata
@@ -188,6 +186,7 @@ class SystemStatusService {
 - Support extended metadata columns
 
 **Trigger Source Codes:**
+
 ```typescript
 enum TriggerSource {
   AUDIO_DIALOG = 'a',
@@ -219,18 +218,19 @@ enum TriggerSource {
   PREVIEW = '(',
   CENTRE_CLICK = ')',
   EFFECT_SETUP = '~',
-  OUTPUT_ASSIGN = '^'
+  OUTPUT_ASSIGN = '^',
 }
 ```
 
 **Implementation:**
+
 ```typescript
 interface PlayoutLogEntry {
   id: string;
   timestamp: Date;
-  itemNumber: number;                 // Sequential item number
-  duration: string;                   // HH:MM:SS or ??:??:?? if still playing
-  midiTimeCode: string | null;        // Optional MIDI timecode
+  itemNumber: number; // Sequential item number
+  duration: string; // HH:MM:SS or ??:??:?? if still playing
+  midiTimeCode: string | null; // Optional MIDI timecode
   buttonNumber: number;
   outputId: string;
   triggerSource: TriggerSource;
@@ -253,8 +253,8 @@ interface PlayoutLogEntry {
 }
 
 interface PlayoutLogFilter {
-  outputs?: string[];                 // Filter by outputs
-  columns?: PlayoutLogColumn[];       // Columns to include
+  outputs?: string[]; // Filter by outputs
+  columns?: PlayoutLogColumn[]; // Columns to include
   startDate?: Date;
   endDate?: Date;
 }
@@ -279,7 +279,7 @@ enum PlayoutLogColumn {
   ENGINEER = 'engineer',
   COPYRIGHT = 'copyright',
   COMMENTS = 'comments',
-  KEYWORDS = 'keywords'
+  KEYWORDS = 'keywords',
 }
 
 class PlayoutLogService {
@@ -292,10 +292,7 @@ class PlayoutLogService {
     // Update duration when track stops
   }
 
-  async getLog(
-    date: Date,
-    filter?: PlayoutLogFilter
-  ): Promise<PlayoutLogEntry[]> {
+  async getLog(date: Date, filter?: PlayoutLogFilter): Promise<PlayoutLogEntry[]> {
     // Get log entries for date
     // Apply filters
   }
@@ -303,7 +300,7 @@ class PlayoutLogService {
   async exportLog(
     entries: PlayoutLogEntry[],
     filter: PlayoutLogFilter,
-    format: 'csv' | 'txt'
+    format: 'csv' | 'txt',
   ): Promise<string> {
     // Export filtered columns to file
   }
@@ -324,6 +321,7 @@ class PlayoutLogService {
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE playout_log (
   id TEXT PRIMARY KEY,
@@ -372,12 +370,14 @@ CREATE TABLE playout_active (
 ### 2.4 Event Logging System
 
 **Requirements:**
+
 - Log system events (GPI, MIDI, file operations, errors)
 - Separate from playout logging
 - Archive daily (28 days retention)
 - Export capabilities
 
 **Implementation:**
+
 ```typescript
 interface EventLogEntry {
   id: string;
@@ -400,15 +400,11 @@ enum EventType {
   MIDI_OUT = 'midi_out',
   ERROR = 'error',
   WARNING = 'warning',
-  SYSTEM = 'system'
+  SYSTEM = 'system',
 }
 
 class EventLogService {
-  async logEvent(
-    eventType: EventType,
-    action: string,
-    details?: string
-  ): Promise<void> {
+  async logEvent(eventType: EventType, action: string, details?: string): Promise<void> {
     // Add entry to event log
   }
 
@@ -416,10 +412,7 @@ class EventLogService {
     // Get event log for date
   }
 
-  async exportLog(
-    entries: EventLogEntry[],
-    format: 'csv' | 'txt'
-  ): Promise<string> {
+  async exportLog(entries: EventLogEntry[], format: 'csv' | 'txt'): Promise<string> {
     // Export to file
   }
 
@@ -430,6 +423,7 @@ class EventLogService {
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE event_log (
   id TEXT PRIMARY KEY,
@@ -448,6 +442,7 @@ CREATE INDEX idx_event_log_type ON event_log(event_type);
 ### 2.5 Log Archival System
 
 **Requirements:**
+
 - Daily log files (one per day)
 - Automatic archival on date rollover
 - 28-day retention in default folder
@@ -455,11 +450,12 @@ CREATE INDEX idx_event_log_type ON event_log(event_type);
 - Background archival process
 
 **Implementation:**
+
 ```typescript
 interface LogArchivalConfig {
   defaultFolder: string;
   customFolder: string | null;
-  retentionDays: number;              // 28 for default folder
+  retentionDays: number; // 28 for default folder
 }
 
 class LogArchivalService {
@@ -528,7 +524,7 @@ interface GetSystemStatusResponse {
 // POST /api/info/status/export
 // Export status to clipboard
 interface ExportStatusRequest {
-  selection?: string;                 // Optional selected text
+  selection?: string; // Optional selected text
 }
 
 interface ExportStatusResponse {
@@ -557,7 +553,7 @@ interface AddPlayoutLogResponse {
 // PUT /api/info/playout-log/:entryId/duration
 // Update duration when track stops
 interface UpdatePlayoutDurationRequest {
-  duration: number;                   // Seconds
+  duration: number; // Seconds
 }
 
 // GET /api/info/playout-log/current
@@ -575,7 +571,7 @@ interface GetArchivedLogsResponse {
 // GET /api/info/playout-log/:date
 // Get log for specific date
 interface GetPlayoutLogRequest {
-  date: string;                       // ISO date
+  date: string; // ISO date
   filter?: PlayoutLogFilter;
 }
 
@@ -586,7 +582,7 @@ interface GetPlayoutLogResponse {
 // POST /api/info/playout-log/export
 // Export log
 interface ExportPlayoutLogRequest {
-  entries: string[];                  // Entry IDs
+  entries: string[]; // Entry IDs
   filter: PlayoutLogFilter;
   format: 'csv' | 'txt';
 }
@@ -675,17 +671,20 @@ interface PlayoutDurationUpdate {
 ## 4. Integration Points
 
 ### 4.1 Session Management Integration
+
 - Session notes loaded with session
 - Session notes saved with session
 - Auto-show on session load (if enabled and non-empty)
 
 ### 4.2 Audio Engine Integration
+
 - Playout log entry created on button play
 - Trigger source captured from play command
 - Duration updated on button stop
 - Handle long-running/looping tracks (delayed duration update)
 
 ### 4.3 External Control Integration
+
 - Capture trigger source for every playback:
   - Mouse clicks (OCC120 mouse function settings)
   - Hotkeys (OCC120)
@@ -697,11 +696,13 @@ interface PlayoutDurationUpdate {
   - And 20+ other sources
 
 ### 4.4 Metadata Integration
+
 - Extract track metadata for playout log
 - Support extended metadata columns (title, artist, album, etc.)
 - WAV file metadata (from OCC118)
 
 ### 4.5 File System Integration
+
 - Daily log archival
 - 28-day retention management
 - Custom folder support (unlimited retention)
@@ -711,9 +712,11 @@ interface PlayoutDurationUpdate {
 ## 5. Implementation Priorities
 
 ### Phase 1: Session Notes (Sprint 1)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Implement session notes data model
 2. Create session notes CRUD API
 3. Add auto-show logic
@@ -722,9 +725,11 @@ interface PlayoutDurationUpdate {
 **Estimated Effort:** 6-8 hours
 
 ### Phase 2: System Status (Sprint 1)
+
 **Priority:** P2
 
 **Tasks:**
+
 1. Implement status aggregation service
 2. Collect system information
 3. Add clipboard export
@@ -733,9 +738,11 @@ interface PlayoutDurationUpdate {
 **Estimated Effort:** 8-12 hours
 
 ### Phase 3: Playout Logging Infrastructure (Sprint 2-3)
+
 **Priority:** P0 (Critical for royalty compliance)
 
 **Tasks:**
+
 1. Implement playout log data model
 2. Create playout log service
 3. Add trigger source tracking
@@ -746,9 +753,11 @@ interface PlayoutDurationUpdate {
 **Estimated Effort:** 20-24 hours
 
 ### Phase 4: Playout Log Extended Features (Sprint 3-4)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Add extended metadata columns
 2. Implement column selection
 3. Add output filtering
@@ -758,9 +767,11 @@ interface PlayoutDurationUpdate {
 **Estimated Effort:** 16-20 hours
 
 ### Phase 5: Event Logging (Sprint 4)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Implement event log data model
 2. Create event log service
 3. Add event logging hooks
@@ -769,9 +780,11 @@ interface PlayoutDurationUpdate {
 **Estimated Effort:** 12-16 hours
 
 ### Phase 6: Log Archival (Sprint 4-5)
+
 **Priority:** P1
 
 **Tasks:**
+
 1. Implement daily archival process
 2. Add retention management
 3. Create archived log loading
@@ -790,6 +803,7 @@ interface PlayoutDurationUpdate {
 Tracks can play for hours or loop indefinitely, making duration calculation complex.
 
 **Solution:**
+
 - Log entry created with duration = "??:??:??"
 - Track active playback in separate table
 - Update duration on stop or periodically
@@ -834,6 +848,7 @@ class PlayoutDurationTracker {
 Daily archival of potentially thousands of log entries.
 
 **Solution:**
+
 - Background archival process
 - Incremental archival (archive throughout day)
 - Batch operations
@@ -871,6 +886,7 @@ class IncrementalArchivalService {
 Loading extended metadata for thousands of log entries.
 
 **Solution:**
+
 - Lazy loading of extended columns
 - Only load when columns are visible
 - Cache metadata in log entry
@@ -961,12 +977,14 @@ describe('LogArchivalService', () => {
 **Total Estimated Effort:** 74-96 hours
 
 **Critical Path:**
+
 1. Playout Logging Infrastructure → Extended Features → Archival
 2. Event Logging → Archival
 3. Session Notes (parallel)
 4. System Status (parallel)
 
 **Key Deliverables:**
+
 - Session notes system
 - System status aggregation
 - Comprehensive playout logging (royalty compliance)
@@ -974,6 +992,7 @@ describe('LogArchivalService', () => {
 - Log archival system
 
 **Regulatory Compliance:**
+
 - Playout logs meet royalty reporting requirements
 - 28-day minimum retention
 - Comprehensive metadata tracking
@@ -986,6 +1005,7 @@ describe('LogArchivalService', () => {
 **Source:** SpotOn Manual - Section 08 - Info Menu
 
 **Key Pages:**
+
 - Page 1: Session Notes
 - Page 2: System Status display
 - Pages 3-7: Playout and Event Logs

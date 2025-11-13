@@ -20,24 +20,25 @@ This document presents a comprehensive sprint plan for implementing File Menu ba
 
 ### 1.1 Core Features Identified
 
-| Feature | SpotOn Has? | OCC Has? | Priority |
-|---------|-------------|----------|----------|
-| **New Session Templates** | ✅ Yes (~newsession.dta) | ❌ No | HIGH |
-| **Recent Files List (MRU)** | ✅ Yes (Sessions + Packages) | ❌ No | CRITICAL |
-| **Auto-Backup System** | ✅ Yes (Timed, timestamped) | ❌ No | CRITICAL |
-| **Restore from Backup** | ✅ Yes (UI with timestamp selector) | ❌ No | CRITICAL |
-| **Package System** | ✅ Yes (.pkg format, session + audio) | ❌ No | HIGH |
-| **Missing File Resolution** | ✅ Yes (Wizard dialog, auto-locate) | ❌ No | CRITICAL |
-| **File Timestamp Validation** | ✅ Yes (Detects modified files) | ❌ No | MEDIUM |
-| **Track List Export** | ✅ Yes (CSV/TXT export) | ❌ No | LOW |
-| **Block Save/Load** | ✅ Yes (Button range import/export) | ❌ No | MEDIUM |
-| **Status Logs on Exit** | ✅ Yes (~StatusLog.txt) | ⚠️ Partial (DBG only) | HIGH |
+| Feature                       | SpotOn Has?                           | OCC Has?              | Priority |
+| ----------------------------- | ------------------------------------- | --------------------- | -------- |
+| **New Session Templates**     | ✅ Yes (~newsession.dta)              | ❌ No                 | HIGH     |
+| **Recent Files List (MRU)**   | ✅ Yes (Sessions + Packages)          | ❌ No                 | CRITICAL |
+| **Auto-Backup System**        | ✅ Yes (Timed, timestamped)           | ❌ No                 | CRITICAL |
+| **Restore from Backup**       | ✅ Yes (UI with timestamp selector)   | ❌ No                 | CRITICAL |
+| **Package System**            | ✅ Yes (.pkg format, session + audio) | ❌ No                 | HIGH     |
+| **Missing File Resolution**   | ✅ Yes (Wizard dialog, auto-locate)   | ❌ No                 | CRITICAL |
+| **File Timestamp Validation** | ✅ Yes (Detects modified files)       | ❌ No                 | MEDIUM   |
+| **Track List Export**         | ✅ Yes (CSV/TXT export)               | ❌ No                 | LOW      |
+| **Block Save/Load**           | ✅ Yes (Button range import/export)   | ❌ No                 | MEDIUM   |
+| **Status Logs on Exit**       | ✅ Yes (~StatusLog.txt)               | ⚠️ Partial (DBG only) | HIGH     |
 
 ---
 
 ### 1.2 Key Insights
 
 **SpotOn's Strengths:**
+
 1. **Data Safety:** Auto-backup, restore from backup, missing file wizard
 2. **Portability:** Package system bundles session + audio files
 3. **Usability:** Recent files, session templates, block operations
@@ -45,6 +46,7 @@ This document presents a comprehensive sprint plan for implementing File Menu ba
 5. **Robustness:** File timestamp validation, path resolution, version checking
 
 **OCC's Gaps:**
+
 - ❌ No safety net for data loss (no auto-backup, no restore)
 - ❌ No portability (can't bundle session + audio)
 - ❌ No workflow efficiency (no recent files, no templates)
@@ -55,6 +57,7 @@ This document presents a comprehensive sprint plan for implementing File Menu ba
 ## 2. Sprint Breakdown
 
 ### Sprint 1: Session Management Foundation (CRITICAL)
+
 **Complexity:** Medium (M)
 **Estimated Duration:** 1-2 weeks
 **Priority:** CRITICAL
@@ -67,6 +70,7 @@ This document presents a comprehensive sprint plan for implementing File Menu ba
 Establish standardized application data folder for persistent storage:
 
 **Directory Structure:**
+
 ```
 ~/.local/share/orpheus-clip-composer/  (Linux)
 ~/Library/Application Support/OrpheusClipComposer/  (macOS)
@@ -81,6 +85,7 @@ Establish standardized application data folder for persistent storage:
 ```
 
 **Implementation:**
+
 ```cpp
 // In SessionManager or new ApplicationPaths class
 class ApplicationPaths {
@@ -102,11 +107,13 @@ public:
 Support for session templates to speed up new session creation:
 
 **Features:**
+
 - Default template: `~newsession.occSession` (loaded on "New Session")
 - User-customizable (save current session as template)
 - Template metadata (name, description, author)
 
 **Implementation:**
+
 ```cpp
 // In SessionManager
 bool SessionManager::loadNewSession() {
@@ -136,6 +143,7 @@ bool SessionManager::saveAsTemplate(const juce::File& templateFile) {
 Enforce `.occSession` extension and reject invalid extensions:
 
 **Implementation:**
+
 ```cpp
 // In SessionManager::saveSession()
 bool SessionManager::validateSessionExtension(const juce::String& filename) {
@@ -182,6 +190,7 @@ bool SessionManager::validateSessionExtension(const juce::String& filename) {
 ---
 
 ### Sprint 2: Auto-Backup and Restore System (CRITICAL)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** CRITICAL
@@ -194,6 +203,7 @@ bool SessionManager::validateSessionExtension(const juce::String& filename) {
 Implement timed automatic backups to prevent data loss:
 
 **Features:**
+
 - Configurable backup interval (default: 5 minutes)
 - Timestamped backup files (e.g., `~session_2025-11-12_14-30-00.occSession.backup`)
 - Backup rotation (keep last N backups, default: 10)
@@ -201,6 +211,7 @@ Implement timed automatic backups to prevent data loss:
 - Only backup if session is "dirty" (modified since last save)
 
 **Implementation:**
+
 ```cpp
 // In SessionManager
 class SessionManager : public juce::Timer {
@@ -262,12 +273,14 @@ void SessionManager::rotateBackups(int maxBackups) {
 User-facing dialog to restore from automatic backups:
 
 **Features:**
+
 - List backups by timestamp (most recent first)
 - Show relative timestamps ("11:27 today", "16:54 yesterday", "18:23 Sun 11 Apr")
 - Preview backup metadata (session name, clip count, last modified)
 - Confirm before restoring (non-destructive)
 
 **Implementation:**
+
 ```cpp
 // New UI component: RestoreBackupDialog
 class RestoreBackupDialog : public juce::Component {
@@ -294,6 +307,7 @@ private:
 Auto-restore most recent backup on startup if previous session crashed:
 
 **Implementation:**
+
 ```cpp
 // In MainComponent::MainComponent() or Application startup
 void Application::checkForCrashRecovery() {
@@ -358,6 +372,7 @@ void Application::shutdown() {
 ---
 
 ### Sprint 3: Recent Files (MRU) System (CRITICAL)
+
 **Complexity:** Small (S)
 **Estimated Duration:** 3-5 days
 **Priority:** CRITICAL
@@ -370,6 +385,7 @@ void Application::shutdown() {
 Maintain Most Recently Used (MRU) list for sessions:
 
 **Features:**
+
 - Track last N sessions (configurable, default: 10)
 - Store in application preferences
 - Update on session save/load
@@ -377,6 +393,7 @@ Maintain Most Recently Used (MRU) list for sessions:
 - Show in File menu as submenu
 
 **Implementation:**
+
 ```cpp
 // In SessionManager or new RecentFilesManager class
 class RecentFilesManager {
@@ -434,6 +451,7 @@ void RecentFilesManager::validateRecentFiles() {
 Add "Load Recent Sessions" submenu to File menu:
 
 **Implementation:**
+
 ```cpp
 // In MainComponent or MenuBarModel
 void MainComponent::getMenuBarNames(juce::StringArray& names) {
@@ -491,6 +509,7 @@ void MainComponent::menuItemSelected(int menuItemId, int topLevelMenuIndex) {
 Store recent files list in application preferences:
 
 **Format:**
+
 ```
 recentFile1=/path/to/session1.occSession
 recentFile2=/path/to/session2.occSession
@@ -499,6 +518,7 @@ recentFile3=/path/to/session3.occSession
 ```
 
 **Implementation:**
+
 ```cpp
 void RecentFilesManager::saveToPreferences(juce::PropertiesFile& props) {
     // Clear old entries
@@ -551,6 +571,7 @@ void RecentFilesManager::loadFromPreferences(juce::PropertiesFile& props) {
 ---
 
 ### Sprint 4: Missing File Resolution System (CRITICAL)
+
 **Complexity:** Extra Large (XL)
 **Estimated Duration:** 3-4 weeks
 **Priority:** CRITICAL
@@ -563,12 +584,14 @@ void RecentFilesManager::loadFromPreferences(juce::PropertiesFile& props) {
 Detect missing audio files when loading session:
 
 **Features:**
+
 - Report all missing files with last known location
 - Show "File not found" on affected clip buttons
 - Log missing files to event log
 - Option to "Try Remote Files" (search original locations)
 
 **Implementation:**
+
 ```cpp
 // In SessionManager::loadSession()
 struct LoadReport {
@@ -626,6 +649,7 @@ LoadReport SessionManager::loadSession(const juce::File& sessionFile) {
 Show detailed report of session loading issues:
 
 **Features:**
+
 - List all missing files with button numbers and paths
 - List all modified files with timestamp differences
 - Option to dismiss (continue with missing files)
@@ -633,6 +657,7 @@ Show detailed report of session loading issues:
 - Copy report to event log for later review
 
 **Implementation:**
+
 ```cpp
 // New UI component: LoadReportDialog
 class LoadReportDialog : public juce::Component {
@@ -687,6 +712,7 @@ void LoadReportDialog::LoadReportDialog(const LoadReport& report)
 Step-by-step wizard for resolving missing files (modeled after SpotOn):
 
 **Features:**
+
 - **Step 1:** Browse to locate replacement file
 - **Step 2:** Choose action:
   - 2a. Copy to original location (restore original structure)
@@ -752,6 +778,7 @@ private:
 Store and validate file timestamps to detect modified files:
 
 **Implementation:**
+
 ```cpp
 // In ClipData struct (SessionManager.h)
 struct ClipData {
@@ -809,6 +836,7 @@ clipObj->setProperty("fileTimestamp", clip.fileTimestamp);
 ---
 
 ### Sprint 5: Status Logs and Event Logging (HIGH)
+
 **Complexity:** Medium (M)
 **Estimated Duration:** 1-2 weeks
 **Priority:** HIGH
@@ -821,6 +849,7 @@ clipObj->setProperty("fileTimestamp", clip.fileTimestamp);
 Save diagnostic status log when exiting via File > Exit:
 
 **Features:**
+
 - `~StatusLog.txt` saved to logs folder
 - Contains: Session state, loaded clips, audio device info, errors
 - Only saved on File > Exit (not window close button)
@@ -828,6 +857,7 @@ Save diagnostic status log when exiting via File > Exit:
 - Use case: Support requests, debugging
 
 **Implementation:**
+
 ```cpp
 // In Application or MainComponent
 void Application::exitViaFileMenu() {
@@ -887,6 +917,7 @@ void Application::saveStatusLog() {
 Structured logging for session load/save events:
 
 **Features:**
+
 - Event log file: `events_YYYY-MM-DD.log` (daily rotation)
 - Log entries: Timestamp, severity, component, message
 - Severity levels: INFO, WARN, ERROR
@@ -894,6 +925,7 @@ Structured logging for session load/save events:
 - Log viewer UI (Info > Logs > Events)
 
 **Implementation:**
+
 ```cpp
 // New class: EventLogger
 class EventLogger {
@@ -963,6 +995,7 @@ void EventLogger::log(Severity severity, Component component,
 Display event logs in UI:
 
 **Features:**
+
 - Tabbed view: Events, Status
 - Filter by severity (Info, Warning, Error)
 - Filter by component (Session, Audio, UI, Transport)
@@ -971,6 +1004,7 @@ Display event logs in UI:
 - Clear logs button
 
 **Implementation:**
+
 ```cpp
 // New UI component: LogViewerDialog
 class LogViewerDialog : public juce::Component {
@@ -1026,12 +1060,14 @@ private:
 ## 3. Additional Backend Features (Medium Priority)
 
 ### Sprint 6: Track List Export (LOW)
+
 **Complexity:** Small (S)
 **Estimated Duration:** 2-3 days
 **Priority:** LOW
 **Dependencies:** None
 
 **Features:**
+
 - Export clip metadata to CSV/TXT files
 - Spreadsheet-compatible format (MS Excel)
 - Include: Button#, Track Name, Length, Trim In/Out, Gain, Clip Group, etc.
@@ -1041,12 +1077,14 @@ private:
 ---
 
 ### Sprint 7: Block Save/Load (MEDIUM)
+
 **Complexity:** Medium (M)
 **Estimated Duration:** 1 week
 **Priority:** MEDIUM
 **Dependencies:** Sprint 1
 
 **Features:**
+
 - Save consecutive button ranges to `.occBlock` file
 - Load button blocks into existing session
 - Merge dialog: Specify starting button index
@@ -1055,12 +1093,14 @@ private:
 ---
 
 ### Sprint 8: Package System (HIGH - Future)
+
 **Complexity:** Extra Large (XL)
 **Estimated Duration:** 3-4 weeks
 **Priority:** HIGH (Phase 2)
 **Dependencies:** Sprint 1, Sprint 4
 
 **Features:**
+
 - Bundle session + audio files into `.occPackage` file
 - Version checking (detect newer package versions)
 - Mini packages (partial session import/export)
@@ -1074,6 +1114,7 @@ private:
 ## 4. Implementation Roadmap
 
 ### Phase 1: Critical Safety Features (Weeks 1-6)
+
 **Focus:** Data loss prevention, crash recovery, usability
 
 1. **Sprint 1:** Session Management Foundation (2 weeks)
@@ -1092,6 +1133,7 @@ private:
    - Preferences persistence
 
 ### Phase 2: Production Robustness (Weeks 7-12)
+
 **Focus:** File management, diagnostics, logging
 
 4. **Sprint 4:** Missing File Resolution System (4 weeks)
@@ -1106,6 +1148,7 @@ private:
    - Log viewer UI
 
 ### Phase 3: Workflow Enhancements (Weeks 13+)
+
 **Focus:** Productivity, portability
 
 6. **Sprint 7:** Block Save/Load (1 week)
@@ -1121,16 +1164,19 @@ private:
 All backend operations must respect OCC's 3-thread model:
 
 **Message Thread:**
+
 - Session save/load (blocking I/O is OK)
 - File dialogs (Browse, Save As)
 - Auto-backup (background thread if needed)
 - Preferences save/load
 
 **Audio Thread:**
+
 - **NO FILE I/O** (never read/write during audio callback)
 - Audio engine queries are lock-free atomics (OK)
 
 **Background Threads:**
+
 - Auto-backup file writes (non-blocking)
 - Log file writes (buffered)
 - Missing file searches (optional)
@@ -1140,6 +1186,7 @@ All backend operations must respect OCC's 3-thread model:
 All file operations must handle errors gracefully:
 
 **Common Errors:**
+
 - File not found (missing files)
 - Permission denied (read-only folders)
 - Disk full (auto-backup fails)
@@ -1147,6 +1194,7 @@ All file operations must handle errors gracefully:
 - Network timeout (remote file paths)
 
 **Error Handling Strategy:**
+
 - Show user-friendly error dialogs
 - Log errors to event log
 - Provide recovery options (e.g., Locate File wizard)
@@ -1155,11 +1203,13 @@ All file operations must handle errors gracefully:
 ### 5.3 Cross-Platform Compatibility
 
 Test all features on:
+
 - **macOS** (primary target for broadcast/theater)
 - **Windows** (secondary target)
 - **Linux** (optional, nice-to-have)
 
 **Platform-Specific Concerns:**
+
 - File paths (use JUCE cross-platform paths)
 - Application data folder locations
 - File permissions (handle read-only folders)
@@ -1167,12 +1217,14 @@ Test all features on:
 ### 5.4 Performance
 
 **Critical Metrics:**
+
 - Auto-backup: <500ms for typical session (48 clips, 8 tabs)
 - Session load: <2s for typical session
 - Recent files list: <100ms to populate menu
 - Log writes: <10ms per entry (buffered, non-blocking)
 
 **Optimization:**
+
 - Use background threads for auto-backup (don't block UI)
 - Cache recent files list in memory (don't re-scan disk)
 - Batch log writes (buffer in memory, flush periodically)
@@ -1184,6 +1236,7 @@ Test all features on:
 ### 6.1 Unit Tests
 
 **Test Coverage:**
+
 - `ApplicationPaths` folder creation (all platforms)
 - `SessionManager` load/save with missing files
 - `RecentFilesManager` add/remove/validate
@@ -1194,6 +1247,7 @@ Test all features on:
 ### 6.2 Integration Tests
 
 **Test Scenarios:**
+
 - Auto-backup triggers after N minutes
 - Crash recovery restores most recent backup
 - Recent files list updates on save/load
@@ -1204,6 +1258,7 @@ Test all features on:
 ### 6.3 Manual Testing
 
 **Test Cases:**
+
 - User loads session with missing files → Load report dialog appears
 - User clicks "Locate File" → Wizard guides through 3 steps
 - User exits via File > Exit → Status log saved
@@ -1217,6 +1272,7 @@ Test all features on:
 ### 7.1 User Documentation
 
 **Topics:**
+
 - Session templates (how to create, use)
 - Recent files list (how to clear, configure)
 - Auto-backup (interval configuration, restore from backup)
@@ -1227,6 +1283,7 @@ Test all features on:
 ### 7.2 Developer Documentation
 
 **Topics:**
+
 - Application data folder structure
 - Session JSON schema (with `fileTimestamp` field)
 - Event logging API (`EventLogger::log()`)
@@ -1241,6 +1298,7 @@ Test all features on:
 ### 8.1 OCC096 - SDK Integration Patterns
 
 **Relevant Patterns:**
+
 - Pattern 7: Session Save (Message Thread, I/O allowed)
 - Threading model (Message/Audio/Background threads)
 
@@ -1249,6 +1307,7 @@ Test all features on:
 ### 8.2 OCC097 - Session Format Specification
 
 **Enhancements Required:**
+
 - Add `fileTimestamp` field to clip metadata
 - Add `templateMetadata` section for session templates
 - Version field for migration (already specified, needs implementation)
@@ -1258,6 +1317,7 @@ Test all features on:
 ### 8.3 OCC111 - Gap Audit Report
 
 **Alignment:**
+
 - OCC111 identified: Auto-save, recent files, session integrity checks
 - This sprint plan addresses all identified gaps
 

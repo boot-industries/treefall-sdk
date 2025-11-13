@@ -1,0 +1,21 @@
+# Archive directories
+docs/occ/archive/
+.claude/archive/
+archive/
+
+# Peer documentation (not relevant to this project)
+docs/occ/peers/
+
+# Build outputs
+build/
+build-*/
+orpheus_clip_composer_app_artefacts/
+
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log

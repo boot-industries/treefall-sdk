@@ -20,21 +20,22 @@ This document presents a comprehensive sprint plan for implementing Setup Menu b
 
 ### 1.1 Core Features Identified
 
-| Feature | SpotOn Has? | OCC Has? | Priority |
-|---------|-------------|----------|----------|
-| **External Tool Registry** | ✅ Yes (WAV editor, search, CD burner) | ❌ No | MEDIUM |
-| **HotKey Configuration** | ✅ Yes (Global/Paged, Ganged/Overlapped) | ⚠️ Partial | HIGH |
-| **MIDI Device Management** | ✅ Yes (Multi-device, monitoring) | ⚠️ Partial | HIGH |
-| **MIDI Monitoring/Logging** | ✅ Yes (Timestamped, visual) | ❌ No | MEDIUM |
-| **GPI Trigger System** | ✅ Yes (64 GPIs, emulation) | ❌ No | LOW |
-| **Timecode Support** | ✅ Yes (MIDI TC, SMPTE) | ❌ No | MEDIUM |
-| **Overlapped Playback Modes** | ✅ Yes (Sequential triggers) | ❌ No | MEDIUM |
+| Feature                       | SpotOn Has?                              | OCC Has?   | Priority |
+| ----------------------------- | ---------------------------------------- | ---------- | -------- |
+| **External Tool Registry**    | ✅ Yes (WAV editor, search, CD burner)   | ❌ No      | MEDIUM   |
+| **HotKey Configuration**      | ✅ Yes (Global/Paged, Ganged/Overlapped) | ⚠️ Partial | HIGH     |
+| **MIDI Device Management**    | ✅ Yes (Multi-device, monitoring)        | ⚠️ Partial | HIGH     |
+| **MIDI Monitoring/Logging**   | ✅ Yes (Timestamped, visual)             | ❌ No      | MEDIUM   |
+| **GPI Trigger System**        | ✅ Yes (64 GPIs, emulation)              | ❌ No      | LOW      |
+| **Timecode Support**          | ✅ Yes (MIDI TC, SMPTE)                  | ❌ No      | MEDIUM   |
+| **Overlapped Playback Modes** | ✅ Yes (Sequential triggers)             | ❌ No      | MEDIUM   |
 
 ---
 
 ### 1.2 Key Insights
 
 **SpotOn's Strengths:**
+
 1. **External Control:** MIDI, GPI, timecode triggers for automation
 2. **Tool Integration:** External WAV editor, search utility, CD burner
 3. **HotKey Flexibility:** Global/Paged scope, Ganged/Overlapped modes
@@ -42,6 +43,7 @@ This document presents a comprehensive sprint plan for implementing Setup Menu b
 5. **Timecode Precision:** MIDI TC, SMPTE LTC with auto-arm
 
 **OCC's Gaps:**
+
 - ❌ **No external tool registry** (can't launch WAV editor from OCC)
 - ⚠️ **Basic MIDI** (no monitoring, no overlapped modes)
 - ❌ **No GPI infrastructure** (legacy hardware triggers)
@@ -53,6 +55,7 @@ This document presents a comprehensive sprint plan for implementing Setup Menu b
 ## 2. Sprint Breakdown
 
 ### Sprint 9: External Tool Registry (MEDIUM)
+
 **Complexity:** Small (S)
 **Estimated Duration:** 3-5 days
 **Priority:** MEDIUM
@@ -65,12 +68,14 @@ This document presents a comprehensive sprint plan for implementing Setup Menu b
 Allow users to configure external applications for common workflows:
 
 **Features:**
+
 - WAV file editor integration (Audacity, Adobe Audition, etc.)
 - Audio file search utility
 - File browser integration
 - Store tool paths in application preferences
 
 **Implementation:**
+
 ```cpp
 // New class: ExternalToolManager
 class ExternalToolManager {
@@ -141,6 +146,7 @@ bool ExternalToolManager::launchTool(ToolType type, const juce::File& file) {
 Add Setup menu with tool configuration dialogs:
 
 **Menu Structure:**
+
 ```
 Setup
 ├── WAV Editor...           (Opens file selector)
@@ -151,6 +157,7 @@ Setup
 ```
 
 **Implementation:**
+
 ```cpp
 // In Setup menu handler
 void MainComponent::onSetupWAVEditor() {
@@ -191,6 +198,7 @@ void MainComponent::onSetupWAVEditor() {
 Add "Edit in External Editor" to clip button right-click menu:
 
 **Implementation:**
+
 ```cpp
 // In ClipButton right-click menu
 void ClipButton::showPopupMenu() {
@@ -230,7 +238,7 @@ void ClipButton::showPopupMenu() {
 - [ ] Tool paths persist across app restarts (saved in preferences)
 - [ ] Right-click menu shows "Edit in [EditorName]..." when editor configured
 - [ ] Clicking menu item launches external editor with audio file path
-- [ ] Cross-platform executable selection (*.exe, *.app, no extension)
+- [ ] Cross-platform executable selection (_.exe, _.app, no extension)
 - [ ] Error handling for missing/invalid executables
 
 #### 2.3 Technical Requirements
@@ -245,6 +253,7 @@ void ClipButton::showPopupMenu() {
 ---
 
 ### Sprint 10: HotKey Configuration System (HIGH)
+
 **Complexity:** Medium (M)
 **Estimated Duration:** 1-2 weeks
 **Priority:** HIGH
@@ -257,11 +266,13 @@ void ClipButton::showPopupMenu() {
 Control whether hotkeys trigger clips on current tab only or across all tabs:
 
 **Features:**
+
 - **Global scope:** Hotkey triggers clip on any tab (search all tabs)
 - **Paged scope:** Hotkey only triggers clips on current tab
 - Persisted in application preferences (not session-specific)
 
 **Implementation:**
+
 ```cpp
 // In SessionManager or new HotKeyManager class
 class HotKeyManager {
@@ -387,6 +398,7 @@ void HotKeyManager::triggerHotKey(juce::KeyPress key, int currentTab) {
 UI for configuring hotkey scope and multi-button action:
 
 **Implementation:**
+
 ```cpp
 // New UI component: HotKeySetupDialog
 class HotKeySetupDialog : public juce::Component {
@@ -516,6 +528,7 @@ void HotKeySetupDialog::updateHints() {
 Show underline on hotkey text when button is part of overlapped sequence:
 
 **Implementation:**
+
 ```cpp
 // In ClipButton::paint()
 void ClipButton::paint(juce::Graphics& g) {
@@ -571,6 +584,7 @@ void ClipButton::paint(juce::Graphics& g) {
 ---
 
 ### Sprint 11: MIDI Device Management (HIGH)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** HIGH
@@ -583,6 +597,7 @@ void ClipButton::paint(juce::Graphics& g) {
 Extend current MIDI support to match SpotOn's capabilities:
 
 **Features:**
+
 - Multiple MIDI In devices (not just one)
 - Multiple MIDI Out devices
 - Device enable/disable per device
@@ -591,6 +606,7 @@ Extend current MIDI support to match SpotOn's capabilities:
 - Send "All Notes Off" on panic (configurable)
 
 **Implementation:**
+
 ```cpp
 // Extend existing MIDI support (OCC likely has basic MIDI)
 class MIDIDeviceManager {
@@ -735,6 +751,7 @@ void MIDIDeviceManager::sendAllNotesOff() {
 UI for configuring MIDI devices:
 
 **Implementation:**
+
 ```cpp
 // New UI component: MIDIDevicesDialog
 class MIDIDevicesDialog : public juce::Component {
@@ -786,6 +803,7 @@ private:
 Store MIDI note per clip (similar to hotkey):
 
 **Implementation:**
+
 ```cpp
 // In ClipData struct (SessionManager.h)
 struct ClipData {
@@ -851,6 +869,7 @@ void ClipEditDialog::addMidiNoteSelector() {
 ---
 
 ### Sprint 12: MIDI Monitoring and Logging (MEDIUM)
+
 **Complexity:** Small (S)
 **Estimated Duration:** 3-5 days
 **Priority:** MEDIUM
@@ -863,6 +882,7 @@ void ClipEditDialog::addMidiNoteSelector() {
 Real-time MIDI message logging window:
 
 **Features:**
+
 - Timestamped MIDI messages (most recent at top)
 - Display: Timestamp, Source, Channel, Note/CC, Velocity, State
 - Run/Stop/Clear controls
@@ -871,6 +891,7 @@ Real-time MIDI message logging window:
 - Export to log file
 
 **Implementation:**
+
 ```cpp
 // New UI component: MIDIMonitorDialog
 class MIDIMonitorDialog : public juce::Component,
@@ -992,6 +1013,7 @@ void MIDIMonitorDialog::timerCallback() {
 Show MIDI activity and timecode in status bar:
 
 **Implementation:**
+
 ```cpp
 // In main window status bar
 class StatusBar : public juce::Component,
@@ -1050,12 +1072,14 @@ private:
 ## 3. Deferred Features (Lower Priority)
 
 ### Sprint 13: GPI Trigger System (LOW - Phase 3)
+
 **Complexity:** Extra Large (XL)
 **Estimated Duration:** 4-5 weeks
 **Priority:** LOW (Phase 3)
 **Rationale:** Legacy hardware, limited use case for modern workflows
 
 **Features (if implemented):**
+
 - Game port joystick support (GPI 1-4)
 - Up to 64 GPIs with emulation
 - GPI actions: Play, Stop, Pause, UnPause, Step to Next
@@ -1068,12 +1092,14 @@ private:
 ---
 
 ### Sprint 14: Timecode Support (MEDIUM - Phase 2)
+
 **Complexity:** Large (L)
 **Estimated Duration:** 2-3 weeks
 **Priority:** MEDIUM (Phase 2)
 **Rationale:** Broadcast/theater requirement, but lower priority than data safety
 
 **Features (if implemented):**
+
 - MIDI Timecode (MTC) parsing
 - SMPTE LTC timecode input (via audio interface)
 - Timecode formats: 24NDF, 25NDF, 30NDF, 29.97DF
@@ -1088,6 +1114,7 @@ private:
 ## 4. Implementation Roadmap
 
 ### Phase 1: External Tools and HotKeys (Weeks 1-3)
+
 **Focus:** User workflow enhancement, hotkey flexibility
 
 1. **Sprint 9:** External Tool Registry (1 week)
@@ -1100,6 +1127,7 @@ private:
    - HotKey Setup dialog
 
 ### Phase 2: MIDI Infrastructure (Weeks 4-7)
+
 **Focus:** External control, MIDI monitoring
 
 3. **Sprint 11:** MIDI Device Management (3 weeks)
@@ -1113,6 +1141,7 @@ private:
    - Timecode detection
 
 ### Phase 3: Advanced Control (Future)
+
 **Focus:** Legacy hardware, timecode triggers
 
 5. **Sprint 13:** GPI Trigger System (Deferred)
@@ -1127,21 +1156,25 @@ private:
 All Setup Menu features respect OCC's threading model:
 
 **Message Thread:**
+
 - External tool launch (blocking process start is OK)
 - MIDI device enumeration/configuration
 - HotKey configuration dialogs
 - MIDI monitoring UI updates
 
 **Audio Thread:**
+
 - MIDI message handling (lock-free dispatch to clip triggers)
 - **NO MIDI device open/close** (must be done on message thread)
 
 **Background Threads:**
+
 - MIDI monitoring log writes (optional buffering)
 
 ### 5.2 Persistence
 
 **Application-Wide Preferences (NOT session-specific):**
+
 - External tool paths (WAV editor, search utility)
 - HotKey scope (Global/Paged)
 - HotKey multi-button action (Ganged/Overlapped)
@@ -1151,20 +1184,23 @@ All Setup Menu features respect OCC's threading model:
 - Send "All Notes Off" on panic (enabled/disabled)
 
 **Session-Specific Settings:**
+
 - MIDI note assignment per clip
 - Hotkey assignment per clip (already exists)
 
 ### 5.3 Cross-Platform Compatibility
 
 **Platform-Specific Considerations:**
+
 - **macOS:** MIDI device names (CoreMIDI)
 - **Windows:** MIDI device names (WinMM, DirectSound)
 - **Linux:** MIDI device names (ALSA)
-- External tool paths (*.app on macOS, *.exe on Windows, no extension on Linux)
+- External tool paths (_.app on macOS, _.exe on Windows, no extension on Linux)
 
 ### 5.4 Performance
 
 **Critical Metrics:**
+
 - MIDI message latency: <5ms (from MIDI In to clip trigger)
 - HotKey latency: <10ms (from key press to clip trigger)
 - MIDI Monitor UI update: 10 FPS (100ms timer)
@@ -1177,6 +1213,7 @@ All Setup Menu features respect OCC's threading model:
 ### 6.1 Unit Tests
 
 **Test Coverage:**
+
 - `ExternalToolManager` tool path validation
 - `HotKeyManager` scope and action logic
 - `MIDIDeviceManager` device enumeration
@@ -1186,6 +1223,7 @@ All Setup Menu features respect OCC's threading model:
 ### 6.2 Integration Tests
 
 **Test Scenarios:**
+
 - Launch external WAV editor with audio file path
 - HotKey triggers clip in Global scope (across tabs)
 - HotKey triggers clip in Paged scope (current tab only)
@@ -1198,6 +1236,7 @@ All Setup Menu features respect OCC's threading model:
 ### 6.3 Manual Testing
 
 **Test Cases:**
+
 - Connect multiple MIDI controllers (test multi-device)
 - Assign same hotkey to 3+ buttons (test Ganged/Overlapped)
 - Assign same MIDI note to 3+ buttons (test Ganged/Overlapped)
@@ -1212,6 +1251,7 @@ All Setup Menu features respect OCC's threading model:
 ### 7.1 User Documentation
 
 **Topics:**
+
 - External tool configuration (WAV editor, search utility)
 - HotKey scope (Global vs. Paged)
 - HotKey multi-button actions (Ganged vs. Overlapped)
@@ -1224,6 +1264,7 @@ All Setup Menu features respect OCC's threading model:
 ### 7.2 Developer Documentation
 
 **Topics:**
+
 - External tool registry API
 - HotKey manager API
 - MIDI device manager API
@@ -1250,6 +1291,7 @@ All Setup Menu features respect OCC's threading model:
 ### 8.3 AudioEngine API Extensions
 
 **New Methods Required:**
+
 ```cpp
 // In AudioEngine.h
 int64_t getClipRemainingTime(int buttonIndex) const;  // For overlapped mode

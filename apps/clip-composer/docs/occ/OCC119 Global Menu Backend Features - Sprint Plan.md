@@ -36,6 +36,7 @@ Analysis of SpotOn Manual Section 06 (Global Menu) identifying backend features 
 ### 1.1 Global Menu Purpose
 
 The Global Menu provides system-wide utilities and advanced features:
+
 - Session/package management tools
 - Master/Slave button linking system
 - Independent Play Stack for interval music
@@ -47,23 +48,23 @@ The Global Menu provides system-wide utilities and advanced features:
 
 ### 1.2 Core Features Identified
 
-| Feature Area | Description | Backend Complexity |
-|--------------|-------------|-------------------|
-| Session/Package Viewer | View and export session/package contents | Low |
-| Master/Slave Links | Complex button relationship system | Very High |
-| Play Groups | Exclusive button groups (25 groups) | High |
-| Play Stack | Independent track player | High |
-| Display Names Editor | Bulk edit display names and reorder tracks | Medium |
-| Refresh Tracks | Detect and reload modified files | Medium |
-| Preview Output Assignment | Route preview to specific output | Medium |
-| Change Output Assignment | Bulk change output assignments | Medium |
-| Generate Timecode | Create SMPTE timecode WAV files | Medium |
-| Click Track Generator | Create metronome/click tracks | Medium |
-| Statistics | Session file size and folder analysis | Low |
-| Clear Attributes | Bulk clear button attributes | Low |
-| CD Burning | Integration with CD burner utilities | Medium |
-| Debug Logging | Collect and package debug logs | Low |
-| Page Image Export | Save page screenshots | Low |
+| Feature Area              | Description                                | Backend Complexity |
+| ------------------------- | ------------------------------------------ | ------------------ |
+| Session/Package Viewer    | View and export session/package contents   | Low                |
+| Master/Slave Links        | Complex button relationship system         | Very High          |
+| Play Groups               | Exclusive button groups (25 groups)        | High               |
+| Play Stack                | Independent track player                   | High               |
+| Display Names Editor      | Bulk edit display names and reorder tracks | Medium             |
+| Refresh Tracks            | Detect and reload modified files           | Medium             |
+| Preview Output Assignment | Route preview to specific output           | Medium             |
+| Change Output Assignment  | Bulk change output assignments             | Medium             |
+| Generate Timecode         | Create SMPTE timecode WAV files            | Medium             |
+| Click Track Generator     | Create metronome/click tracks              | Medium             |
+| Statistics                | Session file size and folder analysis      | Low                |
+| Clear Attributes          | Bulk clear button attributes               | Low                |
+| CD Burning                | Integration with CD burner utilities       | Medium             |
+| Debug Logging             | Collect and package debug logs             | Low                |
+| Page Image Export         | Save page screenshots                      | Low                |
 
 ---
 
@@ -72,6 +73,7 @@ The Global Menu provides system-wide utilities and advanced features:
 ### 2.1 Master/Slave Link System
 
 **Requirements:**
+
 - Support 100 independent links
 - Each link has 1 master button
 - Each link can have unlimited play slaves and stop slaves
@@ -80,29 +82,30 @@ The Global Menu provides system-wide utilities and advanced features:
 - Visual link representation
 
 **Implementation Approach:**
+
 ```typescript
 interface MasterSlaveLink {
-  id: number;                    // Link ID (1-100)
-  name: string;                  // User-defined link name
-  masterButtonId: string;        // Master button ID
-  playSlaves: string[];          // Button IDs that play when master plays
-  stopSlaves: string[];          // Button IDs that stop when master plays
-  mode: LinkMode;                // Normal, VoiceOver, AutoPan, UnPause/Pause
-  enabled: boolean;              // Link enabled/disabled
+  id: number; // Link ID (1-100)
+  name: string; // User-defined link name
+  masterButtonId: string; // Master button ID
+  playSlaves: string[]; // Button IDs that play when master plays
+  stopSlaves: string[]; // Button IDs that stop when master plays
+  mode: LinkMode; // Normal, VoiceOver, AutoPan, UnPause/Pause
+  enabled: boolean; // Link enabled/disabled
 
   // Voice Over specific
   voiceOverGainReduction?: number; // dB reduction for slaves (0 to -60)
 
   // AutoPan specific
-  autoPanStartPosition?: number;  // Starting pan (-1 to 1)
-  autoPanEndPosition?: number;    // Ending pan (-1 to 1)
+  autoPanStartPosition?: number; // Starting pan (-1 to 1)
+  autoPanEndPosition?: number; // Ending pan (-1 to 1)
 }
 
 enum LinkMode {
-  NORMAL = 'normal',             // Standard play/stop slaves
-  VOICE_OVER = 'voice_over',     // Fade down slaves during master
-  AUTO_PAN = 'auto_pan',         // Pan slaves during master
-  UNPAUSE_PAUSE = 'unpause_pause' // Pause/unpause slaves
+  NORMAL = 'normal', // Standard play/stop slaves
+  VOICE_OVER = 'voice_over', // Fade down slaves during master
+  AUTO_PAN = 'auto_pan', // Pan slaves during master
+  UNPAUSE_PAUSE = 'unpause_pause', // Pause/unpause slaves
 }
 
 interface LinkValidation {
@@ -113,6 +116,7 @@ interface LinkValidation {
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE master_slave_links (
   id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 100),
@@ -150,6 +154,7 @@ CREATE INDEX idx_stop_slaves_button ON link_stop_slaves(button_id);
 ### 2.2 Play Groups System
 
 **Requirements:**
+
 - 25 regular play groups (exclusive playback)
 - 4 buzzer groups (A-D) with timeout lockout
 - Group 24: special function to fade out Play Stack
@@ -157,30 +162,32 @@ CREATE INDEX idx_stop_slaves_button ON link_stop_slaves(button_id);
 - Configurable buzzer timeout (0-99 minutes)
 
 **Implementation:**
+
 ```typescript
 interface PlayGroup {
-  id: number;                    // 1-25
-  type: GroupType;               // Regular or Buzzer
-  members: string[];             // Button IDs in this group
-  buzzerTimeout?: number;        // Seconds (for buzzer groups)
-  buzzerLockedUntil?: Date;      // When buzzer lock expires
+  id: number; // 1-25
+  type: GroupType; // Regular or Buzzer
+  members: string[]; // Button IDs in this group
+  buzzerTimeout?: number; // Seconds (for buzzer groups)
+  buzzerLockedUntil?: Date; // When buzzer lock expires
 }
 
 enum GroupType {
-  REGULAR = 'regular',           // Groups 1-23, 25
+  REGULAR = 'regular', // Groups 1-23, 25
   PLAY_STACK_FADEOUT = 'play_stack_fadeout', // Group 24
   BUZZER_TIMEOUT_RESET = 'buzzer_timeout_reset', // Group 25
-  BUZZER = 'buzzer'              // Buzzer groups A-D
+  BUZZER = 'buzzer', // Buzzer groups A-D
 }
 
 interface ButtonGroupAssignment {
   buttonId: string;
-  groupId: number | null;        // null = not in any group
+  groupId: number | null; // null = not in any group
   groupType: GroupType | null;
 }
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE play_groups (
   id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 25),
@@ -208,6 +215,7 @@ CREATE TABLE button_group_assignments (
 ### 2.3 Play Stack System
 
 **Requirements:**
+
 - Independent track player (separate from main buttons)
 - Supports up to 20 tracks
 - Loop mode or time-limited playback (1-90 minutes)
@@ -219,6 +227,7 @@ CREATE TABLE button_group_assignments (
 - Track history (played/unplayed flags)
 
 **Implementation:**
+
 ```typescript
 interface PlayStack {
   id: string;
@@ -227,34 +236,35 @@ interface PlayStack {
   currentTrackIndex: number;
   isPlaying: boolean;
   loopEnabled: boolean;
-  playDuration?: number;         // Minutes (1-90)
-  fadeOutDuration: number;       // Seconds (5-20)
-  delayedStartTime?: Date;       // Optional scheduled start
-  outputId: string;              // Output assignment
-  masterGain: number;            // -20 to +10 dB
+  playDuration?: number; // Minutes (1-90)
+  fadeOutDuration: number; // Seconds (5-20)
+  delayedStartTime?: Date; // Optional scheduled start
+  outputId: string; // Output assignment
+  masterGain: number; // -20 to +10 dB
 }
 
 interface PlayStackTrack {
   id: string;
   filePath: string;
-  fileName: string;              // Display name (truncated)
-  duration: number;              // Samples
-  playDelay: number;             // Seconds (0-9)
-  hasPlayed: boolean;            // Track play history
-  order: number;                 // Position in stack
+  fileName: string; // Display name (truncated)
+  duration: number; // Samples
+  playDelay: number; // Seconds (0-9)
+  hasPlayed: boolean; // Track play history
+  order: number; // Position in stack
 }
 
 interface PlayStackState {
   currentTrackId: string | null;
-  position: number;              // Current position (samples)
-  timeRemaining: number;         // Track time remaining (samples)
-  stackTimeRemaining: number;    // Total stack time remaining (samples)
+  position: number; // Current position (samples)
+  timeRemaining: number; // Track time remaining (samples)
+  stackTimeRemaining: number; // Total stack time remaining (samples)
   isFading: boolean;
-  fadeTimeRemaining: number;     // Seconds
+  fadeTimeRemaining: number; // Seconds
 }
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE play_stacks (
   id TEXT PRIMARY KEY,
@@ -287,6 +297,7 @@ CREATE INDEX idx_stack_tracks_order ON play_stack_tracks(stack_id, track_order);
 ### 2.4 Preview Output Assignment
 
 **Requirements:**
+
 - Assign a specific output for track preview
 - Preview mode activation (Shift+Alt+Click)
 - Only one track can preview at a time
@@ -294,10 +305,11 @@ CREATE INDEX idx_stack_tracks_order ON play_stack_tracks(stack_id, track_order);
 - Independent from normal playback
 
 **Implementation:**
+
 ```typescript
 interface PreviewOutputAssignment {
-  outputId: string;              // Assigned preview output
-  isActive: boolean;             // Preview mode currently active
+  outputId: string; // Assigned preview output
+  isActive: boolean; // Preview mode currently active
   currentPreviewButtonId: string | null;
 }
 
@@ -311,10 +323,7 @@ interface PreviewMode {
 class PreviewService {
   private currentPreview: PreviewMode | null = null;
 
-  async startPreview(
-    buttonId: string,
-    outputId: string
-  ): Promise<void> {
+  async startPreview(buttonId: string, outputId: string): Promise<void> {
     // Stop any existing preview
     if (this.currentPreview) {
       await this.stopPreview();
@@ -325,7 +334,7 @@ class PreviewService {
       isActive: true,
       buttonId,
       position: 0,
-      duration: await this.getButtonDuration(buttonId)
+      duration: await this.getButtonDuration(buttonId),
     };
 
     // Route to preview output
@@ -345,18 +354,20 @@ class PreviewService {
 ### 2.5 Output Assignment Management
 
 **Requirements:**
+
 - Bulk change output assignments globally
 - Filter by current output device
 - Scope: global, current page, button group, or button range
 - Option to set as default output for new tracks
 
 **Implementation:**
+
 ```typescript
 interface OutputAssignmentChange {
-  currentOutput: string | 'any';  // Filter: specific output or 'any'
-  newOutput: string;              // Target output
+  currentOutput: string | 'any'; // Filter: specific output or 'any'
+  newOutput: string; // Target output
   scope: AssignmentScope;
-  setAsDefault: boolean;          // Make this the default for new tracks
+  setAsDefault: boolean; // Make this the default for new tracks
 }
 
 interface AssignmentScope {
@@ -377,12 +388,14 @@ interface OutputAssignmentResult {
 ### 2.6 Display Names Editor
 
 **Requirements:**
+
 - Bulk edit display names for all buttons
 - View button location (page, row, column)
 - Drag-and-drop track reordering
 - Swap button assignments (not just names)
 
 **Implementation:**
+
 ```typescript
 interface DisplayNameEntry {
   buttonId: string;
@@ -424,6 +437,7 @@ class DisplayNamesService {
 ### 2.7 Refresh Tracks System
 
 **Requirements:**
+
 - Scan all loaded tracks for file modifications
 - Compare file timestamps against load timestamps
 - List files with newer timestamps
@@ -432,6 +446,7 @@ class DisplayNamesService {
 - Integration with external audio editors
 
 **Implementation:**
+
 ```typescript
 interface TrackModificationStatus {
   buttonId: string;
@@ -459,9 +474,7 @@ class TrackRefreshService {
     // Return list of modified files
   }
 
-  async refreshTracks(
-    buttonIds: string[]
-  ): Promise<RefreshResult> {
+  async refreshTracks(buttonIds: string[]): Promise<RefreshResult> {
     // Reload tracks that have been modified
     // Reset playlist selections and fade times
     // Return success/error results
@@ -470,6 +483,7 @@ class TrackRefreshService {
 ```
 
 **Database Schema:**
+
 ```sql
 -- Add file tracking to buttons table
 ALTER TABLE buttons ADD COLUMN file_loaded_at TIMESTAMP;
@@ -490,6 +504,7 @@ CREATE TABLE track_refresh_history (
 ### 2.8 Timecode Generator
 
 **Requirements:**
+
 - Generate SMPTE timecode as WAV file
 - Support frame rates: 25Hz NDF, 30Hz NDF, 29.97Hz DF
 - Configurable start timecode and duration
@@ -498,6 +513,7 @@ CREATE TABLE track_refresh_history (
 - Save as 48kHz mono WAV file
 
 **Implementation:**
+
 ```typescript
 interface TimecodeGeneratorParams {
   startTimecode: Timecode;
@@ -524,19 +540,19 @@ interface Duration {
 enum FrameRate {
   FPS_25_NDF = '25Hz NDF',
   FPS_30_NDF = '30Hz NDF',
-  FPS_29_97_DF = '29.97Hz DF'
+  FPS_29_97_DF = '29.97Hz DF',
 }
 
 enum SignalLevel {
   MINUS_28_DBFS = -28,
   MINUS_18_DBFS = -18,
-  MINUS_8_DBFS = -8
+  MINUS_8_DBFS = -8,
 }
 
 class TimecodeGenerator {
   async generateTimecode(
     params: TimecodeGeneratorParams,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<string> {
     // Generate SMPTE timecode waveform
     // Return path to generated WAV file
@@ -547,6 +563,7 @@ class TimecodeGenerator {
 ### 2.9 Click Track Generator
 
 **Requirements:**
+
 - Generate metronome/click tracks
 - Configurable beats per bar (1-16)
 - Configurable number of bars (1-999)
@@ -556,24 +573,25 @@ class TimecodeGenerator {
 - Option to load directly onto next free button
 
 **Implementation:**
+
 ```typescript
 interface ClickTrackParams {
-  beatsPerBar: number;           // 1-16
-  numberOfBars: number;          // 1-999
-  bpm: number;                   // Calculated from slider
+  beatsPerBar: number; // 1-16
+  numberOfBars: number; // 1-999
+  bpm: number; // Calculated from slider
   outputPath: string;
-  loadToButton: boolean;         // Auto-load to next free button
+  loadToButton: boolean; // Auto-load to next free button
 }
 
 interface ClickTrackPreview {
-  beatSound: AudioBuffer;        // Preview sound for beat
-  tapSound: AudioBuffer;         // Preview sound for tap
+  beatSound: AudioBuffer; // Preview sound for beat
+  tapSound: AudioBuffer; // Preview sound for tap
 }
 
 class ClickTrackGenerator {
   async generateClickTrack(
     params: ClickTrackParams,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<string> {
     // Generate click track WAV file
     // Return path to generated file
@@ -592,12 +610,14 @@ class ClickTrackGenerator {
 ### 2.10 Session/Package Viewer
 
 **Requirements:**
+
 - Display session/package contents
 - Show button number, output device, track title
 - Copy to clipboard for external use
 - Parse session and package file formats
 
 **Implementation:**
+
 ```typescript
 interface SessionPackageEntry {
   buttonNumber: number;
@@ -622,9 +642,7 @@ class SessionPackageViewer {
     // Return structured contents
   }
 
-  async exportToClipboard(
-    contents: SessionPackageContents
-  ): Promise<void> {
+  async exportToClipboard(contents: SessionPackageContents): Promise<void> {
     // Format as text and copy to clipboard
   }
 }
@@ -633,12 +651,14 @@ class SessionPackageViewer {
 ### 2.11 Statistics System
 
 **Requirements:**
+
 - File size analysis (bar chart by button)
 - Track folder fragmentation analysis
 - Highlight "Local Files" folder (files copied from network/removable media)
 - Copy files from fragmented folders to consolidated locations
 
 **Implementation:**
+
 ```typescript
 interface FileStatistics {
   fileSizes: FileSizeEntry[];
@@ -649,13 +669,13 @@ interface FileSizeEntry {
   buttonId: string;
   buttonNumber: number;
   fileName: string;
-  fileSize: number;              // Bytes
+  fileSize: number; // Bytes
 }
 
 interface FolderFragmentation {
   folderPath: string;
   fileCount: number;
-  isLocalFilesFolder: boolean;   // Highlighted in red
+  isLocalFilesFolder: boolean; // Highlighted in red
   totalSize: number;
 }
 
@@ -674,7 +694,7 @@ class StatisticsService {
 
   async copyFilesFromFolder(
     operation: FileCopyOperation,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<CopyResult> {
     // Copy files from source to destination
     // Skip files that already exist
@@ -686,6 +706,7 @@ class StatisticsService {
 ### 2.12 Debug Logging System
 
 **Requirements:**
+
 - Collect logs for specified date range (last week, month, 3 months)
 - Include playout, event, and error logs
 - Compress to CAB file
@@ -693,6 +714,7 @@ class StatisticsService {
 - Browse debug folder after collection
 
 **Implementation:**
+
 ```typescript
 interface DebugLogCollection {
   dateRange: LogDateRange;
@@ -705,7 +727,7 @@ interface DebugLogCollection {
 enum LogDateRange {
   LAST_WEEK = 'last_week',
   LAST_MONTH = 'last_month',
-  LAST_3_MONTHS = 'last_3_months'
+  LAST_3_MONTHS = 'last_3_months',
 }
 
 interface DebugCollectionResult {
@@ -719,7 +741,7 @@ interface DebugCollectionResult {
 class DebugLogService {
   async collectLogs(
     params: DebugLogCollection,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<DebugCollectionResult> {
     // Copy logs to debug folder
     // Compress to CAB file
@@ -732,12 +754,14 @@ class DebugLogService {
 ### 2.13 Page Image Export
 
 **Requirements:**
+
 - Export page screenshots as BMP or JPEG
 - Cycle through all pages automatically
 - Save to specified directory
 - Return to original page after export
 
 **Implementation:**
+
 ```typescript
 interface PageImageExport {
   format: ImageFormat;
@@ -747,7 +771,7 @@ interface PageImageExport {
 
 enum ImageFormat {
   BMP = 'bmp',
-  JPEG = 'jpg'
+  JPEG = 'jpg',
 }
 
 interface PageImageExportResult {
@@ -759,7 +783,7 @@ interface PageImageExportResult {
 class PageImageService {
   async exportAllPages(
     params: PageImageExport,
-    onProgress?: (pageNumber: number, total: number) => void
+    onProgress?: (pageNumber: number, total: number) => void,
   ): Promise<PageImageExportResult> {
     // Cycle through pages
     // Capture screenshots
@@ -772,6 +796,7 @@ class PageImageService {
 ### 2.14 CD Burning Integration
 
 **Requirements:**
+
 - Integration with CDBurnerXP or similar utility
 - Support audio CD (CDA) or data CD (WAV)
 - Burn from current page or entire session
@@ -780,17 +805,18 @@ class PageImageService {
 - Multi-channel files mixed to stereo for audio CDs
 
 **Implementation:**
+
 ```typescript
 interface CDBurnRequest {
   type: CDType;
   source: BurnSource;
-  burnerPath: string;            // Path to CDBurnerXP executable
-  buttons: string[];             // Buttons to burn
+  burnerPath: string; // Path to CDBurnerXP executable
+  buttons: string[]; // Buttons to burn
 }
 
 enum CDType {
-  AUDIO_CD = 'audio_cd',         // CDA tracks
-  DATA_CD = 'data_cd'            // WAV files
+  AUDIO_CD = 'audio_cd', // CDA tracks
+  DATA_CD = 'data_cd', // WAV files
 }
 
 interface BurnSource {
@@ -800,18 +826,13 @@ interface BurnSource {
 }
 
 class CDBurningService {
-  async prepareBurnList(
-    request: CDBurnRequest
-  ): Promise<string[]> {
+  async prepareBurnList(request: CDBurnRequest): Promise<string[]> {
     // Get original file paths (not processed versions)
     // Mix multi-channel to stereo if audio CD
     // Return list of file paths
   }
 
-  async launchBurnerUtility(
-    request: CDBurnRequest,
-    filePaths: string[]
-  ): Promise<void> {
+  async launchBurnerUtility(request: CDBurnRequest, filePaths: string[]): Promise<void> {
     // Launch CDBurnerXP with file list
     // Wait for user to complete burn process
   }
@@ -821,6 +842,7 @@ class CDBurningService {
 ### 2.15 Clear Attributes
 
 **Requirements:**
+
 - Clear GPIs (GPIO assignments)
 - Clear Hotkeys
 - Reset MIDI In triggers
@@ -831,6 +853,7 @@ class CDBurningService {
 - Clear external utility paths (CD burner, audio editor, search utility)
 
 **Implementation:**
+
 ```typescript
 interface ClearAttributesOperation {
   clearGPIs: boolean;
@@ -855,9 +878,7 @@ interface ClearAttributesResult {
 }
 
 class ClearAttributesService {
-  async clearAttributes(
-    operation: ClearAttributesOperation
-  ): Promise<ClearAttributesResult> {
+  async clearAttributes(operation: ClearAttributesOperation): Promise<ClearAttributesResult> {
     // Clear specified attributes
     // Return counts of cleared items
   }
@@ -889,7 +910,7 @@ interface MasterSlaveLink {
 interface LinkValidation {
   linkId: number;
   isValid: boolean;
-  isBroken: boolean;             // Master unused or all slaves unused
+  isBroken: boolean; // Master unused or all slaves unused
   errors: string[];
   warnings: string[];
 }
@@ -907,7 +928,7 @@ interface LinkConnection {
   fromButtonId: string;
   toButtonId: string;
   linkType: 'play' | 'stop' | 'pause' | 'unpause' | 'voice_over' | 'auto_pan';
-  color: string;                 // Green, blue, magenta, white, etc.
+  color: string; // Green, blue, magenta, white, etc.
 }
 ```
 
@@ -925,7 +946,7 @@ interface PlayGroup {
 interface ButtonGroupAssignment {
   buttonId: string;
   groupId: number | null;
-  buzzerGroupId: string | null;  // 'A', 'B', 'C', 'D'
+  buzzerGroupId: string | null; // 'A', 'B', 'C', 'D'
 }
 ```
 
@@ -994,7 +1015,7 @@ interface PreviewMode {
 // Get all Master/Slave links
 interface GetLinksResponse {
   links: MasterSlaveLink[];
-  enabled: boolean;              // Global enable/disable
+  enabled: boolean; // Global enable/disable
 }
 
 // GET /api/global/links/:id
@@ -1133,7 +1154,7 @@ interface GetPlayStackResponse {
 interface AddStackTrackRequest {
   filePath: string;
   playDelay?: number;
-  insertAt?: number;             // Optional position
+  insertAt?: number; // Optional position
 }
 
 // DELETE /api/global/play-stack/tracks/:id
@@ -1159,7 +1180,7 @@ interface ReorderStackTracksRequest {
 // POST /api/global/play-stack/play
 // Start playing stack
 interface PlayStackRequest {
-  startAt?: number;              // Optional track index
+  startAt?: number; // Optional track index
 }
 
 // POST /api/global/play-stack/stop
@@ -1171,7 +1192,7 @@ interface StopStackResponse {
 // POST /api/global/play-stack/fade
 // Fade out stack (triggered by Group 24)
 interface FadeStackRequest {
-  fadeDuration?: number;         // Override default fade duration
+  fadeDuration?: number; // Override default fade duration
 }
 
 // PUT /api/global/play-stack/settings
@@ -1259,7 +1280,7 @@ interface BulkOutputAssignmentResponse {
 // POST /api/global/refresh-tracks
 // Refresh modified tracks
 interface RefreshTracksRequest {
-  buttonIds?: string[];          // Optional: specific buttons, else all
+  buttonIds?: string[]; // Optional: specific buttons, else all
 }
 
 interface RefreshTracksResponse {
@@ -1293,7 +1314,7 @@ interface GenerateClickTrackRequest {
 interface GenerateClickTrackResponse {
   filePath: string;
   fileSize: number;
-  loadedToButton?: string;       // If auto-loaded
+  loadedToButton?: string; // If auto-loaded
 }
 
 // GET /api/global/statistics
@@ -1447,7 +1468,7 @@ interface LinksStore {
   // Current state
   links: MasterSlaveLink[];
   enabled: boolean;
-  activeLinks: number[];         // Currently active link IDs
+  activeLinks: number[]; // Currently active link IDs
   brokenLinks: number[];
 
   // Actions
@@ -1499,7 +1520,7 @@ interface PlayStackStore {
   // Current state
   stack: PlayStack;
   state: PlayStackState;
-  isVisible: boolean;            // Window shown/hidden
+  isVisible: boolean; // Window shown/hidden
 
   // Actions
   loadStack(): Promise<void>;
@@ -1552,6 +1573,7 @@ interface PreviewStore {
 **Priority:** P0 (Critical)
 
 **Tasks:**
+
 1. Implement preview output assignment
 2. Create preview mode service
 3. Add Shift+Alt keyboard modifier detection
@@ -1560,6 +1582,7 @@ interface PreviewStore {
 6. Add assignment scope filtering
 
 **Deliverables:**
+
 - Preview output API endpoints
 - Preview mode UI controls
 - Output assignment API endpoints
@@ -1573,6 +1596,7 @@ interface PreviewStore {
 **Priority:** P0 (Critical)
 
 **Tasks:**
+
 1. Implement display names editor service
 2. Add drag-and-drop track reordering
 3. Create track modification scanner
@@ -1581,6 +1605,7 @@ interface PreviewStore {
 6. Handle playlist reset on refresh
 
 **Deliverables:**
+
 - Display names API endpoints
 - Track refresh API endpoints
 - File monitoring service
@@ -1594,6 +1619,7 @@ interface PreviewStore {
 **Priority:** P0 (Critical)
 
 **Tasks:**
+
 1. Implement link data model
 2. Create link CRUD operations
 3. Add play slave execution
@@ -1603,6 +1629,7 @@ interface PreviewStore {
 7. Create link enable/disable
 
 **Deliverables:**
+
 - Links database schema
 - Links API endpoints
 - Link execution engine
@@ -1616,6 +1643,7 @@ interface PreviewStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement Voice Over mode
 2. Add gain reduction for slaves
 3. Implement AutoPan mode
@@ -1624,6 +1652,7 @@ interface PreviewStore {
 6. Add fade time validation for Voice Over
 
 **Deliverables:**
+
 - Voice Over implementation
 - AutoPan implementation
 - Pause/Unpause implementation
@@ -1637,6 +1666,7 @@ interface PreviewStore {
 **Priority:** P2 (Medium)
 
 **Tasks:**
+
 1. Implement link visualization algorithm
 2. Add Ctrl+Shift+Click handler
 3. Create visual link rendering
@@ -1645,6 +1675,7 @@ interface PreviewStore {
 6. Add drag-to-delete links
 
 **Deliverables:**
+
 - Link visualization API
 - Visual link creation/deletion
 
@@ -1657,6 +1688,7 @@ interface PreviewStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement play groups data model
 2. Create exclusive playback logic
 3. Add buzzer groups with timeout
@@ -1665,6 +1697,7 @@ interface PreviewStore {
 6. Add group assignment UI
 
 **Deliverables:**
+
 - Play groups database schema
 - Exclusive playback engine
 - Buzzer timeout management
@@ -1678,6 +1711,7 @@ interface PreviewStore {
 **Priority:** P1 (High)
 
 **Tasks:**
+
 1. Implement play stack data model
 2. Create independent audio player
 3. Add loop mode
@@ -1690,6 +1724,7 @@ interface PreviewStore {
 10. Integrate with Group 24 fadeout
 
 **Deliverables:**
+
 - Play stack database schema
 - Independent audio player
 - Stack management API endpoints
@@ -1703,6 +1738,7 @@ interface PreviewStore {
 **Priority:** P2 (Medium)
 
 **Tasks:**
+
 1. Implement SMPTE timecode generator
 2. Add frame rate support
 3. Implement click track generator
@@ -1711,6 +1747,7 @@ interface PreviewStore {
 6. Add progress reporting
 
 **Deliverables:**
+
 - Timecode generator
 - Click track generator
 - Generation API endpoints
@@ -1724,6 +1761,7 @@ interface PreviewStore {
 **Priority:** P2 (Medium)
 
 **Tasks:**
+
 1. Implement file size analysis
 2. Create folder fragmentation analysis
 3. Add file copy service
@@ -1731,6 +1769,7 @@ interface PreviewStore {
 5. Add clipboard export
 
 **Deliverables:**
+
 - Statistics API endpoints
 - Session viewer API endpoints
 - File copy service
@@ -1744,6 +1783,7 @@ interface PreviewStore {
 **Priority:** P3 (Low)
 
 **Tasks:**
+
 1. Implement debug log collection
 2. Add CAB compression
 3. Implement FTP upload
@@ -1752,6 +1792,7 @@ interface PreviewStore {
 6. Implement clear attributes
 
 **Deliverables:**
+
 - Debug logging service
 - Page export service
 - CD burn service
@@ -1769,6 +1810,7 @@ interface PreviewStore {
 Preventing conflicts between Master/Slave links and Play Groups.
 
 **Solution:**
+
 - Enforce mutual exclusion at database level
 - Validate before saving
 - Auto-delete conflicting assignments
@@ -1787,9 +1829,7 @@ class ConflictResolver {
     // Find buttons in both links and groups
   }
 
-  async resolveConflicts(
-    conflicts: LinkGroupConflict[]
-  ): Promise<void> {
+  async resolveConflicts(conflicts: LinkGroupConflict[]): Promise<void> {
     // Auto-resolve based on priority
     // Links take precedence over groups
   }
@@ -1807,6 +1847,7 @@ class ConflictResolver {
 Synchronizing Voice Over gain reduction with master button fade in/out times.
 
 **Solution:**
+
 - Validate master button has non-zero fade times
 - Use master fade times for slave gain transitions
 - Implement smooth gain curves
@@ -1817,7 +1858,7 @@ class VoiceOverProcessor {
   async applyVoiceOver(
     masterButtonId: string,
     slaveButtonIds: string[],
-    gainReduction: number
+    gainReduction: number,
   ): Promise<void> {
     const masterFadeIn = await this.getFadeInTime(masterButtonId);
     const masterFadeOut = await this.getFadeOutTime(masterButtonId);
@@ -1827,12 +1868,7 @@ class VoiceOverProcessor {
     }
 
     // Apply gain reduction during master playback
-    await this.scheduleGainTransitions(
-      slaveButtonIds,
-      gainReduction,
-      masterFadeIn,
-      masterFadeOut
-    );
+    await this.scheduleGainTransitions(slaveButtonIds, gainReduction, masterFadeIn, masterFadeOut);
   }
 }
 ```
@@ -1848,6 +1884,7 @@ class VoiceOverProcessor {
 Running Play Stack completely independently from main SpotOn playback.
 
 **Solution:**
+
 - Separate audio player instance
 - Dedicated output routing
 - Independent state management
@@ -1878,6 +1915,7 @@ class PlayStackAudioEngine {
 Implementing buzzer group lockout after first trigger, with timeout reset.
 
 **Solution:**
+
 - Track timeout expiration per buzzer group
 - Block play commands during lockout
 - Reset via Group 25 or GPI toggle
@@ -1887,20 +1925,14 @@ Implementing buzzer group lockout after first trigger, with timeout reset.
 class BuzzerGroupManager {
   private timeouts: Map<string, Date> = new Map();
 
-  async canPlay(
-    buttonId: string,
-    groupId: string
-  ): Promise<boolean> {
+  async canPlay(buttonId: string, groupId: string): Promise<boolean> {
     const lockoutExpires = this.timeouts.get(groupId);
     if (!lockoutExpires) return true;
 
     return new Date() > lockoutExpires;
   }
 
-  async lockGroup(
-    groupId: string,
-    timeoutSeconds: number
-  ): Promise<void> {
+  async lockGroup(groupId: string, timeoutSeconds: number): Promise<void> {
     const expiration = new Date();
     expiration.setSeconds(expiration.getSeconds() + timeoutSeconds);
     this.timeouts.set(groupId, expiration);
@@ -1923,6 +1955,7 @@ class BuzzerGroupManager {
 Rendering complex link diagrams with many connections in real-time.
 
 **Solution:**
+
 - Use canvas-based rendering
 - Implement spatial indexing for collision detection
 - Limit visible links to current view
@@ -1933,17 +1966,13 @@ class LinkVisualizationRenderer {
   private canvas: OffscreenCanvas;
   private linkCache: Map<number, Path2D> = new Map();
 
-  async renderLinks(
-    links: LinkVisualization[],
-    viewport: Rect
-  ): Promise<ImageBitmap> {
+  async renderLinks(links: LinkVisualization[], viewport: Rect): Promise<ImageBitmap> {
     // Only render links in viewport
     const visibleLinks = this.filterVisible(links, viewport);
 
     // Use cached paths when possible
     for (const link of visibleLinks) {
-      const path = this.linkCache.get(link.linkId) ||
-                    this.createPath(link);
+      const path = this.linkCache.get(link.linkId) || this.createPath(link);
       this.drawPath(path, link.color);
     }
 
@@ -1963,6 +1992,7 @@ class LinkVisualizationRenderer {
 Refreshing tracks that may be currently playing or locked by external editors.
 
 **Solution:**
+
 - Check playback state before refresh
 - Attempt file access with timeout
 - Skip locked files with warning
@@ -1975,7 +2005,7 @@ class TrackRefreshService {
     if (await this.isPlaying(buttonId)) {
       return {
         success: false,
-        error: 'Cannot refresh playing track'
+        error: 'Cannot refresh playing track',
       };
     }
 
@@ -1983,14 +2013,14 @@ class TrackRefreshService {
     try {
       const file = await this.accessFileWithTimeout(
         buttonId,
-        5000  // 5 second timeout
+        5000, // 5 second timeout
       );
       await this.reloadTrack(buttonId, file);
       return { success: true };
     } catch (error) {
       return {
         success: false,
-        error: 'File locked or inaccessible'
+        error: 'File locked or inaccessible',
       };
     }
   }
@@ -2007,11 +2037,13 @@ class TrackRefreshService {
 ### 8.1 File Menu Integration (OCC115)
 
 **Dependencies:**
+
 - Track loading triggers Master/Slave link assignments
 - Display name setting during file load
 - Output assignment from default setting
 
 **Integration Tasks:**
+
 - Hook into file load events for link setup
 - Coordinate display name assignment
 - Apply default output if set
@@ -2021,12 +2053,14 @@ class TrackRefreshService {
 ### 8.2 Setup Menu Integration (OCC116)
 
 **Dependencies:**
+
 - MIDI trigger assignments for Master/Slave links
 - GPI assignments for Master/Slave triggers
 - Buzzer group timeout configuration
 - External utility paths (CD burner, audio editor)
 
 **Integration Tasks:**
+
 - MIDI trigger link execution
 - GPI trigger link execution
 - Buzzer timeout settings persistence
@@ -2036,11 +2070,13 @@ class TrackRefreshService {
 ### 8.3 Display/Edit Menu Integration (OCC117)
 
 **Dependencies:**
+
 - Audio setup for Voice Over gain reduction
 - Fade times for Voice Over mode
 - Pan settings for AutoPan mode
 
 **Integration Tasks:**
+
 - Voice Over gain reduction UI
 - Fade time validation for Voice Over
 - AutoPan endpoint values
@@ -2050,10 +2086,12 @@ class TrackRefreshService {
 ### 8.4 Search Menu Integration (OCC118)
 
 **Dependencies:**
+
 - Preview output used for search track preview
 - Display names shown in recent files
 
 **Integration Tasks:**
+
 - Use preview output for double-click preview
 - Coordinate preview state
 
@@ -2062,6 +2100,7 @@ class TrackRefreshService {
 ### 8.5 Audio Engine Integration
 
 **Dependencies:**
+
 - Master/Slave link execution during playback
 - Voice Over gain automation
 - AutoPan automation
@@ -2069,6 +2108,7 @@ class TrackRefreshService {
 - Play Stack independent playback
 
 **Integration Tasks:**
+
 - Link trigger on play/stop
 - Real-time gain automation for Voice Over
 - Real-time pan automation for AutoPan
@@ -2245,33 +2285,33 @@ describe('VisualizationPerformance', () => {
 
 ### 11.1 Performance Metrics
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Link execution latency | < 10ms | Time from master trigger to slave action |
-| Voice Over fade smoothness | No audible steps | Audio analysis |
-| Play Stack playback | Sample-accurate | Gap/overlap detection |
-| Link visualization render | < 16ms | 60fps rendering |
+| Metric                     | Target           | Measurement                              |
+| -------------------------- | ---------------- | ---------------------------------------- |
+| Link execution latency     | < 10ms           | Time from master trigger to slave action |
+| Voice Over fade smoothness | No audible steps | Audio analysis                           |
+| Play Stack playback        | Sample-accurate  | Gap/overlap detection                    |
+| Link visualization render  | < 16ms           | 60fps rendering                          |
 
 ### 11.2 Functional Metrics
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Maximum links | 100 | System limit |
-| Maximum play groups | 25 | System limit |
-| Play Stack capacity | 20 tracks | System limit |
-| Buzzer timeout accuracy | ±100ms | Clock accuracy |
+| Metric                  | Target    | Measurement    |
+| ----------------------- | --------- | -------------- |
+| Maximum links           | 100       | System limit   |
+| Maximum play groups     | 25        | System limit   |
+| Play Stack capacity     | 20 tracks | System limit   |
+| Buzzer timeout accuracy | ±100ms    | Clock accuracy |
 
 ---
 
 ## 12. Risk Assessment
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Link/Group conflicts | High | Medium | Automatic conflict resolution |
-| Voice Over timing errors | Medium | High | Fade time validation, testing |
-| Play Stack audio glitches | Low | High | Independent audio thread, testing |
-| Buzzer timeout drift | Medium | Medium | Accurate clock sync, testing |
-| Link visualization lag | Low | Low | Canvas rendering, caching |
+| Risk                      | Probability | Impact | Mitigation                        |
+| ------------------------- | ----------- | ------ | --------------------------------- |
+| Link/Group conflicts      | High        | Medium | Automatic conflict resolution     |
+| Voice Over timing errors  | Medium      | High   | Fade time validation, testing     |
+| Play Stack audio glitches | Low         | High   | Independent audio thread, testing |
+| Buzzer timeout drift      | Medium      | Medium | Accurate clock sync, testing      |
+| Link visualization lag    | Low         | Low    | Canvas rendering, caching         |
 
 ---
 
@@ -2310,19 +2350,19 @@ describe('VisualizationPerformance', () => {
 
 ### Estimated Total Effort
 
-| Phase | Effort (hours) | Priority |
-|-------|----------------|----------|
-| Phase 1: Preview & Output Assignment | 20-24 | P0 |
-| Phase 2: Display Names & Refresh | 16-20 | P0 |
-| Phase 3: Links - Basic | 32-40 | P0 |
-| Phase 4: Links - Advanced Modes | 24-32 | P1 |
-| Phase 5: Link Visualization | 16-20 | P2 |
-| Phase 6: Play Groups | 24-28 | P1 |
-| Phase 7: Play Stack | 40-48 | P1 |
-| Phase 8: Audio Generation | 24-32 | P2 |
-| Phase 9: Statistics & Viewer | 16-20 | P2 |
-| Phase 10: Utility Features | 20-24 | P3 |
-| **Total** | **232-288 hours** | - |
+| Phase                                | Effort (hours)    | Priority |
+| ------------------------------------ | ----------------- | -------- |
+| Phase 1: Preview & Output Assignment | 20-24             | P0       |
+| Phase 2: Display Names & Refresh     | 16-20             | P0       |
+| Phase 3: Links - Basic               | 32-40             | P0       |
+| Phase 4: Links - Advanced Modes      | 24-32             | P1       |
+| Phase 5: Link Visualization          | 16-20             | P2       |
+| Phase 6: Play Groups                 | 24-28             | P1       |
+| Phase 7: Play Stack                  | 40-48             | P1       |
+| Phase 8: Audio Generation            | 24-32             | P2       |
+| Phase 9: Statistics & Viewer         | 16-20             | P2       |
+| Phase 10: Utility Features           | 20-24             | P3       |
+| **Total**                            | **232-288 hours** | -        |
 
 ### Critical Path
 
@@ -2350,6 +2390,7 @@ describe('VisualizationPerformance', () => {
 **Source:** SpotOn Manual - Section 06 - Global Menu
 
 **Key Features:**
+
 - Pages 1-2: Global Menu overview, utilities list
 - Pages 12-17: Display Names editor, track reordering
 - Pages 13-14: Preview output assignment

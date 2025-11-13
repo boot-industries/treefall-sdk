@@ -6,6 +6,9 @@ docs/*/archive/
 .claude/archive/
 archive/
 
+# Peer documentation (not relevant to this project)
+apps/clip-composer/docs/occ/peers/
+
 # Dependencies
 node_modules/
 .pnp/

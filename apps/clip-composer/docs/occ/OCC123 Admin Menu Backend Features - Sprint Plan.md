@@ -22,12 +22,14 @@ This sprint implements the Admin Menu backend features for Clip Composer, provid
 ### 1. Admin Authentication (3 points)
 
 **Backend Components:**
+
 - Password-protected admin mode
 - Session-based authentication
 - Role-based access control
 - Admin action audit logging
 
 **Data Models:**
+
 ```typescript
 interface AdminSession {
   id: string;
@@ -48,6 +50,7 @@ interface AdminAuditLog {
 ```
 
 **API Endpoints:**
+
 - `POST /api/admin/login` - Authenticate admin user
 - `POST /api/admin/logout` - End admin session
 - `GET /api/admin/session` - Check admin session status
@@ -56,27 +59,30 @@ interface AdminAuditLog {
 ### 2. File Folders Management (4 points)
 
 **Backend Components:**
+
 - Folder location configuration
 - Path validation and existence checks
 - Default folder creation
 - Cross-platform path handling
 
 **Data Models:**
+
 ```typescript
 interface FolderConfig {
-  tempFolder: string;              // For external editor copies
-  localFolder: string;             // For network/CD copies
-  packageRootFolder: string;       // For extracted packages
-  playoutLogsFolder: string;       // For playout logs
-  sessionBackupFolder: string;     // For auto-backups
-  userSessionFolder: string;       // Default session location
-  userSessionDefault: boolean;     // Always use default
-  audioFilesFolder: string;        // Default audio location
-  audioFilesDefault: boolean;      // Always use default
+  tempFolder: string; // For external editor copies
+  localFolder: string; // For network/CD copies
+  packageRootFolder: string; // For extracted packages
+  playoutLogsFolder: string; // For playout logs
+  sessionBackupFolder: string; // For auto-backups
+  userSessionFolder: string; // Default session location
+  userSessionDefault: boolean; // Always use default
+  audioFilesFolder: string; // Default audio location
+  audioFilesDefault: boolean; // Always use default
 }
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/folders` - Get all folder configurations
 - `PUT /api/admin/folders` - Update folder configurations
 - `POST /api/admin/folders/validate` - Validate folder paths
@@ -85,12 +91,14 @@ interface FolderConfig {
 ### 3. System Diagnostics (5 points)
 
 **Backend Components:**
+
 - DirectX information retrieval
 - Network scanner for SpotOn systems
 - Audio device capability analysis
 - System information collector
 
 **Data Models:**
+
 ```typescript
 interface DirectXInfo {
   version: string;
@@ -128,6 +136,7 @@ interface AudioFormat {
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/diagnostics/directx` - Get DirectX information
 - `POST /api/admin/diagnostics/scan-network` - Scan for SpotOn systems
 - `GET /api/admin/diagnostics/audio-modes` - Get supported audio modes
@@ -136,6 +145,7 @@ interface AudioFormat {
 ### 4. Output Device Assignment (8 points)
 
 **Backend Components:**
+
 - Audio device enumeration
 - Device patching/routing configuration
 - Device masking (enable/disable)
@@ -145,6 +155,7 @@ interface AudioFormat {
 - Device identification (test tones)
 
 **Data Models:**
+
 ```typescript
 interface OutputDevice {
   id: string;
@@ -185,6 +196,7 @@ interface DeviceIdentConfig {
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/output-devices` - List all output devices
 - `GET /api/admin/output-devices/:id` - Get device details
 - `PUT /api/admin/output-devices/:id` - Update device configuration
@@ -198,12 +210,14 @@ interface DeviceIdentConfig {
 ### 5. Licensing System (5 points)
 
 **Backend Components:**
+
 - Unlock code validation
 - Feature flag management
 - License verification
 - Desktop shortcut creation (5.1 mode)
 
 **Data Models:**
+
 ```typescript
 interface License {
   baseVersion: string;
@@ -227,6 +241,7 @@ interface UnlockCodeValidation {
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/license` - Get current license info
 - `POST /api/admin/license/unlock-5.1` - Validate and activate 5.1 surround
 - `POST /api/admin/license/unlock-p2` - Validate and activate SpotOn P2
@@ -236,6 +251,7 @@ interface UnlockCodeValidation {
 ### 6. Audio Configuration (6 points)
 
 **Backend Components:**
+
 - Primary mixer frequency management
 - Speed bar limits configuration
 - Sample frequency validation
@@ -243,6 +259,7 @@ interface UnlockCodeValidation {
 - Emulated device filtering
 
 **Data Models:**
+
 ```typescript
 interface AudioConfig {
   primaryMixerFrequency: 44100 | 48000;
@@ -269,6 +286,7 @@ interface VolumeControlChannel {
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/audio-config` - Get audio configuration
 - `PUT /api/admin/audio-config` - Update audio configuration
 - `GET /api/admin/audio-config/volume-controls` - Get volume controls
@@ -278,6 +296,7 @@ interface VolumeControlChannel {
 ### 7. Miscellaneous Settings (4 points)
 
 **Backend Components:**
+
 - Timer adjustment and calibration
 - Cascade links configuration
 - Web version check system
@@ -287,6 +306,7 @@ interface VolumeControlChannel {
 - File access time logging
 
 **Data Models:**
+
 ```typescript
 interface MiscConfig {
   timerPeriod: 20 | 31; // milliseconds
@@ -310,6 +330,7 @@ interface VersionCheckResult {
 ```
 
 **API Endpoints:**
+
 - `GET /api/admin/misc` - Get miscellaneous settings
 - `PUT /api/admin/misc` - Update miscellaneous settings
 - `POST /api/admin/misc/check-version` - Check for updates
@@ -319,12 +340,14 @@ interface VersionCheckResult {
 ### 8. Network Discovery (3 points)
 
 **Backend Components:**
+
 - UDP broadcast scanner
 - SpotOn system discovery
 - IP address resolution
 - Network topology mapping
 
 **Data Models:**
+
 ```typescript
 interface NetworkHost {
   hostname: string;
@@ -352,6 +375,7 @@ interface NetworkScanConfig {
 ```
 
 **API Endpoints:**
+
 - `POST /api/admin/network/scan` - Start network scan
 - `GET /api/admin/network/scan/:id` - Get scan results
 - `POST /api/admin/network/lookup` - Lookup hostname/IP
@@ -551,12 +575,14 @@ CREATE INDEX idx_network_cache_ip ON network_scan_cache(ip_address);
 ### Phase 1: Core Admin Infrastructure (Week 1)
 
 **Tasks:**
+
 1. Implement admin authentication system
 2. Set up audit logging
 3. Create folder management API
 4. Build configuration persistence
 
 **Deliverables:**
+
 - Admin login/session management
 - Audit log system
 - Folder configuration CRUD
@@ -565,12 +591,14 @@ CREATE INDEX idx_network_cache_ip ON network_scan_cache(ip_address);
 ### Phase 2: Audio Device Management (Week 2)
 
 **Tasks:**
+
 1. Implement audio device enumeration
 2. Build device patching system
 3. Create speaker configuration manager
 4. Develop device identification system
 
 **Deliverables:**
+
 - Device discovery service
 - Patch management API
 - Test tone generation
@@ -579,12 +607,14 @@ CREATE INDEX idx_network_cache_ip ON network_scan_cache(ip_address);
 ### Phase 3: Licensing & Diagnostics (Week 3)
 
 **Tasks:**
+
 1. Implement unlock code validation
 2. Build network discovery system
 3. Create diagnostics collectors
 4. Integrate all admin features
 
 **Deliverables:**
+
 - License activation system
 - Network scanner
 - System diagnostics API
@@ -627,7 +657,7 @@ describe('OutputDeviceManager', () => {
   it('should reorder devices correctly', async () => {
     const devices = await deviceManager.getDevices();
     const reordered = [devices[2], devices[0], devices[1]];
-    await deviceManager.reorderDevices(reordered.map(d => d.id));
+    await deviceManager.reorderDevices(reordered.map((d) => d.id));
 
     const updated = await deviceManager.getDevices();
     expect(updated[0].id).toBe(devices[2].id);
@@ -677,7 +707,7 @@ describe('Admin API', () => {
       .set('X-Admin-Session', sessionId)
       .send({
         tempFolder: '/tmp/spoton',
-        localFolder: '/var/lib/spoton/local'
+        localFolder: '/var/lib/spoton/local',
       });
 
     expect(response.status).toBe(200);
@@ -712,8 +742,7 @@ describe('Admin API', () => {
 ```typescript
 describe('Admin Security', () => {
   it('should prevent access without authentication', async () => {
-    const response = await request(app)
-      .get('/api/admin/folders');
+    const response = await request(app).get('/api/admin/folders');
     expect(response.status).toBe(401);
   });
 
@@ -727,7 +756,7 @@ describe('Admin Security', () => {
     const logs = await AdminAuditLog.findAll({
       where: { userId: 'admin' },
       order: [['timestamp', 'DESC']],
-      limit: 1
+      limit: 1,
     });
 
     expect(logs[0].action).toBe('update_audio_config');
@@ -775,14 +804,14 @@ describe('Admin Security', () => {
 
 ## Performance Requirements
 
-| Feature | Requirement | Target |
-|---------|------------|--------|
-| Admin Login | <500ms | Fast authentication |
-| Device Enumeration | <1s | Quick device discovery |
-| Network Scan | <10s | 254 IP addresses |
-| Audio Mode Test | <5s per device | Comprehensive testing |
-| Patch Application | <100ms | No audio interruption |
-| Volume Control | <50ms | Real-time adjustment |
+| Feature            | Requirement    | Target                 |
+| ------------------ | -------------- | ---------------------- |
+| Admin Login        | <500ms         | Fast authentication    |
+| Device Enumeration | <1s            | Quick device discovery |
+| Network Scan       | <10s           | 254 IP addresses       |
+| Audio Mode Test    | <5s per device | Comprehensive testing  |
+| Patch Application  | <100ms         | No audio interruption  |
+| Volume Control     | <50ms          | Real-time adjustment   |
 
 ## Dependencies
 
@@ -811,18 +840,21 @@ describe('Admin Security', () => {
 ## Rollout Plan
 
 ### Week 1: Core Admin
+
 - Deploy admin authentication system
 - Activate audit logging
 - Roll out folder management
 - Configure base settings
 
 ### Week 2: Device Management
+
 - Deploy audio device discovery
 - Activate device patching
 - Enable speaker configuration
 - Test volume controls
 
 ### Week 3: Integration
+
 - Activate licensing system
 - Deploy network discovery
 - Enable diagnostics
@@ -843,13 +875,13 @@ describe('Admin Security', () => {
 
 ## Risk Mitigation
 
-| Risk | Mitigation Strategy |
-|------|-------------------|
-| Platform-specific audio APIs | Abstract device interface, test on all platforms |
-| License key validation | Multiple validation checks, dongle verification |
-| Network scan performance | Parallel scanning, configurable timeout |
-| Audio device changes | Hot-plug detection, automatic re-enumeration |
-| Unauthorized access | Strong authentication, session timeout, audit log |
+| Risk                         | Mitigation Strategy                               |
+| ---------------------------- | ------------------------------------------------- |
+| Platform-specific audio APIs | Abstract device interface, test on all platforms  |
+| License key validation       | Multiple validation checks, dongle verification   |
+| Network scan performance     | Parallel scanning, configurable timeout           |
+| Audio device changes         | Hot-plug detection, automatic re-enumeration      |
+| Unauthorized access          | Strong authentication, session timeout, audit log |
 
 ## Documentation Deliverables
 
