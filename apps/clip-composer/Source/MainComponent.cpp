@@ -786,6 +786,10 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
       button->setClipGroup(edited.clipGroup);
       button->setLoopEnabled(edited.loopEnabled); // CRITICAL: Sync loop visual state
 
+      // CRITICAL: Sync fade indicator visual state (not handled by 75fps polling)
+      button->setFadeInEnabled(edited.fadeInSeconds > 0.0);
+      button->setFadeOutEnabled(edited.fadeOutSeconds > 0.0);
+
       // Update duration with trimmed values
       if (edited.sampleRate > 0) {
         int64_t trimmedSamples = edited.trimOutSamples - edited.trimInSamples;
