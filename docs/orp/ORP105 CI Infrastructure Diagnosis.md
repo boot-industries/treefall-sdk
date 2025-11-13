@@ -57,10 +57,12 @@ CI builds failed on macOS and Windows platforms across multiple PRs over several
    - `interim-ci.yml` - Legacy workflow referencing packages ❌
 
 2. **Checked repository structure**
+
    ```bash
    $ ls -la packages/
    ls: cannot access 'packages/': No such file or directory
    ```
+
    Result: **packages/ directory does not exist** (archived as planned)
 
 3. **Analyzed interim-ci.yml**
@@ -80,13 +82,14 @@ CI builds failed on macOS and Windows platforms across multiple PRs over several
 
 ```markdown
 **Completed Actions:**
+
 - [x] Created docs/DECISION_PACKAGES.md documenting choice
-- [ ] Moved packages/ to archive/packages/ (preserves structure)  ← INCOMPLETE
-- [ ] Updated .claudeignore to exclude archived packages           ← INCOMPLETE
-- [ ] Removed TypeScript CI jobs from .github/workflows/           ← INCOMPLETE ⚠️
-- [ ] Removed chaos tests workflow (packages-only)                 ← INCOMPLETE
-- [ ] Updated README.md with "C++ SDK" positioning                 ← INCOMPLETE
-- [ ] Updated .claude/implementation_progress.md                   ← INCOMPLETE
+- [ ] Moved packages/ to archive/packages/ (preserves structure) ← INCOMPLETE
+- [ ] Updated .claudeignore to exclude archived packages ← INCOMPLETE
+- [ ] Removed TypeScript CI jobs from .github/workflows/ ← INCOMPLETE ⚠️
+- [ ] Removed chaos tests workflow (packages-only) ← INCOMPLETE
+- [ ] Updated README.md with "C++ SDK" positioning ← INCOMPLETE
+- [ ] Updated .claude/implementation_progress.md ← INCOMPLETE
 ```
 
 The critical missing step was **"Removed TypeScript CI jobs from .github/workflows/"**, leaving `interim-ci.yml` attempting to build non-existent packages.
@@ -98,6 +101,7 @@ The critical missing step was **"Removed TypeScript CI jobs from .github/workflo
 Investigation revealed:
 
 1. **Test Failure Pattern:**
+
    ```
    Expected equality of these values:
      regResult
@@ -141,6 +145,7 @@ Investigation revealed:
 
 1. **package.json Line 9:** `"test": "./tests/integration/run-tests.sh"`
 2. **tests/integration/run-tests.sh Lines 19-23:**
+
    ```bash
    if [ ! -d "packages/contract/dist" ] || \
       [ ! -d "packages/client/dist" ] || \
@@ -187,6 +192,7 @@ Potential failure modes:
    - Tests compile and link successfully but fail at runtime with NotReady
 
 **Solution:** Add explicit verification steps:
+
 - Check libsndfile installation succeeded on each platform
 - Verify CMake detected libsndfile (check build files for audio_file_reader_libsndfile.cpp vs stub)
 - Fail CI early if libsndfile not detected (don't wait for test failures)
@@ -246,6 +252,7 @@ The workflow had 5 jobs:
 **Rationale:** Cache was poisoned with stale libsndfile detection results
 
 **Before:**
+
 ```yaml
 - name: Cache CMake build
   uses: actions/cache@v4
@@ -260,6 +267,7 @@ The workflow had 5 jobs:
 **After:** (removed - CMake will configure fresh on every run)
 
 **Impact:**
+
 - ✅ Ensures libsndfile detection runs on every build
 - ✅ Prevents cache poisoning from dependency installation failures
 - ⚠️ Slightly longer CI times (~30s per job, acceptable trade-off for reliability)
@@ -272,6 +280,7 @@ The workflow had 5 jobs:
 **Changes:** Complete rewrite to work with C++ SDK
 
 **Before:**
+
 ```bash
 # Ensure packages are built
 echo "Step 1: Verifying package builds..."
@@ -290,6 +299,7 @@ node --test tests/integration/smoke.test.mjs
 ```
 
 **After:**
+
 ```bash
 # Check if build directory exists
 if [ ! -d "build" ]; then
@@ -304,6 +314,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Impact:**
+
 - ✅ Removes references to archived TypeScript packages
 - ✅ Runs C++ SDK tests directly via ctest
 - ✅ `pnpm test` now works (calls C++ tests, not TypeScript builds)
@@ -314,6 +325,7 @@ ctest --test-dir build --output-on-failure
 
 **File:** `package.json`
 **Changes:**
+
 - Removed `"workspaces": ["packages/*"]` configuration
 - Updated `name` from `"orpheus-monorepo"` to `"orpheus-sdk"`
 - Updated `description` to `"C++ SDK for professional audio applications."`
@@ -326,6 +338,7 @@ ctest --test-dir build --output-on-failure
   - `postinstall` (workspace bootstrap)
 
 **Retained Scripts:**
+
 - `prepare` (husky git hooks - still needed)
 - `test` (integration tests - C++ SDK)
 - `lint`, `lint:cpp` (C++ formatting)
@@ -337,6 +350,7 @@ ctest --test-dir build --output-on-failure
 **Changes:** Added explicit verification for libsndfile installation and detection
 
 **macOS Installation (Lines 58-71):**
+
 ```yaml
 - name: Install libsndfile (macOS)
   if: matrix.os == 'macos-latest'
@@ -355,6 +369,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Windows Installation (Lines 73-79):**
+
 ```yaml
 - name: Install libsndfile (Windows)
   if: matrix.os == 'windows-latest'
@@ -377,6 +392,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 **CMake Detection Verification (Lines 106-124 - new step):**
+
 ```yaml
 - name: Verify libsndfile detection
   run: |
@@ -400,6 +416,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Impact:**
+
 - ✅ Fails fast if libsndfile installation fails (before build)
 - ✅ Fails fast if CMake doesn't detect libsndfile (before build)
 - ✅ Prevents silent fallback to stub implementation
@@ -411,6 +428,7 @@ ctest --test-dir build --output-on-failure
 **Problem:** After all previous fixes, tests were still failing (5 tests reported).
 
 **Root cause identified:**
+
 1. **Verification step was unreliable:** Checked build files that might not exist at verification time
 2. **Windows vcpkg path hardcoded:** Used `C:/vcpkg` instead of `VCPKG_INSTALLATION_ROOT` environment variable
 3. **No explicit CMake feedback:** Unclear whether libsndfile was actually detected
@@ -418,6 +436,7 @@ ctest --test-dir build --output-on-failure
 **Changes made:**
 
 **A. Added explicit CMake status messages** (`src/core/audio_io/CMakeLists.txt`):
+
 ```cmake
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_IO_SOURCES audio_file_reader_libsndfile.cpp)
@@ -429,12 +448,14 @@ endif()
 ```
 
 **B. Improved verification to check CMake output** (`.github/workflows/ci-pipeline.yml`):
+
 - Redirect CMake output to file: `cmake ... 2>&1 | tee cmake_output.log`
 - Check for explicit status messages: `grep -q "✓ libsndfile FOUND"`
 - Fail with detailed error listing all 8 tests that will fail
 - Show debug info: platform, toolchain file, all sndfile mentions
 
 **C. Fixed Windows vcpkg integration:**
+
 ```bash
 # Detect vcpkg root (GitHub Actions has it pre-installed)
 if [ -n "$VCPKG_INSTALLATION_ROOT" ]; then
@@ -453,6 +474,7 @@ echo "CMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE" >> $GITHUB_ENV
 ```
 
 **Impact:**
+
 - ✅ Uses standard GitHub Actions environment variable (`VCPKG_INSTALLATION_ROOT`)
 - ✅ CMake output explicitly shows detection status
 - ✅ Verification step checks actual CMake output (not build files)
@@ -464,6 +486,7 @@ echo "CMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE" >> $GITHUB_ENV
 **Problem:** After all previous fixes, Windows builds still failing with HTTP 403 from SourceForge.
 
 **Root cause identified:**
+
 ```
 error: https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz/download: failed: status code 403
 error: building mp3lame:x64-windows failed with: BUILD_FAILED
@@ -505,12 +528,14 @@ Windows install step updated to use GitHub's pre-built binaries:
 ```
 
 **How it works:**
+
 - `--binarysource="clear;nuget,GitHub,readwrite"` tells vcpkg to use GitHub's binary cache
 - Skips compilation entirely (no SourceForge downloads needed)
 - Pre-built packages are provided by GitHub Actions infrastructure
 - Much faster: ~10 seconds vs ~5 minutes for source build
 
 **Impact:**
+
 - ✅ Bypasses SourceForge entirely
 - ✅ 30x faster installation (seconds vs minutes)
 - ✅ Uses official GitHub Actions pre-built binaries
@@ -523,6 +548,7 @@ Windows install step updated to use GitHub's pre-built binaries:
 
 **Root cause identified:**
 The workflow tried to reference `env.CMAKE_TOOLCHAIN_FILE` in a GitHub Actions expression:
+
 ```yaml
 ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE_TOOLCHAIN_FILE={0}', env.CMAKE_TOOLCHAIN_FILE) || '' }}
 ```
@@ -532,6 +558,7 @@ ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE
 **Solution:** Use bash conditionals instead of GitHub Actions expressions.
 
 **Updated Configure CMake step:**
+
 ```yaml
 - name: Configure CMake
   run: |
@@ -556,6 +583,7 @@ ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE
 ```
 
 **Impact:**
+
 - ✅ vcpkg toolchain file correctly passed to CMake on Windows
 - ✅ CMake can now find libsndfile installed via vcpkg
 - ✅ More readable workflow syntax
@@ -572,6 +600,7 @@ ${{ matrix.os == 'windows-latest' && env.CMAKE_TOOLCHAIN_FILE && format('-DCMAKE
 The `ORPHEUS_ENABLE_REALTIME` CMake flag was not set in CI configuration. This flag controls whether real-time infrastructure tests are built.
 
 From `tests/CMakeLists.txt` lines 80-88:
+
 ```cmake
 # M2: Real-time infrastructure tests
 if(ORPHEUS_ENABLE_REALTIME)
@@ -586,6 +615,7 @@ endif()
 ```
 
 **What wasn't building:**
+
 - **transport/** tests (~8 tests): clip_restart_test, clip_seek_test, clip_loop_test, clip_metadata_test, clip_gain_test, multi_clip_stress_test, out_point_enforcement_test, fade_processing_test
 - **audio_io/** tests (~2-3 tests): dummy_driver_test, audio_file_reader_test
 - **routing/** tests (~2 tests): routing_matrix_test, gain_smoother_test
@@ -595,6 +625,7 @@ endif()
 **Solution:** Add `-DORPHEUS_ENABLE_REALTIME=ON` to CMake configuration.
 
 **Updated Configure CMake step (line 120):**
+
 ```yaml
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
@@ -606,6 +637,7 @@ cmake -S . -B build \
 ```
 
 **Impact:**
+
 - ✅ All transport tests now built and run (~8 additional tests)
 - ✅ All audio_io tests now built and run (~2-3 additional tests)
 - ✅ All routing tests now built and run (~2 additional tests)
@@ -613,6 +645,7 @@ cmake -S . -B build \
 - ✅ Tests can now actually fail (they were "passing" because they didn't exist!)
 
 **Why this was so hard to diagnose:**
+
 - libsndfile was installed correctly ✅
 - CMake detected libsndfile correctly ✅
 - Tests compiled successfully ✅
@@ -626,18 +659,21 @@ This was the final piece - all previous fixes were necessary but insufficient be
 **Problem:** After enabling ORPHEUS_ENABLE_REALTIME flag, macOS tests fail with timing accuracy issues.
 
 **Root cause identified:**
+
 1. **MultiClipStressTest fails:** `callback_accuracy` metric fails thresholds in `SixteenSimultaneousClips` and `CPUUsageMeasurement` tests
 2. **CoreAudioDriverTest fails:** `CallbackIsInvoked` expects callback count > 5 but only records 1
 3. **AddressSanitizer overhead:** Sanitizers add significant runtime overhead (~2-5x slowdown) which disrupts timing-sensitive audio tests
 
 From `.github/workflows/ci-pipeline.yml` line 45-47:
+
 ```yaml
 - os: macos-latest
   generator: 'Unix Makefiles'
-  sanitizers: ON    # <-- Causing timing issues
+  sanitizers: ON # <-- Causing timing issues
 ```
 
 **Why this happens:**
+
 - Audio tests use `std::chrono` for callback timing and accuracy measurements
 - AddressSanitizer instruments every memory access, adding microseconds of latency
 - Audio callback tests expect sub-millisecond accuracy
@@ -647,13 +683,15 @@ From `.github/workflows/ci-pipeline.yml` line 45-47:
 **Solution:** Disable sanitizers for macOS (keep them for Ubuntu where they don't cause timing issues).
 
 **Updated matrix configuration:**
+
 ```yaml
 - os: macos-latest
   generator: 'Unix Makefiles'
-  sanitizers: OFF    # <-- Changed from ON
+  sanitizers: OFF # <-- Changed from ON
 ```
 
 **Impact:**
+
 - ✅ macOS audio timing tests pass (callback accuracy restored)
 - ✅ CoreAudio driver tests pass (callbacks invoked as expected)
 - ⚠️ Lose memory safety checks on macOS (still have them on Ubuntu)
@@ -666,6 +704,7 @@ From `.github/workflows/ci-pipeline.yml` line 45-47:
 **Problem:** After commit c95d4915, Windows builds STILL fail with SourceForge 403 errors.
 
 **Root cause identified:**
+
 ```
 Installing libsndfile via vcpkg (using binary cache pull only)...
 vcpkg install libsndfile:x64-windows --binarysource=clear
@@ -676,6 +715,7 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 ```
 
 **Why commit c95d4915 fix was WRONG:**
+
 - Used `--binarysource=clear` thinking it would skip binary cache configuration
 - **ACTUALLY:** `--binarysource=clear` means "skip binary cache, build from source"
 - This FORCES vcpkg to build libsndfile from source, including optional dependencies
@@ -685,6 +725,7 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 **Correct Solution:** Install only core libsndfile features (exclude mp3lame).
 
 **Updated Windows install step:**
+
 ```yaml
 - name: Install libsndfile (Windows)
   if: matrix.os == 'windows-latest'
@@ -709,6 +750,7 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 ```
 
 **How this works:**
+
 - `libsndfile[core]:x64-windows` installs minimal feature set
 - Excludes optional dependencies: mp3lame, external-libs
 - Still supports WAV, FLAC, OGG, Vorbis (sufficient for SDK tests)
@@ -716,11 +758,13 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 - vcpkg will use binary cache automatically (default behavior)
 
 **Why we don't need mp3lame:**
-- SDK tests use WAV files (tests/fixtures/*.wav)
+
+- SDK tests use WAV files (tests/fixtures/\*.wav)
 - MP3 encoding/decoding not required for audio transport tests
 - Core libsndfile provides all formats needed for SDK functionality
 
 **Impact:**
+
 - ✅ Eliminates SourceForge 403 errors completely
 - ✅ Faster installation (binary cache automatically used for core features)
 - ✅ No additional configuration needed
@@ -728,6 +772,7 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 - ✅ Simpler and more reliable than trying to configure binary cache flags
 
 **Evolution of fixes:**
+
 1. **Commit 86abdc76:** Used `--binarysource="clear;nuget,GitHub,readwrite"` → NuGet configuration errors
 2. **Commit c95d4915:** Changed to `--binarysource=clear` → Still hit SourceForge (forced source build)
 3. **Commit 31a6848d:** Use `libsndfile[core]` → Avoids mp3lame entirely ✅
@@ -737,6 +782,7 @@ error: building mp3lame:x64-windows failed with: BUILD_FAILED
 **Problem:** After libsndfile[core] fix, Windows builds now fail at compilation stage.
 
 **Root cause identified:**
+
 ```
 error C2065: 'M_PI_2': undeclared identifier (transport_controller.cpp:1303)
 error C2065: 'high_resolution_clock': undeclared identifier (gain_smoother_test.cpp:361)
@@ -744,12 +790,14 @@ error C2039: 'now': is not a member of 'std::chrono' (gain_smoother_test.cpp:361
 ```
 
 **Issue #1: M_PI_2 not defined on MSVC**
+
 - POSIX defines M_PI_2 (π/2) in math.h
 - MSVC does not define it by default (requires `_USE_MATH_DEFINES` before including math.h)
 - Code uses M_PI_2 for equal-power fade curve: `std::sin(normalizedPosition * M_PI_2)`
 - Located in: `src/core/transport/transport_controller.cpp:1303`
 
 **Issue #2: Missing <chrono> include**
+
 - Test uses `std::chrono::high_resolution_clock::now()`
 - Header `<chrono>` not included in test file
 - Located in: `tests/routing/gain_smoother_test.cpp:361, 367`
@@ -757,6 +805,7 @@ error C2039: 'now': is not a member of 'std::chrono' (gain_smoother_test.cpp:361
 **Solution: Add portable M_PI_2 definition and chrono include**
 
 **Fix #1: transport_controller.cpp**
+
 ```cpp
 // SPDX-License-Identifier: MIT
 #include "transport_controller.h"
@@ -776,6 +825,7 @@ namespace orpheus {
 ```
 
 **Fix #2: gain_smoother_test.cpp**
+
 ```cpp
 // SPDX-License-Identifier: MIT
 #include "../../src/core/routing/gain_smoother.h"
@@ -788,12 +838,14 @@ namespace orpheus {
 ```
 
 **Impact:**
+
 - ✅ Portable across all platforms (Unix/Linux/macOS/Windows)
 - ✅ No functional changes (same behavior on all platforms)
 - ✅ Follows C++20 best practices (explicit includes)
 - ✅ Guards prevent redefinition warnings
 
 **Why this wasn't caught earlier:**
+
 - Tests passed on Ubuntu and macOS (POSIX platforms define M_PI_2)
 - CI only started running Windows builds after libsndfile installation fixed
 - MSVC has stricter requirements for standard library includes
@@ -811,6 +863,7 @@ After resolving all CI infrastructure issues, **macOS still has 2 test failures*
 **File:** `tests/transport/multi_clip_stress_test.cpp`
 
 **Failed Sub-tests:**
+
 1. ✅ `RapidStartStop` - PASSES
 2. ❌ `SixteenSimultaneousClips` - **FAILS** (line 304)
    - Expected: `callback_accuracy > 70%`
@@ -823,6 +876,7 @@ After resolving all CI infrastructure issues, **macOS still has 2 test failures*
 4. ✅ `MemoryUsageTracking` - PASSES
 
 **Error Messages:**
+
 ```
 /Users/runner/work/orpheus-sdk/orpheus-sdk/tests/transport/multi_clip_stress_test.cpp:304: Failure
 Expected: (callback_accuracy) > (70.0), actual: 26.968888888888888 vs 70
@@ -833,6 +887,7 @@ Expected: (callback_accuracy) > (80.0), actual: 38.4 vs 80
 ```
 
 **Root Cause:**
+
 - Dummy audio driver not calling back at expected frequency
 - Only getting ~27-38% of expected callbacks
 - Either:
@@ -841,12 +896,14 @@ Expected: (callback_accuracy) > (80.0), actual: 38.4 vs 80
   - Thread scheduling delays in GitHub Actions
 
 **This is NOT an infrastructure issue:**
+
 - ✅ libsndfile is installed and working
 - ✅ Tests compile and run
 - ✅ Other tests pass
 - ❌ Test logic has timing/performance bug
 
 **Recommended Action:**
+
 - File separate issue for `multi_clip_stress_test` callback accuracy
 - Investigate dummy audio driver callback frequency
 - Consider relaxing timing thresholds for CI environments
@@ -860,6 +917,7 @@ Expected: (callback_accuracy) > (80.0), actual: 38.4 vs 80
 **Failed Test:** `CoreAudioDriverTest.CallbackIsInvoked` (line 238)
 
 **Error:**
+
 ```
 [ RUN      ] CoreAudioDriverTest.CallbackIsInvoked
 /Users/runner/work/orpheus-sdk/orpheus-sdk/tests/audio_io/coreaudio_driver_test.cpp:238: Failure
@@ -869,12 +927,14 @@ Expected: (m_callback->getCallCount()) > (5), actual: 1 vs 5
 ```
 
 **Root Cause:**
+
 - Test waits 100ms for callbacks
 - Expected: >5 callbacks (512 frames @ 48kHz = ~10.7ms per callback)
 - Actual: Only 1 callback in 681ms
 - CoreAudio initialization delay or callback not starting
 
 **Test Code:**
+
 ```cpp
 TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   AudioDriverConfig config;
@@ -896,11 +956,13 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 ```
 
 **This is NOT an infrastructure issue:**
+
 - ✅ CoreAudio framework available on macOS
 - ✅ Test compiles and runs
 - ❌ Test timing expectations don't match actual driver behavior
 
 **Recommended Action:**
+
 - Increase wait time (e.g., 200-500ms) to allow CoreAudio initialization
 - Or add polling loop to wait for callback count threshold
 - Same underlying issue as `multi_clip_stress_test` (callback frequency)
@@ -910,6 +972,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 ### Summary: Infrastructure vs Code Issues
 
 **Infrastructure Issues (ALL FIXED):** ✅
+
 - ✅ Package archival cleanup
 - ✅ CMake cache poisoning
 - ✅ Integration test compatibility
@@ -921,15 +984,18 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 - ✅ Windows MSVC portability (M_PI_2, chrono)
 
 **Code Issues (SEPARATE FROM THIS PR):** ⚠️
+
 - ⚠️ `multi_clip_stress_test` callback accuracy (macOS only)
 - ⚠️ `coreaudio_driver_test` callback invocation (macOS Debug only)
 
 **CI Status After This PR:**
+
 - ✅ **Ubuntu:** 58/58 tests passing (100%)
 - ✅ **Windows:** 58/58 tests passing (100%) - after libsndfile[core] fix
 - ⚠️ **macOS:** 56/58 tests passing (96.5%) - 2 timing test failures
 
 **Acceptance Criteria:**
+
 - This PR fixes ALL infrastructure issues
 - The 2 macOS test failures are legitimate test bugs
 - 96.5% pass rate is acceptable for CI (infrastructure working correctly)
@@ -940,6 +1006,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 ## Final Configuration Summary
 
 **Before:**
+
 ```json
 {
   "name": "orpheus-monorepo",
@@ -955,6 +1022,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 ```
 
 **After:**
+
 ```json
 {
   "name": "orpheus-sdk",
@@ -973,6 +1041,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 After cleanup, the repository has **two CI workflows**:
 
 #### 1. ci-pipeline.yml (Primary, Multi-Platform)
+
 - **Platforms:** ubuntu-latest, windows-latest, macos-latest
 - **Build Types:** Debug, Release
 - **Scope:** C++ SDK build, test, lint
@@ -980,6 +1049,7 @@ After cleanup, the repository has **two CI workflows**:
 - **Status:** ✅ Should pass on all platforms (C++ SDK only)
 
 #### 2. ci.yml (Secondary, Ubuntu Only)
+
 - **Platform:** ubuntu-latest only
 - **Build Types:** Debug, RelWithDebInfo
 - **Scope:** C++ SDK build, test
@@ -1066,12 +1136,14 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
 ### Monitoring
 
 **Add to Sprint Review Checklist:**
+
 - [ ] All CI workflows passing on main branch
 - [ ] No obsolete workflows in `.github/workflows/`
 - [ ] package.json scripts match current architecture
 - [ ] Decision documents have completed checklists
 
 **Automation Opportunity:**
+
 ```yaml
 # Future: Add workflow validation job
 - name: Validate Workflow Configuration
@@ -1088,6 +1160,7 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
 ## Related Work
 
 ### Completed (ORP104)
+
 - ✅ Audio thread safety audit (routing_matrix.cpp)
 - ✅ Lock-free config pattern
 - ✅ Gain conversion caching
@@ -1097,11 +1170,13 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
 **ORP104 changes did NOT cause CI failures** - Ubuntu builds passed cleanly with ORP104 code, proving the C++ SDK is healthy.
 
 ### Completed (DECISION_PACKAGES)
+
 - ✅ Decision documented
 - ✅ Packages directory removed
 - ⚠️ CI workflow cleanup incomplete (fixed by ORP105)
 
 ### Pending (DECISION_PACKAGES Checklist)
+
 - [ ] Update .claudeignore to exclude archive/packages/ (if restored to archive/)
 - [ ] Update README.md with "C++ SDK for professional audio" positioning
 - [ ] Update .claude/implementation_progress.md to mark Phase 1-2 as archived
@@ -1158,6 +1233,7 @@ $ git push origin claude/investigate-ci-macos-windows-011CUxAwYCSDHBxBAqbpGW7o
 
 **Implementation Date:** 2025-11-09
 **Commits:**
+
 - `8c4acd59` - Remove interim-ci.yml, update package.json
 - `4c4fdde3` - Remove CMake build cache
 - `1693af7c` - Fix integration tests, add libsndfile verification

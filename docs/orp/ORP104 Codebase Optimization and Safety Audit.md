@@ -29,6 +29,7 @@ Comprehensive audit of the Orpheus SDK core implementation reveals **3 critical 
 ### What This Document Covers
 
 **NEW findings from deep codebase analysis:**
+
 - Real-time safety violations (file I/O, locks in audio thread)
 - Hot path performance bottlenecks (`std::pow()`, unnecessary conversions)
 - Code quality issues (const-cast, manual memory management)
@@ -38,6 +39,7 @@ Comprehensive audit of the Orpheus SDK core implementation reveals **3 critical 
 ### What ORP102/ORP103 Already Cover
 
 **Already documented (not duplicated here):**
+
 - Build system optimization (JUCE version, LTO, CMake patterns) - ORP103
 - Strategic direction (package archival, SDK release) - ORP102
 - OCC performance bugs (77% CPU, memory leak) - ORP102
@@ -64,6 +66,7 @@ Comprehensive audit of the Orpheus SDK core implementation reveals **3 critical 
 **File:** `src/core/routing/routing_matrix.cpp`
 
 **Line 691-704:**
+
 ```cpp
 void RoutingMatrix::processRouting(...) {
     // AUDIO CALLBACK CODE PATH
@@ -79,6 +82,7 @@ void RoutingMatrix::processRouting(...) {
 ```
 
 **Line 546-554:**
+
 ```cpp
 void RoutingMatrix::updateGain(...) {
     // Called from audio thread during gain smoothing
@@ -94,17 +98,20 @@ void RoutingMatrix::updateGain(...) {
 #### Evidence
 
 **Violation:** CLAUDE.md Broadcast-Safe Rules
+
 ```markdown
 ## Audio Code Rules
 
 **Broadcast-Safe:**
+
 - No audio thread allocations
-- No render path network calls  <-- FILE I/O VIOLATES THIS
+- No render path network calls <-- FILE I/O VIOLATES THIS
 - Lock-free structures, pre-allocate
 - Graceful degradation
 ```
 
 **Impact Analysis:**
+
 - `fopen()` can block for 10-100ms waiting for disk I/O
 - Audio buffer is typically 128-512 samples (~2.7-10ms @ 48kHz)
 - Single blocking call = guaranteed audio dropout
@@ -113,12 +120,14 @@ void RoutingMatrix::updateGain(...) {
 #### Fix Strategy
 
 **Option A: Remove Debug Logging (Recommended)**
+
 ```cpp
 // Delete all FILE* operations from audio thread code
 // Use profiling tools (Instruments, perf) instead
 ```
 
 **Option B: Lock-Free Async Logging**
+
 ```cpp
 // Pre-allocated ring buffer
 struct LogEntry { char msg[256]; uint64_t timestamp; };
@@ -144,7 +153,7 @@ void flush_logs_to_disk() {
 
 - [ ] Remove `fopen()`/`fprintf()`/`fclose()` from `routing_matrix.cpp:691-704`
 - [ ] Remove `fopen()`/`fprintf()`/`fclose()` from `routing_matrix.cpp:546-554`
-- [ ] Search for other FILE* usage in audio paths: `grep -rn "fopen" src/core/`
+- [ ] Search for other FILE\* usage in audio paths: `grep -rn "fopen" src/core/`
 - [ ] Add comment: `// Use Instruments/perf for audio thread profiling`
 - [ ] Test: Build and verify no audio dropouts
 
@@ -161,6 +170,7 @@ void flush_logs_to_disk() {
 **File:** `src/core/routing/routing_matrix.cpp`
 
 **Line 35:**
+
 ```cpp
 void RoutingMatrix::initialize(const RoutingConfig& config) {
     std::lock_guard<std::mutex> lock(m_config_mutex);  // Audio thread may call this!
@@ -170,6 +180,7 @@ void RoutingMatrix::initialize(const RoutingConfig& config) {
 ```
 
 **Line 93:**
+
 ```cpp
 RoutingConfig RoutingMatrix::getConfig() const {
     std::lock_guard<std::mutex> lock(m_config_mutex);  // Called from audio thread!
@@ -180,6 +191,7 @@ RoutingConfig RoutingMatrix::getConfig() const {
 #### Evidence
 
 **Threading Model:** From CLAUDE.md
+
 ```markdown
 ## Core Principles
 
@@ -189,6 +201,7 @@ RoutingConfig RoutingMatrix::getConfig() const {
 **Violation:** If UI thread holds `m_config_mutex` during config update, audio thread blocks waiting for lock
 
 **Scenario:**
+
 1. UI thread: `updateConfig()` → acquires `m_config_mutex`
 2. UI thread: performs expensive validation (10ms)
 3. Audio callback: `processRouting()` → calls `getConfig()` → tries to acquire `m_config_mutex`
@@ -222,6 +235,7 @@ public:
 ```
 
 **Benefits:**
+
 - Zero locks in audio thread
 - Wait-free reads (audio thread never blocks)
 - Simple atomic swap
@@ -257,6 +271,7 @@ void TransportController::scheduleCallback(std::function<void()> callback) {
 **Issue:** `std::function<void()>` with lambda captures can allocate on heap during copy/move
 
 **Example:**
+
 ```cpp
 // In audio thread
 auto clipData = getClipData();  // Captured by lambda
@@ -299,18 +314,22 @@ void TransportController::processAudio(...) {
 #### Performance Analysis
 
 **Frequency:**
+
 - 32 clips @ 48kHz sample rate
 - 512 samples per buffer
 - Audio callback rate: 48000 / 512 = 93.75 callbacks/sec
 - `std::pow()` calls: 32 clips × 93.75 callbacks = **3,000 calls/sec**
 
 **Wait, recalculating:** Looking at code structure, if it's called per-clip per-buffer:
+
 - 32 clips × 93.75 callbacks/sec = 3,000 calls/sec
 
 **But if it's per-sample** (inside inner loop):
+
 - 32 clips × 48,000 samples/sec = **1,536,000 calls/sec**
 
 **Cost:**
+
 - `std::pow()`: ~50-100 CPU cycles (transcendental function)
 - Table lookup: ~5 CPU cycles (cache hit)
 - **Ratio: 10-20x slower**
@@ -350,6 +369,7 @@ public:
 ```
 
 **Benefits:**
+
 - `std::pow()` called only when gain changes (UI event, ~1-10 times/sec)
 - Audio thread uses cached `float` (deterministic, fast)
 - **Expected CPU reduction: 10-20% in playback**
@@ -375,6 +395,7 @@ public:
 **File:** `src/core/transport/transport_controller.cpp`
 
 **Lines: 1045, 1156, 1263, 1311:**
+
 ```cpp
 ClipMetadata TransportController::getClipMetadata(int clipId) const {
     // Const method acquiring mutable lock - violates C++ semantics!
@@ -395,17 +416,20 @@ SessionDefaults TransportController::getSessionDefaults() const {
 #### Evidence
 
 **C++ Standard Violation:**
+
 - `const` methods promise not to modify object state
 - Acquiring lock modifies mutex internal state
 - `const_cast` away `const` to modify = undefined behavior
 
 **Better Design:**
+
 - Make mutex `mutable` (allows modification in const methods)
 - OR redesign API for lock-free reads (atomic pointer pattern)
 
 #### Fix Strategy
 
 **Option A: Mutable Mutex (Quick Fix)**
+
 ```cpp
 class TransportController {
 private:
@@ -421,6 +445,7 @@ public:
 ```
 
 **Option B: Lock-Free Reads (Better, More Work)**
+
 ```cpp
 class TransportController {
 private:
@@ -462,6 +487,7 @@ public:
 **File:** `src/core/routing/routing_matrix.cpp`
 
 **Lines: 69, 723, 726, 729, 761:**
+
 ```cpp
 void RoutingMatrix::createSmoother(int nodeId) {
     // NO EXCEPTION SAFETY!
@@ -499,6 +525,7 @@ public:
 ```
 
 **Benefits:**
+
 - Automatic cleanup (RAII)
 - Exception-safe
 - Clear ownership semantics
@@ -531,14 +558,17 @@ public:
 #### Evidence
 
 **From CLAUDE.md:**
+
 ```markdown
 ## Audio Code Rules
 
 **Quality:**
+
 - Adapters ≤300 LOC when possible
 ```
 
 **Complexity Analysis:**
+
 - CLI argument parsing: ~200 LOC
 - Session management: ~300 LOC
 - Command implementations: ~800 LOC (4 commands)
@@ -558,6 +588,7 @@ adapters/minhost/
 ```
 
 **Benefits:**
+
 - Each file under 300 LOC (maintainable)
 - Clear separation of concerns
 - Easier to test individual components
@@ -584,6 +615,7 @@ adapters/minhost/
 **Exact duplication across 2 adapters:**
 
 **File 1:** `adapters/minhost/main.cpp:256-265`
+
 ```cpp
 struct SessionGuard {
     const orpheus_session_api_v1* api = nullptr;
@@ -598,6 +630,7 @@ struct SessionGuard {
 ```
 
 **File 2:** `adapters/reaper/reaper_entry.cpp:66-74`
+
 ```cpp
 struct SessionGuard {
     const orpheus_session_api_v1* api = nullptr;
@@ -648,6 +681,7 @@ struct SessionGuard {
 ```
 
 **Usage:**
+
 ```cpp
 #include "adapters/shared/session_guard.h"
 
@@ -681,6 +715,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 #### Evidence
 
 **Current Tests (9 total):**
+
 1. Basic initialization
 2. Start/stop single clip
 3. Gain control
@@ -692,6 +727,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 9. Stress test (16 clips)
 
 **Missing Test Coverage:**
+
 - Error handling (invalid clip IDs, out-of-range values)
 - Edge cases (zero-length clips, sample rate changes)
 - Concurrency (UI thread updates during playback)
@@ -703,6 +739,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 **Defer to Phase 3** (post-critical fixes)
 
 **Rationale:**
+
 - Integration tests (16-clip stress) provide basic confidence
 - Critical audio path bugs (file I/O, mutex) are higher priority
 - Full unit test suite is 4-8 hours of work
@@ -720,6 +757,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 #### Problem Statement
 
 **Current State:**
+
 - No automated tests verify "zero allocations in audio path"
 - Manual code review only (error-prone)
 - Broadcast-safe restart (5ms crossfade) documented but not tested
@@ -727,6 +765,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 #### Evidence
 
 **From ORP102 (line 777):**
+
 > Lock-Free Optimization: Brief mutex lock in `addActiveClip()` (audio thread)
 > **Current Performance:** Acceptable (<1ms lock duration)
 > **Priority:** Low (optimize if profiling shows contention)
@@ -738,6 +777,7 @@ orpheus::adapters::SessionGuard session{api, handle};
 **Defer to Phase 3** (create RT safety auditor)
 
 **Future Work:**
+
 - Static analysis: Parse audio callback paths, detect malloc/lock calls
 - Runtime instrumentation: Hook allocator, assert if called in audio thread
 - Determinism tests: Verify bit-identical output across runs
@@ -750,12 +790,13 @@ orpheus::adapters::SessionGuard session{api, handle};
 
 **Goal:** Eliminate broadcast-safe violations (file I/O, mutex)
 
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Remove file I/O from audio thread | `routing_matrix.cpp:691-704, 546-554` | 30 min | P0 |
-| Replace mutex with lock-free atomics | `routing_matrix.cpp:35, 93` | 2 hrs | P0 |
+| Task                                 | File                                  | Effort | Priority |
+| ------------------------------------ | ------------------------------------- | ------ | -------- |
+| Remove file I/O from audio thread    | `routing_matrix.cpp:691-704, 546-554` | 30 min | P0       |
+| Replace mutex with lock-free atomics | `routing_matrix.cpp:35, 93`           | 2 hrs  | P0       |
 
 **Success Criteria:**
+
 - [ ] No `fopen()`/`fclose()` calls in audio thread code paths
 - [ ] No `std::mutex` locks in audio thread code paths
 - [ ] All tests passing (58/58)
@@ -767,12 +808,13 @@ orpheus::adapters::SessionGuard session{api, handle};
 
 **Goal:** Eliminate CPU waste (pow, const-cast)
 
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Cache dB→Linear conversion | `transport_controller.cpp:318` | 1 hr | P1 |
-| Fix const-cast violations | `transport_controller.cpp:1045+` | 2 hrs | P1 |
+| Task                       | File                             | Effort | Priority |
+| -------------------------- | -------------------------------- | ------ | -------- |
+| Cache dB→Linear conversion | `transport_controller.cpp:318`   | 1 hr   | P1       |
+| Fix const-cast violations  | `transport_controller.cpp:1045+` | 2 hrs  | P1       |
 
 **Success Criteria:**
+
 - [ ] `std::pow()` removed from audio processing loop
 - [ ] No `const_cast` in codebase (clang-tidy clean)
 - [ ] Benchmark: 10-20% CPU reduction in 32-clip stress test
@@ -783,13 +825,14 @@ orpheus::adapters::SessionGuard session{api, handle};
 
 **Goal:** Modern C++, DRY principles
 
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Extract SessionGuard to shared | `adapters/shared/session_guard.h` | 30 min | P2 |
-| Convert to `std::make_unique` | `routing_matrix.cpp:69, 723+` | 1 hr | P2 |
-| Add [[nodiscard]] attributes | `include/orpheus/*.h` | 1 hr | P2 |
+| Task                           | File                              | Effort | Priority |
+| ------------------------------ | --------------------------------- | ------ | -------- |
+| Extract SessionGuard to shared | `adapters/shared/session_guard.h` | 30 min | P2       |
+| Convert to `std::make_unique`  | `routing_matrix.cpp:69, 723+`     | 1 hr   | P2       |
+| Add [[nodiscard]] attributes   | `include/orpheus/*.h`             | 1 hr   | P2       |
 
 **Success Criteria:**
+
 - [ ] No code duplication (SessionGuard)
 - [ ] No manual `new`/`delete` in hot paths
 - [ ] Modern C++20 patterns throughout
@@ -800,10 +843,10 @@ orpheus::adapters::SessionGuard session{api, handle};
 
 **Goal:** Comprehensive safety and correctness verification
 
-| Task | Effort | Priority |
-|------|--------|----------|
-| Create RT safety auditor | 3 hrs | P2 |
-| Expand transport controller tests | 4 hrs | P2 |
+| Task                              | Effort | Priority |
+| --------------------------------- | ------ | -------- |
+| Create RT safety auditor          | 3 hrs  | P2       |
+| Expand transport controller tests | 4 hrs  | P2       |
 
 **Status:** Deferred to post-ORP104 (separate sprint)
 
@@ -834,11 +877,13 @@ orpheus::adapters::SessionGuard session{api, handle};
 ### Performance Improvements
 
 **Expected:**
+
 - 10-20% CPU reduction (pow elimination)
 - Zero audio dropouts (file I/O/mutex fixes)
 - Cleaner codebase (modern C++20)
 
 **Measured (post-implementation):**
+
 - Benchmark with `tests/transport/multi_clip_stress_test` before/after
 - CPU profiling with Instruments/perf
 - Dropout count in 1-hour stress test
@@ -849,23 +894,23 @@ orpheus::adapters::SessionGuard session{api, handle};
 
 ### High Risks
 
-| Risk | Mitigation |
-|------|------------|
+| Risk                                        | Mitigation                               |
+| ------------------------------------------- | ---------------------------------------- |
 | Lock-free atomics introduce race conditions | Extensive testing, memory_order analysis |
-| Removing debug logging hides real bugs | Use Instruments/perf, add unit tests |
-| Performance gains less than expected | Benchmark before committing |
+| Removing debug logging hides real bugs      | Use Instruments/perf, add unit tests     |
+| Performance gains less than expected        | Benchmark before committing              |
 
 ### Medium Risks
 
-| Risk | Mitigation |
-|------|------------|
+| Risk                                | Mitigation                                      |
+| ----------------------------------- | ----------------------------------------------- |
 | const-cast fix breaks existing code | Grep for all usage sites, comprehensive testing |
-| unique_ptr changes ABI | Internal only, no public API change |
+| unique_ptr changes ABI              | Internal only, no public API change             |
 
 ### Low Risks
 
-| Risk | Mitigation |
-|------|------------|
+| Risk                                    | Mitigation                 |
+| --------------------------------------- | -------------------------- |
 | SessionGuard extraction breaks adapters | Small change, easy to test |
 
 ---

@@ -12,6 +12,7 @@
 Comprehensive analysis of the Orpheus SDK repository reveals **strong technical foundations** (58/58 tests passing, exceptional documentation) but identifies **strategic architecture questions** and **3 critical blockers** requiring resolution before v1.0 release.
 
 **Overall Repository Health:** 7/10
+
 - **Strengths:** Core SDK stable, comprehensive testing, excellent documentation
 - **Concerns:** Architecture misalignment (unused packages), performance bugs (OCC), CI noise (chaos tests)
 - **Opportunity:** SDK v1.0.0-rc.1 ready for release (pending user approval)
@@ -23,9 +24,11 @@ Comprehensive analysis of the Orpheus SDK repository reveals **strong technical 
 ### ✅ Strengths
 
 #### 1. Core SDK Quality (C++20)
+
 **Status:** Production-ready
 
 **Evidence:**
+
 - 58/58 tests passing (100% success rate)
 - 32 comprehensive unit tests for recent features (gain, loop, metadata)
 - Clean architecture with deterministic audio processing
@@ -33,11 +36,13 @@ Comprehensive analysis of the Orpheus SDK repository reveals **strong technical 
 - Sample-accurate timing preserved
 
 **Files:**
+
 - `src/core/transport/transport_controller.cpp` - Main transport implementation
 - `tests/transport/` - Comprehensive test suite
 - `include/orpheus/` - Well-documented public APIs
 
 **Test Results:**
+
 ```
 Total Tests: 58/58 passing
 Unit Tests: 32/32 (gain: 11, loop: 11, metadata: 10)
@@ -47,9 +52,11 @@ Runtime: 891ms (unit) + 60s (integration)
 ```
 
 #### 2. Documentation Excellence
+
 **Status:** Best-in-class
 
 **Evidence:**
+
 - 180+ ORP/OCC documents with structured naming convention
 - Migration guide ready (`docs/MIGRATION_v0_to_v1.md`, 697 lines)
 - Changelog ready (`CHANGELOG.md`, Keep a Changelog format)
@@ -57,14 +64,17 @@ Runtime: 891ms (unit) + 60s (integration)
 - All public APIs documented with Doxygen comments
 
 **Documentation Categories:**
+
 - **ORP (Orpheus SDK):** 101 documents (architecture, sprints, bug fixes)
 - **OCC (Clip Composer):** 105 documents (product vision, implementation)
 - **Guides:** Migration, troubleshooting, architecture, roadmap
 
 #### 3. Recent Development Momentum
+
 **Status:** Strong progress
 
 **Completed Phases:**
+
 - ✅ Phase 0: Repository setup (15/15 tasks, 100%)
 - ✅ Phase 1: Driver architecture (23/23 tasks, 100%)
 - ✅ Phase 2: WASM + UI components (11/11 tasks, 100%)
@@ -74,6 +84,7 @@ Runtime: 891ms (unit) + 60s (integration)
 **Overall Progress:** 64/104 tasks (61.5%)
 
 **Recent Commits (Last 20):**
+
 - SDK v1.0 documentation complete (migration guide, changelog)
 - Unit tests implemented for all Phase 4 features
 - OCC v0.2.1 sprint plan created (OCC104)
@@ -94,12 +105,14 @@ Runtime: 891ms (unit) + 60s (integration)
 The repository exhibits **dual identity** with misaligned components:
 
 **Core SDK (C++20):**
+
 - Purpose: Professional audio SDK for C++ applications
 - Target: DAWs, plugins, broadcast tools, standalone apps
 - Status: Production-ready, well-tested
 - Consumer: Clip Composer (JUCE app) ✅
 
 **TypeScript Packages (8 packages):**
+
 - Location: `packages/` directory
 - Purpose: Web UI integration (originally for shmui web app)
 - Components:
@@ -115,6 +128,7 @@ The repository exhibits **dual identity** with misaligned components:
 #### Evidence
 
 **File:** `docs/orp/ORP098 Shmui Rebuild.md`
+
 ```markdown
 ## What Made Shmui Useless
 
@@ -128,6 +142,7 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 ```
 
 **Current State:**
+
 - OCC (Clip Composer) uses JUCE for UI, not web technologies
 - TypeScript packages have no downstream consumers
 - CI/CD runs for packages with no production use case
@@ -136,17 +151,20 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 #### Impact Analysis
 
 **Maintenance Cost:**
+
 - CI builds TypeScript packages on every push
 - Security audits run weekly for npm dependencies
 - Package version coordination across 8 packages
 - Documentation maintenance for unused APIs
 
 **Developer Confusion:**
+
 - Unclear if Orpheus is a web SDK or C++ SDK
 - New contributors unsure which codebase to focus on
 - Package directory suggests web-first, but reality is C++-first
 
 **Token Cost (AI Context):**
+
 - Packages consume ~20K tokens in code review
 - Documentation references packages extensively
 - .claudeignore already excludes `node_modules/` but not `packages/`
@@ -156,18 +174,21 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 **Option A: C++ SDK Focus (Recommended)**
 
 **Action:**
+
 - Archive `packages/` directory (preserve in git history)
 - Update README to clarify C++ SDK focus
 - Remove package-related CI jobs (TypeScript builds, npm audits)
 - Focus development on C++ API, JUCE applications (OCC)
 
 **Benefits:**
+
 - Clear strategic direction
 - Reduced CI/CD time (faster feedback)
 - Lower maintenance burden
 - Simplified onboarding for C++ developers
 
 **Risks:**
+
 - Loses future web UI option (can restore from git history)
 - Discards Phase 1-2 work (already documented, can reference)
 
@@ -178,6 +199,7 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 **Option B: Multi-Platform SDK**
 
 **Action:**
+
 - Keep packages, complete web integration
 - Build example web applications:
   - Session browser (React app using `@orpheus/client`)
@@ -187,11 +209,13 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 - Create `packages/orpheus-ui` component library (ORP098 blueprint exists)
 
 **Benefits:**
+
 - Serves both C++ and web developers
 - Enables web-based tools (remote control, session management)
 - Expands SDK reach beyond C++ ecosystem
 
 **Risks:**
+
 - Doubles maintenance surface area
 - Requires dedicated web developer resources
 - OCC doesn't benefit (uses JUCE, not web)
@@ -203,17 +227,20 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 **Option C: Hybrid Approach**
 
 **Action:**
+
 - Maintain packages minimally (security updates only)
 - Document as "future use, not actively developed"
 - Prioritize C++ SDK and OCC for v1.0-v1.5
 - Revisit web strategy post-v1.0 when SDK stabilizes
 
 **Benefits:**
+
 - Preserves future web option without active maintenance
 - Focuses resources on primary use case (OCC)
 - Defers decision until clearer product-market fit
 
 **Risks:**
+
 - Packages may become outdated (dependency drift)
 - Requires periodic maintenance to prevent bitrot
 - Ambiguity remains about SDK purpose
@@ -227,12 +254,14 @@ Backup preserved: ~/Archives/orpheus-backups/shmui-backup-20251031
 **Choose Option A: C++ SDK Focus**
 
 **Rationale:**
+
 1. **Current reality:** OCC (only consumer) uses JUCE, not web
 2. **Resource efficiency:** Small team should focus on one platform
 3. **Market positioning:** Competing with established C++ audio SDKs (JUCE, iPlug2)
 4. **Reversibility:** Packages preserved in git history, can restore if web use case emerges
 
 **Implementation:**
+
 1. Create `docs/DECISION_PACKAGES.md` documenting choice
 2. Move `packages/` to `archive/packages/` (preserves structure)
 3. Update `.claudeignore` to exclude archived packages
@@ -268,22 +297,26 @@ Release branch creation pending user approval.
 **Completed (9/12 tasks):**
 
 ✅ **Priority 1: Testing (4/4)**
+
 - Task 1.1: Gain control unit tests (11/11 passing)
 - Task 1.2: Loop mode unit tests (11/11 passing)
 - Task 1.3: Metadata persistence tests (10/10 passing)
 - Task 1.4: 16-clip integration test (passing, 60s runtime)
 
 ✅ **Priority 3: Documentation (4/5)**
+
 - Task 3.2: Migration guide (`docs/MIGRATION_v0_to_v1.md`, 697 lines)
 - Task 3.4: Changelog (`CHANGELOG.md`, 227 lines)
 - Task 3.5: README updates (v1.0 features, test coverage)
 - Task ORP100: Unit tests implementation report
 
 ⏸️ **Priority 2: Performance (0/2) - Deferred to User**
+
 - Task 2.1: Profile 16-clip scenario (requires Instruments/perf)
 - Task 2.2: Validate latency targets (requires real hardware)
 
 ⏳ **Priority 4: Release Prep (0/3) - Pending User Approval**
+
 - Task 4.1: Create release branch `release/v1.0.0-rc.1`
 - Task 4.2: Run full CI/CD validation
 - Task 4.3: Create GitHub release with changelog
@@ -291,6 +324,7 @@ Release branch creation pending user approval.
 #### Evidence of Readiness
 
 **Test Coverage:**
+
 ```bash
 $ ctest --test-dir build --output-on-failure
 Test project /Users/chrislyons/dev/orpheus-sdk/build
@@ -303,6 +337,7 @@ Test project /Users/chrislyons/dev/orpheus-sdk/build
 ```
 
 **Documentation:**
+
 - `docs/MIGRATION_v0_to_v1.md` - Complete upgrade guide
 - `CHANGELOG.md` - Keep a Changelog format, v1.0.0-rc.1 entry
 - `README.md` - Updated with v1.0 features, quick start
@@ -310,6 +345,7 @@ Test project /Users/chrislyons/dev/orpheus-sdk/build
 - `docs/orp/ORP101.md` - Phase 4 completion summary
 
 **Git Commits (Ready for Tag):**
+
 ```
 64e45713 docs: add SDK v1.0 migration guide, changelog, README updates
 075495a8 test(transport): enhance 16-clip integration test with metadata
@@ -334,6 +370,7 @@ git push origin release/v1.0.0-rc.1 --tags
 **Task 4.2: CI/CD Validation**
 
 Trigger CI pipeline on release branch:
+
 - C++ build (ubuntu/windows/macos × Debug/Release)
 - Test suite (58 tests across all platforms)
 - Linting (clang-format, clang-tidy)
@@ -355,11 +392,13 @@ gh release create v1.0.0-rc.1 \
 #### Impact of Delay
 
 **Internal:**
+
 - Strategic milestone not formally marked
 - No tagged version for downstream integration
 - Psychological: Team ready to move forward, waiting on process
 
 **External:**
+
 - Cannot reference stable v1.0 in external communications
 - Early adopters cannot pin to versioned release
 - Changelog not visible on GitHub Releases page
@@ -369,11 +408,13 @@ gh release create v1.0.0-rc.1 \
 **Approve and Execute Release Tasks (ORP099 4.1-4.3)**
 
 **Timeline:** 4 hours
+
 - Task 4.1: 1 hour (branch, version bump, tag)
 - Task 4.2: 2 hours (CI run + monitoring)
 - Task 4.3: 1 hour (GitHub release creation + validation)
 
 **Prerequisites:**
+
 - User review of `CHANGELOG.md` (ensure accuracy)
 - User review of `MIGRATION_v0_to_v1.md` (ensure completeness)
 - Decision on version number (v1.0.0-rc.1 vs v1.0.0)
@@ -410,6 +451,7 @@ Chaos testing workflow runs nightly but contains **placeholder TODOs instead of 
 ```
 
 **CI Results (Last 5 Runs):**
+
 ```
 completed  failure  Chaos Testing  main  schedule  2025-11-05T02:34:03Z
 completed  failure  Chaos Testing  main  schedule  2025-11-04T02:33:37Z
@@ -419,6 +461,7 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
 ```
 
 **All 3 scenarios affected:**
+
 1. `chaos-test-service-driver` - Service driver crash recovery (placeholder)
 2. `chaos-test-wasm-worker` - WASM worker restart (placeholder)
 3. `chaos-test-client-reconnect` - Client reconnection (placeholder)
@@ -426,17 +469,20 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
 #### Impact Analysis
 
 **Developer Experience:**
+
 - Nightly email notifications for "failures" that aren't real bugs
 - Reduces trust in CI system ("boy who cried wolf")
 - Wastes time investigating false positives
 
 **Production Readiness:**
+
 - No actual validation of crash recovery
 - False sense of reliability ("tests passing" when they test nothing)
 - Real reliability bugs could be masked
 
 **CI Cost:**
-- Runs nightly at 2 AM UTC (cron: '0 2 * * *')
+
+- Runs nightly at 2 AM UTC (cron: '0 2 \* \* \*')
 - Creates GitHub issues on failure (noise in issue tracker)
 - Estimated cost: ~$0.50/month (minimal, but non-zero)
 
@@ -445,6 +491,7 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
 **Option A: Implement Real Chaos Tests (High Value, High Effort)**
 
 **Scope:**
+
 1. **Service driver crash recovery**
    - Spawn service driver process
    - Send command mid-execution
@@ -465,21 +512,25 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
    - Measure: failover time, command queue preservation
 
 **Implementation Files:**
+
 - `packages/engine-service/tests/chaos/service-crash-test.ts`
 - `packages/engine-wasm/tests/chaos/worker-restart-test.ts`
 - `packages/client/tests/chaos/reconnect-test.ts`
 
 **Dependencies:**
+
 - Process management (Node.js `child_process.spawn()`, `process.kill()`)
 - Network simulation (TCP proxy, `tcpkill`, or mock WebSocket)
 - Timer/timeout utilities (measure recovery SLA)
 
 **Benefits:**
+
 - Real validation of production failure modes
 - Confidence in reliability claims
 - Catch regressions in error handling
 
 **Effort:** 8 hours
+
 - 3 hours per test scenario (implementation + validation)
 - 1 hour integration with CI workflow
 
@@ -488,22 +539,26 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
 **Option B: Remove Chaos Tests (Pragmatic, Low Effort)**
 
 **Rationale:**
+
 1. Packages have no production consumers (see Issue 1)
 2. C++ SDK doesn't use Node.js/WASM drivers in production (OCC uses native SDK directly)
 3. Reliability testing better done in integration tests (C++ codebase)
 4. Resources better spent on core SDK testing
 
 **Action:**
+
 1. Remove `.github/workflows/chaos-tests.yml`
 2. Update `.claude/implementation_progress.md` (mark P3.CI.003 as deferred)
 3. Document decision in `docs/DECISION_CHAOS_TESTS.md`
 
 **Benefits:**
+
 - Immediate fix for CI noise
 - Reduces maintenance burden
 - Aligns with C++ SDK focus (Option A from Issue 1)
 
 **Effort:** 1 hour
+
 - 30 min: Remove workflow file
 - 30 min: Update documentation
 
@@ -514,6 +569,7 @@ completed  failure  Chaos Testing  main  schedule  2025-11-01T20:46:23Z
 **Choose Option B: Remove Chaos Tests**
 
 **Rationale:**
+
 1. **Aligns with Option A from Issue 1** (C++ SDK focus, archive packages)
 2. **Pragmatic:** No production consumers for packages currently
 3. **Reversible:** Can restore tests if web SDK strategy changes
@@ -548,6 +604,7 @@ Clip Composer v0.2.0 exhibits **two critical performance bugs** preventing produ
 **Issue:** 77% CPU usage (M2 processor) with no playback active
 
 **Investigation Steps:**
+
 1. Profile with Instruments (macOS Time Profiler)
 2. Identify hot loops in idle state
 3. Check timer callback frequencies
@@ -555,6 +612,7 @@ Clip Composer v0.2.0 exhibits **two critical performance bugs** preventing produ
 5. Verify no unnecessary polling
 
 **Likely Culprits:**
+
 - MainComponent.cpp - main event loop
 - ClipGrid.cpp - button polling (line 149-176, 75fps state sync)
 - ClipButton.cpp - state update loops
@@ -569,6 +627,7 @@ Clip Composer v0.2.0 exhibits **two critical performance bugs** preventing produ
 **Issue:** Every build consumes disk space, only recovered after system reboot
 
 **Investigation Steps:**
+
 1. Monitor build directory sizes: `du -sh build-*/`
 2. Check for orphaned processes: `ps aux | grep orpheus`
 3. Inspect temporary files: `/var/folders/`, `/tmp/`
@@ -576,25 +635,29 @@ Clip Composer v0.2.0 exhibits **two critical performance bugs** preventing produ
 5. Check for file descriptor leaks (macOS: `lsof | grep orpheus`)
 
 **Files to Examine:**
+
 - Build scripts: build-launch.sh, clean-relaunch.sh
 - CMake configuration: CMakeLists.txt
-- Build directories: build-*/, orpheus_clip_composer_app_artefacts/
+- Build directories: build-\*/, orpheus_clip_composer_app_artefacts/
 ```
 
 #### Impact Analysis
 
 **User Experience:**
+
 - Computer overheats during idle (77% CPU)
 - Battery drain on laptops
 - Application unusable for extended sessions (>1 hour)
 - Must reboot system to recover disk space (development friction)
 
 **Development Workflow:**
+
 - Slow iteration cycle (must reboot frequently)
 - Difficult to profile (CPU already maxed)
 - Blocks QA testing for v0.2.0 (cannot test long sessions)
 
 **Production Readiness:**
+
 - **BLOCKS v0.2.1 release** (Sprint 1 is P0 in OCC104)
 - Cannot ship to beta users in current state
 - Reputation risk if users experience overheating
@@ -619,10 +682,12 @@ void MainComponent::timerCallback() {
 **Issue:** Timer runs continuously, even when no playback active
 
 **Expected Behavior:**
+
 - Timer should only run during playback
 - Idle state: no polling, no repaints (event-driven only)
 
 **Fix Strategy:**
+
 1. Conditional timer: `if (isPlaying()) startTimer(...)` else `stopTimer()`
 2. Optimize `clipGrid->syncState()`: Only update changed buttons
 3. Partial repaints: `repaint(dirtyRegion)` instead of `repaint()`
@@ -651,6 +716,7 @@ void MainComponent::timerCallback() {
    - Temporary WAV files for waveform generation
 
 **Fix Strategy:**
+
 1. Add `killall OrpheusClipComposer` to `build-launch.sh` (before build)
 2. Implement proper cleanup in `AudioEngine` destructor
 3. Add `--clean-first` to CMake build command
@@ -663,12 +729,14 @@ void MainComponent::timerCallback() {
 **Execute OCC104 Sprint 1 Immediately**
 
 **Tasks (from OCC104):**
+
 1. **Diagnose Memory Leak** (3 hours)
 2. **Fix CPU Usage at Idle** (6 hours)
 3. **Complete SDK Integration** (4 hours) - verify gain/fade/loop
 4. **Validate** (1 hour) - >1 hour stability test
 
 **Success Criteria:**
+
 - [ ] CPU usage <5% with no playback
 - [ ] No disk space consumption after 10 builds
 - [ ] Computer no longer warm during idle
@@ -694,12 +762,14 @@ void MainComponent::timerCallback() {
 **File:** `src/core/transport/transport_controller.cpp`
 
 1. **Line 57:** SessionGraph integration
+
    ```cpp
    // TODO: m_sessionGraph will be used for querying clip metadata
    (void)m_sessionGraph; // Suppress unused warning for now
    ```
 
 2. **Line 183:** Tempo-based beat calculation
+
    ```cpp
    // TODO: Get tempo from SessionGraph
    double tempo = 120.0; // Default tempo
@@ -707,6 +777,7 @@ void MainComponent::timerCallback() {
    ```
 
 3. **Line 547:** Group assignments
+
    ```cpp
    case TransportCommand::Type::StopGroup:
      // TODO: Get clip group assignments from SessionGraph
@@ -715,6 +786,7 @@ void MainComponent::timerCallback() {
    ```
 
 4. **Line 616:** Error reporting
+
    ```cpp
    if (m_activeClipCount >= MAX_ACTIVE_CLIPS) {
      // TODO: Report error (too many active clips globally)
@@ -723,6 +795,7 @@ void MainComponent::timerCallback() {
    ```
 
 5. **Line 622:** Lock-free optimization
+
    ```cpp
    // NOTE: Brief mutex lock in audio thread - only happens when starting clip
    // TODO: Optimize to lock-free structure for production
@@ -730,6 +803,7 @@ void MainComponent::timerCallback() {
    ```
 
 6. **Line 1388:** Beat calculation (restart)
+
    ```cpp
    pos.samples = trimIn;
    pos.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
@@ -750,6 +824,7 @@ void MainComponent::timerCallback() {
 **Status:** Waiting on SessionGraph API completion
 
 **Impact:**
+
 - Tempo tracking not functional (defaults to 120 BPM)
 - Beat positions always report 0.0
 - Group-based stop commands (StopGroup) non-functional
@@ -757,6 +832,7 @@ void MainComponent::timerCallback() {
 **Priority:** Medium (not blocking v1.0, defer to v1.1)
 
 **Effort:** 6 hours
+
 - 2 hours: SessionGraph API design
 - 3 hours: Implementation (tempo queries, beat calculation)
 - 1 hour: Testing
@@ -770,6 +846,7 @@ void MainComponent::timerCallback() {
 **Priority:** Low (add logging for v1.1)
 
 **Effort:** 2 hours
+
 - 1 hour: Add `IErrorCallback` with `onMaxClipsExceeded()`
 - 1 hour: Testing + documentation
 
@@ -784,6 +861,7 @@ void MainComponent::timerCallback() {
 **Priority:** Low (optimize if profiling shows contention)
 
 **Effort:** 4 hours
+
 - 2 hours: Design lock-free AudioFileEntry lookup (hash table or atomic pointer array)
 - 1 hour: Implementation
 - 1 hour: Benchmark (verify no regression)
@@ -793,6 +871,7 @@ void MainComponent::timerCallback() {
 **Defer All 7 TODOs to v1.1**
 
 **Rationale:**
+
 1. Not blocking v1.0 release (tests passing, features work with defaults)
 2. SessionGraph API needs design work (not ready for quick fix)
 3. Lock-free optimization premature (no evidence of contention)
@@ -814,12 +893,14 @@ void MainComponent::timerCallback() {
 **File:** `src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp`
 
 Recent commits show warnings addressed:
+
 ```
 0a35c618 fix(dsp): suppress Windows C4251 DLL warning for Oscillator class
 50208d5e fix(windows): add missing stdexcept include and suppress CRT warnings
 ```
 
 **Likely Remaining Warnings:**
+
 - JUCE Font deprecation warnings (cosmetic, from SDK enhancement sprint ORP076)
 - CoreAudio API deprecations (AudioObjectGetPropertyData, etc.)
 - C++20 deprecations (std::result_of, std::binary_function)
@@ -847,12 +928,14 @@ Recent commits show warnings addressed:
 **Priority 2: Performance Validation (0/2) - Deferred to User**
 
 **Task 2.1: Profile 16-clip scenario**
+
 - Tool: Instruments (macOS Time Profiler)
 - Target: Measure CPU per thread (audio vs UI)
 - Acceptance: <30% CPU with 16 clips @ 48kHz
 - Effort: 2 hours
 
 **Task 2.2: Validate latency targets**
+
 - Tool: CoreAudio with 512-sample buffer
 - Target: <5ms round-trip latency
 - Acceptance: Documented in performance report
@@ -861,10 +944,12 @@ Recent commits show warnings addressed:
 **Priority 3: Documentation (1/5) - Optional**
 
 **Task 3.1: Regenerate Doxygen API Documentation**
+
 - Status: Headers documented, HTML generation deferred
 - Effort: 1 hour (setup Doxyfile + generate)
 
 **Task 3.3: Update Architecture Docs**
+
 - Files: `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`
 - Content: Metadata storage pattern, Phase 4 status
 - Effort: 2 hours
@@ -919,6 +1004,7 @@ Recent commits show warnings addressed:
 #### Evidence
 
 Recent commits:
+
 ```
 240f1d39 fix(ci): remove failing pkgconfiglite from Windows workflow
 50208d5e fix(windows): add missing stdexcept include and suppress CRT warnings
@@ -926,6 +1012,7 @@ Recent commits:
 ```
 
 **Platforms:**
+
 - ✅ **macOS:** Primary development platform (CoreAudio driver stable)
 - ⚠️ **Windows:** CI passing, but WASAPI driver disabled
 - ❓ **Linux:** ALSA driver status unclear
@@ -935,6 +1022,7 @@ Recent commits:
 **Document platform support matrix**
 
 **Action:**
+
 1. Create `docs/PLATFORM_SUPPORT.md`
 2. Test WASAPI driver on Windows (enable in CI)
 3. Test ALSA driver on Linux (add to CI matrix)
@@ -957,12 +1045,14 @@ Recent commits:
 #### Tasks
 
 **1.1 Strategic Decision: Package Future** (2 hours)
+
 - Review Issue 1 options (A: Archive, B: Multi-platform, C: Hybrid)
 - **Recommendation:** Option A (C++ SDK focus)
 - Document decision in `docs/DECISION_PACKAGES.md`
 - Get user approval
 
 **1.2 Execute Package Strategy** (4 hours, if Option A chosen)
+
 - Move `packages/` to `archive/packages/`
 - Update `.claudeignore` to exclude archived code
 - Remove TypeScript CI jobs (npm builds, security audits, chaos tests)
@@ -970,6 +1060,7 @@ Recent commits:
 - Update `.claude/implementation_progress.md` (mark Phase 1-2 as archived)
 
 **1.3 Complete SDK v1.0.0-rc.1 Release** (4 hours)
+
 - Execute ORP099 Task 4.1: Create `release/v1.0.0-rc.1` branch
 - Bump version in `CMakeLists.txt`
 - Tag `v1.0.0-rc.1`
@@ -977,6 +1068,7 @@ Recent commits:
 - Execute ORP099 Task 4.3: Create GitHub release with `CHANGELOG.md`
 
 **1.4 Update Repository Documentation** (2 hours)
+
 - Update `README.md`:
   - Clarify SDK purpose ("C++ SDK for professional audio")
   - Add quick start guide (build, test, integrate)
@@ -987,6 +1079,7 @@ Recent commits:
   - Update overall progress (64/104 → 67/104 with release tasks)
 
 **1.5 Document This Analysis** (1 hour)
+
 - Create `docs/orp/ORP102.md` (this document)
 - Reference in `.claude/implementation_progress.md`
 
@@ -1016,16 +1109,19 @@ Recent commits:
 #### Tasks
 
 **2.1 Complete Phase 4 Performance Validation** (3 hours)
+
 - Execute ORP099 Task 2.1: Profile 16-clip scenario with Instruments
 - Execute ORP099 Task 2.2: Validate latency targets (CoreAudio, 512 samples)
 - Document results in `docs/orp/ORP103_Performance_Report.md`
 
 **2.2 Generate Doxygen Documentation** (1 hour)
+
 - Execute ORP099 Task 3.1: Create `Doxyfile` configuration
 - Generate HTML documentation
 - Host on GitHub Pages or commit to `docs/api/`
 
 **2.3 Update Architecture Documentation** (2 hours)
+
 - Execute ORP099 Task 3.3: Update `docs/ARCHITECTURE.md`
   - Document metadata storage pattern (AudioFileEntry)
   - Update transport layer diagram
@@ -1034,12 +1130,14 @@ Recent commits:
   - Add v1.1 feature roadmap (SessionGraph, tempo tracking)
 
 **2.4 Address Core SDK TODOs** (8 hours)
+
 - Review 7 TODOs in `transport_controller.cpp` (TD1)
 - **Option A:** Implement SessionGraph tempo tracking (6 hours)
 - **Option B:** Convert TODOs to GitHub issues for v1.1 (2 hours)
 - **Recommendation:** Option B (defer to v1.1, track issues)
 
 **2.5 Cross-Platform Validation** (4 hours)
+
 - Create `docs/PLATFORM_SUPPORT.md`
 - Test WASAPI driver on Windows (re-enable in CI)
 - Test ALSA driver on Linux
@@ -1071,6 +1169,7 @@ Recent commits:
 #### Tasks
 
 **3.1 Diagnose Memory Leak** (3 hours)
+
 - Execute OCC104 Sprint 1 Task 1 (Memory Leak Diagnosis)
 - Monitor build directory sizes: `du -sh build-*/`
 - Check for orphaned processes: `ps aux | grep orpheus`
@@ -1079,23 +1178,27 @@ Recent commits:
 - Identify leak source
 
 **3.2 Fix Memory Leak** (3 hours)
+
 - Implement fix (likely: killall before build, proper cleanup in destructors)
 - Validate: 10 consecutive builds with no disk space growth
 - Update build scripts with fix
 
 **3.3 Diagnose CPU Usage** (2 hours)
+
 - Execute OCC104 Sprint 1 Task 2 (CPU Usage Diagnosis)
 - Profile with Instruments (macOS Time Profiler)
 - Identify hot loops in `MainComponent.cpp`, `ClipGrid.cpp`
 - Confirm 75fps polling loop hypothesis
 
 **3.4 Fix CPU Usage** (4 hours)
+
 - Implement conditional timer (only run during playback)
 - Optimize `syncState()` (only update changed buttons)
 - Implement partial repaints (`repaint(dirtyRegion)`)
 - Validate: <5% CPU at idle
 
 **3.5 Verify SDK Integration** (2 hours)
+
 - Execute OCC104 Sprint 1 Task 3 (SDK Gain/Fade Completion)
 - Test gain slider in Clip Edit Dialog
 - Test fade IN/OUT controls
@@ -1121,12 +1224,12 @@ Recent commits:
 
 ## Timeline Summary
 
-| Sprint   | Duration | Priority | Deliverable                                |
-| -------- | -------- | -------- | ------------------------------------------ |
-| Sprint 1 | 3-5 days | P0       | SDK v1.0.0-rc.1 released, strategy clear   |
-| Sprint 2 | 3-4 days | P1       | Phase 4 100%, debt tracked                 |
-| Sprint 3 | 3-5 days | P0 (OCC) | OCC performance fixed, v0.2.1 unblocked    |
-| **Total**    | **9-13 days** | **—**        | **SDK v1.0, OCC ready for production work** |
+| Sprint    | Duration      | Priority | Deliverable                                 |
+| --------- | ------------- | -------- | ------------------------------------------- |
+| Sprint 1  | 3-5 days      | P0       | SDK v1.0.0-rc.1 released, strategy clear    |
+| Sprint 2  | 3-4 days      | P1       | Phase 4 100%, debt tracked                  |
+| Sprint 3  | 3-5 days      | P0 (OCC) | OCC performance fixed, v0.2.1 unblocked     |
+| **Total** | **9-13 days** | **—**    | **SDK v1.0, OCC ready for production work** |
 
 **Post-Sprint 3:** Execute OCC v0.2.1 (OCC104, 12 sprints, 6 weeks)
 
@@ -1212,18 +1315,21 @@ Recent commits:
 ### Code Statistics
 
 **C++ Core SDK:**
+
 - Source files: ~50 (src/core/, include/orpheus/)
 - Lines of code: ~15,000 (estimated)
 - Test files: 58 tests across 20+ test files
 - Test coverage: High (all public APIs tested)
 
 **TypeScript Packages (if kept):**
+
 - Packages: 8 (`@orpheus/*`)
-- Source files: ~200 (packages/*/src/)
+- Source files: ~200 (packages/\*/src/)
 - Lines of code: ~25,000 (estimated)
 - Test coverage: Moderate (integration tests exist)
 
 **Clip Composer (JUCE App):**
+
 - Source files: ~30 (apps/clip-composer/Source/)
 - Lines of code: ~10,000 (estimated)
 - Test coverage: Manual (no automated tests yet)
@@ -1237,11 +1343,13 @@ Recent commits:
 ### Build Performance
 
 **C++ SDK (Debug):**
+
 - Clean build: ~30 seconds (8 cores, macOS)
 - Incremental build: <5 seconds (single file change)
 - Test execution: <1 second (58 tests)
 
 **TypeScript Packages (if kept):**
+
 - Clean build: ~45 seconds (pnpm build)
 - Incremental build: ~10 seconds (turbo cache)
 - Test execution: ~5 seconds (vitest)
@@ -1249,11 +1357,13 @@ Recent commits:
 ### CI/CD Performance
 
 **Main Pipeline:**
+
 - Duration: 7-10 minutes (matrix builds: 3 OS × 2 configs)
 - Jobs: 7 (cpp-build-test, cpp-lint, native-driver, typescript, integration, dependency, performance)
 - Success rate: ~95% (recent failures from Windows/Linux fixes)
 
 **Chaos Tests (if kept):**
+
 - Duration: 21-23 seconds (currently placeholders)
 - Frequency: Nightly (2 AM UTC)
 - Success rate: 0% (failing due to TODOs)
@@ -1312,6 +1422,7 @@ Recent commits:
 **Order:** Sprint 3 → Sprint 1 → Sprint 2
 
 **Rationale:**
+
 - Unblock OCC development immediately (v0.2.1 plan ready)
 - SDK release can wait (no external users yet)
 - Strategic clarity can be deferred (internal decision)
@@ -1327,12 +1438,14 @@ Recent commits:
 **Order:** Sprint 1 (release only) → Sprint 3 → Sprint 2
 
 **Tasks:**
+
 1. **Sprint 1 (Lite):** SDK release only (skip package decision, 4 hours)
 2. **Sprint 3:** OCC performance fixes (14 hours)
 3. **Sprint 2:** Quality + debt (18 hours)
 4. **Sprint 1 (Complete):** Package strategy after OCC stable (4 hours)
 
 **Rationale:**
+
 - Get v1.0 tag out quickly (psychological win)
 - Fix OCC blockers (highest user impact)
 - Defer strategic decisions until clearer picture
@@ -1346,6 +1459,7 @@ Recent commits:
 ### Option 3: Parallel Execution (If Multiple Developers)
 
 **Simultaneous:**
+
 - **Developer A:** Sprint 1 (strategic clarity + release)
 - **Developer B:** Sprint 3 (OCC performance fixes)
 - **Developer C:** Sprint 2 (documentation + validation)
