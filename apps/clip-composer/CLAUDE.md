@@ -1,11 +1,23 @@
 # Orpheus Clip Composer - Application Development Guide
 
 **Workspace:** This repo inherits general conventions from `~/chrislyons/dev/CLAUDE.md`
+**Best Practices:** See `~/dev/docs/CLAUDE_CODE_BEST_PRACTICES.md` for comprehensive Claude Code workflow guidance
 
 **Location:** `/apps/clip-composer/`
 **Status:** v0.2.0 Sprint Complete (OCC093)
 **Framework:** JUCE 8.0.4
 **SDK:** Orpheus SDK M2 (real-time infrastructure)
+
+## Configuration Hierarchy
+
+This application follows a three-tier configuration hierarchy:
+
+1. **This file (CLAUDE.md)** — Application-specific rules and conventions
+2. **Parent SDK config** (`/Users/chrislyons/dev/orpheus-sdk/CLAUDE.md`) — SDK-level patterns
+3. **Workspace config** (`~/chrislyons/dev/CLAUDE.md`) — Cross-repo patterns
+4. **Global config** (`~/.claude/CLAUDE.md`) — Universal rules
+
+**Conflict Resolution:** App > SDK > Workspace > Global > Code behavior
 
 ---
 
@@ -434,6 +446,126 @@ From `docs/occ/OCC030` Section 10.3:
 ---
 
 **Remember:** Clip Composer is a professional tool for broadcast, theater, and live performance. Design for 24/7 reliability, ultra-low latency, and zero crashes. When in doubt, favor simplicity, determinism, and user autonomy over short-term convenience.
+
+---
+
+## Git Workflow Best Practices
+
+### Commit Guidelines
+
+**Read before committing:**
+
+1. Run `git status` to see changes
+2. Run `git diff` to review specific changes
+3. Create descriptive commit messages
+
+**Commit message format:**
+
+```bash
+git commit -m "type: brief summary
+
+- Detailed change 1
+- Detailed change 2
+- Test results or validation
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
+**Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ui`
+
+**Branch naming:**
+
+- `feature/occ-` — New OCC features
+- `fix/occ-` — Bug fixes
+- `refactor/occ-` — Code refactoring
+- `ui/occ-` — UI improvements
+
+### Error Handling
+
+**Common JUCE build errors:**
+
+1. **Missing JUCE headers:** Verify JUCE path in CMakeLists.txt
+2. **Linker errors with SDK:** Check Orpheus SDK is built first
+3. **Audio driver initialization failures:** Check permissions, device availability
+
+**File edit failures:**
+
+- Always use Read tool before Edit tool
+- Ensure exact whitespace match in old_string
+- Make smaller, targeted edits if full replacement fails
+- Re-read file if edit fails, then retry
+
+**When stuck:**
+
+1. Use `/clear` to reset context
+2. Check `docs/occ/OCC101.md` (Troubleshooting Guide)
+3. Verify SDK is built and tests pass
+4. Check threading model (see Threading Model section)
+
+### Multi-File Editing Strategy
+
+**For coordinated changes across OCC components:**
+
+1. **Discovery Phase:**
+   - Identify which layers are affected (UI → Logic → SDK Integration)
+   - Read files in dependency order
+   - Check threading boundaries (Message vs Audio thread)
+
+2. **Plan Phase:**
+   - Order changes by layer (SDK Integration → Logic → UI)
+   - Verify real-time safety (no allocations on audio thread)
+
+3. **Execute Phase:**
+   - Make changes respecting threading model
+   - Test after each layer completion
+   - Run with sanitizers to catch threading issues
+
+### Custom Slash Commands
+
+Custom commands in `.claude/commands/` for OCC workflows:
+
+**Example: `/rebuild-occ`**
+
+```markdown
+<!-- .claude/commands/rebuild-occ.md -->
+
+Rebuild and launch Clip Composer:
+
+1. Verify SDK is built
+2. Clean OCC build artifacts
+3. Rebuild OCC application
+4. Launch: ./scripts/relaunch-occ.sh
+5. Report any build errors or warnings
+```
+
+**Example: `/check-threading`**
+
+```markdown
+<!-- .claude/commands/check-threading.md -->
+
+Review code for thread safety issues:
+
+1. Check for allocations on audio thread
+2. Verify lock-free communication
+3. Check for UI calls from background threads
+4. Suggest fixes for violations
+```
+
+**Example: `/occ-docs`**
+
+```markdown
+<!-- .claude/commands/occ-docs.md -->
+
+Reference OCC documentation:
+
+1. List relevant OCC### documents for current task
+2. Provide quick summaries
+3. Link to full docs in docs/occ/
+```
+
+---
 
 **Last Updated:** 2025-10-30
 **Status:** v0.2.0 Sprint Complete (OCC093)

@@ -1,8 +1,19 @@
 # Orpheus SDK Development Guide
 
 **Workspace:** Inherits conventions from `~/chrislyons/dev/CLAUDE.md`
+**Best Practices:** See `~/dev/docs/CLAUDE_CODE_BEST_PRACTICES.md` for comprehensive Claude Code workflow guidance
 
 Professional audio SDK with host-neutral C++20 core for deterministic session, transport, and render management.
+
+## Configuration Hierarchy
+
+This repository follows a three-tier configuration hierarchy:
+
+1. **This file (CLAUDE.md)** — Repository-specific rules and conventions
+2. **Workspace config** (`~/chrislyons/dev/CLAUDE.md`) — Cross-repo patterns
+3. **Global config** (`~/.claude/CLAUDE.md`) — Universal rules
+
+**Conflict Resolution:** Repo > Workspace > Global > Code behavior
 
 ## Core Principles
 
@@ -245,14 +256,14 @@ claude-code
 
 **Excluded from Indexing:**
 
-- `docs/orp/archive/**` - Archived ORP documents (180+ days old)
-- `apps/clip-composer/docs/occ/archive/**` - Archived OCC documents (180+ days old)
+- `docs/orp/archive/**` - Archived ORP documents (63+ days old)
+- `apps/clip-composer/docs/occ/archive/**` - Archived OCC documents (63+ days old)
 - `docs/deprecated/**` - Deprecated documentation
 - `*.draft.md` - Draft documents not yet finalized
 
 **Archive Management:**
 
-- Use `~/dev/scripts/archive-old-docs.sh` to move docs older than 90 days
+- Use `~/dev/scripts/archive-old-docs.sh` to move docs older than 63 days
 - Archives preserve history without cluttering active context
 - Check `INDEX.md` in each prefix directory for document lists
 
@@ -318,5 +329,4 @@ Skills are lazy-loaded based on file patterns to reduce context overhead:
 ---
 
 **DON'T USE OPEN TO RUN CLIP COMPOSER** - Always run launch script after build.
-
-- Application rebuilds should be performed manually by the user always.
+**Application rebuilds should be performed manually by the user always.**
