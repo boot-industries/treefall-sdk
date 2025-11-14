@@ -1132,7 +1132,17 @@ int64_t TransportController::getClipPosition(ClipHandle handle) const {
       // Find voice with latest start time (newest)
       if (m_activeClips[i].startSample > newestStartSample) {
         newestStartSample = m_activeClips[i].startSample;
-        newestPosition = m_activeClips[i].currentSample;
+
+        // Get current position (may exceed trim OUT during fade-out rendering)
+        int64_t position = m_activeClips[i].currentSample;
+
+        // OCC130 Bug Fix: Clamp to trim OUT point for visual display
+        // CRITICAL: For non-looped clips, currentSample can advance past trimOut
+        // during fade-out processing. The audio correctly fades within bounds,
+        // but the UI must NEVER show playhead past OUT point (violates edit law).
+        // Looped clips don't have this issue (they reset position at OUT point).
+        int64_t trimOut = m_activeClips[i].trimOutSamples.load(std::memory_order_acquire);
+        newestPosition = std::min(position, trimOut);
       }
     }
   }
