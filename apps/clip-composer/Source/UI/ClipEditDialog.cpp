@@ -76,6 +76,9 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
     m_fileInfoPanel->setText(infoText, juce::dontSendNotification);
   }
 
+  // Set initial transport button colors
+  updateTransportButtonColors();
+
   // CRITICAL: Check if clip is already playing BEFORE loading waveform and preview player
   // This allows seamless continuity when Edit Dialog opens during playback
   bool wasAlreadyPlaying = false;
@@ -519,6 +522,9 @@ void ClipEditDialog::buildPhase2UI() {
       // In edit mode, we ALWAYS want visual feedback regardless of audio engine state
       m_previewPlayer->startPositionTimer();
 
+      // Update button colors to show active state
+      updateTransportButtonColors();
+
       DBG("ClipEditDialog: Play button - restarted from IN point, forced timer start");
     }
   };
@@ -614,29 +620,35 @@ void ClipEditDialog::buildPhase2UI() {
   // Loop button (⟲ circular arrow) - DrawableButton with toggle mode
   m_loopButton = std::make_unique<juce::DrawableButton>("Loop", juce::DrawableButton::ImageFitted);
   {
-    // Create a composite drawable with both arc and arrow
-    auto loopComposite = std::make_unique<juce::DrawableComposite>();
+    // Improved LOOP icon - cleaner circular arrow design
+    juce::Path loopPath;
+    float cx = 0.50f, cy = 0.50f;
+    float radius = 0.22f;
 
-    // Arc path (270 degrees, stroked not filled)
-    juce::Path arcPath;
-    arcPath.addCentredArc(0.50f, 0.50f, 0.20f, 0.20f, 0.0f, 0.0f, 4.7f, true);
-    auto arcDrawable = std::make_unique<juce::DrawablePath>();
-    arcDrawable->setPath(arcPath);
-    arcDrawable->setStrokeFill(juce::Colours::white);
-    arcDrawable->setStrokeThickness(0.06f);
-    arcDrawable->setFill(juce::Colours::transparentBlack);
-    loopComposite->addAndMakeVisible(arcDrawable.release());
+    // Draw most of a circle (leaving gap for arrow)
+    loopPath.addCentredArc(cx, cy, radius, radius, 0.0f, 0.3f, 5.8f,
+                           true); // Start at 0.3 rad, sweep to 5.8 rad
 
-    // Arrow head triangle (filled)
-    juce::Path arrowPath;
-    arrowPath.addTriangle(0.50f, 0.25f, 0.43f, 0.32f, 0.57f, 0.32f);
-    auto arrowDrawable = std::make_unique<juce::DrawablePath>();
-    arrowDrawable->setPath(arrowPath);
-    arrowDrawable->setFill(juce::Colours::white);
-    loopComposite->addAndMakeVisible(arrowDrawable.release());
+    // Add arrowhead at the end
+    float arrowAngle = 5.8f; // Angle where arc ends
+    float arrowX = cx + radius * std::cos(arrowAngle);
+    float arrowY = cy + radius * std::sin(arrowAngle);
 
-    m_loopButton->setImages(loopComposite.get());
-    loopComposite.release(); // DrawableButton takes ownership
+    // Arrowhead pointing along circle tangent
+    float arrowSize = 0.08f;
+    loopPath.startNewSubPath(arrowX, arrowY);
+    loopPath.lineTo(arrowX - arrowSize, arrowY - arrowSize * 0.5f);
+    loopPath.startNewSubPath(arrowX, arrowY);
+    loopPath.lineTo(arrowX - arrowSize * 0.5f, arrowY - arrowSize);
+
+    auto loopIcon = std::make_unique<juce::DrawablePath>();
+    loopIcon->setPath(loopPath);
+    loopIcon->setStrokeFill(juce::Colours::white);
+    loopIcon->setStrokeThickness(0.05f);
+    loopIcon->setFill(juce::Colours::transparentBlack);
+
+    m_loopButton->setImages(loopIcon.get());
+    loopIcon.release(); // DrawableButton takes ownership
   }
   m_loopButton->setClickingTogglesState(true); // Enable toggle mode
   m_loopButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xff3a3a3a));
@@ -681,6 +693,9 @@ void ClipEditDialog::buildPhase2UI() {
         m_transportPositionLabel->setText(timeString, juce::dontSendNotification);
       }
 
+      // Update transport button colors based on playback state (75fps atomic sync)
+      updateTransportButtonColors();
+
       // Update waveform playhead
       if (m_waveformDisplay) {
         m_waveformDisplay->setPlayheadPosition(samplePosition);
@@ -705,6 +720,10 @@ void ClipEditDialog::buildPhase2UI() {
       if (m_waveformDisplay) {
         m_waveformDisplay->clearAuditionRegion();
       }
+
+      // Update transport button colors when playback stops
+      updateTransportButtonColors();
+
       DBG("ClipEditDialog: Preview playback stopped (reached end or manual stop)");
     };
   }
@@ -1149,15 +1168,17 @@ void ClipEditDialog::buildPhase2UI() {
   m_fileInfoPanel->setColour(juce::Label::textColourId, juce::Colours::black);
   addAndMakeVisible(m_fileInfoPanel.get());
 
-  // Gain Control (Feature 5: -30dB to +10dB, default 0dB)
+  // Gain Control (Feature 5: -30dB to +10dB, default 0dB) - Converted to dial/knob
   m_gainLabel = std::make_unique<juce::Label>("gainLabel", "Gain:");
   m_gainLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_gainLabel.get());
 
+  // Create rotary dial instead of horizontal slider
   m_gainSlider =
-      std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
-  m_gainSlider->setRange(-30.0, 10.0, 1.0); // -30dB to +10dB in 1dB steps
+      std::make_unique<juce::Slider>(juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
+  m_gainSlider->setRange(-30.0, 10.0, 0.1); // -30dB to +10dB in 0.1dB steps (finer control)
   m_gainSlider->setValue(0.0);              // Default 0dB
+  m_gainSlider->setDoubleClickReturnValue(true, 0.0); // Double-click resets to 0dB
   m_gainSlider->onValueChange = [this]() {
     // Update gain value label
     double gain = m_gainSlider->getValue();
@@ -1170,8 +1191,9 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_gainSlider.get());
 
+  // Text input field for gain (below the dial)
   m_gainValueLabel = std::make_unique<juce::Label>("gainValueLabel", "0.0 dB");
-  m_gainValueLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain));
+  m_gainValueLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
   m_gainValueLabel->setJustificationType(juce::Justification::centred);
   m_gainValueLabel->setEditable(true);
   m_gainValueLabel->onTextChange = [this]() {
@@ -1187,6 +1209,47 @@ void ClipEditDialog::buildPhase2UI() {
     m_metadata.gainDb = gain;
   };
   addAndMakeVisible(m_gainValueLabel.get());
+
+  // Pitch dial (Item 26 - second dial for pitch adjustment)
+  m_placeholderLabel = std::make_unique<juce::Label>("placeholderLabel", "Pitch:");
+  m_placeholderLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  addAndMakeVisible(m_placeholderLabel.get());
+
+  m_placeholderDial =
+      std::make_unique<juce::Slider>(juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
+  m_placeholderDial->setRange(-12.0, 12.0, 0.1); // -12 to +12 semitones in 0.1 semitone steps
+  m_placeholderDial->setValue(0.0);              // Default 0 (no pitch shift)
+  m_placeholderDial->setDoubleClickReturnValue(true, 0.0); // Double-click resets to 0
+  m_placeholderDial->setEnabled(true);                     // Enabled now
+  m_placeholderDial->onValueChange = [this]() {
+    // Update pitch value label
+    double value = m_placeholderDial->getValue();
+    juce::String suffix = value >= 0 ? " st" : " st"; // semitones
+    m_placeholderValueLabel->setText(juce::String(value, 1) + suffix, juce::dontSendNotification);
+
+    // TODO: Wire to pitch shifting in AudioEngine
+  };
+  addAndMakeVisible(m_placeholderDial.get());
+
+  // Text input field for pitch (below the dial)
+  m_placeholderValueLabel = std::make_unique<juce::Label>("placeholderValueLabel", "0.0 st");
+  m_placeholderValueLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_placeholderValueLabel->setJustificationType(juce::Justification::centred);
+  m_placeholderValueLabel->setEditable(true); // Editable
+  m_placeholderValueLabel->onTextChange = [this]() {
+    // Parse text input for pitch
+    juce::String text = m_placeholderValueLabel->getText()
+                            .trimCharactersAtStart("+-")
+                            .upToFirstOccurrenceOf("st", false, true)
+                            .trim();
+    double pitch = text.getDoubleValue();
+    pitch = juce::jlimit(-12.0, 12.0, pitch);
+    m_placeholderDial->setValue(pitch, juce::dontSendNotification);
+    m_placeholderValueLabel->setText(juce::String(pitch, 1) + " st", juce::dontSendNotification);
+
+    // TODO: Update metadata for pitch value
+  };
+  addAndMakeVisible(m_placeholderValueLabel.get());
 }
 
 void ClipEditDialog::buildPhase3UI() {
@@ -1616,20 +1679,47 @@ void ClipEditDialog::resized() {
 
   contentArea.removeFromTop(GRID); // Reduced: GRID * 2 -> GRID
 
-  // === GAIN CONTROL (Feature 5) ===
-  auto gainRow = contentArea.removeFromTop(GRID * 3);
+  // === GAIN CONTROL & PLACEHOLDER DIAL (Feature 5 - Amended Item 26) ===
+  // Two dials side by side with text fields below
+  auto dialSection =
+      contentArea.removeFromTop(GRID * 5); // Increased height for dials + text fields
+
+  // Left half for Gain dial
+  auto gainSection = dialSection.removeFromLeft(dialSection.getWidth() / 2);
+  gainSection.removeFromLeft(GRID); // Left margin
+
   if (m_gainLabel && m_gainSlider && m_gainValueLabel) {
-    // Label on the left
-    m_gainLabel->setBounds(gainRow.removeFromLeft(GRID * 6));
-    gainRow.removeFromLeft(GRID);
+    // Gain label at top
+    m_gainLabel->setBounds(gainSection.removeFromTop(GRID));
 
-    // Value label on the right
-    auto valueLabelArea = gainRow.removeFromRight(GRID * 10);
-    m_gainValueLabel->setBounds(valueLabelArea);
+    // Gain dial (rotary knob)
+    auto dialArea = gainSection.removeFromTop(GRID * 3);
+    auto dialBounds = dialArea.withSizeKeepingCentre(GRID * 5, GRID * 5); // 60x60 dial
+    m_gainSlider->setBounds(dialBounds);
 
-    // Slider takes remaining space
-    gainRow.removeFromRight(GRID);
-    m_gainSlider->setBounds(gainRow);
+    // Gain value text field below dial
+    auto valueArea = gainSection.removeFromTop(GRID);
+    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 6, GRID * 1.5);
+    m_gainValueLabel->setBounds(valueBounds);
+  }
+
+  // Right half for Placeholder dial
+  auto placeholderSection = dialSection;
+  placeholderSection.removeFromRight(GRID); // Right margin
+
+  if (m_placeholderLabel && m_placeholderDial && m_placeholderValueLabel) {
+    // Placeholder label at top
+    m_placeholderLabel->setBounds(placeholderSection.removeFromTop(GRID));
+
+    // Placeholder dial (rotary knob)
+    auto dialArea = placeholderSection.removeFromTop(GRID * 3);
+    auto dialBounds = dialArea.withSizeKeepingCentre(GRID * 5, GRID * 5); // 60x60 dial
+    m_placeholderDial->setBounds(dialBounds);
+
+    // Placeholder value text field below dial
+    auto valueArea = placeholderSection.removeFromTop(GRID);
+    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 6, GRID * 1.5);
+    m_placeholderValueLabel->setBounds(valueBounds);
   }
 
   contentArea.removeFromTop(GRID * 1.5); // Reduced: GRID * 2 -> GRID * 1.5
@@ -2261,4 +2351,39 @@ bool ClipEditDialog::keyStateChanged(bool isKeyDown) {
   }
 
   return Component::keyStateChanged(isKeyDown);
+}
+
+//==============================================================================
+void ClipEditDialog::updateTransportButtonColors() {
+  // Update button colors based on playback state (using existing 75fps atomic sync)
+  if (!m_previewPlayer)
+    return;
+
+  bool isPlaying = m_previewPlayer->isPlaying();
+
+  // Play button: Green when playing, darker green when stopped
+  if (m_playButton) {
+    if (isPlaying) {
+      // Bright green when actively playing
+      m_playButton->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colour(0xff27ae60)); // Brighter green
+    } else {
+      // Darker green when stopped
+      m_playButton->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colour(0xff1e8449)); // Darker green
+    }
+  }
+
+  // Stop button: Red when stopped, darker red when playing
+  if (m_stopButton) {
+    if (!isPlaying) {
+      // Bright red when stopped (clip is "loaded" and ready)
+      m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colour(0xffff4444)); // Brighter red
+    } else {
+      // Darker red when playing
+      m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colour(0xffcc2222)); // Darker red
+    }
+  }
 }

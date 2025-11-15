@@ -28,6 +28,16 @@ public:
   ~ClipGrid() override = default;
 
   //==============================================================================
+  // Grid configuration (Item 22: Resizable grid)
+  void setGridSize(int columns, int rows); // Resize grid (5×4 to 12×8)
+  int getColumns() const {
+    return m_columns;
+  }
+  int getRows() const {
+    return m_rows;
+  }
+
+  //==============================================================================
   // Button access
   ClipButton* getButton(int index);
   int getButtonCount() const {
@@ -63,6 +73,18 @@ public:
   void setHasActiveClips(bool hasActive);
 
   //==============================================================================
+  // Playbox navigation (Item 60: Arrow key navigation with thin outline)
+  int getPlayboxIndex() const {
+    return m_playboxIndex;
+  }
+  void setPlayboxIndex(int index);
+  void movePlayboxUp();
+  void movePlayboxDown();
+  void movePlayboxLeft();
+  void movePlayboxRight();
+  void triggerPlayboxButton(); // Trigger button at playbox position (Enter key)
+
+  //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
 
@@ -80,14 +102,21 @@ private:
   void timerCallback() override;
 
   //==============================================================================
-  static constexpr int COLUMNS = 6;
-  static constexpr int ROWS = 8;
-  static constexpr int BUTTON_COUNT = COLUMNS * ROWS; // 48
+  // Grid dimensions (Item 22: now configurable, not constexpr)
+  int m_columns = 6; // Default 6, configurable 5-12
+  int m_rows = 8;    // Default 8, configurable 4-8
   static constexpr int GAP = 2;
+
+  // Constraints for grid resizing
+  static constexpr int MIN_COLUMNS = 5;
+  static constexpr int MAX_COLUMNS = 12;
+  static constexpr int MIN_ROWS = 4;
+  static constexpr int MAX_ROWS = 8;
 
   std::vector<std::unique_ptr<ClipButton>> m_buttons;
 
   bool m_hasActiveClips = false; // Track if any clips are playing
+  int m_playboxIndex = 0;        // Current playbox position (Item 60: arrow key navigation)
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "SessionManager.h"
+#include <algorithm> // For std::transform
+#include <cctype>    // For std::isupper, std::isspace, std::isalpha, std::toupper
 #include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
@@ -360,4 +362,76 @@ void SessionManager::clearSession() {
   }
 
   DBG("SessionManager: Cleared session");
+}
+
+//==============================================================================
+// Item 29: Clip Group Management
+
+std::string SessionManager::getClipGroupName(int groupIndex) const {
+  if (groupIndex >= 0 && groupIndex < NUM_CLIP_GROUPS)
+    return m_clipGroupNames[groupIndex];
+  return "Group " + std::to_string(groupIndex + 1); // Fallback
+}
+
+void SessionManager::setClipGroupName(int groupIndex, const std::string& name) {
+  if (groupIndex >= 0 && groupIndex < NUM_CLIP_GROUPS) {
+    m_clipGroupNames[groupIndex] = name;
+    DBG("SessionManager: Group " << groupIndex << " name set to: " << name);
+  }
+}
+
+std::string SessionManager::getClipGroupAbbreviation(int groupIndex) const {
+  if (groupIndex < 0 || groupIndex >= NUM_CLIP_GROUPS)
+    return "G" + std::to_string(groupIndex + 1);
+
+  std::string name = m_clipGroupNames[groupIndex];
+
+  // If it's the default name, return short form
+  if (name.find("Group ") == 0) {
+    return "G" + std::to_string(groupIndex + 1);
+  }
+
+  // Create abbreviation from custom name
+  std::string abbrev;
+
+  // Strategy 1: Use first 3 chars if short enough
+  if (name.length() <= 3) {
+    abbrev = name;
+    std::transform(abbrev.begin(), abbrev.end(), abbrev.begin(), ::toupper);
+    return abbrev;
+  }
+
+  // Strategy 2: Use uppercase letters if present (e.g., "Sound Effects" -> "SE")
+  for (char c : name) {
+    if (std::isupper(c)) {
+      abbrev += c;
+      if (abbrev.length() >= 3)
+        break;
+    }
+  }
+
+  if (!abbrev.empty() && abbrev.length() <= 3)
+    return abbrev;
+
+  // Strategy 3: Use first letter of each word
+  abbrev.clear();
+  bool newWord = true;
+  for (char c : name) {
+    if (std::isspace(c)) {
+      newWord = true;
+    } else if (newWord && std::isalpha(c)) {
+      abbrev += std::toupper(c);
+      newWord = false;
+      if (abbrev.length() >= 3)
+        break;
+    }
+  }
+
+  if (!abbrev.empty())
+    return abbrev.substr(0, 3);
+
+  // Strategy 4: Just use first 3 chars
+  abbrev = name.substr(0, 3);
+  std::transform(abbrev.begin(), abbrev.end(), abbrev.begin(), ::toupper);
+  return abbrev;
 }

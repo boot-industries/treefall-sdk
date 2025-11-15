@@ -67,11 +67,17 @@ void ClipButton::clearClip() {
 }
 
 void ClipButton::setPlaybackProgress(float progress) {
-  m_playbackProgress = juce::jlimit(0.0f, 1.0f, progress);
+  float newProgress = juce::jlimit(0.0f, 1.0f, progress);
 
-  // Only repaint if playing (avoid unnecessary repaints)
-  if (m_state == State::Playing || m_state == State::Stopping)
-    repaint();
+  // Only update and repaint if progress changed meaningfully (>0.1% difference)
+  // This avoids repainting for tiny floating-point variations
+  if (std::abs(newProgress - m_playbackProgress) > 0.001f) {
+    m_playbackProgress = newProgress;
+
+    // Only repaint if playing (avoid unnecessary repaints)
+    if (m_state == State::Playing || m_state == State::Stopping)
+      repaint();
+  }
 }
 
 void ClipButton::setLoopEnabled(bool enabled) {
@@ -177,12 +183,18 @@ void ClipButton::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS,
                            5.0f); // Thick border for prominent glow
 
-    // Trigger repaint for animation (only when playing)
-    repaint();
+    // NOTE: Animation driven by 75fps timer in ClipGrid, NOT by repaint() here
+    // (calling repaint() from paint() would create infinite loop)
   } else {
     // Normal border for other states
     g.setColour(borderColor);
     g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, BORDER_THICKNESS);
+  }
+
+  // Item 60: Draw playbox outline (thin white border that follows arrow key navigation)
+  if (m_isPlaybox) {
+    g.setColour(juce::Colours::white);
+    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, 1.5f); // Thin white outline
   }
 
   if (m_state == State::Empty) {
@@ -348,7 +360,8 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 24.0f,
                                              contentArea.getWidth(), 24.0f);
 
-    // Clip group indicator (right) - e.g., "G1", "G2"
+    // Item 29: Clip group indicator with 3-char abbreviations (right) - e.g., "MUS", "SFX", "VOC",
+    // "G1"
     {
       juce::Colour groupColors[4] = {
           juce::Colour(0xff3498db), // Blue - Group 0
@@ -357,17 +370,21 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
           juce::Colour(0xffe74c3c)  // Red - Group 3
       };
 
-      auto groupBadge = bottomArea.removeFromRight(24.0f).withTrimmedTop(4.0f).withHeight(16.0f);
+      // Reserve 3 characters of width (consistent with other indicators)
+      auto groupBadge = bottomArea.removeFromRight(36.0f).withTrimmedTop(4.0f).withHeight(16.0f);
 
       // Draw group badge background (OCC130 Sprint A.4: 4px corner radius)
       g.setColour(groupColors[m_clipGroup].withAlpha(0.8f));
       g.fillRoundedRectangle(groupBadge, 4.0f); // OCC130: Consistent 4px radius
 
-      // Draw group number
+      // Draw group abbreviation (3 chars max)
+      // TODO: Get abbreviation from SessionManager when available
+      // For now, use default format
+      juce::String groupText = "G" + juce::String(m_clipGroup + 1);
+
       g.setColour(juce::Colours::white);
       g.setFont(juce::FontOptions("HK Grotesk", 10.8f, juce::Font::bold));
-      g.drawText("G" + juce::String(m_clipGroup + 1), groupBadge, juce::Justification::centred,
-                 false);
+      g.drawText(groupText, groupBadge, juce::Justification::centred, false);
     }
   }
 
@@ -579,6 +596,15 @@ void ClipButton::mouseDown(const juce::MouseEvent& e) {
         onEditDialogRequested(m_buttonIndex);
       }
       return; // Don't process as drag or regular click
+    }
+
+    // Item 53: Ctrl+Click (or Cmd+Click on Mac) as alternative to right-click for context menu
+    // Safer than right-click in live scenarios
+    if (e.mods.isCtrlDown() || (e.mods.isCommandDown() && !e.mods.isAltDown())) {
+      // Show context menu (same as right-click)
+      if (onRightClick)
+        onRightClick(m_buttonIndex);
+      return; // Don't process as regular click
     }
 
     // Record mouse down position for potential Cmd+Drag rearrangement

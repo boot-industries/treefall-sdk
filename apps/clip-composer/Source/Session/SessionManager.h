@@ -184,6 +184,26 @@ public:
     return m_currentFile;
   }
 
+  //==============================================================================
+  // Clip Group management (Item 29)
+
+  /**
+   * Get the name of a clip group (0-3)
+   * Default names: "Group 1", "Group 2", etc.
+   */
+  std::string getClipGroupName(int groupIndex) const;
+
+  /**
+   * Set custom name for a clip group
+   */
+  void setClipGroupName(int groupIndex, const std::string& name);
+
+  /**
+   * Get abbreviation for a clip group (<3 chars)
+   * Examples: "MUS", "SFX", "VOC", "G1"
+   */
+  std::string getClipGroupAbbreviation(int groupIndex) const;
+
 private:
   //==============================================================================
   // Helper: Create composite key from tab and button indices
@@ -202,8 +222,12 @@ private:
   int m_currentTab = 0;                   // Currently active tab (0-7)
   std::array<std::string, 8> m_tabLabels; // Tab labels (default: "Tab 1", "Tab 2", etc.)
 
+  // Item 29: Clip Group names (user-editable, default to "Group 1", etc.)
+  std::array<std::string, 4> m_clipGroupNames = {"Group 1", "Group 2", "Group 3", "Group 4"};
+
   static constexpr int NUM_TABS = 8;
   static constexpr int BUTTONS_PER_TAB = 48;
+  static constexpr int NUM_CLIP_GROUPS = 4;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionManager)
 };
