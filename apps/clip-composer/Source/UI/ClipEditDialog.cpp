@@ -452,21 +452,31 @@ void ClipEditDialog::buildPhase2UI() {
   // Preview Transport Controls (Professional icon-based buttons inspired by SpotOn and Merging
   // Ovation)
 
-  // Skip to Start button (◄◄) - consistent padding and sizing
+  // Skip to Start button - Tabler 'player-skip-back' icon
+  // SVG: <path d="M20 5v14l-12 -7z" /> <path d="M4 5l0 14" />
   m_skipToStartButton =
       std::make_unique<juce::DrawableButton>("SkipToStart", juce::DrawableButton::ImageFitted);
   {
     juce::Path skipToStartPath;
-    // Vertical bar (far left) - 20% padding from edges
-    skipToStartPath.addRectangle(0.20f, 0.30f, 0.10f, 0.40f);
-    // First triangle (left)
-    skipToStartPath.addTriangle(0.32f, 0.50f, 0.48f, 0.35f, 0.48f, 0.65f);
-    // Second triangle (right)
-    skipToStartPath.addTriangle(0.52f, 0.50f, 0.68f, 0.35f, 0.68f, 0.65f);
+
+    // Convert from Tabler's 24×24 viewBox to normalized 0-1 coordinates
+    auto norm = [](float val) { return val / 24.0f; };
+
+    // Triangle: M20 5 v14 l-12 -7 z
+    skipToStartPath.startNewSubPath(norm(20), norm(5));
+    skipToStartPath.lineTo(norm(20), norm(19)); // v14 (vertical 14 down)
+    skipToStartPath.lineTo(norm(8), norm(12));  // l-12 -7 (relative: -12 horizontal, -7 vertical)
+    skipToStartPath.closeSubPath();
+
+    // Vertical bar: M4 5 l0 14
+    skipToStartPath.startNewSubPath(norm(4), norm(5));
+    skipToStartPath.lineTo(norm(4), norm(19)); // l0 14 (vertical line down 14)
 
     auto skipToStartIcon = std::make_unique<juce::DrawablePath>();
     skipToStartIcon->setPath(skipToStartPath);
-    skipToStartIcon->setFill(juce::Colours::white);
+    skipToStartIcon->setStrokeFill(juce::Colours::white);
+    skipToStartIcon->setStrokeThickness(norm(2.0f)); // stroke-width="2" from SVG
+    skipToStartIcon->setFill(juce::Colours::transparentBlack);
     m_skipToStartButton->setImages(skipToStartIcon.get());
     skipToStartIcon.release(); // DrawableButton takes ownership
   }
@@ -490,16 +500,26 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_skipToStartButton.get());
 
-  // Play button (►) - consistent padding and sizing
+  // Play button - Tabler 'player-play' icon
+  // SVG: <path d="M7 4v16l13 -8z" />
   m_playButton = std::make_unique<juce::DrawableButton>("Play", juce::DrawableButton::ImageFitted);
   {
     juce::Path playPath;
-    // Triangle with 20% padding (0.25-0.75 horizontal, 0.25-0.75 vertical)
-    playPath.addTriangle(0.30f, 0.25f, 0.30f, 0.75f, 0.70f, 0.50f);
+
+    // Convert from Tabler's 24×24 viewBox to normalized 0-1 coordinates
+    auto norm = [](float val) { return val / 24.0f; };
+
+    // Triangle: M7 4 v16 l13 -8 z
+    playPath.startNewSubPath(norm(7), norm(4));
+    playPath.lineTo(norm(7), norm(20));  // v16 (vertical 16 down)
+    playPath.lineTo(norm(20), norm(12)); // l13 -8 (relative: +13 horizontal, -8 vertical)
+    playPath.closeSubPath();
 
     auto playIcon = std::make_unique<juce::DrawablePath>();
     playIcon->setPath(playPath);
-    playIcon->setFill(juce::Colours::white);
+    playIcon->setStrokeFill(juce::Colours::white);
+    playIcon->setStrokeThickness(norm(2.0f)); // stroke-width="2" from SVG
+    playIcon->setFill(juce::Colours::transparentBlack);
     m_playButton->setImages(playIcon.get());
     playIcon.release(); // DrawableButton takes ownership
   }
@@ -530,16 +550,29 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_playButton.get());
 
-  // Stop button (■) - consistent padding and sizing
+  // Stop button - Tabler 'square' icon (scaled down 20% to match other icons)
+  // SVG: <path d="M4.8 4.8m0 1.6a1.6 1.6 0 0 1 1.6 -1.6h11.2a1.6 1.6 0 0 1 1.6 1.6v11.2a1.6 1.6 0 0
+  // 1 -1.6 1.6h-11.2a1.6 1.6 0 0 1 -1.6 -1.6z" />
   m_stopButton = std::make_unique<juce::DrawableButton>("Stop", juce::DrawableButton::ImageFitted);
   {
     juce::Path stopPath;
-    // Square with 20% padding (0.30-0.70 for a centered 40% square)
-    stopPath.addRectangle(0.30f, 0.30f, 0.40f, 0.40f);
+
+    // Convert from Tabler's 24×24 viewBox to normalized 0-1 coordinates
+    auto norm = [](float val) { return val / 24.0f; };
+
+    // Rounded square path (already scaled down 20% in SVG)
+    // Starting at (4.8, 4.8), size 14.4×14.4, corner radius 1.6
+    float x = norm(4.8f), y = norm(4.8f);
+    float width = norm(14.4f), height = norm(14.4f);
+    float radius = norm(1.6f);
+
+    stopPath.addRoundedRectangle(x, y, width, height, radius);
 
     auto stopIcon = std::make_unique<juce::DrawablePath>();
     stopIcon->setPath(stopPath);
-    stopIcon->setFill(juce::Colours::white);
+    stopIcon->setStrokeFill(juce::Colours::white);
+    stopIcon->setStrokeThickness(norm(2.0f)); // stroke-width="2" from SVG
+    stopIcon->setFill(juce::Colours::transparentBlack);
     m_stopButton->setImages(stopIcon.get());
     stopIcon.release(); // DrawableButton takes ownership
   }
@@ -569,21 +602,31 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_stopButton.get());
 
-  // Skip to End button (►►) - consistent padding and sizing
+  // Skip to End button - Tabler 'player-skip-forward' icon
+  // SVG: <path d="M4 5v14l12 -7z" /> <path d="M20 5l0 14" />
   m_skipToEndButton =
       std::make_unique<juce::DrawableButton>("SkipToEnd", juce::DrawableButton::ImageFitted);
   {
     juce::Path skipToEndPath;
-    // First triangle (left)
-    skipToEndPath.addTriangle(0.32f, 0.35f, 0.32f, 0.65f, 0.48f, 0.50f);
-    // Second triangle (right)
-    skipToEndPath.addTriangle(0.52f, 0.35f, 0.52f, 0.65f, 0.68f, 0.50f);
-    // Vertical bar (far right) - 20% padding from edges
-    skipToEndPath.addRectangle(0.70f, 0.30f, 0.10f, 0.40f);
+
+    // Convert from Tabler's 24×24 viewBox to normalized 0-1 coordinates
+    auto norm = [](float val) { return val / 24.0f; };
+
+    // Triangle: M4 5 v14 l12 -7 z
+    skipToEndPath.startNewSubPath(norm(4), norm(5));
+    skipToEndPath.lineTo(norm(4), norm(19));  // v14 (vertical 14 down)
+    skipToEndPath.lineTo(norm(16), norm(12)); // l12 -7 (relative: +12 horizontal, -7 vertical)
+    skipToEndPath.closeSubPath();
+
+    // Vertical bar: M20 5 l0 14
+    skipToEndPath.startNewSubPath(norm(20), norm(5));
+    skipToEndPath.lineTo(norm(20), norm(19)); // l0 14 (vertical line down 14)
 
     auto skipToEndIcon = std::make_unique<juce::DrawablePath>();
     skipToEndIcon->setPath(skipToEndPath);
-    skipToEndIcon->setFill(juce::Colours::white);
+    skipToEndIcon->setStrokeFill(juce::Colours::white);
+    skipToEndIcon->setStrokeThickness(norm(2.0f)); // stroke-width="2" from SVG
+    skipToEndIcon->setFill(juce::Colours::transparentBlack);
     m_skipToEndButton->setImages(skipToEndIcon.get());
     skipToEndIcon.release(); // DrawableButton takes ownership
   }
@@ -617,34 +660,50 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_skipToEndButton.get());
 
-  // Loop button (⟲ circular arrow) - DrawableButton with toggle mode
+  // Loop button - Tabler 'repeat' icon
+  // SVG: <path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
+  //      <path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
   m_loopButton = std::make_unique<juce::DrawableButton>("Loop", juce::DrawableButton::ImageFitted);
   {
-    // Improved LOOP icon - cleaner circular arrow design
     juce::Path loopPath;
-    float cx = 0.50f, cy = 0.50f;
-    float radius = 0.22f;
 
-    // Draw most of a circle (leaving gap for arrow)
-    loopPath.addCentredArc(cx, cy, radius, radius, 0.0f, 0.3f, 5.8f,
-                           true); // Start at 0.3 rad, sweep to 5.8 rad
+    // Convert from Tabler's 24×24 viewBox to normalized 0-1 coordinates
+    auto norm = [](float val) { return val / 24.0f; };
 
-    // Add arrowhead at the end
-    float arrowAngle = 5.8f; // Angle where arc ends
-    float arrowX = cx + radius * std::cos(arrowAngle);
-    float arrowY = cy + radius * std::sin(arrowAngle);
+    // Top path: M4 12 v-3 a3 3 0 0 1 3 -3 h13
+    loopPath.startNewSubPath(norm(4), norm(12));
+    loopPath.lineTo(norm(4), norm(9)); // v-3 (vertical -3 up)
 
-    // Arrowhead pointing along circle tangent
-    float arrowSize = 0.08f;
-    loopPath.startNewSubPath(arrowX, arrowY);
-    loopPath.lineTo(arrowX - arrowSize, arrowY - arrowSize * 0.5f);
-    loopPath.startNewSubPath(arrowX, arrowY);
-    loopPath.lineTo(arrowX - arrowSize * 0.5f, arrowY - arrowSize);
+    // Arc: a3 3 0 0 1 3 -3 (elliptical arc, radius 3x3, end point +3 horizontal, -3 vertical)
+    loopPath.quadraticTo(norm(4), norm(6), norm(7),
+                         norm(6)); // Approximate arc with quadratic bezier
+
+    loopPath.lineTo(norm(20), norm(6)); // h13 (horizontal 13 right)
+
+    // Top arrow: m-3 -3 l3 3 l-3 3
+    loopPath.startNewSubPath(norm(17), norm(3));
+    loopPath.lineTo(norm(20), norm(6));
+    loopPath.lineTo(norm(17), norm(9));
+
+    // Bottom path: M20 12 v3 a3 3 0 0 1 -3 3 h-13
+    loopPath.startNewSubPath(norm(20), norm(12));
+    loopPath.lineTo(norm(20), norm(15)); // v3 (vertical 3 down)
+
+    // Arc: a3 3 0 0 1 -3 3 (elliptical arc, radius 3x3, end point -3 horizontal, +3 vertical)
+    loopPath.quadraticTo(norm(20), norm(18), norm(17),
+                         norm(18)); // Approximate arc with quadratic bezier
+
+    loopPath.lineTo(norm(4), norm(18)); // h-13 (horizontal -13 left)
+
+    // Bottom arrow: m3 3 l-3 -3 l3 -3
+    loopPath.startNewSubPath(norm(7), norm(21));
+    loopPath.lineTo(norm(4), norm(18));
+    loopPath.lineTo(norm(7), norm(15));
 
     auto loopIcon = std::make_unique<juce::DrawablePath>();
     loopIcon->setPath(loopPath);
     loopIcon->setStrokeFill(juce::Colours::white);
-    loopIcon->setStrokeThickness(0.05f);
+    loopIcon->setStrokeThickness(norm(2.0f)); // stroke-width="2" from SVG
     loopIcon->setFill(juce::Colours::transparentBlack);
 
     m_loopButton->setImages(loopIcon.get());
