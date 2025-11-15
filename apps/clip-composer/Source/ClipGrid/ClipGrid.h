@@ -5,6 +5,7 @@
 #include "ClipButton.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
+#include <orpheus/transport_controller.h> // For PlaybackState enum
 #include <vector>
 
 //==============================================================================
@@ -44,8 +45,8 @@ public:
   std::function<void(int sourceButtonIndex, int targetButtonIndex)>
       onButtonDraggedToButton; // Drag clip to different button
 
-  // Callback to check if clip is playing (for 75fps visual sync)
-  std::function<bool(int)> isClipPlaying;
+  // Callback to get clip playback state (for 75fps visual sync)
+  std::function<orpheus::PlaybackState(int)> getClipState;
 
   // Callback to check if clip exists (for 75fps state validation)
   std::function<bool(int)> hasClip;
@@ -53,6 +54,9 @@ public:
   // Callback to get clip metadata (for 75fps state persistence)
   std::function<void(int, bool&, bool&, bool&, bool&)>
       getClipStates; // buttonIndex → (loop, fadeIn, fadeOut, stopOthers)
+
+  // Callback to get clip playback position (for elapsed time display)
+  std::function<float(int)> getClipPosition; // buttonIndex → progress (0.0-1.0)
 
   //==============================================================================
   // Timer management for performance optimization

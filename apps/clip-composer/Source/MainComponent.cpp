@@ -8,8 +8,8 @@
 
 //==============================================================================
 MainComponent::MainComponent() {
-  // Set Inter font as default for all components
-  setLookAndFeel(&m_interLookAndFeel);
+  // Set HK Grotesk font as default for all components
+  setLookAndFeel(&m_hkGroteskLookAndFeel);
 
   // Create tab switcher (8 tabs for MAX_CLIP_BUTTONS total clips)
   m_tabSwitcher = std::make_unique<TabSwitcher>();
@@ -48,12 +48,12 @@ MainComponent::MainComponent() {
   };
 
   // Wire up 75fps playback state sync (uses global clip index for multi-tab isolation)
-  m_clipGrid->isClipPlaying = [this](int buttonIndex) -> bool {
+  m_clipGrid->getClipState = [this](int buttonIndex) -> orpheus::PlaybackState {
     if (m_audioEngine) {
       int globalClipIndex = getGlobalClipIndex(buttonIndex);
-      return m_audioEngine->isClipPlaying(globalClipIndex);
+      return m_audioEngine->getClipState(globalClipIndex);
     }
-    return false;
+    return orpheus::PlaybackState::Stopped;
   };
 
   // Wire up 75fps clip existence check (prevents orphaned states)
@@ -77,16 +77,36 @@ MainComponent::MainComponent() {
     stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
   };
 
+  // Wire up 75fps playback position tracking (for elapsed time display)
+  m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
+    if (!m_audioEngine || !m_sessionManager.hasClip(buttonIndex))
+      return 0.0f;
+
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+
+    // Get current sample position (absolute)
+    int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
+
+    // Calculate trimmed duration in samples
+    int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
+
+    // Normalize to 0.0-1.0 progress within trimmed region
+    if (trimmedSamples > 0) {
+      float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
+                       static_cast<float>(trimmedSamples);
+      return juce::jlimit(0.0f, 1.0f, progress);
+    }
+
+    return 0.0f;
+  };
+
   // Make this component capture keyboard focus
   setWantsKeyboardFocus(true);
 
-  // Create transport controls
-  m_transportControls = std::make_unique<TransportControls>();
-  addAndMakeVisible(m_transportControls.get());
-
-  // Wire up transport control callbacks
-  m_transportControls->onStopAll = [this]() { onStopAll(); };
-  m_transportControls->onPanic = [this]() { onPanic(); };
+  // OCC130 Sprint B: Wire up transport control callbacks (now in TabSwitcher)
+  m_tabSwitcher->onStopAll = [this]() { onStopAll(); };
+  m_tabSwitcher->onPanic = [this]() { onPanic(); };
 
   // Set window size (1400×900 for better screen fit)
   setSize(1400, 900);
@@ -159,16 +179,10 @@ void MainComponent::resized() {
   grabKeyboardFocus(); // Ensure we get keyboard events
   auto bounds = getLocalBounds();
 
-  // Tab switcher at top (40px)
+  // OCC130 Sprint B: Merged tab switcher + transport controls at top (40px)
   auto tabArea = bounds.removeFromTop(40);
   if (m_tabSwitcher) {
-    m_tabSwitcher->setBounds(tabArea.reduced(10, 0)); // 10px horizontal margin
-  }
-
-  // Transport controls at bottom (60px)
-  auto transportArea = bounds.removeFromBottom(60);
-  if (m_transportControls) {
-    m_transportControls->setBounds(transportArea);
+    m_tabSwitcher->setBounds(tabArea); // Full width (no horizontal margin)
   }
 
   // Main content area
@@ -187,8 +201,8 @@ void MainComponent::resized() {
 
 //==============================================================================
 void MainComponent::timerCallback() {
-  // Update latency display in transport controls
-  if (m_transportControls && m_audioEngine) {
+  // OCC130 Sprint B: Update latency/performance info in merged TabSwitcher
+  if (m_tabSwitcher && m_audioEngine) {
     uint32_t latencySamples = m_audioEngine->getLatencySamples();
     uint32_t sampleRate = m_audioEngine->getSampleRate();
     uint32_t bufferSize = m_audioEngine->getBufferSize();
@@ -197,7 +211,7 @@ void MainComponent::timerCallback() {
     // So divide by 2 to get one-way latency
     double latencyMs = ((latencySamples / 2.0) / static_cast<double>(sampleRate)) * 1000.0;
 
-    m_transportControls->setLatencyInfo(latencyMs, bufferSize, sampleRate);
+    m_tabSwitcher->setLatencyInfo(latencyMs, bufferSize, sampleRate);
 
     // OCC109 v0.2.2: Update CPU and memory display (1Hz refresh rate)
     // CRITICAL: JUCE doesn't provide getCpuUsage() or getMemoryUsageInMegabytes()
@@ -214,14 +228,14 @@ void MainComponent::timerCallback() {
       // SDK will provide per-thread CPU metrics for audio vs UI threads
       float cpuPercent = 0.0f; // TODO: Integrate SDK PerformanceMonitor (ORP110 Feature 3)
 
-      m_transportControls->setPerformanceInfo(cpuPercent, memoryMB);
+      m_tabSwitcher->setPerformanceInfo(cpuPercent, memoryMB);
     } else {
       // Fallback if mach API fails
-      m_transportControls->setPerformanceInfo(0.0f, 0);
+      m_tabSwitcher->setPerformanceInfo(0.0f, 0);
     }
 #else
     // Non-macOS platforms: Placeholder
-    m_transportControls->setPerformanceInfo(0.0f, 0);
+    m_tabSwitcher->setPerformanceInfo(0.0f, 0);
 #endif
   }
 }
@@ -442,7 +456,7 @@ juce::String MainComponent::getKeyboardShortcutForButton(int buttonIndex) const 
 
 //==============================================================================
 void MainComponent::onClipRightClicked(int buttonIndex) {
-  // Show context menu (inherits Inter font from LookAndFeel)
+  // Show context menu (inherits HK Grotesk font from LookAndFeel)
   juce::PopupMenu menu;
 
   bool hasClip = m_sessionManager.hasClip(buttonIndex);
@@ -476,8 +490,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     menu.addItem(6, "Load Multiple Audio Files...");
   }
 
-  // Ensure menu uses Orpheus/Inter aesthetic (inherited from MainComponent's LookAndFeel)
-  menu.setLookAndFeel(&m_interLookAndFeel);
+  // Ensure menu uses HK Grotesk aesthetic (inherited from MainComponent's LookAndFeel)
+  menu.setLookAndFeel(&m_hkGroteskLookAndFeel);
 
   menu.showMenuAsync(juce::PopupMenu::Options(), [this, buttonIndex, hasClip,
                                                   globalClipIndex](int result) {
@@ -614,7 +628,8 @@ void MainComponent::onClipTriggered(int buttonIndex) {
   // Calculate global clip index (tab-aware: 0-383 for 8 tabs × 48 buttons)
   int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
-  // Toggle play/stop based on current state
+  // Toggle play/stop based on current visual state
+  // Timer will sync visual state with SDK state at 75fps
   auto currentState = button->getState();
 
   if (currentState == ClipButton::State::Playing) {
@@ -810,8 +825,58 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     m_currentEditDialog = nullptr; // Clear reference to allow new dialog
   };
 
-  dialog->onCancelClicked = [this, dialog]() {
-    // Close dialog without saving
+  dialog->onCancelClicked = [this, buttonIndex, globalClipIndex, dialog, metadata]() {
+    // CRITICAL: Restore original metadata on CANCEL (discard temporary edits)
+    // Edits are live during preview, but must be reverted if user cancels
+
+    // Restore SessionManager clip data
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+    clipData.displayName = metadata.displayName.toStdString();
+    clipData.color = metadata.color;
+    clipData.clipGroup = metadata.clipGroup;
+    clipData.trimInSamples = metadata.trimInSamples;
+    clipData.trimOutSamples = metadata.trimOutSamples;
+    clipData.fadeInSeconds = metadata.fadeInSeconds;
+    clipData.fadeOutSeconds = metadata.fadeOutSeconds;
+    clipData.fadeInCurve = metadata.fadeInCurve.toStdString();
+    clipData.fadeOutCurve = metadata.fadeOutCurve.toStdString();
+    clipData.gainDb = metadata.gainDb;
+    clipData.loopEnabled = metadata.loopEnabled;
+    clipData.stopOthersEnabled = metadata.stopOthersEnabled;
+    m_sessionManager.setClip(buttonIndex, clipData);
+
+    // Restore SDK state (trim points, fades, loop mode)
+    if (m_audioEngine) {
+      m_audioEngine->updateClipMetadata(
+          globalClipIndex, metadata.trimInSamples, metadata.trimOutSamples, metadata.fadeInSeconds,
+          metadata.fadeOutSeconds, metadata.fadeInCurve, metadata.fadeOutCurve);
+      m_audioEngine->setClipLoopMode(globalClipIndex, metadata.loopEnabled);
+      m_loopEnabled[globalClipIndex] = metadata.loopEnabled;
+      m_stopOthersOnPlay[globalClipIndex] = metadata.stopOthersEnabled;
+    }
+
+    // Restore button visual state
+    auto button = m_clipGrid->getButton(buttonIndex);
+    if (button) {
+      button->setClipName(metadata.displayName);
+      button->setClipColor(metadata.color);
+      button->setClipGroup(metadata.clipGroup);
+      button->setLoopEnabled(metadata.loopEnabled);
+      button->setFadeInEnabled(metadata.fadeInSeconds > 0.0);
+      button->setFadeOutEnabled(metadata.fadeOutSeconds > 0.0);
+      button->setStopOthersEnabled(metadata.stopOthersEnabled);
+
+      // Restore trimmed duration
+      if (metadata.sampleRate > 0) {
+        int64_t trimmedSamples = metadata.trimOutSamples - metadata.trimInSamples;
+        double durationSeconds = static_cast<double>(trimmedSamples) / metadata.sampleRate;
+        button->setClipDuration(durationSeconds);
+      }
+    }
+
+    DBG("MainComponent: CANCEL - Restored original metadata for button " << buttonIndex);
+
+    // Close dialog
     dialog->setVisible(false);
     delete dialog;
     m_currentEditDialog = nullptr; // Clear reference to allow new dialog

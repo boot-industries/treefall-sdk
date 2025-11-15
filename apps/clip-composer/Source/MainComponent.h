@@ -5,12 +5,11 @@
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
 #include "Session/SessionManager.h"
-#include "Transport/TransportControls.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
-#include "UI/InterLookAndFeel.h"
-#include "UI/TabSwitcher.h"
+#include "UI/HKGroteskLookAndFeel.h"
+#include "UI/TabSwitcher.h" // OCC130 Sprint B: Now includes merged transport controls
 #include <juce_gui_extra/juce_gui_extra.h>
 
 //==============================================================================
@@ -77,9 +76,8 @@ private:
 
   //==============================================================================
   // UI Components
-  std::unique_ptr<TabSwitcher> m_tabSwitcher;
+  std::unique_ptr<TabSwitcher> m_tabSwitcher; // OCC130 Sprint B: Merged with transport controls
   std::unique_ptr<ClipGrid> m_clipGrid;
-  std::unique_ptr<TransportControls> m_transportControls;
 
   // Future components
   // std::unique_ptr<RoutingPanel> m_routingPanel;
@@ -91,8 +89,8 @@ private:
   // Session Management (Real Functionality)
   SessionManager m_sessionManager;
 
-  // Custom Look and Feel (Inter font)
-  InterLookAndFeel m_interLookAndFeel;
+  // Custom Look and Feel (HK Grotesk font)
+  HKGroteskLookAndFeel m_hkGroteskLookAndFeel;
 
   // Per-button "stop others on play" mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
   std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_stopOthersOnPlay = {};

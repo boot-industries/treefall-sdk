@@ -274,8 +274,14 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // ORP097 Bug 7 Fix: Mark that clip has looped
         clip.hasLoopedOnce = true;
       } else {
-        // Non-loop mode: skip rendering, will be stopped by post-render check
-        continue;
+        // Non-loop mode: trigger stop fade-out when reaching OUT point
+        // This ensures graceful fade when loop is disabled mid-playback
+        if (!clip.isStopping) {
+          clip.isStopping = true;
+          clip.fadeOutGain = 1.0f;
+          clip.fadeOutStartPos = clip.currentSample;
+        }
+        // Continue rendering with fade-out (don't skip rendering)
       }
     }
 
@@ -353,8 +359,7 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
       // ORP097 Bug 7 Fix: Only apply clip fade-in/out on FIRST playthrough (not on loops)
       // Loops should be seamless with no fade processing at boundaries
-      // CRITICAL: Restart uses broadcast-safe 5ms crossfade, NOT clip fade-in
-      if (!clip.hasLoopedOnce && !clip.isRestarting) {
+      if (!clip.hasLoopedOnce) {
         // Apply clip fade-in (first N samples from trim IN)
         int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
         if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
@@ -363,16 +368,12 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         }
 
         // Apply clip fade-out (last N samples before trim OUT)
-        // CRITICAL: Only apply fade-out if clip will STOP (not loop)
-        bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
-        if (!shouldLoop) {
-          int64_t trimmedDuration = trimOut - trimIn;
-          if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
-            int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
-            float fadeOutPos =
-                static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
-            gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
-          }
+        int64_t trimmedDuration = trimOut - trimIn;
+        if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
+          int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
+          float fadeOutPos =
+              static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
+          gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
         }
       }
 
@@ -464,25 +465,15 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // Continue playback (don't remove clip, don't increment i)
         ++i;
       } else if (clip.reader) {
-        // Non-loop mode WITH reader: Stop at OUT point
-        // CRITICAL: Clip fade-out is applied WITHIN IN/OUT bounds (lines 364-376)
-        // Do NOT apply additional fade-out past OUT point - that violates edit law
-        // "Fade INs and OUTs exist within the bounds of IN/OUT, never outside of them"
+        // Non-loop mode WITH reader: Trigger stop fade-out when reaching OUT point
+        // This ensures graceful fade when loop is disabled mid-playback
         if (!clip.isStopping) {
-          // Stop immediately (no fade-out extension past OUT point)
-          // The clip fade-out (lines 364-376) already faded audio to silence within bounds
-          postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
-            if (m_callback) {
-              m_callback->onClipStopped(handle, pos);
-            }
-          });
-
-          removeActiveClip(clip.handle);
-          continue; // Don't increment i (clip was removed)
-        } else {
-          // Already in fade-out, let normal fade-out logic handle it
-          ++i;
+          clip.isStopping = true;
+          clip.fadeOutGain = 1.0f;
+          clip.fadeOutStartPos = clip.currentSample;
         }
+        // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
+        ++i;
       } else {
         // No reader, non-loop mode - just continue (don't stop test placeholder clips)
         ++i;
@@ -1364,18 +1355,14 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
         clip.reader->seek(trimIn);
       }
 
-      // Enable restart crossfade (5ms fade-in to eliminate clicks)
-      // The audio thread will apply a linear fade-in over the next N samples
-      clip.isRestarting = true;
-      clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
-
       // Cancel any fade-out in progress
       clip.isStopping = false;
       clip.fadeOutGain = 1.0f;
 
-      // CRITICAL: Restart should NOT re-apply clip fade-in
-      // Mark as looped so clip fade-in/out won't be applied (only 5ms restart crossfade)
-      clip.hasLoopedOnce = true;
+      // CRITICAL: Manual restart SHOULD apply clip fade-in (user action)
+      // This is DIFFERENT from auto-loop which should NOT apply fade-in
+      // Set hasLoopedOnce = false to allow clip fade-in on restart
+      clip.hasLoopedOnce = false;
     }
   }
 

@@ -198,17 +198,23 @@ void ClipGrid::timerCallback() {
     }
 
     // Query AudioEngine for atomic playback state
-    if (isClipPlaying) {
-      bool playing = isClipPlaying(i);
+    if (getClipState) {
+      auto sdkState = getClipState(i);
       auto currentState = button->getState();
 
-      // Update button state if it doesn't match SDK atomic state
-      if (playing && currentState != ClipButton::State::Playing) {
+      // CRITICAL: Only update button state if it doesn't conflict with user actions
+      // - Playing → set button to Playing (clip started elsewhere, e.g., Edit Dialog)
+      // - Stopped → set button to Loaded (natural clip end)
+      // - Stopping → DO NOTHING (user already stopped, let fade finish without overriding)
+      if (sdkState == orpheus::PlaybackState::Playing &&
+          currentState != ClipButton::State::Playing) {
         button->setState(ClipButton::State::Playing);
-      } else if (!playing && currentState == ClipButton::State::Playing) {
+      } else if (sdkState == orpheus::PlaybackState::Stopped &&
+                 currentState == ClipButton::State::Playing) {
         // Clip stopped (fade complete) - reset to Loaded (NOT Empty)
         button->setState(ClipButton::State::Loaded);
       }
+      // If sdkState == Stopping, do NOT override button state (user already set it to Loaded)
     }
 
     // CRITICAL: Sync clip metadata indicators at 75fps (loop, fade, stop-others)
@@ -228,7 +234,13 @@ void ClipGrid::timerCallback() {
       button->setStopOthersEnabled(stopOthersEnabled);
     }
 
-    // Repaint button to update visual indicators (fade, loop, stop-others)
+    // Update playback progress for playing clips (75fps smooth animation)
+    if (getClipPosition && button->getState() == ClipButton::State::Playing) {
+      float progress = getClipPosition(i);
+      button->setPlaybackProgress(progress);
+    }
+
+    // Repaint button to update visual indicators (fade, loop, stop-others, time display)
     button->repaint();
   }
 }
