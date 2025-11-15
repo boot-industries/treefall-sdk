@@ -361,11 +361,11 @@ void ClipEditDialog::restartPlayback() {
 void ClipEditDialog::buildPhase1UI() {
   // Clip Name
   m_nameLabel = std::make_unique<juce::Label>("nameLabel", "Clip Name:");
-  m_nameLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_nameLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_nameLabel.get());
 
   m_nameEditor = std::make_unique<juce::TextEditor>();
-  m_nameEditor->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::plain));
+  m_nameEditor->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain));
   m_nameEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_nameEditor->setMultiLine(false);                                // Single line only
   m_nameEditor->setScrollBarThickness(0);                           // No scrollbar
@@ -382,18 +382,18 @@ void ClipEditDialog::buildPhase1UI() {
 
   // File Path (read-only)
   m_filePathLabel = std::make_unique<juce::Label>("filePathLabel", "File Path:");
-  m_filePathLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_filePathLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_filePathLabel.get());
 
   m_filePathEditor = std::make_unique<juce::TextEditor>();
-  m_filePathEditor->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+  m_filePathEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
   m_filePathEditor->setReadOnly(true);
   m_filePathEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
   addAndMakeVisible(m_filePathEditor.get());
 
   // Color
   m_colorLabel = std::make_unique<juce::Label>("colorLabel", "Color:");
-  m_colorLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_colorLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_colorLabel.get());
 
   // Ableton-style color swatch picker
@@ -410,7 +410,7 @@ void ClipEditDialog::buildPhase1UI() {
 
   // Clip Group
   m_groupLabel = std::make_unique<juce::Label>("groupLabel", "Group:");
-  m_groupLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_groupLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_groupLabel.get());
 
   m_groupComboBox = std::make_unique<juce::ComboBox>();
@@ -666,8 +666,8 @@ void ClipEditDialog::buildPhase2UI() {
   addAndMakeVisible(m_stopOthersButton.get());
 
   m_transportPositionLabel = std::make_unique<juce::Label>("posLabel", "00:00:00.00");
-  m_transportPositionLabel->setFont(
-      juce::FontOptions("Inter", 32.0f, juce::Font::bold)); // Issue #11: Enlarged for readability
+  m_transportPositionLabel->setFont(juce::FontOptions(
+      "HK Grotesk", 32.0f, juce::Font::bold)); // Issue #11: Enlarged for readability
   m_transportPositionLabel->setJustificationType(juce::Justification::centred);
   m_transportPositionLabel->setColour(juce::Label::textColourId, juce::Colours::white);
   addAndMakeVisible(m_transportPositionLabel.get());
@@ -812,7 +812,7 @@ void ClipEditDialog::buildPhase2UI() {
   addAndMakeVisible(m_zoomOutButton.get());
 
   m_zoomLabel = std::make_unique<juce::Label>("zoomLabel", "1x");
-  m_zoomLabel->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+  m_zoomLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
   m_zoomLabel->setJustificationType(juce::Justification::centred);
   m_zoomLabel->setColour(juce::Label::textColourId, juce::Colours::white);
   addAndMakeVisible(m_zoomLabel.get());
@@ -837,12 +837,12 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim In Point
   m_trimInLabel = std::make_unique<juce::Label>("trimInLabel", "Trim In:");
-  m_trimInLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_trimInLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_trimInLabel.get());
 
   // Time editor (MM:SS:FF - SpotOn format, 75fps)
   m_trimInTimeEditor = std::make_unique<juce::TextEditor>();
-  m_trimInTimeEditor->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+  m_trimInTimeEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
   m_trimInTimeEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_trimInTimeEditor->setText("00:00:00", false);
   m_trimInTimeEditor->onReturnKey = [this]() {
@@ -990,12 +990,12 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim Out Point
   m_trimOutLabel = std::make_unique<juce::Label>("trimOutLabel", "Trim Out:");
-  m_trimOutLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_trimOutLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_trimOutLabel.get());
 
   // Time editor (MM:SS:FF - SpotOn format, 75fps)
   m_trimOutTimeEditor = std::make_unique<juce::TextEditor>();
-  m_trimOutTimeEditor->setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+  m_trimOutTimeEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
   m_trimOutTimeEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_trimOutTimeEditor->setText("00:00:00", false);
   m_trimOutTimeEditor->onReturnKey = [this]() {
@@ -1134,7 +1134,7 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim Info Label (shows duration in seconds)
   m_trimInfoLabel = std::make_unique<juce::Label>("trimInfoLabel", "Duration: --:--");
-  m_trimInfoLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_trimInfoLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colours::white);
   m_trimInfoLabel->setColour(juce::Label::backgroundColourId, juce::Colour(0xff2a2a2a));
   m_trimInfoLabel->setColour(juce::Label::outlineColourId, juce::Colour(0xff555555));
@@ -1143,7 +1143,7 @@ void ClipEditDialog::buildPhase2UI() {
 
   // File Info Panel (SpotOn-style yellow background)
   m_fileInfoPanel = std::make_unique<juce::Label>("fileInfoPanel", "");
-  m_fileInfoPanel->setFont(juce::FontOptions("Inter", 11.0f, juce::Font::plain));
+  m_fileInfoPanel->setFont(juce::FontOptions("HK Grotesk", 11.0f, juce::Font::plain));
   m_fileInfoPanel->setJustificationType(juce::Justification::centredLeft);
   m_fileInfoPanel->setColour(juce::Label::backgroundColourId, juce::Colour(0xfffff4cc)); // Yellow
   m_fileInfoPanel->setColour(juce::Label::textColourId, juce::Colours::black);
@@ -1151,7 +1151,7 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Gain Control (Feature 5: -30dB to +10dB, default 0dB)
   m_gainLabel = std::make_unique<juce::Label>("gainLabel", "Gain:");
-  m_gainLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_gainLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_gainLabel.get());
 
   m_gainSlider =
@@ -1171,7 +1171,7 @@ void ClipEditDialog::buildPhase2UI() {
   addAndMakeVisible(m_gainSlider.get());
 
   m_gainValueLabel = std::make_unique<juce::Label>("gainValueLabel", "0.0 dB");
-  m_gainValueLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::plain));
+  m_gainValueLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain));
   m_gainValueLabel->setJustificationType(juce::Justification::centred);
   m_gainValueLabel->setEditable(true);
   m_gainValueLabel->onTextChange = [this]() {
@@ -1192,7 +1192,7 @@ void ClipEditDialog::buildPhase2UI() {
 void ClipEditDialog::buildPhase3UI() {
   // Fade In Section
   m_fadeInLabel = std::make_unique<juce::Label>("fadeInLabel", "Fade In:");
-  m_fadeInLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_fadeInLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_fadeInLabel.get());
 
   m_fadeInCombo = std::make_unique<juce::ComboBox>();
@@ -1299,7 +1299,7 @@ void ClipEditDialog::buildPhase3UI() {
 
   // Fade Out Section
   m_fadeOutLabel = std::make_unique<juce::Label>("fadeOutLabel", "Fade Out:");
-  m_fadeOutLabel->setFont(juce::FontOptions("Inter", 14.0f, juce::Font::bold));
+  m_fadeOutLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
   addAndMakeVisible(m_fadeOutLabel.get());
 
   m_fadeOutCombo = std::make_unique<juce::ComboBox>();
@@ -1425,7 +1425,7 @@ void ClipEditDialog::paint(juce::Graphics& g) {
 
   // Title text
   g.setColour(juce::Colours::white);
-  g.setFont(juce::FontOptions("Inter", 20.0f, juce::Font::bold));
+  g.setFont(juce::FontOptions("HK Grotesk", 20.0f, juce::Font::bold));
   g.drawText("Clip Edit", 20, 0, 400, 50, juce::Justification::centredLeft, false);
 }
 

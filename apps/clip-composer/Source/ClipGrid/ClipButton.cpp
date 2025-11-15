@@ -121,12 +121,12 @@ juce::String ClipButton::formatDuration(double seconds) const {
   int minutes = (totalSeconds % 3600) / 60;
   int secs = totalSeconds % 60;
 
-  // Hide HH: if duration < 60 minutes
-  // Never show .FF field (too busy/CPU intensive)
+  // Show MM:SS by default, HH:MM:SS only if >60 minutes
+  // No frames/hundredths shown on clip button faces
   if (hours > 0) {
-    return juce::String::formatted("%d:%02d:%02d", hours, minutes, secs);
+    return juce::String::formatted("%02d:%02d:%02d", hours, minutes, secs);
   } else {
-    return juce::String::formatted("%d:%02d", minutes, secs);
+    return juce::String::formatted("%02d:%02d", minutes, secs);
   }
 }
 
@@ -189,7 +189,7 @@ void ClipButton::paint(juce::Graphics& g) {
     // Button index (larger, more prominent) - 20% increase: 18 -> 21.6
     // Feature 4: Use consecutive numbering across tabs
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::FontOptions("Inter", 21.6f, juce::Font::bold));
+    g.setFont(juce::FontOptions("HK Grotesk", 21.6f, juce::Font::bold));
     g.drawText(juce::String(getDisplayNumber()), bounds, juce::Justification::centred, false);
 
     // No "Empty" text - just the button number on grey background is sufficient
@@ -236,31 +236,56 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     // Button index in white rounded rectangle (Feature 3 - tighter margins)
     // Feature 4: Use consecutive numbering across tabs
     juce::String buttonNumber = juce::String(getDisplayNumber());
-    auto numberFont = juce::FontOptions("Inter", 12.0f, juce::Font::bold);
+    auto numberFont = juce::FontOptions("HK Grotesk", 12.0f, juce::Font::bold);
     g.setFont(numberFont);
 
-    // Calculate text width using GlyphArrangement (replaces deprecated getStringWidth)
-    juce::GlyphArrangement glyphs;
-    glyphs.addLineOfText(juce::Font(numberFont), buttonNumber, 0.0f, 0.0f);
-    float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
-    float boxWidth = textWidth + 6.0f; // Reduced padding: 8.0 -> 6.0
+    // Reserve 3 characters of width (e.g., "960") - fixed width for consistent layout
+    float boxWidth = 36.0f; // Fixed width for up to 3 digits
     float boxHeight = 16.0f;
 
     auto numberBox = topRow.removeFromLeft(boxWidth).withHeight(boxHeight);
 
-    // Draw white rounded rectangle background (tighter corner radius)
+    // Draw white rounded rectangle background (OCC130 Sprint A.4: 4px corner radius)
     g.setColour(juce::Colours::white.withAlpha(0.95f));
-    g.fillRoundedRectangle(numberBox, 2.0f); // Reduced radius: 3.0 -> 2.0
+    g.fillRoundedRectangle(numberBox, 4.0f); // OCC130: Consistent 4px radius
 
     // Draw black text
     g.setColour(juce::Colours::black);
     g.drawText(buttonNumber, numberBox, juce::Justification::centred, false);
 
-    // Keyboard shortcut (right, prominent) - 20% increase: 11 -> 13.2
+    // OCC130 Sprint A.3: Beat indicator next to clip number (top-left)
+    // Format: " // {value}" (e.g., " // 3+")
+    if (m_beatOffset.isNotEmpty()) {
+      g.setColour(textColor); // Use adaptive text color (white/black based on bg)
+      g.setFont(juce::FontOptions("HK Grotesk", 11.0f, juce::Font::plain)); // Thin/light weight
+      juce::String beatDisplay = " // " + m_beatOffset;
+      auto beatArea = topRow.removeFromLeft(40.0f); // Reserve space for beat display
+      g.drawText(beatDisplay, beatArea, juce::Justification::centredLeft, false);
+    }
+
+    // OCC130 Sprint A.4: Keyboard shortcut indicator (top-right corner)
+    // Thin outline box, transparent background, adaptive color
     if (m_keyboardShortcut.isNotEmpty()) {
-      g.setColour(prominentTextColor);
-      g.setFont(juce::FontOptions("Inter", 13.2f, juce::Font::bold));
-      g.drawText(m_keyboardShortcut, topRow, juce::Justification::topRight, false);
+      // Reserve 3 characters of width (e.g., "F12") - fixed width for consistent layout
+      auto hotkeyFont = juce::FontOptions("HK Grotesk", 12.0f, juce::Font::bold);
+      g.setFont(hotkeyFont);
+
+      float hotkeyBoxWidth = 36.0f; // Fixed width for up to 3 characters
+      float hotkeyBoxHeight = 16.0f;
+
+      auto hotkeyBox = topRow.removeFromRight(hotkeyBoxWidth).withHeight(hotkeyBoxHeight);
+
+      // Draw thin outline (1.5px, adaptive color)
+      // Light outline on dark buttons, dark outline on light buttons
+      juce::Colour outlineColor = brightness > 0.8f ? juce::Colours::black.withAlpha(0.6f)
+                                                    : juce::Colours::white.withAlpha(0.8f);
+
+      g.setColour(outlineColor);
+      g.drawRoundedRectangle(hotkeyBox, 4.0f, 1.5f); // 4px radius, 1.5px stroke
+
+      // Draw text (adaptive color)
+      g.setColour(textColor);
+      g.drawText(m_keyboardShortcut, hotkeyBox, juce::Justification::centred, false);
     }
 
     currentY = topRow.getBottom() + 2.0f;
@@ -275,7 +300,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
 
     // Clip Name (PRIMARY - MUCH larger, bold, 3 lines)
     g.setColour(textColor);
-    g.setFont(juce::FontOptions("Inter", 18.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions("HK Grotesk", 18.0f, juce::Font::bold));
 
     // Reserve minimal space for duration
     auto nameOnlyArea = nameArea.withTrimmedBottom(12.0f);
@@ -283,42 +308,45 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
                      3, // Allow up to 3 lines for name
                      0.85f);
 
-    // Duration (secondary - MUCH smaller and subtle)
-    auto durationArea = nameArea.removeFromBottom(11.0f);
+    // OCC130 Sprint A.2: Time display - show elapsed — remaining when playing, total when stopped
+    // Font size: 15.0px (reduced ~15% from original 18px)
+    auto durationArea = nameArea.removeFromBottom(22.0f); // Increased height for larger font
     if (m_durationSeconds > 0.0) {
-      g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::plain));
+      g.setFont(juce::FontOptions("HK Grotesk", 15.0f, juce::Font::plain));
 
-      if (m_state == State::Playing && m_playbackProgress > 0.0f) {
-        // Show elapsed / remaining during playback
+      juce::String timeDisplay;
+
+      // Show different formats based on playback state
+      if (m_state == State::Playing || m_state == State::Stopping) {
+        // Playing/Stopping: show elapsed — remaining
+        // Elapsed = current playhead position within trimmed region (IN to OUT)
         double elapsed = m_durationSeconds * m_playbackProgress;
         double remaining = m_durationSeconds - elapsed;
-        juce::String timeDisplay =
-            "▶ " + formatDuration(elapsed) + " / -" + formatDuration(remaining);
-        g.setColour(juce::Colour(0xff00ff00).withAlpha(0.8f));
-        g.drawText(timeDisplay, durationArea, juce::Justification::centred, false);
+
+        // Format: "MM:SS — MM:SS" (HH:MM:SS if >60 min)
+        timeDisplay = formatDuration(elapsed) + " — " + formatDuration(remaining);
+
+        // Color: green when playing, orange when stopping
+        g.setColour(m_state == State::Playing ? juce::Colour(0xff00ff00).withAlpha(0.9f)
+                                              : juce::Colour(0xffff8800).withAlpha(0.9f));
       } else {
-        // Show total duration when stopped (use adaptive subtle color)
+        // Loaded/Empty: show total duration only
+        timeDisplay = formatDuration(m_durationSeconds);
+
+        // Color: subtle text
         g.setColour(subtleTextColor);
-        g.drawText(formatDuration(m_durationSeconds), durationArea, juce::Justification::centred,
-                   false);
       }
+
+      g.drawText(timeDisplay, durationArea, juce::Justification::centred, false);
     }
 
     currentY = nameArea.getBottom();
   }
 
-  // === BOTTOM ROW: Beat Offset + Group ===
+  // === BOTTOM ROW: Clip Group ===
   {
     auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 24.0f,
                                              contentArea.getWidth(), 24.0f);
-
-    // Beat offset (left, if present) - e.g., "//3+"
-    if (m_beatOffset.isNotEmpty()) {
-      g.setColour(juce::Colour(0xffffaa00)); // Orange for timing info
-      g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::bold));
-      g.drawText("//" + m_beatOffset, bottomArea.withTrimmedRight(bottomArea.getWidth() * 0.7f),
-                 juce::Justification::centredLeft, false);
-    }
 
     // Clip group indicator (right) - e.g., "G1", "G2"
     {
@@ -331,13 +359,13 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
 
       auto groupBadge = bottomArea.removeFromRight(24.0f).withTrimmedTop(4.0f).withHeight(16.0f);
 
-      // Draw group badge background
+      // Draw group badge background (OCC130 Sprint A.4: 4px corner radius)
       g.setColour(groupColors[m_clipGroup].withAlpha(0.8f));
-      g.fillRoundedRectangle(groupBadge, 3.0f);
+      g.fillRoundedRectangle(groupBadge, 4.0f); // OCC130: Consistent 4px radius
 
       // Draw group number
       g.setColour(juce::Colours::white);
-      g.setFont(juce::FontOptions("Inter", 10.8f, juce::Font::bold));
+      g.setFont(juce::FontOptions("HK Grotesk", 10.8f, juce::Font::bold));
       g.drawText("G" + juce::String(m_clipGroup + 1), groupBadge, juce::Justification::centred,
                  false);
     }
@@ -391,7 +419,7 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
 
       // Draw green rounded rectangle background (bright green)
       g.setColour(juce::Colour(0xff00ff00)); // Bright green
-      g.fillRoundedRectangle(playBox, 2.0f); // Same radius as clip number box
+      g.fillRoundedRectangle(playBox, 4.0f); // OCC130 Sprint A.4: Consistent 4px radius
 
       // Draw white play triangle inside
       juce::Path playTriangle;

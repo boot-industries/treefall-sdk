@@ -182,11 +182,6 @@ void PreviewPlayer::jumpTo(int64_t samplePosition) {
         DBG("PreviewPlayer: Started but seek failed - playing from IN (button " << m_buttonIndex
                                                                                 << ")");
       }
-
-      // Notify MainComponent to sync grid button visual state
-      if (onPlayStateChanged) {
-        onPlayStateChanged(true);
-      }
     } else {
       DBG("PreviewPlayer: Failed to start clip from sample " << samplePosition << " (button "
                                                              << m_buttonIndex << ")");

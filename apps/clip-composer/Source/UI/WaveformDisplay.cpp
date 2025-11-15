@@ -202,7 +202,7 @@ void WaveformDisplay::paint(juce::Graphics& g) {
   // Loading state
   if (m_isLoading.load()) {
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+    g.setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
     g.drawText("Loading waveform...", waveformArea, juce::Justification::centred);
     return;
   }
@@ -217,7 +217,7 @@ void WaveformDisplay::paint(juce::Graphics& g) {
       drawTimeScale(g, timeScaleArea);
     } else {
       g.setColour(juce::Colours::white.withAlpha(0.3f));
-      g.setFont(juce::FontOptions("Inter", 12.0f, juce::Font::plain));
+      g.setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
       g.drawText("No waveform data", waveformArea, juce::Justification::centred);
     }
   }
@@ -479,7 +479,7 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
 
   // Draw dB scale on left side (SpotOn-style)
   g.setColour(juce::Colours::white.withAlpha(0.7f));
-  g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::plain));
+  g.setFont(juce::FontOptions("HK Grotesk", 9.0f, juce::Font::plain));
 
   // SpotOn shows: 0, -10, -20, -30, -40, -50 dB
   const float dbValues[] = {0.0f, -10.0f, -20.0f, -30.0f, -40.0f, -50.0f};
@@ -668,54 +668,6 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
   }
 }
 
-void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
-                                            const juce::Rectangle<float>& bounds) {
-  // Only draw if audition is active
-  if (!m_auditionActive || m_waveformData.totalSamples == 0)
-    return;
-
-  // Account for dB scale offset
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
-  const float width = waveformBounds.getWidth();
-
-  // Calculate visible range based on zoom level
-  float visibleWidth = 1.0f / m_zoomFactor;
-  float startFraction = m_zoomCenter - (visibleWidth / 2.0f);
-  float endFraction = m_zoomCenter + (visibleWidth / 2.0f);
-  startFraction = std::clamp(startFraction, 0.0f, 1.0f);
-  endFraction = std::clamp(endFraction, 0.0f, 1.0f);
-
-  // Calculate audition region positions in normalized space [0, 1]
-  float auditionStartNormalized = m_auditionStart / static_cast<float>(m_waveformData.totalSamples);
-  float auditionEndNormalized = m_auditionEnd / static_cast<float>(m_waveformData.totalSamples);
-
-  // Clamp playhead to audition region for proper rendering
-  float playheadNormalized =
-      std::clamp(m_playheadPosition / static_cast<float>(m_waveformData.totalSamples),
-                 auditionStartNormalized, auditionEndNormalized);
-
-  // Map to zoomed viewport coordinates
-  float auditionStartX =
-      waveformBounds.getX() +
-      ((auditionStartNormalized - startFraction) / (endFraction - startFraction)) * width;
-  float playheadX = waveformBounds.getX() +
-                    ((playheadNormalized - startFraction) / (endFraction - startFraction)) * width;
-  float auditionEndX =
-      waveformBounds.getX() +
-      ((auditionEndNormalized - startFraction) / (endFraction - startFraction)) * width;
-
-  // Draw yellow highlight from playhead to OUT (remaining audition region)
-  g.setColour(juce::Colour(0xffffff00).withAlpha(0.15f)); // Yellow, semi-transparent
-  float highlightStart = playheadX;
-  float highlightEnd = auditionEndX;
-
-  if (highlightEnd > highlightStart) {
-    g.fillRect(highlightStart, waveformBounds.getY(), highlightEnd - highlightStart,
-               waveformBounds.getHeight());
-  }
-}
-
 void WaveformDisplay::drawTimeScale(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
   if (m_waveformData.totalSamples == 0)
     return;
@@ -776,7 +728,7 @@ void WaveformDisplay::drawTimeScale(juce::Graphics& g, const juce::Rectangle<flo
 
   // Draw time markers with collision prevention
   g.setColour(juce::Colours::white.withAlpha(0.7f));
-  g.setFont(juce::FontOptions("Inter", 9.0f, juce::Font::plain));
+  g.setFont(juce::FontOptions("HK Grotesk", 9.0f, juce::Font::plain));
 
   double firstMarker = std::ceil(startTime / timeInterval) * timeInterval;
 

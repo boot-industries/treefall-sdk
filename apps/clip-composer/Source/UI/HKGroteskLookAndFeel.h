@@ -6,15 +6,15 @@
 
 //==============================================================================
 /**
- * InterLookAndFeel - Custom look and feel using Inter font
+ * HKGroteskLookAndFeel - Custom look and feel using HK Grotesk font
  *
- * Applies Inter font to all UI components including menus and dialogs
+ * Applies HK Grotesk font to all UI components including menus and dialogs
  */
-class InterLookAndFeel : public juce::LookAndFeel_V4 {
+class HKGroteskLookAndFeel : public juce::LookAndFeel_V4 {
 public:
-  InterLookAndFeel() {
-    // Set Inter as default font for all components
-    setDefaultSansSerifTypefaceName("Inter");
+  HKGroteskLookAndFeel() {
+    // Set HK Grotesk as default font for all components
+    setDefaultSansSerifTypefaceName("HK Grotesk");
 
     // Force popup menus to use dark theme
     setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff2a2a2a));
@@ -25,27 +25,27 @@ public:
   }
 
   juce::Font getPopupMenuFont() override {
-    return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
+    return juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain);
   }
 
   juce::Font getMenuBarFont(juce::MenuBarComponent&, int, const juce::String&) override {
-    return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
+    return juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain);
   }
 
   juce::Font getTextButtonFont(juce::TextButton&, int) override {
-    return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
+    return juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain);
   }
 
   juce::Font getAlertWindowFont() override {
-    return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
+    return juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain);
   }
 
   juce::Font getAlertWindowTitleFont() override {
-    return juce::FontOptions("Inter", 16.0f, juce::Font::bold);
+    return juce::FontOptions("HK Grotesk", 16.0f, juce::Font::bold);
   }
 
   juce::Font getAlertWindowMessageFont() override {
-    return juce::FontOptions("Inter", 14.0f, juce::Font::plain);
+    return juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain);
   }
 
   // Issue #12: Add vertical padding to popup menu items (8px total = 4px top + 4px bottom)

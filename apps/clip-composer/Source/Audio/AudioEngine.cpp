@@ -259,11 +259,15 @@ bool AudioEngine::startClip(int buttonIndex) {
 
   // CRITICAL: Check if already playing - if so, RESTART from IN point (not resume)
   // This ensures rapid clip button clicks always restart from the beginning
+  // Reference: Commit 693293f1 (perfect button behavior, no zigzag distortion)
+  // See: apps/clip-composer/docs/occ/OCC129 for complete technical explanation
   bool isAlreadyPlaying = m_transportController->isClipPlaying(handle);
 
   orpheus::SessionGraphError result;
   if (isAlreadyPlaying) {
     // Already playing - use restartClip() to force restart from IN point
+    // This restarts ALL voices with a 5ms broadcast-safe crossfade
+    // Eliminates zigzag distortion by preventing overlapping voices with independent fades
     result = m_transportController->restartClip(handle);
     if (result != orpheus::SessionGraphError::OK) {
       DBG("AudioEngine: Failed to restart clip " << handle);
