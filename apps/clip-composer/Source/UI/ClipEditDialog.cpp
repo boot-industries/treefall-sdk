@@ -472,6 +472,11 @@ void ClipEditDialog::buildPhase2UI() {
     skipToStartPath.startNewSubPath(norm(4), norm(5));
     skipToStartPath.lineTo(norm(4), norm(19)); // l0 14 (vertical line down 14)
 
+    // Scale down by 33% (to 67% size) and center within button
+    float scale = 0.67f;
+    float offset = (1.0f - scale) / 2.0f; // Center offset
+    skipToStartPath.applyTransform(juce::AffineTransform::scale(scale).translated(offset, offset));
+
     auto skipToStartIcon = std::make_unique<juce::DrawablePath>();
     skipToStartIcon->setPath(skipToStartPath);
     skipToStartIcon->setStrokeFill(juce::Colours::white);
@@ -514,6 +519,11 @@ void ClipEditDialog::buildPhase2UI() {
     playPath.lineTo(norm(7), norm(20));  // v16 (vertical 16 down)
     playPath.lineTo(norm(20), norm(12)); // l13 -8 (relative: +13 horizontal, -8 vertical)
     playPath.closeSubPath();
+
+    // Scale down by 33% (to 67% size) and center within button
+    float scale = 0.67f;
+    float offset = (1.0f - scale) / 2.0f; // Center offset
+    playPath.applyTransform(juce::AffineTransform::scale(scale).translated(offset, offset));
 
     auto playIcon = std::make_unique<juce::DrawablePath>();
     playIcon->setPath(playPath);
@@ -568,6 +578,11 @@ void ClipEditDialog::buildPhase2UI() {
 
     stopPath.addRoundedRectangle(x, y, width, height, radius);
 
+    // Scale down by 33% (to 67% size) and center within button
+    float scale = 0.67f;
+    float offset = (1.0f - scale) / 2.0f; // Center offset
+    stopPath.applyTransform(juce::AffineTransform::scale(scale).translated(offset, offset));
+
     auto stopIcon = std::make_unique<juce::DrawablePath>();
     stopIcon->setPath(stopPath);
     stopIcon->setStrokeFill(juce::Colours::white);
@@ -599,6 +614,9 @@ void ClipEditDialog::buildPhase2UI() {
       m_previewPlayer->stop();
       DBG("ClipEditDialog: Preview playback stopped");
     }
+
+    // Update button colors immediately (instant visual feedback)
+    updateTransportButtonColors();
   };
   addAndMakeVisible(m_stopButton.get());
 
@@ -621,6 +639,11 @@ void ClipEditDialog::buildPhase2UI() {
     // Vertical bar: M20 5 l0 14
     skipToEndPath.startNewSubPath(norm(20), norm(5));
     skipToEndPath.lineTo(norm(20), norm(19)); // l0 14 (vertical line down 14)
+
+    // Scale down by 33% (to 67% size) and center within button
+    float scale = 0.67f;
+    float offset = (1.0f - scale) / 2.0f; // Center offset
+    skipToEndPath.applyTransform(juce::AffineTransform::scale(scale).translated(offset, offset));
 
     auto skipToEndIcon = std::make_unique<juce::DrawablePath>();
     skipToEndIcon->setPath(skipToEndPath);
@@ -699,6 +722,11 @@ void ClipEditDialog::buildPhase2UI() {
     loopPath.startNewSubPath(norm(7), norm(21));
     loopPath.lineTo(norm(4), norm(18));
     loopPath.lineTo(norm(7), norm(15));
+
+    // Scale down by 33% (to 67% size) and center within button
+    float scale = 0.67f;
+    float offset = (1.0f - scale) / 2.0f; // Center offset
+    loopPath.applyTransform(juce::AffineTransform::scale(scale).translated(offset, offset));
 
     auto loopIcon = std::make_unique<juce::DrawablePath>();
     loopIcon->setPath(loopPath);

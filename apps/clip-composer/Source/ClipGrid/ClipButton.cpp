@@ -311,11 +311,20 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
 
     // Clip Name (PRIMARY - MUCH larger, bold, 3 lines)
-    g.setColour(textColor);
     g.setFont(juce::FontOptions("HK Grotesk", 18.0f, juce::Font::bold));
 
     // Reserve minimal space for duration
     auto nameOnlyArea = nameArea.withTrimmedBottom(12.0f);
+
+    // Draw 1px shadow first
+    g.setColour(juce::Colours::black.withAlpha(0.5f));
+    g.drawFittedText(m_clipName, nameOnlyArea.translated(0, 1).toNearestInt(),
+                     juce::Justification::centred,
+                     3, // Allow up to 3 lines for name
+                     0.85f);
+
+    // Draw main text on top
+    g.setColour(textColor);
     g.drawFittedText(m_clipName, nameOnlyArea.toNearestInt(), juce::Justification::centred,
                      3, // Allow up to 3 lines for name
                      0.85f);
@@ -338,12 +347,29 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         // Format: "MM:SS — MM:SS" (HH:MM:SS if >60 min)
         timeDisplay = formatDuration(elapsed) + " — " + formatDuration(remaining);
 
-        // Color: green when playing, orange when stopping
-        g.setColour(m_state == State::Playing ? juce::Colour(0xff00ff00).withAlpha(0.9f)
-                                              : juce::Colour(0xffff8800).withAlpha(0.9f));
+        // Draw dark grey rounded rectangle backdrop with 4px padding
+        auto backdropArea = durationArea.reduced(2.0f);         // Small margin around backdrop
+        g.setColour(juce::Colour(0xff2a2a2a).withAlpha(0.85f)); // Dark grey backdrop
+        g.fillRoundedRectangle(backdropArea, 4.0f);             // 4px corner radius
+
+        // Color: green when playing, orange when stopping (with 2px shadow)
+        juce::Colour timeColor = m_state == State::Playing
+                                     ? juce::Colour(0xff00ff00).withAlpha(0.9f)
+                                     : juce::Colour(0xffff8800).withAlpha(0.9f);
+
+        // Draw 2px shadow first
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.drawText(timeDisplay, durationArea.translated(0, 2), juce::Justification::centred, false);
+
+        // Draw main text on top
+        g.setColour(timeColor);
       } else {
         // Loaded/Empty: show total duration only
         timeDisplay = formatDuration(m_durationSeconds);
+
+        // Draw 1px shadow for loaded state
+        g.setColour(juce::Colours::black.withAlpha(0.5f));
+        g.drawText(timeDisplay, durationArea.translated(0, 1), juce::Justification::centred, false);
 
         // Color: subtle text
         g.setColour(subtleTextColor);
