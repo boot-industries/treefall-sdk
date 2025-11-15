@@ -24,7 +24,7 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
   // Build Phase 3 UI (Fade times)
   buildPhase3UI();
 
-  setSize(700, 800); // Expanded for all phases
+  setSize(700, 850); // Expanded for all phases, increased height to prevent button crushing
 }
 
 ClipEditDialog::~ClipEditDialog() {
@@ -2355,35 +2355,41 @@ bool ClipEditDialog::keyStateChanged(bool isKeyDown) {
 
 //==============================================================================
 void ClipEditDialog::updateTransportButtonColors() {
-  // Update button colors based on playback state (using existing 75fps atomic sync)
+  // Color scheme: Dark (grey) = inactive, Light (colored) = active
   if (!m_previewPlayer)
     return;
 
   bool isPlaying = m_previewPlayer->isPlaying();
+  bool isLoopEnabled = m_metadata.loopEnabled;
 
-  // Play button: Green when playing, darker green when stopped
+  const juce::Colour DARK_INACTIVE = juce::Colour(0xff3a3a3a);
+  const juce::Colour PLAY_ACTIVE = juce::Colour(0xff27ae60);
+  const juce::Colour STOP_ACTIVE = juce::Colour(0xffff4444);
+  const juce::Colour LOOP_ACTIVE = juce::Colour(0xff3498db);
+
+  // Play button: Green when playing, grey when stopped
   if (m_playButton) {
-    if (isPlaying) {
-      // Bright green when actively playing
-      m_playButton->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colour(0xff27ae60)); // Brighter green
-    } else {
-      // Darker green when stopped
-      m_playButton->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colour(0xff1e8449)); // Darker green
-    }
+    m_playButton->setColour(juce::DrawableButton::backgroundColourId,
+                            isPlaying ? PLAY_ACTIVE : DARK_INACTIVE);
   }
 
-  // Stop button: Red when stopped, darker red when playing
+  // Stop button: Red when stopped, grey when playing
   if (m_stopButton) {
-    if (!isPlaying) {
-      // Bright red when stopped (clip is "loaded" and ready)
-      m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colour(0xffff4444)); // Brighter red
-    } else {
-      // Darker red when playing
-      m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colour(0xffcc2222)); // Darker red
-    }
+    m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
+                            !isPlaying ? STOP_ACTIVE : DARK_INACTIVE);
+  }
+
+  // Loop button: Blue when loop enabled, grey when disabled
+  if (m_loopButton) {
+    m_loopButton->setColour(juce::DrawableButton::backgroundColourId,
+                            isLoopEnabled ? LOOP_ACTIVE : DARK_INACTIVE);
+  }
+
+  // Skip buttons: Always grey (navigation only, not stateful)
+  if (m_skipToStartButton) {
+    m_skipToStartButton->setColour(juce::DrawableButton::backgroundColourId, DARK_INACTIVE);
+  }
+  if (m_skipToEndButton) {
+    m_skipToEndButton->setColour(juce::DrawableButton::backgroundColourId, DARK_INACTIVE);
   }
 }

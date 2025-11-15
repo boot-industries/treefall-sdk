@@ -1078,7 +1078,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   };
 
   // Show dialog as modal
-  dialog->setSize(700, 800); // Expanded for Phases 2 & 3
+  dialog->setSize(700, 850); // Expanded for all phases, increased height to prevent button crushing
   dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
   addAndMakeVisible(dialog);
   dialog->toFront(true);

@@ -124,17 +124,15 @@ void TabSwitcher::paint(juce::Graphics& g) {
     g.drawText(m_tabLabels[i], tabBounds, juce::Justification::centred);
   }
 
-  // OCC130 Sprint B: Draw status indicator lights (between tabs and transport buttons)
+  // OCC130 Sprint B: Draw status indicator lights (on the right side, outside of transport buttons)
   // Vertically stacked: Latency (top) and Heartbeat (bottom)
   auto bounds = getLocalBounds();
   float lightSize = 12.0f; // Diameter of each circular indicator
   float lightGap = 4.0f;   // Vertical gap between lights
   float rightMargin = 10.0f;
 
-  // Calculate position (to the left of transport buttons)
-  float buttonWidth = 100.0f;
-  float xPos = static_cast<float>(bounds.getWidth()) -
-               (2.0f * buttonWidth + 2.0f * rightMargin + 20.0f) - (lightSize + 10.0f);
+  // Calculate position (to the right of PANIC button, outside transport controls)
+  float xPos = static_cast<float>(bounds.getWidth()) - (lightSize + rightMargin);
   float yStart = (static_cast<float>(bounds.getHeight()) - (2.0f * lightSize + lightGap)) /
                  2.0f; // Center vertically
 
@@ -184,7 +182,7 @@ void TabSwitcher::paint(juce::Graphics& g) {
 
 void TabSwitcher::resized() {
   // OCC130 Sprint B: Layout transport buttons on right side
-  // | [Tabs (flex space)]  |  [Status Lights]  |  [Stop All] [Panic] |
+  // | [Tabs (flex space)]  |  [Stop All] [Panic]  |  [●Latency] [●Heartbeat] |
 
   auto bounds = getLocalBounds().reduced(10, 0); // 10px horizontal margin
 
@@ -192,7 +190,10 @@ void TabSwitcher::resized() {
   int buttonHeight = 32;
   int gap = 10;
 
-  // Panic button (rightmost)
+  // Reserve space for status indicators on the far right (22px width total)
+  bounds.removeFromRight(22); // lightSize (12px) + rightMargin (10px)
+
+  // Panic button (after status lights)
   auto panicBounds = bounds.removeFromRight(buttonWidth);
   panicBounds = panicBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
   m_panicButton->setBounds(panicBounds);
@@ -205,7 +206,7 @@ void TabSwitcher::resized() {
   m_stopAllButton->setBounds(stopBounds);
 
   // Tabs are laid out in paint() dynamically (flex space on left)
-  // Status lights are drawn in paint() (between tabs and buttons)
+  // Status lights are drawn in paint() (on the far right, outside transport buttons)
 }
 
 //==============================================================================
@@ -331,7 +332,9 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
   // OCC130 Sprint B: Reserve space for transport controls on right
   int buttonWidth = 100;
   int gap = 10;
-  int transportWidth = 2 * (buttonWidth + gap) + 30; // Buttons + status lights
+  int statusLightsWidth = 22; // 12px lights + 10px margin
+  int transportWidth =
+      2 * (buttonWidth + gap) + statusLightsWidth + 20; // Buttons + status lights + padding
   int availableWidth = bounds.getWidth() - transportWidth;
 
   int tabWidth = (availableWidth - (TAB_GAP * (NUM_TABS - 1))) / NUM_TABS;
