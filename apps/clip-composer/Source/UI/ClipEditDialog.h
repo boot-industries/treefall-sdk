@@ -155,6 +155,9 @@ public:
 
 private:
   //==============================================================================
+  // Update transport button colors based on playback state
+  void updateTransportButtonColors();
+  //==============================================================================
   void buildPhase1UI();       // File metadata
   void buildPhase2UI();       // In/Out points
   void buildPhase3UI();       // Fade times
@@ -227,8 +230,13 @@ private:
 
   // Gain control (Feature 5: -30dB to +10dB)
   std::unique_ptr<juce::Label> m_gainLabel;
-  std::unique_ptr<juce::Slider> m_gainSlider;
+  std::unique_ptr<juce::Slider> m_gainSlider; // Now a rotary dial/knob
   std::unique_ptr<juce::Label> m_gainValueLabel;
+
+  // Pitch control (-12 to +12 semitones)
+  std::unique_ptr<juce::Label> m_placeholderLabel; // Using placeholder names for now
+  std::unique_ptr<juce::Slider> m_placeholderDial; // Will rename when feature is finalized
+  std::unique_ptr<juce::Label> m_placeholderValueLabel;
 
   // Phase 3: Fade time controls
   std::unique_ptr<juce::Label> m_fadeInLabel;

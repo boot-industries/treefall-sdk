@@ -89,6 +89,17 @@ public:
     return (m_tabIndex * 48) + m_buttonIndex + 1;
   }
 
+  // Playbox indicator (Item 60: Arrow key navigation with thin white outline)
+  void setIsPlaybox(bool isPlaybox) {
+    if (m_isPlaybox != isPlaybox) {
+      m_isPlaybox = isPlaybox;
+      repaint();
+    }
+  }
+  bool getIsPlaybox() const {
+    return m_isPlaybox;
+  }
+
   //==============================================================================
   // Callbacks
   std::function<void(int buttonIndex)> onClick;
@@ -130,6 +141,7 @@ private:
   bool m_fadeOutEnabled = false;
   bool m_effectsEnabled = false;
   bool m_stopOthersEnabled = false;
+  bool m_isPlaybox = false; // Item 60: Arrow key navigation outline
 
   // Drag state (Cmd+Drag to rearrange clips)
   juce::Point<int> m_mouseDownPosition;

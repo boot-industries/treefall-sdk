@@ -15,10 +15,10 @@ public:
   ClipComposerApplication() = default;
 
   const juce::String getApplicationName() override {
-    return "Orpheus Clip Composer";
+    return "Clip Composer"; // Item 51: Removed "Orpheus" from title
   }
   const juce::String getApplicationVersion() override {
-    return "0.1.0";
+    return "0.2.1"; // Item 51: Updated version for Sprint A/B fixes
   }
   bool moreThanOneInstanceAllowed() override {
     return false;
@@ -61,7 +61,11 @@ public:
                              juce::ResizableWindow::backgroundColourId),
                          DocumentWindow::allButtons) {
       setUsingNativeTitleBar(true);
-      setContentOwned(new MainComponent(), true);
+      auto* mainComponent = new MainComponent();
+      setContentOwned(mainComponent, true);
+
+      // Item 51: Dynamic application title
+      updateTitle();
 
 #if JUCE_IOS || JUCE_ANDROID
       setFullScreen(true);
@@ -76,6 +80,21 @@ public:
     void closeButtonPressed() override {
       // This is called when user presses window close button
       JUCEApplication::getInstance()->systemRequestedQuit();
+    }
+
+    // Item 51: Update window title with session info
+    void updateTitle() {
+      juce::String title = "Clip Composer"; // Item 51: Removed "Orpheus"
+
+// TODO: Add session name when SessionManager supports it
+// For now, just show version and build info
+#ifdef DEBUG
+      title += " [DEBUG]";
+#endif
+
+      title += " - v0.2.1"; // Updated version for Sprint A/B fixes
+
+      setName(title);
     }
 
   private:

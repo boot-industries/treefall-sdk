@@ -101,5 +101,9 @@ private:
   // Single Edit Dialog tracking (ensures only one dialog open at a time)
   ClipEditDialog* m_currentEditDialog = nullptr;
 
+  // Item 24: Clip Copy/Paste clipboard
+  bool m_hasClipInClipboard = false;
+  SessionManager::ClipData m_clipboardData;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

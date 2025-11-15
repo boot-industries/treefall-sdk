@@ -4173,10 +4173,10 @@ The following files must be created as part of this consolidated implementation 
 
 **Technical Steering Committee Sign-Off**:
 
-- [ ] **Lead Architect**: **********\_********** Date: **\_\_\_**
-- [ ] **Engineering Manager**: ******\_\_\_\_****** Date: **\_\_\_**
-- [ ] **Product Owner**: **********\_\_********** Date: **\_\_\_**
-- [ ] **QA Lead**: ************\_\_\_************ Date: **\_\_\_**
+- [ ] **Lead Architect**: ****\*\*****\_****\*\***** Date: **\_\_\_**
+- [ ] **Engineering Manager**: **\*\***\_\_\_\_**\*\*** Date: **\_\_\_**
+- [ ] **Product Owner**: ****\*\*****\_\_****\*\***** Date: **\_\_\_**
+- [ ] **QA Lead**: ****\*\*\*\*****\_\_\_****\*\*\*\***** Date: **\_\_\_**
 
 **Approval Conditions**:
 

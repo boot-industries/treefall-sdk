@@ -272,15 +272,132 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     }
   }
 
-  // Space bar = Stop All
-  if (key == juce::KeyPress::spaceKey) {
-    onStopAll();
+  // Item 54: Standard macOS key commands
+  if (key.getModifiers().isCommandDown() && !key.getModifiers().isShiftDown()) {
+    // Cmd+S = Save Session
+    if (key == juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0)) {
+      menuItemSelected(3, 0); // Trigger "Save Session" menu item
+      return true;
+    }
+    // Cmd+, = Preferences (future - currently just show message)
+    if (key == juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0)) {
+      // TODO: Open Preferences dialog when implemented
+      DBG("MainComponent: Cmd+, pressed - Preferences dialog not yet implemented");
+      juce::AlertWindow::showMessageBoxAsync(
+          juce::AlertWindow::InfoIcon, "Preferences",
+          "Preferences dialog will be implemented in a future release.", "OK");
+      return true;
+    }
+
+    // Item 24: Clip Copy/Paste functionality
+    // Cmd+C = Copy clip at playbox position
+    if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0)) {
+      int playboxIndex = m_clipGrid->getPlayboxIndex();
+      if (m_sessionManager.hasClip(playboxIndex)) {
+        m_clipboardData = m_sessionManager.getClip(playboxIndex);
+        m_hasClipInClipboard = true;
+        DBG("MainComponent: Copied clip from button " << playboxIndex << " - "
+                                                      << m_clipboardData.displayName);
+
+        // Visual feedback - could add a status message later
+      } else {
+        DBG("MainComponent: No clip at playbox position " << playboxIndex << " to copy");
+      }
+      return true;
+    }
+
+    // Cmd+V = Paste clip at playbox position
+    if (key == juce::KeyPress('v', juce::ModifierKeys::commandModifier, 0)) {
+      if (m_hasClipInClipboard) {
+        int playboxIndex = m_clipGrid->getPlayboxIndex();
+
+        // Check if target has a clip and warn about overwrite
+        if (m_sessionManager.hasClip(playboxIndex)) {
+          bool confirmed = juce::AlertWindow::showOkCancelBox(
+              juce::AlertWindow::WarningIcon, "Replace Clip?",
+              "Button " + juce::String(playboxIndex + 1) + " already has a clip.\n\n" +
+                  "Replace it with \"" + juce::String(m_clipboardData.displayName) + "\"?",
+              "Replace", "Cancel");
+
+          if (!confirmed) {
+            return true;
+          }
+        }
+
+        // Load the clip from clipboard
+        loadClipToButton(playboxIndex, juce::String(m_clipboardData.filePath));
+
+        // Only proceed if clip was successfully loaded (user didn't cancel copy/link dialog)
+        if (m_sessionManager.hasClip(playboxIndex)) {
+          // Copy all metadata
+          auto clipData = m_sessionManager.getClip(playboxIndex);
+          clipData.displayName = m_clipboardData.displayName;
+          clipData.color = m_clipboardData.color;
+          clipData.clipGroup = m_clipboardData.clipGroup;
+          clipData.trimInSamples = m_clipboardData.trimInSamples;
+          clipData.trimOutSamples = m_clipboardData.trimOutSamples;
+          clipData.fadeInSeconds = m_clipboardData.fadeInSeconds;
+          clipData.fadeOutSeconds = m_clipboardData.fadeOutSeconds;
+          clipData.fadeInCurve = m_clipboardData.fadeInCurve;
+          clipData.fadeOutCurve = m_clipboardData.fadeOutCurve;
+          clipData.gainDb = m_clipboardData.gainDb;
+          clipData.loopEnabled = m_clipboardData.loopEnabled;
+          clipData.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
+          m_sessionManager.setClip(playboxIndex, clipData);
+
+          // Update button visually
+          updateButtonFromClip(playboxIndex);
+
+          DBG("MainComponent: Pasted clip \"" << m_clipboardData.displayName << "\" to button "
+                                              << playboxIndex);
+        } else {
+          DBG("MainComponent: Clip paste cancelled (user declined copy/link dialog)");
+        }
+      } else {
+        DBG("MainComponent: No clip in clipboard to paste");
+      }
+      return true;
+    }
+  }
+
+  // Cmd+Shift+S = Save Session As
+  if (key.getModifiers().isCommandDown() && key.getModifiers().isShiftDown()) {
+    if (key ==
+        juce::KeyPress('s', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+      menuItemSelected(4, 0); // Trigger "Save Session As" menu item
+      return true;
+    }
+  }
+
+  // Item 60: Arrow key navigation for playbox
+  if (key == juce::KeyPress::upKey) {
+    m_clipGrid->movePlayboxUp();
+    return true;
+  }
+  if (key == juce::KeyPress::downKey) {
+    m_clipGrid->movePlayboxDown();
+    return true;
+  }
+  if (key == juce::KeyPress::leftKey) {
+    m_clipGrid->movePlayboxLeft();
+    return true;
+  }
+  if (key == juce::KeyPress::rightKey) {
+    m_clipGrid->movePlayboxRight();
     return true;
   }
 
-  // Escape = PANIC
+  // Space bar = Trigger playbox button
+  // Enter = Also trigger playbox button (user's preference)
+  if (key == juce::KeyPress::spaceKey || key == juce::KeyPress::returnKey) {
+    m_clipGrid->triggerPlayboxButton();
+    return true;
+  }
+
+  // Escape = Stop All (not PANIC)
   if (key == juce::KeyPress::escapeKey) {
-    onPanic();
+    onStopAll();
     return true;
   }
 
@@ -500,18 +617,43 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       onClipDoubleClicked(buttonIndex);
     } else if (result == 1) {
       // Load audio file
-      juce::FileChooser chooser("Select Audio File",
-                                juce::File::getSpecialLocation(juce::File::userMusicDirectory),
-                                "*.wav;*.aiff;*.aif;*.flac");
+      // Item 9: Warning if replacing existing clip
+      bool shouldLoad = true;
+      if (hasClip) {
+        auto clipData = m_sessionManager.getClip(buttonIndex);
+        shouldLoad = juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon, "Replace Clip?",
+            "Button " + juce::String(buttonIndex + 1) + " already has a clip:\n\"" +
+                juce::String(clipData.displayName) + "\"\n\n" +
+                "Do you want to replace it with a new clip?",
+            "Replace", "Cancel");
+      }
 
-      if (chooser.browseForFileToOpen()) {
-        auto file = chooser.getResult();
-        loadClipToButton(buttonIndex, file.getFullPathName());
+      if (shouldLoad) {
+        juce::FileChooser chooser("Select Audio File",
+                                  juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+                                  "*.wav;*.aiff;*.aif;*.flac");
+
+        if (chooser.browseForFileToOpen()) {
+          auto file = chooser.getResult();
+          loadClipToButton(buttonIndex, file.getFullPathName());
+        }
       }
     } else if (result == 2 && hasClip) {
       // Remove clip
-      m_sessionManager.removeClip(buttonIndex);
-      updateButtonFromClip(buttonIndex);
+      // Item 9: Warning before removing clip
+      auto clipData = m_sessionManager.getClip(buttonIndex);
+      bool confirmed = juce::AlertWindow::showOkCancelBox(
+          juce::AlertWindow::WarningIcon, "Remove Clip?",
+          "Remove \"" + juce::String(clipData.displayName) + "\" from button " +
+              juce::String(buttonIndex + 1) + "?\n\n" + "This action cannot be undone.",
+          "Remove", "Cancel");
+
+      if (confirmed) {
+        m_sessionManager.removeClip(buttonIndex);
+        updateButtonFromClip(buttonIndex);
+        DBG("MainComponent: Removed clip from button " << buttonIndex);
+      }
     } else if (result == 4) {
       // Toggle "stop others on play" mode
       m_stopOthersOnPlay[globalClipIndex] = !m_stopOthersOnPlay[globalClipIndex];
@@ -554,13 +696,46 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
                     << "): Loop = " << (m_loopEnabled[globalClipIndex] ? "ON" : "OFF"));
     } else if (result == 6) {
       // Load multiple audio files
+      // Item 9: Warning if clips will be overwritten
+      bool shouldLoad = true;
+
+      // Count how many clips would be overwritten
+      int overwriteCount = 0;
+      int totalButtons = 48; // Per tab
+      int filesToLoad = 0;
+
       juce::FileChooser chooser("Select Audio Files",
                                 juce::File::getSpecialLocation(juce::File::userMusicDirectory),
                                 "*.wav;*.aiff;*.aif;*.flac");
 
       if (chooser.browseForMultipleFilesToOpen()) {
         auto files = chooser.getResults();
-        loadMultipleFiles(files, buttonIndex);
+        filesToLoad = files.size();
+
+        // Check how many existing clips would be overwritten
+        for (int i = buttonIndex; i < juce::jmin(buttonIndex + filesToLoad, totalButtons); ++i) {
+          if (m_sessionManager.hasClip(i)) {
+            overwriteCount++;
+          }
+        }
+
+        if (overwriteCount > 0) {
+          juce::String message = "Loading " + juce::String(filesToLoad) +
+                                 " files starting at button " + juce::String(buttonIndex + 1) +
+                                 " will overwrite " + juce::String(overwriteCount) +
+                                 " existing clip" + (overwriteCount > 1 ? "s" : "") + ".\n\n" +
+                                 "This action cannot be undone.\n\n" + "Do you want to continue?";
+
+          shouldLoad = juce::AlertWindow::showOkCancelBox(
+              juce::AlertWindow::WarningIcon,
+              "Overwrite " + juce::String(overwriteCount) + " Clip" +
+                  (overwriteCount > 1 ? "s" : "") + "?",
+              message, "Overwrite", "Cancel");
+        }
+
+        if (shouldLoad) {
+          loadMultipleFiles(files, buttonIndex);
+        }
       }
     } else if (result == 8 && hasClip) {
       // Set Color - show ColorSwatchPicker popup
@@ -624,6 +799,9 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     DBG("MainComponent: Button " + juce::String(buttonIndex) + " has no clip loaded");
     return;
   }
+
+  // Item 60: Move playbox to the triggered button (follows last clip launched)
+  m_clipGrid->setPlayboxIndex(buttonIndex);
 
   // Calculate global clip index (tab-aware: 0-383 for 8 tabs × 48 buttons)
   int globalClipIndex = getGlobalClipIndex(buttonIndex);
@@ -929,8 +1107,59 @@ void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int 
 }
 
 void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePath) {
-  // Use SessionManager to load the clip (real functionality)
-  bool success = m_sessionManager.loadClip(buttonIndex, filePath);
+  // Item 32: Audio asset copying - copy file to project folder
+  juce::File sourceFile(filePath);
+  juce::String finalPath = filePath;
+
+  // Check if we should copy the audio file to project folder
+  // Only copy if source is outside our project audio folder
+  juce::File projectAudioDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                                   .getChildFile("Orpheus Clip Composer")
+                                   .getChildFile("Audio");
+
+  if (!sourceFile.isAChildOf(projectAudioDir)) {
+    // Ask user if they want to copy the file
+    int result = juce::AlertWindow::showYesNoCancelBox(
+        juce::AlertWindow::QuestionIcon, "Copy Audio File?",
+        juce::String("Would you like to copy this audio file to your project folder?\n\n") +
+            "This ensures your session remains portable even if the original file is moved.\n\n" +
+            "File: " + sourceFile.getFileName(),
+        "Copy to Project", "Link to Original", "Cancel");
+
+    if (result == 0) {
+      // Cancel - don't load
+      return;
+    } else if (result == 1) {
+      // Copy to project folder
+      if (!projectAudioDir.exists()) {
+        projectAudioDir.createDirectory();
+      }
+
+      // Create unique filename if file already exists
+      juce::File destFile = projectAudioDir.getChildFile(sourceFile.getFileName());
+      int counter = 1;
+      while (destFile.exists()) {
+        juce::String nameWithoutExt = sourceFile.getFileNameWithoutExtension();
+        juce::String ext = sourceFile.getFileExtension();
+        destFile = projectAudioDir.getChildFile(nameWithoutExt + "_" + juce::String(counter) + ext);
+        counter++;
+      }
+
+      if (sourceFile.copyFileTo(destFile)) {
+        finalPath = destFile.getFullPathName();
+        DBG("MainComponent: Copied audio file to project folder: " << finalPath);
+      } else {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Copy Failed",
+                                               "Failed to copy audio file to project folder.\n"
+                                               "Using original file location instead.",
+                                               "OK");
+      }
+    }
+    // else result == 2: Link to original (use original path)
+  }
+
+  // Use SessionManager to load the clip (with final path)
+  bool success = m_sessionManager.loadClip(buttonIndex, finalPath);
 
   if (success) {
     // Calculate global clip index for multi-tab isolation
@@ -1204,6 +1433,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
   } else if (topLevelMenuIndex == 1) // Session menu
   {
     menu.addItem(10, "Clear All Clips");
+    menu.addItem(14, "Clear Current Tab"); // Item 8: Clear tab with warning
     menu.addSeparator();
     menu.addItem(11, "Stop All Clips");
     menu.addItem(12, "PANIC");
@@ -1360,8 +1590,12 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   {
     juce::String shortcuts = "=== ORPHEUS CLIP COMPOSER - KEYBOARD SHORTCUTS ===\n\n";
     shortcuts += "GLOBAL SHORTCUTS:\n";
-    shortcuts += "  Space ........... Stop All Clips (with fade)\n";
-    shortcuts += "  Esc ............. PANIC (immediate mute)\n";
+    shortcuts += "  ↑ ↓ ← → ......... Move playbox around grid\n";
+    shortcuts += "  Space/Enter ..... Trigger playbox button\n";
+    shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
+    shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
+    shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
+    shortcuts += "  Cmd/Ctrl+, ...... Preferences (coming soon)\n";
     shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
     shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
     shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
@@ -1396,6 +1630,68 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Keyboard Shortcuts",
                                            shortcuts, "OK");
+    break;
+  }
+
+  case 14: // Clear Current Tab (Item 8)
+  {
+    // Get current tab index
+    int currentTab = m_sessionManager.getActiveTab();
+    int clipCount = 0;
+
+    // Count how many clips are on current tab
+    for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+      if (m_sessionManager.hasClip(i)) {
+        clipCount++;
+      }
+    }
+
+    if (clipCount == 0) {
+      juce::AlertWindow::showMessageBoxAsync(
+          juce::AlertWindow::InfoIcon, "Clear Tab",
+          "Tab " + juce::String(currentTab + 1) + " has no clips to clear.", "OK");
+      break;
+    }
+
+    // Warn user before clearing tab
+    juce::String message = "This will remove all " + juce::String(clipCount) + " clips from Tab " +
+                           juce::String(currentTab + 1) + ".\n\n" +
+                           "This action cannot be undone.\n\n" + "Are you sure?";
+
+    bool confirmed = juce::AlertWindow::showOkCancelBox(
+        juce::AlertWindow::WarningIcon, "Clear Tab " + juce::String(currentTab + 1) + "?", message,
+        "Clear Tab", "Cancel");
+
+    if (confirmed) {
+      // Stop playing clips on current tab first
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        auto button = m_clipGrid->getButton(i);
+        if (button && button->getState() == ClipButton::State::Playing) {
+          int globalIndex = getGlobalClipIndex(i);
+          if (m_audioEngine) {
+            m_audioEngine->stopClip(globalIndex);
+          }
+        }
+      }
+
+      // Clear all clips on current tab
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        if (m_sessionManager.hasClip(i)) {
+          m_sessionManager.removeClip(i);
+          auto button = m_clipGrid->getButton(i);
+          if (button) {
+            button->clearClip();
+          }
+
+          // Clear internal state for this button's global index
+          int globalIndex = getGlobalClipIndex(i);
+          m_loopEnabled[globalIndex] = false;
+          m_stopOthersOnPlay[globalIndex] = false;
+        }
+      }
+
+      DBG("MainComponent: Cleared " << clipCount << " clips from Tab " << (currentTab + 1));
+    }
     break;
   }
 
