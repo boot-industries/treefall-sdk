@@ -12,6 +12,7 @@
 The Orpheus SDK demonstrates strong foundational practices with modern C++20, comprehensive CI/CD, and good documentation. However, several modernization opportunities exist that could improve maintainability, developer experience, and leverage newer language features. This audit identifies 24 actionable recommendations across 4 priority levels.
 
 **Key Findings:**
+
 - ✅ **Strengths:** C++20 adoption, sanitizers enabled, active clang-tidy, comprehensive test suite (41 test files)
 - ⚠️ **Modernization Gaps:** Limited C++20 feature adoption (no concepts/ranges), manual memory management in places, outdated npm dependencies
 - 🔧 **Quick Wins:** Upgrade npm packages, add Dependabot, replace raw pointers with smart pointers (3 files)
@@ -25,6 +26,7 @@ The Orpheus SDK demonstrates strong foundational practices with modern C++20, co
 **What:** Multiple npm development dependencies are outdated, including major version jumps for linting tools.
 
 **Current State:**
+
 ```
 - ESLint: 8.57.1 → 9.39.1 (major version bump)
 - @typescript-eslint/*: 7.x → 8.x (major version)
@@ -35,12 +37,14 @@ The Orpheus SDK demonstrates strong foundational practices with modern C++20, co
 ```
 
 **Why:**
+
 - **Security:** Older versions may contain unpatched vulnerabilities
 - **Features:** Missing improvements in linting rules and error detection
 - **Compatibility:** Future tooling may drop support for older versions
 - **Developer Experience:** Newer versions have better error messages and performance
 
 **How:**
+
 1. Update ESLint to v9 (requires migration guide review - breaking changes)
 2. Update @typescript-eslint plugins to v8 (check for rule changes)
 3. Update @commitlint to v20 (review config for breaking changes)
@@ -57,17 +61,20 @@ The Orpheus SDK demonstrates strong foundational practices with modern C++20, co
 **What:** Project requires CMake 3.22, but 3.28+ is available with useful features.
 
 **Current State:**
+
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 ```
 
 **Why:**
+
 - **Performance:** CMake 3.28+ has faster configuration and build times
 - **Features:** Better C++20 module support, improved FetchContent performance
 - **Workflow Presets:** Enhanced `CMakePresets.json` support for multi-config workflows
 - **Developer Experience:** Better error messages and diagnostics
 
 **How:**
+
 1. Update minimum to CMake 3.25 (adds `DOWNLOAD_EXTRACT_TIMESTAMP` by default)
 2. Consider CMake 3.28 for C++20 modules preparation
 3. Update CI workflow CMake version (`CMAKE_VERSION: '3.27.x'` → `'3.28.x'`)
@@ -84,6 +91,7 @@ cmake_minimum_required(VERSION 3.22)
 **Current State:** No `.github/dependabot.yml` file exists.
 
 **Why:**
+
 - **Security:** Automated alerts for vulnerable dependencies
 - **Maintenance:** Reduces manual work tracking updates
 - **Best Practice:** Industry standard for open source projects
@@ -95,17 +103,17 @@ Create `.github/dependabot.yml`:
 version: 2
 updates:
   # npm dependencies
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     open-pull-requests-limit: 5
 
   # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
 ```
 
 **Priority:** **HIGH** (security + maintenance)
@@ -117,15 +125,18 @@ updates:
 **What:** Clip Composer uses JUCE 8.0.4 (released August 2024).
 
 **Current State:**
+
 ```cmake
 GIT_TAG 8.0.4
 ```
 
 **Why:**
+
 - JUCE 8.0.x is relatively recent but check for security/bug fix releases
 - JUCE 8 warnings are currently suppressed (see `apps/clip-composer/CMakeLists.txt:117`)
 
 **How:**
+
 1. Check JUCE release notes for 8.0.5+ (security/critical fixes)
 2. Update if patches available
 3. Re-enable compiler warnings once JUCE warnings resolved
@@ -141,11 +152,13 @@ GIT_TAG 8.0.4
 **What:** Several files use raw `new`/`delete` instead of smart pointers.
 
 **Current State:**
+
 - `src/core/routing/routing_matrix.cpp:24-27,65-66,69` - Raw `delete` for `GainSmoother*`
 - `src/core/routing/clip_routing.cpp` - Contains raw pointer management
 - `src/core/abi/session_api.cpp` - ABI layer (acceptable use case)
 
 **Example from `routing_matrix.cpp:24-27`:**
+
 ```cpp
 if (m_master_gain_smoother) {
   delete m_master_gain_smoother;
@@ -154,12 +167,14 @@ if (m_master_gain_smoother) {
 ```
 
 **Why:**
+
 - **Safety:** Manual delete can leak if exceptions thrown before cleanup
 - **Maintainability:** Smart pointers provide RAII and automatic cleanup
 - **Best Practice:** C++ Core Guidelines recommend avoiding explicit delete
 - **Exception Safety:** Automatic cleanup on scope exit
 
 **How:**
+
 1. Replace `GainSmoother* m_master_gain_smoother` with `std::unique_ptr<GainSmoother>`
 2. Remove all explicit `delete` calls
 3. Use `std::make_unique` for construction:
@@ -169,6 +184,7 @@ if (m_master_gain_smoother) {
 4. Update `cleanupChannels()` and `cleanupGroups()` similarly if they use raw pointers
 
 **Files to update:**
+
 - `src/core/routing/routing_matrix.cpp` (confirmed)
 - `src/core/routing/clip_routing.cpp` (review needed)
 
@@ -181,12 +197,14 @@ if (m_master_gain_smoother) {
 **What:** Project uses C++20 but doesn't leverage many modern features.
 
 **Current State:**
+
 - ✅ Uses: `std::atomic`, `std::string_view`, `std::optional`, `std::variant`, `std::span`
 - ❌ Missing: No `std::ranges`, no C++20 concepts, limited `constexpr` usage (9 occurrences across 2 files)
 - ❌ Missing: No coroutines (may not be needed for audio code)
 - ❌ Missing: No `std::format` (C++20 formatting)
 
 **Why:**
+
 - **Performance:** Ranges/views enable zero-cost abstractions and clearer code
 - **Type Safety:** Concepts provide better compile-time constraints
 - **Readability:** Modern features reduce boilerplate
@@ -196,11 +214,13 @@ if (m_master_gain_smoother) {
 
 **Step 1: Introduce ranges/views for data processing**
 Look for opportunities in:
+
 - `src/core/audio_io/waveform_processor.cpp` - Sample data processing
 - `src/core/routing/routing_matrix.cpp` - Channel iteration
 - Test files - Data validation and assertions
 
 Example transformation:
+
 ```cpp
 // Before
 for (size_t i = 0; i < channels.size(); ++i) {
@@ -217,11 +237,13 @@ for (auto& channel : channels | std::views::filter(&Channel::enabled)) {
 
 **Step 2: Add concepts for template constraints**
 Identify generic code that could benefit:
+
 - Audio sample type concepts (`AudioSample`, `FloatingPoint`)
 - Callback function concepts
 - Buffer type concepts
 
 Example:
+
 ```cpp
 // Before
 template<typename T>
@@ -234,6 +256,7 @@ void processSamples(T* buffer, size_t count);
 
 **Step 3: Increase constexpr usage**
 Look for compile-time constants:
+
 - Buffer sizes (`MAX_BUFFER_SIZE`)
 - Sample rate constraints
 - Channel limits
@@ -247,18 +270,21 @@ Look for compile-time constants:
 **What:** Only 6 `noexcept` annotations across 2 header files.
 
 **Current State:**
+
 ```
 src/core/session/session_graph.h: 4 occurrences
 src/core/routing/routing_matrix.h: 2 occurrences
 ```
 
 **Why:**
+
 - **Performance:** Compiler can optimize `noexcept` functions better
 - **Safety:** Clearer contracts about exception guarantees
 - **Real-time Audio:** Critical for audio thread functions (no exceptions allowed)
 - **Move Operations:** Move constructors/assignment should be `noexcept` for optimal container performance
 
 **How:**
+
 1. **Audit audio thread functions** - Mark all audio callback paths as `noexcept`
    - `TransportController::process()` and related render functions
    - `RoutingMatrix::processMix()` and audio processing
@@ -293,11 +319,13 @@ src/core/routing/routing_matrix.h: 2 occurrences
 **What:** String formatting uses traditional methods instead of C++20 `std::format`.
 
 **Why:**
+
 - **Type Safety:** Compile-time format string validation
 - **Performance:** Often faster than `sprintf`/iostreams
 - **Readability:** Python-like formatting syntax
 
 **Example:**
+
 ```cpp
 // Before
 char buffer[256];
@@ -308,6 +336,7 @@ std::string message = std::format("Sample rate: {} Hz", sampleRate);
 ```
 
 **How:**
+
 1. Check compiler support (GCC 13+ has full support - ✅ project uses GCC 13.3.0)
 2. Add `<format>` header
 3. Replace string concatenation and sprintf with `std::format`
@@ -324,16 +353,19 @@ std::string message = std::format("Sample rate: {} Hz", sampleRate);
 **What:** No use of `std::async`, `std::future`, `std::promise` in codebase.
 
 **Current State:**
+
 - Uses `std::thread` (3 files: `dummy_audio_driver.cpp`, `waveform_processor.cpp`)
 - Uses `std::mutex` and `std::atomic` (11 files)
 - No higher-level concurrency abstractions
 
 **Why:**
+
 - **Modern Patterns:** `std::async` provides cleaner async operations
 - **Future-Proofing:** Preparing for C++23 sender/receiver patterns
 - **Use Cases:** Audio file loading, waveform processing could benefit
 
 **How:**
+
 1. **Evaluate use cases:**
    - Audio file loading in background threads
    - Waveform visualization processing
@@ -350,15 +382,18 @@ std::string message = std::format("Sample rate: {} Hz", sampleRate);
 **What:** Strong atomic usage but documentation could be clearer.
 
 **Current State:**
+
 - Excellent: Uses lock-free patterns with `std::atomic` extensively
 - Good: Comments about thread safety in critical sections
 - Gap: No centralized threading documentation
 
 **Why:**
+
 - **Maintenance:** New contributors need clear threading rules
 - **Safety:** Prevents accidental violations of audio thread safety
 
 **How:**
+
 1. Create `docs/THREADING_MODEL.md` documenting:
    - Audio thread constraints (no allocations, no locks, no blocking)
    - Message thread patterns
@@ -375,16 +410,19 @@ std::string message = std::format("Sample rate: {} Hz", sampleRate);
 **What:** Limited performance testing infrastructure.
 
 **Current State:**
+
 - 1 perf tool: `tools/perf/render_click.cpp` (or similar)
 - No benchmark framework integration
 - 15 uses of `std::chrono` for timing
 
 **Why:**
+
 - **Performance Regression Detection:** Catch slowdowns in CI
 - **Optimization Guidance:** Data-driven optimization decisions
 - **Broadcast Requirements:** 24/7 reliability needs performance guarantees
 
 **How:**
+
 1. **Add Google Benchmark:**
    ```cmake
    FetchContent_Declare(
@@ -409,12 +447,14 @@ std::string message = std::format("Sample rate: {} Hz", sampleRate);
 **What:** 2 disabled tests found in test suite.
 
 **Current State:**
+
 ```bash
 find tests -name "*.cpp" -exec grep -l "DISABLED_" {} \; | wc -l
 # Result: 2
 ```
 
 **Why:**
+
 - Disabled tests often indicate:
   - Known bugs
   - Flaky tests (timing issues)
@@ -422,6 +462,7 @@ find tests -name "*.cpp" -exec grep -l "DISABLED_" {} \; | wc -l
   - Technical debt
 
 **How:**
+
 1. Audit disabled tests with:
    ```bash
    grep -rn "DISABLED_" tests/
@@ -443,16 +484,19 @@ find tests -name "*.cpp" -exec grep -l "DISABLED_" {} \; | wc -l
 **What:** No code coverage tracking configured.
 
 **Current State:**
+
 - No `codecov.yml` or similar config
 - Sanitizers enabled (ASan, UBSan) ✅
 - 41 test files exist
 
 **Why:**
+
 - **Quality Visibility:** Identify untested code paths
 - **Regression Prevention:** Ensure new code is tested
 - **Confidence:** Quantify test suite effectiveness
 
 **How:**
+
 1. **Add CMake coverage target:**
    ```cmake
    option(ENABLE_COVERAGE "Enable coverage reporting" OFF)
@@ -482,16 +526,18 @@ find tests -name "*.cpp" -exec grep -l "DISABLED_" {} \; | wc -l
 **What:** No `CMakePresets.json` for standardized build configurations.
 
 **Why:**
+
 - **Developer Onboarding:** One-command builds for common scenarios
 - **IDE Integration:** Better VS Code/CLion support
 - **Consistency:** Same builds across team members
 
 **How:**
 Create `CMakePresets.json`:
+
 ```json
 {
   "version": 3,
-  "cmakeMinimumRequired": {"major": 3, "minor": 22, "patch": 0},
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
   "configurePresets": [
     {
       "name": "dev-debug",
@@ -527,13 +573,14 @@ Create `CMakePresets.json`:
     {
       "name": "dev-debug",
       "configurePreset": "dev-debug",
-      "output": {"outputOnFailure": true}
+      "output": { "outputOnFailure": true }
     }
   ]
 }
 ```
 
 **Usage:**
+
 ```bash
 cmake --preset dev-debug
 cmake --build --preset dev-debug
@@ -549,17 +596,20 @@ ctest --preset dev-debug
 **What:** clang-tidy enabled but warnings not treated as errors.
 
 **Current State (.clang-tidy):**
+
 ```yaml
 Checks: bugprone-*,modernize-*,performance-*,readability-*
-WarningsAsErrors: ''  # Empty!
+WarningsAsErrors: '' # Empty!
 ```
 
 **Why:**
+
 - **Quality Enforcement:** Warnings-as-errors prevents technical debt accumulation
 - **CI Integration:** Catch issues before merge
 - **Modernization:** Force adoption of modern patterns
 
 **How:**
+
 1. **Gradual rollout:**
    ```yaml
    # Phase 1: High-priority checks as errors
@@ -587,16 +637,19 @@ WarningsAsErrors: ''  # Empty!
 **What:** Public API documentation completeness unknown.
 
 **Current State:**
+
 - 14 public headers in `include/orpheus/`
 - Mentions "Add Doxygen for public APIs" in CLAUDE.md
 - Unknown if Doxygen is configured or generated
 
 **Why:**
+
 - **SDK Usability:** External users need API docs
 - **Onboarding:** New team members benefit from examples
 - **Contract Clarity:** Document preconditions, thread-safety guarantees
 
 **How:**
+
 1. **Audit current documentation:**
    ```bash
    grep -r "///" include/orpheus/ | wc -l  # Doxygen-style comments
@@ -625,6 +678,7 @@ WarningsAsErrors: ''  # Empty!
 **What:** 18 TODO/FIXME comments across 6 files.
 
 **Current State:**
+
 ```
 src/core/audio_io/waveform_processor.cpp: 1
 src/core/audio_io/audio_file_reader_libsndfile.cpp: 1
@@ -635,11 +689,13 @@ src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp: 1
 ```
 
 **Why:**
+
 - **Technical Debt Visibility:** Track what needs to be done
 - **Prioritization:** Convert to GitHub issues for planning
 - **Accountability:** Ensure TODOs don't accumulate indefinitely
 
 **How:**
+
 1. **Audit all TODOs:**
    ```bash
    grep -rn "TODO\|FIXME\|XXX\|HACK" src/ include/ > todo_audit.txt
@@ -668,12 +724,14 @@ src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp: 1
 **What:** Only AddressSanitizer (ASan) and UBSan currently enabled.
 
 **Why:**
+
 - **Real-time Safety:** Audio thread race conditions are critical bugs
 - **Concurrency Bugs:** Catch data races, deadlocks
 - **Complement ASan:** Different classes of errors
 
 **How:**
 Add TSAN job to `.github/workflows/ci-pipeline.yml`:
+
 ```yaml
 cpp-tsan:
   name: Thread Sanitizer (Ubuntu Debug)
@@ -691,7 +749,7 @@ cpp-tsan:
     - name: Test with TSAN
       run: ctest --test-dir build --output-on-failure
       env:
-        TSAN_OPTIONS: "halt_on_error=1 second_deadlock_stack=1"
+        TSAN_OPTIONS: 'halt_on_error=1 second_deadlock_stack=1'
 ```
 
 **Priority:** **HIGH** (audio thread safety)
@@ -703,11 +761,13 @@ cpp-tsan:
 **What:** clang-tidy configured but not enforced in CI.
 
 **Why:**
+
 - **Prevention:** Catch issues before code review
 - **Consistency:** Enforce coding standards automatically
 
 **How:**
 Add to CI pipeline:
+
 ```yaml
 static-analysis:
   name: Static Analysis (clang-tidy)
@@ -734,17 +794,20 @@ static-analysis:
 **What:** Clip Composer tests only run on macOS.
 
 **Current State:**
+
 ```yaml
 matrix:
-  os: [macos-latest]  # Start with macOS only (JUCE works best there)
+  os: [macos-latest] # Start with macOS only (JUCE works best there)
 ```
 
 **Why:**
+
 - **Cross-platform Validation:** Catch platform-specific bugs
 - **JUCE Support:** JUCE works on all platforms, not just macOS
 - **User Coverage:** Clip Composer targets Windows/Linux too
 
 **How:**
+
 1. **Phase 1:** Add Linux to matrix:
    ```yaml
    matrix:
@@ -770,12 +833,14 @@ matrix:
 **What:** No CMake build caching in CI.
 
 **Why:**
+
 - **Speed:** Reduce CI time from ~20min to ~5min for incremental builds
 - **Cost:** Lower CI compute costs
 - **Developer Experience:** Faster feedback loops
 
 **How:**
 Add caching to CI jobs:
+
 ```yaml
 - name: Cache CMake build
   uses: actions/cache@v4
@@ -805,11 +870,13 @@ Add caching to CI jobs:
 **What:** No automated vulnerability scanning for dependencies.
 
 **Why:**
+
 - **Security:** Detect CVEs in third-party libraries
 - **Compliance:** Required for commercial software
 - **Proactive:** Catch issues before exploitation
 
 **How:**
+
 1. **Enable GitHub Dependency Graph** (Settings → Security)
 2. **Add Dependabot security updates** (see 1.3)
 3. **Consider Snyk or similar** for deeper analysis
@@ -827,10 +894,12 @@ Add caching to CI jobs:
 **What:** No automated secrets detection.
 
 **Why:**
+
 - **Prevention:** Catch accidental credential commits
 - **Compliance:** Required for many security standards
 
 **How:**
+
 1. **Enable GitHub Secret Scanning** (if not already on)
 2. **Add pre-commit hook:**
    ```yaml
@@ -852,10 +921,12 @@ Add caching to CI jobs:
 **What:** Check if additional security flags could be enabled.
 
 **Current State:**
+
 - Sanitizers enabled ✅
 - Warnings as errors (for most warnings) ✅
 
 **Potential Additions:**
+
 ```cmake
 if(NOT MSVC)
   add_compile_options(
@@ -871,6 +942,7 @@ endif()
 ```
 
 **How:**
+
 1. Add flags to `cmake/CompilerWarnings.cmake`
 2. Test all platforms
 3. Measure performance impact (should be minimal)
@@ -886,15 +958,18 @@ endif()
 **What:** Uses lock-free patterns but no formal queue abstraction.
 
 **Current State:**
+
 - `TransportCommand` queue in `transport_controller.h`
 - Manual atomic operations
 
 **Why:**
+
 - **Reusability:** Generic lock-free queue helps other components
 - **Testing:** Isolated testing of concurrent data structures
 - **Best Practice:** Separate concerns
 
 **How:**
+
 1. Extract lock-free queue to `include/orpheus/lock_free_queue.h`
 2. Make it generic: `template<typename T, size_t Capacity>`
 3. Add comprehensive tests for concurrent scenarios
@@ -911,11 +986,13 @@ endif()
 **What:** Comprehensive unit tests (41 files) but integration test status unclear.
 
 **Why:**
+
 - **System-Level Bugs:** Catch issues that unit tests miss
 - **Workflow Validation:** Test real-world usage patterns
 - **Regression Prevention:** High-value tests for critical paths
 
 **How:**
+
 1. **Audit existing integration tests:**
    ```bash
    find tests/integration -name "*.cpp" -o -name "*.sh"
@@ -935,11 +1012,13 @@ endif()
 **What:** No fuzz testing for audio file readers.
 
 **Why:**
+
 - **Security:** Malformed audio files can cause crashes
 - **Robustness:** Catch edge cases in parsing logic
 - **Best Practice:** Standard for file format parsers
 
 **How:**
+
 1. **Add libFuzzer integration:**
    ```cmake
    if(ENABLE_FUZZING)
@@ -964,29 +1043,37 @@ endif()
 **What:** No formal ADR system for documenting design decisions.
 
 **Why:**
+
 - **Knowledge Preservation:** Why decisions were made
 - **Onboarding:** Help new contributors understand context
 - **Consistency:** Reference for future decisions
 
 **How:**
+
 1. Create `docs/adr/` directory
 2. Template:
+
    ```markdown
    # ADR-001: Lock-Free Audio Thread Communication
 
    ## Status
+
    Accepted
 
    ## Context
+
    Audio thread must communicate with message thread without blocking...
 
    ## Decision
+
    Use lock-free queue with atomic operations...
 
    ## Consequences
+
    - Positive: ...
    - Negative: ...
    ```
+
 3. Document key decisions:
    - Threading model
    - Lock-free patterns
@@ -999,6 +1086,7 @@ endif()
 ## Priority Summary
 
 ### High Priority (10 items)
+
 1. **Outdated npm dependencies** (1.1) - Security + compatibility
 2. **Missing Dependabot** (1.3) - Automated security
 3. **Raw pointer usage** (2.1) - Safety + maintainability
@@ -1008,6 +1096,7 @@ endif()
 7. **Dependency scanning** (6.1) - Security vulnerabilities
 
 ### Medium Priority (11 items)
+
 8. **CMake version bump** (1.2) - Performance + features
 9. **noexcept specification** (2.3) - Performance + safety
 10. **Thread safety documentation** (3.2) - Maintainability
@@ -1022,6 +1111,7 @@ endif()
 19. **Integration test coverage** (8.1) - System validation
 
 ### Low Priority (7 items)
+
 20. **JUCE version check** (1.4) - Stable current version
 21. **C++20 feature adoption** (2.2) - Incremental modernization
 22. **std::format usage** (2.5) - Nice-to-have
@@ -1037,6 +1127,7 @@ endif()
 ## Implementation Roadmap
 
 ### Phase 1: Quick Wins (1-2 weeks)
+
 - Update npm dependencies (1.1)
 - Add Dependabot (1.3)
 - Fix raw pointer usage (2.1) - 3 files
@@ -1044,6 +1135,7 @@ endif()
 - Add TSAN to CI (5.1)
 
 ### Phase 2: Developer Experience (2-4 weeks)
+
 - CMake presets (4.2)
 - CMake version bump (1.2)
 - clang-tidy enforcement (4.3)
@@ -1051,6 +1143,7 @@ endif()
 - Audit/fix disabled tests (3.4)
 
 ### Phase 3: Documentation & Safety (4-6 weeks)
+
 - API documentation (4.4)
 - Thread safety docs (3.2)
 - Performance benchmarking (3.3)
@@ -1058,6 +1151,7 @@ endif()
 - Secrets scanning (6.2)
 
 ### Phase 4: Modernization (ongoing)
+
 - C++20 features (2.2, 2.5)
 - noexcept specifications (2.3)
 - Platform coverage expansion (5.3)
@@ -1079,4 +1173,4 @@ Prioritizing the **High** and **Medium** items would significantly improve the p
 
 ---
 
-*This audit was generated by analyzing the repository structure, code patterns, dependencies, CI configuration, and best practices as of November 18, 2025.*
+_This audit was generated by analyzing the repository structure, code patterns, dependencies, CI configuration, and best practices as of November 18, 2025._
