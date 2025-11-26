@@ -21,11 +21,39 @@ class SessionGraph;
 
 /// Command for audio thread (lock-free queue)
 struct TransportCommand {
-  enum class Type : uint8_t { Start, Stop, StopAll, StopGroup };
+  enum class Type : uint8_t {
+    Start,
+    Stop,
+    StopAll,
+    StopGroup,
+    UpdateTrim,
+    UpdateFade,
+    UpdateGain,
+    UpdateLoop,
+    UpdateStopOthers
+  };
 
   Type type;
   ClipHandle handle;
-  uint8_t groupIndex; // For StopGroup command
+
+  union {
+    uint8_t groupIndex; // For StopGroup command
+
+    struct {
+      int64_t in;
+      int64_t out;
+    } trim; // For UpdateTrim
+
+    struct {
+      double inSeconds;
+      double outSeconds;
+      FadeCurve inCurve;
+      FadeCurve outCurve;
+    } fade; // For UpdateFade
+
+    float gainDb;      // For UpdateGain
+    bool booleanValue; // For UpdateLoop / UpdateStopOthers
+  } data;
 };
 
 /// Active clip state (in audio thread)
