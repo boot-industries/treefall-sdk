@@ -4,6 +4,7 @@
 #include <orpheus/performance_monitor.h>
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 using namespace orpheus;

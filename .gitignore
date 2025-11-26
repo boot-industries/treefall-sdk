@@ -49,6 +49,8 @@ out/
 *.mp3
 *.wav
 *.pdf
+*.dmg
+*.bak
 
 # Dependency graph output
 deps-graph.svg

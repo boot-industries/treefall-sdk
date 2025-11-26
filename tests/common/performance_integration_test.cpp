@@ -5,6 +5,7 @@
 #include <orpheus/transport_controller.h>
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 using namespace orpheus;
