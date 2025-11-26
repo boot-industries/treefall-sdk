@@ -17,6 +17,8 @@ Fixed critical bug where non-loop mode clips were looping back to position 0 ins
 
 **Result:** All 10 OUT point enforcement tests passing (100%), edit laws now enforced correctly.
 
+**Update (2025-11-26):** This fix was found to be regressed (missing) during ORP114 investigation. It has been re-applied in ORP115.
+
 ---
 
 ## Problem Description

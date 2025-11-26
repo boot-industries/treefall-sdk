@@ -83,7 +83,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::Start, handle, 0};
+  m_commands[writeIndex] = {TransportCommand::Type::Start, handle, {0}};
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -104,7 +104,7 @@ SessionGraphError TransportController::stopClip(ClipHandle handle) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::Stop, handle, 0};
+  m_commands[writeIndex] = {TransportCommand::Type::Stop, handle, {0}};
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -120,7 +120,7 @@ SessionGraphError TransportController::stopAllClips() {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::StopAll, 0, 0};
+  m_commands[writeIndex] = {TransportCommand::Type::StopAll, 0, {0}};
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -141,7 +141,7 @@ SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::StopGroup, 0, groupIndex};
+  m_commands[writeIndex] = {TransportCommand::Type::StopGroup, 0, {groupIndex}};
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -280,6 +280,11 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
+
+          // ORP092 Fix: Clear reader to prevent libsndfile auto-wrap to 0
+          // We are at OUT point, so we should stop reading immediately.
+          // Fade-out will render silence, which is broadcast-safe.
+          clip.reader = nullptr;
         }
         // Continue rendering with fade-out (don't skip rendering)
       }
@@ -532,6 +537,81 @@ void TransportController::processCommands() {
     case TransportCommand::Type::StopGroup:
       // TODO: Get clip group assignments from SessionGraph
       // For now, this is a no-op
+      break;
+
+    case TransportCommand::Type::UpdateTrim:
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle == cmd.handle) {
+          // Update trim points
+          int64_t trimIn = cmd.data.trim.in;
+          int64_t trimOut = cmd.data.trim.out;
+
+          m_activeClips[i].trimInSamples.store(trimIn, std::memory_order_release);
+          m_activeClips[i].trimOutSamples.store(trimOut, std::memory_order_release);
+
+          // ORP114 Fix: Clamp position to new trim range immediately
+          // This prevents fade calculation overflow in processAudio()
+          if (m_activeClips[i].currentSample < trimIn) {
+            m_activeClips[i].currentSample = trimIn;
+            if (m_activeClips[i].reader) {
+              m_activeClips[i].reader->seek(trimIn);
+            }
+          } else if (m_activeClips[i].currentSample >= trimOut) {
+            m_activeClips[i].currentSample = trimOut;
+            // Don't seek to trimOut (EOF), just let it stop naturally in processAudio logic
+            // But ensure reader is consistent if we needed to read
+            if (m_activeClips[i].reader) {
+              m_activeClips[i].reader->seek(trimOut);
+            }
+          }
+        }
+      }
+      break;
+
+    case TransportCommand::Type::UpdateFade:
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle == cmd.handle) {
+          m_activeClips[i].fadeInSeconds.store(cmd.data.fade.inSeconds, std::memory_order_release);
+          m_activeClips[i].fadeOutSeconds.store(cmd.data.fade.outSeconds,
+                                                std::memory_order_release);
+          m_activeClips[i].fadeInCurve.store(cmd.data.fade.inCurve, std::memory_order_release);
+          m_activeClips[i].fadeOutCurve.store(cmd.data.fade.outCurve, std::memory_order_release);
+
+          // Recalculate sample counts (safe to do in audio thread)
+          int64_t inSamples =
+              static_cast<int64_t>(cmd.data.fade.inSeconds * static_cast<double>(m_sampleRate));
+          int64_t outSamples =
+              static_cast<int64_t>(cmd.data.fade.outSeconds * static_cast<double>(m_sampleRate));
+
+          m_activeClips[i].fadeInSamples.store(inSamples, std::memory_order_release);
+          m_activeClips[i].fadeOutSamples.store(outSamples, std::memory_order_release);
+        }
+      }
+      break;
+
+    case TransportCommand::Type::UpdateGain:
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle == cmd.handle) {
+          float gainDb = cmd.data.gainDb;
+          m_activeClips[i].gainDb.store(gainDb, std::memory_order_release);
+          // Calculate linear gain here to avoid pow() in the inner audio loop
+          // Note: std::pow is expensive but safe-ish in command processor (run once per update)
+          // Ideally we'd use a fast approximation or lookup table, but this is infrequent.
+          float linear = std::pow(10.0f, gainDb / 20.0f);
+          m_activeClips[i].gainLinear.store(linear, std::memory_order_release);
+        }
+      }
+      break;
+
+    case TransportCommand::Type::UpdateLoop:
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle == cmd.handle) {
+          m_activeClips[i].loopEnabled.store(cmd.data.booleanValue, std::memory_order_release);
+        }
+      }
+      break;
+
+    default:
       break;
     }
 
@@ -849,12 +929,15 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
 
   // Check if audio file reader is available (may be nullptr if libsndfile not installed)
   if (!uniqueReader) {
+    fprintf(stderr, "TransportController: createAudioFileReader() returned nullptr\n");
     return SessionGraphError::NotReady; // Audio file reading not available
   }
 
   auto result = uniqueReader->open(file_path);
 
   if (!result.isOk()) {
+    fprintf(stderr, "TransportController: AudioFileReader::open('%s') failed with error %d\n",
+            file_path.c_str(), (int)result.error);
     return result.error;
   }
 
@@ -918,13 +1001,19 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
     }
   }
 
-  // Update trim points for any active clips with this handle
-  // NOTE: We update active clips directly (no command queue needed for metadata updates)
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      m_activeClips[i].trimInSamples.store(trimInSamples, std::memory_order_release);
-      m_activeClips[i].trimOutSamples.store(trimOutSamples, std::memory_order_release);
-    }
+  // Post command to audio thread for thread-safe update (ORP115)
+  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
+
+  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
+    TransportCommand& cmd = m_commands[writeIndex];
+    cmd.type = TransportCommand::Type::UpdateTrim;
+    cmd.handle = handle;
+    cmd.data.trim.in = trimInSamples;
+    cmd.data.trim.out = trimOutSamples;
+    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
+  } else {
+    return SessionGraphError::InternalError; // Queue full
   }
 
   return SessionGraphError::OK;
@@ -980,12 +1069,6 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
     return SessionGraphError::InvalidFadeDuration;
   }
 
-  // Calculate fade sample counts
-  int64_t fadeInSampleCount =
-      static_cast<int64_t>(fadeInSeconds * static_cast<double>(m_sampleRate));
-  int64_t fadeOutSampleCount =
-      static_cast<int64_t>(fadeOutSeconds * static_cast<double>(m_sampleRate));
-
   // Store fade settings persistently in AudioFileEntry
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
@@ -998,16 +1081,21 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
     }
   }
 
-  // Update fade settings for any active clips with this handle
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      m_activeClips[i].fadeInSeconds.store(fadeInSeconds, std::memory_order_release);
-      m_activeClips[i].fadeOutSeconds.store(fadeOutSeconds, std::memory_order_release);
-      m_activeClips[i].fadeInCurve.store(fadeInCurve, std::memory_order_release);
-      m_activeClips[i].fadeOutCurve.store(fadeOutCurve, std::memory_order_release);
-      m_activeClips[i].fadeInSamples.store(fadeInSampleCount, std::memory_order_release);
-      m_activeClips[i].fadeOutSamples.store(fadeOutSampleCount, std::memory_order_release);
-    }
+  // Post command to audio thread for thread-safe update (ORP115)
+  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
+
+  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
+    TransportCommand& cmd = m_commands[writeIndex];
+    cmd.type = TransportCommand::Type::UpdateFade;
+    cmd.handle = handle;
+    cmd.data.fade.inSeconds = fadeInSeconds;
+    cmd.data.fade.outSeconds = fadeOutSeconds;
+    cmd.data.fade.inCurve = fadeInCurve;
+    cmd.data.fade.outCurve = fadeOutCurve;
+    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
+  } else {
+    return SessionGraphError::InternalError; // Queue full
   }
 
   return SessionGraphError::OK;
@@ -1061,9 +1149,6 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
     return SessionGraphError::InvalidParameter;
   }
 
-  // Precompute linear gain (once, on UI thread)
-  float gainLinear = std::pow(10.0f, gainDb / 20.0f);
-
   // Store gain persistently in AudioFileEntry
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
@@ -1074,13 +1159,18 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
     it->second.gainDb = gainDb;
   }
 
-  // Update gain for any active clips with this handle (takes effect immediately)
-  // Store both dB and precomputed linear values atomically
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      m_activeClips[i].gainDb.store(gainDb, std::memory_order_release);
-      m_activeClips[i].gainLinear.store(gainLinear, std::memory_order_release);
-    }
+  // Post command to audio thread for thread-safe update (ORP115)
+  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
+
+  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
+    TransportCommand& cmd = m_commands[writeIndex];
+    cmd.type = TransportCommand::Type::UpdateGain;
+    cmd.handle = handle;
+    cmd.data.gainDb = gainDb;
+    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
+  } else {
+    return SessionGraphError::InternalError; // Queue full
   }
 
   return SessionGraphError::OK;
@@ -1101,11 +1191,18 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
     it->second.loopEnabled = shouldLoop;
   }
 
-  // Update loop mode for any active clips with this handle
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      m_activeClips[i].loopEnabled.store(shouldLoop, std::memory_order_release);
-    }
+  // Post command to audio thread for thread-safe update (ORP115)
+  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
+
+  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
+    TransportCommand& cmd = m_commands[writeIndex];
+    cmd.type = TransportCommand::Type::UpdateLoop;
+    cmd.handle = handle;
+    cmd.data.booleanValue = shouldLoop;
+    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
+  } else {
+    return SessionGraphError::InternalError; // Queue full
   }
 
   return SessionGraphError::OK;
