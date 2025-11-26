@@ -29,8 +29,46 @@ This repository follows a three-tier configuration hierarchy:
 ├── adapters/            # Host integrations (REAPER, minhost, realtime_engine, clip_grid)
 ├── apps/                # Applications (Clip Composer, Wave Finder, FX Engine)
 ├── tests/               # GoogleTest suite
-└── docs/                # Architecture, roadmap, adapter guides
+├── docs/                # Architecture, roadmap, adapter guides
+└── (future) packages/shmui-juce/  # UX package - JUCE UI components (see below)
 ```
+
+## UX Package: shmui
+
+**Status:** Planned integration | **Repo:** `~/dev/shmui` (standalone)
+
+**shmui** is a dual-stack component library (React + JUCE C++) providing audio visualization and agentic UI components. The JUCE components will be integrated as a first-party package for Orpheus SDK applications.
+
+**JUCE Components:**
+
+- `AudioAnalyzer` - FFT, RMS, frequency band analysis (thread-safe)
+- `WaveformVisualizer` - Multiple waveform display variants
+- `BarVisualizer` - Frequency band display with state animations
+- `OrbVisualizer` - OpenGL shader-based 3D orb
+- `MatrixDisplay` - LED-style matrix display with animations
+
+**Threading Compatibility:**
+
+- shmui components follow JUCE message thread model
+- `AudioAnalyzer` is thread-safe for audio/UI communication (compatible with Orpheus broadcast-safe principles)
+- Visualization components use `juce::MessageManager::callAsync()` for cross-thread updates
+
+**When to Use:**
+
+- ✅ Application-level UI (Clip Composer, Wave Finder, FX Engine)
+- ✅ Audio visualization and feedback displays
+- ❌ Core SDK (SDK remains UI-agnostic, host-neutral)
+
+**Integration Plan:**
+
+1. Documentation cross-references (current phase)
+2. Physical integration: `packages/shmui-juce/` (planned)
+3. Clip Composer adoption (after package integration)
+
+**See Also:**
+
+- shmui repo: `~/dev/shmui/CLAUDE.md` (when created), `~/dev/shmui/GEMINI.md`
+- shmui JUCE source: `~/dev/shmui/juce/Source/ShmUI.h`
 
 ## Quick Command Reference
 
