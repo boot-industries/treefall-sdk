@@ -1,10 +1,12 @@
 # ORP095: Hot Buffer Size Change Implementation
 
-**Status:** ✅ Complete
+**Status:** ❌ Not Implemented (Code Missing)
 **Type:** Feature Enhancement
 **Priority:** High
 **Date:** 2025-10-28
 **Author:** Claude Code
+
+**Update (2025-11-26):** Investigation during ORP114 revealed that the `reconfigure()` method described here is **not present** in the codebase. This feature needs to be re-implemented.
 
 ## Summary
 
