@@ -4,12 +4,17 @@
 
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
+#include "Core/Database.h"
+#include "Core/EventLogger.h"
+#include "Core/PlayoutLogger.h"
+#include "Core/ServiceContext.h"
+#include "Core/UndoManager.h"
 #include "Session/SessionManager.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
 #include "UI/HKGroteskLookAndFeel.h"
-#include "UI/TabSwitcher.h" // OCC130 Sprint B: Now includes merged transport controls
+#include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 //==============================================================================
@@ -75,19 +80,23 @@ private:
   }
 
   //==============================================================================
-  // UI Components
-  std::unique_ptr<TabSwitcher> m_tabSwitcher; // OCC130 Sprint B: Merged with transport controls
-  std::unique_ptr<ClipGrid> m_clipGrid;
-
-  // Future components
-  // std::unique_ptr<RoutingPanel> m_routingPanel;
-  // std::unique_ptr<WaveformDisplay> m_waveformDisplay;
-
-  // SDK Integration (Active!)
+  // Core Services (Ownership)
   std::unique_ptr<AudioEngine> m_audioEngine;
+  SessionManager m_sessionManager; // Stack allocated in v0.1, maybe change to unique_ptr later
 
-  // Session Management (Real Functionality)
-  SessionManager m_sessionManager;
+  // Infrastructure (Sprint 0-2)
+  std::unique_ptr<orpheus::Database> m_database;
+  std::unique_ptr<orpheus::EventLogger> m_eventLogger;
+  std::unique_ptr<orpheus::PlayoutLogger> m_playoutLogger;
+  std::unique_ptr<orpheus::UndoManager> m_undoManager;
+
+  // Service Context (Dependency Injection)
+  orpheus::ServiceContext m_serviceContext;
+
+  //==============================================================================
+  // UI Components
+  std::unique_ptr<TabSwitcher> m_tabSwitcher;
+  std::unique_ptr<ClipGrid> m_clipGrid;
 
   // Custom Look and Feel (HK Grotesk font)
   HKGroteskLookAndFeel m_hkGroteskLookAndFeel;

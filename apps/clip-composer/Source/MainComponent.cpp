@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainComponent.h"
+#include "Core/ApplicationPaths.h"
 
 #if JUCE_MAC
 #include <mach/mach.h>
@@ -8,6 +9,38 @@
 
 //==============================================================================
 MainComponent::MainComponent() {
+  // Sprint 0: Ensure application directories exist
+  orpheus::ApplicationPaths::ensureDirectoriesExist();
+
+  // Initialize Core Services
+  m_audioEngine = std::make_unique<AudioEngine>();
+  m_undoManager = std::make_unique<orpheus::UndoManager>();
+
+  // Initialize Database & Logging (Sprint 2)
+  m_database = std::make_unique<orpheus::Database>();
+  auto dbFile = orpheus::ApplicationPaths::getLogsDir().getChildFile("app.db");
+  auto result = m_database->open(dbFile);
+
+  if (result.failed()) {
+    DBG("Failed to open database: " << result.getErrorMessage());
+    // Fallback or fatal error handling? For now, we proceed without logging.
+  } else {
+    m_eventLogger = std::make_unique<orpheus::EventLogger>(*m_database);
+    m_playoutLogger = std::make_unique<orpheus::PlayoutLogger>(*m_database);
+
+    // Log startup
+    m_eventLogger->log(orpheus::EventType::Startup, "MainComponent", "Application started");
+  }
+
+  // Populate Service Context (Dependency Injection)
+  m_serviceContext.sessionManager = &m_sessionManager;
+  m_serviceContext.audioEngine = m_audioEngine.get();
+  m_serviceContext.undoManager = m_undoManager.get();
+  m_serviceContext.eventLogger = m_eventLogger.get();
+  m_serviceContext.playoutLogger = m_playoutLogger.get();
+
+  // Note: SettingsService will be added in future sprint
+
   // Set HK Grotesk font as default for all components
   setLookAndFeel(&m_hkGroteskLookAndFeel);
 
@@ -116,8 +149,8 @@ MainComponent::MainComponent() {
   juce::MenuBarModel::setMacMainMenu(this);
 #endif
 
-  // Initialize audio engine with real SDK components
-  m_audioEngine = std::make_unique<AudioEngine>();
+  // AudioEngine is already initialized at top of constructor
+  // m_audioEngine = std::make_unique<AudioEngine>();
 
   // Load saved audio settings (sample rate, buffer size, device)
   juce::PropertiesFile::Options options;
