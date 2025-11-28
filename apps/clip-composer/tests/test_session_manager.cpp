@@ -2,6 +2,7 @@
 // SessionManager Tests (Sprint A4)
 
 #include "../Source/Session/SessionManager.h"
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <juce_core/juce_core.h>
 
@@ -15,9 +16,8 @@ class SessionManagerTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_sessionManager = std::make_unique<SessionManager>();
-    m_tempSessionPath = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("clip_composer_test_session.json")
-                            .getFullPathName();
+    auto tempDir = std::filesystem::temp_directory_path();
+    m_tempSessionPath = (tempDir / "clip_composer_test_session.json").string();
   }
 
   void TearDown() override {

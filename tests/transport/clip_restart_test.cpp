@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
+#include <filesystem>
 #include <fstream>
 #include <orpheus/audio_file_reader.h>
 #include <vector>
@@ -13,19 +14,20 @@ class ClipRestartTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
-
-    // Create test audio file
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_restart.wav").string();
     createTestAudioFile();
   }
 
   void TearDown() override {
     m_transport.reset();
-    std::remove("/tmp/test_clip_restart.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file (1 second of silence, 48kHz, stereo, 16-bit PCM)
-    std::ofstream file("/tmp/test_clip_restart.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     // WAV header (RIFF)
     file << "RIFF";
@@ -62,13 +64,14 @@ protected:
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::string m_testFilePath;
 };
 
 TEST_F(ClipRestartTest, RestartNotPlayingStartsClip) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_restart.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Restart when not playing should just start it
@@ -108,7 +111,7 @@ TEST_F(ClipRestartTest, RestartIsIdempotent) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_restart.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Start clip
@@ -178,6 +181,8 @@ protected:
     m_transport->setCallback(m_callback.get());
 
     // Create test audio file
+    m_testFilePath =
+        (std::filesystem::temp_directory_path() / "test_clip_restart_callback.wav").string();
     createTestAudioFile();
   }
 
@@ -185,12 +190,14 @@ protected:
     m_transport->setCallback(nullptr);
     m_callback.reset();
     m_transport.reset();
-    std::remove("/tmp/test_clip_restart_callback.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file (1 second of silence, 48kHz, stereo, 16-bit PCM)
-    std::ofstream file("/tmp/test_clip_restart_callback.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     // WAV header (RIFF)
     file << "RIFF";
@@ -228,13 +235,14 @@ protected:
 
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<TestCallback> m_callback;
+  std::string m_testFilePath;
 };
 
 TEST_F(ClipRestartCallbackTest, RestartCallbackFired) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_restart_callback.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Start clip
@@ -264,7 +272,7 @@ TEST_F(ClipRestartCallbackTest, RestartCallbackNotFiredForStart) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_restart_callback.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Restart when not playing (should just start)

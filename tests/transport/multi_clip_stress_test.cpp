@@ -5,11 +5,12 @@
 #include <orpheus/transport_controller.h>
 
 // Access implementation for processAudio
-#include "transport/transport_controller.h"
+#include "../../src/core/transport/transport_controller.h"
 
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -40,6 +41,8 @@ protected:
     // Create transport callback
     m_callback = std::make_unique<TestTransportCallback>();
     m_transport->setCallback(m_callback.get());
+
+    m_tempDir = std::filesystem::temp_directory_path();
   }
 
   void TearDown() override {
@@ -48,6 +51,13 @@ protected:
     }
     m_transport.reset();
     m_driver.reset();
+
+    // Clean up temp files
+    for (const auto& file : m_tempFiles) {
+      if (std::filesystem::exists(file)) {
+        std::filesystem::remove(file);
+      }
+    }
   }
 
   // Test transport callback
@@ -130,7 +140,7 @@ protected:
     }
 
     // Write to temp file (simple WAV format)
-    std::string filepath = "/tmp/" + filename;
+    std::string filepath = (m_tempDir / filename).string();
     std::ofstream file(filepath, std::ios::binary);
 
     // WAV header (simplified, 44 bytes)
@@ -165,12 +175,15 @@ protected:
     }
 
     file.close();
+    m_tempFiles.push_back(filepath);
     return filepath;
   }
 
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<IAudioDriver> m_driver;
   std::unique_ptr<TestTransportCallback> m_callback;
+  std::filesystem::path m_tempDir;
+  std::vector<std::string> m_tempFiles;
 };
 
 // ============================================================================
