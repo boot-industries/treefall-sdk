@@ -367,6 +367,9 @@ TEST_F(ClipLoopTest, IsClipLoopingQuery) {
   // Disable loop mode while playing
   m_transport->setClipLoopMode(handle, false);
 
+  // Process command
+  m_transport->processAudio(buffers, 2, 512);
+
   // Should no longer report as looping
   EXPECT_FALSE(m_transport->isClipLooping(handle))
       << "Clip should not be looping (playing but loop disabled)";
