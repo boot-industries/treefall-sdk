@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 
+#include "../../src/core/transport/transport_controller.h"
+#include <filesystem>
+#include <fstream>
 #include <orpheus/transport_controller.h>
-
-#include "transport/transport_controller.h"
 
 using namespace orpheus;
 
@@ -19,21 +20,66 @@ protected:
     m_sampleRate = 48000;
     m_fileDuration = 10 * m_sampleRate; // 10 seconds
 
-    // Try to register test audio file - if this fails, tests that need audio will be skipped
-    // For cue point tests, we mainly need the AudioFileEntry to exist in storage
-    std::string testFile = "../tests/fixtures/audio/test_tone_1s.wav";
-    auto result = m_transport->registerClipAudio(m_clipHandle, testFile);
-    m_hasAudioFile = (result == SessionGraphError::OK);
+    // Generate temporary test audio file
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_cue_points.wav").string();
+    createTestAudioFile();
 
-    // Most cue point tests don't need actual audio, just the clip to be "registered"
-    // If audio file not available, tests will check m_hasAudioFile before running
+    auto result = m_transport->registerClipAudio(m_clipHandle, m_testFilePath);
+    m_hasAudioFile = (result == SessionGraphError::OK);
+  }
+
+  void TearDown() override {
+    m_transport.reset();
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
+  }
+
+  void createTestAudioFile() {
+    // Create a minimal WAV file (10 seconds of silence, 48kHz, stereo, 16-bit PCM)
+    std::ofstream file(m_testFilePath, std::ios::binary);
+
+    uint32_t durationSamples = static_cast<uint32_t>(m_fileDuration);
+    uint16_t numChannels = 2;
+
+    // WAV header (RIFF)
+    file << "RIFF";
+    uint32_t fileSize = 36 + (durationSamples * numChannels * 2);
+    file.write(reinterpret_cast<const char*>(&fileSize), 4);
+    file << "WAVE";
+
+    // fmt chunk
+    file << "fmt ";
+    uint32_t fmtSize = 16;
+    file.write(reinterpret_cast<const char*>(&fmtSize), 4);
+    uint16_t audioFormat = 1; // PCM
+    file.write(reinterpret_cast<const char*>(&audioFormat), 2);
+    file.write(reinterpret_cast<const char*>(&numChannels), 2);
+    file.write(reinterpret_cast<const char*>(&m_sampleRate), 4);
+    uint32_t byteRate = m_sampleRate * numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&byteRate), 4);
+    uint16_t blockAlign = numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&blockAlign), 2);
+    uint16_t bitsPerSample = 16;
+    file.write(reinterpret_cast<const char*>(&bitsPerSample), 2);
+
+    // data chunk
+    file << "data";
+    uint32_t dataSize = durationSamples * numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&dataSize), 4);
+
+    // Write silence (10 seconds is 1.92 MB, acceptable for test file)
+    std::vector<char> silence(dataSize, 0);
+    file.write(silence.data(), dataSize);
+    file.close();
   }
 
   std::unique_ptr<TransportController> m_transport;
   ClipHandle m_clipHandle{0};
   uint32_t m_sampleRate{48000};
   int64_t m_fileDuration{0};
-  bool m_hasAudioFile{false}; // Flag to skip tests that require audio playback
+  bool m_hasAudioFile{false};
+  std::string m_testFilePath;
 };
 
 /// Test adding a single cue point
@@ -178,7 +224,7 @@ TEST_F(ClipCuePointsTest, RemoveInvalidCueIndex) {
 /// Test adding cue point with position clamping
 TEST_F(ClipCuePointsTest, PositionClamping) {
   // Try to add cue point beyond file duration
-  int64_t outOfRangePosition = 20 * m_sampleRate; // 20 seconds (file is only ~1 second)
+  int64_t outOfRangePosition = 20 * m_sampleRate; // 20 seconds (file is only 10 seconds)
   int index =
       m_transport->addCuePoint(m_clipHandle, outOfRangePosition, "Out of Range", 0xFFFFFFFF);
 

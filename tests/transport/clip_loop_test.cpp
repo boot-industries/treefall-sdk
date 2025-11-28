@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
+#include <filesystem>
 #include <fstream>
 #include <orpheus/audio_file_reader.h>
 #include <vector>
@@ -15,18 +16,21 @@ protected:
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
 
     // Create test audio file (short clip for faster loop testing)
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_loop.wav").string();
     createTestAudioFile();
   }
 
   void TearDown() override {
     m_transport.reset();
-    std::remove("/tmp/test_clip_loop.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a short WAV file (0.1 seconds = 4800 samples @ 48kHz, stereo, 16-bit PCM)
     // Short duration makes loop testing faster
-    std::ofstream file("/tmp/test_clip_loop.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     const uint32_t sampleRate = 48000;
     const uint32_t duration = 4800; // 0.1 seconds
@@ -72,6 +76,7 @@ protected:
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::string m_testFilePath;
 };
 
 // Test 1: setClipLoopMode enables looping
@@ -79,7 +84,7 @@ TEST_F(ClipLoopTest, SetLoopModeEnablesLooping) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Enable loop mode
@@ -96,7 +101,7 @@ TEST_F(ClipLoopTest, SetLoopModeEnablesLooping) {
 TEST_F(ClipLoopTest, SetLoopModeDisablesLooping) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Enable loop mode first
@@ -116,7 +121,7 @@ TEST_F(ClipLoopTest, SetLoopModeDisablesLooping) {
 TEST_F(ClipLoopTest, LoopBoundarySeeksToTrimIn) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points (loop from 1000 to 3000 samples)
@@ -183,7 +188,7 @@ TEST_F(ClipLoopTest, OnClipLoopedCallbackFires) {
 
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set short trim for faster loop
@@ -219,7 +224,7 @@ TEST_F(ClipLoopTest, OnClipLoopedCallbackFires) {
 TEST_F(ClipLoopTest, LoopModeRespectsTrims) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points
@@ -258,7 +263,7 @@ TEST_F(ClipLoopTest, LoopModeRespectsTrims) {
 TEST_F(ClipLoopTest, LoopModeNoFadeAtBoundary) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set fade-out (should NOT be applied at loop boundary)
@@ -291,7 +296,7 @@ TEST_F(ClipLoopTest, LoopModeNoFadeAtBoundary) {
 TEST_F(ClipLoopTest, LoopModePersists) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Enable loop mode
@@ -335,7 +340,7 @@ TEST_F(ClipLoopTest, LoopModePersists) {
 TEST_F(ClipLoopTest, IsClipLoopingQuery) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Initially not looping
@@ -371,7 +376,7 @@ TEST_F(ClipLoopTest, IsClipLoopingQuery) {
 TEST_F(ClipLoopTest, InvalidInputsRejected) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Test invalid handle (0)
@@ -404,7 +409,7 @@ TEST_F(ClipLoopTest, MultipleLoopsExecuteCorrectly) {
 
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set very short trim for fast loops (1000 samples = ~2 buffers)
@@ -445,7 +450,7 @@ TEST_F(ClipLoopTest, ConcurrentLoopModeChanges) {
   std::vector<ClipHandle> handles = {1, 2, 3, 4};
 
   for (auto handle : handles) {
-    auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_loop.wav");
+    auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
     ASSERT_EQ(regResult, SessionGraphError::OK);
   }
 
