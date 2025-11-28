@@ -16,15 +16,15 @@ namespace orpheus {
 PlayoutLogger::PlayoutLogger(Database& db) : m_db(db) {
   if (m_db.isOpen()) {
     // Schema optimized for reporting
-    m_db.execute("CREATE TABLE IF NOT EXISTS playout_log (
-                 "id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 "start_time INTEGER NOT NULL,
-                 "duration REAL DEFAULT 0.0,
-                 "track_name TEXT,
-                 "file_name TEXT,
-                 "output_name TEXT,
-                 "trigger_source TEXT,
-                 "metadata TEXT
+    m_db.execute("CREATE TABLE IF NOT EXISTS playout_log ("
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                 "start_time INTEGER NOT NULL,"
+                 "duration REAL DEFAULT 0.0,"
+                 "track_name TEXT,"
+                 "file_name TEXT,"
+                 "output_name TEXT,"
+                 "trigger_source TEXT,"
+                 "metadata TEXT"
                  ");");
 
     m_db.execute("CREATE INDEX IF NOT EXISTS idx_playout_time ON playout_log(start_time);");
@@ -120,13 +120,11 @@ juce::File PlayoutLogger::exportLogsToCsv(juce::Time startDate, juce::Time endDa
     auto time = juce::Time(static_cast<int64_t>(row.at("start_time")));
     csv += time.toString(true, true) + ",";
     csv += row.at("duration").toString() + ",";
-    csv += \"" + row.at("track_name").toString() + \"",
-        ";
-        csv += \"" + row.at("file_name").toString() + \"",
-        ";
-        csv += row.at("output_name").toString() + ",";
+    csv += "\"" + row.at("track_name").toString().replace("\"", "\"\"") + "\",";
+    csv += "\"" + row.at("file_name").toString().replace("\"", "\"\"") + "\",";
+    csv += row.at("output_name").toString() + ",";
     csv += row.at("trigger_source").toString() + ",";
-    csv += \"" + row.at("metadata").toString().replace("\"", "\"\"") + \""\n ";
+    csv += "\"" + row.at("metadata").toString().replace("\"", "\"\"") + "\"\n";
   }
 
   juce::File exportFile =
