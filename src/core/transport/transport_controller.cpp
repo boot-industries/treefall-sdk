@@ -1580,10 +1580,10 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
       cuePoints.begin(), cuePoints.end(), cue,
       [](const CuePoint& a, const CuePoint& b) { return a.position < b.position; });
 
-  cuePoints.insert(insertPos, cue);
+  auto insertedIt = cuePoints.insert(insertPos, cue);
 
   // Return index of inserted cue point
-  return static_cast<int>(std::distance(cuePoints.begin(), insertPos));
+  return static_cast<int>(std::distance(cuePoints.begin(), insertedIt));
 }
 
 std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {
