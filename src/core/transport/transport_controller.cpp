@@ -480,6 +480,14 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     if (!clip.reader || !clip.reader->isOpen()) {
       // Clip has no reader - advance position by buffer size so fades can complete
       clip.currentSample += static_cast<int64_t>(numFrames);
+
+      // Clamp position to OUT point if stopping (prevents position escape during fade-out)
+      if (clip.isStopping) {
+        int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
+        if (clip.currentSample > clipTrimOut) {
+          clip.currentSample = clipTrimOut;
+        }
+      }
     }
   }
 
@@ -542,18 +550,15 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
         // Continue playback (don't remove clip, don't increment i)
         ++i;
-      } else if (clip.reader) {
-        // Non-loop mode WITH reader: Trigger stop fade-out when reaching OUT point
-        // This ensures graceful fade when loop is disabled mid-playback
+      } else {
+        // Non-loop mode (with or without reader): Trigger stop fade-out when reaching OUT point
+        // This handles both test clips (no reader) and clips whose reader was cleared at OUT point
         if (!clip.isStopping) {
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
         }
         // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
-        ++i;
-      } else {
-        // No reader, non-loop mode - just continue (don't stop test placeholder clips)
         ++i;
       }
     } else {
@@ -1582,8 +1587,8 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
 
   auto insertedIt = cuePoints.insert(insertPos, cue);
 
-  // Return index of inserted cue point
-  return static_cast<int>(std::distance(cuePoints.begin(), insertedIt));
+  int index = static_cast<int>(std::distance(cuePoints.begin(), insertedIt));
+  return index;
 }
 
 std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {
