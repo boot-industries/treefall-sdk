@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 
+#include "../../src/core/transport/transport_controller.h"
+#include <filesystem>
+#include <fstream>
 #include <orpheus/transport_controller.h>
-
-#include "transport/transport_controller.h"
 
 using namespace orpheus;
 
@@ -19,21 +20,66 @@ protected:
     m_sampleRate = 48000;
     m_fileDuration = 10 * m_sampleRate; // 10 seconds
 
-    // Try to register test audio file - if this fails, tests that need audio will be skipped
-    // For cue point tests, we mainly need the AudioFileEntry to exist in storage
-    std::string testFile = "../tests/fixtures/audio/test_tone_1s.wav";
-    auto result = m_transport->registerClipAudio(m_clipHandle, testFile);
-    m_hasAudioFile = (result == SessionGraphError::OK);
+    // Generate temporary test audio file
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_cue_points.wav").string();
+    createTestAudioFile();
 
-    // Most cue point tests don't need actual audio, just the clip to be "registered"
-    // If audio file not available, tests will check m_hasAudioFile before running
+    auto result = m_transport->registerClipAudio(m_clipHandle, m_testFilePath);
+    m_hasAudioFile = (result == SessionGraphError::OK);
+  }
+
+  void TearDown() override {
+    m_transport.reset();
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
+  }
+
+  void createTestAudioFile() {
+    // Create a minimal WAV file (10 seconds of silence, 48kHz, stereo, 16-bit PCM)
+    std::ofstream file(m_testFilePath, std::ios::binary);
+
+    uint32_t durationSamples = static_cast<uint32_t>(m_fileDuration);
+    uint16_t numChannels = 2;
+
+    // WAV header (RIFF)
+    file << "RIFF";
+    uint32_t fileSize = 36 + (durationSamples * numChannels * 2);
+    file.write(reinterpret_cast<const char*>(&fileSize), 4);
+    file << "WAVE";
+
+    // fmt chunk
+    file << "fmt ";
+    uint32_t fmtSize = 16;
+    file.write(reinterpret_cast<const char*>(&fmtSize), 4);
+    uint16_t audioFormat = 1; // PCM
+    file.write(reinterpret_cast<const char*>(&audioFormat), 2);
+    file.write(reinterpret_cast<const char*>(&numChannels), 2);
+    file.write(reinterpret_cast<const char*>(&m_sampleRate), 4);
+    uint32_t byteRate = m_sampleRate * numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&byteRate), 4);
+    uint16_t blockAlign = numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&blockAlign), 2);
+    uint16_t bitsPerSample = 16;
+    file.write(reinterpret_cast<const char*>(&bitsPerSample), 2);
+
+    // data chunk
+    file << "data";
+    uint32_t dataSize = durationSamples * numChannels * 2;
+    file.write(reinterpret_cast<const char*>(&dataSize), 4);
+
+    // Write silence (10 seconds is 1.92 MB, acceptable for test file)
+    std::vector<char> silence(dataSize, 0);
+    file.write(silence.data(), dataSize);
+    file.close();
   }
 
   std::unique_ptr<TransportController> m_transport;
   ClipHandle m_clipHandle{0};
   uint32_t m_sampleRate{48000};
   int64_t m_fileDuration{0};
-  bool m_hasAudioFile{false}; // Flag to skip tests that require audio playback
+  bool m_hasAudioFile{false};
+  std::string m_testFilePath;
 };
 
 /// Test adding a single cue point
@@ -68,10 +114,10 @@ TEST_F(ClipCuePointsTest, AddMultipleCuePointsSorted) {
   int idx2 = m_transport->addCuePoint(m_clipHandle, 2 * m_sampleRate, "Intro", 0x00FF00FF);
   int idx3 = m_transport->addCuePoint(m_clipHandle, 5 * m_sampleRate, "Verse 1", 0x0000FFFF);
 
-  // Verify indices reflect sorted positions
-  EXPECT_EQ(idx2, 0); // Intro at 2s is first
-  EXPECT_EQ(idx3, 1); // Verse 1 at 5s is second
-  EXPECT_EQ(idx1, 2); // Chorus at 7s is third
+  // Verify indices reflect positions at insertion time
+  EXPECT_EQ(idx1, 0); // Chorus was first added (index 0 in empty list)
+  EXPECT_EQ(idx2, 0); // Intro inserted at index 0 (before Chorus)
+  EXPECT_EQ(idx3, 1); // Verse 1 inserted at index 1 (between Intro and Chorus)
 
   // Get cue points and verify sorted order
   auto cuePoints = m_transport->getCuePoints(m_clipHandle);
@@ -108,6 +154,14 @@ TEST_F(ClipCuePointsTest, SeekToCuePoint) {
 
   // Start playback
   m_transport->startClip(m_clipHandle);
+
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
 
   // Seek to second cue point (index 1, at 5 seconds)
   auto result = m_transport->seekToCuePoint(m_clipHandle, 1);
@@ -178,7 +232,7 @@ TEST_F(ClipCuePointsTest, RemoveInvalidCueIndex) {
 /// Test adding cue point with position clamping
 TEST_F(ClipCuePointsTest, PositionClamping) {
   // Try to add cue point beyond file duration
-  int64_t outOfRangePosition = 20 * m_sampleRate; // 20 seconds (file is only ~1 second)
+  int64_t outOfRangePosition = 20 * m_sampleRate; // 20 seconds (file is only 10 seconds)
   int index =
       m_transport->addCuePoint(m_clipHandle, outOfRangePosition, "Out of Range", 0xFFFFFFFF);
 
@@ -261,6 +315,14 @@ TEST_F(ClipCuePointsTest, SeekToMultipleCuePoints) {
   // Start playback
   m_transport->startClip(m_clipHandle);
 
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
+
   // Seek to each cue point in sequence
   for (uint32_t i = 0; i < 4; ++i) {
     auto result = m_transport->seekToCuePoint(m_clipHandle, i);
@@ -281,6 +343,15 @@ TEST_F(ClipCuePointsTest, CuePointAtZero) {
 
   // Start playback and seek to cue point 0
   m_transport->startClip(m_clipHandle);
+
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
+
   auto result = m_transport->seekToCuePoint(m_clipHandle, 0);
   EXPECT_EQ(result, SessionGraphError::OK);
 

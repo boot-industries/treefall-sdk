@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Integration test for fade curve processing in TransportController
 
-#include "transport/transport_controller.h"
+#include "../../src/core/transport/transport_controller.h"
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <orpheus/audio_file_reader.h>
@@ -15,7 +16,7 @@ class FadeProcessingTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
-
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_fade_audio.wav").string();
     // Create a test audio file (1 second of silence at 48kHz)
     createTestAudioFile();
   }
@@ -24,12 +25,14 @@ protected:
     m_transport.reset();
 
     // Clean up test file
-    std::remove("/tmp/test_fade_audio.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file (1 second of silence, 48kHz, stereo, 16-bit PCM)
-    std::ofstream file("/tmp/test_fade_audio.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     // WAV header
     file << "RIFF";
@@ -60,20 +63,21 @@ protected:
     file.write(reinterpret_cast<const char*>(&dataSize), 4);
 
     // Write silence (48000 samples * 2 channels * 2 bytes)
-    std::vector<uint8_t> silence(dataSize, 0);
-    file.write(reinterpret_cast<const char*>(silence.data()), dataSize);
+    std::vector<char> silence(dataSize, 0);
+    file.write(silence.data(), dataSize);
 
     file.close();
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::string m_testFilePath;
 };
 
 // Test fade metadata update and retrieval
 TEST_F(FadeProcessingTest, UpdateAndQueryFadeMetadata) {
   // Register test audio file
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Update fade settings
@@ -88,7 +92,7 @@ TEST_F(FadeProcessingTest, UpdateAndQueryFadeMetadata) {
 TEST_F(FadeProcessingTest, RejectNegativeFadeDuration) {
   // Register test audio file
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Try to set negative fade-in duration (should fail)
@@ -102,7 +106,7 @@ TEST_F(FadeProcessingTest, RejectNegativeFadeDuration) {
 TEST_F(FadeProcessingTest, RejectFadeLongerThanClip) {
   // Register test audio file (1 second long)
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Try to set fade-in longer than clip duration
@@ -116,7 +120,7 @@ TEST_F(FadeProcessingTest, RejectFadeLongerThanClip) {
 TEST_F(FadeProcessingTest, TrimPointsAndFadesInteraction) {
   // Register test audio file
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Set trim points (trim to 0.5s duration)
@@ -135,7 +139,7 @@ TEST_F(FadeProcessingTest, TrimPointsAndFadesInteraction) {
 TEST_F(FadeProcessingTest, AudioCallbackWithFades) {
   // Register test audio file
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Set fade-in and fade-out
@@ -173,7 +177,7 @@ TEST_F(FadeProcessingTest, AudioCallbackWithFades) {
 // Test all fade curve types
 TEST_F(FadeProcessingTest, AllFadeCurveTypes) {
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Test Linear fade
@@ -198,7 +202,7 @@ TEST_F(FadeProcessingTest, AllFadeCurveTypes) {
 // Test metadata persistence across clip start/stop
 TEST_F(FadeProcessingTest, FadeMetadataPersistsAcrossPlayback) {
   ClipHandle handle = 1;
-  auto result = m_transport->registerClipAudio(handle, "/tmp/test_fade_audio.wav");
+  auto result = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(result, SessionGraphError::OK);
 
   // Set fades

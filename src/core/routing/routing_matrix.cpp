@@ -18,13 +18,7 @@ RoutingMatrix::RoutingMatrix()
       m_callback(nullptr) {}
 
 RoutingMatrix::~RoutingMatrix() {
-  cleanupChannels();
-  cleanupGroups();
-
-  if (m_master_gain_smoother) {
-    delete m_master_gain_smoother;
-    m_master_gain_smoother = nullptr;
-  }
+  // Vectors and unique_ptrs handle cleanup automatically
 }
 
 // ============================================================================
@@ -45,8 +39,8 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
 
   // Clean up existing state if reinitializing
   if (m_initialized.load(std::memory_order_acquire)) {
-    cleanupChannels();
-    cleanupGroups();
+    m_channels.clear();
+    m_groups.clear();
   }
 
   // Store configuration (lock-free: write to inactive buffer, then atomic swap)
@@ -61,12 +55,9 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   initializeGroups();
 
   // Initialize master gain smoother
-  if (m_master_gain_smoother) {
-    delete m_master_gain_smoother;
-  }
   // TODO: Get sample rate from config (needs to be added)
   uint32_t sample_rate = 48000; // Default for now
-  m_master_gain_smoother = new GainSmoother(sample_rate, config.gain_smoothing_ms);
+  m_master_gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
   m_master_gain_smoother->reset(1.0f); // Unity gain
 
   // Pre-allocate audio processing buffers
@@ -726,13 +717,13 @@ void RoutingMatrix::initializeChannels() {
   for (uint8_t i = 0; i < config.num_channels; ++i) {
     ChannelState channel;
     channel.group_index = 0; // Default to group 0
-    channel.gain_smoother = new GainSmoother(sample_rate, config.gain_smoothing_ms);
+    channel.gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
     channel.gain_smoother->reset(1.0f); // Unity gain
 
-    channel.pan_left = new GainSmoother(sample_rate, config.gain_smoothing_ms);
+    channel.pan_left = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
     channel.pan_left->reset(0.707f); // -3 dB (constant-power center)
 
-    channel.pan_right = new GainSmoother(sample_rate, config.gain_smoothing_ms);
+    channel.pan_right = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
     channel.pan_right->reset(0.707f); // -3 dB
 
     channel.mute.store(false, std::memory_order_release);
@@ -768,7 +759,7 @@ void RoutingMatrix::initializeGroups() {
 
   for (uint8_t i = 0; i < config.num_groups; ++i) {
     GroupState group;
-    group.gain_smoother = new GainSmoother(sample_rate, config.gain_smoothing_ms);
+    group.gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
     group.gain_smoother->reset(1.0f); // Unity gain
 
     group.mute.store(false, std::memory_order_release);
@@ -788,34 +779,6 @@ void RoutingMatrix::initializeGroups() {
 
     m_groups.push_back(std::move(group));
   }
-}
-
-void RoutingMatrix::cleanupChannels() {
-  for (auto& channel : m_channels) {
-    if (channel.gain_smoother) {
-      delete channel.gain_smoother;
-      channel.gain_smoother = nullptr;
-    }
-    if (channel.pan_left) {
-      delete channel.pan_left;
-      channel.pan_left = nullptr;
-    }
-    if (channel.pan_right) {
-      delete channel.pan_right;
-      channel.pan_right = nullptr;
-    }
-  }
-  m_channels.clear();
-}
-
-void RoutingMatrix::cleanupGroups() {
-  for (auto& group : m_groups) {
-    if (group.gain_smoother) {
-      delete group.gain_smoother;
-      group.gain_smoother = nullptr;
-    }
-  }
-  m_groups.clear();
 }
 
 void RoutingMatrix::updateSoloState() {

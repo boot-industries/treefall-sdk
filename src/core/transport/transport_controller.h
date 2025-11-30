@@ -19,6 +19,25 @@ namespace core {
 class SessionGraph;
 } // namespace core
 
+/// Playback context (thread-safe state transfer from UI to Audio thread)
+/// Contains all immutable state required to start a clip
+struct ClipPlaybackContext {
+  ClipHandle handle;
+  std::shared_ptr<IAudioFileReader> reader;
+
+  // Metadata snapshot at start time
+  int64_t trimInSamples;
+  int64_t trimOutSamples;
+  double fadeInSeconds;
+  double fadeOutSeconds;
+  FadeCurve fadeInCurve;
+  FadeCurve fadeOutCurve;
+  float gainDb;
+  float gainLinear;
+  bool loopEnabled;
+  uint16_t numChannels;
+};
+
 /// Command for audio thread (lock-free queue)
 struct TransportCommand {
   enum class Type : uint8_t {
@@ -35,6 +54,10 @@ struct TransportCommand {
 
   Type type;
   ClipHandle handle;
+
+  // Context for Start command (carries reader + metadata safely)
+  // This is separate from the union to ensure proper shared_ptr management
+  std::shared_ptr<ClipPlaybackContext> startContext;
 
   union {
     uint8_t groupIndex; // For StopGroup command
@@ -184,8 +207,8 @@ private:
   ActiveClip* findOldestVoice(ClipHandle handle);
 
   /// Add a clip to active list (audio thread only)
-  /// @note For multi-voice: creates new voice instance with unique voiceId
-  void addActiveClip(ClipHandle handle);
+  /// @param context Playback context with immutable state
+  void addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
 
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove

@@ -71,10 +71,67 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Multi-voice: Always allow starting (audio thread will handle max voice limits)
-  // This enables rapid re-fire for layering same clip over itself
+  // Resolve playback context (UI thread - safe to lock mutex)
+  auto context = std::make_shared<ClipPlaybackContext>();
+  context->handle = handle;
 
-  // Post command to audio thread
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it != m_audioFiles.end()) {
+      const auto& entry = it->second;
+      context->reader = entry.reader;
+      context->numChannels = entry.metadata.num_channels;
+      context->trimInSamples = entry.trimInSamples;
+
+      // If trim OUT is not set (0), use file duration
+      context->trimOutSamples =
+          (entry.trimOutSamples == 0) ? entry.metadata.duration_samples : entry.trimOutSamples;
+
+      context->fadeInSeconds = entry.fadeInSeconds;
+      context->fadeOutSeconds = entry.fadeOutSeconds;
+      context->fadeInCurve = entry.fadeInCurve;
+      context->fadeOutCurve = entry.fadeOutCurve;
+      context->gainDb = entry.gainDb;
+      // Precompute linear gain
+      context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
+      context->loopEnabled = entry.loopEnabled;
+    } else {
+      // Clip not registered - use defaults for testing
+      context->reader = nullptr;
+      context->numChannels = 2;
+      context->trimInSamples = 0;
+      context->trimOutSamples = 48000 * 60; // Default 60s
+      context->fadeInSeconds = 0.0;
+      context->fadeOutSeconds = 0.0;
+      context->fadeInCurve = FadeCurve::Linear;
+      context->fadeOutCurve = FadeCurve::Linear;
+      context->gainDb = 0.0f;
+      context->gainLinear = 1.0f;
+      context->loopEnabled = false;
+    }
+  }
+
+  // Check "Stop Others" mode (UI thread check is fine for initiating stop command)
+  bool stopOthers = false;
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it != m_audioFiles.end()) {
+      stopOthers = it->second.stopOthersOnPlay;
+    }
+  }
+
+  if (stopOthers) {
+    // This is a separate command, processed before start
+    // We can call stopAllClips() directly here? No, that pushes a command.
+    // We should push StopAll first.
+    // Or we can add a flag to Start command?
+    // Let's push a StopAll command first if queue has space.
+    stopAllClips();
+  }
+
+  // Post Start command to audio thread
   size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
   size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
 
@@ -83,7 +140,11 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::Start, handle, {0}};
+  TransportCommand& cmd = m_commands[writeIndex];
+  cmd.type = TransportCommand::Type::Start;
+  cmd.handle = handle;
+  cmd.startContext = context; // Move shared_ptr into command
+
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -104,7 +165,11 @@ SessionGraphError TransportController::stopClip(ClipHandle handle) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::Stop, handle, {0}};
+  TransportCommand& cmd = m_commands[writeIndex];
+  cmd.type = TransportCommand::Type::Stop;
+  cmd.handle = handle;
+  cmd.startContext = nullptr;
+  cmd.data.groupIndex = 0;
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -120,7 +185,11 @@ SessionGraphError TransportController::stopAllClips() {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::StopAll, 0, {0}};
+  TransportCommand& cmd = m_commands[writeIndex];
+  cmd.type = TransportCommand::Type::StopAll;
+  cmd.handle = 0;
+  cmd.startContext = nullptr;
+  cmd.data.groupIndex = 0;
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -141,7 +210,11 @@ SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
     return SessionGraphError::InternalError; // Queue full
   }
 
-  m_commands[writeIndex] = {TransportCommand::Type::StopGroup, 0, {groupIndex}};
+  TransportCommand& cmd = m_commands[writeIndex];
+  cmd.type = TransportCommand::Type::StopGroup;
+  cmd.handle = 0;
+  cmd.startContext = nullptr;
+  cmd.data.groupIndex = groupIndex;
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -362,9 +435,11 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         gain *= std::max(0.0f, clip.fadeOutGain); // Use pre-computed fade gain
       }
 
-      // ORP097 Bug 7 Fix: Only apply clip fade-in/out on FIRST playthrough (not on loops)
-      // Loops should be seamless with no fade processing at boundaries
-      if (!clip.hasLoopedOnce) {
+      // ORP097 Fix: Only apply clip fade-in/out for NON-LOOPED clips
+      // Looped clips should have seamless loops with no fades at boundaries
+      // Note: STOP fades (when clip.isStopping) are applied separately and work for all clips
+      bool isLooped = clip.loopEnabled.load(std::memory_order_acquire);
+      if (!isLooped) {
         // Apply clip fade-in (first N samples from trim IN)
         int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
         if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
@@ -469,18 +544,20 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
         // Continue playback (don't remove clip, don't increment i)
         ++i;
-      } else if (clip.reader) {
-        // Non-loop mode WITH reader: Trigger stop fade-out when reaching OUT point
-        // This ensures graceful fade when loop is disabled mid-playback
+      } else {
+        // Non-loop mode: Clip reached OUT point
+        // Trigger stop fade-out if not already stopping
         if (!clip.isStopping) {
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
+
+          // ORP097 Fix: Clear reader to prevent rendering past OUT point
+          // This ensures position advances via "clips without readers" loop (line 484)
+          // allowing fade-out to complete properly
+          clip.reader = nullptr;
         }
         // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
-        ++i;
-      } else {
-        // No reader, non-loop mode - just continue (don't stop test placeholder clips)
         ++i;
       }
     } else {
@@ -505,12 +582,14 @@ void TransportController::processCommands() {
     case TransportCommand::Type::Start: {
       // Multi-voice: Always add new voice instance (removes oldest if at max capacity)
       // This allows rapid re-fire to layer same clip over itself (up to MAX_VOICES_PER_CLIP)
-      addActiveClip(cmd.handle);
-      postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
-        if (m_callback) {
-          m_callback->onClipStarted(handle, pos);
-        }
-      });
+      if (cmd.startContext) {
+        addActiveClip(cmd.startContext);
+        postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
+          if (m_callback) {
+            m_callback->onClipStarted(handle, pos);
+          }
+        });
+      }
     } break;
 
     case TransportCommand::Type::Stop: {
@@ -657,7 +736,12 @@ ActiveClip* TransportController::findOldestVoice(ClipHandle handle) {
   return oldest;
 }
 
-void TransportController::addActiveClip(ClipHandle handle) {
+void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
+  if (!context)
+    return;
+
+  ClipHandle handle = context->handle;
+
   // Multi-voice: Check if we need to remove oldest voice to make room
   size_t currentVoiceCount = countActiveVoices(handle);
   if (currentVoiceCount >= MAX_VOICES_PER_CLIP) {
@@ -683,123 +767,54 @@ void TransportController::addActiveClip(ClipHandle handle) {
     return;
   }
 
-  // Look up audio file reader and metadata for this clip
-  // NOTE: Brief mutex lock in audio thread - only happens when starting clip, not during playback
-  // TODO: Optimize to lock-free structure for production
-  std::shared_ptr<IAudioFileReader> reader; // Capture shared_ptr (thread-safe refcount increment)
-  uint16_t numChannels = 2;                 // Default stereo
-  int64_t totalFrames = 48000 * 10;         // Default 10 seconds
-
-  // Persistent metadata from storage
-  int64_t trimInSamples = 0;
-  int64_t trimOutSamples = 0;
-  double fadeInSeconds = 0.0;
-  double fadeOutSeconds = 0.0;
-  FadeCurve fadeInCurve = FadeCurve::Linear;
-  FadeCurve fadeOutCurve = FadeCurve::Linear;
-  float gainDb = 0.0f;
-  bool loopEnabled = false;
-  bool stopOthersOnPlay = false;
-
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
-      reader = it->second.reader; // Capture shared_ptr (atomic refcount increment)
-      numChannels = it->second.metadata.num_channels;
-      totalFrames = it->second.metadata.duration_samples;
-
-      // Load persistent metadata from storage
-      trimInSamples = it->second.trimInSamples;
-      trimOutSamples = it->second.trimOutSamples;
-      fadeInSeconds = it->second.fadeInSeconds;
-      fadeOutSeconds = it->second.fadeOutSeconds;
-      fadeInCurve = it->second.fadeInCurve;
-      fadeOutCurve = it->second.fadeOutCurve;
-      gainDb = it->second.gainDb;
-      loopEnabled = it->second.loopEnabled;
-      stopOthersOnPlay = it->second.stopOthersOnPlay;
-
-      // If trim OUT is not set (0), use file duration
-      if (trimOutSamples == 0) {
-        trimOutSamples = totalFrames;
-      }
-    }
-  }
-
-  // If still no trim OUT point (no audio file registered), use sensible default for testing
-  // This allows clips to "play" even without audio (useful for integration tests)
-  if (trimOutSamples == 0) {
-    trimOutSamples = 48000 * 60; // Default to 60 seconds for unregistered clips
-  }
-
-  // If "Stop Others On Play" is enabled, trigger fade-out for all other active clips
-  if (stopOthersOnPlay) {
-    for (size_t i = 0; i < m_activeClipCount; ++i) {
-      // Skip the clip we're about to start (if it was already playing)
-      if (m_activeClips[i].handle != handle) {
-        m_activeClips[i].isStopping = true;
-        m_activeClips[i].fadeOutGain = 1.0f;
-        m_activeClips[i].fadeOutStartPos = m_activeClips[i].currentSample;
-      }
-    }
-  }
-
-  // If no audio file registered, we'll play silence (reader will be nullptr)
-
-  // Initialize clip with persistent metadata from storage
+  // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   ActiveClip& clip = m_activeClips[m_activeClipCount++];
   clip.handle = handle;
   clip.voiceId = m_nextVoiceId++; // Multi-voice: Assign unique voice ID
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
-  clip.currentSample =
-      trimInSamples; // CRITICAL: Start from IN point (Clip Edit Law #1: Playback MUST >= IN)
+  clip.currentSample = context->trimInSamples; // CRITICAL: Start from IN point
 
-  // Initialize trim points from persistent storage
-  clip.trimInSamples.store(trimInSamples, std::memory_order_release);
-  clip.trimOutSamples.store(trimOutSamples, std::memory_order_release);
+  // Initialize trim points
+  clip.trimInSamples.store(context->trimInSamples, std::memory_order_release);
+  clip.trimOutSamples.store(context->trimOutSamples, std::memory_order_release);
 
-  // Initialize fade settings from persistent storage
-  clip.fadeInSeconds.store(fadeInSeconds, std::memory_order_release);
-  clip.fadeOutSeconds.store(fadeOutSeconds, std::memory_order_release);
-  clip.fadeInCurve.store(fadeInCurve, std::memory_order_release);
-  clip.fadeOutCurve.store(fadeOutCurve, std::memory_order_release);
+  // Initialize fade settings
+  clip.fadeInSeconds.store(context->fadeInSeconds, std::memory_order_release);
+  clip.fadeOutSeconds.store(context->fadeOutSeconds, std::memory_order_release);
+  clip.fadeInCurve.store(context->fadeInCurve, std::memory_order_release);
+  clip.fadeOutCurve.store(context->fadeOutCurve, std::memory_order_release);
 
   // Calculate and store fade sample counts
   int64_t fadeInSampleCount =
-      static_cast<int64_t>(fadeInSeconds * static_cast<double>(m_sampleRate));
+      static_cast<int64_t>(context->fadeInSeconds * static_cast<double>(m_sampleRate));
   int64_t fadeOutSampleCount =
-      static_cast<int64_t>(fadeOutSeconds * static_cast<double>(m_sampleRate));
+      static_cast<int64_t>(context->fadeOutSeconds * static_cast<double>(m_sampleRate));
   clip.fadeInSamples.store(fadeInSampleCount, std::memory_order_release);
   clip.fadeOutSamples.store(fadeOutSampleCount, std::memory_order_release);
 
-  // Initialize gain from persistent storage
-  clip.gainDb.store(gainDb, std::memory_order_release);
+  // Initialize gain
+  clip.gainDb.store(context->gainDb, std::memory_order_release);
+  clip.gainLinear.store(context->gainLinear, std::memory_order_release);
 
-  // Precompute and cache linear gain (avoid pow() in audio thread)
-  float gainLinear = std::pow(10.0f, gainDb / 20.0f);
-  clip.gainLinear.store(gainLinear, std::memory_order_release);
+  // Initialize loop mode
+  clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
-  // Initialize loop mode from persistent storage
-  clip.loopEnabled.store(loopEnabled, std::memory_order_release);
-
-  clip.reader = reader; // Store shared_ptr (maintains reference count)
-  clip.numChannels = numChannels;
+  clip.reader = context->reader; // Store shared_ptr (maintains reference count)
+  clip.numChannels = context->numChannels;
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
   clip.fadeOutStartPos = 0; // Will be set when stopClip() is called
 
-  // Initialize restart crossfade state (broadcast-safe restart mechanism)
+  // Initialize restart crossfade state
   clip.isRestarting = false;
   clip.restartFadeFramesRemaining = 0;
 
-  // ORP097 Bug 7 Fix: Initialize loop state (start with false - first playthrough gets fades)
+  // ORP097 Bug 7 Fix: Initialize loop state
   clip.hasLoopedOnce = false;
 
-  // Seek to trim IN point once when starting (ALWAYS seek, even if trim is 0!)
-  if (reader) {
-    int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-    reader->seek(trimIn);
+  // Seek to trim IN point once when starting
+  if (clip.reader) {
+    clip.reader->seek(context->trimInSamples);
   }
 }
 
@@ -1214,6 +1229,7 @@ int64_t TransportController::getClipPosition(ClipHandle handle) const {
 
   int64_t newestPosition = -1;
   int64_t newestStartSample = INT64_MIN;
+  const ActiveClip* newestClip = nullptr;
 
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
@@ -1221,8 +1237,18 @@ int64_t TransportController::getClipPosition(ClipHandle handle) const {
       if (m_activeClips[i].startSample > newestStartSample) {
         newestStartSample = m_activeClips[i].startSample;
         newestPosition = m_activeClips[i].currentSample;
+        newestClip = &m_activeClips[i];
       }
     }
+  }
+
+  // Clamp reported position to last valid playback position (trimOut - 1) for stopping clips
+  // (internally position advances past OUT to complete fade, but UI shouldn't see this)
+  // Edit Law #2: "Playhead < OUT" - position must be strictly less than OUT
+  if (newestClip && newestClip->isStopping) {
+    int64_t trimOut = newestClip->trimOutSamples.load(std::memory_order_acquire);
+    int64_t maxValidPosition = trimOut - 1; // Last valid playback sample
+    newestPosition = std::min(newestPosition, maxValidPosition);
   }
 
   return newestPosition; // Returns -1 if no voices found
@@ -1569,10 +1595,10 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
       cuePoints.begin(), cuePoints.end(), cue,
       [](const CuePoint& a, const CuePoint& b) { return a.position < b.position; });
 
-  cuePoints.insert(insertPos, cue);
+  auto insertedIt = cuePoints.insert(insertPos, cue);
 
-  // Return index of inserted cue point
-  return static_cast<int>(std::distance(cuePoints.begin(), insertPos));
+  int index = static_cast<int>(std::distance(cuePoints.begin(), insertedIt));
+  return index;
 }
 
 std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {

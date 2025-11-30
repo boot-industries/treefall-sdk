@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
+#include <filesystem>
 #include <fstream>
 #include <orpheus/audio_file_reader.h>
 #include <vector>
@@ -13,19 +14,20 @@ class OutPointEnforcementTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
-
-    // Create test audio file
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_out_point.wav").string();
     createTestAudioFile();
   }
 
   void TearDown() override {
     m_transport.reset();
-    std::remove("/tmp/test_out_point.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file (1 second of silence, 48kHz, stereo, 16-bit PCM)
-    std::ofstream file("/tmp/test_out_point.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     // WAV header (RIFF)
     file << "RIFF";
@@ -62,13 +64,14 @@ protected:
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::string m_testFilePath;
 };
 
 TEST_F(OutPointEnforcementTest, StopsAtOutPointWhenLoopDisabled) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Set trim points: 0.5 second clip (24000 samples)
@@ -107,7 +110,7 @@ TEST_F(OutPointEnforcementTest, OutPointWithFadeOut) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points: 0.5 second clip (24000 samples)
@@ -154,7 +157,7 @@ TEST_F(OutPointEnforcementTest, OutPointWithZeroLengthFade) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points
@@ -228,7 +231,8 @@ protected:
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
     m_callback = std::make_unique<TestCallback>();
     m_transport->setCallback(m_callback.get());
-
+    m_testFilePath =
+        (std::filesystem::temp_directory_path() / "test_out_point_callback.wav").string();
     createTestAudioFile();
   }
 
@@ -236,12 +240,14 @@ protected:
     m_transport->setCallback(nullptr);
     m_callback.reset();
     m_transport.reset();
-    std::remove("/tmp/test_out_point_callback.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file
-    std::ofstream file("/tmp/test_out_point_callback.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     file << "RIFF";
     uint32_t fileSize = 36 + (48000 * 2 * 2);
@@ -275,13 +281,14 @@ protected:
 
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<TestCallback> m_callback;
+  std::string m_testFilePath;
 };
 
 TEST_F(OutPointCallbackTest, CallbackFiredOnOutPoint) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point_callback.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points
@@ -324,8 +331,8 @@ TEST_F(OutPointCallbackTest, MultipleClipsDifferentOutPoints) {
   auto handle2 = static_cast<ClipHandle>(2);
 
   // Register both clips
-  m_transport->registerClipAudio(handle1, "/tmp/test_out_point_callback.wav");
-  m_transport->registerClipAudio(handle2, "/tmp/test_out_point_callback.wav");
+  m_transport->registerClipAudio(handle1, m_testFilePath.c_str());
+  m_transport->registerClipAudio(handle2, m_testFilePath.c_str());
 
   // Set different trim points
   m_transport->updateClipTrimPoints(handle1, 0, 24000); // 0.5 sec
@@ -374,7 +381,7 @@ TEST_F(OutPointEnforcementTest, LoopModeRestartsAtInPoint) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip with audio file
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Set trim points: 0.5 second clip (24000 samples)
@@ -418,7 +425,7 @@ TEST_F(OutPointEnforcementTest, LoopModeWithNonZeroInPoint) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points: Start at 0.1 sec (4800 samples), end at 0.5 sec (24000 samples)
@@ -462,7 +469,7 @@ TEST_F(OutPointCallbackTest, LoopCallbackFired) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point_callback.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points
@@ -510,7 +517,7 @@ TEST_F(OutPointEnforcementTest, NonLoopNeverGoesbelowInPoint) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points with non-zero IN point (matches ORP091 log: IN=444836)
@@ -564,7 +571,7 @@ TEST_F(OutPointEnforcementTest, PositionNeverEscapesOutDuringPlayback) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points: 0.5 second clip (24000 samples)
@@ -612,7 +619,7 @@ TEST_F(OutPointEnforcementTest, PositionNeverEscapesBelowInPoint) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set trim points with non-zero IN point
@@ -665,7 +672,7 @@ TEST_F(OutPointEnforcementTest, MetadataUpdateClampsPosition) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_out_point.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set initial trim points: large range
