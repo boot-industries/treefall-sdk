@@ -35,6 +35,29 @@ if(NOT sqlite3_POPULATED)
   )
 endif()
 
+
+# Get Git commit hash
+execute_process(COMMAND git rev-parse --short HEAD
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE APP_COMMIT_HASH
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+# Get build date and time
+execute_process(COMMAND git log -1 --format=%cd --date=format:'%y%m%d-%H%M'
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE APP_BUILD_DATE
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+# Configure BuildInfo.h
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/Source/BuildInfo.h.in
+  ${CMAKE_CURRENT_SOURCE_DIR}/Source/BuildInfo.h
+  @ONLY
+)
+
+# Add shmui-juce as a subdirectory
+add_subdirectory(${CMAKE_SOURCE_DIR}/packages/shmui-juce)
+
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app
   PRODUCT_NAME "Orpheus Clip Composer"
@@ -66,6 +89,10 @@ set(CLIP_COMPOSER_SOURCES
   Source/Core/EventLogger.cpp
   Source/Core/PlayoutLogger.cpp
   Source/Core/UndoManager.cpp
+
+  # UI Components
+  Source/UI/SessionHistoryWindow.cpp
+  Source/UI/HeartbeatIndicator.cpp
 )
 
 target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
@@ -99,6 +126,7 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_utils
     juce::juce_events
     sqlite3
+    orpheus_shmui_juce # Link against shmui-juce library
 )
 
 # Link against Orpheus SDK modules

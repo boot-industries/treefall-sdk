@@ -9,6 +9,7 @@
 AudioEngine::AudioEngine() {
   // Initialize clip handles to invalid
   m_clipHandles.fill(0);
+  m_audioAnalyzer = std::make_unique<shmui::AudioAnalyzer>();
 }
 
 AudioEngine::~AudioEngine() {
@@ -21,6 +22,10 @@ bool AudioEngine::initialize(uint32_t sampleRate) {
     return true;
 
   m_sampleRate = sampleRate;
+
+  // Configure AudioAnalyzer
+  const int numOutputChannels = 2; // Stereo output
+  m_audioAnalyzer->prepareToPlay(sampleRate, numOutputChannels);
 
   // Create transport controller (concrete class for extended API)
   // TODO: Pass SessionGraph once integrated
@@ -435,6 +440,14 @@ uint32_t AudioEngine::getSampleRate() const {
   return m_sampleRate;
 }
 
+const std::vector<float>& AudioEngine::getRmsLevels() const {
+  return m_audioAnalyzer->getRmsLevels();
+}
+
+const std::vector<float>& AudioEngine::getPeakLevels() const {
+  return m_audioAnalyzer->getPeakLevels();
+}
+
 //==============================================================================
 // Audio Device Management (for Audio Settings Dialog)
 
@@ -807,6 +820,11 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
 
   // Call SDK transport controller for real audio processing!
   m_transportController->processAudio(output_buffers, num_channels, num_frames);
+
+  // Process audio for VU meter
+  if (m_audioAnalyzer) {
+    m_audioAnalyzer->process(output_buffers, num_channels, num_frames);
+  }
 
   // Process any pending callbacks (posts to UI thread)
   m_transportController->processCallbacks();

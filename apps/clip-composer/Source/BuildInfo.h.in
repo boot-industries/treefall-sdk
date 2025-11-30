@@ -1,0 +1,4 @@
+#pragma once
+
+#define APP_BUILD_DATE "@APP_BUILD_DATE@"
+#define APP_COMMIT_HASH "@APP_COMMIT_HASH@"

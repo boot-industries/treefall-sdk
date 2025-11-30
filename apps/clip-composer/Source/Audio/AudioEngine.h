@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <ShmUI.h> // Include ShmUI for AudioAnalyzer
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_events/juce_events.h>
@@ -315,6 +316,17 @@ private:
   uint32_t m_bufferSize = 512;
   bool m_initialized = false;
   std::string m_currentDeviceName = "Default Device"; // Current audio device name
+
+  // Audio analysis for VU meter
+  std::unique_ptr<shmui::AudioAnalyzer> m_audioAnalyzer;
+  std::vector<float> m_rmsLevels;
+  std::vector<float> m_peakLevels;
+
+  /// Get current RMS levels for all channels
+  const std::vector<float>& getRmsLevels() const;
+
+  /// Get current Peak levels for all channels
+  const std::vector<float>& getPeakLevels() const;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

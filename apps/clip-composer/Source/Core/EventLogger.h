@@ -52,6 +52,9 @@ public:
     log(EventType::Error, component, message);
   }
 
+  /// Callback for new log entries (to be connected to UI for real-time display)
+  std::function<void(const juce::String&)> onNewLogEntry;
+
   /** Prunes old logs based on retention policy (default 30 days). */
   void pruneOldLogs(int daysToKeep = 30);
 

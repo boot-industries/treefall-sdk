@@ -14,6 +14,8 @@
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
 #include "UI/HKGroteskLookAndFeel.h"
+#include "UI/HeartbeatIndicator.h"   // Include the new HeartbeatIndicator
+#include "UI/SessionHistoryWindow.h" // Include the new SessionHistoryWindow
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -97,6 +99,10 @@ private:
   // UI Components
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
   std::unique_ptr<ClipGrid> m_clipGrid;
+  std::unique_ptr<juce::Component> m_vuMeterPlaceholder; // Placeholder for VU Meter
+
+  std::unique_ptr<SessionHistoryWindow> m_sessionHistoryWindow;
+  std::unique_ptr<HeartbeatIndicator> m_heartbeatIndicator; // Heartbeat indicator
 
   // Custom Look and Feel (HK Grotesk font)
   HKGroteskLookAndFeel m_hkGroteskLookAndFeel;

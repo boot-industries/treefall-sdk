@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include "BuildInfo.h" // Include the generated build info
 #include "MainComponent.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -93,6 +94,8 @@ public:
 #endif
 
       title += " - v0.2.1"; // Updated version for Sprint A/B fixes
+      title += " [" + juce::String(APP_BUILD_DATE) + "-" + juce::String(APP_COMMIT_HASH) +
+               "]"; // Add build info
 
       setName(title);
     }
