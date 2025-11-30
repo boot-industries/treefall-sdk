@@ -37,7 +37,15 @@ EventLogger::~EventLogger() {
 
 void EventLogger::log(EventType type, const juce::String& component, const juce::String& message) {
   juce::ScopedLock lock(m_lock);
-  m_queue.push_back({juce::Time::getCurrentTime(), type, component, message});
+  juce::Time now = juce::Time::getCurrentTime();
+  m_queue.push_back({now, type, component, message});
+
+  // Format the log entry for UI display and push to callback (if set)
+  if (onNewLogEntry) {
+    juce::String formattedEntry = now.formatted("%H:%M:%S") + " [" + eventTypeToString(type) +
+                                  "] " + component + ": " + message;
+    onNewLogEntry(formattedEntry);
+  }
 }
 
 void EventLogger::timerCallback() {

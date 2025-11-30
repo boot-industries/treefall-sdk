@@ -55,6 +55,17 @@ MainComponent::MainComponent() {
   m_clipGrid = std::make_unique<ClipGrid>();
   addAndMakeVisible(m_clipGrid.get());
 
+  // Placeholder for VU Meter
+  m_vuMeterPlaceholder = std::make_unique<juce::Component>();
+  m_vuMeterPlaceholder->setColour(juce::ResizableWindow::backgroundColourId,
+                                  juce::Colours::darkgrey.darker(0.8f));
+  m_vuMeterPlaceholder->setOpaque(true);
+  addAndMakeVisible(m_vuMeterPlaceholder.get());
+
+  // Session History Window (initially hidden)
+  m_sessionHistoryWindow = std::make_unique<SessionHistoryWindow>();
+  m_sessionHistoryWindow->setVisible(false);
+
   // Wire up right-click handler for loading clips
   m_clipGrid->onButtonRightClicked = [this](int buttonIndex) { onClipRightClicked(buttonIndex); };
 
@@ -220,6 +231,12 @@ void MainComponent::resized() {
 
   // Main content area
   auto contentArea = bounds.reduced(10); // 10px margin
+
+  // VU Meter on the right
+  if (m_vuMeterPlaceholder) {
+    auto vuMeterArea = contentArea.removeFromRight(40); // 40px wide VU meter
+    m_vuMeterPlaceholder->setBounds(vuMeterArea);
+  }
 
   // Clip grid takes most of the space
   if (m_clipGrid) {
@@ -1472,6 +1489,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addItem(12, "PANIC");
     menu.addSeparator();
     menu.addItem(13, "Keyboard Shortcuts...");
+    menu.addSeparator();
+    menu.addItem(15, "Toggle Session History Window", true, m_sessionHistoryWindow->isVisible());
   } else if (topLevelMenuIndex == 2) // Audio menu
   {
     menu.addItem(20, "Audio I/O Settings...");
@@ -1725,6 +1744,14 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
       DBG("MainComponent: Cleared " << clipCount << " clips from Tab " << (currentTab + 1));
     }
+    break;
+  }
+
+  case 15: // Toggle Session History Window
+  {
+    bool isVisible = m_sessionHistoryWindow->isVisible();
+    m_sessionHistoryWindow->setVisible(!isVisible);
+    DBG("MainComponent: Session History Window visibility toggled to " << !isVisible);
     break;
   }
 
