@@ -16,6 +16,25 @@ if(NOT TARGET juce::juce_gui_basics)
   FetchContent_MakeAvailable(juce)
 endif()
 
+# Fetch SQLite3
+FetchContent_Declare(
+  sqlite3
+  URL https://www.sqlite.org/2023/sqlite-amalgamation-3440200.zip
+)
+FetchContent_GetProperties(sqlite3)
+if(NOT sqlite3_POPULATED)
+  FetchContent_Populate(sqlite3)
+  add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+  target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
+  # Optimize for size/performance
+  target_compile_definitions(sqlite3 PUBLIC
+    SQLITE_THREADSAFE=1
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_OMIT_LOAD_EXTENSION
+  )
+endif()
+
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app
   PRODUCT_NAME "Orpheus Clip Composer"
@@ -41,6 +60,12 @@ set(CLIP_COMPOSER_SOURCES
   Source/UI/WaveformDisplay.cpp
   Source/UI/PreviewPlayer.cpp
   Source/Audio/AudioEngine.cpp
+  # Core Infrastructure (Sprint 0)
+  Source/Core/ApplicationPaths.cpp
+  Source/Core/Database.cpp
+  Source/Core/EventLogger.cpp
+  Source/Core/PlayoutLogger.cpp
+  Source/Core/UndoManager.cpp
 )
 
 target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
@@ -73,6 +98,7 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_events
+    sqlite3
 )
 
 # Link against Orpheus SDK modules

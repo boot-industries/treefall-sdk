@@ -1,3 +1,7 @@
+# Other model configs (Gemini, Codex - not for Claude Code)
+GEMINI.md
+.codex/
+
 # Archive directories
 docs/occ/archive/
 .claude/archive/

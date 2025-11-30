@@ -15,10 +15,10 @@ class GainSmoother;
 
 /// Internal channel state (audio thread)
 struct ChannelState {
-  uint8_t group_index;         ///< Assigned group (255 = unassigned)
-  GainSmoother* gain_smoother; ///< Gain smoothing
-  GainSmoother* pan_left;      ///< Left pan gain
-  GainSmoother* pan_right;     ///< Right pan gain
+  uint8_t group_index;                         ///< Assigned group (255 = unassigned)
+  std::unique_ptr<GainSmoother> gain_smoother; ///< Gain smoothing
+  std::unique_ptr<GainSmoother> pan_left;      ///< Left pan gain
+  std::unique_ptr<GainSmoother> pan_right;     ///< Right pan gain
   std::atomic<bool> mute;
   std::atomic<bool> solo;
 
@@ -32,15 +32,11 @@ struct ChannelState {
 
   // Move constructor (needed for std::vector with atomics)
   ChannelState(ChannelState&& other) noexcept
-      : group_index(other.group_index), gain_smoother(other.gain_smoother),
-        pan_left(other.pan_left), pan_right(other.pan_right), mute(other.mute.load()),
-        solo(other.solo.load()), peak_level(other.peak_level.load()),
+      : group_index(other.group_index), gain_smoother(std::move(other.gain_smoother)),
+        pan_left(std::move(other.pan_left)), pan_right(std::move(other.pan_right)),
+        mute(other.mute.load()), solo(other.solo.load()), peak_level(other.peak_level.load()),
         rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
-        config(std::move(other.config)) {
-    other.gain_smoother = nullptr;
-    other.pan_left = nullptr;
-    other.pan_right = nullptr;
-  }
+        config(std::move(other.config)) {}
 
   // Default constructor
   ChannelState()
@@ -55,7 +51,7 @@ struct ChannelState {
 
 /// Internal group state (audio thread)
 struct GroupState {
-  GainSmoother* gain_smoother; ///< Gain smoothing
+  std::unique_ptr<GainSmoother> gain_smoother; ///< Gain smoothing
   std::atomic<bool> mute;
   std::atomic<bool> solo;
 
@@ -69,11 +65,10 @@ struct GroupState {
 
   // Move constructor (needed for std::vector with atomics)
   GroupState(GroupState&& other) noexcept
-      : gain_smoother(other.gain_smoother), mute(other.mute.load()), solo(other.solo.load()),
-        peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
-        clip_count(other.clip_count.load()), config(std::move(other.config)) {
-    other.gain_smoother = nullptr;
-  }
+      : gain_smoother(std::move(other.gain_smoother)), mute(other.mute.load()),
+        solo(other.solo.load()), peak_level(other.peak_level.load()),
+        rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
+        config(std::move(other.config)) {}
 
   // Default constructor
   GroupState()
@@ -159,7 +154,7 @@ private:
   std::vector<GroupState> m_groups;
 
   // Master output
-  GainSmoother* m_master_gain_smoother;
+  std::unique_ptr<GainSmoother> m_master_gain_smoother;
   std::atomic<bool> m_master_mute;
   std::atomic<float> m_master_peak;
   std::atomic<float> m_master_rms;

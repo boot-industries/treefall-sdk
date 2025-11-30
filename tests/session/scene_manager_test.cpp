@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
@@ -22,8 +23,8 @@ protected:
     // Create scene manager
     sceneManager = createSceneManager(sessionGraph.get());
 
-    // Use /tmp directly (always exists on Unix systems)
-    tempDir = "/tmp";
+    // Use std::filesystem for portable temp directory
+    tempDir = std::filesystem::temp_directory_path().string();
   }
 
   void TearDown() override {
@@ -37,7 +38,7 @@ protected:
   }
 
   std::string getTempFilePath(const std::string& filename) {
-    return tempDir + "/orpheus_test_" + filename;
+    return (std::filesystem::path(tempDir) / ("orpheus_test_" + filename)).string();
   }
 
   std::unique_ptr<core::SessionGraph> sessionGraph;

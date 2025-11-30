@@ -3,6 +3,7 @@
 
 #include "../../src/core/transport/transport_controller.h"
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <orpheus/audio_file_reader.h>
@@ -16,19 +17,21 @@ class ClipGainTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, 48000);
-
+    m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_gain.wav").string();
     // Create test audio file with known samples for verification
     createTestAudioFile();
   }
 
   void TearDown() override {
     m_transport.reset();
-    std::remove("/tmp/test_clip_gain.wav");
+    if (!m_testFilePath.empty() && std::filesystem::exists(m_testFilePath)) {
+      std::filesystem::remove(m_testFilePath);
+    }
   }
 
   void createTestAudioFile() {
     // Create a minimal WAV file (1 second of 0.5 amplitude sine wave, 48kHz, stereo, 16-bit PCM)
-    std::ofstream file("/tmp/test_clip_gain.wav", std::ios::binary);
+    std::ofstream file(m_testFilePath, std::ios::binary);
 
     // WAV header (RIFF)
     file << "RIFF";
@@ -72,6 +75,7 @@ protected:
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::string m_testFilePath;
 };
 
 // Test 1: Gain initialization at 0 dB (unity gain)
@@ -79,7 +83,7 @@ TEST_F(ClipGainTest, GainInitializesToUnityGain) {
   auto handle = static_cast<ClipHandle>(1);
 
   // Register clip
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
 
   // Check initial gain is 0 dB (unity)
@@ -92,7 +96,7 @@ TEST_F(ClipGainTest, GainInitializesToUnityGain) {
 TEST_F(ClipGainTest, SetGainWithinValidRange) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Test various valid gain values
@@ -114,7 +118,7 @@ TEST_F(ClipGainTest, SetGainWithinValidRange) {
 TEST_F(ClipGainTest, GetGainReturnsCorrectValue) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set gain to -12 dB
@@ -130,7 +134,7 @@ TEST_F(ClipGainTest, GetGainReturnsCorrectValue) {
 TEST_F(ClipGainTest, GainEdgeCases) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Test 0 dB (unity gain)
@@ -163,7 +167,7 @@ TEST_F(ClipGainTest, GainEdgeCases) {
 TEST_F(ClipGainTest, InvalidInputsRejected) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Test NaN
@@ -192,7 +196,7 @@ TEST_F(ClipGainTest, InvalidInputsRejected) {
 TEST_F(ClipGainTest, DbToLinearConversionAccuracy) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Test known dB-to-linear conversions
@@ -226,7 +230,7 @@ TEST_F(ClipGainTest, DbToLinearConversionAccuracy) {
 TEST_F(ClipGainTest, GainChangesDuringPlayback) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set initial gain
@@ -267,7 +271,7 @@ TEST_F(ClipGainTest, ConcurrentGainChanges) {
   std::vector<ClipHandle> handles = {1, 2, 3, 4};
 
   for (auto handle : handles) {
-    auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+    auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
     ASSERT_EQ(regResult, SessionGraphError::OK);
   }
 
@@ -310,7 +314,7 @@ TEST_F(ClipGainTest, ConcurrentGainChanges) {
 TEST_F(ClipGainTest, GainPersistsAcrossStopStartCycle) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set gain
@@ -360,7 +364,7 @@ TEST_F(ClipGainTest, GainPersistsAcrossStopStartCycle) {
 TEST_F(ClipGainTest, GainAppliedToAudioOutput) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Set gain to -6 dB (should halve amplitude approximately)
@@ -394,7 +398,7 @@ TEST_F(ClipGainTest, GainAppliedToAudioOutput) {
 TEST_F(ClipGainTest, ThreadSafeConcurrentUpdates) {
   auto handle = static_cast<ClipHandle>(1);
 
-  auto regResult = m_transport->registerClipAudio(handle, "/tmp/test_clip_gain.wav");
+  auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK);
 
   // Start clip
