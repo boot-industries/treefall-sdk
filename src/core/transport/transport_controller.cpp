@@ -435,9 +435,11 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         gain *= std::max(0.0f, clip.fadeOutGain); // Use pre-computed fade gain
       }
 
-      // ORP097 Bug 7 Fix: Only apply clip fade-in/out on FIRST playthrough (not on loops)
-      // Loops should be seamless with no fade processing at boundaries
-      if (!clip.hasLoopedOnce) {
+      // ORP097 Fix: Only apply clip fade-in/out for NON-LOOPED clips
+      // Looped clips should have seamless loops with no fades at boundaries
+      // Note: STOP fades (when clip.isStopping) are applied separately and work for all clips
+      bool isLooped = clip.loopEnabled.load(std::memory_order_acquire);
+      if (!isLooped) {
         // Apply clip fade-in (first N samples from trim IN)
         int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
         if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
@@ -480,14 +482,6 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     if (!clip.reader || !clip.reader->isOpen()) {
       // Clip has no reader - advance position by buffer size so fades can complete
       clip.currentSample += static_cast<int64_t>(numFrames);
-
-      // Clamp position to OUT point if stopping (prevents position escape during fade-out)
-      if (clip.isStopping) {
-        int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
-        if (clip.currentSample > clipTrimOut) {
-          clip.currentSample = clipTrimOut;
-        }
-      }
     }
   }
 
@@ -551,12 +545,17 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // Continue playback (don't remove clip, don't increment i)
         ++i;
       } else {
-        // Non-loop mode (with or without reader): Trigger stop fade-out when reaching OUT point
-        // This handles both test clips (no reader) and clips whose reader was cleared at OUT point
+        // Non-loop mode: Clip reached OUT point
+        // Trigger stop fade-out if not already stopping
         if (!clip.isStopping) {
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
+
+          // ORP097 Fix: Clear reader to prevent rendering past OUT point
+          // This ensures position advances via "clips without readers" loop (line 484)
+          // allowing fade-out to complete properly
+          clip.reader = nullptr;
         }
         // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
         ++i;
@@ -1230,6 +1229,7 @@ int64_t TransportController::getClipPosition(ClipHandle handle) const {
 
   int64_t newestPosition = -1;
   int64_t newestStartSample = INT64_MIN;
+  const ActiveClip* newestClip = nullptr;
 
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].handle == handle) {
@@ -1237,8 +1237,18 @@ int64_t TransportController::getClipPosition(ClipHandle handle) const {
       if (m_activeClips[i].startSample > newestStartSample) {
         newestStartSample = m_activeClips[i].startSample;
         newestPosition = m_activeClips[i].currentSample;
+        newestClip = &m_activeClips[i];
       }
     }
+  }
+
+  // Clamp reported position to last valid playback position (trimOut - 1) for stopping clips
+  // (internally position advances past OUT to complete fade, but UI shouldn't see this)
+  // Edit Law #2: "Playhead < OUT" - position must be strictly less than OUT
+  if (newestClip && newestClip->isStopping) {
+    int64_t trimOut = newestClip->trimOutSamples.load(std::memory_order_acquire);
+    int64_t maxValidPosition = trimOut - 1; // Last valid playback sample
+    newestPosition = std::min(newestPosition, maxValidPosition);
   }
 
   return newestPosition; // Returns -1 if no voices found

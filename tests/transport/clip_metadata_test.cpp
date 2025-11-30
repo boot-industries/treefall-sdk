@@ -118,12 +118,14 @@ TEST_F(ClipMetadataTest, FadeCurvesPersist) {
   auto handle = static_cast<ClipHandle>(1);
   m_transport->registerClipAudio(handle, m_testFilePath.c_str());
 
-  double fadeInTime = 0.5;
-  double fadeOutTime = 1.2;
+  double fadeInTime = 0.3;  // 0.3s fits in 1s clip
+  double fadeOutTime = 0.4; // 0.4s fits in 1s clip (total 0.7s leaves 0.3s unfaded)
   auto fadeInCurve = FadeCurve::Exponential;
   auto fadeOutCurve = FadeCurve::EqualPower; // Logarithmic not supported
 
-  m_transport->updateClipFades(handle, fadeInTime, fadeOutTime, fadeInCurve, fadeOutCurve);
+  auto result =
+      m_transport->updateClipFades(handle, fadeInTime, fadeOutTime, fadeInCurve, fadeOutCurve);
+  ASSERT_EQ(result, SessionGraphError::OK); // Verify update succeeded
 
   auto metadata = m_transport->getClipMetadata(handle);
   ASSERT_TRUE(metadata.has_value());

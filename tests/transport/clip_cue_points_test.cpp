@@ -114,10 +114,10 @@ TEST_F(ClipCuePointsTest, AddMultipleCuePointsSorted) {
   int idx2 = m_transport->addCuePoint(m_clipHandle, 2 * m_sampleRate, "Intro", 0x00FF00FF);
   int idx3 = m_transport->addCuePoint(m_clipHandle, 5 * m_sampleRate, "Verse 1", 0x0000FFFF);
 
-  // Verify indices reflect sorted positions
-  EXPECT_EQ(idx2, 0); // Intro at 2s is first
-  EXPECT_EQ(idx3, 1); // Verse 1 at 5s is second
-  EXPECT_EQ(idx1, 2); // Chorus at 7s is third
+  // Verify indices reflect positions at insertion time
+  EXPECT_EQ(idx1, 0); // Chorus was first added (index 0 in empty list)
+  EXPECT_EQ(idx2, 0); // Intro inserted at index 0 (before Chorus)
+  EXPECT_EQ(idx3, 1); // Verse 1 inserted at index 1 (between Intro and Chorus)
 
   // Get cue points and verify sorted order
   auto cuePoints = m_transport->getCuePoints(m_clipHandle);
@@ -154,6 +154,14 @@ TEST_F(ClipCuePointsTest, SeekToCuePoint) {
 
   // Start playback
   m_transport->startClip(m_clipHandle);
+
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
 
   // Seek to second cue point (index 1, at 5 seconds)
   auto result = m_transport->seekToCuePoint(m_clipHandle, 1);
@@ -307,6 +315,14 @@ TEST_F(ClipCuePointsTest, SeekToMultipleCuePoints) {
   // Start playback
   m_transport->startClip(m_clipHandle);
 
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
+
   // Seek to each cue point in sequence
   for (uint32_t i = 0; i < 4; ++i) {
     auto result = m_transport->seekToCuePoint(m_clipHandle, i);
@@ -327,6 +343,15 @@ TEST_F(ClipCuePointsTest, CuePointAtZero) {
 
   // Start playback and seek to cue point 0
   m_transport->startClip(m_clipHandle);
+
+  // Process audio to execute start command
+  float* buffers[2] = {nullptr, nullptr};
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  buffers[0] = leftBuffer.data();
+  buffers[1] = rightBuffer.data();
+  m_transport->processAudio(buffers, 2, 512);
+
   auto result = m_transport->seekToCuePoint(m_clipHandle, 0);
   EXPECT_EQ(result, SessionGraphError::OK);
 
