@@ -1,49 +1,69 @@
-# ORP Documentation Index
+# ORP - Orpheus SDK
 
-**Prefix:** ORP (Orpheus SDK)
-**Next Available Number:** ORP119
+Project documentation index for orpheus-sdk.
 
-## Active Documentation
+## Recent Documents
 
-Current, frequently-referenced documents. See individual files for full titles.
+- [[ORP117 Modernization Audit]]
+- [[ORP117 Routing Matrix Technical Explainer]]
+- [[ORP118 Audio Architecture Audit Findings]]
+- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+- [[ORP119 Shmui Integration Strategy]]
 
-Recent documents (ORP090-ORP117):
+## All Documents
 
-- [ORP068](./ORP068.md) — Implementation Plan (v2.0) - Current roadmap
-- [ORP099](./ORP099.md) — SDK Track Phase 4 Completion and Testing
-- [ORP100](./ORP100.md) — Unit Tests Implementation Report
-- [ORP101](./ORP101.md) — Phase 4 Completion Report
-- [ORP109](./ORP109 SDK Feature Roadmap for Clip Composer Integration.md) — SDK Feature Roadmap for Clip Composer Integration
-- [ORP110](./ORP110 ORP109 Implementation Report.md) — ORP109 Implementation Report (7 features complete)
-- [ORP118](./ORP118 Multi-Voice Architecture and Audio Summing Topology.md) — Multi-Voice Architecture and Audio Summing Topology
+- [[ORP068 Implementation Plan (v2.0)]]
+- [[ORP082]]
+- [[ORP084]]
+- [[ORP085]]
+- [[ORP086 Feature Request - Seamless Clip Restart API]]
+- [[ORP087 Seamless Clip Restart API — Sprint Completion Report]]
+- [[ORP088 Edit Law Enforcement & Position Tracking]]
+- [[ORP089 Sprint Completion Report]]
+- [[ORP090 Sprint Summary + Loop Mode Verification]]
+- [[ORP091 SDK OUT Point Enforcement Not Working]]
+- [[ORP092 Fix - Non-Loop Clips Illegal Loop-to-Zero Bug]]
+- [[ORP093 Sprint - Trim Point Boundary Enforcement]]
+- [[ORP094 Fix - Trim Point Boundary Enforcement]]
+- [[ORP095 Hot Buffer Size Change Implementation]]
+- [[ORP096 Fix Use-After-Free Bug]]
+- [[ORP097 SDK Transport - Fade Bug Fixes for OCC v020]]
+- [[ORP098 Shmui Rebuild]]
+- [[ORP099 SDK Track Phase 4 Completion and Testing]]
+- [[ORP100 Unit Tests Implementation Report]]
+- [[ORP101 Phase 4 Completion Report]]
+- [[ORP102 Repository Analysis and Sprint Recommendations]]
+- [[ORP103 Build System Analysis and Optimization Recommendations]]
+- [[ORP104 Codebase Optimization and Safety Audit]]
+- [[ORP105 CI Infrastructure Diagnosis]]
+- [[ORP106 Wave Finder Architecture Assessment - JUCE vs SDK Integration]]
+- [[ORP107 FreqFinder Architecture Independence - ADR]]
+- [[ORP108 Network Audio Claims Cleanup]]
+- [[ORP109 SDK Feature Roadmap for Clip Composer Integration]]
+- [[ORP110A App-Level Integration Report]]
+- [[ORP110B Performance Monitor API Completion Report]]
+- [[ORP111 SDK Transport Enhancement Request - Clip Composer Edit Dialog Support]]
+- [[ORP112 SDK Transport Features Verification - ORP111 Complete]]
+- [[ORP113 Documentation Alignment Audit - ORP and OCC Planning vs Execution Analysis]]
+- [[ORP114 Critical Gain Staging Bug Investigation and Fix]]
+- [[ORP115 Thread-Safe Metadata Updates]]
+- [[ORP116 Bloat Remediation Sprint]]
+- [[ORP117 Modernization Audit]]
+- [[ORP117 Routing Matrix Technical Explainer]]
+- [[ORP118 Audio Architecture Audit Findings]]
+- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+- [[ORP119 Shmui Integration Strategy]]
 
-For complete list, see: `ls -1 docs/orp/ORP*.md`
+## Navigation
 
-## Archived Documentation
+- **Vault:** [[../../vault|Return to Vault]]
+- **Repo:** orpheus-sdk
+- **Docs:** `docs/orp/`
 
-Documents older than 180 days (moved to `archive/` subdirectory):
+## Tags
 
-**Total Archived:** 18 documents (ORP061-ORP081)
+#project-index #orp
 
-Archive highlights:
+---
 
-- ORP061-066: Early planning and architecture
-- ORP067-076: Layer development and latency audits
-- ORP077-081: Sprint reports and implementation updates
-
-View archived docs: `ls -1 docs/orp/archive/`
-
-## Archive Policy
-
-- Documents older than 180 days are automatically archived
-- Run: `~/dev/scripts/archive-old-docs.sh orpheus-sdk ORP`
-- Archived docs remain accessible in `docs/orp/archive/`
-- Claude Code excludes archived docs from context to optimize token usage
-
-## Creating New Documents
-
-1. Use next available number: **ORP119**
-2. Follow naming pattern: `ORP098 Title Here.md` or `ORP098.md`
-3. Use IEEE citation style for references
-4. Update this INDEX.md with the new document
-5. Increment "Next Available Number" above
+**Last Generated:** 2026-01-04

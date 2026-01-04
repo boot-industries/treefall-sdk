@@ -61,8 +61,22 @@ View archived docs: `ls -1 apps/clip-composer/docs/occ/archive/`
 
 ## Creating New Documents
 
-1. Use next available number: **OCC104**
+1. Use next available number: **OCC105**
 2. Follow naming pattern: `OCC### Descriptive Title.md` (MUST include descriptive title)
 3. Use IEEE citation style for references
 4. Update this INDEX.md with the new document
 5. Increment "Next Available Number" above
+
+## Navigation
+
+- **Vault:** [[../../vault|Return to Vault]]
+- **Repo:** orpheus-sdk/apps/clip-composer
+- **Docs:** `apps/clip-composer/docs/occ/`
+
+## Tags
+
+#project-index #occ
+
+---
+
+**Last Updated:** 2026-01-04
