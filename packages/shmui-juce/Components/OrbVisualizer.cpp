@@ -12,6 +12,8 @@
 #include "OrbVisualizer.h"
 #include "../Utils/ColorUtils.h"
 
+using namespace juce::gl; // For OpenGL constants (GL_ARRAY_BUFFER, etc.)
+
 namespace shmui {
 
 // Embedded shader source (loaded from files at compile time)
@@ -323,17 +325,19 @@ void OrbVisualizer::renderOpenGL() {
 
   // Draw quad
   openGLContext.extensions.glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-  if (auto* posAttr = shader->getAttributeIDFromName("aPosition")) {
-    openGLContext.extensions.glVertexAttribPointer(posAttr->attributeID, 4, GL_FLOAT, GL_FALSE, 0,
-                                                   nullptr);
-    openGLContext.extensions.glEnableVertexAttribArray(posAttr->attributeID);
+  GLuint posAttrID =
+      (GLuint)openGLContext.extensions.glGetAttribLocation(shader->getProgramID(), "aPosition");
+  if (posAttrID != (GLuint)-1) {
+    openGLContext.extensions.glVertexAttribPointer(posAttrID, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+    openGLContext.extensions.glEnableVertexAttribArray(posAttrID);
   }
 
   openGLContext.extensions.glBindBuffer(GL_ARRAY_BUFFER, texCoordBuffer);
-  if (auto* texAttr = shader->getAttributeIDFromName("aTexCoord")) {
-    openGLContext.extensions.glVertexAttribPointer(texAttr->attributeID, 2, GL_FLOAT, GL_FALSE, 0,
-                                                   nullptr);
-    openGLContext.extensions.glEnableVertexAttribArray(texAttr->attributeID);
+  GLuint texAttrID =
+      (GLuint)openGLContext.extensions.glGetAttribLocation(shader->getProgramID(), "aTexCoord");
+  if (texAttrID != (GLuint)-1) {
+    openGLContext.extensions.glVertexAttribPointer(texAttrID, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    openGLContext.extensions.glEnableVertexAttribArray(texAttrID);
   }
 
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

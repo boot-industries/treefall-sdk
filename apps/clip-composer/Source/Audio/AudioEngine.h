@@ -169,6 +169,12 @@ public:
   /// @return Sample rate in Hz
   uint32_t getSampleRate() const;
 
+  /// Get audio analyzer for VU meter visualization
+  /// @return Pointer to AudioAnalyzer (valid after initialize())
+  shmui::AudioAnalyzer* getAudioAnalyzer() const {
+    return m_audioAnalyzer.get();
+  }
+
   //==============================================================================
   // Audio Device Management (for Audio Settings Dialog)
 

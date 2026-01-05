@@ -13,7 +13,8 @@
 #pragma once
 
 #include "../Utils/Interpolation.h"
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_opengl/juce_opengl.h>
 
 namespace shmui {
 

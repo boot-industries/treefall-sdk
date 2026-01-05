@@ -2,6 +2,7 @@
 
 #include "MainComponent.h"
 #include "Core/ApplicationPaths.h"
+#include "UI/DesignTokens.h"
 
 #if JUCE_MAC
 #include <mach/mach.h>
@@ -55,12 +56,13 @@ MainComponent::MainComponent() {
   m_clipGrid = std::make_unique<ClipGrid>();
   addAndMakeVisible(m_clipGrid.get());
 
-  // Placeholder for VU Meter
-  m_vuMeterPlaceholder = std::make_unique<juce::Component>();
-  m_vuMeterPlaceholder->setColour(juce::ResizableWindow::backgroundColourId,
-                                  juce::Colours::darkgrey.darker(0.8f));
-  m_vuMeterPlaceholder->setOpaque(true);
-  addAndMakeVisible(m_vuMeterPlaceholder.get());
+  // Create BarVisualizer (shmui frequency visualizer)
+  m_barVisualizer = std::make_unique<shmui::BarVisualizer>();
+  m_barVisualizer->setBarCount(12);
+  m_barVisualizer->setBarColour(juce::Colour(OCC::Design::kAccentCyan));
+  m_barVisualizer->setBackgroundColour(juce::Colour(OCC::Design::kBgPrimary));
+  m_barVisualizer->setHeightRange(10.0f, 100.0f);
+  addAndMakeVisible(m_barVisualizer.get());
 
   // Session History Window (initially hidden)
   m_sessionHistoryWindow = std::make_unique<SessionHistoryWindow>();
@@ -189,6 +191,12 @@ MainComponent::MainComponent() {
 
     if (m_audioEngine->start()) {
       DBG("MainComponent: Audio engine started successfully");
+
+      // Connect BarVisualizer to AudioEngine's AudioAnalyzer
+      if (m_barVisualizer && m_audioEngine->getAudioAnalyzer()) {
+        m_barVisualizer->setAudioAnalyzer(m_audioEngine->getAudioAnalyzer());
+        DBG("MainComponent: BarVisualizer connected to AudioAnalyzer");
+      }
     } else {
       DBG("MainComponent: Failed to start audio engine");
     }
@@ -216,7 +224,7 @@ MainComponent::~MainComponent() {
 //==============================================================================
 void MainComponent::paint(juce::Graphics& g) {
   // Dark background (professional broadcast look)
-  g.fillAll(juce::Colour(0xff151515));
+  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
 }
 
 void MainComponent::resized() {
@@ -232,10 +240,11 @@ void MainComponent::resized() {
   // Main content area
   auto contentArea = bounds.reduced(10); // 10px margin
 
-  // VU Meter on the right
-  if (m_vuMeterPlaceholder) {
-    auto vuMeterArea = contentArea.removeFromRight(40); // 40px wide VU meter
-    m_vuMeterPlaceholder->setBounds(vuMeterArea);
+  // BarVisualizer on the right (60px wide with 10px left margin)
+  if (m_barVisualizer) {
+    auto visualizerArea = contentArea.removeFromRight(60); // 60px wide for frequency bars
+    contentArea.removeFromRight(10);                       // 10px left margin
+    m_barVisualizer->setBounds(visualizerArea);
   }
 
   // Clip grid takes most of the space
@@ -1751,7 +1760,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   {
     bool isVisible = m_sessionHistoryWindow->isVisible();
     m_sessionHistoryWindow->setVisible(!isVisible);
-    DBG("MainComponent: Session History Window visibility toggled to " << !isVisible);
+    DBG("MainComponent: Session History Window visibility toggled to "
+        << (!isVisible ? "visible" : "hidden"));
     break;
   }
 

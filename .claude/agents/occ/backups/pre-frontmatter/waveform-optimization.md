@@ -1,10 +1,3 @@
----
-name: waveform-optimization
-version: 2.0.0
-description: Optimize waveform rendering and visualization
-tools: Read, Bash, Grep, Glob
----
-
 # Agent: Waveform Optimization
 
 ## Purpose

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipButton.h"
+#include "../UI/DesignTokens.h"
 #include "ClipGrid.h"
 
 //==============================================================================
@@ -145,24 +146,23 @@ void ClipButton::paint(juce::Graphics& g) {
 
   switch (m_state) {
   case State::Empty:
-    bgColor = juce::Colour(0xff2a2a2a);     // Dark grey
-    borderColor = juce::Colour(0xff404040); // Slightly lighter border
+    bgColor = juce::Colour(OCC::Design::kBgComponent);
+    borderColor = juce::Colour(OCC::Design::kBorderDefault);
     break;
 
   case State::Loaded:
-    bgColor = m_clipColor.withAlpha(0.9f); // 90% opacity clip color
+    bgColor = m_clipColor.withAlpha(0.9f);
     borderColor = m_clipColor.darker(0.2f);
     break;
 
   case State::Playing:
-    // Glowing pulsing border instead of bright fill (preserve clip color, only animate border)
-    bgColor = m_clipColor.withAlpha(0.9f); // Keep 90% opacity clip color
-    borderColor = juce::Colours::white;    // White glowing border
+    bgColor = m_clipColor.withAlpha(0.9f);
+    borderColor = juce::Colour(OCC::Design::kTextPrimary);
     break;
 
   case State::Stopping:
-    bgColor = m_clipColor.withAlpha(0.9f); // 90% opacity
-    borderColor = juce::Colours::orange;   // Orange border during fade-out
+    bgColor = m_clipColor.withAlpha(0.9f);
+    borderColor = juce::Colour(OCC::Design::kMeterOrange);
     break;
   }
 
@@ -348,14 +348,14 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
         timeDisplay = formatDuration(elapsed) + " — " + formatDuration(remaining);
 
         // Draw dark grey rounded rectangle backdrop with 4px padding
-        auto backdropArea = durationArea.reduced(2.0f);         // Small margin around backdrop
-        g.setColour(juce::Colour(0xff2a2a2a).withAlpha(0.85f)); // Dark grey backdrop
-        g.fillRoundedRectangle(backdropArea, 4.0f);             // 4px corner radius
+        auto backdropArea = durationArea.reduced(2.0f);
+        g.setColour(juce::Colour(OCC::Design::kBgComponent).withAlpha(0.85f));
+        g.fillRoundedRectangle(backdropArea, OCC::Design::kRadiusMD);
 
         // Color: green when playing, orange when stopping (with 2px shadow)
         juce::Colour timeColor = m_state == State::Playing
-                                     ? juce::Colour(0xff00ff00).withAlpha(0.9f)
-                                     : juce::Colour(0xffff8800).withAlpha(0.9f);
+                                     ? juce::Colour(OCC::Design::kAccentGreen).withAlpha(0.9f)
+                                     : juce::Colour(OCC::Design::kMeterOrange).withAlpha(0.9f);
 
         // Draw 2px shadow first
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -390,18 +390,15 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     // "G1"
     {
       juce::Colour groupColors[4] = {
-          juce::Colour(0xff3498db), // Blue - Group 0
-          juce::Colour(0xff2ecc71), // Green - Group 1
-          juce::Colour(0xfff39c12), // Orange - Group 2
-          juce::Colour(0xffe74c3c)  // Red - Group 3
-      };
+          juce::Colour(OCC::Design::kGroupBlue), juce::Colour(OCC::Design::kGroupGreen),
+          juce::Colour(OCC::Design::kGroupOrange), juce::Colour(OCC::Design::kGroupRed)};
 
       // Reserve 3 characters of width (consistent with other indicators)
       auto groupBadge = bottomArea.removeFromRight(36.0f).withTrimmedTop(4.0f).withHeight(16.0f);
 
-      // Draw group badge background (OCC130 Sprint A.4: 4px corner radius)
+      // Draw group badge background
       g.setColour(groupColors[m_clipGroup].withAlpha(0.8f));
-      g.fillRoundedRectangle(groupBadge, 4.0f); // OCC130: Consistent 4px radius
+      g.fillRoundedRectangle(groupBadge, OCC::Design::kRadiusMD);
 
       // Draw group abbreviation (3 chars max)
       // TODO: Get abbreviation from SessionManager when available
@@ -461,8 +458,8 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
       auto playBox = juce::Rectangle<float>(xPos, yPos, boxWidth, boxHeight);
 
       // Draw green rounded rectangle background (bright green)
-      g.setColour(juce::Colour(0xff00ff00)); // Bright green
-      g.fillRoundedRectangle(playBox, 4.0f); // OCC130 Sprint A.4: Consistent 4px radius
+      g.setColour(juce::Colour(OCC::Design::kAccentGreen));
+      g.fillRoundedRectangle(playBox, OCC::Design::kRadiusMD);
 
       // Draw white play triangle inside
       juce::Path playTriangle;
@@ -514,7 +511,7 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
       hexagon.closeSubPath();
 
       // Fill with red
-      g.setColour(juce::Colour(0xffff0000)); // Bright red
+      g.setColour(juce::Colour(OCC::Design::kMeterRed));
       g.fillPath(hexagon);
 
       // Thin white border
@@ -551,7 +548,7 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
       loopPath.lineTo(arrowX + 2.0f, arrowY - 2.0f);
 
       // Draw with white/yellow color
-      g.setColour(juce::Colour(0xffffff00).withAlpha(0.9f)); // Yellow
+      g.setColour(juce::Colour(OCC::Design::kAccentYellow).withAlpha(0.9f));
       g.strokePath(loopPath, juce::PathStrokeType(1.5f));
     }
     // Else: blank space
@@ -570,7 +567,7 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
       fadePath.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getY() + 2.0f);
 
       // Draw with cyan color
-      g.setColour(juce::Colour(0xff00ffff).withAlpha(0.9f)); // Cyan
+      g.setColour(juce::Colour(OCC::Design::kAccentCyan).withAlpha(0.9f));
       g.strokePath(fadePath, juce::PathStrokeType(2.0f));
     }
     // Else: blank space
@@ -589,7 +586,7 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
       fadePath.lineTo(iconBounds.getRight() - 2.0f, iconBounds.getBottom() - 2.0f);
 
       // Draw with orange color
-      g.setColour(juce::Colour(0xffff8800).withAlpha(0.9f)); // Orange
+      g.setColour(juce::Colour(OCC::Design::kAccentOrange).withAlpha(0.9f));
       g.strokePath(fadePath, juce::PathStrokeType(2.0f));
     }
     // Else: blank space
