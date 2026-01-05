@@ -19,7 +19,9 @@ target_include_directories(orpheus_shmui_juce PUBLIC
 target_link_libraries(orpheus_shmui_juce PUBLIC
   juce::juce_core
   juce::juce_audio_basics
-  juce::juce_gui_basics # For Component, Graphics, etc.
+  juce::juce_dsp          # For FFT in AudioAnalyzer
+  juce::juce_gui_basics   # For Component, Graphics, etc.
+  juce::juce_opengl       # For OrbVisualizer
 )
 
 target_compile_features(orpheus_shmui_juce PRIVATE cxx_std_20)

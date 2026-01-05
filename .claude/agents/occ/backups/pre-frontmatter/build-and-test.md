@@ -1,10 +1,3 @@
----
-name: build-and-test
-version: 2.0.0
-description: Build Clip Composer application and verify compilation succeeds
-tools: Read, Bash, Grep, Glob
----
-
 # Agent: Build and Test
 
 ## Purpose

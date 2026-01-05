@@ -2,6 +2,10 @@
 
 Project documentation index for orpheus-sdk.
 
+## Overview
+
+- [[README]]
+
 ## Recent Documents
 
 - [[ORP117 Modernization Audit]]
@@ -53,6 +57,26 @@ Project documentation index for orpheus-sdk.
 - [[ORP118 Audio Architecture Audit Findings]]
 - [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
 - [[ORP119 Shmui Integration Strategy]]
+
+## Archived Documents
+
+- [[archive/ORP061]]
+- [[archive/ORP062]]
+- [[archive/ORP063]]
+- [[archive/ORP065]]
+- [[archive/ORP066]]
+- [[archive/ORP067]]
+- [[archive/ORP069 OCC Enhancements]]
+- [[archive/ORP070B Progress Tracker]]
+- [[archive/ORP070 OCC MVP Sprint]]
+- [[archive/ORP071 Shmui Enhancements for OCC Ecosystem]]
+- [[archive/ORP072 AES67 Network Audio Driver]]
+- [[archive/ORP073]]
+- [[archive/ORP074]]
+- [[archive/ORP075]]
+- [[archive/ORP076]]
+- [[archive/ORP077_LATENCY_AUDIT]]
+- [[archive/ORP081]]
 
 ## Navigation
 

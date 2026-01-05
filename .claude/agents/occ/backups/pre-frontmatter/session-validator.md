@@ -1,10 +1,3 @@
----
-name: session-validator
-version: 2.0.0
-description: Validate Clip Composer session integrity and state
-tools: Read, Bash, Grep, Glob
----
-
 # Agent: Session Validator
 
 ## Purpose

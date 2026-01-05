@@ -12,8 +12,8 @@
 
 #pragma once
 
-#include <JuceHeader.h>
 #include <array>
+#include <juce_graphics/juce_graphics.h>
 
 namespace shmui {
 

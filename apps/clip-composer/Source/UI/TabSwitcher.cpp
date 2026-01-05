@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "TabSwitcher.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 TabSwitcher::TabSwitcher() {
@@ -84,7 +85,7 @@ void TabSwitcher::timerCallback() {
 //==============================================================================
 void TabSwitcher::paint(juce::Graphics& g) {
   // Background
-  g.fillAll(juce::Colour(0xff1a1a1a)); // Very dark grey
+  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
 
   // Draw tabs
   for (int i = 0; i < NUM_TABS; ++i) {
@@ -96,31 +97,32 @@ void TabSwitcher::paint(juce::Graphics& g) {
 
     if (i == m_activeTab) {
       // Active tab - bright highlight
-      tabColor = juce::Colour(0xff2a9d8f); // Teal
-      textColor = juce::Colours::white;
+      tabColor = juce::Colour(OCC::Design::kAccentTeal);
+      textColor = juce::Colour(OCC::Design::kTextPrimary);
     } else if (i == m_hoveredTab) {
       // Hovered tab - subtle highlight
-      tabColor = juce::Colour(0xff2a2a2a); // Light grey
-      textColor = juce::Colour(0xffcccccc);
+      tabColor = juce::Colour(OCC::Design::kBgComponent);
+      textColor = juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.8f);
     } else {
       // Inactive tab - dark
-      tabColor = juce::Colour(0xff1e1e1e);  // Dark grey
-      textColor = juce::Colour(0xff888888); // Medium grey
+      tabColor = juce::Colour(OCC::Design::kBgSecondary).brighter(0.1f);
+      textColor = juce::Colour(OCC::Design::kTextSecondary);
     }
 
     // Draw tab background
     g.setColour(tabColor);
-    g.fillRoundedRectangle(tabBounds.toFloat(), 4.0f);
+    g.fillRoundedRectangle(tabBounds.toFloat(), OCC::Design::kRadiusMD);
 
     // Draw tab border (subtle)
     if (i == m_activeTab) {
-      g.setColour(juce::Colour(0xff3ab7a8)); // Lighter teal
-      g.drawRoundedRectangle(tabBounds.toFloat(), 4.0f, 2.0f);
+      g.setColour(juce::Colour(OCC::Design::kBorderActive));
+      g.drawRoundedRectangle(tabBounds.toFloat(), OCC::Design::kRadiusMD,
+                             OCC::Design::kBorderMedium);
     }
 
     // Draw tab label (larger, centered)
     g.setColour(textColor);
-    g.setFont(juce::FontOptions("HK Grotesk", 15.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions("HK Grotesk", OCC::Design::kFontMD + 1.0f, juce::Font::bold));
     g.drawText(m_tabLabels[i], tabBounds, juce::Justification::centred);
   }
 
@@ -143,19 +145,19 @@ void TabSwitcher::paint(juce::Graphics& g) {
     // Color-code based on latency (green < 10ms, yellow < 20ms, red >= 20ms)
     juce::Colour latencyColor;
     if (m_latencyMs < 10.0) {
-      latencyColor = juce::Colours::lightgreen;
+      latencyColor = juce::Colour(OCC::Design::kMeterGreen);
     } else if (m_latencyMs < 20.0) {
-      latencyColor = juce::Colours::orange;
+      latencyColor = juce::Colour(OCC::Design::kMeterYellow);
     } else {
-      latencyColor = juce::Colours::red;
+      latencyColor = juce::Colour(OCC::Design::kMeterRed);
     }
 
     g.setColour(latencyColor.withAlpha(0.9f));
     g.fillEllipse(latencyCircle);
 
     // Subtle border
-    g.setColour(juce::Colours::white.withAlpha(0.3f));
-    g.drawEllipse(latencyCircle, 1.0f);
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.3f));
+    g.drawEllipse(latencyCircle, OCC::Design::kBorderThin);
   }
 
   // Heartbeat indicator (bottom light)
@@ -171,12 +173,12 @@ void TabSwitcher::paint(juce::Graphics& g) {
         0.2f +
         0.7f * std::exp(-5.0f * normalizedPhase); // Exponential decay (0.2 dark → 0.9 bright)
 
-    g.setColour(juce::Colours::cyan.withAlpha(pulseAlpha));
+    g.setColour(juce::Colour(OCC::Design::kAccentCyan).withAlpha(pulseAlpha));
     g.fillEllipse(heartbeatCircle);
 
     // Subtle border
-    g.setColour(juce::Colours::white.withAlpha(0.3f));
-    g.drawEllipse(heartbeatCircle, 1.0f);
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.3f));
+    g.drawEllipse(heartbeatCircle, OCC::Design::kBorderThin);
   }
 }
 

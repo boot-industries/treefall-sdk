@@ -19,6 +19,9 @@
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
+// shmui visualizers (all components included via ShmUI.h)
+#include <ShmUI.h>
+
 //==============================================================================
 /**
  * Main UI component for Orpheus Clip Composer
@@ -99,7 +102,7 @@ private:
   // UI Components
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
   std::unique_ptr<ClipGrid> m_clipGrid;
-  std::unique_ptr<juce::Component> m_vuMeterPlaceholder; // Placeholder for VU Meter
+  std::unique_ptr<shmui::BarVisualizer> m_barVisualizer; // shmui frequency visualizer
 
   std::unique_ptr<SessionHistoryWindow> m_sessionHistoryWindow;
   std::unique_ptr<HeartbeatIndicator> m_heartbeatIndicator; // Heartbeat indicator

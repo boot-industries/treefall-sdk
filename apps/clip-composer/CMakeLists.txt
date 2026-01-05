@@ -56,7 +56,12 @@ configure_file(
 )
 
 # Add shmui-juce as a subdirectory
-add_subdirectory(${CMAKE_SOURCE_DIR}/packages/shmui-juce)
+# CMAKE_SOURCE_DIR points to different locations depending on build context:
+# - SDK root when building from /build
+# - apps/clip-composer when building standalone
+# Use CMAKE_CURRENT_SOURCE_DIR (always apps/clip-composer) for reliable path resolution
+set(SHMUI_JUCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/shmui-juce")
+add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
 
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app

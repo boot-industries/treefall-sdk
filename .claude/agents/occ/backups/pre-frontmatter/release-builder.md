@@ -1,10 +1,3 @@
----
-name: release-builder
-version: 2.0.0
-description: Prepare and package Clip Composer releases
-tools: Read, Bash, Grep, Glob
----
-
 # Agent: Release Builder
 
 ## Purpose
