@@ -8,11 +8,11 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
-- [[ORP117 Modernization Audit]]
-- [[ORP117 Routing Matrix Technical Explainer]]
-- [[ORP118 Audio Architecture Audit Findings]]
-- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+- [[ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration]]
 - [[ORP119 Shmui Integration Strategy]]
+- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+- [[ORP118 Audio Architecture Audit Findings]]
+- [[ORP117 Routing Matrix Technical Explainer]]
 
 ## All Documents
 
@@ -57,6 +57,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP118 Audio Architecture Audit Findings]]
 - [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
 - [[ORP119 Shmui Integration Strategy]]
+- [[ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration]]
 
 ## Archived Documents
 
