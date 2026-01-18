@@ -17,6 +17,12 @@ MainComponent::MainComponent() {
   m_audioEngine = std::make_unique<AudioEngine>();
   m_undoManager = std::make_unique<orpheus::UndoManager>();
 
+  // Initialize Managers (OCC116/OCC117)
+  m_displayPreferences = std::make_unique<orpheus::DisplayPreferences>();
+  m_externalToolManager = std::make_unique<orpheus::ExternalToolManager>();
+  m_hotKeyManager = std::make_unique<orpheus::HotKeyManager>();
+  m_midiDeviceManager = std::make_unique<orpheus::MIDIDeviceManager>();
+
   // Initialize Database & Logging (Sprint 2)
   m_database = std::make_unique<orpheus::Database>();
   auto dbFile = orpheus::ApplicationPaths::getLogsDir().getChildFile("app.db");
@@ -333,6 +339,12 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
 
   // Item 54: Standard macOS key commands
   if (key.getModifiers().isCommandDown() && !key.getModifiers().isShiftDown()) {
+    // Cmd+Z = Undo
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
+      menuItemSelected(100, 1); // Trigger Undo menu item
+      return true;
+    }
+
     // Cmd+S = Save Session
     if (key == juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0)) {
       menuItemSelected(3, 0); // Trigger "Save Session" menu item
@@ -419,12 +431,19 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     }
   }
 
-  // Cmd+Shift+S = Save Session As
+  // Cmd+Shift+S = Save Session As, Cmd+Shift+Z = Redo
   if (key.getModifiers().isCommandDown() && key.getModifiers().isShiftDown()) {
     if (key ==
         juce::KeyPress('s', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
                        0)) {
       menuItemSelected(4, 0); // Trigger "Save Session As" menu item
+      return true;
+    }
+    // Cmd+Shift+Z = Redo
+    if (key ==
+        juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+      menuItemSelected(101, 1); // Trigger Redo menu item
       return true;
     }
   }
@@ -1473,7 +1492,7 @@ void MainComponent::onTabSelected(int tabIndex) {
 //==============================================================================
 // Menu Bar Implementation
 juce::StringArray MainComponent::getMenuBarNames() {
-  return {"File", "Session", "Audio"};
+  return {"File", "Edit", "Session", "Setup", "Display", "Audio"};
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
@@ -1489,10 +1508,21 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addItem(4, "Save Session As...");
     menu.addSeparator();
     menu.addItem(5, "Quit");
-  } else if (topLevelMenuIndex == 1) // Session menu
+  } else if (topLevelMenuIndex == 1) // Edit menu (OCC117)
+  {
+    bool canUndo = m_undoManager && m_undoManager->canUndo();
+    bool canRedo = m_undoManager && m_undoManager->canRedo();
+    juce::String undoText = canUndo ? ("Undo " + m_undoManager->getUndoDescription()) : "Undo";
+    juce::String redoText = canRedo ? ("Redo " + m_undoManager->getRedoDescription()) : "Redo";
+
+    menu.addItem(100, undoText, canUndo);
+    menu.addItem(101, redoText, canRedo);
+    menu.addSeparator();
+    menu.addItem(102, "Paste Special...", m_hasClipInClipboard);
+  } else if (topLevelMenuIndex == 2) // Session menu
   {
     menu.addItem(10, "Clear All Clips");
-    menu.addItem(14, "Clear Current Tab"); // Item 8: Clear tab with warning
+    menu.addItem(14, "Clear Current Tab");
     menu.addSeparator();
     menu.addItem(11, "Stop All Clips");
     menu.addItem(12, "PANIC");
@@ -1500,7 +1530,79 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addItem(13, "Keyboard Shortcuts...");
     menu.addSeparator();
     menu.addItem(15, "Toggle Session History Window", true, m_sessionHistoryWindow->isVisible());
-  } else if (topLevelMenuIndex == 2) // Audio menu
+  } else if (topLevelMenuIndex == 3) // Setup menu (OCC116)
+  {
+    menu.addItem(200, "WAV Editor...");
+    menu.addItem(201, "Search Utility...");
+    menu.addItem(202, "File Browser...");
+    menu.addSeparator();
+    menu.addItem(203, "HotKey Setup...");
+    menu.addItem(204, "MIDI Devices...");
+    menu.addSeparator();
+    menu.addItem(205, "MIDI Monitor...");
+  } else if (topLevelMenuIndex == 4) // Display menu (OCC117)
+  {
+    // Page Tabs submenu
+    juce::PopupMenu pageTabsMenu;
+    pageTabsMenu.addItem(300, "Small", true,
+                         m_displayPreferences->getPageTabHeight() ==
+                             orpheus::DisplayPreferences::Size::Small);
+    pageTabsMenu.addItem(301, "Medium", true,
+                         m_displayPreferences->getPageTabHeight() ==
+                             orpheus::DisplayPreferences::Size::Medium);
+    pageTabsMenu.addItem(302, "Large", true,
+                         m_displayPreferences->getPageTabHeight() ==
+                             orpheus::DisplayPreferences::Size::Large);
+    menu.addSubMenu("Page Tabs", pageTabsMenu);
+
+    // Status Bar submenu
+    juce::PopupMenu statusBarMenu;
+    statusBarMenu.addItem(310, "Small", true,
+                          m_displayPreferences->getStatusBarHeight() ==
+                              orpheus::DisplayPreferences::Size::Small);
+    statusBarMenu.addItem(311, "Medium", true,
+                          m_displayPreferences->getStatusBarHeight() ==
+                              orpheus::DisplayPreferences::Size::Medium);
+    statusBarMenu.addItem(312, "Large", true,
+                          m_displayPreferences->getStatusBarHeight() ==
+                              orpheus::DisplayPreferences::Size::Large);
+    menu.addSubMenu("Status Bar", statusBarMenu);
+
+    // Bevel Width submenu
+    juce::PopupMenu bevelMenu;
+    bevelMenu.addItem(320, "None", true,
+                      m_displayPreferences->getBevelWidth() ==
+                          orpheus::DisplayPreferences::BevelWidth::None);
+    bevelMenu.addItem(321, "5%", true,
+                      m_displayPreferences->getBevelWidth() ==
+                          orpheus::DisplayPreferences::BevelWidth::Percent5);
+    bevelMenu.addItem(322, "10%", true,
+                      m_displayPreferences->getBevelWidth() ==
+                          orpheus::DisplayPreferences::BevelWidth::Percent10);
+    bevelMenu.addItem(323, "15%", true,
+                      m_displayPreferences->getBevelWidth() ==
+                          orpheus::DisplayPreferences::BevelWidth::Percent15);
+    bevelMenu.addItem(324, "20%", true,
+                      m_displayPreferences->getBevelWidth() ==
+                          orpheus::DisplayPreferences::BevelWidth::Percent20);
+    menu.addSubMenu("Bevel Width", bevelMenu);
+
+    // Button Text Mode submenu
+    juce::PopupMenu textModeMenu;
+    textModeMenu.addItem(330, "None", true,
+                         m_displayPreferences->getButtonTextMode() ==
+                             orpheus::DisplayPreferences::ButtonTextMode::None);
+    textModeMenu.addItem(331, "Hot Key", true,
+                         m_displayPreferences->getButtonTextMode() ==
+                             orpheus::DisplayPreferences::ButtonTextMode::HotKey);
+    textModeMenu.addItem(332, "MIDI Note", true,
+                         m_displayPreferences->getButtonTextMode() ==
+                             orpheus::DisplayPreferences::ButtonTextMode::MidiNote);
+    menu.addSubMenu("Button Text", textModeMenu);
+
+    menu.addSeparator();
+    menu.addItem(340, "Level Meters...");
+  } else if (topLevelMenuIndex == 5) // Audio menu
   {
     menu.addItem(20, "Audio I/O Settings...");
     menu.addSeparator();
@@ -1807,6 +1909,262 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
       // Start loading from first button in current tab
       loadMultipleFiles(files, 0);
     }
+    break;
+  }
+
+  //==============================================================================
+  // Edit Menu (OCC117)
+  case 100: // Undo
+    if (m_undoManager && m_undoManager->canUndo()) {
+      m_undoManager->undo();
+      // Refresh UI to reflect undone state
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        updateButtonFromClip(i);
+      }
+      DBG("MainComponent: Undo executed");
+    }
+    break;
+
+  case 101: // Redo
+    if (m_undoManager && m_undoManager->canRedo()) {
+      m_undoManager->redo();
+      // Refresh UI to reflect redone state
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        updateButtonFromClip(i);
+      }
+      DBG("MainComponent: Redo executed");
+    }
+    break;
+
+  case 102: // Paste Special
+  {
+    if (!m_hasClipInClipboard) {
+      juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Paste Special",
+                                             "No clip in clipboard. Copy a clip first with Cmd+C.",
+                                             "OK");
+      break;
+    }
+
+    auto* dialog =
+        new PasteSpecialDialog(&m_sessionManager, m_clipboardData, m_sessionManager.getActiveTab());
+    dialog->onOkClicked = [this, dialog]() {
+      auto options = dialog->getOptions();
+      auto targetIndices = dialog->getTargetIndices();
+
+      // Apply paste special to all target indices
+      for (int targetIndex : targetIndices) {
+        int buttonIndex = targetIndex % 48;
+        int tabIndex = targetIndex / 48;
+
+        // Only paste if target has a clip
+        if (m_sessionManager.hasClip(buttonIndex, tabIndex)) {
+          auto targetClip = m_sessionManager.getClip(buttonIndex, tabIndex);
+
+          // Apply selected options
+          if (options.gainAbsolute) {
+            targetClip.gainDb = m_clipboardData.gainDb;
+          } else if (options.gainRelative) {
+            targetClip.gainDb += options.gainRelativeDb;
+          }
+
+          if (options.fadeIn) {
+            targetClip.fadeInSeconds = m_clipboardData.fadeInSeconds;
+          }
+          if (options.fadeInCurve) {
+            targetClip.fadeInCurve = m_clipboardData.fadeInCurve;
+          }
+          if (options.fadeOut) {
+            targetClip.fadeOutSeconds = m_clipboardData.fadeOutSeconds;
+          }
+          if (options.fadeOutCurve) {
+            targetClip.fadeOutCurve = m_clipboardData.fadeOutCurve;
+          }
+
+          if (options.color) {
+            targetClip.color = m_clipboardData.color;
+          }
+          if (options.clipGroup) {
+            targetClip.clipGroup = m_clipboardData.clipGroup;
+          }
+          if (options.loop) {
+            targetClip.loopEnabled = m_clipboardData.loopEnabled;
+          }
+          if (options.stopOthers) {
+            targetClip.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
+          }
+
+          m_sessionManager.setClip(buttonIndex, targetClip, tabIndex);
+        }
+      }
+
+      // Refresh current tab display
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        updateButtonFromClip(i);
+      }
+
+      dialog->setVisible(false);
+      delete dialog;
+      DBG("MainComponent: Paste Special applied to " << targetIndices.size() << " clips");
+    };
+
+    dialog->onCancelClicked = [dialog]() {
+      dialog->setVisible(false);
+      delete dialog;
+    };
+
+    dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
+    addAndMakeVisible(dialog);
+    dialog->toFront(true);
+    break;
+  }
+
+  //==============================================================================
+  // Setup Menu (OCC116)
+  case 200: // WAV Editor
+  {
+    juce::FileChooser chooser("Select WAV Editor Application", juce::File("/Applications"),
+                              "*.app");
+    if (chooser.browseForFileToOpen()) {
+      m_externalToolManager->setToolPath(orpheus::ExternalToolManager::ToolType::WAVEditor,
+                                         chooser.getResult());
+      DBG("MainComponent: WAV Editor set to " << chooser.getResult().getFullPathName());
+    }
+    break;
+  }
+
+  case 201: // Search Utility
+  {
+    juce::FileChooser chooser("Select Search Utility Application", juce::File("/Applications"),
+                              "*.app");
+    if (chooser.browseForFileToOpen()) {
+      m_externalToolManager->setToolPath(orpheus::ExternalToolManager::ToolType::SearchUtility,
+                                         chooser.getResult());
+      DBG("MainComponent: Search Utility set to " << chooser.getResult().getFullPathName());
+    }
+    break;
+  }
+
+  case 202: // File Browser
+  {
+    juce::FileChooser chooser("Select File Browser Application", juce::File("/Applications"),
+                              "*.app");
+    if (chooser.browseForFileToOpen()) {
+      m_externalToolManager->setToolPath(orpheus::ExternalToolManager::ToolType::FileBrowser,
+                                         chooser.getResult());
+      DBG("MainComponent: File Browser set to " << chooser.getResult().getFullPathName());
+    }
+    break;
+  }
+
+  case 203: // HotKey Setup
+  {
+    auto* dialog = new HotKeySetupDialog(m_hotKeyManager.get());
+    dialog->onOkClicked = [dialog]() {
+      dialog->setVisible(false);
+      delete dialog;
+    };
+    dialog->onCancelClicked = [dialog]() {
+      dialog->setVisible(false);
+      delete dialog;
+    };
+
+    dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
+    addAndMakeVisible(dialog);
+    dialog->toFront(true);
+    break;
+  }
+
+  case 204: // MIDI Devices
+  {
+    auto* dialog = new MIDIDevicesDialog(m_midiDeviceManager.get());
+    dialog->onOkClicked = [dialog]() {
+      dialog->setVisible(false);
+      delete dialog;
+    };
+    dialog->onCancelClicked = [dialog]() {
+      dialog->setVisible(false);
+      delete dialog;
+    };
+    dialog->onMonitorClicked = [this, dialog]() {
+      // Open MIDI Monitor window
+      if (!m_midiMonitorWindow) {
+        m_midiMonitorWindow = std::make_unique<MIDIMonitorWindow>(m_midiDeviceManager.get());
+      }
+      m_midiMonitorWindow->setVisible(true);
+      m_midiMonitorWindow->toFront(true);
+    };
+
+    dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
+    addAndMakeVisible(dialog);
+    dialog->toFront(true);
+    break;
+  }
+
+  case 205: // MIDI Monitor
+  {
+    if (!m_midiMonitorWindow) {
+      m_midiMonitorWindow = std::make_unique<MIDIMonitorWindow>(m_midiDeviceManager.get());
+    }
+    m_midiMonitorWindow->setVisible(true);
+    m_midiMonitorWindow->toFront(true);
+    break;
+  }
+
+  //==============================================================================
+  // Display Menu (OCC117)
+  case 300: // Page Tabs Small
+    m_displayPreferences->setPageTabHeight(orpheus::DisplayPreferences::Size::Small);
+    break;
+  case 301: // Page Tabs Medium
+    m_displayPreferences->setPageTabHeight(orpheus::DisplayPreferences::Size::Medium);
+    break;
+  case 302: // Page Tabs Large
+    m_displayPreferences->setPageTabHeight(orpheus::DisplayPreferences::Size::Large);
+    break;
+
+  case 310: // Status Bar Small
+    m_displayPreferences->setStatusBarHeight(orpheus::DisplayPreferences::Size::Small);
+    break;
+  case 311: // Status Bar Medium
+    m_displayPreferences->setStatusBarHeight(orpheus::DisplayPreferences::Size::Medium);
+    break;
+  case 312: // Status Bar Large
+    m_displayPreferences->setStatusBarHeight(orpheus::DisplayPreferences::Size::Large);
+    break;
+
+  case 320: // Bevel None
+    m_displayPreferences->setBevelWidth(orpheus::DisplayPreferences::BevelWidth::None);
+    break;
+  case 321: // Bevel 5%
+    m_displayPreferences->setBevelWidth(orpheus::DisplayPreferences::BevelWidth::Percent5);
+    break;
+  case 322: // Bevel 10%
+    m_displayPreferences->setBevelWidth(orpheus::DisplayPreferences::BevelWidth::Percent10);
+    break;
+  case 323: // Bevel 15%
+    m_displayPreferences->setBevelWidth(orpheus::DisplayPreferences::BevelWidth::Percent15);
+    break;
+  case 324: // Bevel 20%
+    m_displayPreferences->setBevelWidth(orpheus::DisplayPreferences::BevelWidth::Percent20);
+    break;
+
+  case 330: // Button Text None
+    m_displayPreferences->setButtonTextMode(orpheus::DisplayPreferences::ButtonTextMode::None);
+    break;
+  case 331: // Button Text Hot Key
+    m_displayPreferences->setButtonTextMode(orpheus::DisplayPreferences::ButtonTextMode::HotKey);
+    break;
+  case 332: // Button Text MIDI Note
+    m_displayPreferences->setButtonTextMode(orpheus::DisplayPreferences::ButtonTextMode::MidiNote);
+    break;
+
+  case 340: // Level Meters
+  {
+    if (!m_levelMetersWindow) {
+      m_levelMetersWindow = std::make_unique<LevelMetersWindow>(m_audioEngine.get());
+    }
+    m_levelMetersWindow->setVisible(true);
+    m_levelMetersWindow->toFront(true);
     break;
   }
 

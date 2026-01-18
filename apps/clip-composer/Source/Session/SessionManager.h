@@ -164,11 +164,35 @@ public:
   ClipData getClip(int buttonIndex) const;
 
   /**
+   * @brief Get clip data for a button in a specific tab.
+   * @param buttonIndex Button index within the tab
+   * @param tabIndex Tab index (0-7)
+   * @return ClipData if assigned, or ClipData with empty filePath if not
+   */
+  ClipData getClip(int buttonIndex, int tabIndex) const;
+
+  /**
    * @brief Check if button has a clip assigned in current tab.
    * @param buttonIndex Button index within current tab
    * @return true if button has a valid clip
    */
   bool hasClip(int buttonIndex) const;
+
+  /**
+   * @brief Check if button has a clip assigned in a specific tab.
+   * @param buttonIndex Button index within the tab
+   * @param tabIndex Tab index (0-7)
+   * @return true if button has a valid clip
+   */
+  bool hasClip(int buttonIndex, int tabIndex) const;
+
+  /**
+   * @brief Update clip metadata for a button in a specific tab.
+   * @param buttonIndex Button index within the tab
+   * @param clipData Updated clip metadata
+   * @param tabIndex Tab index (0-7)
+   */
+  void setClip(int buttonIndex, const ClipData& clipData, int tabIndex);
 
   /**
    * @brief Get all assigned clips (for session save).

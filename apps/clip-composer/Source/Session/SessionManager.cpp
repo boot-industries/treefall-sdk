@@ -130,6 +130,29 @@ bool SessionManager::hasClip(int buttonIndex) const {
   return m_clips.find(key) != m_clips.end();
 }
 
+SessionManager::ClipData SessionManager::getClip(int buttonIndex, int tabIndex) const {
+  int key = makeKey(tabIndex, buttonIndex);
+  auto it = m_clips.find(key);
+  if (it != m_clips.end())
+    return it->second;
+
+  return ClipData(); // Empty/invalid
+}
+
+bool SessionManager::hasClip(int buttonIndex, int tabIndex) const {
+  int key = makeKey(tabIndex, buttonIndex);
+  return m_clips.find(key) != m_clips.end();
+}
+
+void SessionManager::setClip(int buttonIndex, const ClipData& clipData, int tabIndex) {
+  int key = makeKey(tabIndex, buttonIndex);
+  m_clips[key] = clipData;
+
+  DBG("SessionManager: Updated clip metadata for tab " << tabIndex << ", button " << buttonIndex
+                                                       << " - Name: " << clipData.displayName
+                                                       << ", Group: " << clipData.clipGroup);
+}
+
 //==============================================================================
 SessionManager::ClipData SessionManager::extractMetadata(const juce::String& filePath) {
   ClipData data;
