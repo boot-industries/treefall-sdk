@@ -914,17 +914,51 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 }
 
 void TransportController::postCallback(std::function<void()> callback) {
-  std::lock_guard<std::mutex> lock(m_callbackMutex);
-  m_callbackQueue.push(std::move(callback));
+  // ORP121 C-03: Lock-free SPSC callback queue
+  // Audio thread writes to ring buffer (no mutex, no blocking)
+  //
+  // Memory ordering rationale:
+  // - relaxed for same-thread reads (writeIdx in postCallback)
+  // - acquire for cross-thread reads (readIdx check for full detection)
+  // - release for writes (ensures callback data visible before index update)
+
+  size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1); // Mask for wrap (power of 2)
+
+  // Check if queue full (read index caught up)
+  if (nextIdx == m_callbackReadIndex.load(std::memory_order_acquire)) {
+    // Queue full - drop callback (better than blocking audio thread)
+    // Increment dropped callback counter for diagnostics
+    m_droppedCallbackCount.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+
+  m_callbackRing[writeIdx] = std::move(callback);
+  m_callbackWriteIndex.store(nextIdx, std::memory_order_release);
 }
 
 void TransportController::processCallbacks() {
-  std::lock_guard<std::mutex> lock(m_callbackMutex);
-  while (!m_callbackQueue.empty()) {
-    auto callback = std::move(m_callbackQueue.front());
-    m_callbackQueue.pop();
-    callback();
+  // ORP121 C-03: Lock-free SPSC callback queue
+  // UI thread reads from ring buffer (no mutex, no blocking)
+  //
+  // Memory ordering rationale:
+  // - relaxed for same-thread reads (readIdx in processCallbacks)
+  // - acquire for cross-thread reads (writeIdx to see all pending callbacks)
+  // - release for writes (ensures slot cleared before index update)
+
+  size_t readIdx = m_callbackReadIndex.load(std::memory_order_relaxed);
+  size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_acquire);
+
+  while (readIdx != writeIdx) {
+    auto& callback = m_callbackRing[readIdx];
+    if (callback) {
+      callback();
+      callback = nullptr; // Clear slot to release captured resources
+    }
+    readIdx = (readIdx + 1) & (CALLBACK_QUEUE_SIZE - 1);
   }
+
+  m_callbackReadIndex.store(readIdx, std::memory_order_release);
 }
 
 SessionGraphError TransportController::registerClipAudio(ClipHandle handle,

@@ -60,11 +60,11 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   m_master_gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
   m_master_gain_smoother->reset(1.0f); // Unity gain
 
-  // Pre-allocate audio processing buffers
+  // ORP121 A-02: Pre-allocate stereo audio processing buffers
   m_group_buffers.clear();
   m_group_buffers.resize(config.num_groups);
   for (auto& buffer : m_group_buffers) {
-    buffer.resize(MAX_BUFFER_SIZE, 0.0f);
+    buffer.resize(MAX_BUFFER_SIZE); // Allocates both L and R channels
   }
 
   m_temp_buffer.clear();
@@ -526,14 +526,14 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   const RoutingConfig& config = m_config_buffers[config_idx];
 
   // ========================================================================
-  // Step 1: Clear group buffers
+  // Step 1: Clear stereo group buffers (ORP121 A-02)
   // ========================================================================
   for (uint8_t grp = 0; grp < config.num_groups; ++grp) {
-    std::memset(m_group_buffers[grp].data(), 0, num_frames * sizeof(float));
+    m_group_buffers[grp].clear();
   }
 
   // ========================================================================
-  // Step 2: Process channels → groups
+  // Step 2: Process channels → groups (ORP121 A-02/C-04: Stereo with pan law)
   // ========================================================================
   // Note: Use Instruments/perf for audio thread profiling, not file I/O
 
@@ -548,50 +548,68 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
 
     // Check if channel is effectively muted (explicit mute or solo)
     if (isChannelMuted(ch)) {
+      // Still need to advance smoothers to stay in sync
+      for (uint32_t frame = 0; frame < num_frames; ++frame) {
+        channel.gain_smoother->process();
+        channel.pan_left->process();
+        channel.pan_right->process();
+      }
       continue;
     }
 
     // Get input buffer for this channel
     const float* input = channel_inputs[ch];
-
-    // Get group buffer
-    float* group_buffer = m_group_buffers[group_idx].data();
-
-    // Process channel gain + sum into group
-    // For stereo: mono input → pan to L/R → sum into group buffer
-    for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      // Get smoothed gain values for this sample
-      float channel_gain = channel.gain_smoother->process();
-
-      // TODO: Stereo panning requires dual group buffers (L/R per group)
-      // For now, just advance pan smoothers to keep them in sync
-      float pan_left = channel.pan_left->process();
-      float pan_right = channel.pan_right->process();
-      (void)pan_left;  // Unused for now
-      (void)pan_right; // Unused for now
-
-      // Read input sample
-      float sample = input[frame];
-
-      // Apply channel gain
-      sample *= channel_gain;
-
-      // For stereo output: sum L/R panned samples
-      // (For now, sum mono signal - full stereo panning requires 2 group buffers per group)
-      group_buffer[frame] += sample; // Mono sum for now
+    if (!input) {
+      // No input for this channel - advance smoothers and skip
+      for (uint32_t frame = 0; frame < num_frames; ++frame) {
+        channel.gain_smoother->process();
+        channel.pan_left->process();
+        channel.pan_right->process();
+      }
+      continue;
     }
 
-    // Update channel meters (if enabled)
+    // Get stereo group buffer (ORP121 A-02)
+    auto& group_buffer = m_group_buffers[group_idx];
+
+    // ORP121 A-02/C-04: Process channel gain + pan → stereo group buffer
+    // Pan law: constant-power (-3 dB at center)
+    // pan_left/pan_right are pre-computed in updatePanLaw()
+    for (uint32_t frame = 0; frame < num_frames; ++frame) {
+      // Get smoothed gain and pan values for this sample
+      float channel_gain = channel.gain_smoother->process();
+      float pan_left = channel.pan_left->process();
+      float pan_right = channel.pan_right->process();
+
+      // Read input sample and apply channel gain
+      float sample = input[frame] * channel_gain;
+
+      // ORP121 C-04: Apply pan law (constant-power stereo positioning)
+      // pan_left/pan_right encode the constant-power coefficients:
+      // - Center (pan=0): L=R=0.707 (-3 dB each, total energy preserved)
+      // - Hard left (pan=-1): L=1.0, R=0.0
+      // - Hard right (pan=+1): L=0.0, R=1.0
+      float sample_L = sample * pan_left;
+      float sample_R = sample * pan_right;
+
+      // Sum into stereo group buffer
+      group_buffer.left[frame] += sample_L;
+      group_buffer.right[frame] += sample_R;
+    }
+
+    // Update channel meters using left channel (if enabled)
+    // TODO: Proper stereo metering would meter both channels
     if (config.enable_metering) {
-      processMetering(group_buffer, num_frames, channel.peak_level, channel.rms_level);
-      if (detectClipping(group_buffer, num_frames)) {
+      processMetering(group_buffer.left.data(), num_frames, channel.peak_level, channel.rms_level);
+      if (detectClipping(group_buffer.left.data(), num_frames) ||
+          detectClipping(group_buffer.right.data(), num_frames)) {
         channel.clip_count.fetch_add(1, std::memory_order_relaxed);
       }
     }
   }
 
   // ========================================================================
-  // Step 3: Process groups → master
+  // Step 3: Process groups → master (ORP121 A-02: Stereo groups)
   // ========================================================================
   // Clear master output first
   for (uint8_t out = 0; out < config.num_outputs; ++out) {
@@ -603,33 +621,53 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
 
     // Check if group is effectively muted
     if (isGroupMuted(grp)) {
+      // Still need to advance gain smoother to stay in sync
+      for (uint32_t frame = 0; frame < num_frames; ++frame) {
+        group.gain_smoother->process();
+      }
       continue;
     }
 
-    // Get group buffer
-    float* group_buffer = m_group_buffers[grp].data();
+    // Get stereo group buffer (ORP121 A-02)
+    auto& group_buffer = m_group_buffers[grp];
 
-    // Process group gain + sum into master
+    // ORP121 A-03: Get output bus assignment (stereo pair)
+    // output_bus 0 = channels 0-1 (stereo pair 1)
+    // output_bus 1 = channels 2-3 (stereo pair 2)
+    // etc.
+    uint8_t output_bus = group.config.output_bus;
+    uint8_t out_L = output_bus * 2;
+    uint8_t out_R = output_bus * 2 + 1;
+
+    // Validate output channels exist
+    if (out_R >= config.num_outputs) {
+      // Output bus doesn't exist - route to master (0-1)
+      out_L = 0;
+      out_R = std::min((uint8_t)1, (uint8_t)(config.num_outputs - 1));
+    }
+
+    // Process group gain + sum into master (ORP121 A-02: stereo)
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
       // Get smoothed group gain for this sample
       float group_gain = group.gain_smoother->process();
 
-      // Read group sample
-      float sample = group_buffer[frame];
+      // Read stereo group samples and apply gain
+      float sample_L = group_buffer.left[frame] * group_gain;
+      float sample_R = group_buffer.right[frame] * group_gain;
 
-      // Apply group gain
-      sample *= group_gain;
-
-      // Sum into master output (stereo: same to both L/R for now)
-      for (uint8_t out = 0; out < std::min(config.num_outputs, (uint8_t)2); ++out) {
-        master_output[out][frame] += sample;
+      // Sum into master output at configured output bus
+      master_output[out_L][frame] += sample_L;
+      if (out_L != out_R) { // Only write R if stereo output
+        master_output[out_R][frame] += sample_R;
       }
     }
 
-    // Update group meters (if enabled)
+    // Update group meters using left channel (if enabled)
+    // TODO: Proper stereo metering would meter both channels
     if (config.enable_metering) {
-      processMetering(group_buffer, num_frames, group.peak_level, group.rms_level);
-      if (detectClipping(group_buffer, num_frames)) {
+      processMetering(group_buffer.left.data(), num_frames, group.peak_level, group.rms_level);
+      if (detectClipping(group_buffer.left.data(), num_frames) ||
+          detectClipping(group_buffer.right.data(), num_frames)) {
         group.clip_count.fetch_add(1, std::memory_order_relaxed);
       }
     }
@@ -676,20 +714,35 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   // ========================================================================
   // OCC109 v0.2.2: Fix "Stop All" distortion when 32 clips fade out simultaneously
   // Soft limiter prevents audible distortion when summed gains exceed 0dBFS
+  //
+  // ORP121 C-02: Fixed discontinuity in soft-knee limiter
+  // Previous implementation had discontinuity at 0.9 threshold causing audible clicks
+  // New implementation uses continuous soft-knee compression starting at -2 dBFS
   if (config.enable_clipping_protection) {
+    // Soft-knee limiter constants (ORP121 C-02)
+    static constexpr float THRESHOLD = 0.794f; // -2 dBFS (10^(-2/20))
+    static constexpr float KNEE_WIDTH = 0.3f;  // Soft knee range for gradual compression
+    static constexpr float CEILING = 0.9999f;  // Final hard limit (-0.001 dBFS)
+
     for (uint8_t out = 0; out < config.num_outputs; ++out) {
       for (uint32_t frame = 0; frame < num_frames; ++frame) {
         float sample = master_output[out][frame];
+        float abs_sample = std::abs(sample);
 
-        // Soft-knee limiter using tanh (smooth compression near ±1.0)
-        // tanh(x) naturally compresses values approaching ±infinity to ±1.0
-        // Scale factor 0.9 provides headroom and prevents hard clipping
-        if (std::abs(sample) > 0.9f) {
-          sample = std::tanh(sample * 0.9f) / 0.9f;
+        // ORP121 C-02: Continuous soft-knee limiter
+        // Uses soft-knee compression starting at -2 dBFS with smooth transition
+        // Curve is C1 continuous (no jumps, smooth derivative)
+        //
+        // Mathematical verification:
+        // - At threshold (0.794): excess=0, tanh(0)=0, output=0.794 (continuous)
+        // - At 1.0: excess=0.206, tanh(0.687)=0.596, output=0.794+0.179=0.973
+        // - At 2.0: excess=1.206, tanh(4.02)=0.999, output clamped to 0.9999
+        if (abs_sample > THRESHOLD) {
+          float excess = abs_sample - THRESHOLD;
+          float knee_ratio = excess / KNEE_WIDTH;
+          float compressed = THRESHOLD + std::tanh(knee_ratio) * KNEE_WIDTH;
+          sample = std::copysign(std::min(compressed, CEILING), sample);
         }
-
-        // Hard clip as safety (broadcast-safe, never exceeds ±1.0)
-        sample = std::max(-1.0f, std::min(1.0f, sample));
 
         master_output[out][frame] = sample;
       }

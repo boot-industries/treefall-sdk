@@ -81,6 +81,23 @@ struct GroupState {
   GroupState& operator=(GroupState&&) = delete;
 };
 
+/// ORP121 A-02: Stereo group buffer for true stereo imaging
+/// Each group has L/R channel pair instead of mono
+struct StereoGroupBuffer {
+  std::vector<float> left;  ///< Left channel samples
+  std::vector<float> right; ///< Right channel samples
+
+  void resize(size_t frames) {
+    left.resize(frames, 0.0f);
+    right.resize(frames, 0.0f);
+  }
+
+  void clear() {
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+  }
+};
+
 /// Routing matrix implementation
 class RoutingMatrix : public IRoutingMatrix {
 public:
@@ -166,9 +183,9 @@ private:
   // Callback
   IRoutingCallback* m_callback;
 
-  // Audio processing buffers (pre-allocated)
-  std::vector<std::vector<float>> m_group_buffers; // [num_groups][max_buffer_size]
-  std::vector<float> m_temp_buffer;                // Temp buffer for processing
+  // ORP121 A-02: Audio processing buffers (pre-allocated, stereo)
+  std::vector<StereoGroupBuffer> m_group_buffers; // [num_groups] stereo L/R pairs
+  std::vector<float> m_temp_buffer;               // Temp buffer for processing
 
   static constexpr size_t MAX_BUFFER_SIZE = 2048;
   static constexpr uint8_t UNASSIGNED_GROUP = 255;
