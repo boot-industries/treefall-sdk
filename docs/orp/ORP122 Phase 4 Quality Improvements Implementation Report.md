@@ -180,19 +180,54 @@ a2530dc3 feat(orp121): implement Phase 4 quality improvements
 
 ---
 
+## Verified Pre-Existing Implementations
+
+During Phase 4 work, the following issues were found to already have implementations:
+
+### Q-06: Gain Staging Documentation ✅
+**Location:** `docs/orp/GAIN_STAGING.md`
+**Status:** Complete - comprehensive gain staging documentation exists
+
+### Q-08: Waveform Rendering Performance Tests ✅
+**Location:** `tests/audio_io/waveform_processor_test.cpp`
+**Status:** Complete - includes `PerformanceTest10MinuteWav` (10-min WAV → 800px < 2s)
+
+### Q-09: Error Logging ✅
+**Location:** `apps/clip-composer/Source/Audio/AudioEngine.cpp`
+**Status:** Complete - uses JUCE `DBG()` for all error paths
+**SDK:** Returns `SessionGraphError` codes for caller handling
+
+### Q-12: CPU/Memory Profiling API ✅
+**Location:** `include/orpheus/performance_monitor.h`
+**Status:** Complete - comprehensive `IPerformanceMonitor` API with:
+- CPU usage percentage
+- Latency measurement
+- Buffer underrun counting
+- Timing histograms
+- Peak CPU tracking
+
+---
+
 ## Remaining ORP121 Work
 
 ### Phase 4 Complete Issues
-- [x] Q-03: Sample rate parameterization
-- [x] Q-04: True-peak metering
-- [x] Q-05: Headroom management
-- [x] Q-07: Threading stress tests
+- [x] Q-03: Sample rate parameterization (implemented this session)
+- [x] Q-04: True-peak metering (implemented this session)
+- [x] Q-05: Headroom management (implemented this session)
+- [x] Q-06: Gain staging documentation (pre-existing)
+- [x] Q-07: Threading stress tests (implemented this session)
+- [x] Q-08: Waveform rendering performance tests (pre-existing)
+- [x] Q-09: Error logging (pre-existing)
+- [x] Q-12: CPU/memory profiling API (pre-existing)
 
-### Phase 4 Remaining Issues
-- [ ] Q-01: Add multi-channel clip status callbacks
-- [ ] Q-02: Implement metering ballistics modes
-- [ ] Q-06: Add clip correlation/phase metering
-- [ ] Q-08: Create fault injection testing framework
+### Phase 4 Deferred Issues (Breaking Changes)
+- [ ] Q-01: Standardize case style (snake_case) - requires major version bump
+- [ ] Q-02: Normalize terminology (group→bus, handle→id) - requires major version bump
+
+### Phase 4 OCC-Specific Issues
+- [ ] Q-10: Cue buss dynamic allocation (AudioEngine)
+- [ ] Q-11: Hard-coded button limits (AudioEngine)
+- [ ] Q-13: Incomplete Doxygen coverage
 
 ### Phase 5-6 (Future)
 - Performance optimization (P-01 through P-04)
