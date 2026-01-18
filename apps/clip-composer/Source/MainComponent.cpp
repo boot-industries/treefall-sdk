@@ -39,14 +39,7 @@ MainComponent::MainComponent() {
     m_eventLogger->log(orpheus::EventType::Startup, "MainComponent", "Application started");
   }
 
-  // Populate Service Context (Dependency Injection)
-  m_serviceContext.sessionManager = &m_sessionManager;
-  m_serviceContext.audioEngine = m_audioEngine.get();
-  m_serviceContext.undoManager = m_undoManager.get();
-  m_serviceContext.eventLogger = m_eventLogger.get();
-  m_serviceContext.playoutLogger = m_playoutLogger.get();
-
-  // Note: SettingsService will be added in future sprint
+  // Note: Additional services (SettingsService, etc.) will be added in future sprints
 
   // Set HK Grotesk font as default for all components
   setLookAndFeel(&m_hkGroteskLookAndFeel);
