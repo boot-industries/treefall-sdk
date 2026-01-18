@@ -42,9 +42,16 @@ public:
   GainSmoother(uint32_t sample_rate, float smoothing_time_ms);
 
   /// Set target gain (thread-safe, lock-free)
-  /// @param target Target gain value (linear, 0.0 = silence, 1.0 = unity)
+  /// @param target Target gain value (linear, 0.0 = silence, 1.0 = unity, max = +12 dB)
   /// @note Called from UI thread, takes effect on next audio callback
   void setTarget(float target);
+
+  /// Maximum gain in dB (allows boost capability for professional mixing)
+  static constexpr float MAX_GAIN_DB = 12.0f;
+
+  /// Maximum linear gain value (10^(12/20) ≈ 3.981)
+  /// 32-bit float provides ~1528 dB headroom; clipping at output stage is sufficient
+  static constexpr float MAX_LINEAR_GAIN = 3.981071705534972f;
 
   /// Get current target gain (thread-safe read)
   /// @return Current target gain

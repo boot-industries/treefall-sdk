@@ -9,7 +9,6 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <unordered_map>
 
 namespace orpheus {
@@ -253,9 +252,16 @@ private:
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};
 
-  // Callback queue (Audio → UI thread)
-  std::mutex m_callbackMutex;
-  std::queue<std::function<void()>> m_callbackQueue;
+  // ORP121 C-03: Lock-free callback queue (Audio → UI thread)
+  // SPSC ring buffer: Audio thread writes, UI thread reads - no contention
+  // Power of 2 size for efficient modulo via bitwise AND
+  static constexpr size_t CALLBACK_QUEUE_SIZE = 256;
+  std::array<std::function<void()>, CALLBACK_QUEUE_SIZE> m_callbackRing;
+  std::atomic<size_t> m_callbackWriteIndex{0};
+  std::atomic<size_t> m_callbackReadIndex{0};
+
+  // Diagnostic counter for dropped callbacks (queue overflow)
+  std::atomic<uint32_t> m_droppedCallbackCount{0};
 
   // Fade parameters
   static constexpr float FADE_OUT_DURATION_MS = 10.0f;
