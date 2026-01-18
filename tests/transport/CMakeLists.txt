@@ -354,4 +354,37 @@ if(TARGET orpheus_audio_io)
         NAME clip_cue_points_test
         COMMAND clip_cue_points_test
     )
+
+    # ORP121 Q-07: Callback queue stress tests
+    add_executable(callback_queue_stress_test
+        callback_queue_stress_test.cpp
+    )
+
+    target_link_libraries(callback_queue_stress_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found
+    if(SNDFILE_FOUND)
+        target_link_libraries(callback_queue_stress_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(callback_queue_stress_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(callback_queue_stress_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME callback_queue_stress_test
+        COMMAND callback_queue_stress_test
+    )
 endif()

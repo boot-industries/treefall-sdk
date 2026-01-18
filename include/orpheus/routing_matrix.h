@@ -52,6 +52,15 @@ enum class MeteringMode : uint8_t {
   LUFS = 3      ///< Loudness Units Full Scale (broadcast standard)
 };
 
+/// ORP121 Q-05: Headroom management mode for automatic gain compensation
+/// Prevents summing overflow when multiple channels are mixed to a group
+enum class HeadroomMode : uint8_t {
+  None = 0,       ///< No compensation (sum can exceed 0 dBFS)
+  PerGroup = 1,   ///< Divide by number of active channels per group (1/n)
+  Global = 2,     ///< Divide by total active channels across all groups
+  Logarithmic = 3 ///< -3 dB per doubling of channels (1/sqrt(n))
+};
+
 /// Channel strip configuration (like a console channel)
 struct ChannelConfig {
   std::string name;    ///< Channel name (e.g., "Kick", "Snare", "Music Bed 1")
@@ -97,11 +106,18 @@ struct RoutingConfig {
   bool enable_metering;            ///< Enable real-time metering (small CPU cost)
   bool enable_clipping_protection; ///< Soft-clip at 0 dBFS to prevent hard clipping
 
+  /// ORP121 Q-03: Audio sample rate for smoother calculations
+  uint32_t sample_rate; ///< Audio sample rate in Hz (default 48000)
+
+  /// ORP121 Q-05: Automatic headroom management
+  HeadroomMode headroom_mode; ///< Gain compensation mode (default: None)
+
   /// Default constructor (sensible defaults for OCC)
   RoutingConfig()
       : num_channels(16), num_groups(4), num_outputs(2), solo_mode(SoloMode::SIP),
         metering_mode(MeteringMode::Peak), gain_smoothing_ms(10.0f), dim_amount_db(-12.0f),
-        enable_metering(true), enable_clipping_protection(true) {}
+        enable_metering(true), enable_clipping_protection(true), sample_rate(48000),
+        headroom_mode(HeadroomMode::None) {}
 };
 
 /// Audio level meters (per-channel or per-group)
