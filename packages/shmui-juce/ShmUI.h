@@ -2,19 +2,15 @@
   ==============================================================================
 
     ShmUI.h
-    Created: Shmui-to-JUCE Audio Visualization Port
+    Orpheus SDK Audio Visualization Components
 
-    Main include header for all shmui JUCE visualization components.
-
-    This library provides JUCE C++ implementations of the ElevenLabs UI
-    audio visualization components, translated from the original
-    React/TypeScript shmui library.
+    Professional audio visualization components for broadcast and theater.
+    Design aesthetic: Neo-vintage console (Neve-inspired).
 
     Components:
     - AudioAnalyzer: Core audio analysis (FFT, RMS, frequency bands)
     - WaveformVisualizer: Multiple waveform display variants
     - BarVisualizer: Frequency band display with state animations
-    - OrbVisualizer: OpenGL shader-based 3D orb
     - MatrixDisplay: LED-style matrix display with animations
 
     Usage:
@@ -39,7 +35,6 @@
 // Visualization Components
 #include "Components/BarVisualizer.h"
 #include "Components/MatrixDisplay.h"
-#include "Components/OrbVisualizer.h"
 #include "Components/WaveformVisualizer.h"
 
 // Utilities

@@ -7,10 +7,16 @@
 
 //==============================================================================
 /**
- * HKGroteskLookAndFeel - Custom look and feel using HK Grotesk font
+ * HKGroteskLookAndFeel - Neo-vintage console aesthetic
  *
- * Applies HK Grotesk font to all UI components including menus and dialogs
- * Uses design tokens from DesignTokens.h for consistent styling
+ * Inspired by Neve hardware: brushed aluminum, warm amber indicators,
+ * tactile button feedback with depth and bevels. Premium broadcast feel.
+ *
+ * Visual Effects:
+ * - Top-lit gradient buttons (simulating studio overhead lighting)
+ * - Inner shadow for inset controls
+ * - Warm color palette with cream text
+ * - Metallic border highlights
  */
 class HKGroteskLookAndFeel : public juce::LookAndFeel_V4 {
 public:
@@ -140,7 +146,7 @@ public:
   }
 
   //============================================================================
-  // BUTTON DRAWING
+  // BUTTON DRAWING (Neo-vintage console aesthetic)
   //============================================================================
 
   void drawButtonBackground(juce::Graphics& g, juce::Button& button,
@@ -152,22 +158,154 @@ public:
 
     juce::Colour baseColour = backgroundColour;
 
-    if (shouldDrawButtonAsDown) {
-      baseColour = baseColour.brighter(0.2f);
-    } else if (shouldDrawButtonAsHighlighted) {
-      baseColour = baseColour.brighter(0.1f);
-    }
-
+    // Disabled state
     if (!button.isEnabled()) {
-      baseColour = baseColour.withAlpha(0.5f);
+      baseColour = baseColour.withAlpha(0.4f);
     }
 
-    g.setColour(baseColour);
-    g.fillRoundedRectangle(bounds, cornerSize);
+    // === PRESSED STATE: Inset effect ===
+    if (shouldDrawButtonAsDown) {
+      // Darker, pressed into the console surface
+      juce::Colour pressedTop = baseColour.darker(0.15f);
+      juce::Colour pressedBottom = baseColour.darker(0.05f);
 
-    // Border
+      juce::ColourGradient pressedGradient(pressedTop, bounds.getX(), bounds.getY(), pressedBottom,
+                                           bounds.getX(), bounds.getBottom(), false);
+
+      g.setGradientFill(pressedGradient);
+      g.fillRoundedRectangle(bounds, cornerSize);
+
+      // Inner shadow (top edge darker = pressed in)
+      g.setColour(juce::Colours::black.withAlpha(0.25f));
+      g.drawRoundedRectangle(bounds.reduced(1.0f), cornerSize - 1, 1.0f);
+
+      // Subtle border
+      g.setColour(juce::Colour(OCC::Design::kBorderDefault).darker(0.2f));
+      g.drawRoundedRectangle(bounds, cornerSize, OCC::Design::kBorderThin);
+
+      // === HOVER STATE: Lifted, lit from above ===
+    } else if (shouldDrawButtonAsHighlighted) {
+      // Brighter top = lit from above
+      juce::Colour hoverTop = baseColour.brighter(0.12f);
+      juce::Colour hoverBottom = baseColour.darker(0.05f);
+
+      juce::ColourGradient hoverGradient(hoverTop, bounds.getX(), bounds.getY(), hoverBottom,
+                                         bounds.getX(), bounds.getBottom(), false);
+
+      g.setGradientFill(hoverGradient);
+      g.fillRoundedRectangle(bounds, cornerSize);
+
+      // Highlight edge (top metallic sheen)
+      g.setColour(juce::Colour(OCC::Design::kMetalLight).withAlpha(0.15f));
+      auto highlightBounds = bounds.withHeight(bounds.getHeight() * 0.4f);
+      g.fillRoundedRectangle(highlightBounds, cornerSize);
+
+      // Brighter border on hover
+      g.setColour(juce::Colour(OCC::Design::kBorderHighlight));
+      g.drawRoundedRectangle(bounds, cornerSize, OCC::Design::kBorderThin);
+
+      // === NORMAL STATE: Subtle top-lit gradient ===
+    } else {
+      // Gentle gradient: slightly lighter at top (studio lighting simulation)
+      juce::Colour normalTop = baseColour.brighter(0.04f);
+      juce::Colour normalBottom = baseColour.darker(0.04f);
+
+      juce::ColourGradient normalGradient(normalTop, bounds.getX(), bounds.getY(), normalBottom,
+                                          bounds.getX(), bounds.getBottom(), false);
+
+      g.setGradientFill(normalGradient);
+      g.fillRoundedRectangle(bounds, cornerSize);
+
+      // Standard border
+      g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+      g.drawRoundedRectangle(bounds, cornerSize, OCC::Design::kBorderThin);
+    }
+  }
+
+  //============================================================================
+  // SLIDER DRAWING (Console fader aesthetic)
+  //============================================================================
+
+  void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+                        float minSliderPos, float maxSliderPos,
+                        const juce::Slider::SliderStyle style, juce::Slider& slider) override {
+    const bool isVertical =
+        style == juce::Slider::LinearVertical || style == juce::Slider::LinearBarVertical;
+
+    auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
+                                         static_cast<float>(width), static_cast<float>(height));
+
+    // === TRACK (Recessed channel) ===
+    const float trackWidth = isVertical ? 6.0f : bounds.getHeight() * 0.4f;
+    juce::Rectangle<float> track;
+
+    if (isVertical) {
+      track = bounds.withSizeKeepingCentre(trackWidth, bounds.getHeight());
+    } else {
+      track = bounds.withSizeKeepingCentre(bounds.getWidth(), trackWidth);
+    }
+
+    // Track background (inset)
+    g.setColour(juce::Colour(OCC::Design::kBgInset));
+    g.fillRoundedRectangle(track, 2.0f);
+
+    // Track inner shadow
+    g.setColour(juce::Colours::black.withAlpha(0.3f));
+    g.drawRoundedRectangle(track, 2.0f, 1.0f);
+
+    // === FILL (Active portion) ===
+    juce::Rectangle<float> fill;
+    if (isVertical) {
+      float fillHeight = sliderPos - static_cast<float>(y);
+      fill = track.withTop(sliderPos).withBottom(track.getBottom());
+    } else {
+      fill = track.withRight(sliderPos);
+    }
+
+    // Gradient fill (Neve blue)
+    juce::Colour fillTop = juce::Colour(OCC::Design::kNeveBlue);
+    juce::Colour fillBottom = juce::Colour(OCC::Design::kNeveBlueDark);
+
+    juce::ColourGradient fillGradient(fillTop, fill.getX(), fill.getY(), fillBottom, fill.getX(),
+                                      fill.getBottom(), false);
+    g.setGradientFill(fillGradient);
+    g.fillRoundedRectangle(fill, 2.0f);
+
+    // === THUMB (Console knob) ===
+    const float thumbSize = isVertical ? 20.0f : 16.0f;
+    juce::Rectangle<float> thumbBounds;
+
+    if (isVertical) {
+      thumbBounds =
+          juce::Rectangle<float>(thumbSize, thumbSize).withCentre({bounds.getCentreX(), sliderPos});
+    } else {
+      thumbBounds =
+          juce::Rectangle<float>(thumbSize, thumbSize).withCentre({sliderPos, bounds.getCentreY()});
+    }
+
+    // Thumb gradient (brushed aluminum effect)
+    juce::Colour thumbTop = juce::Colour(OCC::Design::kMetalLight);
+    juce::Colour thumbBottom = juce::Colour(OCC::Design::kMetalDark);
+
+    juce::ColourGradient thumbGradient(thumbTop, thumbBounds.getX(), thumbBounds.getY(),
+                                       thumbBottom, thumbBounds.getX(), thumbBounds.getBottom(),
+                                       false);
+    g.setGradientFill(thumbGradient);
+    g.fillEllipse(thumbBounds);
+
+    // Thumb border
     g.setColour(juce::Colour(OCC::Design::kBorderDefault));
-    g.drawRoundedRectangle(bounds, cornerSize, OCC::Design::kBorderThin);
+    g.drawEllipse(thumbBounds, 1.0f);
+
+    // Center indicator line
+    g.setColour(juce::Colour(OCC::Design::kNeveBlue));
+    if (isVertical) {
+      g.drawHorizontalLine(static_cast<int>(thumbBounds.getCentreY()), thumbBounds.getX() + 4.0f,
+                           thumbBounds.getRight() - 4.0f);
+    } else {
+      g.drawVerticalLine(static_cast<int>(thumbBounds.getCentreX()), thumbBounds.getY() + 4.0f,
+                         thumbBounds.getBottom() - 4.0f);
+    }
   }
 
   //============================================================================
@@ -186,6 +324,38 @@ public:
     // Add 8px vertical padding (4px top + 4px bottom) for better spacing
     if (!isSeparator) {
       idealHeight += static_cast<int>(OCC::Design::kSpace2);
+    }
+  }
+
+  //============================================================================
+  // TEXT EDITOR DRAWING (Inset field)
+  //============================================================================
+
+  void fillTextEditorBackground(juce::Graphics& g, int width, int height,
+                                juce::TextEditor& editor) override {
+    auto bounds =
+        juce::Rectangle<float>(0, 0, static_cast<float>(width), static_cast<float>(height));
+
+    // Inset background
+    g.setColour(juce::Colour(OCC::Design::kBgInset));
+    g.fillRoundedRectangle(bounds, OCC::Design::kRadiusSM);
+
+    // Inner shadow (top edge)
+    g.setColour(juce::Colours::black.withAlpha(0.15f));
+    g.drawHorizontalLine(1, 1.0f, static_cast<float>(width) - 1.0f);
+  }
+
+  void drawTextEditorOutline(juce::Graphics& g, int width, int height,
+                             juce::TextEditor& editor) override {
+    auto bounds =
+        juce::Rectangle<float>(0, 0, static_cast<float>(width), static_cast<float>(height));
+
+    if (editor.hasKeyboardFocus(true)) {
+      g.setColour(juce::Colour(OCC::Design::kNeveBlue));
+      g.drawRoundedRectangle(bounds.reduced(0.5f), OCC::Design::kRadiusSM, 1.5f);
+    } else {
+      g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+      g.drawRoundedRectangle(bounds.reduced(0.5f), OCC::Design::kRadiusSM, 1.0f);
     }
   }
 };

@@ -19,30 +19,40 @@ class TransportController;
 }
 
 /**
- * AudioEngine - Integrates Orpheus SDK with Clip Composer
+ * @brief Integrates Orpheus SDK with Clip Composer for audio playback.
  *
- * This class serves as the bridge between JUCE UI and Orpheus SDK's
+ * AudioEngine serves as the bridge between JUCE UI and Orpheus SDK's
  * real-time audio infrastructure.
  *
- * Architecture:
+ * @section arch Architecture
  * - Owns ITransportController, IAudioDriver
  * - Manages clip loading via IAudioFileReader
  * - Posts callbacks to UI thread via juce::MessageManager
  * - Thread-safe command posting from UI
  *
- * Threading Model:
+ * @section threading Threading Model
  * - Construction/destruction: UI thread
  * - startClip(), stopClip(), etc.: UI thread (lock-free)
  * - Audio callback: Audio thread (real-time safe)
  * - SDK callbacks: Posted to UI thread via MessageManager
+ *
+ * @section memory Memory Management
+ * - Clip slots: Pre-allocated array for MAX_CLIP_BUTTONS (960 clips)
+ * - Cue Buss pool: Pre-allocated array for MAX_CUE_BUSSES (8 preview channels)
+ * - No dynamic allocations during playback (broadcast-safe)
  */
 class AudioEngine : public orpheus::ITransportCallback, public orpheus::IAudioCallback {
 public:
   //==============================================================================
   // Constants
 
-  /// Maximum number of clip buttons (8 tabs × 48 buttons per tab)
-  static constexpr int MAX_CLIP_BUTTONS = 384;
+  /// Maximum number of clip buttons (8 tabs × 10×12 buttons per tab = 960)
+  /// Per OCC product specification for full 960-clip capacity
+  static constexpr int MAX_CLIP_BUTTONS = 960;
+
+  /// Maximum number of cue busses for preview playback (pool-based, no runtime allocation)
+  /// Typically only 1-2 needed (Edit Dialog previews), 8 provides headroom
+  static constexpr int MAX_CUE_BUSSES = 8;
 
   //==============================================================================
   AudioEngine();
@@ -194,8 +204,10 @@ public:
   bool setAudioDevice(const std::string& deviceName, uint32_t sampleRate, uint32_t bufferSize);
 
   //==============================================================================
-  // Cue Buss Management (for Edit Dialog preview)
-  // ClipHandles 10001+ are Cue Busses (dynamically allocated)
+  /// @name Cue Buss Management
+  /// Pool-based preview playback for Edit Dialog (broadcast-safe, no runtime allocations).
+  /// ClipHandles 10001+ are Cue Busses from pre-allocated pool.
+  /// @{
 
   /// Allocate a Cue Buss for preview playback
   /// @param filePath Audio file path to load into Cue Buss
@@ -271,14 +283,28 @@ public:
   /// Use case: OCC waveform click-to-jog (seamless seek while playing)
   bool seekCueBuss(orpheus::ClipHandle cueBussHandle, int64_t position);
 
-  //==============================================================================
-  // Callbacks from UI
+  /// @}
 
-  /// Set callback for clip events
+  //==============================================================================
+  /// @name Callbacks
+  /// Event callbacks for UI integration.
+  /// @{
+
+  /**
+   * @brief Callback invoked when clip playback state changes.
+   * @param buttonIndex The clip button index (0 to MAX_CLIP_BUTTONS-1)
+   * @param state The new playback state (Playing, Stopped, etc.)
+   * @note Called on UI thread via MessageManager.
+   */
   std::function<void(int buttonIndex, orpheus::PlaybackState state)> onClipStateChanged;
 
-  /// Set callback for buffer underruns (audio dropouts)
+  /**
+   * @brief Callback invoked when audio buffer underrun (dropout) detected.
+   * @note Called on UI thread. Indicates audio processing couldn't keep up.
+   */
   std::function<void()> onBufferUnderrunDetected;
+
+  /// @}
 
   //==============================================================================
   // ITransportCallback overrides (Posted to UI Thread)
@@ -311,11 +337,18 @@ private:
   // Clip metadata cache (for UI queries)
   std::array<std::optional<orpheus::AudioFileMetadata>, MAX_CLIP_BUTTONS> m_clipMetadata;
 
-  // Cue Buss management (ClipHandles 10001+)
-  std::vector<orpheus::ClipHandle> m_cueBussHandles; // Active Cue Busses
-  orpheus::ClipHandle m_nextCueBussHandle = 10001;   // Next available Cue Buss handle
-  std::unordered_map<orpheus::ClipHandle, orpheus::AudioFileMetadata>
-      m_cueBussMetadata; // Cue Buss metadata cache
+  /**
+   * @brief Cue Buss slot in pre-allocated pool.
+   * Pool-based management ensures broadcast-safe operation (no runtime allocations).
+   * ClipHandles are fixed: CUE_BUSS_BASE_HANDLE, CUE_BUSS_BASE_HANDLE+1, ...,
+   * CUE_BUSS_BASE_HANDLE+MAX_CUE_BUSSES-1
+   */
+  struct CueBussSlot {
+    orpheus::ClipHandle handle = 0;                     ///< 0 = free, 10001+ = allocated
+    std::optional<orpheus::AudioFileMetadata> metadata; ///< Cached audio file metadata
+  };
+  std::array<CueBussSlot, MAX_CUE_BUSSES> m_cueBussPool; ///< Pre-allocated Cue Buss pool
+  static constexpr orpheus::ClipHandle CUE_BUSS_BASE_HANDLE = 10001; ///< First Cue Buss handle
 
   // Engine state
   uint32_t m_sampleRate = 48000;

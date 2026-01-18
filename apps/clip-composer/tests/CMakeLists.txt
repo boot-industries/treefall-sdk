@@ -19,6 +19,7 @@ target_include_directories(clip_composer_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Source
     ${CMAKE_SOURCE_DIR}/include  # Orpheus SDK headers
+    ${CMAKE_SOURCE_DIR}/packages/shmui-juce  # ShmUI audio visualization components
 )
 
 # Link against GoogleTest
@@ -38,6 +39,13 @@ target_link_libraries(clip_composer_tests
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_events
+    juce::juce_dsp
+)
+
+# Link against shmui (needed for AudioEngine's AudioAnalyzer)
+target_link_libraries(clip_composer_tests
+  PRIVATE
+    orpheus_shmui_juce
 )
 
 # Link against Orpheus SDK modules
