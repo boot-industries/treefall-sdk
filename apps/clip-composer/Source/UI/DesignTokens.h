@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // DesignTokens.h - Unified design token system for Clip Composer
-// Inspired by Minimeters plugin aesthetic
+// Neo-vintage console aesthetic inspired by Neve hardware
 
 #pragma once
 
@@ -9,60 +9,84 @@
 namespace OCC::Design {
 
 //==============================================================================
-// BACKGROUNDS
+// NEVE-INSPIRED PALETTE
+// Based on modern Neve console aesthetic: brushed aluminum, warm indicators,
+// premium tactile feel. Deep charcoal with subtle blue undertone.
 //==============================================================================
 
-constexpr uint32_t kBgPrimary = 0xFF000000;   // Pure black
-constexpr uint32_t kBgSecondary = 0xFF151515; // Current app bg
-constexpr uint32_t kBgSurface = 0xFF252930;   // Elevated surfaces
-constexpr uint32_t kBgComponent = 0xFF2a2a2a; // Component bg
-
 //==============================================================================
-// ACCENTS
+// BACKGROUNDS (Deep slate with subtle warmth)
 //==============================================================================
 
-constexpr uint32_t kAccentCyan = 0xFFc8e9fd;   // Minimeters cyan
-constexpr uint32_t kAccentTeal = 0xFF2a9d8f;   // Current active tab
-constexpr uint32_t kAccentGreen = 0xFF00dd00;  // Playing (softened)
-constexpr uint32_t kAccentYellow = 0xFFffff00; // Loop indicator
-constexpr uint32_t kAccentOrange = 0xFFff8800; // Fade out / stopping
+constexpr uint32_t kBgPrimary = 0xFF0d0e10;   // Near-black with blue undertone
+constexpr uint32_t kBgSecondary = 0xFF1a1c1f; // Console chassis
+constexpr uint32_t kBgSurface = 0xFF252830;   // Elevated panels
+constexpr uint32_t kBgComponent = 0xFF2d3139; // Component wells
+constexpr uint32_t kBgInset = 0xFF1f2125;     // Recessed areas
 
 //==============================================================================
-// BORDERS & TEXT
+// CONSOLE METALLICS (Brushed aluminum simulation)
 //==============================================================================
 
-constexpr uint32_t kBorderDefault = 0xFF404040;
-constexpr uint32_t kBorderActive = 0xFF3ab7a8;
-constexpr uint32_t kTextPrimary = 0xFFffffff;
-constexpr uint32_t kTextSecondary = 0xFF888888;
+constexpr uint32_t kMetalLight = 0xFF8a9199; // Highlight edge
+constexpr uint32_t kMetalMid = 0xFF5a6169;   // Mid-tone aluminum
+constexpr uint32_t kMetalDark = 0xFF3a4049;  // Shadow edge
+constexpr uint32_t kMetalWarm = 0xFF6a635d;  // Warm aluminum tint
 
 //==============================================================================
-// METERING COLORS
+// ACCENTS (Neve-inspired, premium feel)
 //==============================================================================
 
-constexpr uint32_t kMeterGreen = 0xFF00cc00;
-constexpr uint32_t kMeterYellow = 0xFFcccc00;
-constexpr uint32_t kMeterOrange = 0xFFcc6600;
-constexpr uint32_t kMeterRed = 0xFFcc0000;
+constexpr uint32_t kNeveBlue = 0xFF5a9ab5;     // Signature Neve blue-teal
+constexpr uint32_t kNeveBlueDark = 0xFF3d7a8f; // Darker variant
+constexpr uint32_t kAmber = 0xFFe8a445;        // Warm amber (VU meter gold)
+constexpr uint32_t kAmberGlow = 0xFFf5c466;    // Bright amber highlight
+constexpr uint32_t kAccentGreen = 0xFF48b060;  // Softer, warmer green
+constexpr uint32_t kAccentYellow = 0xFFd4a844; // Warm gold (not harsh yellow)
+constexpr uint32_t kAccentOrange = 0xFFd47a3a; // Warm coral-orange
+constexpr uint32_t kAccentCyan = 0xFF7ab5c5;   // Soft cyan for highlights
+
+// Legacy compatibility
+constexpr uint32_t kAccentTeal = kNeveBlue;
 
 //==============================================================================
-// CLIP STATE COLORS
+// BORDERS & TEXT (Warm, not clinical white)
 //==============================================================================
 
-constexpr uint32_t kClipEmpty = 0xFF1a1a1a;
-constexpr uint32_t kClipLoaded = 0xFF2a2a2a;
-constexpr uint32_t kClipPlaying = 0xFF00aa00;
-constexpr uint32_t kClipCued = 0xFFaa8800;
-constexpr uint32_t kClipStopping = 0xFFaa4400;
+constexpr uint32_t kBorderDefault = 0xFF404550;   // Subtle slate border
+constexpr uint32_t kBorderActive = 0xFF5a9ab5;    // Neve blue for active
+constexpr uint32_t kBorderHighlight = 0xFF707580; // Bright edge
+constexpr uint32_t kTextPrimary = 0xFFf0ece6;     // Warm off-white (cream)
+constexpr uint32_t kTextSecondary = 0xFF8a8a8a;   // Muted gray
+constexpr uint32_t kTextMuted = 0xFF5a5a5a;       // Very muted
 
 //==============================================================================
-// GROUP COLORS
+// METERING COLORS (Warm vintage VU aesthetic)
 //==============================================================================
 
-constexpr uint32_t kGroupBlue = 0xFF3498db;   // Group 0 - Blue
-constexpr uint32_t kGroupGreen = 0xFF2ecc71;  // Group 1 - Green
-constexpr uint32_t kGroupOrange = 0xFFf39c12; // Group 2 - Orange
-constexpr uint32_t kGroupRed = 0xFFe74c3c;    // Group 3 - Red
+constexpr uint32_t kMeterGreen = 0xFF45a855;  // Softer, warmer green
+constexpr uint32_t kMeterYellow = 0xFFc5a530; // Gold, not neon yellow
+constexpr uint32_t kMeterOrange = 0xFFc57030; // Warm amber-orange
+constexpr uint32_t kMeterRed = 0xFFb53535;    // Deep coral red
+
+//==============================================================================
+// CLIP STATE COLORS (Console button aesthetic)
+//==============================================================================
+
+constexpr uint32_t kClipEmpty = 0xFF1f2225;    // Unlit button well
+constexpr uint32_t kClipLoaded = 0xFF2d3139;   // Ready state
+constexpr uint32_t kClipPlaying = 0xFF3a8548;  // Active green glow
+constexpr uint32_t kClipCued = 0xFFa87830;     // Amber standby
+constexpr uint32_t kClipStopping = 0xFFa85a30; // Fade-out coral
+
+//==============================================================================
+// GROUP COLORS (Neve channel strip inspired)
+//==============================================================================
+
+constexpr uint32_t kGroupBlue = 0xFF5a9ab5;   // Neve blue
+constexpr uint32_t kGroupGreen = 0xFF4a9a60;  // Console green
+constexpr uint32_t kGroupOrange = 0xFFd48a40; // Warm orange
+constexpr uint32_t kGroupRed = 0xFFc55050;    // Coral red
 
 //==============================================================================
 // SPACING SCALE (4px base)

@@ -10,6 +10,9 @@ ClipButton::ClipButton(int buttonIndex) : m_buttonIndex(buttonIndex) {
   m_state = State::Empty;
   m_clipColor = juce::Colours::darkgrey;
   // m_clipName default-constructs to empty string, no need to assign
+
+  // Initialize animation timer (60fps for smooth hover effects)
+  m_lastAnimTime = juce::Time::getMillisecondCounterHiRes();
 }
 
 //==============================================================================
@@ -166,9 +169,25 @@ void ClipButton::paint(juce::Graphics& g) {
     break;
   }
 
+  // Apply hover brightness using shmui::Interpolation::lerp
+  // Subtle lift effect: brighten background and border on hover
+  if (m_hoverOpacity > 0.01f) {
+    float hoverLift = m_hoverOpacity * 0.15f; // 15% max brightness increase
+    bgColor = bgColor.brighter(hoverLift);
+    borderColor = borderColor.brighter(hoverLift * 0.5f);
+  }
+
   // Draw button background with rounded corners
   g.setColour(bgColor);
   g.fillRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS);
+
+  // Draw subtle hover glow (outer glow effect)
+  if (m_hoverOpacity > 0.01f && m_state != State::Playing) {
+    // Soft Neve blue glow around button on hover
+    juce::Colour glowColor = juce::Colour(OCC::Design::kNeveBlue).withAlpha(m_hoverOpacity * 0.35f);
+    g.setColour(glowColor);
+    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS + 1, 2.0f);
+  }
 
   // Draw border (animated for Playing state)
   if (m_state == State::Playing) {
@@ -695,4 +714,51 @@ void ClipButton::mouseUp(const juce::MouseEvent& e) {
   // Note: Double-click behavior intentionally removed
   // Clip buttons prioritize single-click for PLAY/STOP at all times
   // Use right-click menu or Ctrl+Opt+Cmd+Click to access Edit Dialog
+}
+
+//==============================================================================
+// Animation Handlers (shmui Interpolation-based)
+
+void ClipButton::mouseEnter(const juce::MouseEvent& /*e*/) {
+  m_isHovered = true;
+  // Start animation timer if not already running
+  if (!isTimerRunning())
+    startTimerHz(60); // 60fps for smooth hover animation
+}
+
+void ClipButton::mouseExit(const juce::MouseEvent& /*e*/) {
+  m_isHovered = false;
+  // Timer will stop when animation completes
+}
+
+void ClipButton::timerCallback() {
+  // Calculate delta time for frame-rate independent animation
+  double now = juce::Time::getMillisecondCounterHiRes();
+  float deltaTime = static_cast<float>((now - m_lastAnimTime) / 1000.0);
+  m_lastAnimTime = now;
+
+  // Clamp delta time to prevent huge jumps after focus loss
+  deltaTime = juce::jlimit(0.0f, 0.1f, deltaTime);
+
+  // Animate hover opacity using shmui::Interpolation::smoothDelta
+  float targetHover = m_isHovered ? 1.0f : 0.0f;
+  m_hoverOpacity = shmui::Interpolation::smoothDelta(m_hoverOpacity, targetHover, 0.25f, deltaTime);
+
+  // Animate press opacity (for click feedback)
+  float targetPress = 0.0f; // Will be set to 1.0 during mouseDown
+  m_pressOpacity = shmui::Interpolation::smoothDelta(m_pressOpacity, targetPress, 0.35f, deltaTime);
+
+  // Check if animation is complete
+  bool hoverComplete = std::abs(m_hoverOpacity - targetHover) < 0.01f;
+  bool pressComplete = std::abs(m_pressOpacity - targetPress) < 0.01f;
+
+  if (hoverComplete && pressComplete && !m_isHovered) {
+    // Animation complete, stop timer
+    stopTimer();
+    m_hoverOpacity = 0.0f;
+    m_pressOpacity = 0.0f;
+  }
+
+  // Trigger repaint for visual update
+  repaint();
 }
