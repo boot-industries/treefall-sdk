@@ -43,6 +43,12 @@ public:
     return NUM_TABS;
   }
 
+  // OCC144: Dynamic tab height from DisplayPreferences
+  void setTabHeight(int height);
+  int getTabHeight() const {
+    return m_tabHeight;
+  }
+
   // Tab labels (for future session metadata)
   void setTabLabel(int tabIndex, const juce::String& label);
   juce::String getTabLabel(int tabIndex) const;
@@ -81,10 +87,11 @@ private:
 
   //==============================================================================
   static constexpr int NUM_TABS = 8;
-  static constexpr int TAB_HEIGHT = 40;
+  static constexpr int DEFAULT_TAB_HEIGHT = 36; // Medium default
   static constexpr int TAB_GAP = 2;
 
   int m_activeTab = 0;
+  int m_tabHeight = DEFAULT_TAB_HEIGHT; // OCC144: Dynamic tab height
   int m_hoveredTab = -1;
 
   juce::Array<juce::String> m_tabLabels;

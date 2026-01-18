@@ -226,6 +226,65 @@ void MIDIDeviceManager::cancelMidiLearnMode() {
 }
 
 //==============================================================================
+// OCC144: Per-Button MIDI Note Assignment
+
+void MIDIDeviceManager::assignMidiNote(int globalButtonIndex, int note, int channel) {
+  if (globalButtonIndex < 0 || globalButtonIndex >= MAX_BUTTONS) {
+    return;
+  }
+
+  if (note >= 0 && note <= 127) {
+    m_buttonMidiNotes[globalButtonIndex] = {note, channel};
+    DBG("MIDIDeviceManager: Assigned MIDI note " << note << " (Ch " << channel << ") to button "
+                                                 << globalButtonIndex);
+  } else {
+    clearMidiNote(globalButtonIndex);
+  }
+
+  save();
+  notifyChanged();
+}
+
+std::pair<int, int> MIDIDeviceManager::getMidiNote(int globalButtonIndex) const {
+  auto it = m_buttonMidiNotes.find(globalButtonIndex);
+  if (it != m_buttonMidiNotes.end()) {
+    return it->second;
+  }
+  return {-1, -1};
+}
+
+void MIDIDeviceManager::clearMidiNote(int globalButtonIndex) {
+  auto it = m_buttonMidiNotes.find(globalButtonIndex);
+  if (it != m_buttonMidiNotes.end()) {
+    m_buttonMidiNotes.erase(it);
+    DBG("MIDIDeviceManager: Cleared MIDI note for button " << globalButtonIndex);
+    save();
+    notifyChanged();
+  }
+}
+
+bool MIDIDeviceManager::hasMidiNote(int globalButtonIndex) const {
+  return m_buttonMidiNotes.find(globalButtonIndex) != m_buttonMidiNotes.end();
+}
+
+juce::String MIDIDeviceManager::getMidiNoteDescription(int globalButtonIndex) const {
+  auto it = m_buttonMidiNotes.find(globalButtonIndex);
+  if (it != m_buttonMidiNotes.end()) {
+    auto [note, channel] = it->second;
+    return noteNumberToName(note) + " (Ch " + juce::String(channel) + ")";
+  }
+  return juce::String();
+}
+
+juce::String MIDIDeviceManager::noteNumberToName(int noteNumber) {
+  static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                    "F#", "G",  "G#", "A",  "A#", "B"};
+  int octave = (noteNumber / 12) - 1;
+  int noteIndex = noteNumber % 12;
+  return juce::String(noteNames[noteIndex]) + juce::String(octave);
+}
+
+//==============================================================================
 // MidiInputCallback
 
 void MIDIDeviceManager::handleIncomingMidiMessage(juce::MidiInput* source,
@@ -258,22 +317,82 @@ void MIDIDeviceManager::handleIncomingMidiMessage(juce::MidiInput* source,
 
 void MIDIDeviceManager::handleNoteOn(int noteNumber, int channel, int velocity,
                                      const juce::String& source) {
-  if (m_sessionManager == nullptr || m_audioEngine == nullptr) {
+  if (m_audioEngine == nullptr) {
     return;
   }
 
-  // Find clips matching this MIDI note
-  // Note: This requires ClipData to have midiNote and midiChannel fields
-  // For now, this is a placeholder - actual implementation depends on SessionManager
-  // having the ability to query clips by MIDI note
-
-  // TODO: Implement clip-to-MIDI note mapping in SessionManager::ClipData
-  // and query matching clips here based on m_scope setting
-
-  (void)noteNumber;
-  (void)channel;
   (void)velocity;
   (void)source;
+
+  // OCC144: Find all buttons with matching MIDI note assignment
+  std::vector<int> matchingButtons;
+
+  // Determine search range based on scope
+  int startIndex = 0;
+  int endIndex = MAX_BUTTONS;
+
+  if (m_scope == Scope::Paged) {
+    // Only search current tab (48 buttons per tab)
+    startIndex = m_currentTab * 48;
+    endIndex = startIndex + 48;
+  }
+
+  for (const auto& [buttonIndex, noteAssignment] : m_buttonMidiNotes) {
+    auto [assignedNote, assignedChannel] = noteAssignment;
+
+    // Check if in range (for Paged scope)
+    if (buttonIndex < startIndex || buttonIndex >= endIndex) {
+      continue;
+    }
+
+    // Match note (channel 0 = omni/any channel)
+    if (assignedNote == noteNumber && (assignedChannel == 0 || assignedChannel == channel)) {
+      matchingButtons.push_back(buttonIndex);
+    }
+  }
+
+  if (matchingButtons.empty()) {
+    return;
+  }
+
+  // Trigger based on multi-note action
+  if (m_multiNoteAction == MultiNoteAction::Ganged) {
+    // Play all matching buttons simultaneously
+    for (int buttonIndex : matchingButtons) {
+      m_audioEngine->startClip(buttonIndex);
+    }
+  } else {
+    // Overlapped mode: Play next in sequence
+    int lastIndex = 0;
+    auto it = m_lastTriggeredButtonForNote.find(noteNumber);
+    if (it != m_lastTriggeredButtonForNote.end()) {
+      lastIndex = it->second;
+    }
+
+    // Find next button that's not already playing
+    int nextIndex = -1;
+    for (size_t i = 0; i < matchingButtons.size(); ++i) {
+      int candidateIndex =
+          (lastIndex + 1 + static_cast<int>(i)) % static_cast<int>(matchingButtons.size());
+      int buttonIndex = matchingButtons[candidateIndex];
+
+      if (!m_audioEngine->isClipPlaying(buttonIndex)) {
+        nextIndex = candidateIndex;
+        break;
+      }
+    }
+
+    // If all playing, choose the first one in rotation
+    if (nextIndex == -1) {
+      nextIndex = (lastIndex + 1) % static_cast<int>(matchingButtons.size());
+    }
+
+    // Play selected button
+    if (nextIndex >= 0 && nextIndex < static_cast<int>(matchingButtons.size())) {
+      m_audioEngine->startClip(matchingButtons[nextIndex]);
+      m_lastTriggeredButtonForNote[noteNumber] = nextIndex;
+    }
+  }
 }
 
 void MIDIDeviceManager::handleNoteOff(int noteNumber, int channel) {
@@ -315,6 +434,16 @@ void MIDIDeviceManager::save() {
   }
   prefs.setValue("enabledMidiOutDevices", outDevices.joinIntoString("|"));
 
+  // OCC144: Save per-button MIDI note assignments
+  juce::String midiNotesData;
+  for (const auto& [buttonIndex, noteAssignment] : m_buttonMidiNotes) {
+    auto [note, channel] = noteAssignment;
+    // Format: buttonIndex:note:channel;
+    midiNotesData +=
+        juce::String(buttonIndex) + ":" + juce::String(note) + ":" + juce::String(channel) + ";";
+  }
+  prefs.setValue("buttonMidiNotes", midiNotesData);
+
   prefs.saveIfNeeded();
 }
 
@@ -342,6 +471,33 @@ void MIDIDeviceManager::load() {
     for (const auto& name : outDevices) {
       m_enabledMidiOutDevices.insert(name);
     }
+  }
+
+  // OCC144: Load per-button MIDI note assignments
+  m_buttonMidiNotes.clear();
+  juce::String midiNotesData = prefs.getValue("buttonMidiNotes", "");
+  if (midiNotesData.isNotEmpty()) {
+    juce::StringArray entries;
+    entries.addTokens(midiNotesData, ";", "");
+
+    for (const auto& entry : entries) {
+      if (entry.isEmpty())
+        continue;
+
+      juce::StringArray parts;
+      parts.addTokens(entry, ":", "");
+      if (parts.size() >= 3) {
+        int buttonIndex = parts[0].getIntValue();
+        int note = parts[1].getIntValue();
+        int channel = parts[2].getIntValue();
+
+        if (buttonIndex >= 0 && buttonIndex < MAX_BUTTONS && note >= 0 && note <= 127) {
+          m_buttonMidiNotes[buttonIndex] = {note, channel};
+        }
+      }
+    }
+    DBG("MIDIDeviceManager: Loaded " << m_buttonMidiNotes.size()
+                                     << " custom MIDI note assignments");
   }
 }
 

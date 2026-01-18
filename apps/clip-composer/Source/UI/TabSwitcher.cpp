@@ -36,7 +36,7 @@ TabSwitcher::TabSwitcher() {
   // Timer fires every 10ms, phase increments 0→100 in 1 second (100 steps × 10ms = 1000ms)
   startTimer(10); // 10ms intervals for smooth 1Hz pulse animation
 
-  setSize(800, TAB_HEIGHT);
+  setSize(800, m_tabHeight);
 }
 
 //==============================================================================
@@ -62,6 +62,16 @@ juce::String TabSwitcher::getTabLabel(int tabIndex) const {
   if (tabIndex >= 0 && tabIndex < NUM_TABS)
     return m_tabLabels[tabIndex];
   return "";
+}
+
+// OCC144: Dynamic tab height from DisplayPreferences
+void TabSwitcher::setTabHeight(int height) {
+  if (height != m_tabHeight && height > 0) {
+    m_tabHeight = height;
+    setSize(getWidth(), m_tabHeight);
+    resized();
+    repaint();
+  }
 }
 
 //==============================================================================
@@ -344,5 +354,5 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
   int x = tabIndex * (tabWidth + TAB_GAP);
   int y = 0;
 
-  return juce::Rectangle<int>(x, y, tabWidth, TAB_HEIGHT);
+  return juce::Rectangle<int>(x, y, tabWidth, m_tabHeight);
 }

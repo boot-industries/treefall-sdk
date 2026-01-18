@@ -449,6 +449,47 @@ const std::vector<float>& AudioEngine::getPeakLevels() const {
 }
 
 //==============================================================================
+// OCC144: Level Metering
+
+float AudioEngine::getMasterRmsLevel() const {
+  if (m_audioAnalyzer) {
+    return m_audioAnalyzer->getRMSLevel();
+  }
+  return 0.0f;
+}
+
+float AudioEngine::getMasterPeakLevel() const {
+  if (m_audioAnalyzer) {
+    return m_audioAnalyzer->getPeakLevel();
+  }
+  return 0.0f;
+}
+
+void AudioEngine::getGroupLevels(std::array<float, 4>& groupLevels) const {
+  // Placeholder implementation until clip group routing is implemented
+  // For now, distribute the master level across groups based on frequency bands
+  if (m_audioAnalyzer) {
+    std::vector<float> bandLevels;
+    m_audioAnalyzer->getFrequencyBands(bandLevels, 8);
+    if (bandLevels.size() >= 8) {
+      // Group 0: Low frequencies (bands 0-1)
+      groupLevels[0] = (bandLevels[0] + bandLevels[1]) / 2.0f;
+      // Group 1: Low-mid frequencies (bands 2-3)
+      groupLevels[1] = (bandLevels[2] + bandLevels[3]) / 2.0f;
+      // Group 2: High-mid frequencies (bands 4-5)
+      groupLevels[2] = (bandLevels[4] + bandLevels[5]) / 2.0f;
+      // Group 3: High frequencies (bands 6-7)
+      groupLevels[3] = (bandLevels[6] + bandLevels[7]) / 2.0f;
+    } else {
+      float masterLevel = getMasterRmsLevel();
+      groupLevels.fill(masterLevel * 0.5f);
+    }
+  } else {
+    groupLevels.fill(0.0f);
+  }
+}
+
+//==============================================================================
 // Audio Device Management (for Audio Settings Dialog)
 
 std::vector<std::string> AudioEngine::getAvailableDevices() const {
