@@ -16,6 +16,7 @@ add_library(orpheus_core_runtime OBJECT
   core/session/scene_manager.cpp
   core/otio/reconform_plan.cpp
   dsp/oscillator.cpp
+  core/channel_format.cpp  # ORP121 A-04/A-05: Multi-channel format abstraction
 )
 
 target_compile_features(orpheus_core_runtime PUBLIC cxx_std_20)

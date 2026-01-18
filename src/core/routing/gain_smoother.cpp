@@ -18,8 +18,10 @@ GainSmoother::GainSmoother(uint32_t sample_rate, float smoothing_time_ms)
 }
 
 void GainSmoother::setTarget(float target) {
-  // Clamp to valid range
-  target = std::clamp(target, 0.0f, 1.0f);
+  // ORP121 C-01: Allow gains up to +12 dB (3.981 linear)
+  // Rationale: Professional mixing requires boost capability
+  // 32-bit float provides ~1528 dB headroom, clipping at output stage is sufficient
+  target = std::clamp(target, 0.0f, MAX_LINEAR_GAIN);
 
   // Atomic write (lock-free)
   m_pending_target.store(target, std::memory_order_release);
@@ -63,7 +65,8 @@ float GainSmoother::process() {
 }
 
 void GainSmoother::reset(float gain) {
-  gain = std::clamp(gain, 0.0f, 1.0f);
+  // ORP121 C-01: Allow gains up to +12 dB (3.981 linear)
+  gain = std::clamp(gain, 0.0f, MAX_LINEAR_GAIN);
   m_current = gain;
   m_target = gain;
   m_pending_target.store(gain, std::memory_order_release);

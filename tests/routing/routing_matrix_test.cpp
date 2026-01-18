@@ -221,15 +221,16 @@ TEST_F(RoutingMatrixTest, ChannelGainAttenuation) {
   // After smoothing, output should be attenuated
   // -6 dB = 0.5 linear, so peak should be ~0.5
   // For sine wave: avg(abs(x)) = (2/π) * amplitude ≈ 0.637 * amplitude
-  // Expected: 0.637 * 0.5 = 0.318
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Expected: 0.637 * 0.5 * 0.707 = 0.225
   float avg_output = 0.0f;
   for (uint32_t i = BUFFER_SIZE / 2; i < BUFFER_SIZE; ++i) { // Second half (after transient)
     avg_output += std::abs(outputs[0][i]);
   }
   avg_output /= (BUFFER_SIZE / 2);
 
-  // Expect approximately 0.318 (0.5 peak × 0.637 sine wave factor)
-  EXPECT_NEAR(avg_output, 0.318f, 0.05f);
+  // Expect approximately 0.225 (0.5 peak × 0.637 sine × 0.707 pan law)
+  EXPECT_NEAR(avg_output, 0.225f, 0.05f);
 }
 
 TEST_F(RoutingMatrixTest, MasterGainAttenuation) {
@@ -259,13 +260,16 @@ TEST_F(RoutingMatrixTest, MasterGainAttenuation) {
 
   // Output should be attenuated by master gain
   // For sine wave with -6 dB gain: avg(abs(x)) ≈ 0.318
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Expected: 0.637 * 0.5 * 0.707 = 0.225
   float avg_output = 0.0f;
   for (uint32_t i = BUFFER_SIZE / 2; i < BUFFER_SIZE; ++i) {
     avg_output += std::abs(outputs[0][i]);
   }
   avg_output /= (BUFFER_SIZE / 2);
 
-  EXPECT_NEAR(avg_output, 0.318f, 0.05f);
+  // Expect approximately 0.225 (0.5 peak × 0.637 sine × 0.707 pan law)
+  EXPECT_NEAR(avg_output, 0.225f, 0.05f);
 }
 
 // ============================================================================
@@ -375,8 +379,9 @@ TEST_F(RoutingMatrixTest, MeteringDetectsPeak) {
   // Check master meter
   auto meter = matrix->getMasterMeter();
 
-  // Peak should be close to 1.0 (unity gain)
-  EXPECT_NEAR(meter.peak_db, 0.0f, 1.0f); // 0 dB = unity
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Peak should be close to -3 dB (unity input × 0.707 pan law)
+  EXPECT_NEAR(meter.peak_db, -3.0f, 1.0f); // -3 dB due to pan law at center
 }
 
 TEST_F(RoutingMatrixTest, MeteringDetectsClipping) {
