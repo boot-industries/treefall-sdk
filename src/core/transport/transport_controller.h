@@ -303,9 +303,15 @@ private:
   std::vector<std::vector<float>>
       m_clipReadBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS]
 
-  // Each clip gets its own channel buffer for routing (mono summed output)
-  std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES]
+  // ORP121 A-01: Stereo clip buffers for routing (preserves source L/R)
+  // Each clip has L and R buffers: [clip_index * 2 + 0] = L, [clip_index * 2 + 1] = R
+  // Total channels = MAX_ACTIVE_CLIPS * 2 for stereo preservation
+  std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS * 2][MAX_BUFFER_FRAMES]
   std::vector<float*> m_clipChannelPointers;            // Pointers for processRouting()
+
+  // ORP121 A-01: ITU-R BS.775-3 downmix helpers for multi-channel sources
+  float applyDownmixLeft(const float* src, size_t frame, size_t numCh) const;
+  float applyDownmixRight(const float* src, size_t frame, size_t numCh) const;
 };
 
 } // namespace orpheus
