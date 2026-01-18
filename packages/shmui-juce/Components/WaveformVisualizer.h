@@ -14,6 +14,8 @@
 
 #include "../Audio/AudioAnalyzer.h"
 #include "../Utils/Interpolation.h"
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_dsp/juce_dsp.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 

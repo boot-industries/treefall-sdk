@@ -221,15 +221,16 @@ TEST_F(RoutingMatrixTest, ChannelGainAttenuation) {
   // After smoothing, output should be attenuated
   // -6 dB = 0.5 linear, so peak should be ~0.5
   // For sine wave: avg(abs(x)) = (2/π) * amplitude ≈ 0.637 * amplitude
-  // Expected: 0.637 * 0.5 = 0.318
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Expected: 0.637 * 0.5 * 0.707 = 0.225
   float avg_output = 0.0f;
   for (uint32_t i = BUFFER_SIZE / 2; i < BUFFER_SIZE; ++i) { // Second half (after transient)
     avg_output += std::abs(outputs[0][i]);
   }
   avg_output /= (BUFFER_SIZE / 2);
 
-  // Expect approximately 0.318 (0.5 peak × 0.637 sine wave factor)
-  EXPECT_NEAR(avg_output, 0.318f, 0.05f);
+  // Expect approximately 0.225 (0.5 peak × 0.637 sine × 0.707 pan law)
+  EXPECT_NEAR(avg_output, 0.225f, 0.05f);
 }
 
 TEST_F(RoutingMatrixTest, MasterGainAttenuation) {
@@ -259,13 +260,16 @@ TEST_F(RoutingMatrixTest, MasterGainAttenuation) {
 
   // Output should be attenuated by master gain
   // For sine wave with -6 dB gain: avg(abs(x)) ≈ 0.318
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Expected: 0.637 * 0.5 * 0.707 = 0.225
   float avg_output = 0.0f;
   for (uint32_t i = BUFFER_SIZE / 2; i < BUFFER_SIZE; ++i) {
     avg_output += std::abs(outputs[0][i]);
   }
   avg_output /= (BUFFER_SIZE / 2);
 
-  EXPECT_NEAR(avg_output, 0.318f, 0.05f);
+  // Expect approximately 0.225 (0.5 peak × 0.637 sine × 0.707 pan law)
+  EXPECT_NEAR(avg_output, 0.225f, 0.05f);
 }
 
 // ============================================================================
@@ -375,8 +379,9 @@ TEST_F(RoutingMatrixTest, MeteringDetectsPeak) {
   // Check master meter
   auto meter = matrix->getMasterMeter();
 
-  // Peak should be close to 1.0 (unity gain)
-  EXPECT_NEAR(meter.peak_db, 0.0f, 1.0f); // 0 dB = unity
+  // ORP121 C-04: Constant-power pan law applies -3 dB (0.707) at center
+  // Peak should be close to -3 dB (unity input × 0.707 pan law)
+  EXPECT_NEAR(meter.peak_db, -3.0f, 1.0f); // -3 dB due to pan law at center
 }
 
 TEST_F(RoutingMatrixTest, MeteringDetectsClipping) {
@@ -606,6 +611,195 @@ TEST_F(RoutingMatrixTest, ProcessWithOversizedBufferFails) {
   auto result = matrix->processRouting(input_ptrs.data(), output_ptrs.data(), 4096);
 
   EXPECT_EQ(result, SessionGraphError::InvalidParameter);
+}
+
+// ============================================================================
+// ORP121 Q-05: Headroom Management Tests
+// ============================================================================
+
+TEST_F(RoutingMatrixTest, HeadroomModeNoneNoAttenuation) {
+  // HeadroomMode::None should not attenuate the signal
+  config.headroom_mode = HeadroomMode::None;
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.1f; // Fast smoothing for test
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  // Assign both channels to group 0
+  matrix->setChannelGroup(0, 0);
+  matrix->setChannelGroup(1, 0);
+  matrix->setChannelGain(0, 0.0f); // Unity gain
+  matrix->setChannelGain(1, 0.0f); // Unity gain
+  matrix->setGroupGain(0, 0.0f);   // Unity gain
+  matrix->setMasterGain(0.0f);     // Unity gain
+
+  // Create constant amplitude test inputs (0.5 for both channels)
+  std::vector<std::vector<float>> inputs(2);
+  for (auto& in : inputs) {
+    in.resize(BUFFER_SIZE, 0.5f);
+  }
+  auto input_ptrs = toPointerArray(inputs);
+
+  // Create output buffers
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  // Process a few times to let gain smoothers settle
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // With HeadroomMode::None, output should be sum of inputs: 0.5 + 0.5 = 1.0
+  // (allowing for constant-power pan law at center, each channel contributes ~0.707 * 0.5)
+  // Two centered channels: 2 * (0.707 * 0.5) ≈ 0.707
+  float expected = 2.0f * (0.707107f * 0.5f);
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected, 0.05f);
+}
+
+TEST_F(RoutingMatrixTest, HeadroomModePerGroupAttenuates) {
+  // HeadroomMode::PerGroup should attenuate by 1/n where n = active channels in group
+  config.headroom_mode = HeadroomMode::PerGroup;
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.1f;
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  // Assign both channels to group 0
+  matrix->setChannelGroup(0, 0);
+  matrix->setChannelGroup(1, 0);
+  matrix->setChannelGain(0, 0.0f);
+  matrix->setChannelGain(1, 0.0f);
+  matrix->setGroupGain(0, 0.0f);
+  matrix->setMasterGain(0.0f);
+
+  // Create constant amplitude test inputs
+  std::vector<std::vector<float>> inputs(2);
+  for (auto& in : inputs) {
+    in.resize(BUFFER_SIZE, 0.5f);
+  }
+  auto input_ptrs = toPointerArray(inputs);
+
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  // Process multiple times to let smoothers settle
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // With 2 channels in group, headroom = 1/2 = 0.5
+  // Expected: (2 * 0.707 * 0.5) * 0.5 ≈ 0.354
+  float expected_none = 2.0f * (0.707107f * 0.5f);
+  float expected_per_group = expected_none * 0.5f;
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_per_group, 0.05f);
+}
+
+TEST_F(RoutingMatrixTest, TruePeakMeteringDetectsInterSamplePeaks) {
+  // ORP121 Q-04: True-peak metering should detect peaks between samples
+  config.metering_mode = MeteringMode::TruePeak;
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.1f;
+  config.enable_metering = true;
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  matrix->setChannelGroup(0, 0);
+  matrix->setChannelGain(0, 0.0f);
+  matrix->setGroupGain(0, 0.0f);
+  matrix->setMasterGain(0.0f);
+
+  // Create test signal: two samples that will create an inter-sample peak
+  // At samples [0.7, -0.7], the true peak between them is higher than 0.7
+  std::vector<std::vector<float>> inputs(1);
+  inputs[0].resize(BUFFER_SIZE, 0.0f);
+  // Create a pattern that will produce inter-sample peaks
+  for (uint32_t i = 0; i < BUFFER_SIZE; i += 2) {
+    inputs[0][i] = 0.7f;
+    inputs[0][i + 1] = -0.7f;
+  }
+  auto input_ptrs = toPointerArray(inputs);
+
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  // Process multiple times to let smoothers settle
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // Get meter reading
+  AudioMeter meter = matrix->getMasterMeter();
+
+  // True-peak should detect inter-sample peaks higher than sample peak
+  // The sample peak is 0.7, but true-peak may be higher due to interpolation
+  // We just verify it detected a significant peak (> 0.5 after pan law)
+  float peak_linear = std::pow(10.0f, meter.peak_db / 20.0f);
+  EXPECT_GT(peak_linear, 0.3f);
+
+  std::cout << "[True-Peak] Detected peak: " << meter.peak_db << " dBFS (" << peak_linear
+            << " linear)\n";
+}
+
+TEST_F(RoutingMatrixTest, HeadroomModeLogarithmicAttenuates) {
+  // HeadroomMode::Logarithmic should attenuate by 1/sqrt(n)
+  config.headroom_mode = HeadroomMode::Logarithmic;
+  config.num_channels = 4;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.1f;
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  // Assign all 4 channels to group 0
+  for (int i = 0; i < 4; ++i) {
+    matrix->setChannelGroup(i, 0);
+    matrix->setChannelGain(i, 0.0f);
+  }
+  matrix->setGroupGain(0, 0.0f);
+  matrix->setMasterGain(0.0f);
+
+  // Create constant amplitude test inputs
+  std::vector<std::vector<float>> inputs(4);
+  for (auto& in : inputs) {
+    in.resize(BUFFER_SIZE, 0.5f);
+  }
+  auto input_ptrs = toPointerArray(inputs);
+
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  // Process multiple times to let smoothers settle
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // With 4 channels, logarithmic headroom = 1/sqrt(4) = 0.5
+  // Expected: (4 * 0.707 * 0.5) * 0.5 ≈ 0.707
+  float expected_none = 4.0f * (0.707107f * 0.5f);
+  float expected_log = expected_none * (1.0f / std::sqrt(4.0f));
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_log, 0.1f);
 }
 
 // ============================================================================

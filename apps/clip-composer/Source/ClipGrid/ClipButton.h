@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "../../../packages/shmui-juce/Utils/Interpolation.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 // Forward declaration
@@ -9,103 +10,233 @@ class ClipGrid;
 
 //==============================================================================
 /**
- * ClipButton - Individual clip trigger button
+ * @brief Individual clip trigger button in the ClipGrid.
  *
- * Represents a single clip in the grid (one of 48 for MVP, 960 for full app).
+ * Represents a single clip in the grid (one of up to 960 for full app capacity).
  *
- * Visual States:
+ * @section states Visual States
  * - Empty: Dark grey, no label
  * - Loaded: Colored based on clip type, shows clip name
- * - Playing: Bright border, animated
- * - Stopping: Fade-out animation
+ * - Playing: Bright border, animated progress
+ * - Stopping: Fade-out animation in progress
  *
- * Interaction:
+ * @section interaction Interaction
  * - Click: Trigger clip (start if stopped, stop if playing)
  * - Right-click: Show context menu (load clip, edit, remove)
- * - Drag-drop: Load audio file onto button
+ * - Ctrl+Opt+Cmd+Click: Open Edit Dialog
+ * - Cmd+Drag: Rearrange clips between buttons
+ *
+ * @section numbering Button Numbering
+ * Buttons are numbered consecutively across tabs (Feature 4):
+ * Tab 1 = 1-120, Tab 2 = 121-240, etc.
  */
-class ClipButton : public juce::Component {
+class ClipButton : public juce::Component, private juce::Timer {
 public:
   //==============================================================================
   /**
-   * Button states for visual feedback
+   * @brief Button states for visual feedback.
+   *
+   * Determines the visual appearance and behavior of the button.
    */
   enum class State {
-    Empty,   // No clip loaded
-    Loaded,  // Clip loaded, ready to play
-    Playing, // Currently playing
-    Stopping // Fade-out in progress
+    Empty,   ///< No clip loaded (dark grey, no label)
+    Loaded,  ///< Clip loaded, ready to play (colored, shows name)
+    Playing, ///< Currently playing (bright border, progress animation)
+    Stopping ///< Fade-out in progress (transitioning to Loaded)
   };
 
   //==============================================================================
+  /**
+   * @brief Construct a ClipButton.
+   * @param buttonIndex Button index within the grid (0 to MAX-1)
+   */
   ClipButton(int buttonIndex);
   ~ClipButton() override = default;
 
   //==============================================================================
-  // Visual state
+  /// @name Visual State
+  /// @{
+
+  /**
+   * @brief Set the visual state of the button.
+   * @param newState New state (Empty, Loaded, Playing, Stopping)
+   */
   void setState(State newState);
+
+  /**
+   * @brief Get current visual state.
+   * @return Current state
+   */
   State getState() const {
     return m_state;
   }
 
-  // Clip data
+  /// @}
+
+  //==============================================================================
+  /// @name Clip Data
+  /// @{
+
+  /**
+   * @brief Set the display name for this clip.
+   * @param name Clip name to display on button
+   */
   void setClipName(const juce::String& name);
+
+  /**
+   * @brief Set the visual color for this clip.
+   * @param color JUCE color to use for button fill
+   */
   void setClipColor(juce::Colour color);
+
+  /**
+   * @brief Set the clip duration for HUD display.
+   * @param durationSeconds Duration in seconds
+   */
   void setClipDuration(double durationSeconds);
-  void setClipGroup(int group); // 0-3 for routing
+
+  /**
+   * @brief Set the clip group assignment.
+   * @param group Clip group index (0-3) for routing
+   */
+  void setClipGroup(int group);
+
+  /**
+   * @brief Set keyboard shortcut text to display.
+   * @param shortcut Shortcut label (e.g., "Q", "F1")
+   */
   void setKeyboardShortcut(const juce::String& shortcut);
-  void setBeatOffset(const juce::String& beatOffset); // Optional: "1", "1+", "1++", "3+", etc.
+
+  /**
+   * @brief Set beat offset text to display.
+   * @param beatOffset Beat offset label (e.g., "1", "1+", "1++", "3+")
+   */
+  void setBeatOffset(const juce::String& beatOffset);
+
+  /**
+   * @brief Clear all clip data and reset to Empty state.
+   */
   void clearClip();
 
-  // Playback progress (0.0 = start, 1.0 = end)
+  /// @}
+
+  //==============================================================================
+  /// @name Playback
+  /// @{
+
+  /**
+   * @brief Set playback progress for visual feedback.
+   * @param progress Progress value (0.0 = start, 1.0 = end)
+   */
   void setPlaybackProgress(float progress);
+
+  /**
+   * @brief Get current playback progress.
+   * @return Progress value (0.0 to 1.0)
+   */
   float getPlaybackProgress() const {
     return m_playbackProgress;
   }
 
-  // Status flags for icons
+  /// @}
+
+  //==============================================================================
+  /// @name Status Flags
+  /// @{
+
+  /** @brief Set loop indicator visibility. */
   void setLoopEnabled(bool enabled);
+
+  /** @brief Set fade-in indicator visibility. */
   void setFadeInEnabled(bool enabled);
+
+  /** @brief Set fade-out indicator visibility. */
   void setFadeOutEnabled(bool enabled);
+
+  /** @brief Set effects indicator visibility. */
   void setEffectsEnabled(bool enabled);
+
+  /** @brief Set stop-others indicator visibility. */
   void setStopOthersEnabled(bool enabled);
 
+  /// @}
+
+  //==============================================================================
+  /// @name Identification
+  /// @{
+
+  /**
+   * @brief Get the button index within current tab.
+   * @return Button index (0 to BUTTONS_PER_TAB-1)
+   */
   int getButtonIndex() const {
     return m_buttonIndex;
   }
 
-  // Tab management (for consecutive numbering across tabs - Feature 4)
+  /**
+   * @brief Set the tab index for consecutive numbering.
+   * @param tabIndex Tab index (0-7)
+   */
   void setTabIndex(int tabIndex) {
     m_tabIndex = tabIndex;
     repaint();
   }
+
+  /**
+   * @brief Get the tab index.
+   * @return Tab index (0-7)
+   */
   int getTabIndex() const {
     return m_tabIndex;
   }
 
-  // Get display number (consecutive across all tabs)
-  // Tab 1 = 1-48, Tab 2 = 49-96, Tab 3 = 97-144, etc.
+  /**
+   * @brief Get display number (consecutive across all tabs).
+   * @return Display number: Tab 1 = 1-120, Tab 2 = 121-240, etc.
+   */
   int getDisplayNumber() const {
     return (m_tabIndex * 48) + m_buttonIndex + 1;
   }
 
-  // Playbox indicator (Item 60: Arrow key navigation with thin white outline)
+  /**
+   * @brief Set playbox indicator state (arrow key navigation).
+   * @param isPlaybox true to show thin white outline
+   */
   void setIsPlaybox(bool isPlaybox) {
     if (m_isPlaybox != isPlaybox) {
       m_isPlaybox = isPlaybox;
       repaint();
     }
   }
+
+  /**
+   * @brief Check if this button is the current playbox.
+   * @return true if playbox indicator is active
+   */
   bool getIsPlaybox() const {
     return m_isPlaybox;
   }
 
+  /// @}
+
   //==============================================================================
-  // Callbacks
+  /// @name Callbacks
+  /// Event callbacks for UI integration.
+  /// @{
+
+  /** @brief Callback invoked on button click (trigger clip). */
   std::function<void(int buttonIndex)> onClick;
+
+  /** @brief Callback invoked on right-click (context menu). */
   std::function<void(int buttonIndex)> onRightClick;
-  std::function<void(int buttonIndex)> onEditDialogRequested; // Ctrl+Opt+Cmd+Click shortcut
+
+  /** @brief Callback invoked on Ctrl+Opt+Cmd+Click (edit dialog). */
+  std::function<void(int buttonIndex)> onEditDialogRequested;
+
+  /** @brief Callback invoked when dragging clip to another button. */
   std::function<void(int sourceButtonIndex, int targetButtonIndex)> onDragToButton;
+
+  /// @}
 
   //==============================================================================
   void paint(juce::Graphics& g) override;
@@ -113,6 +244,9 @@ public:
   void mouseDown(const juce::MouseEvent& e) override;
   void mouseDrag(const juce::MouseEvent& e) override;
   void mouseUp(const juce::MouseEvent& e) override;
+  void mouseEnter(const juce::MouseEvent& e) override;
+  void mouseExit(const juce::MouseEvent& e) override;
+  void timerCallback() override;
 
 private:
   //==============================================================================
@@ -146,6 +280,13 @@ private:
   // Drag state (Cmd+Drag to rearrange clips)
   juce::Point<int> m_mouseDownPosition;
   bool m_isDragging = false;
+
+  // Animation state (shmui Interpolation-based)
+  bool m_isHovered = false;
+  float m_hoverOpacity = 0.0f;    // 0.0 = not hovered, 1.0 = fully hovered
+  float m_pressOpacity = 0.0f;    // 0.0 = not pressed, 1.0 = fully pressed
+  float m_stateTransition = 0.0f; // Smooth state change animation
+  double m_lastAnimTime = 0.0;    // For frame-rate independent animation
 
   // Visual constants
   static constexpr int BORDER_THICKNESS = 2;

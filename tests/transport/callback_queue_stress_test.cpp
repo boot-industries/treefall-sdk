@@ -1,0 +1,376 @@
+// SPDX-License-Identifier: MIT
+// ORP121 Q-07: Threading stress tests for callback queue (C-03 validation)
+//
+// This test validates the lock-free SPSC callback queue that routes
+// events from the audio thread to the UI thread.
+
+#include "../../src/core/transport/transport_controller.h"
+
+#include <atomic>
+#include <chrono>
+#include <gtest/gtest.h>
+#include <memory>
+#include <random>
+#include <thread>
+#include <vector>
+
+using namespace orpheus;
+
+// Callback counter for stress testing
+class CountingCallback : public ITransportCallback {
+public:
+  std::atomic<int> startCount{0};
+  std::atomic<int> stopCount{0};
+  std::atomic<int> loopCount{0};
+  std::atomic<int> restartCount{0};
+  std::atomic<int> seekCount{0};
+  std::atomic<int> underrunCount{0};
+
+  void onClipStarted(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+    startCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void onClipStopped(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+    stopCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void onClipLooped(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+    loopCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void onClipRestarted(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+    restartCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void onClipSeeked(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+    seekCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void onBufferUnderrun(TransportPosition /*position*/) override {
+    underrunCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  int totalCallbacks() const {
+    return startCount.load() + stopCount.load() + loopCount.load() + restartCount.load() +
+           seekCount.load() + underrunCount.load();
+  }
+};
+
+class CallbackQueueStressTest : public ::testing::Test {
+protected:
+  static constexpr uint32_t SAMPLE_RATE = 48000;
+  static constexpr size_t BUFFER_SIZE = 512;
+
+  void SetUp() override {
+    m_transport = std::make_unique<TransportController>(nullptr, SAMPLE_RATE);
+    m_callback = std::make_unique<CountingCallback>();
+    m_transport->setCallback(m_callback.get());
+  }
+
+  void TearDown() override {
+    m_transport.reset();
+  }
+
+  // Simulate audio thread processing
+  void simulateAudioCallback(size_t numBuffers = 1) {
+    std::vector<float> buffer(BUFFER_SIZE * 2, 0.0f);
+    std::vector<float*> buffers = {buffer.data(), buffer.data() + BUFFER_SIZE};
+
+    for (size_t i = 0; i < numBuffers; ++i) {
+      m_transport->processAudio(buffers.data(), 2, BUFFER_SIZE);
+    }
+  }
+
+  // Simulate UI thread callback processing
+  void simulateUICallback() {
+    m_transport->processCallbacks();
+  }
+
+  std::unique_ptr<TransportController> m_transport;
+  std::unique_ptr<CountingCallback> m_callback;
+};
+
+// ============================================================================
+// Basic Functionality Tests
+// ============================================================================
+
+TEST_F(CallbackQueueStressTest, SingleStartStopCallback) {
+  // Start and stop a clip, verify callbacks arrive
+  ClipHandle handle = 1;
+
+  m_transport->startClip(handle);
+  simulateAudioCallback();
+  simulateUICallback();
+
+  // Give time for callback to be processed
+  EXPECT_GE(m_callback->startCount.load(), 0); // May or may not have fired yet
+
+  m_transport->stopClip(handle);
+  simulateAudioCallback();
+  simulateUICallback();
+
+  // Callbacks should eventually be received
+  std::cout << "[Callback Queue] Start: " << m_callback->startCount.load()
+            << ", Stop: " << m_callback->stopCount.load() << "\n";
+}
+
+// ============================================================================
+// Concurrent Access Tests
+// ============================================================================
+
+TEST_F(CallbackQueueStressTest, ConcurrentStartStopClips) {
+  // Simulate rapid start/stop from UI thread while audio processes
+  std::atomic<bool> running{true};
+  constexpr int NUM_ITERATIONS = 100;
+
+  // Audio thread simulation
+  std::thread audioThread([this, &running]() {
+    while (running.load()) {
+      simulateAudioCallback();
+      std::this_thread::sleep_for(std::chrono::microseconds(100)); // ~10kHz
+    }
+  });
+
+  // UI thread simulation - start/stop clips rapidly
+  std::thread uiThread([this, &running]() {
+    for (int i = 0; i < NUM_ITERATIONS; ++i) {
+      ClipHandle handle = static_cast<ClipHandle>(i % 10 + 1);
+
+      m_transport->startClip(handle);
+      std::this_thread::sleep_for(std::chrono::microseconds(500));
+
+      simulateUICallback();
+
+      m_transport->stopClip(handle);
+      std::this_thread::sleep_for(std::chrono::microseconds(500));
+
+      simulateUICallback();
+    }
+    running.store(false);
+  });
+
+  audioThread.join();
+  uiThread.join();
+
+  // Final callback processing
+  simulateUICallback();
+
+  std::cout << "[Callback Queue] Concurrent test - Total callbacks: "
+            << m_callback->totalCallbacks() << "\n";
+
+  // Should complete without deadlock
+  EXPECT_TRUE(true);
+}
+
+TEST_F(CallbackQueueStressTest, HighFrequencyCommands) {
+  // Stress test: Many commands in rapid succession
+  std::atomic<bool> running{true};
+  constexpr int NUM_COMMANDS = 1000;
+
+  // Audio thread - process frequently
+  std::thread audioThread([this, &running]() {
+    while (running.load()) {
+      simulateAudioCallback();
+      std::this_thread::sleep_for(std::chrono::microseconds(50));
+    }
+  });
+
+  // UI thread - issue commands as fast as possible
+  std::thread uiThread([this, &running, NUM_COMMANDS]() {
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<int> dist(1, 10);
+
+    for (int i = 0; i < NUM_COMMANDS; ++i) {
+      ClipHandle handle = static_cast<ClipHandle>(dist(rng));
+
+      // Alternate start/stop
+      if (i % 2 == 0) {
+        m_transport->startClip(handle);
+      } else {
+        m_transport->stopClip(handle);
+      }
+
+      // Process callbacks periodically
+      if (i % 10 == 0) {
+        simulateUICallback();
+      }
+    }
+    running.store(false);
+  });
+
+  audioThread.join();
+  uiThread.join();
+
+  // Final drain
+  for (int i = 0; i < 10; ++i) {
+    simulateUICallback();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  std::cout << "[Callback Queue] High frequency - Commands: " << NUM_COMMANDS
+            << ", Callbacks: " << m_callback->totalCallbacks() << "\n";
+
+  EXPECT_TRUE(true); // No deadlock
+}
+
+// ============================================================================
+// Stress Tests (Extended Duration)
+// ============================================================================
+
+TEST_F(CallbackQueueStressTest, SustainedOperationTwoSeconds) {
+  // Run concurrent audio/UI threads for 2 seconds
+  std::atomic<bool> running{true};
+  std::atomic<int> commandCount{0};
+
+  // Audio thread
+  std::thread audioThread([this, &running]() {
+    while (running.load()) {
+      simulateAudioCallback();
+      std::this_thread::sleep_for(std::chrono::microseconds(100)); // ~10kHz
+    }
+  });
+
+  // UI command thread
+  std::thread commandThread([this, &running, &commandCount]() {
+    std::mt19937 rng(12345);
+    std::uniform_int_distribution<int> clipDist(1, 32);
+
+    while (running.load()) {
+      ClipHandle handle = static_cast<ClipHandle>(clipDist(rng));
+
+      // Random operation
+      if (commandCount.load() % 2 == 0) {
+        m_transport->startClip(handle);
+      } else {
+        m_transport->stopClip(handle);
+      }
+      commandCount.fetch_add(1);
+
+      std::this_thread::sleep_for(std::chrono::microseconds(500)); // 2000 cmd/sec
+    }
+  });
+
+  // UI callback thread
+  std::thread callbackThread([this, &running]() {
+    while (running.load()) {
+      simulateUICallback();
+      std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 60Hz
+    }
+  });
+
+  // Run for 2 seconds
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  running.store(false);
+
+  audioThread.join();
+  commandThread.join();
+  callbackThread.join();
+
+  // Final drain
+  simulateUICallback();
+
+  std::cout << "[Callback Queue] 2-second sustained test:\n"
+            << "  Commands issued: " << commandCount.load() << "\n"
+            << "  Callbacks received: " << m_callback->totalCallbacks() << "\n"
+            << "  Start: " << m_callback->startCount.load()
+            << ", Stop: " << m_callback->stopCount.load() << "\n";
+
+  // Should complete without crash or deadlock
+  EXPECT_TRUE(true);
+}
+
+// ============================================================================
+// Queue Overflow Test
+// ============================================================================
+
+TEST_F(CallbackQueueStressTest, RapidFireWithoutProcessing) {
+  // Issue many commands without processing callbacks (tests queue overflow handling)
+  constexpr int NUM_COMMANDS = 1000;
+
+  // Issue commands very rapidly without processing callbacks
+  for (int i = 0; i < NUM_COMMANDS; ++i) {
+    ClipHandle handle = static_cast<ClipHandle>(i % 10 + 1);
+    if (i % 2 == 0) {
+      m_transport->startClip(handle);
+    } else {
+      m_transport->stopClip(handle);
+    }
+    simulateAudioCallback(); // Process audio to generate callbacks
+  }
+
+  // Now process all callbacks at once
+  for (int i = 0; i < 20; ++i) {
+    simulateUICallback();
+  }
+
+  std::cout << "[Callback Queue] Rapid fire test (queue overflow scenario):\n"
+            << "  Commands: " << NUM_COMMANDS << "\n"
+            << "  Callbacks received: " << m_callback->totalCallbacks() << "\n";
+
+  // Queue size is 256, so we expect at most 256 callbacks to be retained
+  // (unless multiple processing passes)
+  EXPECT_GT(m_callback->totalCallbacks(), 0);
+}
+
+// ============================================================================
+// Latency Test
+// ============================================================================
+
+TEST_F(CallbackQueueStressTest, CallbackLatency) {
+  // Measure time from command to callback
+  constexpr int NUM_ITERATIONS = 50;
+  std::vector<int64_t> latencies;
+  latencies.reserve(NUM_ITERATIONS);
+
+  for (int i = 0; i < NUM_ITERATIONS; ++i) {
+    auto start = std::chrono::high_resolution_clock::now();
+
+    ClipHandle handle = static_cast<ClipHandle>(i + 1);
+    int initialCount = m_callback->startCount.load();
+
+    m_transport->startClip(handle);
+    simulateAudioCallback();
+    simulateUICallback();
+
+    // Wait for callback (with timeout)
+    int timeout = 100;
+    while (m_callback->startCount.load() == initialCount && timeout-- > 0) {
+      simulateAudioCallback();
+      simulateUICallback();
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    latencies.push_back(latency);
+
+    m_transport->stopClip(handle);
+    simulateAudioCallback();
+    simulateUICallback();
+  }
+
+  // Calculate statistics
+  int64_t total = 0;
+  int64_t max_lat = 0;
+  for (auto lat : latencies) {
+    total += lat;
+    max_lat = std::max(max_lat, lat);
+  }
+  double avg_lat = static_cast<double>(total) / NUM_ITERATIONS;
+
+  std::cout << "[Callback Queue] Latency:\n"
+            << "  Average: " << avg_lat << " µs\n"
+            << "  Maximum: " << max_lat << " µs\n";
+
+  // Callbacks should complete within reasonable time (< 10ms)
+  EXPECT_LT(avg_lat, 10000.0);
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

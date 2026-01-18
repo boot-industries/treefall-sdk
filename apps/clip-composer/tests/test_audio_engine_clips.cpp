@@ -39,7 +39,7 @@ TEST_F(AudioEngineClipsTest, LoadClipInvalidButtonIndex) {
   bool success = m_engine->loadClip(-1, "/tmp/test.wav");
   EXPECT_FALSE(success) << "Negative button index should be rejected";
 
-  success = m_engine->loadClip(384, "/tmp/test.wav");
+  success = m_engine->loadClip(960, "/tmp/test.wav");
   EXPECT_FALSE(success) << "Button index >= MAX_CLIP_BUTTONS should be rejected";
 }
 
@@ -55,19 +55,20 @@ TEST_F(AudioEngineClipsTest, UnloadClipThatWasNeverLoaded) {
 }
 
 TEST_F(AudioEngineClipsTest, MAX_CLIP_BUTTONS_Constant) {
-  // Verify MAX_CLIP_BUTTONS is 384 (8 tabs × 48 buttons)
-  EXPECT_EQ(AudioEngine::MAX_CLIP_BUTTONS, 384);
+  // Verify MAX_CLIP_BUTTONS is 960 (8 tabs × 10×12 buttons = 960 clips)
+  // Updated per ORP121 Q-11: Increase clip limit from 384 to 960
+  EXPECT_EQ(AudioEngine::MAX_CLIP_BUTTONS, 960);
 }
 
 TEST_F(AudioEngineClipsTest, LoadClipAtBoundaryIndices) {
-  // Test boundary indices (0 and 383)
+  // Test boundary indices (0 and 959 for 960 total clips)
   bool success0 = m_engine->loadClip(0, "/tmp/clip0.wav");
-  bool success383 = m_engine->loadClip(383, "/tmp/clip383.wav");
+  bool success959 = m_engine->loadClip(959, "/tmp/clip959.wav");
 
   // Should accept valid indices (even if files don't exist)
   // Actual loading will fail due to missing files, but index validation should pass
   EXPECT_FALSE(success0) << "File doesn't exist, but index should be valid";
-  EXPECT_FALSE(success383) << "File doesn't exist, but index should be valid";
+  EXPECT_FALSE(success959) << "File doesn't exist, but index should be valid";
 }
 
 TEST_F(AudioEngineClipsTest, LoadMultipleClipsSequentially) {

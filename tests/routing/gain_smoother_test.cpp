@@ -252,17 +252,24 @@ TEST_F(GainSmootherTest, TargetEqualsCurrentNoRamp) {
   EXPECT_FALSE(smoother.isRamping());
 }
 
-TEST_F(GainSmootherTest, ClampToZeroAndOne) {
+TEST_F(GainSmootherTest, ClampToValidRange) {
   GainSmoother smoother(SAMPLE_RATE, 10.0f);
 
-  // Test clamping to valid range [0.0, 1.0]
+  // Test clamping to valid range [0.0, MAX_LINEAR_GAIN]
+  // ORP121 C-01: Allow gains up to +12 dB (3.981 linear)
+  static constexpr float MAX_LINEAR_GAIN = 3.981071705534972f; // +12 dB
+
   smoother.setTarget(-0.5f); // Should clamp to 0.0
   smoother.process();
   EXPECT_GE(smoother.getTarget(), 0.0f);
 
-  smoother.setTarget(1.5f); // Should clamp to 1.0
+  smoother.setTarget(1.5f); // Valid gain (within 0 to +12 dB range)
   smoother.process();
-  EXPECT_LE(smoother.getTarget(), 1.0f);
+  EXPECT_NEAR(smoother.getTarget(), 1.5f, TOLERANCE);
+
+  smoother.setTarget(5.0f); // Should clamp to MAX_LINEAR_GAIN (~3.981)
+  smoother.process();
+  EXPECT_LE(smoother.getTarget(), MAX_LINEAR_GAIN);
 }
 
 TEST_F(GainSmootherTest, VerySmallIncrement) {
