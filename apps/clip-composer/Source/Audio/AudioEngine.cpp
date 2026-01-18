@@ -532,14 +532,29 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
 }
 
 //==============================================================================
-// Cue Buss Management (for Edit Dialog preview)
+// Cue Buss Management (pool-based, broadcast-safe - no runtime allocations)
 
 orpheus::ClipHandle AudioEngine::allocateCueBuss(const juce::String& filePath) {
   if (!m_transportController)
     return 0;
 
-  // Allocate next Cue handle (10001, 10002, 10003, ...)
-  orpheus::ClipHandle cueBussHandle = m_nextCueBussHandle++;
+  // Find a free slot in the pre-allocated pool (no dynamic allocation)
+  int freeSlot = -1;
+  for (int i = 0; i < MAX_CUE_BUSSES; ++i) {
+    if (m_cueBussPool[i].handle == 0) {
+      freeSlot = i;
+      break;
+    }
+  }
+
+  if (freeSlot < 0) {
+    DBG("AudioEngine: Cue Buss pool exhausted (max " << MAX_CUE_BUSSES << ")");
+    return 0;
+  }
+
+  // Calculate handle from pool slot (deterministic, no counter needed)
+  orpheus::ClipHandle cueBussHandle =
+      CUE_BUSS_BASE_HANDLE + static_cast<orpheus::ClipHandle>(freeSlot);
 
   // Register audio file with transport controller
   auto result = m_transportController->registerClipAudio(cueBussHandle, filePath.toStdString());
@@ -549,37 +564,48 @@ orpheus::ClipHandle AudioEngine::allocateCueBuss(const juce::String& filePath) {
     return 0;
   }
 
-  // Track active Cue Buss
-  m_cueBussHandles.push_back(cueBussHandle);
+  // Mark slot as allocated
+  m_cueBussPool[freeSlot].handle = cueBussHandle;
 
   // Read metadata for UI (same as loadClip does for buttons)
   auto reader = orpheus::createAudioFileReader();
   auto metadataResult = reader->open(filePath.toStdString());
   if (metadataResult.isOk()) {
-    m_cueBussMetadata[cueBussHandle] = metadataResult.value;
+    m_cueBussPool[freeSlot].metadata = metadataResult.value;
     DBG("AudioEngine: Cue Buss " << cueBussHandle << " metadata: "
                                  << static_cast<int>(metadataResult.value.sample_rate) << " Hz, "
                                  << static_cast<int>(metadataResult.value.num_channels) << " ch, "
                                  << static_cast<int>(metadataResult.value.duration_samples)
                                  << " samples");
   } else {
+    m_cueBussPool[freeSlot].metadata = std::nullopt;
     DBG("AudioEngine: WARNING - Failed to read metadata for Cue Buss " << cueBussHandle);
   }
-
-  // Determine Cue number for UI display (Cue 1, Cue 2, Cue 3, ...)
-  int cueNumber = static_cast<int>(m_cueBussHandles.size());
 
   // CRITICAL: Set default loop state to DISABLED (SDK defaults to loop=true)
   // This will be overridden by ClipEditDialog::setClipMetadata() if user has loop enabled
   m_transportController->setClipLoopMode(cueBussHandle, false);
 
-  DBG("AudioEngine: Allocated Cue " << cueNumber << " (handle " << cueBussHandle
-                                    << "): " << filePath << " (loop=disabled by default)");
+  // Count active cue busses for logging
+  int activeCues = 0;
+  for (int i = 0; i < MAX_CUE_BUSSES; ++i) {
+    if (m_cueBussPool[i].handle != 0)
+      ++activeCues;
+  }
+
+  DBG("AudioEngine: Allocated Cue " << activeCues << " (handle " << cueBussHandle << ", slot "
+                                    << freeSlot << "): " << filePath
+                                    << " (loop=disabled by default)");
   return cueBussHandle;
 }
 
 void AudioEngine::releaseCueBuss(orpheus::ClipHandle cueBussHandle) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
+    return;
+
+  // Find slot by handle
+  int slot = static_cast<int>(cueBussHandle - CUE_BUSS_BASE_HANDLE);
+  if (slot < 0 || slot >= MAX_CUE_BUSSES || m_cueBussPool[slot].handle != cueBussHandle)
     return;
 
   // Stop if playing
@@ -587,22 +613,17 @@ void AudioEngine::releaseCueBuss(orpheus::ClipHandle cueBussHandle) {
     m_transportController->stopClip(cueBussHandle);
   }
 
-  // Remove from active Cue Busses
-  auto it = std::find(m_cueBussHandles.begin(), m_cueBussHandles.end(), cueBussHandle);
-  if (it != m_cueBussHandles.end()) {
-    m_cueBussHandles.erase(it);
-  }
-
-  // Remove metadata
-  m_cueBussMetadata.erase(cueBussHandle);
+  // Clear slot (no deallocation, just mark as free)
+  m_cueBussPool[slot].handle = 0;
+  m_cueBussPool[slot].metadata = std::nullopt;
 
   // TODO: Unregister from transport controller (needs SDK API)
 
-  DBG("AudioEngine: Released Cue Buss (handle " << cueBussHandle << ")");
+  DBG("AudioEngine: Released Cue Buss (handle " << cueBussHandle << ", slot " << slot << ")");
 }
 
 bool AudioEngine::startCueBuss(orpheus::ClipHandle cueBussHandle) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   auto result = m_transportController->startClip(cueBussHandle);
@@ -616,7 +637,7 @@ bool AudioEngine::startCueBuss(orpheus::ClipHandle cueBussHandle) {
 }
 
 bool AudioEngine::stopCueBuss(orpheus::ClipHandle cueBussHandle) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   auto result = m_transportController->stopClip(cueBussHandle);
@@ -630,7 +651,7 @@ bool AudioEngine::stopCueBuss(orpheus::ClipHandle cueBussHandle) {
 }
 
 bool AudioEngine::restartCueBuss(orpheus::ClipHandle cueBussHandle) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   // Use SDK's restartClip() - works for both main grid and Cue Buss
@@ -648,7 +669,7 @@ bool AudioEngine::updateCueBussMetadata(orpheus::ClipHandle cueBussHandle, int64
                                         int64_t trimOutSamples, double fadeInSeconds,
                                         double fadeOutSeconds, const juce::String& fadeInCurve,
                                         const juce::String& fadeOutCurve) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   // Map fade curve strings to SDK enum
@@ -711,7 +732,7 @@ bool AudioEngine::updateCueBussMetadata(orpheus::ClipHandle cueBussHandle, int64
 }
 
 bool AudioEngine::isCueBussPlaying(orpheus::ClipHandle cueBussHandle) const {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   return m_transportController->isClipPlaying(cueBussHandle);
@@ -719,14 +740,18 @@ bool AudioEngine::isCueBussPlaying(orpheus::ClipHandle cueBussHandle) const {
 
 std::optional<orpheus::AudioFileMetadata>
 AudioEngine::getCueBussMetadata(orpheus::ClipHandle cueBussHandle) const {
-  auto it = m_cueBussMetadata.find(cueBussHandle);
-  if (it != m_cueBussMetadata.end())
-    return it->second;
-  return std::nullopt;
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE)
+    return std::nullopt;
+
+  int slot = static_cast<int>(cueBussHandle - CUE_BUSS_BASE_HANDLE);
+  if (slot < 0 || slot >= MAX_CUE_BUSSES || m_cueBussPool[slot].handle != cueBussHandle)
+    return std::nullopt;
+
+  return m_cueBussPool[slot].metadata;
 }
 
 bool AudioEngine::setCueBussLoop(orpheus::ClipHandle cueBussHandle, bool enabled) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   auto result = m_transportController->setClipLoopMode(cueBussHandle, enabled);
@@ -741,7 +766,7 @@ bool AudioEngine::setCueBussLoop(orpheus::ClipHandle cueBussHandle, bool enabled
 }
 
 int64_t AudioEngine::getCueBussPosition(orpheus::ClipHandle cueBussHandle) const {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return 0;
 
   // Use SDK's getClipPosition() API (Phase 2 of ORP085)
@@ -749,7 +774,7 @@ int64_t AudioEngine::getCueBussPosition(orpheus::ClipHandle cueBussHandle) const
 }
 
 bool AudioEngine::isCueBussLooping(orpheus::ClipHandle cueBussHandle) const {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   // Use SDK's isClipLooping() API (Phase 7 of ORP085)
@@ -757,7 +782,7 @@ bool AudioEngine::isCueBussLooping(orpheus::ClipHandle cueBussHandle) const {
 }
 
 bool AudioEngine::seekCueBuss(orpheus::ClipHandle cueBussHandle, int64_t position) {
-  if (cueBussHandle < 10001 || !m_transportController)
+  if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
   // Use SDK's seekClip() API (ORP089)
