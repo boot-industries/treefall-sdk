@@ -110,9 +110,6 @@ private:
   std::unique_ptr<orpheus::HotKeyManager> m_hotKeyManager;
   std::unique_ptr<orpheus::MIDIDeviceManager> m_midiDeviceManager;
 
-  // Service Context (Dependency Injection)
-  orpheus::ServiceContext m_serviceContext;
-
   //==============================================================================
   // UI Components
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
