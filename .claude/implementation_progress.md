@@ -11,7 +11,7 @@
 **Scope:** Quality improvements for routing matrix and transport systems
 **Document:** `docs/orp/ORP121 Audio Backend Refactoring Master Plan.md`
 
-### Completed Tasks (4/4 - 100%)
+### Completed Tasks (8/13 - 62%)
 
 **Q-03: Remove Hardcoded Sample Rate Assumptions** ✅
 - Added `sample_rate` field to `RoutingConfig` struct (default: 48000)
@@ -63,6 +63,25 @@
 - **Tests Added:**
   - `TruePeakMeteringDetectsInterSamplePeaks` - Validates inter-sample peak detection
 - **Results:** All 27 routing matrix tests passing
+
+### Verified Pre-Existing Implementations
+
+**Q-06: Gain Staging Documentation** ✅ (Pre-existing)
+- **Location:** `docs/orp/GAIN_STAGING.md`
+- Comprehensive gain staging documentation already exists
+
+**Q-08: Waveform Rendering Performance Tests** ✅ (Pre-existing)
+- **Location:** `tests/audio_io/waveform_processor_test.cpp`
+- Includes `PerformanceTest10MinuteWav` (10-min WAV → 800px < 2s)
+
+**Q-09: Error Logging** ✅ (Pre-existing)
+- **Location:** `apps/clip-composer/Source/Audio/AudioEngine.cpp`
+- Uses JUCE `DBG()` for all error paths
+- SDK returns `SessionGraphError` codes for caller handling
+
+**Q-12: CPU/Memory Profiling API** ✅ (Pre-existing)
+- **Location:** `include/orpheus/performance_monitor.h`
+- Comprehensive `IPerformanceMonitor` API with CPU usage, latency, underrun counting, timing histograms
 
 ### Test Results Summary
 
