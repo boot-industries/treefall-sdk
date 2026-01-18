@@ -26,10 +26,16 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
   // Create and initialize routing matrix
   m_routingMatrix = createRoutingMatrix();
 
+  // ORP121 A-01: ST2110-aligned channel architecture
+  // Each clip can use up to 2 routing channels (L/R for stereo sources)
+  // Mono sources use 1 channel, stereo sources use 2 independent channels
+  // This follows ST2110-30 principle: audio as discrete independent channels
+  static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
+
   RoutingConfig routingConfig;
-  routingConfig.num_channels = MAX_ACTIVE_CLIPS; // One channel per possible active clip
-  routingConfig.num_groups = 4;                  // 4 Clip Groups (as per ORP070)
-  routingConfig.num_outputs = 2;                 // Stereo output
+  routingConfig.num_channels = MAX_ROUTING_CHANNELS; // 2 channels per clip (stereo support)
+  routingConfig.num_groups = 4;                      // 4 Clip Groups (as per ORP070)
+  routingConfig.num_outputs = 2;                     // Stereo output
   routingConfig.solo_mode = SoloMode::SIP;
   routingConfig.metering_mode = MeteringMode::Peak;
   routingConfig.gain_smoothing_ms =
@@ -41,21 +47,49 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
 
   m_routingMatrix->initialize(routingConfig);
 
+  // ORP121 A-01: Configure channel pairs for stereo routing
+  // Each clip's L channel: pan = -1.0 (hard left)
+  // Each clip's R channel: pan = +1.0 (hard right)
+  // Both channels route to the same group (group 0 by default)
+  for (size_t clip = 0; clip < MAX_ACTIVE_CLIPS; ++clip) {
+    size_t ch_L = clip * 2;
+    size_t ch_R = clip * 2 + 1;
+
+    // Configure L channel (hard left pan)
+    ChannelConfig configL;
+    configL.gain_db = 0.0f;
+    configL.pan = -1.0f; // Hard left for stereo L channel
+    configL.mute = false;
+    configL.solo = false;
+    m_routingMatrix->configureChannel(static_cast<uint8_t>(ch_L), configL);
+    m_routingMatrix->setChannelGroup(static_cast<uint8_t>(ch_L), 0);
+
+    // Configure R channel (hard right pan)
+    ChannelConfig configR;
+    configR.gain_db = 0.0f;
+    configR.pan = 1.0f; // Hard right for stereo R channel
+    configR.mute = false;
+    configR.solo = false;
+    m_routingMatrix->configureChannel(static_cast<uint8_t>(ch_R), configR);
+    m_routingMatrix->setChannelGroup(static_cast<uint8_t>(ch_R), 0);
+  }
+
   // Pre-allocate per-clip read buffers (interleaved audio from files)
   m_clipReadBuffers.resize(MAX_ACTIVE_CLIPS);
   for (auto& buffer : m_clipReadBuffers) {
     buffer.resize(MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS, 0.0f);
   }
 
-  // Pre-allocate per-clip channel buffers (mono output for routing)
-  m_clipChannelBuffers.resize(MAX_ACTIVE_CLIPS);
+  // ORP121 A-01: Pre-allocate stereo clip channel buffers
+  // Each clip has L and R buffers: index = clip * 2 + (0 for L, 1 for R)
+  m_clipChannelBuffers.resize(MAX_ROUTING_CHANNELS);
   for (auto& buffer : m_clipChannelBuffers) {
     buffer.resize(MAX_BUFFER_FRAMES, 0.0f);
   }
 
   // Pre-allocate pointer array for processRouting()
-  m_clipChannelPointers.resize(MAX_ACTIVE_CLIPS);
-  for (size_t i = 0; i < MAX_ACTIVE_CLIPS; ++i) {
+  m_clipChannelPointers.resize(MAX_ROUTING_CHANNELS);
+  for (size_t i = 0; i < MAX_ROUTING_CHANNELS; ++i) {
     m_clipChannelPointers[i] = m_clipChannelBuffers[i].data();
   }
 
@@ -279,8 +313,9 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   // Clamp frames to max buffer size
   numFrames = std::min(numFrames, MAX_BUFFER_FRAMES);
 
-  // Clear all clip channel buffers
-  for (size_t i = 0; i < MAX_ACTIVE_CLIPS; ++i) {
+  // ORP121 A-01: Clear all clip channel buffers (stereo - 2 per clip)
+  static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
+  for (size_t i = 0; i < MAX_ROUTING_CHANNELS; ++i) {
     std::memset(m_clipChannelBuffers[i].data(), 0, numFrames * sizeof(float));
   }
 
@@ -399,8 +434,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
     size_t framesRead = readResult.value;
 
-    // Output to this clip's channel buffer (mono sum for routing)
-    float* clipChannelBuffer = m_clipChannelBuffers[i].data();
+    // ORP121 A-01: Stereo output to L/R channel buffers (indices i*2 and i*2+1)
+    // No mono sum - preserves source channel separation per ST2110-30
 
     // Load precomputed linear gain (atomic read, no pow() call in audio thread!)
     float clipGainLinear = clip.gainLinear.load(std::memory_order_acquire);
@@ -457,15 +492,32 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         }
       }
 
-      // Mix all file channels to mono for routing
-      float monoSample = 0.0f;
-      for (size_t ch = 0; ch < numFileChannels; ++ch) {
-        size_t srcIndex = frame * numFileChannels + ch;
-        monoSample += clipReadBuffer[srcIndex];
-      }
-      monoSample /= static_cast<float>(numFileChannels); // Average channels
+      // ORP121 A-01: Preserve stereo from source (ST2110-aligned)
+      // Each file channel maps to discrete routing channels
+      // - Mono: Duplicate to L/R (phantom center image)
+      // - Stereo: Direct L→L, R→R mapping
+      // - Multi-channel (>2): ITU-R BS.775-3 downmix to stereo
+      float sample_L, sample_R;
 
-      clipChannelBuffer[frame] = monoSample * gain;
+      if (numFileChannels == 1) {
+        // Mono source: Duplicate to both L/R (centered phantom image)
+        float mono = clipReadBuffer[frame];
+        sample_L = mono;
+        sample_R = mono;
+      } else if (numFileChannels == 2) {
+        // Stereo source: Preserve L/R separation
+        sample_L = clipReadBuffer[frame * 2 + 0];
+        sample_R = clipReadBuffer[frame * 2 + 1];
+      } else {
+        // Multi-channel (>2): Apply ITU-R BS.775-3 downmix to stereo
+        sample_L = applyDownmixLeft(clipReadBuffer, frame, numFileChannels);
+        sample_R = applyDownmixRight(clipReadBuffer, frame, numFileChannels);
+      }
+
+      // Apply gain and write to stereo clip buffers
+      // L channel at index i*2, R channel at index i*2+1
+      m_clipChannelBuffers[i * 2][frame] = sample_L * gain;
+      m_clipChannelBuffers[i * 2 + 1][frame] = sample_R * gain;
     }
 
     // Advance clip position by actual frames read (not buffer size!)
@@ -914,17 +966,51 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 }
 
 void TransportController::postCallback(std::function<void()> callback) {
-  std::lock_guard<std::mutex> lock(m_callbackMutex);
-  m_callbackQueue.push(std::move(callback));
+  // ORP121 C-03: Lock-free SPSC callback queue
+  // Audio thread writes to ring buffer (no mutex, no blocking)
+  //
+  // Memory ordering rationale:
+  // - relaxed for same-thread reads (writeIdx in postCallback)
+  // - acquire for cross-thread reads (readIdx check for full detection)
+  // - release for writes (ensures callback data visible before index update)
+
+  size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
+  size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1); // Mask for wrap (power of 2)
+
+  // Check if queue full (read index caught up)
+  if (nextIdx == m_callbackReadIndex.load(std::memory_order_acquire)) {
+    // Queue full - drop callback (better than blocking audio thread)
+    // Increment dropped callback counter for diagnostics
+    m_droppedCallbackCount.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+
+  m_callbackRing[writeIdx] = std::move(callback);
+  m_callbackWriteIndex.store(nextIdx, std::memory_order_release);
 }
 
 void TransportController::processCallbacks() {
-  std::lock_guard<std::mutex> lock(m_callbackMutex);
-  while (!m_callbackQueue.empty()) {
-    auto callback = std::move(m_callbackQueue.front());
-    m_callbackQueue.pop();
-    callback();
+  // ORP121 C-03: Lock-free SPSC callback queue
+  // UI thread reads from ring buffer (no mutex, no blocking)
+  //
+  // Memory ordering rationale:
+  // - relaxed for same-thread reads (readIdx in processCallbacks)
+  // - acquire for cross-thread reads (writeIdx to see all pending callbacks)
+  // - release for writes (ensures slot cleared before index update)
+
+  size_t readIdx = m_callbackReadIndex.load(std::memory_order_relaxed);
+  size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_acquire);
+
+  while (readIdx != writeIdx) {
+    auto& callback = m_callbackRing[readIdx];
+    if (callback) {
+      callback();
+      callback = nullptr; // Clear slot to release captured resources
+    }
+    readIdx = (readIdx + 1) & (CALLBACK_QUEUE_SIZE - 1);
   }
+
+  m_callbackReadIndex.store(readIdx, std::memory_order_release);
 }
 
 SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
@@ -1657,6 +1743,77 @@ SessionGraphError TransportController::removeCuePoint(ClipHandle handle, uint32_
   cuePoints.erase(cuePoints.begin() + cueIndex);
 
   return SessionGraphError::OK;
+}
+
+// ============================================================================
+// ORP121 A-01: ITU-R BS.775-3 Downmix Helper Functions
+// Standard coefficients for multi-channel to stereo conversion
+// ============================================================================
+
+/// ITU-R BS.775-3 standard downmix coefficients
+/// These values ensure energy-preserving downmix from surround to stereo
+static constexpr float DOWNMIX_CENTER = 0.7071067811865476f;   // 1/sqrt(2) = -3dB
+static constexpr float DOWNMIX_SURROUND = 0.7071067811865476f; // 1/sqrt(2) = -3dB
+
+float TransportController::applyDownmixLeft(const float* src, size_t frame, size_t numCh) const {
+  // ITU-R BS.775-3 downmix to left channel
+  // Standard 5.1 layout: L=0, R=1, C=2, LFE=3, Ls=4, Rs=5
+  // Formula: L_out = L + 0.707*C + 0.707*Ls
+
+  if (numCh < 3) {
+    // Mono or stereo - just return left channel (or mono)
+    return src[frame * numCh];
+  }
+
+  if (numCh < 6) {
+    // 3-5 channels (unusual layouts) - simple left-weighted average
+    float sum = 0.0f;
+    for (size_t ch = 0; ch < numCh; ch += 2) {
+      sum += src[frame * numCh + ch];
+    }
+    return sum / static_cast<float>((numCh + 1) / 2);
+  }
+
+  // 5.1 or higher: Full ITU-R BS.775-3 downmix
+  float L = src[frame * numCh + 0];  // Left
+  float C = src[frame * numCh + 2];  // Center
+  float Ls = src[frame * numCh + 4]; // Left Surround
+
+  // Note: LFE (channel 3) typically excluded from stereo downmix per spec
+  return L + DOWNMIX_CENTER * C + DOWNMIX_SURROUND * Ls;
+}
+
+float TransportController::applyDownmixRight(const float* src, size_t frame, size_t numCh) const {
+  // ITU-R BS.775-3 downmix to right channel
+  // Standard 5.1 layout: L=0, R=1, C=2, LFE=3, Ls=4, Rs=5
+  // Formula: R_out = R + 0.707*C + 0.707*Rs
+
+  if (numCh < 2) {
+    // Mono - return the single channel
+    return src[frame * numCh];
+  }
+
+  if (numCh < 3) {
+    // Stereo - return right channel
+    return src[frame * numCh + 1];
+  }
+
+  if (numCh < 6) {
+    // 3-5 channels (unusual layouts) - simple right-weighted average
+    float sum = 0.0f;
+    for (size_t ch = 1; ch < numCh; ch += 2) {
+      sum += src[frame * numCh + ch];
+    }
+    return sum / static_cast<float>(numCh / 2);
+  }
+
+  // 5.1 or higher: Full ITU-R BS.775-3 downmix
+  float R = src[frame * numCh + 1];  // Right
+  float C = src[frame * numCh + 2];  // Center
+  float Rs = src[frame * numCh + 5]; // Right Surround
+
+  // Note: LFE (channel 3) typically excluded from stereo downmix per spec
+  return R + DOWNMIX_CENTER * C + DOWNMIX_SURROUND * Rs;
 }
 
 // Factory function
