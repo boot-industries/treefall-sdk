@@ -3,6 +3,8 @@
 
 #include <orpheus/routing_matrix.h>
 
+#include "true_peak_meter.h"
+
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -26,6 +28,7 @@ struct ChannelState {
   std::atomic<float> peak_level;
   std::atomic<float> rms_level;
   std::atomic<uint32_t> clip_count;
+  TruePeakMeter true_peak_meter; ///< ORP121 Q-04: True-peak metering
 
   // Configuration (UI thread writes, audio thread reads)
   ChannelConfig config;
@@ -36,7 +39,7 @@ struct ChannelState {
         pan_left(std::move(other.pan_left)), pan_right(std::move(other.pan_right)),
         mute(other.mute.load()), solo(other.solo.load()), peak_level(other.peak_level.load()),
         rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
-        config(std::move(other.config)) {}
+        true_peak_meter(std::move(other.true_peak_meter)), config(std::move(other.config)) {}
 
   // Default constructor
   ChannelState()
@@ -59,6 +62,7 @@ struct GroupState {
   std::atomic<float> peak_level;
   std::atomic<float> rms_level;
   std::atomic<uint32_t> clip_count;
+  TruePeakMeter true_peak_meter; ///< ORP121 Q-04: True-peak metering
 
   // Configuration
   GroupConfig config;
@@ -68,7 +72,7 @@ struct GroupState {
       : gain_smoother(std::move(other.gain_smoother)), mute(other.mute.load()),
         solo(other.solo.load()), peak_level(other.peak_level.load()),
         rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
-        config(std::move(other.config)) {}
+        true_peak_meter(std::move(other.true_peak_meter)), config(std::move(other.config)) {}
 
   // Default constructor
   GroupState()
@@ -157,6 +161,11 @@ private:
   float dbToLinear(float db) const;
   float linearToDb(float linear) const;
 
+  // ORP121 Q-05: Headroom compensation
+  float getHeadroomCompensation(uint8_t group_index) const;
+  uint8_t countActiveChannelsInGroup(uint8_t group_index) const;
+  uint8_t countTotalActiveChannels() const;
+
   void processMetering(float* buffer, size_t num_frames, std::atomic<float>& peak,
                        std::atomic<float>& rms);
   bool detectClipping(float* buffer, size_t num_frames);
@@ -176,6 +185,7 @@ private:
   std::atomic<float> m_master_peak;
   std::atomic<float> m_master_rms;
   std::atomic<uint32_t> m_master_clip_count;
+  TruePeakMeter m_master_true_peak_meter; ///< ORP121 Q-04: Master true-peak metering
 
   // Solo state
   std::atomic<bool> m_solo_active;

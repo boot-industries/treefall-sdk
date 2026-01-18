@@ -55,9 +55,9 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   initializeGroups();
 
   // Initialize master gain smoother
-  // TODO: Get sample rate from config (needs to be added)
-  uint32_t sample_rate = 48000; // Default for now
-  m_master_gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
+  // ORP121 Q-03: Use sample_rate from config (no hardcoded assumptions)
+  m_master_gain_smoother =
+      std::make_unique<GainSmoother>(config.sample_rate, config.gain_smoothing_ms);
   m_master_gain_smoother->reset(1.0f); // Unity gain
 
   // ORP121 A-02: Pre-allocate stereo audio processing buffers
@@ -646,14 +646,17 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
       out_R = std::min((uint8_t)1, (uint8_t)(config.num_outputs - 1));
     }
 
+    // ORP121 Q-05: Get headroom compensation for this group (computed once per buffer)
+    float headroom = getHeadroomCompensation(grp);
+
     // Process group gain + sum into master (ORP121 A-02: stereo)
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
       // Get smoothed group gain for this sample
       float group_gain = group.gain_smoother->process();
 
-      // Read stereo group samples and apply gain
-      float sample_L = group_buffer.left[frame] * group_gain;
-      float sample_R = group_buffer.right[frame] * group_gain;
+      // Read stereo group samples and apply gain + headroom compensation (Q-05)
+      float sample_L = group_buffer.left[frame] * group_gain * headroom;
+      float sample_R = group_buffer.right[frame] * group_gain * headroom;
 
       // Sum into master output at configured output bus
       master_output[out_L][frame] += sample_L;
@@ -757,12 +760,11 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
 // ============================================================================
 
 void RoutingMatrix::initializeChannels() {
-  // TODO: Get sample rate from config
-  uint32_t sample_rate = 48000;
-
+  // ORP121 Q-03: Get sample rate from config (no hardcoded assumptions)
   // Get active config (lock-free read)
   int config_idx = m_active_config_idx.load(std::memory_order_acquire);
   const RoutingConfig& config = m_config_buffers[config_idx];
+  uint32_t sample_rate = config.sample_rate;
 
   m_channels.clear();
   m_channels.reserve(config.num_channels);
@@ -800,12 +802,11 @@ void RoutingMatrix::initializeChannels() {
 }
 
 void RoutingMatrix::initializeGroups() {
-  // TODO: Get sample rate from config
-  uint32_t sample_rate = 48000;
-
+  // ORP121 Q-03: Get sample rate from config (no hardcoded assumptions)
   // Get active config (lock-free read)
   int config_idx = m_active_config_idx.load(std::memory_order_acquire);
   const RoutingConfig& config = m_config_buffers[config_idx];
+  uint32_t sample_rate = config.sample_rate;
 
   m_groups.clear();
   m_groups.reserve(config.num_groups);
@@ -879,16 +880,35 @@ void RoutingMatrix::updatePanLaw(uint8_t channel_index, float pan) {
 
 void RoutingMatrix::processMetering(float* buffer, size_t num_frames, std::atomic<float>& peak,
                                     std::atomic<float>& rms) {
-  // Calculate peak (maximum absolute value)
+  // Get current config for metering mode
+  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& config = m_config_buffers[config_idx];
+
+  // Calculate peak based on metering mode
   float peak_value = 0.0f;
-  for (size_t i = 0; i < num_frames; ++i) {
-    float abs_sample = std::abs(buffer[i]);
-    if (abs_sample > peak_value) {
-      peak_value = abs_sample;
+
+  if (config.metering_mode == MeteringMode::TruePeak) {
+    // ORP121 Q-04: True-peak metering with 4x oversampling (ITU-R BS.1770-4)
+    // Note: We use the master true-peak meter here since processMetering is
+    // called for various metering points. For per-channel/group true-peak,
+    // the TruePeakMeter instances in ChannelState/GroupState should be used.
+    for (size_t i = 0; i < num_frames; ++i) {
+      float true_peak = m_master_true_peak_meter.process(buffer[i]);
+      if (true_peak > peak_value) {
+        peak_value = true_peak;
+      }
+    }
+  } else {
+    // Standard peak metering (maximum absolute value)
+    for (size_t i = 0; i < num_frames; ++i) {
+      float abs_sample = std::abs(buffer[i]);
+      if (abs_sample > peak_value) {
+        peak_value = abs_sample;
+      }
     }
   }
 
-  // Calculate RMS (root mean square)
+  // Calculate RMS (root mean square) - same for all metering modes
   float sum_squares = 0.0f;
   for (size_t i = 0; i < num_frames; ++i) {
     sum_squares += buffer[i] * buffer[i];
@@ -924,6 +944,60 @@ float RoutingMatrix::linearToDb(float linear) const {
   if (linear <= 0.0f)
     return -100.0f; // -inf
   return 20.0f * std::log10(linear);
+}
+
+// ============================================================================
+// ORP121 Q-05: Headroom Management
+// ============================================================================
+
+uint8_t RoutingMatrix::countActiveChannelsInGroup(uint8_t group_index) const {
+  uint8_t count = 0;
+  for (const auto& channel : m_channels) {
+    if (channel.group_index == group_index && !channel.mute.load(std::memory_order_acquire)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+uint8_t RoutingMatrix::countTotalActiveChannels() const {
+  uint8_t count = 0;
+  for (const auto& channel : m_channels) {
+    if (channel.group_index != UNASSIGNED_GROUP && !channel.mute.load(std::memory_order_acquire)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+float RoutingMatrix::getHeadroomCompensation(uint8_t group_index) const {
+  // Get active config (lock-free read)
+  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& config = m_config_buffers[config_idx];
+
+  switch (config.headroom_mode) {
+  case HeadroomMode::None:
+    return 1.0f;
+
+  case HeadroomMode::PerGroup: {
+    uint8_t active = countActiveChannelsInGroup(group_index);
+    return active > 0 ? 1.0f / static_cast<float>(active) : 1.0f;
+  }
+
+  case HeadroomMode::Global: {
+    uint8_t active = countTotalActiveChannels();
+    return active > 0 ? 1.0f / static_cast<float>(active) : 1.0f;
+  }
+
+  case HeadroomMode::Logarithmic: {
+    // -3 dB per doubling of channels: 1/sqrt(n)
+    uint8_t active = countActiveChannelsInGroup(group_index);
+    return active > 0 ? 1.0f / std::sqrt(static_cast<float>(active)) : 1.0f;
+  }
+
+  default:
+    return 1.0f;
+  }
 }
 
 // ============================================================================
