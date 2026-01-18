@@ -95,9 +95,23 @@ set(CLIP_COMPOSER_SOURCES
   Source/Core/PlayoutLogger.cpp
   Source/Core/UndoManager.cpp
 
+  # Core Managers (OCC116/OCC117)
+  Source/Core/DisplayPreferences.cpp
+  Source/Core/ExternalToolManager.cpp
+  Source/Core/HotKeyManager.cpp
+  Source/Core/MIDIDeviceManager.cpp
+  Source/Core/ClipCommands.cpp
+
   # UI Components
   Source/UI/SessionHistoryWindow.cpp
   Source/UI/HeartbeatIndicator.cpp
+
+  # UI Dialogs (OCC116/OCC117)
+  Source/UI/HotKeySetupDialog.cpp
+  Source/UI/MIDIDevicesDialog.cpp
+  Source/UI/PasteSpecialDialog.cpp
+  Source/UI/MIDIMonitorWindow.cpp
+  Source/UI/LevelMetersWindow.cpp
 )
 
 target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})

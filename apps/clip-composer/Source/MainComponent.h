@@ -5,7 +5,11 @@
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
 #include "Core/Database.h"
+#include "Core/DisplayPreferences.h"
 #include "Core/EventLogger.h"
+#include "Core/ExternalToolManager.h"
+#include "Core/HotKeyManager.h"
+#include "Core/MIDIDeviceManager.h"
 #include "Core/PlayoutLogger.h"
 #include "Core/ServiceContext.h"
 #include "Core/UndoManager.h"
@@ -14,8 +18,13 @@
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
 #include "UI/HKGroteskLookAndFeel.h"
-#include "UI/HeartbeatIndicator.h"   // Include the new HeartbeatIndicator
-#include "UI/SessionHistoryWindow.h" // Include the new SessionHistoryWindow
+#include "UI/HeartbeatIndicator.h"
+#include "UI/HotKeySetupDialog.h"
+#include "UI/LevelMetersWindow.h"
+#include "UI/MIDIDevicesDialog.h"
+#include "UI/MIDIMonitorWindow.h"
+#include "UI/PasteSpecialDialog.h"
+#include "UI/SessionHistoryWindow.h"
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -95,6 +104,12 @@ private:
   std::unique_ptr<orpheus::PlayoutLogger> m_playoutLogger;
   std::unique_ptr<orpheus::UndoManager> m_undoManager;
 
+  // Managers (OCC116/OCC117)
+  std::unique_ptr<orpheus::DisplayPreferences> m_displayPreferences;
+  std::unique_ptr<orpheus::ExternalToolManager> m_externalToolManager;
+  std::unique_ptr<orpheus::HotKeyManager> m_hotKeyManager;
+  std::unique_ptr<orpheus::MIDIDeviceManager> m_midiDeviceManager;
+
   // Service Context (Dependency Injection)
   orpheus::ServiceContext m_serviceContext;
 
@@ -105,7 +120,11 @@ private:
   std::unique_ptr<shmui::BarVisualizer> m_barVisualizer; // shmui frequency visualizer
 
   std::unique_ptr<SessionHistoryWindow> m_sessionHistoryWindow;
-  std::unique_ptr<HeartbeatIndicator> m_heartbeatIndicator; // Heartbeat indicator
+  std::unique_ptr<HeartbeatIndicator> m_heartbeatIndicator;
+
+  // Popup Windows (OCC116/OCC117)
+  std::unique_ptr<MIDIMonitorWindow> m_midiMonitorWindow;
+  std::unique_ptr<LevelMetersWindow> m_levelMetersWindow;
 
   // Custom Look and Feel (HK Grotesk font)
   HKGroteskLookAndFeel m_hkGroteskLookAndFeel;
