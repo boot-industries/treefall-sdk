@@ -222,7 +222,7 @@
     <div class="container">
         <h1>Orpheus SDK - Command Reference</h1>
         <p class="subtitle">Quick reference for common development tasks</p>
-        <p class="last-updated">Last updated: 2025-11-03</p>
+        <p class="last-updated">Last updated: 2026-01-18</p>
         </div>
 
         <div class="warning">
@@ -312,6 +312,26 @@
                     <td class="job">Run OCC integration tests</td>
                     <td><code class="command">ctest --test-dir build -R OCC_Integration --output-on-failure</code></td>
                     <td class="description">Run OCC integration tests with SDK</td>
+                </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run routing matrix tests</td>
+                    <td><code class="command">./build/tests/routing/routing_matrix_test</code></td>
+                    <td class="description">Run routing matrix tests (HeadroomMode, true-peak metering)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run callback queue stress tests</td>
+                    <td><code class="command">./build/tests/transport/callback_queue_stress_test</code></td>
+                    <td class="description">Run SPSC callback queue stress tests (lock-free verification)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run transport tests</td>
+                    <td><code class="command">ctest --test-dir build -R transport --output-on-failure</code></td>
+                    <td class="description">Run all transport-related tests</td>
+                </tr>
+                <tr class="section-row hidden" data-section="testing">
+                    <td class="job">Run tests (parallel)</td>
+                    <td><code class="command">ctest --test-dir build --output-on-failure -j4</code></td>
+                    <td class="description">Run tests in parallel (4 jobs)</td>
                 </tr>
 
                 <!-- Run Commands -->
@@ -434,9 +454,29 @@
                     <td colspan="3">Documentation</td>
                 </tr>
                 <tr class="section-row hidden" data-section="docs">
-                    <td class="job">Update this page</td>
-                    <td><code class="command">./scripts/update-commands-page.sh</code></td>
-                    <td class="description">Regenerate this command reference page</td>
+                    <td class="job">View SDK progress</td>
+                    <td><code class="command">cat .claude/implementation_progress.md</code></td>
+                    <td class="description">View SDK implementation progress and ORP121 status</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View ORP121 master plan</td>
+                    <td><code class="command">cat "docs/orp/ORP121 Audio Backend Refactoring Master Plan.md"</code></td>
+                    <td class="description">View audio backend refactoring master plan</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View gain staging docs</td>
+                    <td><code class="command">cat docs/orp/GAIN_STAGING.md</code></td>
+                    <td class="description">View gain staging model documentation</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View wireframes</td>
+                    <td><code class="command">ls -la wireframes/v2026-01-18/</code></td>
+                    <td class="description">List current architecture wireframe diagrams</td>
+                </tr>
+                <tr class="section-row hidden" data-section="docs">
+                    <td class="job">View ORP index</td>
+                    <td><code class="command">cat docs/orp/INDEX.md</code></td>
+                    <td class="description">View Orpheus SDK documentation index</td>
                 </tr>
                 <tr class="section-row hidden" data-section="docs">
                     <td class="job">Find OCC docs</td>
