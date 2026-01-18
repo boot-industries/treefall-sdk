@@ -186,6 +186,21 @@ public:
   }
 
   //==============================================================================
+  // OCC144: Level Metering
+
+  /// Get current master RMS level (for Level Meters window)
+  /// @return RMS level as 0.0-1.0 (or higher if clipping)
+  float getMasterRmsLevel() const;
+
+  /// Get current master peak level (for Level Meters window)
+  /// @return Peak level as 0.0-1.0 (or higher if clipping)
+  float getMasterPeakLevel() const;
+
+  /// Get group levels (placeholder - returns master level for all groups until routing implemented)
+  /// @param groupLevels Output array for 4 group levels
+  void getGroupLevels(std::array<float, 4>& groupLevels) const;
+
+  //==============================================================================
   // Audio Device Management (for Audio Settings Dialog)
 
   /// Get list of available audio device names

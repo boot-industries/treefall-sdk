@@ -122,6 +122,12 @@ public:
    */
   void setBackgroundColour(const juce::Colour& colour);
 
+  /**
+   * @brief Enable VU meter gradient mode (green-yellow-red).
+   * When enabled, bars are drawn with a vertical gradient based on level.
+   */
+  void setGradientMode(bool enabled);
+
   //==============================================================================
   // Component overrides
 
@@ -146,6 +152,7 @@ private:
   float maxHeightPct = 100.0f;
   bool demoMode = false;
   bool centerAlign = false;
+  bool gradientMode = false; // VU meter gradient mode (green-yellow-red)
 
   // Volume data
   std::vector<float> volumeBands;

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipEditDialog.h"
+#include "DesignTokens.h"
+
+using namespace OCC::Design;
 
 //==============================================================================
 ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
@@ -24,7 +27,7 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
   // Build Phase 3 UI (Fade times)
   buildPhase3UI();
 
-  setSize(700, 850); // Expanded for all phases, increased height to prevent button crushing
+  setSize(700, 880); // Expanded for all phases + larger 64px dials
 }
 
 ClipEditDialog::~ClipEditDialog() {
@@ -364,11 +367,12 @@ void ClipEditDialog::restartPlayback() {
 void ClipEditDialog::buildPhase1UI() {
   // Clip Name
   m_nameLabel = std::make_unique<juce::Label>("nameLabel", "Clip Name:");
-  m_nameLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_nameLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_nameLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_nameLabel.get());
 
   m_nameEditor = std::make_unique<juce::TextEditor>();
-  m_nameEditor->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::plain));
+  m_nameEditor->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::plain));
   m_nameEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_nameEditor->setMultiLine(false);                                // Single line only
   m_nameEditor->setScrollBarThickness(0);                           // No scrollbar
@@ -383,20 +387,22 @@ void ClipEditDialog::buildPhase1UI() {
   };
   addAndMakeVisible(m_nameEditor.get());
 
-  // File Path (read-only)
+  // File Path (read-only) - Note: These are NOT added as visible since file info
+  // is shown in m_fileInfoPanel. Keeping for potential future use.
   m_filePathLabel = std::make_unique<juce::Label>("filePathLabel", "File Path:");
-  m_filePathLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
-  addAndMakeVisible(m_filePathLabel.get());
+  m_filePathLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  // NOT visible - file info shown in m_fileInfoPanel
 
   m_filePathEditor = std::make_unique<juce::TextEditor>();
-  m_filePathEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_filePathEditor->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_filePathEditor->setReadOnly(true);
-  m_filePathEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
-  addAndMakeVisible(m_filePathEditor.get());
+  m_filePathEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(kBgInset));
+  // NOT visible - file info shown in m_fileInfoPanel
 
   // Color
   m_colorLabel = std::make_unique<juce::Label>("colorLabel", "Color:");
-  m_colorLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_colorLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_colorLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_colorLabel.get());
 
   // Ableton-style color swatch picker
@@ -413,7 +419,8 @@ void ClipEditDialog::buildPhase1UI() {
 
   // Clip Group
   m_groupLabel = std::make_unique<juce::Label>("groupLabel", "Group:");
-  m_groupLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_groupLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_groupLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_groupLabel.get());
 
   m_groupComboBox = std::make_unique<juce::ComboBox>();
@@ -428,7 +435,9 @@ void ClipEditDialog::buildPhase1UI() {
 
   // Dialog buttons
   m_okButton = std::make_unique<juce::TextButton>("OK");
-  m_okButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2ecc71)); // Green
+  m_okButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kAccentGreen));
+  m_okButton->setColour(juce::TextButton::buttonOnColourId,
+                        juce::Colour(kAccentGreen).brighter(0.2f));
   m_okButton->onClick = [this]() {
     if (onOkClicked)
       onOkClicked(m_metadata);
@@ -436,7 +445,9 @@ void ClipEditDialog::buildPhase1UI() {
   addAndMakeVisible(m_okButton.get());
 
   m_cancelButton = std::make_unique<juce::TextButton>("Cancel");
-  m_cancelButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff95a5a6)); // Grey
+  m_cancelButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kMetalMid));
+  m_cancelButton->setColour(juce::TextButton::buttonOnColourId,
+                            juce::Colour(kMetalMid).brighter(0.2f));
   m_cancelButton->onClick = [this]() {
     if (onCancelClicked)
       onCancelClicked();
@@ -486,9 +497,9 @@ void ClipEditDialog::buildPhase2UI() {
     skipToStartIcon.release(); // DrawableButton takes ownership
   }
   m_skipToStartButton->setColour(juce::DrawableButton::backgroundColourId,
-                                 juce::Colour(0xff3a3a3a));
+                                 juce::Colour(kBgComponent));
   m_skipToStartButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                                 juce::Colour(0xff4a4a4a));
+                                 juce::Colour(kBgComponent).brighter(0.15f));
   m_skipToStartButton->onClick = [this]() {
     if (m_previewPlayer) {
       // Issue #9: Jump to IN point (keep play/pause state)
@@ -533,9 +544,9 @@ void ClipEditDialog::buildPhase2UI() {
     m_playButton->setImages(playIcon.get());
     playIcon.release(); // DrawableButton takes ownership
   }
-  m_playButton->setColour(juce::DrawableButton::backgroundColourId,
-                          juce::Colour(0xff2ecc71)); // Green
-  m_playButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0xff27ae60));
+  m_playButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(kAccentGreen));
+  m_playButton->setColour(juce::DrawableButton::backgroundOnColourId,
+                          juce::Colour(kAccentGreen).brighter(0.15f));
   m_playButton->onClick = [this]() {
     if (m_previewPlayer) {
       // Play button ALWAYS restarts from IN point (that's its purpose)
@@ -591,9 +602,9 @@ void ClipEditDialog::buildPhase2UI() {
     m_stopButton->setImages(stopIcon.get());
     stopIcon.release(); // DrawableButton takes ownership
   }
-  m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
-                          juce::Colour(0xffe74c3c)); // Red
-  m_stopButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0xffc0392b));
+  m_stopButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(kMeterRed));
+  m_stopButton->setColour(juce::DrawableButton::backgroundOnColourId,
+                          juce::Colour(kMeterRed).brighter(0.15f));
   m_stopButton->onClick = [this]() {
     if (!m_previewPlayer)
       return;
@@ -653,9 +664,10 @@ void ClipEditDialog::buildPhase2UI() {
     m_skipToEndButton->setImages(skipToEndIcon.get());
     skipToEndIcon.release(); // DrawableButton takes ownership
   }
-  m_skipToEndButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xff3a3a3a));
+  m_skipToEndButton->setColour(juce::DrawableButton::backgroundColourId,
+                               juce::Colour(kBgComponent));
   m_skipToEndButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                               juce::Colour(0xff4a4a4a));
+                               juce::Colour(kBgComponent).brighter(0.15f));
   m_skipToEndButton->onClick = [this]() {
     if (m_previewPlayer) {
       // Issue #9: Jump to 2 seconds before OUT point (keep play/pause state)
@@ -738,9 +750,9 @@ void ClipEditDialog::buildPhase2UI() {
     loopIcon.release(); // DrawableButton takes ownership
   }
   m_loopButton->setClickingTogglesState(true); // Enable toggle mode
-  m_loopButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xff3a3a3a));
+  m_loopButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(kBgComponent));
   m_loopButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                          juce::Colour(0xff3498db)); // Blue when active (loop enabled)
+                          juce::Colour(kNeveBlue)); // Neve blue when active (loop enabled)
   m_loopButton->onClick = [this]() {
     // Update metadata (source of truth)
     m_metadata.loopEnabled = m_loopButton->getToggleState();
@@ -766,9 +778,9 @@ void ClipEditDialog::buildPhase2UI() {
 
   m_transportPositionLabel = std::make_unique<juce::Label>("posLabel", "00:00:00.00");
   m_transportPositionLabel->setFont(juce::FontOptions(
-      "HK Grotesk", 32.0f, juce::Font::bold)); // Issue #11: Enlarged for readability
+      "HK Grotesk", kFont3XL, juce::Font::bold)); // 24pt - Transport Time hierarchy
   m_transportPositionLabel->setJustificationType(juce::Justification::centred);
-  m_transportPositionLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+  m_transportPositionLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_transportPositionLabel.get());
 
   // Wire up preview player callbacks
@@ -900,7 +912,9 @@ void ClipEditDialog::buildPhase2UI() {
   // Zoom controls: +/- buttons (4 levels: 1x, 2x, 4x, 8x)
   // Zoom always centers on playhead position for intuitive navigation
   m_zoomOutButton = std::make_unique<juce::TextButton>("-");
-  m_zoomOutButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+  m_zoomOutButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kBgComponent));
+  m_zoomOutButton->setColour(juce::TextButton::buttonOnColourId,
+                             juce::Colour(kBgComponent).brighter(0.15f));
   m_zoomOutButton->onClick = [this]() {
     int currentLevel = m_waveformDisplay->getZoomLevel();
     if (currentLevel > 0) {
@@ -918,13 +932,15 @@ void ClipEditDialog::buildPhase2UI() {
   addAndMakeVisible(m_zoomOutButton.get());
 
   m_zoomLabel = std::make_unique<juce::Label>("zoomLabel", "1x");
-  m_zoomLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_zoomLabel->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_zoomLabel->setJustificationType(juce::Justification::centred);
-  m_zoomLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+  m_zoomLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_zoomLabel.get());
 
   m_zoomInButton = std::make_unique<juce::TextButton>("+");
-  m_zoomInButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+  m_zoomInButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kBgComponent));
+  m_zoomInButton->setColour(juce::TextButton::buttonOnColourId,
+                            juce::Colour(kBgComponent).brighter(0.15f));
   m_zoomInButton->onClick = [this]() {
     int currentLevel = m_waveformDisplay->getZoomLevel();
     if (currentLevel < 4) { // Max zoom level is 4 (16x)
@@ -943,12 +959,13 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim In Point
   m_trimInLabel = std::make_unique<juce::Label>("trimInLabel", "Trim In:");
-  m_trimInLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_trimInLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_trimInLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_trimInLabel.get());
 
   // Time editor (MM:SS:FF - SpotOn format, 75fps)
   m_trimInTimeEditor = std::make_unique<juce::TextEditor>();
-  m_trimInTimeEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_trimInTimeEditor->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_trimInTimeEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_trimInTimeEditor->setText("00:00:00", false);
   m_trimInTimeEditor->onReturnKey = [this]() {
@@ -1047,7 +1064,9 @@ void ClipEditDialog::buildPhase2UI() {
 
   // SET button for IN point (capture current playback position - SpotOn-inspired)
   m_trimInHoldButton = std::make_unique<juce::TextButton>("SET");
-  m_trimInHoldButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3498db)); // Blue
+  m_trimInHoldButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kNeveBlue));
+  m_trimInHoldButton->setColour(juce::TextButton::buttonOnColourId,
+                                juce::Colour(kNeveBlue).brighter(0.15f));
   m_trimInHoldButton->onClick = [this]() {
     if (m_previewPlayer) {
       int64_t currentPos = m_previewPlayer->getCurrentPosition();
@@ -1096,12 +1115,13 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim Out Point
   m_trimOutLabel = std::make_unique<juce::Label>("trimOutLabel", "Trim Out:");
-  m_trimOutLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_trimOutLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_trimOutLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_trimOutLabel.get());
 
   // Time editor (MM:SS:FF - SpotOn format, 75fps)
   m_trimOutTimeEditor = std::make_unique<juce::TextEditor>();
-  m_trimOutTimeEditor->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_trimOutTimeEditor->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_trimOutTimeEditor->setJustification(juce::Justification::centredLeft); // Vertically center text
   m_trimOutTimeEditor->setText("00:00:00", false);
   m_trimOutTimeEditor->onReturnKey = [this]() {
@@ -1190,8 +1210,9 @@ void ClipEditDialog::buildPhase2UI() {
 
   // SET button for OUT point (capture current playback position - SpotOn-inspired)
   m_trimOutHoldButton = std::make_unique<juce::TextButton>("SET");
-  m_trimOutHoldButton->setColour(juce::TextButton::buttonColourId,
-                                 juce::Colour(0xff3498db)); // Blue
+  m_trimOutHoldButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kNeveBlue));
+  m_trimOutHoldButton->setColour(juce::TextButton::buttonOnColourId,
+                                 juce::Colour(kNeveBlue).brighter(0.15f));
   m_trimOutHoldButton->onClick = [this]() {
     if (m_previewPlayer) {
       int64_t currentPos = m_previewPlayer->getCurrentPosition();
@@ -1240,24 +1261,26 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Trim Info Label (shows duration in seconds)
   m_trimInfoLabel = std::make_unique<juce::Label>("trimInfoLabel", "Duration: --:--");
-  m_trimInfoLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
-  m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-  m_trimInfoLabel->setColour(juce::Label::backgroundColourId, juce::Colour(0xff2a2a2a));
-  m_trimInfoLabel->setColour(juce::Label::outlineColourId, juce::Colour(0xff555555));
+  m_trimInfoLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_trimInfoLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
+  m_trimInfoLabel->setColour(juce::Label::backgroundColourId, juce::Colour(kBgInset));
+  m_trimInfoLabel->setColour(juce::Label::outlineColourId, juce::Colour(kBorderDefault));
   m_trimInfoLabel->setJustificationType(juce::Justification::centred);
   addAndMakeVisible(m_trimInfoLabel.get());
 
-  // File Info Panel (SpotOn-style yellow background)
+  // File Info Panel (Neo-vintage console surface, subtle not jarring)
   m_fileInfoPanel = std::make_unique<juce::Label>("fileInfoPanel", "");
-  m_fileInfoPanel->setFont(juce::FontOptions("HK Grotesk", 11.0f, juce::Font::plain));
+  m_fileInfoPanel->setFont(juce::FontOptions("HK Grotesk", kFontXS, juce::Font::plain));
   m_fileInfoPanel->setJustificationType(juce::Justification::centredLeft);
-  m_fileInfoPanel->setColour(juce::Label::backgroundColourId, juce::Colour(0xfffff4cc)); // Yellow
-  m_fileInfoPanel->setColour(juce::Label::textColourId, juce::Colours::black);
+  m_fileInfoPanel->setColour(juce::Label::backgroundColourId, juce::Colour(kBgSurface));
+  m_fileInfoPanel->setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
+  m_fileInfoPanel->setColour(juce::Label::outlineColourId, juce::Colour(kBorderDefault));
   addAndMakeVisible(m_fileInfoPanel.get());
 
   // Gain Control (Feature 5: -30dB to +10dB, default 0dB) - Converted to dial/knob
   m_gainLabel = std::make_unique<juce::Label>("gainLabel", "Gain:");
-  m_gainLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_gainLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_gainLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_gainLabel.get());
 
   // Create rotary dial instead of horizontal slider
@@ -1280,8 +1303,9 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Text input field for gain (below the dial)
   m_gainValueLabel = std::make_unique<juce::Label>("gainValueLabel", "0.0 dB");
-  m_gainValueLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_gainValueLabel->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_gainValueLabel->setJustificationType(juce::Justification::centred);
+  m_gainValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_gainValueLabel->setEditable(true);
   m_gainValueLabel->onTextChange = [this]() {
     // Parse text input (accept single integer like "3" or decimal like "3.0")
@@ -1299,7 +1323,8 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Pitch dial (Item 26 - second dial for pitch adjustment)
   m_placeholderLabel = std::make_unique<juce::Label>("placeholderLabel", "Pitch:");
-  m_placeholderLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_placeholderLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_placeholderLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_placeholderLabel.get());
 
   m_placeholderDial =
@@ -1320,8 +1345,9 @@ void ClipEditDialog::buildPhase2UI() {
 
   // Text input field for pitch (below the dial)
   m_placeholderValueLabel = std::make_unique<juce::Label>("placeholderValueLabel", "0.0 st");
-  m_placeholderValueLabel->setFont(juce::FontOptions("HK Grotesk", 12.0f, juce::Font::plain));
+  m_placeholderValueLabel->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_placeholderValueLabel->setJustificationType(juce::Justification::centred);
+  m_placeholderValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_placeholderValueLabel->setEditable(true); // Editable
   m_placeholderValueLabel->onTextChange = [this]() {
     // Parse text input for pitch
@@ -1342,7 +1368,8 @@ void ClipEditDialog::buildPhase2UI() {
 void ClipEditDialog::buildPhase3UI() {
   // Fade In Section
   m_fadeInLabel = std::make_unique<juce::Label>("fadeInLabel", "Fade In:");
-  m_fadeInLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_fadeInLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_fadeInLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_fadeInLabel.get());
 
   m_fadeInCombo = std::make_unique<juce::ComboBox>();
@@ -1449,7 +1476,8 @@ void ClipEditDialog::buildPhase3UI() {
 
   // Fade Out Section
   m_fadeOutLabel = std::make_unique<juce::Label>("fadeOutLabel", "Fade Out:");
-  m_fadeOutLabel->setFont(juce::FontOptions("HK Grotesk", 14.0f, juce::Font::bold));
+  m_fadeOutLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
+  m_fadeOutLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_fadeOutLabel.get());
 
   m_fadeOutCombo = std::make_unique<juce::ComboBox>();
@@ -1557,25 +1585,25 @@ void ClipEditDialog::buildPhase3UI() {
 
 //==============================================================================
 void ClipEditDialog::paint(juce::Graphics& g) {
-  // Dark background
-  g.fillAll(juce::Colour(0xff1a1a1a));
+  // Dark background (Neo-vintage console)
+  g.fillAll(juce::Colour(kBgPrimary));
 
-  // Styled outer border (professional 2px with subtle highlight)
+  // Styled outer border (professional 2px with Neve blue accent)
   auto bounds = getLocalBounds().toFloat();
-  g.setColour(juce::Colour(0xff3498db).withAlpha(0.6f)); // Blue accent
-  g.drawRoundedRectangle(bounds.reduced(1.0f), 6.0f, 2.0f);
+  g.setColour(juce::Colour(kNeveBlue).withAlpha(0.6f));
+  g.drawRoundedRectangle(bounds.reduced(1.0f), kRadiusLG, kBorderMedium);
 
   // Inner shadow/depth effect
   g.setColour(juce::Colours::black.withAlpha(0.3f));
-  g.drawRoundedRectangle(bounds.reduced(3.0f), 4.0f, 1.0f);
+  g.drawRoundedRectangle(bounds.reduced(3.0f), kRadiusMD, kBorderThin);
 
   // Title bar
-  g.setColour(juce::Colour(0xff252525));
+  g.setColour(juce::Colour(kBgSecondary));
   g.fillRect(0, 0, getWidth(), 50);
 
-  // Title text
-  g.setColour(juce::Colours::white);
-  g.setFont(juce::FontOptions("HK Grotesk", 20.0f, juce::Font::bold));
+  // Title text (24pt bold - Dialog Title hierarchy)
+  g.setColour(juce::Colour(kTextPrimary));
+  g.setFont(juce::FontOptions("HK Grotesk", kFont3XL, juce::Font::bold));
   g.drawText("Clip Edit", 20, 0, 400, 50, juce::Justification::centredLeft, false);
 }
 
@@ -1635,14 +1663,15 @@ void ClipEditDialog::resized() {
 
   // === TRANSPORT BAR (centered playback controls + vertically centered time display) ===
   if (m_skipToStartButton && m_playButton && m_stopButton && m_skipToEndButton && m_loopButton &&
-      m_transportPositionLabel) {
+      m_stopOthersButton && m_transportPositionLabel) {
     // Reserve space for transport section - will be centered between buttons and Duration
     const int TRANSPORT_HEIGHT = GRID * 10; // Increased to accommodate centered time
     auto transportRow = contentArea.removeFromTop(TRANSPORT_HEIGHT);
 
     // Transport buttons (top)
     auto buttonRow = transportRow.removeFromTop(GRID * 4);
-    auto transportCenter = buttonRow.withSizeKeepingCentre(GRID * 35, GRID * 4);
+    auto transportCenter =
+        buttonRow.withSizeKeepingCentre(GRID * 50, GRID * 4); // Wider for all controls
 
     // Skip to Start button (◄◄)
     m_skipToStartButton->setBounds(transportCenter.removeFromLeft(GRID * 4));
@@ -1662,6 +1691,10 @@ void ClipEditDialog::resized() {
 
     // Skip to End button (►►)
     m_skipToEndButton->setBounds(transportCenter.removeFromLeft(GRID * 4));
+    transportCenter.removeFromLeft(GRID * 2); // Extra spacing before toggle
+
+    // Stop Others toggle button (OCC144: was missing from layout)
+    m_stopOthersButton->setBounds(transportCenter.removeFromLeft(GRID * 12)); // Wider for text
 
     // Transport position label (vertically centered - equidistant from buttons and Duration)
     // Using remaining height, center the time display
@@ -1766,46 +1799,49 @@ void ClipEditDialog::resized() {
 
   contentArea.removeFromTop(GRID); // Reduced: GRID * 2 -> GRID
 
-  // === GAIN CONTROL & PLACEHOLDER DIAL (Feature 5 - Amended Item 26) ===
-  // Two dials side by side with text fields below
+  // === GAIN CONTROL & PITCH DIAL (Feature 5 - Amended Item 26) ===
+  // Two 64px dials side by side with labels above and values below
+  const int dialSize = Layout::kDialSize; // 64px
   auto dialSection =
-      contentArea.removeFromTop(GRID * 5); // Increased height for dials + text fields
+      contentArea.removeFromTop(GRID * 8); // Increased height for larger dials + text fields
 
   // Left half for Gain dial
   auto gainSection = dialSection.removeFromLeft(dialSection.getWidth() / 2);
   gainSection.removeFromLeft(GRID); // Left margin
 
   if (m_gainLabel && m_gainSlider && m_gainValueLabel) {
-    // Gain label at top
-    m_gainLabel->setBounds(gainSection.removeFromTop(GRID));
+    // Gain label centered above dial
+    auto labelArea = gainSection.removeFromTop(GRID * 2);
+    m_gainLabel->setBounds(labelArea.withSizeKeepingCentre(dialSize, GRID * 2));
 
-    // Gain dial (rotary knob)
-    auto dialArea = gainSection.removeFromTop(GRID * 3);
-    auto dialBounds = dialArea.withSizeKeepingCentre(GRID * 5, GRID * 5); // 60x60 dial
+    // Gain dial (64x64 rotary knob)
+    auto dialArea = gainSection.removeFromTop(dialSize + GRID);
+    auto dialBounds = dialArea.withSizeKeepingCentre(dialSize, dialSize);
     m_gainSlider->setBounds(dialBounds);
 
-    // Gain value text field below dial
-    auto valueArea = gainSection.removeFromTop(GRID);
-    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 6, GRID * 1.5);
+    // Gain value text field centered below dial
+    auto valueArea = gainSection.removeFromTop(GRID * 2);
+    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 7, GRID * 2);
     m_gainValueLabel->setBounds(valueBounds);
   }
 
-  // Right half for Placeholder dial
-  auto placeholderSection = dialSection;
-  placeholderSection.removeFromRight(GRID); // Right margin
+  // Right half for Pitch dial
+  auto pitchSection = dialSection;
+  pitchSection.removeFromRight(GRID); // Right margin
 
   if (m_placeholderLabel && m_placeholderDial && m_placeholderValueLabel) {
-    // Placeholder label at top
-    m_placeholderLabel->setBounds(placeholderSection.removeFromTop(GRID));
+    // Pitch label centered above dial
+    auto labelArea = pitchSection.removeFromTop(GRID * 2);
+    m_placeholderLabel->setBounds(labelArea.withSizeKeepingCentre(dialSize, GRID * 2));
 
-    // Placeholder dial (rotary knob)
-    auto dialArea = placeholderSection.removeFromTop(GRID * 3);
-    auto dialBounds = dialArea.withSizeKeepingCentre(GRID * 5, GRID * 5); // 60x60 dial
+    // Pitch dial (64x64 rotary knob)
+    auto dialArea = pitchSection.removeFromTop(dialSize + GRID);
+    auto dialBounds = dialArea.withSizeKeepingCentre(dialSize, dialSize);
     m_placeholderDial->setBounds(dialBounds);
 
-    // Placeholder value text field below dial
-    auto valueArea = placeholderSection.removeFromTop(GRID);
-    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 6, GRID * 1.5);
+    // Pitch value text field centered below dial
+    auto valueArea = pitchSection.removeFromTop(GRID * 2);
+    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 7, GRID * 2);
     m_placeholderValueLabel->setBounds(valueBounds);
   }
 
@@ -2442,37 +2478,38 @@ bool ClipEditDialog::keyStateChanged(bool isKeyDown) {
 
 //==============================================================================
 void ClipEditDialog::updateTransportButtonColors() {
-  // Color scheme: Dark (grey) = inactive, Light (colored) = active
+  // Color scheme: Dark (component bg) = inactive, Bright (colored) = active
+  // Using DesignTokens for consistent Neve-inspired console aesthetic
   if (!m_previewPlayer)
     return;
 
   bool isPlaying = m_previewPlayer->isPlaying();
   bool isLoopEnabled = m_metadata.loopEnabled;
 
-  const juce::Colour DARK_INACTIVE = juce::Colour(0xff3a3a3a);
-  const juce::Colour PLAY_ACTIVE = juce::Colour(0xff27ae60);
-  const juce::Colour STOP_ACTIVE = juce::Colour(0xffff4444);
-  const juce::Colour LOOP_ACTIVE = juce::Colour(0xff3498db);
+  const juce::Colour DARK_INACTIVE = juce::Colour(kBgComponent);
+  const juce::Colour PLAY_ACTIVE = juce::Colour(kAccentGreen);
+  const juce::Colour STOP_ACTIVE = juce::Colour(kMeterRed);
+  const juce::Colour LOOP_ACTIVE = juce::Colour(kNeveBlue);
 
-  // Play button: Green when playing, grey when stopped
+  // Play button: Green when playing, component bg when stopped
   if (m_playButton) {
     m_playButton->setColour(juce::DrawableButton::backgroundColourId,
                             isPlaying ? PLAY_ACTIVE : DARK_INACTIVE);
   }
 
-  // Stop button: Red when stopped, grey when playing
+  // Stop button: Red when stopped, component bg when playing
   if (m_stopButton) {
     m_stopButton->setColour(juce::DrawableButton::backgroundColourId,
                             !isPlaying ? STOP_ACTIVE : DARK_INACTIVE);
   }
 
-  // Loop button: Blue when loop enabled, grey when disabled
+  // Loop button: Neve blue when loop enabled, component bg when disabled
   if (m_loopButton) {
     m_loopButton->setColour(juce::DrawableButton::backgroundColourId,
                             isLoopEnabled ? LOOP_ACTIVE : DARK_INACTIVE);
   }
 
-  // Skip buttons: Always grey (navigation only, not stateful)
+  // Skip buttons: Always component bg (navigation only, not stateful)
   if (m_skipToStartButton) {
     m_skipToStartButton->setColour(juce::DrawableButton::backgroundColourId, DARK_INACTIVE);
   }

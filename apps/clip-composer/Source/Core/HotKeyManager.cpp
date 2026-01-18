@@ -153,6 +153,56 @@ void HotKeyManager::resetOverlappedSequence() {
 }
 
 //==============================================================================
+// OCC144: Per-Button HotKey Assignment
+
+void HotKeyManager::assignHotKey(int globalButtonIndex, const juce::KeyPress& key) {
+  if (globalButtonIndex < 0 || globalButtonIndex >= MAX_BUTTONS) {
+    return;
+  }
+
+  if (key.isValid()) {
+    m_buttonHotKeys[globalButtonIndex] = key;
+    DBG("HotKeyManager: Assigned hotkey to button " << globalButtonIndex << ": "
+                                                    << key.getTextDescription());
+  } else {
+    clearHotKey(globalButtonIndex);
+  }
+
+  save();
+  notifyChanged();
+}
+
+juce::KeyPress HotKeyManager::getHotKey(int globalButtonIndex) const {
+  auto it = m_buttonHotKeys.find(globalButtonIndex);
+  if (it != m_buttonHotKeys.end()) {
+    return it->second;
+  }
+  return juce::KeyPress();
+}
+
+void HotKeyManager::clearHotKey(int globalButtonIndex) {
+  auto it = m_buttonHotKeys.find(globalButtonIndex);
+  if (it != m_buttonHotKeys.end()) {
+    m_buttonHotKeys.erase(it);
+    DBG("HotKeyManager: Cleared hotkey for button " << globalButtonIndex);
+    save();
+    notifyChanged();
+  }
+}
+
+bool HotKeyManager::hasHotKey(int globalButtonIndex) const {
+  return m_buttonHotKeys.find(globalButtonIndex) != m_buttonHotKeys.end();
+}
+
+juce::String HotKeyManager::getHotKeyDescription(int globalButtonIndex) const {
+  auto it = m_buttonHotKeys.find(globalButtonIndex);
+  if (it != m_buttonHotKeys.end()) {
+    return it->second.getTextDescription();
+  }
+  return juce::String();
+}
+
+//==============================================================================
 // Persistence
 
 juce::PropertiesFile::Options HotKeyManager::getPropertiesFileOptions() const {
@@ -171,6 +221,17 @@ void HotKeyManager::save() {
   prefs.setValue("scope", scopeToString(m_scope));
   prefs.setValue("multiButtonAction", multiButtonActionToString(m_multiButtonAction));
 
+  // OCC144: Save per-button hotkey assignments
+  juce::String hotkeysData;
+  for (const auto& [buttonIndex, keyPress] : m_buttonHotKeys) {
+    if (keyPress.isValid()) {
+      // Format: buttonIndex:keyCode:modifiers;
+      hotkeysData += juce::String(buttonIndex) + ":" + juce::String(keyPress.getKeyCode()) + ":" +
+                     juce::String(keyPress.getModifiers().getRawFlags()) + ";";
+    }
+  }
+  prefs.setValue("buttonHotKeys", hotkeysData);
+
   prefs.saveIfNeeded();
 }
 
@@ -179,6 +240,32 @@ void HotKeyManager::load() {
 
   m_scope = stringToScope(prefs.getValue("scope", "Paged"));
   m_multiButtonAction = stringToMultiButtonAction(prefs.getValue("multiButtonAction", "Ganged"));
+
+  // OCC144: Load per-button hotkey assignments
+  m_buttonHotKeys.clear();
+  juce::String hotkeysData = prefs.getValue("buttonHotKeys", "");
+  if (hotkeysData.isNotEmpty()) {
+    juce::StringArray entries;
+    entries.addTokens(hotkeysData, ";", "");
+
+    for (const auto& entry : entries) {
+      if (entry.isEmpty())
+        continue;
+
+      juce::StringArray parts;
+      parts.addTokens(entry, ":", "");
+      if (parts.size() >= 3) {
+        int buttonIndex = parts[0].getIntValue();
+        int keyCode = parts[1].getIntValue();
+        int modifiers = parts[2].getIntValue();
+
+        if (buttonIndex >= 0 && buttonIndex < MAX_BUTTONS && keyCode != 0) {
+          m_buttonHotKeys[buttonIndex] = juce::KeyPress(keyCode, juce::ModifierKeys(modifiers), 0);
+        }
+      }
+    }
+    DBG("HotKeyManager: Loaded " << m_buttonHotKeys.size() << " custom hotkey assignments");
+  }
 }
 
 void HotKeyManager::notifyChanged() {

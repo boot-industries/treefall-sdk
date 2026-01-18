@@ -112,6 +112,7 @@ set(CLIP_COMPOSER_SOURCES
   Source/UI/PasteSpecialDialog.cpp
   Source/UI/MIDIMonitorWindow.cpp
   Source/UI/LevelMetersWindow.cpp
+  Source/UI/AboutDialog.cpp
 )
 
 target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
@@ -120,10 +121,12 @@ target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
 target_compile_features(orpheus_clip_composer_app PRIVATE cxx_std_20)
 
 # Include directories
+# Note: CMAKE_SOURCE_DIR varies based on build context, use relative path from app
+set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 target_include_directories(orpheus_clip_composer_app
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/include  # Orpheus SDK public headers
+    ${SDK_ROOT}/include  # Orpheus SDK public headers
 )
 
 # JUCE compile definitions
@@ -150,8 +153,9 @@ target_link_libraries(orpheus_clip_composer_app
 
 # Link against Orpheus SDK modules
 # Note: These libraries are built by the SDK CMakeLists.txt in src/core/
-set(SDK_LIB_DIR "${CMAKE_SOURCE_DIR}/build/src/core")
-set(SDK_PLATFORM_LIB_DIR "${CMAKE_SOURCE_DIR}/build/src/platform/audio_drivers")
+# Use SDK_ROOT defined earlier for consistent path resolution
+set(SDK_LIB_DIR "${SDK_ROOT}/build/src/core")
+set(SDK_PLATFORM_LIB_DIR "${SDK_ROOT}/build/src/platform/audio_drivers")
 
 # Core SDK libraries (static linking for now)
 target_link_libraries(orpheus_clip_composer_app

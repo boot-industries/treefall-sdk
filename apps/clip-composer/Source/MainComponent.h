@@ -14,6 +14,7 @@
 #include "Core/ServiceContext.h"
 #include "Core/UndoManager.h"
 #include "Session/SessionManager.h"
+#include "UI/AboutDialog.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
@@ -68,6 +69,9 @@ private:
   //==============================================================================
   // Timer callback for latency updates
   void timerCallback() override;
+
+  // OCC144: Apply display preferences to UI components
+  void applyDisplayPreferences();
 
   //==============================================================================
   // Core Functionality
@@ -138,6 +142,9 @@ private:
   // Item 24: Clip Copy/Paste clipboard
   bool m_hasClipInClipboard = false;
   SessionManager::ClipData m_clipboardData;
+
+  // OCC144: Track clip start times for elapsed time logging
+  std::unordered_map<int, juce::Time> m_clipStartTimes;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

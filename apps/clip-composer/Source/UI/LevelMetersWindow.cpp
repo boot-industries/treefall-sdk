@@ -213,6 +213,16 @@ void LevelMetersWindow::Content::addPlayHistoryEntry(int clipIndex, const juce::
 void LevelMetersWindow::Content::timerCallback() {
   auto now = juce::Time::getCurrentTime();
 
+  // OCC144: Poll AudioEngine for current levels
+  if (m_audioEngine) {
+    std::array<float, 4> groupLevels;
+    m_audioEngine->getGroupLevels(groupLevels);
+    for (int i = 0; i < 4; ++i) {
+      m_groupLevels[i].store(groupLevels[i]);
+    }
+    m_masterLevel.store(m_audioEngine->getMasterRmsLevel());
+  }
+
   // Update peaks
   for (int i = 0; i < 4; ++i) {
     float currentLevel = m_groupLevels[i].load();

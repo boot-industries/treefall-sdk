@@ -139,6 +139,29 @@ public:
   }
 
   //==============================================================================
+  // OCC144: Per-Button MIDI Note Assignment
+
+  static constexpr int MAX_BUTTONS = 960; // 8 tabs × 10×12 buttons
+
+  /** Assign a MIDI note to a button */
+  void assignMidiNote(int globalButtonIndex, int note, int channel = 1);
+
+  /** Get assigned MIDI note/channel for a button (-1 if none) */
+  std::pair<int, int> getMidiNote(int globalButtonIndex) const;
+
+  /** Clear MIDI note assignment for a button */
+  void clearMidiNote(int globalButtonIndex);
+
+  /** Check if button has a MIDI note assigned */
+  bool hasMidiNote(int globalButtonIndex) const;
+
+  /** Get human-readable description (e.g., "C4 (Ch 1)") */
+  juce::String getMidiNoteDescription(int globalButtonIndex) const;
+
+  /** Static helper: Convert note number to name (e.g., 60 -> "C4") */
+  static juce::String noteNumberToName(int noteNumber);
+
+  //==============================================================================
   // Persistence
 
   void save();
@@ -202,6 +225,10 @@ private:
 
   // MIDI learn mode
   std::function<void(int note, int channel)> m_midiLearnCallback;
+
+  // OCC144: Per-button MIDI note assignments
+  // Key: globalButtonIndex, Value: (noteNumber, channel)
+  std::map<int, std::pair<int, int>> m_buttonMidiNotes;
 
   // Thread safety
   juce::CriticalSection m_midiLock;

@@ -138,4 +138,18 @@ constexpr float kAnimDurationSlow = 0.3f;   // 300ms
 constexpr int kRefreshRateHz = 60;
 constexpr float kPulseFrequency = 2.0f; // Hz for playing state pulse
 
+//==============================================================================
+// LAYOUT CONSTANTS (Dialog-specific)
+//==============================================================================
+
+namespace Layout {
+constexpr int kRowHeight = 32;       // Standard row height (matches kSpace8)
+constexpr int kSmallRow = 24;        // Compact row height (matches kSpace6)
+constexpr int kSectionGap = 16;      // Gap between sections (matches kSpace4)
+constexpr int kItemGap = 8;          // Gap between items (matches kSpace2)
+constexpr int kDialSize = 64;        // Rotary dial diameter
+constexpr int kTimeFieldWidth = 110; // Time input field width
+constexpr int kButtonHeight = 40;    // Standard button height (25% taller than default)
+} // namespace Layout
+
 } // namespace OCC::Design

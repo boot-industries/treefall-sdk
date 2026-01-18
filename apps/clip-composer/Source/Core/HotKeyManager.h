@@ -112,6 +112,39 @@ public:
   void resetOverlappedSequence();
 
   //==============================================================================
+  // OCC144: Per-Button HotKey Assignment
+
+  /**
+   * Assign a custom hotkey to a specific button position.
+   * @param globalButtonIndex Global button index (0-383 for 8 tabs × 48 buttons)
+   * @param key The key to assign (empty KeyPress to clear)
+   */
+  void assignHotKey(int globalButtonIndex, const juce::KeyPress& key);
+
+  /**
+   * Get the assigned hotkey for a button position.
+   * @param globalButtonIndex Global button index
+   * @return The assigned KeyPress, or invalid if none assigned
+   */
+  juce::KeyPress getHotKey(int globalButtonIndex) const;
+
+  /**
+   * Clear the assigned hotkey for a button position.
+   */
+  void clearHotKey(int globalButtonIndex);
+
+  /**
+   * Check if a button has a custom hotkey assigned.
+   */
+  bool hasHotKey(int globalButtonIndex) const;
+
+  /**
+   * Get human-readable string for a button's assigned hotkey.
+   * Returns empty string if no hotkey assigned.
+   */
+  juce::String getHotKeyDescription(int globalButtonIndex) const;
+
+  //==============================================================================
   // Persistence
 
   void save();
@@ -144,6 +177,12 @@ private:
   // Track last triggered button per hotkey for overlapped mode
   // Key: keyCode, Value: last triggered clip index in the matching set
   std::map<int, int> m_lastTriggeredIndex;
+
+  // OCC144: Per-button custom hotkey assignments
+  // Key: global button index (0-383), Value: assigned KeyPress
+  std::map<int, juce::KeyPress> m_buttonHotKeys;
+
+  static constexpr int MAX_BUTTONS = 384; // 8 tabs × 48 buttons
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HotKeyManager)
 };
