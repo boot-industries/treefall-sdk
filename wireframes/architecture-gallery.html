@@ -384,62 +384,38 @@
                     <pre class="mermaid">
 graph TB
     subgraph APPS["Application Layer"]
-        direction LR
-        CC["Clip Composer<br/>JUCE Desktop<br/>Professional soundboard"]
-        WF["Wave Finder<br/>(Planned)<br/>Harmonic calculator"]
-        FX["FX Engine<br/>(Planned)<br/>LLM effects"]
-        DEMO["Demo Host<br/>Integration demo"]
+        direction TB
+        CC["Clip Composer<br/>JUCE Desktop"]
+        WF["Wave Finder<br/>(Planned)"]
+        FX["FX Engine<br/>(Planned)"]
+        DEMO["Demo Host"]
     end
 
     subgraph ADAPTERS["Adapter Layer"]
-        direction LR
-        MINHOST["Minhost CLI<br/>Offline render"]
+        direction TB
+        MINHOST["Minhost CLI"]
         REAPER["REAPER Ext<br/>(Quarantined)"]
-        CUSTOM["Custom Adapters<br/>Partner integrations"]
+        CUSTOM["Custom Adapters"]
     end
 
-    subgraph DRIVERS["TypeScript Driver Layer"]
-        direction LR
-        NATIVE["Native Driver<br/>@orpheus/engine-native<br/>N-API bindings"]
-        SERVICE["Service Driver<br/>@orpheus/engine-service<br/>HTTP + WebSocket"]
-        WASM["WASM Driver<br/>@orpheus/engine-wasm<br/>Browser access"]
-        BROKER["Client Broker<br/>@orpheus/client<br/>Auto selection"]
+    subgraph DRIVERS["TypeScript Drivers"]
+        direction TB
+        NATIVE["Native Driver<br/>@orpheus/engine-native"]
+        SERVICE["Service Driver<br/>@orpheus/engine-service"]
+        WASM["WASM Driver<br/>@orpheus/engine-wasm"]
+        BROKER["Client Broker<br/>@orpheus/client"]
     end
 
     subgraph CORE["Core SDK (C++20)"]
         direction TB
-
-        subgraph SESSION["Session Management"]
-            direction LR
-            GRAPH["SessionGraph<br/>Tracks, clips, tempo"]
-            JSON["Session JSON<br/>Load/save"]
-        end
-
-        subgraph TRANSPORT["Real-Time Transport"]
-            direction LR
-            CTRL["TransportController<br/>Playback, fades"]
-            ACTIVE["ActiveClip Manager<br/>Lock-free"]
-            SPSC["SPSC Queue<br/>256 slots (ORP121)"]
-        end
-
-        subgraph ROUTING["Routing & DSP (ORP121)"]
-            direction LR
-            MATRIX["RoutingMatrix<br/>N x M stereo"]
-            GAIN["GainSmoother<br/>-inf to +12 dB"]
-            PEAK["TruePeakMeter<br/>ITU-R BS.1770-4<br/>4x oversample"]
-            HEADROOM["HeadroomMode<br/>None/PerGroup/<br/>Global/Logarithmic"]
-            LIMITER["Soft-Knee Limiter<br/>-2 dBFS threshold"]
-        end
-
-        subgraph AUDIO["Audio I/O"]
-            direction LR
-            READER["AudioFileReader<br/>WAV/AIFF/FLAC"]
-            DRIVER["Audio Drivers<br/>CoreAudio/WASAPI/ALSA"]
-        end
+        SESSION["Session: Graph, JSON"]
+        TRANSPORT["Transport: Controller,<br/>ActiveClip, SPSC Queue"]
+        ROUTING["Routing (ORP121):<br/>Matrix, Gain, TruePeak,<br/>Headroom, Limiter"]
+        AUDIO["Audio I/O:<br/>FileReader, Drivers"]
     end
 
     subgraph PLATFORM["Platform Layer"]
-        direction LR
+        direction TB
         COREAUDIO["macOS CoreAudio"]
         WASAPI["Windows WASAPI"]
         ALSA["Linux ALSA"]
@@ -462,20 +438,10 @@ graph TB
     BROKER --> SERVICE
     BROKER --> WASM
 
-    GRAPH --> JSON
-    CTRL --> ACTIVE
-    CTRL --> SPSC
-    MATRIX --> GAIN
-    MATRIX --> PEAK
-    MATRIX --> HEADROOM
-    MATRIX --> LIMITER
-    CTRL --> READER
-    CTRL --> MATRIX
-    READER --> DRIVER
-    DRIVER --> COREAUDIO
-    DRIVER --> WASAPI
-    DRIVER --> ALSA
-    READER --> SNDFILE
+    AUDIO --> COREAUDIO
+    AUDIO --> WASAPI
+    AUDIO --> ALSA
+    AUDIO --> SNDFILE
                     </pre>
                 </div>
             </div>
@@ -501,17 +467,17 @@ graph TB
         direction TB
         TC["TransportController<br/>activeClips: map<br/>+startClip()<br/>+stopClip()<br/>+processAudio()"]
         AC["ActiveClip<br/>currentFrame: atomic<br/>gainLinear: atomic<br/>loopEnabled: atomic"]
-        SQ["SPSCCallbackQueue<br/>ring: function[256]<br/>writeIndex: atomic<br/>readIndex: atomic<br/>+push() +pop()"]
+        SQ["SPSCCallbackQueue<br/>ring: function[256]<br/>writeIndex: atomic<br/>readIndex: atomic"]
     end
 
     subgraph ROUTING_CLASSES["Routing Classes (ORP121)"]
         direction TB
         RM["RoutingMatrix<br/>channels: ChannelState[]<br/>groups: GroupState[]<br/>+setRouting()<br/>+process()"]
-        RC["RoutingConfig<br/>numInputChannels<br/>numOutputChannels<br/>sampleRate<br/>headroomMode<br/>enableTruePeak"]
-        HM["HeadroomMode<br/>None<br/>PerGroup<br/>Global<br/>Logarithmic"]
-        GS["GainSmoother<br/>currentGain, targetGain<br/>+setTarget()<br/>+process()<br/>MAX_GAIN_DB: 12.0"]
-        TPM["TruePeakMeter<br/>history: float[12]<br/>peakHold<br/>+process()<br/>OVERSAMPLE: 4<br/>TAPS_PER_PHASE: 12"]
-        SKL["SoftKneeLimiter<br/>+process()<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3"]
+        RC["RoutingConfig<br/>numInputChannels<br/>numOutputChannels<br/>sampleRate, headroomMode"]
+        HM["HeadroomMode<br/>None / PerGroup /<br/>Global / Logarithmic"]
+        GS["GainSmoother<br/>currentGain, targetGain<br/>MAX_GAIN_DB: 12.0"]
+        TPM["TruePeakMeter<br/>history: float[12]<br/>OVERSAMPLE: 4<br/>TAPS_PER_PHASE: 12"]
+        SKL["SoftKneeLimiter<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3"]
     end
 
     SG --> TRK
@@ -549,45 +515,34 @@ sequenceDiagram
     participant D as Audio Driver
 
     Note over U,D: Initialization
-
     U->>UI: Load Session
     UI->>T: new TransportController
     T->>R: new RoutingMatrix(config)
     R->>M: Init per-channel meters
 
-    Note over U,D: Audio Processing Loop
+    Note over U,D: Audio Processing (every 5ms)
+    D->>T: processAudio(buffer)
+    Note right of T: Read samples from clips
+    Note right of T: Apply fades per clip
+    T->>R: Add to input buffer
+    Note right of R: GainSmoother processing
+    R->>M: 4x oversample metering
+    Note right of R: Group mixing + headroom
+    Note right of R: Soft-knee limiter
+    R-->>T: Output buffer
 
-    loop Every 5ms at 512 samples
-        D->>T: processAudio(buffer)
-
-        loop Each active clip
-            T->>T: Read samples
-            T->>T: Apply fades
-            T->>R: Add to input buffer
-        end
-
-        R->>R: Apply GainSmoother
-        R->>M: 4x oversample metering
-        R->>R: Group mixing + headroom
-        R->>R: Soft-knee limiter
-        R-->>T: Output buffer
-
-        alt Clip reached end
-            alt Loop enabled
-                T->>Q: postCallback(onLooped)
-            else No loop
-                T->>Q: postCallback(onFinished)
-            end
+    alt Clip reached end
+        alt Loop enabled
+            T->>Q: postCallback(onLooped)
+        else No loop
+            T->>Q: postCallback(onFinished)
         end
     end
 
-    Note over U,D: UI Callback Processing (10Hz)
-
+    Note over U,D: UI Callback (10Hz)
     UI->>Q: processCallbacks()
-    loop While not empty
-        Q-->>UI: callback
-        UI->>U: Update UI state
-    end
+    Q-->>UI: callback
+    UI->>U: Update UI state
                     </pre>
                 </div>
             </div>
@@ -612,18 +567,18 @@ sequenceDiagram
 graph TB
     subgraph ROOT["orpheus-sdk/"]
         direction TB
-        CLAUDE["CLAUDE.md<br/>Development guide"]
-        CMAKE["CMakeLists.txt<br/>C++ build system"]
-        PKG["package.json<br/>pnpm workspace"]
+        CLAUDE["CLAUDE.md"]
+        CMAKE["CMakeLists.txt"]
+        PKG["package.json"]
     end
 
     subgraph SRC["src/ (Core SDK)"]
         direction TB
-        CORE_SESSION["core/session/<br/>SessionGraph, JSON"]
-        CORE_TRANSPORT["core/transport/<br/>TransportController"]
-        CORE_ROUTING["core/routing/<br/>RoutingMatrix, DSP"]
-        CORE_AUDIO["core/audio_io/<br/>File readers"]
-        PLATFORM["platform/<br/>Audio drivers"]
+        CORE_SESSION["core/session/"]
+        CORE_TRANSPORT["core/transport/"]
+        CORE_ROUTING["core/routing/"]
+        CORE_AUDIO["core/audio_io/"]
+        PLATFORM["platform/"]
     end
 
     subgraph ORP121_FILES["ORP121 Additions"]
@@ -650,25 +605,12 @@ graph TB
 
     subgraph PACKAGES["packages/"]
         direction TB
-
-        subgraph SHMUI["shmui-juce/"]
-            direction TB
-            ANALYZER["AudioAnalyzer<br/>FFT, RMS"]
-            WAVEFORM["WaveformVisualizer"]
-            BAR["BarVisualizer"]
-            MATRIX_DISP["MatrixDisplay"]
-        end
+        SHMUI["shmui-juce/<br/>AudioAnalyzer, Waveform,<br/>Bar, Matrix visualizers"]
     end
 
     subgraph APPS["apps/"]
         direction TB
-
-        subgraph CLIP_COMPOSER["clip-composer/"]
-            direction TB
-            CC_SRC["Source/<br/>JUCE components"]
-            CC_DOCS["docs/occ/<br/>OCC documents"]
-        end
-
+        CLIP_COMPOSER["clip-composer/<br/>Source/, docs/occ/"]
         DEMO_HOST["juce-demo-host/"]
     end
 
@@ -681,8 +623,8 @@ graph TB
 
     subgraph WIREFRAMES["wireframes/"]
         direction TB
-        WF_OLD["v2025-11-08/<br/>Previous version"]
-        WF_NEW["v2026-01-18/<br/>Current (ORP121)"]
+        WF_OLD["v2025-11-08/"]
+        WF_NEW["v2026-01-18/"]
     end
 
     ROOT --> SRC
@@ -693,24 +635,7 @@ graph TB
     ROOT --> DOCS
     ROOT --> WIREFRAMES
 
-    SRC --> CORE_SESSION
-    SRC --> CORE_TRANSPORT
-    SRC --> CORE_ROUTING
-    SRC --> CORE_AUDIO
-    SRC --> PLATFORM
-
     CORE_ROUTING --> ORP121_FILES
-
-    PACKAGES --> SHMUI
-    SHMUI --> ANALYZER
-    SHMUI --> WAVEFORM
-    SHMUI --> BAR
-    SHMUI --> MATRIX_DISP
-
-    APPS --> CLIP_COMPOSER
-    APPS --> DEMO_HOST
-
-    DOCS --> ORP_DOCS
                     </pre>
                 </div>
             </div>
@@ -735,35 +660,35 @@ graph TB
 
     subgraph GUI["GUI Applications"]
         direction TB
-        CC_APP["Clip Composer<br/>960 buttons, 8 tabs<br/>Waveform, fades, loops"]
-        DEMO_APP["Demo Host<br/>Integration example"]
-        CUSTOM_APP["Custom Apps<br/>Your application"]
+        CC_APP["Clip Composer<br/>960 buttons, 8 tabs"]
+        DEMO_APP["Demo Host"]
+        CUSTOM_APP["Custom Apps"]
     end
 
     subgraph CLI["CLI Tools"]
         direction TB
-        MINHOST_CLI["orpheus_minhost<br/>--session PATH<br/>--render OUTPUT"]
-        INSPECT_CLI["inspect_session<br/>--file PATH<br/>--validate"]
+        MINHOST_CLI["orpheus_minhost<br/>--session, --render"]
+        INSPECT_CLI["inspect_session<br/>--file, --validate"]
     end
 
     subgraph JS_API["JavaScript Drivers"]
         direction TB
-        JS_NATIVE["@orpheus/engine-native<br/>Lowest latency"]
-        JS_SERVICE["@orpheus/engine-service<br/>HTTP + WebSocket"]
-        JS_WASM["@orpheus/engine-wasm<br/>Browser access"]
-        JS_CLIENT["@orpheus/client<br/>Auto driver selection"]
+        JS_NATIVE["@orpheus/engine-native"]
+        JS_SERVICE["@orpheus/engine-service"]
+        JS_WASM["@orpheus/engine-wasm"]
+        JS_CLIENT["@orpheus/client"]
     end
 
     subgraph CPP_API["Native C++ API"]
         direction TB
-        CPP_HEADERS["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h<br/>HeadroomMode config<br/>TruePeak metering"]
+        CPP_HEADERS["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h"]
     end
 
     subgraph CONFIG["Configuration"]
         direction TB
-        SESSION_JSON["session.json<br/>Human-readable<br/>Version control friendly"]
-        ENV_VARS["Environment Variables<br/>ORPHEUS_LOG_LEVEL<br/>ORPHEUS_DRIVER_TYPE"]
-        ROUTING_CFG["RoutingConfig<br/>sample_rate<br/>headroom_mode<br/>enable_true_peak"]
+        SESSION_JSON["session.json"]
+        ENV_VARS["Environment Variables"]
+        ROUTING_CFG["RoutingConfig"]
     end
 
     END_USER --> CC_APP
@@ -816,26 +741,19 @@ graph TB
 
     subgraph CI["CI Pipeline"]
         direction TB
-
-        subgraph MATRIX["Matrix Build"]
-            direction TB
-            UBUNTU["Ubuntu"]
-            WINDOWS["Windows"]
-            MACOS["macOS"]
-        end
-
-        LINT["Lint Job<br/>clang-format, eslint"]
-        NATIVE["Native Driver<br/>N-API build"]
-        TS_BUILD["TypeScript<br/>pnpm build"]
-        INTEGRATION["Integration Tests<br/>Multi-clip stress"]
-        PERF["Performance<br/>Budget validation"]
+        MATRIX["Matrix Build<br/>Ubuntu, Windows, macOS"]
+        LINT["Lint: clang-format, eslint"]
+        NATIVE["Native Driver: N-API"]
+        TS_BUILD["TypeScript: pnpm build"]
+        INTEGRATION["Integration Tests"]
+        PERF["Performance Budgets"]
     end
 
     subgraph ORP121_TESTS["ORP121 Test Suite"]
         direction TB
         ROUTING_T["routing_matrix_test<br/>27 tests"]
         CALLBACK_T["callback_queue_stress<br/>6 tests"]
-        PERF_T["Performance Tests<br/>Waveform rendering"]
+        PERF_T["Performance Tests"]
     end
 
     subgraph ARTIFACTS["Build Artifacts"]
@@ -847,9 +765,9 @@ graph TB
 
     subgraph DIST["Distribution"]
         direction TB
-        GH_RELEASE["GitHub Releases<br/>Binaries + source"]
-        NPM_REG["npm Registry<br/>@orpheus packages"]
-        GH_PAGES["GitHub Pages<br/>API docs"]
+        GH_RELEASE["GitHub Releases"]
+        NPM_REG["npm Registry"]
+        GH_PAGES["GitHub Pages"]
     end
 
     LOCAL --> BUILD_LOCAL
