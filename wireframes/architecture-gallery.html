@@ -567,75 +567,39 @@ sequenceDiagram
 graph TB
     subgraph ROOT["orpheus-sdk/"]
         direction TB
-        CLAUDE["CLAUDE.md"]
-        CMAKE["CMakeLists.txt"]
-        PKG["package.json"]
+        CONFIG["CLAUDE.md<br/>CMakeLists.txt<br/>package.json"]
     end
 
-    subgraph SRC["src/ (Core SDK)"]
+    subgraph CORE["Core C++ (src/, include/)"]
         direction TB
-        CORE_SESSION["core/session/"]
-        CORE_TRANSPORT["core/transport/"]
-        CORE_ROUTING["core/routing/"]
-        CORE_AUDIO["core/audio_io/"]
-        PLATFORM["platform/"]
+        SRC["src/<br/>core/session/<br/>core/transport/<br/>core/routing/<br/>core/audio_io/<br/>platform/"]
+        INCLUDE["include/orpheus/<br/>abi_version.h<br/>transport_controller.h<br/>routing_matrix.h<br/>audio_driver.h"]
+        ORP121["ORP121 Additions<br/>true_peak_meter.h<br/>gain_smoother.cpp<br/>GAIN_STAGING.md"]
     end
 
-    subgraph ORP121_FILES["ORP121 Additions"]
+    subgraph TESTING["Testing (tests/)"]
         direction TB
-        TPM_H["true_peak_meter.h<br/>ITU-R BS.1770-4"]
-        GS_CPP["gain_smoother.cpp<br/>+12 dB range"]
-        GAIN_DOC["GAIN_STAGING.md"]
+        TESTS["routing_matrix_test (27)<br/>callback_queue_stress (6)<br/>transport_test"]
     end
 
-    subgraph INCLUDE["include/orpheus/"]
+    subgraph APPLICATIONS["Applications"]
         direction TB
-        ABI_H["abi_version.h"]
-        TC_H["transport_controller.h"]
-        RM_H["routing_matrix.h"]
-        AD_H["audio_driver.h"]
+        PACKAGES["packages/shmui-juce/<br/>AudioAnalyzer, Waveform,<br/>Bar, Matrix visualizers"]
+        APPS["apps/clip-composer/<br/>apps/juce-demo-host/"]
     end
 
-    subgraph TESTS["tests/"]
+    subgraph DOCUMENTATION["Documentation"]
         direction TB
-        ROUTING_TEST["routing_matrix_test<br/>27 tests"]
-        CALLBACK_TEST["callback_queue_stress<br/>6 tests"]
-        TRANSPORT_TEST["transport_test"]
+        DOCS["docs/orp/ (120+ docs)<br/>ARCHITECTURE.md<br/>ROADMAP.md"]
+        WIREFRAMES["wireframes/<br/>v2025-11-08/<br/>v2026-01-18/"]
     end
 
-    subgraph PACKAGES["packages/"]
-        direction TB
-        SHMUI["shmui-juce/<br/>AudioAnalyzer, Waveform,<br/>Bar, Matrix visualizers"]
-    end
+    ROOT --> CORE
+    ROOT --> TESTING
+    ROOT --> APPLICATIONS
+    ROOT --> DOCUMENTATION
 
-    subgraph APPS["apps/"]
-        direction TB
-        CLIP_COMPOSER["clip-composer/<br/>Source/, docs/occ/"]
-        DEMO_HOST["juce-demo-host/"]
-    end
-
-    subgraph DOCS["docs/"]
-        direction TB
-        ORP_DOCS["orp/<br/>120+ ORP documents"]
-        ARCH_DOC["ARCHITECTURE.md"]
-        ROAD_DOC["ROADMAP.md"]
-    end
-
-    subgraph WIREFRAMES["wireframes/"]
-        direction TB
-        WF_OLD["v2025-11-08/"]
-        WF_NEW["v2026-01-18/"]
-    end
-
-    ROOT --> SRC
-    ROOT --> INCLUDE
-    ROOT --> TESTS
-    ROOT --> PACKAGES
-    ROOT --> APPS
-    ROOT --> DOCS
-    ROOT --> WIREFRAMES
-
-    CORE_ROUTING --> ORP121_FILES
+    SRC --> ORP121
                     </pre>
                 </div>
             </div>
