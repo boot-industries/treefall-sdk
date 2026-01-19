@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orpheus SDK + Clip Composer - Architecture Gallery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                darkMode: true,
+                background: '#1a1a1a',
+                primaryColor: '#4fc3f7',
+                primaryTextColor: '#e0e0e0',
+                primaryBorderColor: '#81d4fa',
+                lineColor: '#FFA500',
+                secondaryColor: '#7c4dff',
+                tertiaryColor: '#00c853'
+            },
+            flowchart: { curve: 'basis' },
+            sequence: { mirrorActors: false }
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 1rem 2rem;
+            line-height: 1.5;
+            font-size: 0.875rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #fff;
+        }
+
+        h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #4fc3f7;
+            margin: 1.5rem 0 0.75rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .subtitle {
+            color: #888;
+            margin-bottom: 0.75rem;
+            font-size: 0.75rem;
+        }
+
+        .last-updated {
+            color: #666;
+            font-size: 0.625rem;
+            margin-bottom: 1rem;
+        }
+
+        .info {
+            background: #1a2a3a;
+            border-left: 3px solid #4fc3f7;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+        }
+
+        .info-title {
+            color: #4fc3f7;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card {
+            background: #242424;
+            padding: 0.75rem;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .stat-label {
+            font-size: 0.625rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .diagram-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .diagram-card {
+            background: #242424;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .diagram-header {
+            background: #2a2a2a;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .diagram-header:hover {
+            background: #333;
+        }
+
+        .diagram-header::before {
+            content: '\25BC';
+            font-size: 0.625rem;
+            transition: transform 0.2s;
+            color: #888;
+        }
+
+        .diagram-header.collapsed::before {
+            transform: rotate(-90deg);
+        }
+
+        .diagram-title {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.875rem;
+        }
+
+        .diagram-type {
+            font-size: 0.625rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-weight: 600;
+            margin-left: auto;
+        }
+
+        .diagram-type.flowchart { background: #1a3a4a; color: #4fc3f7; }
+        .diagram-type.sequence { background: #3a2a4a; color: #7c4dff; }
+        .diagram-type.class { background: #1a4a2a; color: #00c853; }
+
+        .diagram-description {
+            font-size: 0.7rem;
+            color: #888;
+            margin-left: 0.5rem;
+        }
+
+        .diagram-content {
+            padding: 1rem;
+            overflow-x: auto;
+            background: #1e1e1e;
+        }
+
+        .diagram-content.hidden {
+            display: none;
+        }
+
+        .diagram-content pre {
+            background: transparent;
+            margin: 0;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        .mermaid svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        footer {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #333;
+            color: #666;
+            font-size: 0.625rem;
+        }
+
+        footer a {
+            color: #4fc3f7;
+        }
+
+        .quick-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .quick-nav a {
+            background: #2a2a2a;
+            color: #4fc3f7;
+            padding: 0.4rem 0.75rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.7rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .quick-nav a:hover {
+            background: #3a3a3a;
+        }
+
+        .quick-nav a.section-label {
+            background: transparent;
+            color: #666;
+            padding-left: 0;
+            cursor: default;
+        }
+
+        .color-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: #242424;
+            border-radius: 6px;
+        }
+
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.65rem;
+        }
+
+        .color-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+
+        .spec-ref {
+            font-size: 0.65rem;
+            color: #666;
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid #333;
+        }
+
+        .spec-ref a {
+            color: #4fc3f7;
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.6rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            margin-left: 0.5rem;
+            font-weight: 600;
+        }
+
+        .badge.orp121 {
+            background: #ffccbc;
+            color: #bf360c;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 0.5rem 1rem;
+            }
+            .diagram-content {
+                padding: 0.5rem;
+            }
+            .stats {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Orpheus SDK + Clip Composer - Architecture Gallery</h1>
+        <p class="subtitle">Professional Audio SDK with broadcast-safe C++20 core</p>
+        <p class="last-updated">Last updated: 2026-01-18 | Version: ORP121 Phase 4 Complete</p>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">960</div>
+                <div class="stat-label">Clip Buttons</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">27</div>
+                <div class="stat-label">Routing Tests</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">4x</div>
+                <div class="stat-label">True-Peak Oversample</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">256</div>
+                <div class="stat-label">SPSC Queue Slots</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">48kHz</div>
+                <div class="stat-label">Sample Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">154</div>
+                <div class="stat-label">Test Cases</div>
+            </div>
+        </div>
+
+        <div class="info">
+            <div class="info-title">Diagram Collection</div>
+            6 architectural diagrams covering system architecture, component relationships, data flow, repository structure, entry points, and CI/CD infrastructure.
+            Click headers to expand/collapse. Diagrams render via Mermaid.js. Press <kbd>a</kbd> to expand all, <kbd>Esc</kbd> to collapse all.
+        </div>
+
+        <div class="color-legend">
+            <div class="color-item">
+                <span class="color-swatch" style="background: #4fc3f7;"></span>
+                <span>Core SDK</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #7c4dff;"></span>
+                <span>Applications</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #00c853;"></span>
+                <span>shmui-juce</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #ffccbc;"></span>
+                <span>ORP121 Additions</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #FFA500;"></span>
+                <span>Data Flow</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #cfd8dc;"></span>
+                <span>Platform</span>
+            </div>
+        </div>
+
+        <nav class="quick-nav">
+            <span class="section-label">Architecture:</span>
+            <a href="#overview">Overview</a>
+            <a href="#components">Components</a>
+            <a href="#dataflow">Data Flow</a>
+            <span class="section-label">Structure:</span>
+            <a href="#repo">Repository</a>
+            <a href="#entry">Entry Points</a>
+            <span class="section-label">Infrastructure:</span>
+            <a href="#cicd">CI/CD</a>
+        </nav>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- SYSTEM ARCHITECTURE SECTION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+        <h2>System Architecture</h2>
+
+        <div class="diagram-grid">
+            <!-- Architecture Overview -->
+            <div class="diagram-card" id="overview">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">Architecture Overview</span>
+                    <span class="badge orp121">ORP121</span>
+                    <span class="diagram-description">High-level system design with routing enhancements</span>
+                    <span class="diagram-type flowchart">FLOWCHART</span>
+                </div>
+                <div class="diagram-content">
+                    <pre class="mermaid">
+graph TB
+    subgraph Applications["Applications Layer"]
+        APP1["Orpheus Clip Composer<br/>(JUCE App)<br/>Professional soundboard<br/>Status: v0.2.x"]
+        APP2["Orpheus Wave Finder<br/>(Planned)<br/>Harmonic calculator"]
+        APP3["Orpheus FX Engine<br/>(Planned)<br/>LLM-powered effects"]
+        APP4["JUCE Demo Host<br/>Integration demo"]
+    end
+
+    subgraph Adapters["Adapters Layer"]
+        ADP1["Minhost CLI<br/>Offline rendering<br/>Session loading"]
+        ADP2["REAPER Extension<br/>DAW Integration<br/>Status: Quarantined"]
+        ADP3["Custom Adapters<br/>Partner integrations"]
+    end
+
+    subgraph Drivers["Driver Layer (TypeScript)"]
+        DRV1["Native Driver<br/>@orpheus/engine-native<br/>N-API bindings"]
+        DRV2["Service Driver<br/>@orpheus/engine-service<br/>HTTP + WebSocket"]
+        DRV3["WASM Driver<br/>@orpheus/engine-wasm<br/>Browser access"]
+        DRV4["Client Broker<br/>@orpheus/client<br/>Auto driver selection"]
+    end
+
+    subgraph CoreSDK["Core SDK (C++20)"]
+        subgraph Session["Session Management"]
+            CORE1["SessionGraph<br/>Tracks, clips, tempo<br/>Metadata persistence"]
+            CORE2["Session JSON<br/>Load/save sessions"]
+        end
+
+        subgraph Transport["Real-Time Transport"]
+            CORE3["TransportController<br/>Clip playback<br/>Sample-accurate timing<br/>Fade/gain/loop"]
+            CORE4["ActiveClip Manager<br/>Lock-free structures"]
+            CORE5["SPSC Callback Queue<br/>Lock-free ring buffer<br/>256 slots (ORP121 C-03)"]
+        end
+
+        subgraph AudioIO["Audio I/O"]
+            CORE6["AudioFileReader<br/>WAV/AIFF/FLAC<br/>libsndfile"]
+            CORE7["Audio Drivers<br/>CoreAudio, WASAPI<br/>ALSA, Dummy"]
+        end
+
+        subgraph Routing["Routing & DSP (ORP121)"]
+            CORE8["RoutingMatrix<br/>N×M stereo routing<br/>Constant-power pan law"]
+            CORE9["GainSmoother<br/>Range: -inf to +12 dB<br/>Smooth transitions"]
+            CORE10["TruePeakMeter<br/>ITU-R BS.1770-4<br/>4x oversampling"]
+            CORE11["HeadroomMode<br/>None / PerGroup<br/>Global / Logarithmic"]
+            CORE12["Soft-Knee Limiter<br/>-2 dBFS threshold<br/>C1 continuous curve"]
+        end
+
+        subgraph ABI["ABI & Contracts"]
+            CORE13["ABI Version<br/>Compatibility checks"]
+            CORE14["Contract System<br/>JSON schemas"]
+        end
+    end
+
+    subgraph Platform["Platform Layer"]
+        PLAT1["macOS CoreAudio<br/>Low-latency I/O"]
+        PLAT2["Windows WASAPI<br/>Planned v1.0"]
+        PLAT3["Linux ALSA<br/>Planned v1.0"]
+        PLAT4["libsndfile<br/>Audio decoding"]
+    end
+
+    subgraph External["External Services (Optional)"]
+        EXT1["Network Audio<br/>AES67/ST2110<br/>PTP sync"]
+        EXT2["Remote Control<br/>WebSocket/OSC"]
+    end
+
+    APP1 --> ADP1
+    APP1 --> CoreSDK
+    APP2 -.-> CoreSDK
+    APP3 -.-> CoreSDK
+    APP4 --> CoreSDK
+
+    ADP1 --> CoreSDK
+    ADP2 -.-> CoreSDK
+    ADP3 -.-> CoreSDK
+
+    DRV1 --> CoreSDK
+    DRV2 --> CoreSDK
+    DRV3 --> CoreSDK
+    DRV4 --> DRV1
+    DRV4 --> DRV2
+    DRV4 --> DRV3
+
+    CORE1 --> CORE2
+    CORE3 --> CORE4
+    CORE3 --> CORE5
+    CORE6 --> CORE7
+
+    CORE8 --> CORE9
+    CORE8 --> CORE10
+    CORE8 --> CORE11
+    CORE8 --> CORE12
+
+    CORE3 --> CORE6
+    CORE3 --> CORE8
+    CORE7 --> PLAT1
+    CORE7 --> PLAT2
+    CORE7 --> PLAT3
+    CORE6 --> PLAT4
+
+    CoreSDK -.Optional.-> EXT1
+    CoreSDK -.Optional.-> EXT2
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>architecture-overview.mermaid.md</code> |
+                        Notes: <code>architecture-overview.notes.md</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Component Map -->
+            <div class="diagram-card" id="components">
+                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">Component Map</span>
+                    <span class="badge orp121">ORP121</span>
+                    <span class="diagram-description">TruePeakMeter, HeadroomMode, SPSC Queue classes</span>
+                    <span class="diagram-type class">CLASS</span>
+                </div>
+                <div class="diagram-content hidden">
+                    <pre class="mermaid">
+classDiagram
+    class SessionGraph {
+        +vector~Track~ tracks
+        +TempoInfo tempo
+        +string sessionName
+        +addTrack(Track)
+        +removeTrack(id)
+        +getTrack(id) Track
+    }
+
+    class ITransportController {
+        &lt;&lt;interface&gt;&gt;
+        +startClip(clipId) ErrorCode
+        +stopClip(clipId) ErrorCode
+        +stopAllClips() ErrorCode
+        +processAudio(buffer, frameCount) void
+        +processCallbacks() void
+    }
+
+    class TransportController {
+        -map~string,ActiveClip~ activeClips
+        -IAudioDriver* driver
+        -SPSCCallbackQueue callbackQueue
+        +startClip(clipId) ErrorCode
+        +processAudio(buffer, frameCount) void
+        +postCallback(callback) void
+    }
+
+    class SPSCCallbackQueue {
+        &lt;&lt;ORP121 C-03&gt;&gt;
+        -array~function,256~ ring
+        -atomic~size_t~ writeIndex
+        -atomic~size_t~ readIndex
+        +push(callback) bool
+        +pop() function
+        +isEmpty() bool
+    }
+
+    class RoutingConfig {
+        &lt;&lt;ORP121 Q-03&gt;&gt;
+        +uint8_t numInputChannels
+        +uint8_t numOutputChannels
+        +uint32_t sampleRate
+        +HeadroomMode headroomMode
+        +bool enableTruePeak
+    }
+
+    class HeadroomMode {
+        &lt;&lt;enumeration&gt;&gt;
+        &lt;&lt;ORP121 Q-05&gt;&gt;
+        None
+        PerGroup
+        Global
+        Logarithmic
+    }
+
+    class RoutingMatrix {
+        -vector~ChannelState~ channels
+        -vector~GroupState~ groups
+        -RoutingConfig config
+        +setRouting(src, dst, gain) ErrorCode
+        +process(inputs, outputs, frameCount) void
+        -getHeadroomCompensation(group) float
+    }
+
+    class GainSmoother {
+        &lt;&lt;ORP121 C-01&gt;&gt;
+        -float currentGain
+        -float targetGain
+        +setTarget(gainDb, rampMs) void
+        +process() float
+        +MAX_GAIN_DB = 12.0f
+    }
+
+    class TruePeakMeter {
+        &lt;&lt;ORP121 Q-04&gt;&gt;
+        -array~float,12~ history
+        -float peakHold
+        +process(sample) float
+        +getPeak() float
+        +OVERSAMPLE_FACTOR = 4
+        +TAPS_PER_PHASE = 12
+    }
+
+    class SoftKneeLimiter {
+        &lt;&lt;ORP121 C-02&gt;&gt;
+        +process(sample) float
+        +THRESHOLD = 0.794f
+        +KNEE_WIDTH = 0.3f
+    }
+
+    TransportController ..|> ITransportController
+    TransportController "1" *-- "1" SPSCCallbackQueue
+    RoutingMatrix "1" --> "1" RoutingConfig
+    RoutingConfig --> HeadroomMode : uses
+    RoutingMatrix --> SoftKneeLimiter : uses
+    RoutingMatrix --> GainSmoother : uses
+    RoutingMatrix --> TruePeakMeter : uses
+    TransportController --> RoutingMatrix : processes through
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>component-map.mermaid.md</code> |
+                        Notes: <code>component-map.notes.md</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Data Flow -->
+            <div class="diagram-card" id="dataflow">
+                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">Data Flow</span>
+                    <span class="badge orp121">ORP121</span>
+                    <span class="diagram-description">Lock-free callbacks, true-peak metering, headroom compensation</span>
+                    <span class="diagram-type sequence">SEQUENCE</span>
+                </div>
+                <div class="diagram-content hidden">
+                    <pre class="mermaid">
+sequenceDiagram
+    participant User
+    participant UI as UI Thread
+    participant Queue as SPSC Queue
+    participant Transport as TransportController
+    participant Routing as RoutingMatrix
+    participant Meter as TruePeakMeter
+    participant Audio as Audio Thread
+    participant Driver as Audio Driver
+
+    Note over User,Driver: Initialization Phase
+
+    User->>UI: Load Session
+    UI->>Transport: new TransportController(session, driver)
+    Transport->>Routing: new RoutingMatrix(config)
+    Note over Routing: config.sampleRate = 48000<br/>config.headroomMode = Logarithmic<br/>config.enableTruePeak = true
+    Routing->>Meter: Initialize per-channel meters
+    Transport->>Driver: initialize(config)
+
+    Note over User,Driver: Audio Processing Loop (Audio Thread)
+
+    loop Every Audio Callback (~5ms @ 512 samples)
+        Driver->>Audio: Audio callback
+        Audio->>Transport: processAudio(buffer, frameCount)
+
+        loop For each active clip
+            Transport->>Transport: Read samples from AudioFileReader
+            Transport->>Transport: Apply fade IN/OUT curves
+            Transport->>Routing: Add to input buffer
+        end
+
+        Note over Routing: ORP121 Routing Pipeline
+
+        Routing->>Routing: Step 1: Channel Processing
+        Note right of Routing: Apply GainSmoother<br/>Apply constant-power pan
+
+        Routing->>Meter: Step 2: Channel Metering
+        Note right of Meter: 4x oversample<br/>48-tap polyphase FIR
+
+        Routing->>Routing: Step 3: Group Mixing
+        Note right of Routing: Apply HeadroomMode<br/>(Logarithmic: -10*log10(n))
+
+        Routing->>Routing: Step 5: Master Output
+        Note right of Routing: Apply soft-knee limiter<br/>(threshold: -2 dBFS)
+
+        alt Clip reached end
+            alt Loop enabled
+                Transport->>Transport: Seek to trimIn
+                Transport->>Queue: postCallback(onClipLooped)
+                Note over Queue: Lock-free push!
+            else No loop
+                Transport->>Queue: postCallback(onClipFinished)
+            end
+        end
+    end
+
+    Note over User,Driver: Callback Processing (UI Thread, 10Hz)
+
+    UI->>Queue: processCallbacks()
+    loop While queue not empty
+        Queue-->>UI: callback function
+        UI->>User: Update UI state
+    end
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>data-flow.mermaid.md</code> |
+                        Notes: <code>data-flow.notes.md</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- REPOSITORY STRUCTURE SECTION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+        <h2>Repository Structure</h2>
+
+        <div class="diagram-grid">
+            <!-- Repository Structure -->
+            <div class="diagram-card" id="repo">
+                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">Repository Structure</span>
+                    <span class="diagram-description">Complete directory tree with ORP121 additions</span>
+                    <span class="diagram-type flowchart">FLOWCHART</span>
+                </div>
+                <div class="diagram-content hidden">
+                    <pre class="mermaid">
+graph TB
+    subgraph Root["Repository Root"]
+        A["orpheus-sdk<br/>Professional Audio SDK"]
+    end
+
+    subgraph Core["Core SDK (C++20)"]
+        B["src/<br/>Implementation"]
+        C["include/orpheus/<br/>Public API"]
+        D["tests/<br/>GoogleTest suite"]
+
+        B1["src/core/session/<br/>SessionGraph, JSON"]
+        B2["src/core/transport/<br/>TransportController"]
+        B3["src/core/routing/<br/>RoutingMatrix, DSP"]
+        B4["src/core/audio_io/<br/>File readers"]
+        B5["src/platform/<br/>Audio drivers"]
+    end
+
+    subgraph RoutingFiles["ORP121 Routing (New)"]
+        R1["true_peak_meter.h<br/>ITU-R BS.1770-4"]
+        R2["gain_smoother.cpp<br/>+12 dB range"]
+        R3["GAIN_STAGING.md<br/>Documentation"]
+    end
+
+    subgraph Packages["Packages (shmui-juce)"]
+        E["packages/"]
+        E1["shmui-juce/<br/>Audio visualization"]
+        E2["AudioAnalyzer"]
+        E3["WaveformVisualizer"]
+        E4["BarVisualizer"]
+        E5["MatrixDisplay"]
+    end
+
+    subgraph Applications["Applications"]
+        G["apps/"]
+        G1["clip-composer/<br/>JUCE soundboard"]
+        G2["juce-demo-host/"]
+    end
+
+    subgraph Docs["Documentation"]
+        I["docs/"]
+        I1["orp/<br/>ORP documents"]
+        I2["ORP121 Master Plan"]
+        I3["ORP122 Phase 4 Report"]
+    end
+
+    subgraph Wireframes["Wireframes"]
+        W["wireframes/"]
+        W1["v2025-11-08/"]
+        W2["v2026-01-18/<br/>Current (ORP121)"]
+    end
+
+    A --> B
+    A --> C
+    A --> D
+    A --> E
+    A --> G
+    A --> I
+    A --> W
+
+    B --> B1
+    B --> B2
+    B --> B3
+
+    B3 --> R1
+    B3 --> R2
+
+    E --> E1
+    E1 --> E2
+    E1 --> E3
+
+    G --> G1
+    G --> G2
+
+    I --> I1
+    I1 --> I2
+    I1 --> I3
+
+    W --> W1
+    W --> W2
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>repo-structure.mermaid.md</code> |
+                        Notes: <code>repo-structure.notes.md</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Entry Points -->
+            <div class="diagram-card" id="entry">
+                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">Entry Points</span>
+                    <span class="diagram-description">All ways to interact with the SDK</span>
+                    <span class="diagram-type flowchart">FLOWCHART</span>
+                </div>
+                <div class="diagram-content hidden">
+                    <pre class="mermaid">
+graph TB
+    subgraph Users["User Personas"]
+        USER1["End User<br/>Broadcast/Theater"]
+        USER2["App Developer<br/>TypeScript/JavaScript"]
+        USER3["Plugin Developer<br/>C++/Native"]
+        USER4["DevOps/QA<br/>CLI Tools"]
+    end
+
+    subgraph GUIApps["GUI Applications"]
+        APP1["Orpheus Clip Composer<br/>JUCE Desktop App<br/>960 buttons, 8 tabs"]
+        APP2["JUCE Demo Host"]
+        APP3["Custom Applications"]
+    end
+
+    subgraph CLITools["Command-Line Tools"]
+        CLI1["Minhost<br/>./orpheus_minhost<br/>--session --render"]
+        CLI2["Session Inspector<br/>./inspect_session"]
+    end
+
+    subgraph JSDrivers["JavaScript Drivers"]
+        DRV1["Native Driver<br/>@orpheus/engine-native"]
+        DRV2["Service Driver<br/>@orpheus/engine-service"]
+        DRV3["WASM Driver<br/>@orpheus/engine-wasm"]
+        DRV4["Client Broker<br/>@orpheus/client"]
+    end
+
+    subgraph NativeAPI["Native C++ API"]
+        CPP1["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h"]
+    end
+
+    subgraph Config["Configuration"]
+        CFG1["Session JSON"]
+        CFG2["Environment Variables"]
+        CFG3["RoutingConfig<br/>ORP121: headroom_mode"]
+    end
+
+    USER1 --> APP1
+    USER2 --> DRV4
+    USER3 --> CPP1
+    USER4 --> CLI1
+
+    APP1 --> CPP1
+    DRV4 --> DRV1
+    DRV4 --> DRV2
+    DRV4 --> DRV3
+    DRV1 --> CPP1
+
+    APP1 -.Uses.-> CFG3
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>entry-points.mermaid.md</code> |
+                        Notes: <code>entry-points.notes.md</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- CI/CD INFRASTRUCTURE SECTION -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+        <h2>CI/CD Infrastructure</h2>
+
+        <div class="diagram-grid">
+            <!-- Deployment Infrastructure -->
+            <div class="diagram-card" id="cicd">
+                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                    <span class="diagram-title">CI/CD Pipeline</span>
+                    <span class="diagram-description">Build system, testing, and deployment</span>
+                    <span class="diagram-type flowchart">FLOWCHART</span>
+                </div>
+                <div class="diagram-content hidden">
+                    <pre class="mermaid">
+graph TB
+    subgraph Development["Development"]
+        DEV1["Developer Workstation<br/>C++20, CMake, Node.js"]
+        DEV2["Local Build<br/>cmake --build build"]
+        DEV3["Local Testing<br/>ctest + sanitizers"]
+    end
+
+    subgraph VersionControl["Version Control"]
+        VC1["Git Repository<br/>main, feature/*"]
+        VC2["Pull Request<br/>CI must pass"]
+        VC3["Release Tags<br/>v1.0.0-rc.1"]
+    end
+
+    subgraph CIPipeline["CI Pipeline"]
+        CI1["Unified Pipeline<br/>ci-pipeline.yml"]
+        CI2["Matrix Build<br/>ubuntu/windows/macos<br/>Debug/Release"]
+        CI3["Lint Job<br/>clang-format, eslint"]
+        CI6["Integration Tests"]
+        CI8["Performance<br/>Budget validation"]
+    end
+
+    subgraph Testing["ORP121 Test Suite"]
+        TEST1["routing_matrix_test<br/>27 tests"]
+        TEST2["callback_queue_stress<br/>6 tests"]
+        TEST3["Performance Tests"]
+    end
+
+    subgraph BuildArtifacts["Build Artifacts"]
+        ART1["C++ Libraries<br/>liborpheus_*.a"]
+        ART2["Executables<br/>ClipComposer.app"]
+        ART3["npm Packages<br/>@orpheus/*"]
+    end
+
+    subgraph Distribution["Distribution"]
+        DIST1["GitHub Releases"]
+        DIST2["npm Registry"]
+        DIST3["GitHub Pages<br/>API docs"]
+    end
+
+    DEV1 --> DEV2
+    DEV2 --> DEV3
+    DEV3 --> VC1
+
+    VC1 --> VC2
+    VC2 --> CI1
+
+    CI1 --> CI2
+    CI1 --> CI3
+    CI1 --> CI6
+    CI1 --> CI8
+
+    CI2 --> TEST1
+    CI2 --> TEST2
+    CI2 --> TEST3
+
+    CI2 --> ART1
+    CI2 --> ART2
+
+    ART1 --> DIST1
+    ART2 --> DIST1
+    ART3 --> DIST2
+
+    VC3 --> DIST1
+                    </pre>
+                    <p class="spec-ref">
+                        Source: <code>deployment-infrastructure.mermaid.md</code> |
+                        Notes: <code>deployment-infrastructure.notes.md</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p><strong>Source:</strong> <code>wireframes/v2026-01-18/*.mermaid.md</code> | <strong>Notes:</strong> <code>wireframes/v2026-01-18/*.notes.md</code></p>
+            <p>Generated for: <strong>Orpheus SDK</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
+            <p>Applications: Orpheus Clip Composer (Professional Soundboard) | shmui-juce (Audio Visualization)</p>
+            <p>Standards: <a href="https://www.itu.int/rec/R-REC-BS.1770">ITU-R BS.1770-4</a> (True-Peak Metering) | <a href="https://www.aes.org/publications/standards/search.cfm?docID=96">AES67</a> (Network Audio)</p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleDiagram(header) {
+            header.classList.toggle('collapsed');
+            const content = header.nextElementSibling;
+            content.classList.toggle('hidden');
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.diagram-header:not(.collapsed)').forEach(h => {
+                    h.classList.add('collapsed');
+                    h.nextElementSibling.classList.add('hidden');
+                });
+            }
+            // 'a' to expand all
+            if (e.key === 'a' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') {
+                document.querySelectorAll('.diagram-header.collapsed').forEach(h => {
+                    h.classList.remove('collapsed');
+                    h.nextElementSibling.classList.remove('hidden');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
