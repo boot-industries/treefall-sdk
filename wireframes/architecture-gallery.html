@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orpheus SDK + Clip Composer - Architecture Gallery</title>
+    <title>Orpheus SDK - Architecture Gallery</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,12 +15,12 @@
             themeVariables: {
                 darkMode: true,
                 background: '#1a1a1a',
-                primaryColor: '#4fc3f7',
+                primaryColor: '#E65100',
                 primaryTextColor: '#e0e0e0',
-                primaryBorderColor: '#81d4fa',
-                lineColor: '#FFA500',
-                secondaryColor: '#7c4dff',
-                tertiaryColor: '#00c853'
+                primaryBorderColor: '#FF9800',
+                lineColor: '#1E90FF',
+                secondaryColor: '#7B1FA2',
+                tertiaryColor: '#2E7D32'
             },
             flowchart: { curve: 'basis' },
             sequence: { mirrorActors: false }
@@ -57,7 +57,7 @@
         h2 {
             font-size: 1rem;
             font-weight: 600;
-            color: #4fc3f7;
+            color: #FF9800;
             margin: 1.5rem 0 0.75rem 0;
             padding-bottom: 0.5rem;
             border-bottom: 1px solid #333;
@@ -76,8 +76,8 @@
         }
 
         .info {
-            background: #1a2a3a;
-            border-left: 3px solid #4fc3f7;
+            background: #2a2a1a;
+            border-left: 3px solid #FF9800;
             padding: 0.75rem;
             margin-bottom: 1rem;
             border-radius: 3px;
@@ -85,7 +85,7 @@
         }
 
         .info-title {
-            color: #4fc3f7;
+            color: #FF9800;
             font-weight: 600;
             margin-bottom: 0.25rem;
         }
@@ -169,9 +169,9 @@
             margin-left: auto;
         }
 
-        .diagram-type.flowchart { background: #1a3a4a; color: #4fc3f7; }
-        .diagram-type.sequence { background: #3a2a4a; color: #7c4dff; }
-        .diagram-type.class { background: #1a4a2a; color: #00c853; }
+        .diagram-type.flowchart { background: #3a2a1a; color: #FF9800; }
+        .diagram-type.sequence { background: #2a3a4a; color: #1E90FF; }
+        .diagram-type.class { background: #3a3a2a; color: #FFB74D; }
 
         .diagram-description {
             font-size: 0.7rem;
@@ -213,7 +213,7 @@
         }
 
         footer a {
-            color: #4fc3f7;
+            color: #FF9800;
         }
 
         .quick-nav {
@@ -225,7 +225,7 @@
 
         .quick-nav a {
             background: #2a2a2a;
-            color: #4fc3f7;
+            color: #FF9800;
             padding: 0.4rem 0.75rem;
             border-radius: 4px;
             text-decoration: none;
@@ -268,30 +268,12 @@
             border-radius: 2px;
         }
 
-        .spec-ref {
-            font-size: 0.65rem;
-            color: #666;
-            margin-top: 0.5rem;
-            padding-top: 0.5rem;
-            border-top: 1px solid #333;
-        }
-
-        .spec-ref a {
-            color: #4fc3f7;
-        }
-
-        .badge {
-            display: inline-block;
-            font-size: 0.6rem;
-            padding: 0.15rem 0.4rem;
+        kbd {
+            background: #333;
+            padding: 0.1rem 0.4rem;
             border-radius: 3px;
-            margin-left: 0.5rem;
-            font-weight: 600;
-        }
-
-        .badge.orp121 {
-            background: #ffccbc;
-            color: #bf360c;
+            font-size: 0.65rem;
+            border: 1px solid #444;
         }
 
         @media (max-width: 768px) {
@@ -309,14 +291,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>Orpheus SDK + Clip Composer - Architecture Gallery</h1>
-        <p class="subtitle">Professional Audio SDK with broadcast-safe C++20 core</p>
+        <h1>Orpheus SDK - Architecture Gallery</h1>
+        <p class="subtitle">Professional Audio SDK - C++20 Core + Host Adapters + Clip Composer</p>
         <p class="last-updated">Last updated: 2026-01-18 | Version: ORP121 Phase 4 Complete</p>
 
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-value">960</div>
-                <div class="stat-label">Clip Buttons</div>
+                <div class="stat-value">6</div>
+                <div class="stat-label">Diagrams</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value">27</div>
@@ -324,11 +306,11 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value">4x</div>
-                <div class="stat-label">True-Peak Oversample</div>
+                <div class="stat-label">True-Peak</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value">256</div>
-                <div class="stat-label">SPSC Queue Slots</div>
+                <div class="stat-label">SPSC Slots</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value">48kHz</div>
@@ -348,629 +330,567 @@
 
         <div class="color-legend">
             <div class="color-item">
-                <span class="color-swatch" style="background: #4fc3f7;"></span>
-                <span>Core SDK</span>
-            </div>
-            <div class="color-item">
-                <span class="color-swatch" style="background: #7c4dff;"></span>
+                <span class="color-swatch" style="background: #e3f2fd;"></span>
                 <span>Applications</span>
             </div>
             <div class="color-item">
-                <span class="color-swatch" style="background: #00c853;"></span>
-                <span>shmui-juce</span>
+                <span class="color-swatch" style="background: #fff8e1;"></span>
+                <span>Core SDK</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #e8f5e9;"></span>
+                <span>Drivers</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #fce4ec;"></span>
+                <span>Platform</span>
             </div>
             <div class="color-item">
                 <span class="color-swatch" style="background: #ffccbc;"></span>
-                <span>ORP121 Additions</span>
+                <span>ORP121 Routing</span>
             </div>
             <div class="color-item">
-                <span class="color-swatch" style="background: #FFA500;"></span>
-                <span>Data Flow</span>
-            </div>
-            <div class="color-item">
-                <span class="color-swatch" style="background: #cfd8dc;"></span>
-                <span>Platform</span>
+                <span class="color-swatch" style="background: #f3e5f5;"></span>
+                <span>Adapters</span>
             </div>
         </div>
 
         <nav class="quick-nav">
-            <span class="section-label">Architecture:</span>
-            <a href="#overview">Overview</a>
+            <span class="section-label">System:</span>
+            <a href="#architecture">Architecture</a>
             <a href="#components">Components</a>
             <a href="#dataflow">Data Flow</a>
             <span class="section-label">Structure:</span>
             <a href="#repo">Repository</a>
             <a href="#entry">Entry Points</a>
-            <span class="section-label">Infrastructure:</span>
             <a href="#cicd">CI/CD</a>
         </nav>
 
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- SYSTEM ARCHITECTURE SECTION -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ================================================================== -->
+        <!-- SYSTEM OVERVIEW SECTION -->
+        <!-- ================================================================== -->
 
-        <h2>System Architecture</h2>
+        <h2>System Overview</h2>
 
         <div class="diagram-grid">
             <!-- Architecture Overview -->
-            <div class="diagram-card" id="overview">
+            <div class="diagram-card" id="architecture">
                 <div class="diagram-header" onclick="toggleDiagram(this)">
-                    <span class="diagram-title">Architecture Overview</span>
-                    <span class="badge orp121">ORP121</span>
-                    <span class="diagram-description">High-level system design with routing enhancements</span>
+                    <span class="diagram-title">System Architecture</span>
+                    <span class="diagram-description">Layered SDK with ORP121 routing enhancements</span>
                     <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
                 <div class="diagram-content">
                     <pre class="mermaid">
 graph TB
-    subgraph Applications["Applications Layer"]
-        APP1["Orpheus Clip Composer<br/>(JUCE App)<br/>Professional soundboard<br/>Status: v0.2.x"]
-        APP2["Orpheus Wave Finder<br/>(Planned)<br/>Harmonic calculator"]
-        APP3["Orpheus FX Engine<br/>(Planned)<br/>LLM-powered effects"]
-        APP4["JUCE Demo Host<br/>Integration demo"]
+    subgraph APPS["Application Layer"]
+        direction LR
+        CC["Clip Composer<br/>JUCE Desktop<br/>Professional soundboard"]
+        WF["Wave Finder<br/>(Planned)<br/>Harmonic calculator"]
+        FX["FX Engine<br/>(Planned)<br/>LLM effects"]
+        DEMO["Demo Host<br/>Integration demo"]
     end
 
-    subgraph Adapters["Adapters Layer"]
-        ADP1["Minhost CLI<br/>Offline rendering<br/>Session loading"]
-        ADP2["REAPER Extension<br/>DAW Integration<br/>Status: Quarantined"]
-        ADP3["Custom Adapters<br/>Partner integrations"]
+    subgraph ADAPTERS["Adapter Layer"]
+        direction LR
+        MINHOST["Minhost CLI<br/>Offline render"]
+        REAPER["REAPER Ext<br/>(Quarantined)"]
+        CUSTOM["Custom Adapters<br/>Partner integrations"]
     end
 
-    subgraph Drivers["Driver Layer (TypeScript)"]
-        DRV1["Native Driver<br/>@orpheus/engine-native<br/>N-API bindings"]
-        DRV2["Service Driver<br/>@orpheus/engine-service<br/>HTTP + WebSocket"]
-        DRV3["WASM Driver<br/>@orpheus/engine-wasm<br/>Browser access"]
-        DRV4["Client Broker<br/>@orpheus/client<br/>Auto driver selection"]
+    subgraph DRIVERS["TypeScript Driver Layer"]
+        direction LR
+        NATIVE["Native Driver<br/>@orpheus/engine-native<br/>N-API bindings"]
+        SERVICE["Service Driver<br/>@orpheus/engine-service<br/>HTTP + WebSocket"]
+        WASM["WASM Driver<br/>@orpheus/engine-wasm<br/>Browser access"]
+        BROKER["Client Broker<br/>@orpheus/client<br/>Auto selection"]
     end
 
-    subgraph CoreSDK["Core SDK (C++20)"]
-        subgraph Session["Session Management"]
-            CORE1["SessionGraph<br/>Tracks, clips, tempo<br/>Metadata persistence"]
-            CORE2["Session JSON<br/>Load/save sessions"]
+    subgraph CORE["Core SDK (C++20)"]
+        direction TB
+
+        subgraph SESSION["Session Management"]
+            direction LR
+            GRAPH["SessionGraph<br/>Tracks, clips, tempo"]
+            JSON["Session JSON<br/>Load/save"]
         end
 
-        subgraph Transport["Real-Time Transport"]
-            CORE3["TransportController<br/>Clip playback<br/>Sample-accurate timing<br/>Fade/gain/loop"]
-            CORE4["ActiveClip Manager<br/>Lock-free structures"]
-            CORE5["SPSC Callback Queue<br/>Lock-free ring buffer<br/>256 slots (ORP121 C-03)"]
+        subgraph TRANSPORT["Real-Time Transport"]
+            direction LR
+            CTRL["TransportController<br/>Playback, fades"]
+            ACTIVE["ActiveClip Manager<br/>Lock-free"]
+            SPSC["SPSC Queue<br/>256 slots (ORP121)"]
         end
 
-        subgraph AudioIO["Audio I/O"]
-            CORE6["AudioFileReader<br/>WAV/AIFF/FLAC<br/>libsndfile"]
-            CORE7["Audio Drivers<br/>CoreAudio, WASAPI<br/>ALSA, Dummy"]
+        subgraph ROUTING["Routing & DSP (ORP121)"]
+            direction LR
+            MATRIX["RoutingMatrix<br/>N x M stereo"]
+            GAIN["GainSmoother<br/>-inf to +12 dB"]
+            PEAK["TruePeakMeter<br/>ITU-R BS.1770-4<br/>4x oversample"]
+            HEADROOM["HeadroomMode<br/>None/PerGroup/<br/>Global/Logarithmic"]
+            LIMITER["Soft-Knee Limiter<br/>-2 dBFS threshold"]
         end
 
-        subgraph Routing["Routing & DSP (ORP121)"]
-            CORE8["RoutingMatrix<br/>N×M stereo routing<br/>Constant-power pan law"]
-            CORE9["GainSmoother<br/>Range: -inf to +12 dB<br/>Smooth transitions"]
-            CORE10["TruePeakMeter<br/>ITU-R BS.1770-4<br/>4x oversampling"]
-            CORE11["HeadroomMode<br/>None / PerGroup<br/>Global / Logarithmic"]
-            CORE12["Soft-Knee Limiter<br/>-2 dBFS threshold<br/>C1 continuous curve"]
-        end
-
-        subgraph ABI["ABI & Contracts"]
-            CORE13["ABI Version<br/>Compatibility checks"]
-            CORE14["Contract System<br/>JSON schemas"]
+        subgraph AUDIO["Audio I/O"]
+            direction LR
+            READER["AudioFileReader<br/>WAV/AIFF/FLAC"]
+            DRIVER["Audio Drivers<br/>CoreAudio/WASAPI/ALSA"]
         end
     end
 
-    subgraph Platform["Platform Layer"]
-        PLAT1["macOS CoreAudio<br/>Low-latency I/O"]
-        PLAT2["Windows WASAPI<br/>Planned v1.0"]
-        PLAT3["Linux ALSA<br/>Planned v1.0"]
-        PLAT4["libsndfile<br/>Audio decoding"]
+    subgraph PLATFORM["Platform Layer"]
+        direction LR
+        COREAUDIO["macOS CoreAudio"]
+        WASAPI["Windows WASAPI"]
+        ALSA["Linux ALSA"]
+        SNDFILE["libsndfile"]
     end
 
-    subgraph External["External Services (Optional)"]
-        EXT1["Network Audio<br/>AES67/ST2110<br/>PTP sync"]
-        EXT2["Remote Control<br/>WebSocket/OSC"]
-    end
+    CC --> CORE
+    WF -.-> CORE
+    FX -.-> CORE
+    DEMO --> CORE
 
-    APP1 --> ADP1
-    APP1 --> CoreSDK
-    APP2 -.-> CoreSDK
-    APP3 -.-> CoreSDK
-    APP4 --> CoreSDK
+    MINHOST --> CORE
+    REAPER -.-> CORE
+    CUSTOM -.-> CORE
 
-    ADP1 --> CoreSDK
-    ADP2 -.-> CoreSDK
-    ADP3 -.-> CoreSDK
+    NATIVE --> CORE
+    SERVICE --> CORE
+    WASM --> CORE
+    BROKER --> NATIVE
+    BROKER --> SERVICE
+    BROKER --> WASM
 
-    DRV1 --> CoreSDK
-    DRV2 --> CoreSDK
-    DRV3 --> CoreSDK
-    DRV4 --> DRV1
-    DRV4 --> DRV2
-    DRV4 --> DRV3
-
-    CORE1 --> CORE2
-    CORE3 --> CORE4
-    CORE3 --> CORE5
-    CORE6 --> CORE7
-
-    CORE8 --> CORE9
-    CORE8 --> CORE10
-    CORE8 --> CORE11
-    CORE8 --> CORE12
-
-    CORE3 --> CORE6
-    CORE3 --> CORE8
-    CORE7 --> PLAT1
-    CORE7 --> PLAT2
-    CORE7 --> PLAT3
-    CORE6 --> PLAT4
-
-    CoreSDK -.Optional.-> EXT1
-    CoreSDK -.Optional.-> EXT2
+    GRAPH --> JSON
+    CTRL --> ACTIVE
+    CTRL --> SPSC
+    MATRIX --> GAIN
+    MATRIX --> PEAK
+    MATRIX --> HEADROOM
+    MATRIX --> LIMITER
+    CTRL --> READER
+    CTRL --> MATRIX
+    READER --> DRIVER
+    DRIVER --> COREAUDIO
+    DRIVER --> WASAPI
+    DRIVER --> ALSA
+    READER --> SNDFILE
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>architecture-overview.mermaid.md</code> |
-                        Notes: <code>architecture-overview.notes.md</code>
-                    </p>
                 </div>
             </div>
 
             <!-- Component Map -->
             <div class="diagram-card" id="components">
-                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Component Map</span>
-                    <span class="badge orp121">ORP121</span>
-                    <span class="diagram-description">TruePeakMeter, HeadroomMode, SPSC Queue classes</span>
-                    <span class="diagram-type class">CLASS</span>
+                    <span class="diagram-description">ORP121 classes: TruePeakMeter, HeadroomMode, SPSC Queue</span>
+                    <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
-                <div class="diagram-content hidden">
+                <div class="diagram-content">
                     <pre class="mermaid">
-classDiagram
-    class SessionGraph {
-        +vector~Track~ tracks
-        +TempoInfo tempo
-        +string sessionName
-        +addTrack(Track)
-        +removeTrack(id)
-        +getTrack(id) Track
-    }
+graph TB
+    subgraph SESSION_CLASSES["Session Classes"]
+        direction TB
+        SG["SessionGraph<br/>tracks: Track[]<br/>tempo: TempoInfo"]
+        TRK["Track<br/>id, name<br/>clips: Clip[]"]
+        CLIP["Clip<br/>audioFilePath<br/>trimIn/Out, fades<br/>gainDb, loopEnabled"]
+    end
 
-    class ITransportController {
-        &lt;&lt;interface&gt;&gt;
-        +startClip(clipId) ErrorCode
-        +stopClip(clipId) ErrorCode
-        +stopAllClips() ErrorCode
-        +processAudio(buffer, frameCount) void
-        +processCallbacks() void
-    }
+    subgraph TRANSPORT_CLASSES["Transport Classes"]
+        direction TB
+        TC["TransportController<br/>activeClips: map<br/>+startClip()<br/>+stopClip()<br/>+processAudio()"]
+        AC["ActiveClip<br/>currentFrame: atomic<br/>gainLinear: atomic<br/>loopEnabled: atomic"]
+        SQ["SPSCCallbackQueue<br/>ring: function[256]<br/>writeIndex: atomic<br/>readIndex: atomic<br/>+push() +pop()"]
+    end
 
-    class TransportController {
-        -map~string,ActiveClip~ activeClips
-        -IAudioDriver* driver
-        -SPSCCallbackQueue callbackQueue
-        +startClip(clipId) ErrorCode
-        +processAudio(buffer, frameCount) void
-        +postCallback(callback) void
-    }
+    subgraph ROUTING_CLASSES["Routing Classes (ORP121)"]
+        direction TB
+        RM["RoutingMatrix<br/>channels: ChannelState[]<br/>groups: GroupState[]<br/>+setRouting()<br/>+process()"]
+        RC["RoutingConfig<br/>numInputChannels<br/>numOutputChannels<br/>sampleRate<br/>headroomMode<br/>enableTruePeak"]
+        HM["HeadroomMode<br/>None<br/>PerGroup<br/>Global<br/>Logarithmic"]
+        GS["GainSmoother<br/>currentGain, targetGain<br/>+setTarget()<br/>+process()<br/>MAX_GAIN_DB: 12.0"]
+        TPM["TruePeakMeter<br/>history: float[12]<br/>peakHold<br/>+process()<br/>OVERSAMPLE: 4<br/>TAPS_PER_PHASE: 12"]
+        SKL["SoftKneeLimiter<br/>+process()<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3"]
+    end
 
-    class SPSCCallbackQueue {
-        &lt;&lt;ORP121 C-03&gt;&gt;
-        -array~function,256~ ring
-        -atomic~size_t~ writeIndex
-        -atomic~size_t~ readIndex
-        +push(callback) bool
-        +pop() function
-        +isEmpty() bool
-    }
+    SG --> TRK
+    TRK --> CLIP
 
-    class RoutingConfig {
-        &lt;&lt;ORP121 Q-03&gt;&gt;
-        +uint8_t numInputChannels
-        +uint8_t numOutputChannels
-        +uint32_t sampleRate
-        +HeadroomMode headroomMode
-        +bool enableTruePeak
-    }
+    TC --> AC
+    TC --> SQ
 
-    class HeadroomMode {
-        &lt;&lt;enumeration&gt;&gt;
-        &lt;&lt;ORP121 Q-05&gt;&gt;
-        None
-        PerGroup
-        Global
-        Logarithmic
-    }
-
-    class RoutingMatrix {
-        -vector~ChannelState~ channels
-        -vector~GroupState~ groups
-        -RoutingConfig config
-        +setRouting(src, dst, gain) ErrorCode
-        +process(inputs, outputs, frameCount) void
-        -getHeadroomCompensation(group) float
-    }
-
-    class GainSmoother {
-        &lt;&lt;ORP121 C-01&gt;&gt;
-        -float currentGain
-        -float targetGain
-        +setTarget(gainDb, rampMs) void
-        +process() float
-        +MAX_GAIN_DB = 12.0f
-    }
-
-    class TruePeakMeter {
-        &lt;&lt;ORP121 Q-04&gt;&gt;
-        -array~float,12~ history
-        -float peakHold
-        +process(sample) float
-        +getPeak() float
-        +OVERSAMPLE_FACTOR = 4
-        +TAPS_PER_PHASE = 12
-    }
-
-    class SoftKneeLimiter {
-        &lt;&lt;ORP121 C-02&gt;&gt;
-        +process(sample) float
-        +THRESHOLD = 0.794f
-        +KNEE_WIDTH = 0.3f
-    }
-
-    TransportController ..|> ITransportController
-    TransportController "1" *-- "1" SPSCCallbackQueue
-    RoutingMatrix "1" --> "1" RoutingConfig
-    RoutingConfig --> HeadroomMode : uses
-    RoutingMatrix --> SoftKneeLimiter : uses
-    RoutingMatrix --> GainSmoother : uses
-    RoutingMatrix --> TruePeakMeter : uses
-    TransportController --> RoutingMatrix : processes through
+    RM --> RC
+    RC --> HM
+    RM --> GS
+    RM --> TPM
+    RM --> SKL
+    TC --> RM
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>component-map.mermaid.md</code> |
-                        Notes: <code>component-map.notes.md</code>
-                    </p>
                 </div>
             </div>
 
             <!-- Data Flow -->
             <div class="diagram-card" id="dataflow">
-                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Data Flow</span>
-                    <span class="badge orp121">ORP121</span>
-                    <span class="diagram-description">Lock-free callbacks, true-peak metering, headroom compensation</span>
+                    <span class="diagram-description">Lock-free callbacks, true-peak metering pipeline</span>
                     <span class="diagram-type sequence">SEQUENCE</span>
                 </div>
-                <div class="diagram-content hidden">
+                <div class="diagram-content">
                     <pre class="mermaid">
 sequenceDiagram
-    participant User
+    participant U as User
     participant UI as UI Thread
-    participant Queue as SPSC Queue
-    participant Transport as TransportController
-    participant Routing as RoutingMatrix
-    participant Meter as TruePeakMeter
-    participant Audio as Audio Thread
-    participant Driver as Audio Driver
+    participant Q as SPSC Queue
+    participant T as Transport
+    participant R as RoutingMatrix
+    participant M as TruePeakMeter
+    participant D as Audio Driver
 
-    Note over User,Driver: Initialization Phase
+    Note over U,D: Initialization
 
-    User->>UI: Load Session
-    UI->>Transport: new TransportController(session, driver)
-    Transport->>Routing: new RoutingMatrix(config)
-    Note over Routing: config.sampleRate = 48000<br/>config.headroomMode = Logarithmic<br/>config.enableTruePeak = true
-    Routing->>Meter: Initialize per-channel meters
-    Transport->>Driver: initialize(config)
+    U->>UI: Load Session
+    UI->>T: new TransportController
+    T->>R: new RoutingMatrix(config)
+    R->>M: Init per-channel meters
 
-    Note over User,Driver: Audio Processing Loop (Audio Thread)
+    Note over U,D: Audio Processing Loop
 
-    loop Every Audio Callback (~5ms @ 512 samples)
-        Driver->>Audio: Audio callback
-        Audio->>Transport: processAudio(buffer, frameCount)
+    loop Every 5ms at 512 samples
+        D->>T: processAudio(buffer)
 
-        loop For each active clip
-            Transport->>Transport: Read samples from AudioFileReader
-            Transport->>Transport: Apply fade IN/OUT curves
-            Transport->>Routing: Add to input buffer
+        loop Each active clip
+            T->>T: Read samples
+            T->>T: Apply fades
+            T->>R: Add to input buffer
         end
 
-        Note over Routing: ORP121 Routing Pipeline
-
-        Routing->>Routing: Step 1: Channel Processing
-        Note right of Routing: Apply GainSmoother<br/>Apply constant-power pan
-
-        Routing->>Meter: Step 2: Channel Metering
-        Note right of Meter: 4x oversample<br/>48-tap polyphase FIR
-
-        Routing->>Routing: Step 3: Group Mixing
-        Note right of Routing: Apply HeadroomMode<br/>(Logarithmic: -10*log10(n))
-
-        Routing->>Routing: Step 5: Master Output
-        Note right of Routing: Apply soft-knee limiter<br/>(threshold: -2 dBFS)
+        R->>R: Apply GainSmoother
+        R->>M: 4x oversample metering
+        R->>R: Group mixing + headroom
+        R->>R: Soft-knee limiter
+        R-->>T: Output buffer
 
         alt Clip reached end
             alt Loop enabled
-                Transport->>Transport: Seek to trimIn
-                Transport->>Queue: postCallback(onClipLooped)
-                Note over Queue: Lock-free push!
+                T->>Q: postCallback(onLooped)
             else No loop
-                Transport->>Queue: postCallback(onClipFinished)
+                T->>Q: postCallback(onFinished)
             end
         end
     end
 
-    Note over User,Driver: Callback Processing (UI Thread, 10Hz)
+    Note over U,D: UI Callback Processing (10Hz)
 
-    UI->>Queue: processCallbacks()
-    loop While queue not empty
-        Queue-->>UI: callback function
-        UI->>User: Update UI state
+    UI->>Q: processCallbacks()
+    loop While not empty
+        Q-->>UI: callback
+        UI->>U: Update UI state
     end
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>data-flow.mermaid.md</code> |
-                        Notes: <code>data-flow.notes.md</code>
-                    </p>
                 </div>
             </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- REPOSITORY STRUCTURE SECTION -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ================================================================== -->
+        <!-- STRUCTURE SECTION -->
+        <!-- ================================================================== -->
 
         <h2>Repository Structure</h2>
 
         <div class="diagram-grid">
             <!-- Repository Structure -->
             <div class="diagram-card" id="repo">
-                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Repository Structure</span>
-                    <span class="diagram-description">Complete directory tree with ORP121 additions</span>
+                    <span class="diagram-description">Monorepo: C++ core + TypeScript drivers + Applications</span>
                     <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
-                <div class="diagram-content hidden">
+                <div class="diagram-content">
                     <pre class="mermaid">
 graph TB
-    subgraph Root["Repository Root"]
-        A["orpheus-sdk<br/>Professional Audio SDK"]
+    subgraph ROOT["orpheus-sdk/"]
+        direction TB
+        CLAUDE["CLAUDE.md<br/>Development guide"]
+        CMAKE["CMakeLists.txt<br/>C++ build system"]
+        PKG["package.json<br/>pnpm workspace"]
     end
 
-    subgraph Core["Core SDK (C++20)"]
-        B["src/<br/>Implementation"]
-        C["include/orpheus/<br/>Public API"]
-        D["tests/<br/>GoogleTest suite"]
-
-        B1["src/core/session/<br/>SessionGraph, JSON"]
-        B2["src/core/transport/<br/>TransportController"]
-        B3["src/core/routing/<br/>RoutingMatrix, DSP"]
-        B4["src/core/audio_io/<br/>File readers"]
-        B5["src/platform/<br/>Audio drivers"]
+    subgraph SRC["src/ (Core SDK)"]
+        direction TB
+        CORE_SESSION["core/session/<br/>SessionGraph, JSON"]
+        CORE_TRANSPORT["core/transport/<br/>TransportController"]
+        CORE_ROUTING["core/routing/<br/>RoutingMatrix, DSP"]
+        CORE_AUDIO["core/audio_io/<br/>File readers"]
+        PLATFORM["platform/<br/>Audio drivers"]
     end
 
-    subgraph RoutingFiles["ORP121 Routing (New)"]
-        R1["true_peak_meter.h<br/>ITU-R BS.1770-4"]
-        R2["gain_smoother.cpp<br/>+12 dB range"]
-        R3["GAIN_STAGING.md<br/>Documentation"]
+    subgraph ORP121_FILES["ORP121 Additions"]
+        direction TB
+        TPM_H["true_peak_meter.h<br/>ITU-R BS.1770-4"]
+        GS_CPP["gain_smoother.cpp<br/>+12 dB range"]
+        GAIN_DOC["GAIN_STAGING.md"]
     end
 
-    subgraph Packages["Packages (shmui-juce)"]
-        E["packages/"]
-        E1["shmui-juce/<br/>Audio visualization"]
-        E2["AudioAnalyzer"]
-        E3["WaveformVisualizer"]
-        E4["BarVisualizer"]
-        E5["MatrixDisplay"]
+    subgraph INCLUDE["include/orpheus/"]
+        direction TB
+        ABI_H["abi_version.h"]
+        TC_H["transport_controller.h"]
+        RM_H["routing_matrix.h"]
+        AD_H["audio_driver.h"]
     end
 
-    subgraph Applications["Applications"]
-        G["apps/"]
-        G1["clip-composer/<br/>JUCE soundboard"]
-        G2["juce-demo-host/"]
+    subgraph TESTS["tests/"]
+        direction TB
+        ROUTING_TEST["routing_matrix_test<br/>27 tests"]
+        CALLBACK_TEST["callback_queue_stress<br/>6 tests"]
+        TRANSPORT_TEST["transport_test"]
     end
 
-    subgraph Docs["Documentation"]
-        I["docs/"]
-        I1["orp/<br/>ORP documents"]
-        I2["ORP121 Master Plan"]
-        I3["ORP122 Phase 4 Report"]
+    subgraph PACKAGES["packages/"]
+        direction TB
+
+        subgraph SHMUI["shmui-juce/"]
+            direction TB
+            ANALYZER["AudioAnalyzer<br/>FFT, RMS"]
+            WAVEFORM["WaveformVisualizer"]
+            BAR["BarVisualizer"]
+            MATRIX_DISP["MatrixDisplay"]
+        end
     end
 
-    subgraph Wireframes["Wireframes"]
-        W["wireframes/"]
-        W1["v2025-11-08/"]
-        W2["v2026-01-18/<br/>Current (ORP121)"]
+    subgraph APPS["apps/"]
+        direction TB
+
+        subgraph CLIP_COMPOSER["clip-composer/"]
+            direction TB
+            CC_SRC["Source/<br/>JUCE components"]
+            CC_DOCS["docs/occ/<br/>OCC documents"]
+        end
+
+        DEMO_HOST["juce-demo-host/"]
     end
 
-    A --> B
-    A --> C
-    A --> D
-    A --> E
-    A --> G
-    A --> I
-    A --> W
+    subgraph DOCS["docs/"]
+        direction TB
+        ORP_DOCS["orp/<br/>120+ ORP documents"]
+        ARCH_DOC["ARCHITECTURE.md"]
+        ROAD_DOC["ROADMAP.md"]
+    end
 
-    B --> B1
-    B --> B2
-    B --> B3
+    subgraph WIREFRAMES["wireframes/"]
+        direction TB
+        WF_OLD["v2025-11-08/<br/>Previous version"]
+        WF_NEW["v2026-01-18/<br/>Current (ORP121)"]
+    end
 
-    B3 --> R1
-    B3 --> R2
+    ROOT --> SRC
+    ROOT --> INCLUDE
+    ROOT --> TESTS
+    ROOT --> PACKAGES
+    ROOT --> APPS
+    ROOT --> DOCS
+    ROOT --> WIREFRAMES
 
-    E --> E1
-    E1 --> E2
-    E1 --> E3
+    SRC --> CORE_SESSION
+    SRC --> CORE_TRANSPORT
+    SRC --> CORE_ROUTING
+    SRC --> CORE_AUDIO
+    SRC --> PLATFORM
 
-    G --> G1
-    G --> G2
+    CORE_ROUTING --> ORP121_FILES
 
-    I --> I1
-    I1 --> I2
-    I1 --> I3
+    PACKAGES --> SHMUI
+    SHMUI --> ANALYZER
+    SHMUI --> WAVEFORM
+    SHMUI --> BAR
+    SHMUI --> MATRIX_DISP
 
-    W --> W1
-    W --> W2
+    APPS --> CLIP_COMPOSER
+    APPS --> DEMO_HOST
+
+    DOCS --> ORP_DOCS
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>repo-structure.mermaid.md</code> |
-                        Notes: <code>repo-structure.notes.md</code>
-                    </p>
                 </div>
             </div>
 
             <!-- Entry Points -->
             <div class="diagram-card" id="entry">
-                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Entry Points</span>
                     <span class="diagram-description">All ways to interact with the SDK</span>
                     <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
-                <div class="diagram-content hidden">
+                <div class="diagram-content">
                     <pre class="mermaid">
 graph TB
-    subgraph Users["User Personas"]
-        USER1["End User<br/>Broadcast/Theater"]
-        USER2["App Developer<br/>TypeScript/JavaScript"]
-        USER3["Plugin Developer<br/>C++/Native"]
-        USER4["DevOps/QA<br/>CLI Tools"]
+    subgraph USERS["User Personas"]
+        direction TB
+        END_USER["End User<br/>Broadcast/Theater"]
+        APP_DEV["App Developer<br/>TypeScript/JavaScript"]
+        PLUGIN_DEV["Plugin Developer<br/>C++/Native"]
+        DEVOPS["DevOps/QA<br/>CLI Tools"]
     end
 
-    subgraph GUIApps["GUI Applications"]
-        APP1["Orpheus Clip Composer<br/>JUCE Desktop App<br/>960 buttons, 8 tabs"]
-        APP2["JUCE Demo Host"]
-        APP3["Custom Applications"]
+    subgraph GUI["GUI Applications"]
+        direction TB
+        CC_APP["Clip Composer<br/>960 buttons, 8 tabs<br/>Waveform, fades, loops"]
+        DEMO_APP["Demo Host<br/>Integration example"]
+        CUSTOM_APP["Custom Apps<br/>Your application"]
     end
 
-    subgraph CLITools["Command-Line Tools"]
-        CLI1["Minhost<br/>./orpheus_minhost<br/>--session --render"]
-        CLI2["Session Inspector<br/>./inspect_session"]
+    subgraph CLI["CLI Tools"]
+        direction TB
+        MINHOST_CLI["orpheus_minhost<br/>--session PATH<br/>--render OUTPUT"]
+        INSPECT_CLI["inspect_session<br/>--file PATH<br/>--validate"]
     end
 
-    subgraph JSDrivers["JavaScript Drivers"]
-        DRV1["Native Driver<br/>@orpheus/engine-native"]
-        DRV2["Service Driver<br/>@orpheus/engine-service"]
-        DRV3["WASM Driver<br/>@orpheus/engine-wasm"]
-        DRV4["Client Broker<br/>@orpheus/client"]
+    subgraph JS_API["JavaScript Drivers"]
+        direction TB
+        JS_NATIVE["@orpheus/engine-native<br/>Lowest latency"]
+        JS_SERVICE["@orpheus/engine-service<br/>HTTP + WebSocket"]
+        JS_WASM["@orpheus/engine-wasm<br/>Browser access"]
+        JS_CLIENT["@orpheus/client<br/>Auto driver selection"]
     end
 
-    subgraph NativeAPI["Native C++ API"]
-        CPP1["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h"]
+    subgraph CPP_API["Native C++ API"]
+        direction TB
+        CPP_HEADERS["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h<br/>HeadroomMode config<br/>TruePeak metering"]
     end
 
-    subgraph Config["Configuration"]
-        CFG1["Session JSON"]
-        CFG2["Environment Variables"]
-        CFG3["RoutingConfig<br/>ORP121: headroom_mode"]
+    subgraph CONFIG["Configuration"]
+        direction TB
+        SESSION_JSON["session.json<br/>Human-readable<br/>Version control friendly"]
+        ENV_VARS["Environment Variables<br/>ORPHEUS_LOG_LEVEL<br/>ORPHEUS_DRIVER_TYPE"]
+        ROUTING_CFG["RoutingConfig<br/>sample_rate<br/>headroom_mode<br/>enable_true_peak"]
     end
 
-    USER1 --> APP1
-    USER2 --> DRV4
-    USER3 --> CPP1
-    USER4 --> CLI1
+    END_USER --> CC_APP
+    APP_DEV --> JS_CLIENT
+    PLUGIN_DEV --> CPP_HEADERS
+    DEVOPS --> MINHOST_CLI
 
-    APP1 --> CPP1
-    DRV4 --> DRV1
-    DRV4 --> DRV2
-    DRV4 --> DRV3
-    DRV1 --> CPP1
+    CC_APP --> CPP_HEADERS
+    DEMO_APP --> CPP_HEADERS
+    CUSTOM_APP --> CPP_HEADERS
+    CUSTOM_APP -.-> JS_CLIENT
 
-    APP1 -.Uses.-> CFG3
+    JS_CLIENT --> JS_NATIVE
+    JS_CLIENT --> JS_SERVICE
+    JS_CLIENT --> JS_WASM
+    JS_NATIVE --> CPP_HEADERS
+
+    MINHOST_CLI --> CPP_HEADERS
+    INSPECT_CLI --> CPP_HEADERS
+
+    CC_APP -.-> SESSION_JSON
+    CC_APP -.-> ROUTING_CFG
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>entry-points.mermaid.md</code> |
-                        Notes: <code>entry-points.notes.md</code>
-                    </p>
                 </div>
             </div>
-        </div>
 
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- CI/CD INFRASTRUCTURE SECTION -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-
-        <h2>CI/CD Infrastructure</h2>
-
-        <div class="diagram-grid">
-            <!-- Deployment Infrastructure -->
+            <!-- CI/CD Pipeline -->
             <div class="diagram-card" id="cicd">
-                <div class="diagram-header collapsed" onclick="toggleDiagram(this)">
+                <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">CI/CD Pipeline</span>
-                    <span class="diagram-description">Build system, testing, and deployment</span>
+                    <span class="diagram-description">Build, test, and deployment infrastructure</span>
                     <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
-                <div class="diagram-content hidden">
+                <div class="diagram-content">
                     <pre class="mermaid">
 graph TB
-    subgraph Development["Development"]
-        DEV1["Developer Workstation<br/>C++20, CMake, Node.js"]
-        DEV2["Local Build<br/>cmake --build build"]
-        DEV3["Local Testing<br/>ctest + sanitizers"]
+    subgraph DEV["Development"]
+        direction TB
+        LOCAL["Developer Workstation<br/>C++20, CMake, Node.js"]
+        BUILD_LOCAL["cmake --build build"]
+        TEST_LOCAL["ctest + sanitizers"]
     end
 
-    subgraph VersionControl["Version Control"]
-        VC1["Git Repository<br/>main, feature/*"]
-        VC2["Pull Request<br/>CI must pass"]
-        VC3["Release Tags<br/>v1.0.0-rc.1"]
+    subgraph GIT["Version Control"]
+        direction TB
+        REPO["Git Repository<br/>main, feature/*, claude/*"]
+        PR["Pull Request<br/>CI must pass"]
+        TAG["Release Tags<br/>v1.0.0-rc.1"]
     end
 
-    subgraph CIPipeline["CI Pipeline"]
-        CI1["Unified Pipeline<br/>ci-pipeline.yml"]
-        CI2["Matrix Build<br/>ubuntu/windows/macos<br/>Debug/Release"]
-        CI3["Lint Job<br/>clang-format, eslint"]
-        CI6["Integration Tests"]
-        CI8["Performance<br/>Budget validation"]
+    subgraph CI["CI Pipeline"]
+        direction TB
+
+        subgraph MATRIX["Matrix Build"]
+            direction TB
+            UBUNTU["Ubuntu"]
+            WINDOWS["Windows"]
+            MACOS["macOS"]
+        end
+
+        LINT["Lint Job<br/>clang-format, eslint"]
+        NATIVE["Native Driver<br/>N-API build"]
+        TS_BUILD["TypeScript<br/>pnpm build"]
+        INTEGRATION["Integration Tests<br/>Multi-clip stress"]
+        PERF["Performance<br/>Budget validation"]
     end
 
-    subgraph Testing["ORP121 Test Suite"]
-        TEST1["routing_matrix_test<br/>27 tests"]
-        TEST2["callback_queue_stress<br/>6 tests"]
-        TEST3["Performance Tests"]
+    subgraph ORP121_TESTS["ORP121 Test Suite"]
+        direction TB
+        ROUTING_T["routing_matrix_test<br/>27 tests"]
+        CALLBACK_T["callback_queue_stress<br/>6 tests"]
+        PERF_T["Performance Tests<br/>Waveform rendering"]
     end
 
-    subgraph BuildArtifacts["Build Artifacts"]
-        ART1["C++ Libraries<br/>liborpheus_*.a"]
-        ART2["Executables<br/>ClipComposer.app"]
-        ART3["npm Packages<br/>@orpheus/*"]
+    subgraph ARTIFACTS["Build Artifacts"]
+        direction TB
+        LIBS["C++ Libraries<br/>liborpheus_*.a"]
+        EXES["Executables<br/>orpheus_minhost<br/>ClipComposer.app"]
+        NPM["npm Packages<br/>@orpheus/*"]
     end
 
-    subgraph Distribution["Distribution"]
-        DIST1["GitHub Releases"]
-        DIST2["npm Registry"]
-        DIST3["GitHub Pages<br/>API docs"]
+    subgraph DIST["Distribution"]
+        direction TB
+        GH_RELEASE["GitHub Releases<br/>Binaries + source"]
+        NPM_REG["npm Registry<br/>@orpheus packages"]
+        GH_PAGES["GitHub Pages<br/>API docs"]
     end
 
-    DEV1 --> DEV2
-    DEV2 --> DEV3
-    DEV3 --> VC1
+    LOCAL --> BUILD_LOCAL
+    BUILD_LOCAL --> TEST_LOCAL
+    TEST_LOCAL --> REPO
 
-    VC1 --> VC2
-    VC2 --> CI1
+    REPO --> PR
+    PR --> CI
 
-    CI1 --> CI2
-    CI1 --> CI3
-    CI1 --> CI6
-    CI1 --> CI8
+    CI --> MATRIX
+    CI --> LINT
+    CI --> NATIVE
+    CI --> TS_BUILD
+    CI --> INTEGRATION
+    CI --> PERF
 
-    CI2 --> TEST1
-    CI2 --> TEST2
-    CI2 --> TEST3
+    MATRIX --> ROUTING_T
+    MATRIX --> CALLBACK_T
+    MATRIX --> PERF_T
 
-    CI2 --> ART1
-    CI2 --> ART2
+    MATRIX --> LIBS
+    MATRIX --> EXES
+    TS_BUILD --> NPM
 
-    ART1 --> DIST1
-    ART2 --> DIST1
-    ART3 --> DIST2
+    LIBS --> GH_RELEASE
+    EXES --> GH_RELEASE
+    NPM --> NPM_REG
 
-    VC3 --> DIST1
+    PR --> TAG
+    TAG --> GH_RELEASE
+    TAG --> GH_PAGES
                     </pre>
-                    <p class="spec-ref">
-                        Source: <code>deployment-infrastructure.mermaid.md</code> |
-                        Notes: <code>deployment-infrastructure.notes.md</code>
-                    </p>
                 </div>
             </div>
         </div>
 
         <footer>
-            <p><strong>Source:</strong> <code>wireframes/v2026-01-18/*.mermaid.md</code> | <strong>Notes:</strong> <code>wireframes/v2026-01-18/*.notes.md</code></p>
+            <p><strong>Source:</strong> <code>wireframes/v2026-01-18/*.mermaid.md</code></p>
             <p>Generated for: <strong>Orpheus SDK</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
-            <p>Applications: Orpheus Clip Composer (Professional Soundboard) | shmui-juce (Audio Visualization)</p>
-            <p>Standards: <a href="https://www.itu.int/rec/R-REC-BS.1770">ITU-R BS.1770-4</a> (True-Peak Metering) | <a href="https://www.aes.org/publications/standards/search.cfm?docID=96">AES67</a> (Network Audio)</p>
+            <p>Stack: C++20 (Core), TypeScript (Drivers), JUCE (Applications) | ITU-R BS.1770-4 (True-Peak)</p>
+            <p>Apps: <a href="https://github.com/chrislyons/orpheus-sdk">Clip Composer</a> | shmui-juce (Audio Visualization)</p>
         </footer>
     </div>
 
