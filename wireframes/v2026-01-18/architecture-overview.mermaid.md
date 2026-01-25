@@ -1,6 +1,6 @@
 %% Orpheus SDK Architecture Overview
-%% High-level system design with ORP121 routing enhancements
-%% Last updated: 2026-01-18
+%% High-level system design with ORP121 routing enhancements and shmui-juce v2.0.0
+%% Last updated: 2026-01-25
 
 graph TB
     subgraph Applications["Applications Layer"]
@@ -8,6 +8,13 @@ graph TB
         APP2["Orpheus Wave Finder<br/>(Planned)<br/>Harmonic calculator"]
         APP3["Orpheus FX Engine<br/>(Planned)<br/>LLM-powered effects"]
         APP4["JUCE Demo Host<br/>Integration demo"]
+    end
+
+    subgraph ShmUI["shmui-juce (v2.0.0 Active)"]
+        SHMUI1["Audio/<br/>AudioAnalyzer (thread-safe)<br/>FFT, RMS, bands"]
+        SHMUI2["Components/<br/>WaveformVisualizer, Editor<br/>BarVisualizer, OrbVisualizer<br/>MatrixDisplay, LevelMeter"]
+        SHMUI3["Controls/<br/>Button hierarchy<br/>Transport, Mute, Clip"]
+        SHMUI4["Icons/<br/>Icon library<br/>Transport, Audio, UI"]
     end
 
     subgraph Adapters["Adapters Layer"]
@@ -66,11 +73,15 @@ graph TB
         EXT2["Remote Control<br/>WebSocket/OSC"]
     end
 
+    APP1 --> ShmUI
     APP1 --> ADP1
     APP1 --> CoreSDK
     APP2 -.-> CoreSDK
     APP3 -.-> CoreSDK
     APP4 --> CoreSDK
+    APP4 -.-> ShmUI
+
+    ShmUI --> CoreSDK
 
     ADP1 --> CoreSDK
     ADP2 -.-> CoreSDK
@@ -104,6 +115,7 @@ graph TB
     CoreSDK -.Optional.-> EXT2
 
     style Applications fill:#e3f2fd
+    style ShmUI fill:#c8e6c9
     style Adapters fill:#f3e5f5
     style Drivers fill:#e8f5e9
     style CoreSDK fill:#fff3e0

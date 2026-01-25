@@ -1,6 +1,6 @@
 %% Orpheus SDK Data Flow
-%% Lock-free callback queue, true-peak metering, and headroom compensation (ORP121)
-%% Last updated: 2026-01-18
+%% Lock-free callback queue, true-peak metering, headroom compensation (ORP121), shmui visualization
+%% Last updated: 2026-01-25
 
 sequenceDiagram
     participant User
@@ -9,6 +9,8 @@ sequenceDiagram
     participant Transport as TransportController
     participant Routing as RoutingMatrix
     participant Meter as TruePeakMeter
+    participant Analyzer as shmui::AudioAnalyzer<br/>(Thread-Safe)
+    participant Vis as shmui Visualizers<br/>(Message Thread)
     participant Audio as Audio Thread
     participant Driver as Audio Driver
 
@@ -112,3 +114,18 @@ sequenceDiagram
     Transport-->>UI: SessionGraph
     UI->>UI: Serialize to JSON
     UI-->>User: Session saved
+
+    Note over User,Driver: shmui Visualization Flow (Thread-Safe)
+
+    Note over Analyzer: AudioAnalyzer runs on Audio Thread
+    Audio->>Analyzer: pushSamples(buffer, frameCount)
+    Note right of Analyzer: Lock-free ring buffer<br/>Computes FFT, RMS, bands
+
+    Note over Vis: Visualizers poll on Message Thread (60 FPS)
+    Vis->>Analyzer: getFFTData() / getRMS() / getBandLevels()
+    Note right of Analyzer: Atomic read operations<br/>No locks required
+    Analyzer-->>Vis: FFTData / RMS / BandLevels
+    Vis->>Vis: Update visualization state
+    Vis->>User: Paint waveform/bars/orb/meters
+
+    Note over Analyzer,Vis: Thread boundary:<br/>Audio Thread writes → Message Thread reads<br/>No mutexes, no priority inversion

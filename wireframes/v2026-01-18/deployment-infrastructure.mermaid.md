@@ -1,12 +1,19 @@
 %% Orpheus SDK Deployment Infrastructure
-%% CI/CD pipeline, build system, and testing infrastructure
-%% Last updated: 2026-01-18
+%% CI/CD pipeline, build system, testing infrastructure, and shmui-juce sync
+%% Last updated: 2026-01-25
 
 graph TB
     subgraph Development["Development"]
         DEV1["Developer Workstation<br/>C++20, CMake, Node.js"]
         DEV2["Local Build<br/>cmake --build build"]
         DEV3["Local Testing<br/>ctest + sanitizers"]
+    end
+
+    subgraph ShmSync["shmui-juce Sync (v2.0.0)"]
+        SHM1["Source: ~/dev/shmui<br/>juce/Source/"]
+        SHM2["rsync -av --delete<br/>→ packages/shmui-juce/"]
+        SHM3["CMake Integration<br/>add_subdirectory(shmui-juce)"]
+        SHM4["Version Check<br/>shmui::Version::string"]
     end
 
     subgraph VersionControl["Version Control"]
@@ -61,6 +68,12 @@ graph TB
     DEV2 --> DEV3
     DEV3 --> VC1
 
+    SHM1 --> SHM2
+    SHM2 --> SHM3
+    SHM3 --> SHM4
+    SHM2 --> DEV2
+    SHM4 --> VC1
+
     VC1 --> VC2
     VC2 --> CI1
 
@@ -94,6 +107,7 @@ graph TB
     VC3 --> DIST2
 
     style Development fill:#e3f2fd
+    style ShmSync fill:#c8e6c9
     style VersionControl fill:#f3e5f5
     style CIPipeline fill:#e8f5e9
     style Testing fill:#ffccbc

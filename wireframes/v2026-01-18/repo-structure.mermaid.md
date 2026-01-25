@@ -1,6 +1,6 @@
 %% Orpheus SDK Repository Structure
-%% Complete directory tree with ORP121 additions
-%% Last updated: 2026-01-18
+%% Complete directory tree with ORP121 additions and shmui-juce v2.0.0
+%% Last updated: 2026-01-25
 
 graph TB
     subgraph Root["Repository Root"]
@@ -31,13 +31,31 @@ graph TB
         R3["GAIN_STAGING.md<br/>Documentation"]
     end
 
-    subgraph Packages["Packages (shmui-juce)"]
+    subgraph Packages["Packages (shmui-juce v2.0.0)"]
         E["packages/"]
-        E1["shmui-juce/<br/>Audio visualization"]
-        E2["AudioAnalyzer<br/>FFT, RMS analysis"]
-        E3["WaveformVisualizer"]
-        E4["BarVisualizer"]
-        E5["MatrixDisplay"]
+        E1["shmui-juce/<br/>Audio visualization + Controls"]
+        E2["CMakeLists.txt<br/>Build integration"]
+        E3["ShmUI.h<br/>Main include header"]
+        E4["Audio/<br/>AudioAnalyzer (thread-safe)"]
+        E5["Components/<br/>Visualizers + Controls"]
+        E6["Controls/<br/>Button system"]
+        E7["Icons/<br/>Icon library"]
+        E8["Shaders/<br/>OrbFragment, OrbVertex"]
+    end
+
+    subgraph ShmComponents["shmui Components"]
+        SC1["WaveformVisualizer<br/>WaveformEditor"]
+        SC2["BarVisualizer<br/>OrbVisualizer"]
+        SC3["MatrixDisplay<br/>LevelMeter"]
+        SC4["TransportBar<br/>ScrubBar"]
+        SC5["AudioPlayerControls"]
+    end
+
+    subgraph ShmControls["shmui Controls (Button Hierarchy)"]
+        SB1["Button (base)<br/>Style variants"]
+        SB2["TextButton<br/>IconButton"]
+        SB3["ToggleButton<br/>TransportButton"]
+        SB4["MuteButton<br/>ClipButton"]
     end
 
     subgraph Adapters["Adapters"]
@@ -104,6 +122,20 @@ graph TB
     E1 --> E3
     E1 --> E4
     E1 --> E5
+    E1 --> E6
+    E1 --> E7
+    E1 --> E8
+
+    E5 --> SC1
+    E5 --> SC2
+    E5 --> SC3
+    E5 --> SC4
+    E5 --> SC5
+
+    E6 --> SB1
+    SB1 --> SB2
+    SB1 --> SB3
+    SB1 --> SB4
 
     F --> F1
     F --> F2
@@ -123,6 +155,8 @@ graph TB
     style Core fill:#fff4e6
     style RoutingFiles fill:#ffccbc
     style Packages fill:#e8f5e9
+    style ShmComponents fill:#c8e6c9
+    style ShmControls fill:#a5d6a7
     style Adapters fill:#f3e5f5
     style Applications fill:#fce4ec
     style Docs fill:#e0f2f1

@@ -1,4 +1,4 @@
-# Orpheus SDK Wireframes - v2026-01-18
+# Orpheus SDK Wireframes - v2026-01-18 (Updated 2026-01-25)
 
 Comprehensive Mermaid diagram documentation with accompanying explanatory text for the Orpheus SDK architecture.
 
@@ -9,11 +9,20 @@ This wireframe collection provides detailed architectural documentation to help 
 - **`{topic}.mermaid.md`** - Pure Mermaid diagram (compatible with mermaid.live)
 - **`{topic}.notes.md`** - Extended documentation and insights
 
-## What's New in v2026-01-18
+## What's New in v2026-01-18 (Updated 2026-01-25)
 
-This version reflects the **ORP121 Audio Backend Refactoring** work:
+This version reflects the **ORP121 Audio Backend Refactoring** work and **shmui-juce v2.0.0 integration**:
 
-### Phase 1-3: Critical Fixes & Architecture
+### 2026-01-25 Update: shmui-juce v2.0.0 Integration
+- **Active Status:** shmui-juce now integrated as first-party package
+- **Components:** WaveformVisualizer, WaveformEditor, BarVisualizer, OrbVisualizer, MatrixDisplay, LevelMeter, TransportBar, ScrubBar, AudioPlayerControls
+- **Controls:** Full button hierarchy (Button base → TextButton, IconButton, ToggleButton, TransportButton, MuteButton, ClipButton)
+- **Audio:** Thread-safe AudioAnalyzer for FFT, RMS, and frequency band analysis
+- **Icons:** Comprehensive icon library (Transport, Audio, Mixer, Files, Edit, UI, Arrows, Status)
+- **Sync:** Managed via rsync from `~/dev/shmui/juce/Source/`
+- **CMake:** Build integration via add_subdirectory(packages/shmui-juce)
+
+### ORP121 Phase 1-3: Critical Fixes & Architecture
 - **C-01:** GainSmoother range extended to +12 dB
 - **C-02:** Continuous soft-knee limiter (no discontinuity)
 - **C-03:** Lock-free SPSC callback queue (priority inversion fix)
@@ -21,7 +30,7 @@ This version reflects the **ORP121 Audio Backend Refactoring** work:
 - **A-01:** Stereo preservation (ST2110-aligned)
 - **A-04/A-05:** Multi-channel format abstraction
 
-### Phase 4: Quality Improvements
+### ORP121 Phase 4: Quality Improvements
 - **Q-03:** Sample rate parameterization in RoutingConfig
 - **Q-04:** ITU-R BS.1770-4 true-peak metering
 - **Q-05:** Headroom management modes (None, PerGroup, Global, Logarithmic)
@@ -91,7 +100,14 @@ The Orpheus SDK is built on four non-negotiable principles:
 
 ## Version History
 
-### v2026-01-18 (Current)
+### v2026-01-25 (Latest Update)
+- **shmui-juce v2.0.0** integration across all diagrams
+- Added shmui namespace classes to component map
+- Added visualization data flow with thread-safe AudioAnalyzer
+- Added shmui-juce sync workflow to deployment infrastructure
+- Added button hierarchy and controls documentation
+
+### v2026-01-18
 - **ORP121 Audio Backend Refactoring** updates
 - Added TruePeakMeter class (ITU-R BS.1770-4)
 - Added HeadroomMode enum (4 modes)
@@ -117,6 +133,7 @@ The Orpheus SDK is built on four non-negotiable principles:
 
 ---
 
-**Last Updated:** 2026-01-18
+**Last Updated:** 2026-01-25
 **Maintained By:** SDK Core Team
-**Branch:** `feature/orp121-audio-backend-refactoring`
+**Branch:** `refactor/occ-code-simplifier-audit`
+**shmui-juce:** v2.0.0 (synced from `~/dev/shmui`)

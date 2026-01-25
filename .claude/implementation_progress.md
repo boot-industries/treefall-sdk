@@ -1,8 +1,94 @@
 # ORP068 Implementation Progress
 
-**Last Updated:** 2026-01-18 (Session: ORP121 Phase 4 Complete)
+**Last Updated:** 2026-01-25 (Session: Wireframes & Documentation Update)
 **Current Phase:** Phase 4 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | ORP121 Quality Improvements ✅ Complete
+**Overall Progress:** C++ SDK Production-Ready | ORP121 Quality Improvements ✅ Complete | shmui-juce v2.0.0 Integrated
+
+---
+
+## 📐 Wireframes & Documentation Update (2026-01-25)
+
+**Scope:** Update architecture wireframes and documentation HTMLs to reflect shmui-juce v2.0.0 integration
+**Branch:** `refactor/occ-code-simplifier-audit`
+
+### Completed Tasks (9/9 - 100%)
+
+**Phase 1: Wireframe Diagrams (6 files updated)**
+
+1. ✅ `repo-structure.mermaid.md` - Added shmui-juce v2.0.0 package structure (Controls/, Icons/, Shaders/, CMakeLists.txt, ShmUI.h)
+2. ✅ `architecture-overview.mermaid.md` - Added shmui-juce subgraph with Audio, Components, Controls, Icons sections
+3. ✅ `component-map.mermaid.md` - Added shmui namespace classes (AudioAnalyzer, WaveformVisualizer, WaveformEditor, BarVisualizer, LevelMeter, Button hierarchy)
+4. ✅ `data-flow.mermaid.md` - Added shmui visualization flow (AudioAnalyzer thread-safe pattern, 60 FPS visualizer polling)
+5. ✅ `entry-points.mermaid.md` - Added shmui-juce API entry point section (#include ShmUI.h, Button System, Icons Library)
+6. ✅ `deployment-infrastructure.mermaid.md` - Added shmui-juce sync workflow (rsync from ~/dev/shmui, CMake integration)
+
+**Phase 2: README Update**
+
+7. ✅ `wireframes/v2026-01-18/README.md` - Updated version to "Updated 2026-01-25", added shmui-juce v2.0.0 integration details to "What's New"
+
+**Phase 3: HTML Galleries**
+
+8. ✅ `wireframes/architecture-gallery.html` - Updated all 6 Mermaid diagrams, added shmui-juce to color legend, updated stats
+9. ✅ `docs/repo-commands.html` - Added "shmui-juce (Audio Visualization)" section with 5 commands (sync, version check, list components/controls, view header)
+
+### Files Modified
+
+**Wireframe Diagrams (wireframes/v2026-01-18/):**
+- `repo-structure.mermaid.md` - +30 lines
+- `architecture-overview.mermaid.md` - +15 lines
+- `component-map.mermaid.md` - +65 lines
+- `data-flow.mermaid.md` - +20 lines
+- `entry-points.mermaid.md` - +25 lines
+- `deployment-infrastructure.mermaid.md` - +15 lines
+- `README.md` - Updated version history
+
+**HTML Files:**
+- `wireframes/architecture-gallery.html` - Updated all diagrams, footer, color legend
+- `docs/repo-commands.html` - Added shmui-juce section with 5 commands
+
+### shmui-juce v2.0.0 Package Structure
+
+```
+packages/shmui-juce/
+├── CMakeLists.txt          # Build integration
+├── ShmUI.h                 # Main include header
+├── Audio/
+│   └── AudioAnalyzer       # Thread-safe FFT, RMS, band analysis
+├── Components/
+│   ├── WaveformVisualizer  # Multiple waveform display variants
+│   ├── WaveformEditor      # Advanced waveform with trim/fade/seek
+│   ├── BarVisualizer       # Frequency band display
+│   ├── OrbVisualizer       # OpenGL shader-based 3D orb
+│   ├── MatrixDisplay       # LED-style matrix
+│   ├── LevelMeter          # Professional VU/PPM meter
+│   ├── TransportBar        # Full transport control strip
+│   ├── ScrubBar            # Timeline scrubber
+│   └── AudioPlayerControls # Complete player UI
+├── Controls/
+│   ├── Button              # Base button with style/size variants
+│   ├── TextButton          # Text label button
+│   ├── IconButton          # Icon-only button
+│   ├── ToggleButton        # Stateful toggle
+│   ├── TransportButton     # Play/Pause/Stop/Record
+│   ├── MuteButton          # Mute/Solo/Bypass toggles
+│   └── ClipButton          # Clip trigger with state machine
+├── Icons/                  # Icon library (Transport, Audio, Mixer, etc.)
+└── Shaders/
+    ├── OrbFragment.glsl
+    └── OrbVertex.glsl
+```
+
+### Sync Command
+
+```bash
+rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/
+```
+
+### Verification
+
+- [ ] Open `wireframes/architecture-gallery.html` in browser - verify all 6 diagrams render
+- [ ] Open `docs/repo-commands.html` in browser - verify shmui section visible
+- [ ] Paste updated mermaid files into https://mermaid.live to verify syntax
 
 ---
 

@@ -293,7 +293,7 @@
     <div class="container">
         <h1>Orpheus SDK - Architecture Gallery</h1>
         <p class="subtitle">Professional Audio SDK - C++20 Core + Host Adapters + Clip Composer</p>
-        <p class="last-updated">Last updated: 2026-01-18 | Version: ORP121 Phase 4 Complete</p>
+        <p class="last-updated">Last updated: 2026-01-25 | Version: ORP121 + shmui-juce v2.0.0</p>
 
         <div class="stats">
             <div class="stat-card">
@@ -332,6 +332,10 @@
             <div class="color-item">
                 <span class="color-swatch" style="background: #e3f2fd;"></span>
                 <span>Applications</span>
+            </div>
+            <div class="color-item">
+                <span class="color-swatch" style="background: #c8e6c9;"></span>
+                <span>shmui-juce</span>
             </div>
             <div class="color-item">
                 <span class="color-swatch" style="background: #fff8e1;"></span>
@@ -391,6 +395,13 @@ graph TB
         DEMO["Demo Host"]
     end
 
+    subgraph SHMUI["shmui-juce (v2.0.0)"]
+        direction TB
+        ANALYZER["Audio/<br/>AudioAnalyzer<br/>(thread-safe)"]
+        COMPONENTS["Components/<br/>Waveform, Bar, Orb<br/>Matrix, LevelMeter"]
+        CONTROLS["Controls/<br/>Button hierarchy<br/>Transport, Clip"]
+    end
+
     subgraph ADAPTERS["Adapter Layer"]
         direction TB
         MINHOST["Minhost CLI"]
@@ -422,10 +433,14 @@ graph TB
         SNDFILE["libsndfile"]
     end
 
+    CC --> SHMUI
     CC --> CORE
     WF -.-> CORE
     FX -.-> CORE
     DEMO --> CORE
+    DEMO -.-> SHMUI
+
+    SHMUI --> CORE
 
     MINHOST --> CORE
     REAPER -.-> CORE
@@ -450,7 +465,7 @@ graph TB
             <div class="diagram-card" id="components">
                 <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Component Map</span>
-                    <span class="diagram-description">ORP121 classes: TruePeakMeter, HeadroomMode, SPSC Queue</span>
+                    <span class="diagram-description">ORP121 classes + shmui-juce v2.0.0 components</span>
                     <span class="diagram-type flowchart">FLOWCHART</span>
                 </div>
                 <div class="diagram-content">
@@ -480,6 +495,16 @@ graph TB
         SKL["SoftKneeLimiter<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3"]
     end
 
+    subgraph SHMUI_CLASSES["shmui-juce v2.0.0"]
+        direction TB
+        SAA["AudioAnalyzer<br/>(thread-safe)<br/>FFT, RMS, bands"]
+        SWV["WaveformVisualizer<br/>WaveformEditor"]
+        SBV["BarVisualizer<br/>OrbVisualizer"]
+        SLM["LevelMeter<br/>MatrixDisplay"]
+        SBT["Button (base)<br/>TextButton, IconButton"]
+        STB["TransportButton<br/>MuteButton, ClipButton"]
+    end
+
     SG --> TRK
     TRK --> CLIP
 
@@ -492,6 +517,11 @@ graph TB
     RM --> TPM
     RM --> SKL
     TC --> RM
+
+    SWV --> SAA
+    SBV --> SAA
+    SLM --> SAA
+    SBT --> STB
                     </pre>
                 </div>
             </div>
@@ -500,7 +530,7 @@ graph TB
             <div class="diagram-card" id="dataflow">
                 <div class="diagram-header" onclick="toggleDiagram(this)">
                     <span class="diagram-title">Data Flow</span>
-                    <span class="diagram-description">Lock-free callbacks, true-peak metering pipeline</span>
+                    <span class="diagram-description">Lock-free callbacks, true-peak metering, shmui visualization</span>
                     <span class="diagram-type sequence">SEQUENCE</span>
                 </div>
                 <div class="diagram-content">
@@ -512,6 +542,8 @@ sequenceDiagram
     participant T as Transport
     participant R as RoutingMatrix
     participant M as TruePeakMeter
+    participant AA as shmui::AudioAnalyzer
+    participant V as shmui Visualizers
     participant D as Audio Driver
 
     Note over U,D: Initialization
@@ -543,6 +575,13 @@ sequenceDiagram
     UI->>Q: processCallbacks()
     Q-->>UI: callback
     UI->>U: Update UI state
+
+    Note over U,D: shmui Visualization (60 FPS)
+    D->>AA: pushSamples(buffer)
+    Note right of AA: Lock-free ring buffer
+    V->>AA: getFFTData() / getRMS()
+    AA-->>V: FFTData / BandLevels
+    V->>U: Paint visualizers
                     </pre>
                 </div>
             </div>
@@ -582,9 +621,16 @@ graph TB
         TESTS["routing_matrix_test (27)<br/>callback_queue_stress (6)<br/>transport_test"]
     end
 
+    subgraph SHMUI_PKG["shmui-juce (v2.0.0)"]
+        direction TB
+        SHMUI_HDR["ShmUI.h (main include)<br/>CMakeLists.txt"]
+        SHMUI_AUD["Audio/<br/>AudioAnalyzer (thread-safe)"]
+        SHMUI_CMP["Components/<br/>Waveform, Bar, Orb, Matrix<br/>LevelMeter, TransportBar"]
+        SHMUI_CTL["Controls/<br/>Button, Text, Icon<br/>Transport, Mute, Clip"]
+    end
+
     subgraph APPLICATIONS["Applications"]
         direction TB
-        PACKAGES["packages/shmui-juce/<br/>AudioAnalyzer, Waveform,<br/>Bar, Matrix visualizers"]
         APPS["apps/clip-composer/<br/>apps/juce-demo-host/"]
     end
 
@@ -596,10 +642,15 @@ graph TB
 
     ROOT --> CORE
     ROOT --> TESTING
+    ROOT --> SHMUI_PKG
     ROOT --> APPLICATIONS
     ROOT --> DOCUMENTATION
 
     SRC --> ORP121
+    SHMUI_HDR --> SHMUI_AUD
+    SHMUI_HDR --> SHMUI_CMP
+    SHMUI_HDR --> SHMUI_CTL
+    APPS --> SHMUI_PKG
                     </pre>
                 </div>
             </div>
@@ -648,6 +699,12 @@ graph TB
         CPP_HEADERS["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h"]
     end
 
+    subgraph SHMUI_API["shmui-juce (v2.0.0)"]
+        direction TB
+        SHMUI_INC["#include ShmUI.h<br/>Visualization + Controls"]
+        SHMUI_BTN["Button hierarchy<br/>Transport, Clip, Mute"]
+    end
+
     subgraph CONFIG["Configuration"]
         direction TB
         SESSION_JSON["session.json"]
@@ -661,9 +718,12 @@ graph TB
     DEVOPS --> MINHOST_CLI
 
     CC_APP --> CPP_HEADERS
+    CC_APP --> SHMUI_API
     DEMO_APP --> CPP_HEADERS
     CUSTOM_APP --> CPP_HEADERS
     CUSTOM_APP -.-> JS_CLIENT
+
+    SHMUI_INC --> CPP_HEADERS
 
     JS_CLIENT --> JS_NATIVE
     JS_CLIENT --> JS_SERVICE
@@ -694,6 +754,13 @@ graph TB
         LOCAL["Developer Workstation<br/>C++20, CMake, Node.js"]
         BUILD_LOCAL["cmake --build build"]
         TEST_LOCAL["ctest + sanitizers"]
+    end
+
+    subgraph SHMUI_SYNC["shmui-juce Sync"]
+        direction TB
+        SHMUI_SRC["~/dev/shmui<br/>juce/Source/"]
+        SHMUI_RSYNC["rsync → packages/<br/>shmui-juce/"]
+        SHMUI_VER["Version: 2.0.0"]
     end
 
     subgraph GIT["Version Control"]
@@ -738,6 +805,10 @@ graph TB
     BUILD_LOCAL --> TEST_LOCAL
     TEST_LOCAL --> REPO
 
+    SHMUI_SRC --> SHMUI_RSYNC
+    SHMUI_RSYNC --> SHMUI_VER
+    SHMUI_RSYNC --> BUILD_LOCAL
+
     REPO --> PR
     PR --> CI
 
@@ -772,7 +843,8 @@ graph TB
             <p><strong>Source:</strong> <code>wireframes/v2026-01-18/*.mermaid.md</code></p>
             <p>Generated for: <strong>Orpheus SDK</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
             <p>Stack: C++20 (Core), TypeScript (Drivers), JUCE (Applications) | ITU-R BS.1770-4 (True-Peak)</p>
-            <p>Apps: <a href="https://github.com/chrislyons/orpheus-sdk">Clip Composer</a> | shmui-juce (Audio Visualization)</p>
+            <p>Apps: <a href="https://github.com/chrislyons/orpheus-sdk">Clip Composer</a> | shmui-juce v2.0.0 (Audio Visualization + Controls)</p>
+            <p>Updated: 2026-01-25 | shmui sync: <code>rsync -av --delete ~/dev/shmui/juce/Source/ packages/shmui-juce/</code></p>
         </footer>
     </div>
 
