@@ -114,11 +114,6 @@ void BarVisualizer::setBackgroundColour(const juce::Colour& colour) {
   repaint();
 }
 
-void BarVisualizer::setGradientMode(bool enabled) {
-  gradientMode = enabled;
-  repaint();
-}
-
 void BarVisualizer::paint(juce::Graphics& g) {
   const auto bounds = getLocalBounds().toFloat().reduced(16.0f);
 
@@ -164,8 +159,9 @@ void BarVisualizer::paint(juce::Graphics& g) {
     const bool isHighlighted =
         std::find(highlighted.begin(), highlighted.end(), i) != highlighted.end();
 
-    // Determine bar colour (used for solid mode and pulsing effect)
+    // Choose color based on state
     juce::Colour colour;
+
     if (isHighlighted) {
       colour = highlightColour;
     } else if (agentState == AgentState::Speaking) {
@@ -174,32 +170,8 @@ void BarVisualizer::paint(juce::Graphics& g) {
       colour = barColour;
     }
 
-    // Choose color based on state and gradient mode
-    if (gradientMode) {
-      // VU meter gradient: green (bottom) -> yellow (middle) -> red (top)
-      // Create vertical gradient from bottom to top of bar
-      juce::ColourGradient gradient;
-      gradient.isRadial = false;
-      gradient.point1 = {x + barWidth / 2.0f, bounds.getBottom()}; // Bottom
-      gradient.point2 = {x + barWidth / 2.0f, bounds.getY()};      // Top
-
-      // Green at bottom (0%), yellow at 60%, orange at 80%, red at top (100%)
-      gradient.addColour(0.0, juce::Colour(0xFF22C55E)); // Green (safe)
-      gradient.addColour(0.6, juce::Colour(0xFFEAB308)); // Yellow (caution)
-      gradient.addColour(0.8, juce::Colour(0xFFF97316)); // Orange (warning)
-      gradient.addColour(1.0, juce::Colour(0xFFEF4444)); // Red (clip)
-
-      g.setGradientFill(gradient);
-      g.fillRoundedRectangle(x, y, barWidth, barHeight, barWidth / 2.0f);
-
-      // Add a subtle border for definition
-      g.setColour(juce::Colours::white.withAlpha(0.3f));
-      g.drawRoundedRectangle(x, y, barWidth, barHeight, barWidth / 2.0f, 1.0f);
-    } else {
-      // Original solid color mode
-      g.setColour(colour);
-      g.fillRoundedRectangle(x, y, barWidth, barHeight, barWidth / 2.0f);
-    }
+    g.setColour(colour);
+    g.fillRoundedRectangle(x, y, barWidth, barHeight, barWidth / 2.0f);
 
     // Pulsing effect for thinking state
     if (agentState == AgentState::Thinking && isHighlighted) {

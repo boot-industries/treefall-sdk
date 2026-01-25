@@ -15,11 +15,9 @@
 
 #pragma once
 
+#include <JuceHeader.h>
 #include <array>
 #include <atomic>
-#include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_dsp/juce_dsp.h>
-#include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
 namespace shmui {
@@ -61,6 +59,9 @@ public:
   /** dB normalization range */
   static constexpr float kMinDb = -100.0f;
   static constexpr float kMaxDb = -10.0f;
+
+  /** Maximum expected buffer size for pre-allocation (avoids audio thread allocation) */
+  static constexpr int kMaxBufferSize = 8192;
 
   //==============================================================================
 
@@ -252,8 +253,8 @@ private:
   mutable juce::SpinLock dataLock;
 
   // Pre-allocated buffer for mono mixdown (avoids allocation on audio thread)
-  std::vector<float> monoMixBuffer;
-  int monoMixBufferSize = 0;
+  // Buffer is pre-sized in constructor to kMaxBufferSize
+  std::vector<float> monoMixBuffer{kMaxBufferSize, 0.0f};
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioAnalyzer)
 };

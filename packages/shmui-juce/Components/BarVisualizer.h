@@ -13,24 +13,11 @@
 #pragma once
 
 #include "../Audio/AudioAnalyzer.h"
-#include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_dsp/juce_dsp.h>
-#include <juce_gui_basics/juce_gui_basics.h>
+#include "../Utils/AgentState.h"
+#include <JuceHeader.h>
 #include <vector>
 
 namespace shmui {
-
-/**
- * @brief Agent state for bar visualizer animations.
- */
-enum class AgentState {
-  Idle,         ///< Inactive state
-  Connecting,   ///< Initial connection animation
-  Initializing, ///< Setup animation
-  Listening,    ///< Listening for input
-  Thinking,     ///< Processing/thinking
-  Speaking      ///< Output/speaking
-};
 
 /**
  * @brief Multi-band frequency visualizer with state animations.
@@ -122,12 +109,6 @@ public:
    */
   void setBackgroundColour(const juce::Colour& colour);
 
-  /**
-   * @brief Enable VU meter gradient mode (green-yellow-red).
-   * When enabled, bars are drawn with a vertical gradient based on level.
-   */
-  void setGradientMode(bool enabled);
-
   //==============================================================================
   // Component overrides
 
@@ -152,7 +133,6 @@ private:
   float maxHeightPct = 100.0f;
   bool demoMode = false;
   bool centerAlign = false;
-  bool gradientMode = false; // VU meter gradient mode (green-yellow-red)
 
   // Volume data
   std::vector<float> volumeBands;
@@ -169,9 +149,9 @@ private:
   juce::Colour highlightColour = juce::Colour(0xFF3B82F6);  // primary
   juce::Colour backgroundColour = juce::Colour(0xFFF5F5F5); // muted
 
-  // Frequency band configuration
+  // Frequency band configuration (matches AudioAnalyzer defaults and React)
   static constexpr int kLoPass = 100;
-  static constexpr int kHiPass = 200;
+  static constexpr int kHiPass = 600;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BarVisualizer)
 };
