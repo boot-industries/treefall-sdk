@@ -114,6 +114,11 @@ void BarVisualizer::setBackgroundColour(const juce::Colour& colour) {
   repaint();
 }
 
+void BarVisualizer::setGradientMode(bool gradient) {
+  gradientMode = gradient;
+  repaint();
+}
+
 void BarVisualizer::paint(juce::Graphics& g) {
   const auto bounds = getLocalBounds().toFloat().reduced(16.0f);
 
@@ -162,7 +167,19 @@ void BarVisualizer::paint(juce::Graphics& g) {
     // Choose color based on state
     juce::Colour colour;
 
-    if (isHighlighted) {
+    if (gradientMode) {
+      // VU meter gradient: green -> yellow -> red based on level
+      const float level = juce::jlimit(0.0f, 1.0f, volume);
+      if (level < 0.5f) {
+        // Green to yellow
+        const float t = level * 2.0f;
+        colour = juce::Colour::fromRGB(static_cast<uint8_t>(t * 255), 255, 0);
+      } else {
+        // Yellow to red
+        const float t = (level - 0.5f) * 2.0f;
+        colour = juce::Colour::fromRGB(255, static_cast<uint8_t>((1.0f - t) * 255), 0);
+      }
+    } else if (isHighlighted) {
       colour = highlightColour;
     } else if (agentState == AgentState::Speaking) {
       colour = highlightColour;

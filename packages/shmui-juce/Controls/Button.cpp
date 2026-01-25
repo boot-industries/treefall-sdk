@@ -35,6 +35,8 @@ Button::Button() : m_animTimer(std::make_unique<AnimationTimer>(*this)) {
   setMouseCursor(juce::MouseCursor::PointingHandCursor);
 }
 
+Button::~Button() = default;
+
 //==============================================================================
 void Button::setStyle(ButtonStyle style) {
   if (m_style != style) {
