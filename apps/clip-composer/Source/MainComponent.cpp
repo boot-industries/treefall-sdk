@@ -74,91 +74,14 @@ MainComponent::MainComponent() {
   m_sessionHistoryWindow = std::make_unique<SessionHistoryWindow>();
   m_sessionHistoryWindow->setVisible(false);
 
-  // Wire up right-click handler for loading clips
-  m_clipGrid->onButtonRightClicked = [this](int buttonIndex) { onClipRightClicked(buttonIndex); };
-
-  // Wire up left-click handler for triggering clips
-  m_clipGrid->onButtonClicked = [this](int buttonIndex) { onClipTriggered(buttonIndex); };
-
-  // Wire up Ctrl+Opt+Cmd+Click handler for edit dialog
-  m_clipGrid->onButtonEditDialogRequested = [this](int buttonIndex) {
-    onClipDoubleClicked(buttonIndex);
-  };
-
-  // Double-click does nothing - right-click is the ONLY way to open edit dialog
-  // m_clipGrid->onButtonDoubleClicked = [this](int buttonIndex) { onClipDoubleClicked(buttonIndex);
-  // };
-
-  // Wire up drag & drop handler
-  m_clipGrid->onFilesDropped = [this](const juce::Array<juce::File>& files, int buttonIndex) {
-    loadMultipleFiles(files, buttonIndex);
-  };
-
-  // Wire up clip drag-to-reorder handler
-  m_clipGrid->onButtonDraggedToButton = [this](int sourceIndex, int targetIndex) {
-    onClipDraggedToButton(sourceIndex, targetIndex);
-  };
-
-  // Wire up 75fps playback state sync (uses global clip index for multi-tab isolation)
-  m_clipGrid->getClipState = [this](int buttonIndex) -> orpheus::PlaybackState {
-    if (m_audioEngine) {
-      int globalClipIndex = getGlobalClipIndex(buttonIndex);
-      return m_audioEngine->getClipState(globalClipIndex);
-    }
-    return orpheus::PlaybackState::Stopped;
-  };
-
-  // Wire up 75fps clip existence check (prevents orphaned states)
-  m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
-    return m_sessionManager.hasClip(buttonIndex);
-  };
-
-  // Wire up 75fps clip state tracking (ensures fade, loop, stop-others persist)
-  m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
-                                     bool& fadeOutEnabled, bool& stopOthersEnabled) {
-    if (!m_sessionManager.hasClip(buttonIndex))
-      return;
-
-    auto clipData = m_sessionManager.getClip(buttonIndex);
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-
-    // Query clip metadata (these are CLIP properties, not button properties)
-    loopEnabled = m_loopEnabled[globalClipIndex];
-    fadeInEnabled = (clipData.fadeInSeconds > 0.0);
-    fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
-    stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
-  };
-
-  // Wire up 75fps playback position tracking (for elapsed time display)
-  m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
-    if (!m_audioEngine || !m_sessionManager.hasClip(buttonIndex))
-      return 0.0f;
-
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-    auto clipData = m_sessionManager.getClip(buttonIndex);
-
-    // Get current sample position (absolute)
-    int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
-
-    // Calculate trimmed duration in samples
-    int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
-
-    // Normalize to 0.0-1.0 progress within trimmed region
-    if (trimmedSamples > 0) {
-      float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
-                       static_cast<float>(trimmedSamples);
-      return juce::jlimit(0.0f, 1.0f, progress);
-    }
-
-    return 0.0f;
-  };
+  // Wire up ClipGrid callbacks (moved to helper method for readability)
+  wireUpClipGridCallbacks();
 
   // Make this component capture keyboard focus
   setWantsKeyboardFocus(true);
 
-  // OCC130 Sprint B: Wire up transport control callbacks (now in TabSwitcher)
-  m_tabSwitcher->onStopAll = [this]() { onStopAll(); };
-  m_tabSwitcher->onPanic = [this]() { onPanic(); };
+  // Wire up transport control callbacks (moved to helper method for readability)
+  wireUpTransportCallbacks();
 
   // Set window size (1400×900 for better screen fit)
   setSize(1400, 900);
@@ -203,140 +126,9 @@ MainComponent::MainComponent() {
       DBG("MainComponent: BarVisualizer will receive group levels via timer");
 
       // OCC144: Wire up clip state callback for Session History logging
+      // (implementation moved to handleClipStateChanged() for readability)
       m_audioEngine->onClipStateChanged = [this](int buttonIndex, orpheus::PlaybackState state) {
-        // Get clip info for logging
-        int tabIndex = buttonIndex / 48;
-        int localIndex = buttonIndex % 48;
-
-        // Build history entry with timestamp
-        auto now = juce::Time::getCurrentTime();
-        juce::String timestamp = now.formatted("%H:%M:%S");
-
-        juce::String clipName;
-        int groupIndex = 0;
-        int sampleRate = 0;
-        int numChannels = 0;
-        int64_t durationSamples = 0;
-        int64_t trimInSamples = 0;
-        int64_t trimOutSamples = 0;
-        double fadeInSeconds = 0.0;
-        double fadeOutSeconds = 0.0;
-
-        // Get clip metadata from session manager (need to temporarily switch tabs)
-        int currentTab = m_sessionManager.getActiveTab();
-        m_sessionManager.setActiveTab(tabIndex);
-        if (m_sessionManager.hasClip(localIndex)) {
-          auto clipData = m_sessionManager.getClip(localIndex);
-          if (clipData.displayName.empty()) {
-            // Extract filename from filePath
-            juce::File file(clipData.filePath);
-            clipName = file.getFileNameWithoutExtension();
-          } else {
-            clipName = clipData.displayName;
-          }
-          groupIndex = clipData.clipGroup;
-          sampleRate = clipData.sampleRate;
-          numChannels = clipData.numChannels;
-          durationSamples = clipData.durationSamples;
-          trimInSamples = clipData.trimInSamples;
-          trimOutSamples = clipData.trimOutSamples;
-          fadeInSeconds = clipData.fadeInSeconds;
-          fadeOutSeconds = clipData.fadeOutSeconds;
-        }
-        m_sessionManager.setActiveTab(currentTab);
-
-        // Helper lambda: format samples as MM:SS.mmm
-        auto formatTime = [](int64_t samples, int sr) -> juce::String {
-          if (sr <= 0)
-            return "--:--";
-          double seconds = static_cast<double>(samples) / sr;
-          int mins = static_cast<int>(seconds) / 60;
-          double secs = std::fmod(seconds, 60.0);
-          return juce::String::formatted("%02d:%05.2f", mins, secs);
-        };
-
-        // Calculate clip duration (trimmed region)
-        int64_t trimmedDuration = trimOutSamples - trimInSamples;
-        juce::String durationStr = formatTime(trimmedDuration, sampleRate);
-
-        // Build state string and additional info
-        juce::String stateStr;
-        juce::String elapsedStr;
-        juce::String metadataStr;
-
-        switch (state) {
-        case orpheus::PlaybackState::Playing:
-          stateStr = "PLAY";
-          // Record start time for elapsed calculation
-          m_clipStartTimes[buttonIndex] = now;
-          // Build metadata: duration, sample rate, channels, group, fades
-          metadataStr = " | Dur: " + durationStr;
-          if (sampleRate > 0) {
-            metadataStr += " | " + juce::String(sampleRate / 1000) + "kHz";
-          }
-          if (numChannels > 0) {
-            metadataStr += " " + juce::String(numChannels) + "ch";
-          }
-          metadataStr += " | G" + juce::String(groupIndex + 1);
-          if (fadeInSeconds > 0.0) {
-            metadataStr += " | FI:" + juce::String(fadeInSeconds, 1) + "s";
-          }
-          if (fadeOutSeconds > 0.0) {
-            metadataStr += " FO:" + juce::String(fadeOutSeconds, 1) + "s";
-          }
-          break;
-
-        case orpheus::PlaybackState::Stopped:
-          stateStr = "STOP";
-          // Calculate elapsed time since play started
-          if (m_clipStartTimes.count(buttonIndex) > 0) {
-            auto startTime = m_clipStartTimes[buttonIndex];
-            auto elapsedMs = now.toMilliseconds() - startTime.toMilliseconds();
-            double elapsedSecs = elapsedMs / 1000.0;
-            int elapsedMins = static_cast<int>(elapsedSecs) / 60;
-            double elapsedSecsPart = std::fmod(elapsedSecs, 60.0);
-            elapsedStr = " | Played: " +
-                         juce::String::formatted("%02d:%05.2f", elapsedMins, elapsedSecsPart);
-            m_clipStartTimes.erase(buttonIndex);
-          }
-          metadataStr = " | G" + juce::String(groupIndex + 1);
-          break;
-
-        case orpheus::PlaybackState::Stopping:
-          stateStr = "FADE";
-          metadataStr = " | G" + juce::String(groupIndex + 1);
-          if (fadeOutSeconds > 0.0) {
-            metadataStr += " | FO:" + juce::String(fadeOutSeconds, 1) + "s";
-          }
-          break;
-
-        default:
-          stateStr = "----";
-          break;
-        }
-
-        // Log to SessionHistoryWindow with enhanced info
-        if (m_sessionHistoryWindow && m_sessionHistoryWindow->isVisible()) {
-          juce::String entry = timestamp + " | " + stateStr + " | Tab " +
-                               juce::String(tabIndex + 1) + " | " + clipName + elapsedStr +
-                               metadataStr;
-          m_sessionHistoryWindow->addHistoryEntry(entry);
-        }
-
-        // Log to LevelMetersWindow play history (only for PLAY events)
-        if (state == orpheus::PlaybackState::Playing && m_levelMetersWindow) {
-          m_levelMetersWindow->addPlayHistoryEntry(buttonIndex, clipName, groupIndex);
-        }
-
-        // Also log to database if available
-        if (m_playoutLogger && state == orpheus::PlaybackState::Playing) {
-          orpheus::PlayoutEntry entry;
-          entry.startTime = now;
-          entry.trackName = clipName;
-          entry.outputName = "Group " + juce::String(groupIndex + 1);
-          entry.triggerSource = "User";
-          m_playoutLogger->logPlaybackStart(entry);
-        }
+        handleClipStateChanged(buttonIndex, state);
       };
     } else {
       DBG("MainComponent: Failed to start audio engine");
@@ -492,6 +284,224 @@ void MainComponent::applyDisplayPreferences() {
   }
   if (m_tabSwitcher) {
     m_tabSwitcher->repaint();
+  }
+}
+
+//==============================================================================
+// Initialization helpers: Extract callback wiring from constructor for clarity
+
+void MainComponent::wireUpClipGridCallbacks() {
+  // Right-click handler for loading clips
+  m_clipGrid->onButtonRightClicked = [this](int buttonIndex) { onClipRightClicked(buttonIndex); };
+
+  // Left-click handler for triggering clips
+  m_clipGrid->onButtonClicked = [this](int buttonIndex) { onClipTriggered(buttonIndex); };
+
+  // Ctrl+Opt+Cmd+Click handler for edit dialog
+  m_clipGrid->onButtonEditDialogRequested = [this](int buttonIndex) {
+    onClipDoubleClicked(buttonIndex);
+  };
+
+  // Drag & drop handler
+  m_clipGrid->onFilesDropped = [this](const juce::Array<juce::File>& files, int buttonIndex) {
+    loadMultipleFiles(files, buttonIndex);
+  };
+
+  // Clip drag-to-reorder handler
+  m_clipGrid->onButtonDraggedToButton = [this](int sourceIndex, int targetIndex) {
+    onClipDraggedToButton(sourceIndex, targetIndex);
+  };
+
+  // 75fps playback state sync (uses global clip index for multi-tab isolation)
+  m_clipGrid->getClipState = [this](int buttonIndex) -> orpheus::PlaybackState {
+    if (m_audioEngine) {
+      int globalClipIndex = getGlobalClipIndex(buttonIndex);
+      return m_audioEngine->getClipState(globalClipIndex);
+    }
+    return orpheus::PlaybackState::Stopped;
+  };
+
+  // 75fps clip existence check (prevents orphaned states)
+  m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
+    return m_sessionManager.hasClip(buttonIndex);
+  };
+
+  // 75fps clip state tracking (ensures fade, loop, stop-others persist)
+  m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
+                                     bool& fadeOutEnabled, bool& stopOthersEnabled) {
+    if (!m_sessionManager.hasClip(buttonIndex))
+      return;
+
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
+
+    // Query clip metadata (these are CLIP properties, not button properties)
+    loopEnabled = m_loopEnabled[globalClipIndex];
+    fadeInEnabled = (clipData.fadeInSeconds > 0.0);
+    fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
+    stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
+  };
+
+  // 75fps playback position tracking (for elapsed time display)
+  m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
+    if (!m_audioEngine || !m_sessionManager.hasClip(buttonIndex))
+      return 0.0f;
+
+    int globalClipIndex = getGlobalClipIndex(buttonIndex);
+    auto clipData = m_sessionManager.getClip(buttonIndex);
+
+    // Get current sample position (absolute)
+    int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
+
+    // Calculate trimmed duration in samples
+    int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
+
+    // Normalize to 0.0-1.0 progress within trimmed region
+    if (trimmedSamples > 0) {
+      float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
+                       static_cast<float>(trimmedSamples);
+      return juce::jlimit(0.0f, 1.0f, progress);
+    }
+
+    return 0.0f;
+  };
+}
+
+void MainComponent::wireUpTransportCallbacks() {
+  m_tabSwitcher->onStopAll = [this]() { onStopAll(); };
+  m_tabSwitcher->onPanic = [this]() { onPanic(); };
+}
+
+void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state) {
+  // Get clip info for logging
+  int tabIndex = buttonIndex / 48;
+  int localIndex = buttonIndex % 48;
+
+  // Build history entry with timestamp
+  auto now = juce::Time::getCurrentTime();
+  juce::String timestamp = now.formatted("%H:%M:%S");
+
+  juce::String clipName;
+  int groupIndex = 0;
+  int sampleRate = 0;
+  int numChannels = 0;
+  int64_t trimInSamples = 0;
+  int64_t trimOutSamples = 0;
+  double fadeInSeconds = 0.0;
+  double fadeOutSeconds = 0.0;
+
+  // Get clip metadata from session manager (need to temporarily switch tabs)
+  int currentTab = m_sessionManager.getActiveTab();
+  m_sessionManager.setActiveTab(tabIndex);
+  if (m_sessionManager.hasClip(localIndex)) {
+    auto clipData = m_sessionManager.getClip(localIndex);
+    if (clipData.displayName.empty()) {
+      // Extract filename from filePath
+      juce::File file(clipData.filePath);
+      clipName = file.getFileNameWithoutExtension();
+    } else {
+      clipName = clipData.displayName;
+    }
+    groupIndex = clipData.clipGroup;
+    sampleRate = clipData.sampleRate;
+    numChannels = clipData.numChannels;
+    trimInSamples = clipData.trimInSamples;
+    trimOutSamples = clipData.trimOutSamples;
+    fadeInSeconds = clipData.fadeInSeconds;
+    fadeOutSeconds = clipData.fadeOutSeconds;
+  }
+  m_sessionManager.setActiveTab(currentTab);
+
+  // Helper lambda: format samples as MM:SS.mmm
+  auto formatTime = [](int64_t samples, int sr) -> juce::String {
+    if (sr <= 0)
+      return "--:--";
+    double seconds = static_cast<double>(samples) / sr;
+    int mins = static_cast<int>(seconds) / 60;
+    double secs = std::fmod(seconds, 60.0);
+    return juce::String::formatted("%02d:%05.2f", mins, secs);
+  };
+
+  // Calculate clip duration (trimmed region)
+  int64_t trimmedDuration = trimOutSamples - trimInSamples;
+  juce::String durationStr = formatTime(trimmedDuration, sampleRate);
+
+  // Build state string and additional info
+  juce::String stateStr;
+  juce::String elapsedStr;
+  juce::String metadataStr;
+
+  switch (state) {
+  case orpheus::PlaybackState::Playing:
+    stateStr = "PLAY";
+    // Record start time for elapsed calculation
+    m_clipStartTimes[buttonIndex] = now;
+    // Build metadata: duration, sample rate, channels, group, fades
+    metadataStr = " | Dur: " + durationStr;
+    if (sampleRate > 0) {
+      metadataStr += " | " + juce::String(sampleRate / 1000) + "kHz";
+    }
+    if (numChannels > 0) {
+      metadataStr += " " + juce::String(numChannels) + "ch";
+    }
+    metadataStr += " | G" + juce::String(groupIndex + 1);
+    if (fadeInSeconds > 0.0) {
+      metadataStr += " | FI:" + juce::String(fadeInSeconds, 1) + "s";
+    }
+    if (fadeOutSeconds > 0.0) {
+      metadataStr += " FO:" + juce::String(fadeOutSeconds, 1) + "s";
+    }
+    break;
+
+  case orpheus::PlaybackState::Stopped:
+    stateStr = "STOP";
+    // Calculate elapsed time since play started
+    if (m_clipStartTimes.count(buttonIndex) > 0) {
+      auto startTime = m_clipStartTimes[buttonIndex];
+      auto elapsedMs = now.toMilliseconds() - startTime.toMilliseconds();
+      double elapsedSecs = elapsedMs / 1000.0;
+      int elapsedMins = static_cast<int>(elapsedSecs) / 60;
+      double elapsedSecsPart = std::fmod(elapsedSecs, 60.0);
+      elapsedStr =
+          " | Played: " + juce::String::formatted("%02d:%05.2f", elapsedMins, elapsedSecsPart);
+      m_clipStartTimes.erase(buttonIndex);
+    }
+    metadataStr = " | G" + juce::String(groupIndex + 1);
+    break;
+
+  case orpheus::PlaybackState::Stopping:
+    stateStr = "FADE";
+    metadataStr = " | G" + juce::String(groupIndex + 1);
+    if (fadeOutSeconds > 0.0) {
+      metadataStr += " | FO:" + juce::String(fadeOutSeconds, 1) + "s";
+    }
+    break;
+
+  default:
+    stateStr = "----";
+    break;
+  }
+
+  // Log to SessionHistoryWindow with enhanced info
+  if (m_sessionHistoryWindow && m_sessionHistoryWindow->isVisible()) {
+    juce::String entry = timestamp + " | " + stateStr + " | Tab " + juce::String(tabIndex + 1) +
+                         " | " + clipName + elapsedStr + metadataStr;
+    m_sessionHistoryWindow->addHistoryEntry(entry);
+  }
+
+  // Log to LevelMetersWindow play history (only for PLAY events)
+  if (state == orpheus::PlaybackState::Playing && m_levelMetersWindow) {
+    m_levelMetersWindow->addPlayHistoryEntry(buttonIndex, clipName, groupIndex);
+  }
+
+  // Also log to database if available
+  if (m_playoutLogger && state == orpheus::PlaybackState::Playing) {
+    orpheus::PlayoutEntry entry;
+    entry.startTime = now;
+    entry.trackName = clipName;
+    entry.outputName = "Group " + juce::String(groupIndex + 1);
+    entry.triggerSource = "User";
+    m_playoutLogger->logPlaybackStart(entry);
   }
 }
 

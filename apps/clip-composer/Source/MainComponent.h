@@ -74,6 +74,12 @@ private:
   void applyDisplayPreferences();
 
   //==============================================================================
+  // Initialization helpers (extract callback wiring from constructor)
+  void wireUpClipGridCallbacks();
+  void wireUpTransportCallbacks();
+  void handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state);
+
+  //==============================================================================
   // Core Functionality
   void onClipRightClicked(int buttonIndex);
   void onClipTriggered(int buttonIndex);     // Trigger clip (keyboard or mouse)
