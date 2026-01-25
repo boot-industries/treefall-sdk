@@ -194,4 +194,44 @@ constexpr int kTimeFieldWidth = 110; // Time input field width
 constexpr int kButtonHeight = 40;    // Standard button height (25% taller than default)
 } // namespace Layout
 
+//==============================================================================
+// WAVEFORM DISPLAY (WaveformDisplay.cpp)
+//==============================================================================
+
+namespace Waveform {
+// Dimensions
+constexpr float kScaleWidth = 40.0f;      // dB scale column width
+constexpr float kTimeScaleHeight = 30.0f; // Time scale row height
+constexpr float kHandleTolerance = 8.0f;  // Click tolerance for trim handles
+constexpr float kMarkerWidth = 2.0f;      // Trim marker line width
+constexpr float kPlayheadWidth = 3.0f;    // Playhead line width
+constexpr float kHandleWidth = 6.0f;      // Trim handle width
+constexpr float kHandleHeight = 12.0f;    // Trim handle height
+
+// Pagination (auto-scroll during playback)
+constexpr float kPaginationLeftTrigger = 0.10f;  // 10% from left edge
+constexpr float kPaginationRightTrigger = 0.90f; // 90% from left edge
+constexpr float kPaginationCenterOffset = 0.40f; // Position playhead at 10% from left
+
+// Zoom levels (index → factor)
+constexpr float kZoomFactors[] = {1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
+constexpr int kMaxZoomLevel = 4;
+
+// Colors
+constexpr uint32_t kBgWaveform = 0xFF1a1a1a;     // Waveform area background
+constexpr uint32_t kBgTimeScale = 0xFF0f0f0f;    // Time scale area background
+constexpr uint32_t kWaveformBlue = 0xFF4a9eff;   // Waveform line color
+constexpr uint32_t kTrimInMagenta = 0xFFff00ff;  // IN marker (SpotOn standard)
+constexpr uint32_t kTrimOutCyan = 0xFF00ffff;    // OUT marker (SpotOn standard)
+constexpr uint32_t kPlayheadYellow = 0xFFffff00; // Playhead/audition highlight
+constexpr uint32_t kShadedRegion = 0x80000000;   // 50% black for trimmed regions
+
+// Alpha values
+constexpr float kMarkerAlpha = 0.8f;             // Trim marker opacity
+constexpr float kPlayheadAlpha = 0.9f;           // Playhead opacity
+constexpr float kAuditionHighlightAlpha = 0.15f; // Audition region highlight
+constexpr float kCenterLineAlpha = 0.2f;         // Center line opacity
+constexpr float kScaleTextAlpha = 0.7f;          // dB/time scale text opacity
+} // namespace Waveform
+
 } // namespace OCC::Design
