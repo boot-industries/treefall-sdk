@@ -109,6 +109,18 @@ public:
    */
   void setBackgroundColour(const juce::Colour& colour);
 
+  /**
+   * @brief Enable VU-meter gradient mode (green-yellow-red).
+   */
+  void setGradientMode(bool gradient);
+
+  /**
+   * @brief Check if gradient mode is enabled.
+   */
+  bool isGradientMode() const {
+    return gradientMode;
+  }
+
   //==============================================================================
   // Component overrides
 
@@ -133,6 +145,7 @@ private:
   float maxHeightPct = 100.0f;
   bool demoMode = false;
   bool centerAlign = false;
+  bool gradientMode = false;
 
   // Volume data
   std::vector<float> volumeBands;
