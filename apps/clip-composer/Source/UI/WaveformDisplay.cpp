@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "WaveformDisplay.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 WaveformDisplay::WaveformDisplay() {
@@ -88,6 +89,8 @@ void WaveformDisplay::setTrimPoints(int64_t trimInSamples, int64_t trimOutSample
 }
 
 void WaveformDisplay::setPlayheadPosition(int64_t samplePosition) {
+  using namespace OCC::Design::Waveform;
+
   m_playheadPosition = samplePosition;
 
   // PAGINATION MODE: Viewport stays fixed UNLESS playhead escapes visible area
@@ -103,16 +106,14 @@ void WaveformDisplay::setPlayheadPosition(int64_t samplePosition) {
     startFraction = std::clamp(startFraction, 0.0f, 1.0f);
     endFraction = std::clamp(endFraction, 0.0f, 1.0f);
 
-    // Calculate pagination trigger points (10% from left, 90% from left == 10% from right)
-    float leftEdge = startFraction + (visibleWidth * 0.10f);  // 10% from left edge
-    float rightEdge = startFraction + (visibleWidth * 0.90f); // 90% from left (10% from right)
+    // Calculate pagination trigger points
+    float leftEdge = startFraction + (visibleWidth * kPaginationLeftTrigger);
+    float rightEdge = startFraction + (visibleWidth * kPaginationRightTrigger);
 
     // Check if playhead escaped pagination zone
     if (playheadNormalized < leftEdge || playheadNormalized > rightEdge) {
       // Playhead escaped - page viewport to position playhead at 10% from left
-      // New zoom center = playheadNormalized + 40% of visible width
-      // (since center is 50% and we want playhead at 10%, we need center at playhead + 40%)
-      m_zoomCenter = playheadNormalized + (visibleWidth * 0.40f);
+      m_zoomCenter = playheadNormalized + (visibleWidth * kPaginationCenterOffset);
 
       // Clamp zoom center to keep viewport within boundaries
       float halfWidth = visibleWidth / 2.0f;
@@ -140,26 +141,10 @@ void WaveformDisplay::clearAuditionRegion() {
 }
 
 void WaveformDisplay::setZoomLevel(int level, float centerNormalized) {
-  m_zoomLevel = std::clamp(level, 0, 4); // 0-4 for 5 levels
+  using namespace OCC::Design::Waveform;
 
-  // Convert level to zoom factor (1x, 2x, 4x, 8x, 16x)
-  switch (m_zoomLevel) {
-  case 0:
-    m_zoomFactor = 1.0f;
-    break;
-  case 1:
-    m_zoomFactor = 2.0f;
-    break;
-  case 2:
-    m_zoomFactor = 4.0f;
-    break;
-  case 3:
-    m_zoomFactor = 8.0f;
-    break;
-  case 4:
-    m_zoomFactor = 16.0f;
-    break;
-  }
+  m_zoomLevel = std::clamp(level, 0, kMaxZoomLevel);
+  m_zoomFactor = kZoomFactors[m_zoomLevel];
 
   // Update zoom center if provided (e.g., zoom to playhead position)
   if (centerNormalized >= 0.0f) {
@@ -184,19 +169,20 @@ void WaveformDisplay::clear() {
 
 //==============================================================================
 void WaveformDisplay::paint(juce::Graphics& g) {
+  using namespace OCC::Design::Waveform;
+
   auto bounds = getLocalBounds().toFloat();
 
-  // Reserve 30px at bottom for time scale
-  const float timeScaleHeight = 30.0f;
-  auto waveformArea = bounds.withTrimmedBottom(timeScaleHeight);
-  auto timeScaleArea = bounds.withTop(bounds.getBottom() - timeScaleHeight);
+  // Reserve space at bottom for time scale
+  auto waveformArea = bounds.withTrimmedBottom(kTimeScaleHeight);
+  auto timeScaleArea = bounds.withTop(bounds.getBottom() - kTimeScaleHeight);
 
   // Background (waveform area)
-  g.setColour(juce::Colour(0xff1a1a1a));
+  g.setColour(juce::Colour(kBgWaveform));
   g.fillRect(waveformArea);
 
   // Background (time scale area) - slightly darker
-  g.setColour(juce::Colour(0xff0f0f0f));
+  g.setColour(juce::Colour(kBgTimeScale));
   g.fillRect(timeScaleArea);
 
   // Loading state
@@ -234,14 +220,15 @@ bool WaveformDisplay::isNearHandle(float mouseX, float handleX, float tolerance)
 }
 
 void WaveformDisplay::mouseDown(const juce::MouseEvent& event) {
+  using namespace OCC::Design::Waveform;
+
   juce::ScopedLock lock(m_dataLock);
 
   if (!m_waveformData.isValid || m_waveformData.totalSamples == 0)
     return;
 
   auto bounds = getLocalBounds().toFloat();
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
   float mouseX = static_cast<float>(event.x);
 
   // Calculate visible range based on zoom level
@@ -261,15 +248,15 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& event) {
                    ((trimOutNormalized - startFraction) / (endFraction - startFraction)) *
                        waveformBounds.getWidth();
 
-  // Check if clicking near a handle (within 8 pixels) - REQUIRES Shift key to prevent accidental
-  // dragging Shift+drag on handle = precise trim point adjustment
+  // Check if clicking near a handle - REQUIRES Shift key to prevent accidental dragging
+  // Shift+drag on handle = precise trim point adjustment
   if (event.mods.isShiftDown()) {
-    if (isNearHandle(mouseX, trimInX, 8.0f)) {
+    if (isNearHandle(mouseX, trimInX, kHandleTolerance)) {
       m_draggedHandle = DragHandle::TrimIn;
       setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
       DBG("WaveformDisplay: Started dragging IN handle");
       return;
-    } else if (isNearHandle(mouseX, trimOutX, 8.0f)) {
+    } else if (isNearHandle(mouseX, trimOutX, kHandleTolerance)) {
       m_draggedHandle = DragHandle::TrimOut;
       setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
       DBG("WaveformDisplay: Started dragging OUT handle");
@@ -322,6 +309,8 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& event) {
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& event) {
+  using namespace OCC::Design::Waveform;
+
   if (m_draggedHandle == DragHandle::None)
     return;
 
@@ -331,8 +320,7 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& event) {
     return;
 
   auto bounds = getLocalBounds().toFloat();
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
   float mouseX = static_cast<float>(event.x);
 
   // Calculate visible range based on zoom level
@@ -465,12 +453,13 @@ void WaveformDisplay::generateWaveformData(const juce::File& audioFile) {
 }
 
 void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
+  using namespace OCC::Design::Waveform;
+
   if (m_waveformData.minValues.empty() || m_waveformData.maxValues.empty())
     return;
 
-  // Reserve space for dB scale on left (40px)
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  // Reserve space for dB scale on left
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
 
   const float width = waveformBounds.getWidth();
   const float height = waveformBounds.getHeight();
@@ -478,7 +467,7 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
   const int numPixels = static_cast<int>(m_waveformData.minValues.size());
 
   // Draw dB scale on left side (SpotOn-style)
-  g.setColour(juce::Colours::white.withAlpha(0.7f));
+  g.setColour(juce::Colours::white.withAlpha(kScaleTextAlpha));
   g.setFont(juce::FontOptions("HK Grotesk", 9.0f, juce::Font::plain));
 
   // SpotOn shows: 0, -10, -20, -30, -40, -50 dB
@@ -490,11 +479,11 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
     float y = bounds.getY() + normalizedY * height * 0.9f + height * 0.05f;
 
     // Draw tick mark
-    g.drawLine(scaleWidth - 5.0f, y, scaleWidth - 2.0f, y, 1.0f);
+    g.drawLine(kScaleWidth - 5.0f, y, kScaleWidth - 2.0f, y, 1.0f);
 
     // Draw label
     juce::String label = (db == 0.0f) ? "0" : juce::String(static_cast<int>(db));
-    g.drawText(label, 2, static_cast<int>(y - 6), static_cast<int>(scaleWidth - 8), 12,
+    g.drawText(label, 2, static_cast<int>(y - 6), static_cast<int>(kScaleWidth - 8), 12,
                juce::Justification::centredRight, false);
   }
 
@@ -511,7 +500,7 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
   int endPixel = static_cast<int>(endFraction * numPixels);
 
   // Draw waveform as vertical lines (min to max per pixel column)
-  g.setColour(juce::Colour(0xff4a9eff)); // Light blue
+  g.setColour(juce::Colour(kWaveformBlue));
 
   for (int i = startPixel; i < endPixel; ++i) {
     if (i < 0 || i >= numPixels)
@@ -537,19 +526,20 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<floa
   }
 
   // Draw center line
-  g.setColour(juce::Colours::white.withAlpha(0.2f));
+  g.setColour(juce::Colours::white.withAlpha(kCenterLineAlpha));
   g.drawLine(waveformBounds.getX(), midY, waveformBounds.getRight(), midY, 1.0f);
 }
 
 void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
                                             const juce::Rectangle<float>& bounds) {
+  using namespace OCC::Design::Waveform;
+
   // Only draw if audition is active
   if (!m_auditionActive || m_waveformData.totalSamples == 0)
     return;
 
   // Account for dB scale offset
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
   const float width = waveformBounds.getWidth();
 
   // Calculate visible range based on zoom level
@@ -580,7 +570,7 @@ void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
 
   // Draw yellow highlight from playhead to OUT (remaining audition region)
   // This shows the span that will play before reaching OUT
-  g.setColour(juce::Colour(0xffffff00).withAlpha(0.15f)); // Yellow, semi-transparent
+  g.setColour(juce::Colour(kPlayheadYellow).withAlpha(kAuditionHighlightAlpha));
   float highlightStart = playheadX;
   float highlightEnd = auditionEndX;
 
@@ -591,12 +581,13 @@ void WaveformDisplay::drawAuditionHighlight(juce::Graphics& g,
 }
 
 void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
+  using namespace OCC::Design::Waveform;
+
   if (m_waveformData.totalSamples == 0)
     return;
 
   // Account for dB scale offset
-  const float scaleWidth = 40.0f;
-  auto waveformBounds = bounds.withTrimmedLeft(scaleWidth);
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
   const float width = waveformBounds.getWidth();
 
   // Calculate visible range based on zoom level (same as drawWaveform)
@@ -620,17 +611,17 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
                    ((trimOutNormalized - startFraction) / (endFraction - startFraction)) * width;
 
   // Trim In marker (MAGENTA - SpotOn standard)
-  g.setColour(juce::Colour(0xffff00ff).withAlpha(0.8f));
-  g.drawLine(trimInX, bounds.getY(), trimInX, bounds.getBottom(), 2.0f);
-  g.fillRect(trimInX - 3.0f, bounds.getY(), 6.0f, 12.0f); // Small handle at top
+  g.setColour(juce::Colour(kTrimInMagenta).withAlpha(kMarkerAlpha));
+  g.drawLine(trimInX, bounds.getY(), trimInX, bounds.getBottom(), kMarkerWidth);
+  g.fillRect(trimInX - kHandleWidth / 2.0f, bounds.getY(), kHandleWidth, kHandleHeight);
 
   // Trim Out marker (CYAN - SpotOn standard)
-  g.setColour(juce::Colour(0xff00ffff).withAlpha(0.8f));
-  g.drawLine(trimOutX, bounds.getY(), trimOutX, bounds.getBottom(), 2.0f);
-  g.fillRect(trimOutX - 3.0f, bounds.getY(), 6.0f, 12.0f); // Small handle at top
+  g.setColour(juce::Colour(kTrimOutCyan).withAlpha(kMarkerAlpha));
+  g.drawLine(trimOutX, bounds.getY(), trimOutX, bounds.getBottom(), kMarkerWidth);
+  g.fillRect(trimOutX - kHandleWidth / 2.0f, bounds.getY(), kHandleWidth, kHandleHeight);
 
   // Shaded regions outside trim points (only draw if markers are visible)
-  g.setColour(juce::Colours::black.withAlpha(0.5f));
+  g.setColour(juce::Colour(kShadedRegion));
 
   // Shade before IN point
   if (trimInNormalized >= startFraction && trimInNormalized <= endFraction) {
@@ -661,20 +652,21 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
       float playheadX =
           waveformBounds.getX() +
           ((playheadNormalized - startFraction) / (endFraction - startFraction)) * width;
-      g.setColour(juce::Colour(0xffffff00).withAlpha(0.9f)); // Yellow
+      g.setColour(juce::Colour(kPlayheadYellow).withAlpha(kPlayheadAlpha));
       g.drawLine(playheadX, waveformBounds.getY(), playheadX, waveformBounds.getBottom(),
-                 3.0f); // Thicker (3.0f)
+                 kPlayheadWidth);
     }
   }
 }
 
 void WaveformDisplay::drawTimeScale(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
+  using namespace OCC::Design::Waveform;
+
   if (m_waveformData.totalSamples == 0)
     return;
 
   // Account for dB scale offset (same as waveform)
-  const float scaleWidth = 40.0f;
-  auto timeScaleBounds = bounds.withTrimmedLeft(scaleWidth);
+  auto timeScaleBounds = bounds.withTrimmedLeft(kScaleWidth);
   const float width = timeScaleBounds.getWidth();
 
   // Calculate visible range based on zoom level
@@ -727,7 +719,7 @@ void WaveformDisplay::drawTimeScale(juce::Graphics& g, const juce::Rectangle<flo
   }
 
   // Draw time markers with collision prevention
-  g.setColour(juce::Colours::white.withAlpha(0.7f));
+  g.setColour(juce::Colours::white.withAlpha(kScaleTextAlpha));
   g.setFont(juce::FontOptions("HK Grotesk", 9.0f, juce::Font::plain));
 
   double firstMarker = std::ceil(startTime / timeInterval) * timeInterval;
