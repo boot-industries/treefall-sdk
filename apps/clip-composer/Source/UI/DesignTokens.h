@@ -139,6 +139,48 @@ constexpr int kRefreshRateHz = 60;
 constexpr float kPulseFrequency = 2.0f; // Hz for playing state pulse
 
 //==============================================================================
+// CLIP BUTTON SPECIFIC
+//==============================================================================
+
+namespace ClipButton {
+// Typography (HK Grotesk)
+constexpr float kFontButtonNumber = 21.6f; // Empty state button number
+constexpr float kFontHotkey = 12.0f;       // Hotkey label
+constexpr float kFontBeatOffset = 11.0f;   // Beat offset indicator
+constexpr float kFontClipName = 18.0f;     // Clip name (primary)
+constexpr float kFontTimeDisplay = 15.0f;  // Elapsed/remaining time
+constexpr float kFontGroupLabel = 10.8f;   // Group badge text
+
+// Indicator box dimensions
+constexpr float kIndicatorBoxWidth = 36.0f;  // Width for number/hotkey boxes
+constexpr float kIndicatorBoxHeight = 16.0f; // Height for indicator boxes
+constexpr float kPlayBoxWidth = 24.0f;       // Play icon box width
+constexpr float kBeatAreaWidth = 40.0f;      // Beat offset display area
+
+// Status icons
+constexpr float kSmallIconSize = 14.0f; // Status icon dimensions
+constexpr float kIconGap = 4.0f;        // Gap between status icons
+constexpr float kIconRadius = 5.0f;     // Loop icon arc radius
+constexpr float kHexagonRadius = 7.0f;  // Stop-others hexagon radius
+constexpr float kTriangleSize = 7.0f;   // Play triangle size
+
+// Animation
+constexpr float kPulseCycleMs = 500.0f;      // Playing state pulse cycle
+constexpr float kHoverBrightnessMax = 0.15f; // Max hover brightness boost
+constexpr float kHoverGlowAlpha = 0.35f;     // Hover glow opacity
+constexpr float kPlayingBorderWidth = 5.0f;  // Thick border for playing state
+constexpr float kPlayboxBorderWidth = 1.5f;  // Thin border for playbox outline
+
+// Alpha values
+constexpr float kLoadedAlpha = 0.9f;         // Loaded clip background
+constexpr float kTextShadowAlpha = 0.5f;     // Text shadow opacity
+constexpr float kProgressBgAlpha = 0.3f;     // Progress bar background
+constexpr float kGroupBadgeAlpha = 0.8f;     // Group badge background
+constexpr float kBackdropAlpha = 0.85f;      // Time display backdrop
+constexpr float kBrightnessThreshold = 0.8f; // Threshold for text color switch
+} // namespace ClipButton
+
+//==============================================================================
 // LAYOUT CONSTANTS (Dialog-specific)
 //==============================================================================
 
