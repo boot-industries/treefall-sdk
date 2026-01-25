@@ -174,6 +174,11 @@ private:
   // Restart playback from current IN point (for edit law enforcement)
   void restartPlayback();
 
+  // Fade time ↔ combo box ID mapping helpers
+  // Combo IDs: 1=0.0s, 2=0.1s, ..., 11=1.0s, 12=1.2s, 13=1.6s, 14=2.0s, 15=2.4s, 16=3.0s
+  static int mapFadeTimeToComboId(double fadeSeconds);
+  static double mapComboIdToFadeTime(int comboId);
+
   //==============================================================================
   ClipMetadata m_metadata;
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
