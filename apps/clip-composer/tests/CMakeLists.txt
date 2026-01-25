@@ -15,11 +15,13 @@ add_executable(clip_composer_tests
 target_compile_features(clip_composer_tests PRIVATE cxx_std_20)
 
 # Include directories
+# Use relative path from tests directory to SDK root (consistent with main CMakeLists.txt)
+set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 target_include_directories(clip_composer_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Source
-    ${CMAKE_SOURCE_DIR}/include  # Orpheus SDK headers
-    ${CMAKE_SOURCE_DIR}/packages/shmui-juce  # ShmUI audio visualization components
+    ${SDK_ROOT}/include  # Orpheus SDK headers
+    ${SDK_ROOT}/packages/shmui-juce  # ShmUI audio visualization components
 )
 
 # Link against GoogleTest
@@ -49,8 +51,9 @@ target_link_libraries(clip_composer_tests
 )
 
 # Link against Orpheus SDK modules
-set(SDK_LIB_DIR "${CMAKE_SOURCE_DIR}/build/src/core")
-set(SDK_PLATFORM_LIB_DIR "${CMAKE_SOURCE_DIR}/build/src/platform/audio_drivers")
+# Use SDK_ROOT defined above for consistent path resolution
+set(SDK_LIB_DIR "${SDK_ROOT}/build/src/core")
+set(SDK_PLATFORM_LIB_DIR "${SDK_ROOT}/build/src/platform/audio_drivers")
 
 target_link_libraries(clip_composer_tests
   PRIVATE
