@@ -222,7 +222,7 @@
     <div class="container">
         <h1>Orpheus SDK - Command Reference</h1>
         <p class="subtitle">Quick reference for common development tasks</p>
-        <p class="last-updated">Last updated: 2026-01-18</p>
+        <p class="last-updated">Last updated: 2026-01-25</p>
         </div>
 
         <div class="warning">
@@ -507,6 +507,36 @@
                     <td class="job">View OCC README</td>
                     <td><code class="command">cat apps/clip-composer/CLAUDE.md</code></td>
                     <td class="description">View Clip Composer development guide</td>
+                </tr>
+
+                <!-- shmui-juce -->
+                <tr class="section-header collapsed" data-section="shmui" tabindex="0">
+                    <td colspan="3">shmui-juce (Audio Visualization)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="shmui">
+                    <td class="job">Sync shmui-juce</td>
+                    <td><code class="command">rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/</code></td>
+                    <td class="description">Sync shmui-juce from upstream repo (~/dev/shmui)</td>
+                </tr>
+                <tr class="section-row hidden" data-section="shmui">
+                    <td class="job">Check shmui version</td>
+                    <td><code class="command">grep -A 3 "namespace Version" packages/shmui-juce/ShmUI.h</code></td>
+                    <td class="description">Show current shmui-juce version</td>
+                </tr>
+                <tr class="section-row hidden" data-section="shmui">
+                    <td class="job">List shmui components</td>
+                    <td><code class="command">ls -1 packages/shmui-juce/Components/</code></td>
+                    <td class="description">List available shmui visualization components</td>
+                </tr>
+                <tr class="section-row hidden" data-section="shmui">
+                    <td class="job">List shmui controls</td>
+                    <td><code class="command">ls -1 packages/shmui-juce/Controls/</code></td>
+                    <td class="description">List available shmui button/control components</td>
+                </tr>
+                <tr class="section-row hidden" data-section="shmui">
+                    <td class="job">View shmui main header</td>
+                    <td><code class="command">cat packages/shmui-juce/ShmUI.h</code></td>
+                    <td class="description">View main shmui include header with all components</td>
                 </tr>
 
                 <!-- Diagnostics -->

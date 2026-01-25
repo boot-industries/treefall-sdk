@@ -1,6 +1,6 @@
 %% Orpheus SDK Component Map
-%% Detailed component breakdown with ORP121 additions (TruePeakMeter, HeadroomMode, SPSC Queue)
-%% Last updated: 2026-01-18
+%% Detailed component breakdown with ORP121 additions and shmui-juce v2.0.0 classes
+%% Last updated: 2026-01-25
 
 classDiagram
     class SessionGraph {
@@ -189,6 +189,80 @@ classDiagram
         +CEILING = 0.9999f
     }
 
+    class shmui_AudioAnalyzer {
+        <<shmui v2.0.0>>
+        <<thread-safe>>
+        -fftData
+        -rmsBuffer
+        -frequencyBands
+        +pushSamples(buffer, frames) void
+        +getFFTData() FFTData
+        +getRMS() float
+        +getBandLevels() BandLevels
+    }
+
+    class shmui_WaveformVisualizer {
+        <<shmui v2.0.0>>
+        -AudioAnalyzer* analyzer
+        -WaveformVariant variant
+        +setSource(AudioSource) void
+        +setVariant(Variant) void
+        +paint(Graphics) void
+    }
+
+    class shmui_WaveformEditor {
+        <<shmui v2.0.0>>
+        -selection trimIn/trimOut
+        -fadeIn/fadeOut
+        +setAudioFile(File) void
+        +getTrimRange() Range
+        +onSelectionChanged callback
+    }
+
+    class shmui_BarVisualizer {
+        <<shmui v2.0.0>>
+        -AudioAnalyzer* analyzer
+        -barCount
+        -stateAnimations
+        +setBarCount(count) void
+        +paint(Graphics) void
+    }
+
+    class shmui_LevelMeter {
+        <<shmui v2.0.0>>
+        -MeterType type
+        -peakHold
+        +setLevel(dB) void
+        +setType(VU/PPM/Peak) void
+        +paint(Graphics) void
+    }
+
+    class shmui_Button {
+        <<shmui v2.0.0>>
+        -ButtonStyle style
+        -ButtonSize size
+        +setStyle(Primary/Secondary/Ghost) void
+        +setSize(Small/Medium/Large) void
+        +onClick callback
+    }
+
+    class shmui_TransportButton {
+        <<shmui v2.0.0>>
+        -TransportState state
+        +setState(Play/Pause/Stop/Record) void
+        +getState() TransportState
+    }
+
+    class shmui_ClipButton {
+        <<shmui v2.0.0>>
+        -ClipState state
+        -Clip* clip
+        +trigger() void
+        +stop() void
+        +getState() ClipState
+        +onStateChanged callback
+    }
+
     SessionGraph "1" *-- "many" Track
     Track "1" *-- "many" Clip
 
@@ -213,3 +287,13 @@ classDiagram
     RoutingConfig --> HeadroomMode : uses
 
     TransportController --> RoutingMatrix : processes through
+
+    shmui_WaveformVisualizer --> shmui_AudioAnalyzer : uses
+    shmui_WaveformEditor --> shmui_AudioAnalyzer : uses
+    shmui_BarVisualizer --> shmui_AudioAnalyzer : uses
+    shmui_LevelMeter --> shmui_AudioAnalyzer : uses
+
+    shmui_TransportButton --|> shmui_Button
+    shmui_ClipButton --|> shmui_Button
+
+    shmui_ClipButton --> Clip : displays state

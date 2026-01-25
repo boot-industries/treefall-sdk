@@ -1,6 +1,6 @@
 %% Orpheus SDK Entry Points
-%% All ways to interact with the SDK including applications, CLI tools, and language bindings
-%% Last updated: 2026-01-18
+%% All ways to interact with the SDK including applications, CLI tools, language bindings, and shmui-juce
+%% Last updated: 2026-01-25
 
 graph TB
     subgraph Users["User Personas"]
@@ -40,6 +40,14 @@ graph TB
         CPP2["REAPER Extension<br/>(Quarantined)"]
     end
 
+    subgraph ShmUI["shmui-juce (v2.0.0)"]
+        SHM1["#include ShmUI.h<br/><br/>Visualization:<br/>- AudioAnalyzer (thread-safe)<br/>- WaveformVisualizer/Editor<br/>- BarVisualizer, OrbVisualizer<br/>- LevelMeter, MatrixDisplay"]
+
+        SHM2["Button System:<br/>- Button (base)<br/>- TextButton, IconButton<br/>- TransportButton<br/>- MuteButton, ClipButton"]
+
+        SHM3["Icons Library:<br/>- Transport icons<br/>- Audio/Mixer icons<br/>- UI/Status icons"]
+    end
+
     subgraph Config["Configuration"]
         CFG1["Session JSON<br/>session.json<br/>Human-readable<br/>Version control friendly"]
 
@@ -63,9 +71,14 @@ graph TB
     USER4 --> CLI2
 
     APP1 --> CPP1
+    APP1 --> ShmUI
     APP2 --> CPP1
+    APP2 -.-> ShmUI
     APP3 --> CPP1
     APP3 -.-> DRV4
+
+    SHM1 --> CPP1
+    SHM2 --> CPP1
 
     DRV4 --> DRV1
     DRV4 --> DRV2
@@ -87,4 +100,5 @@ graph TB
     style CLITools fill:#e8f5e9
     style JSDrivers fill:#fff3e0
     style NativeAPI fill:#fce4ec
+    style ShmUI fill:#c8e6c9
     style Config fill:#f1f8e9
