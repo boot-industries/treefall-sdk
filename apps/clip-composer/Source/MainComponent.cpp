@@ -305,6 +305,39 @@ void MainComponent::timerCallback() {
       m_tabSwitcher->setPerformanceInfo(0.0f, 0);
 #endif
     }
+
+    // Auto-backup: save dirty sessions every 60 seconds (60 × 1Hz ticks)
+    m_autoBackupCounter++;
+    if (m_autoBackupCounter >= 60 && m_sessionManager.isDirty()) {
+      m_autoBackupCounter = 0;
+
+      // Generate timestamped backup filename
+      auto now = juce::Time::getCurrentTime();
+      auto backupDir = orpheus::ApplicationPaths::getBackupsDir();
+      auto timestamp = now.formatted("%Y%m%d_%H%M%S");
+      auto backupFile = backupDir.getChildFile("session_backup_" + timestamp + ".json");
+
+      if (m_sessionManager.saveSession(backupFile)) {
+        // Re-mark dirty since backup shouldn't clear dirty state
+        m_sessionManager.markDirty();
+        DBG("Auto-backup saved: " << backupFile.getFullPathName());
+
+        // Prune old backups: keep only 5 most recent
+        auto backupFiles =
+            backupDir.findChildFiles(juce::File::findFiles, false, "session_backup_*.json");
+        if (backupFiles.size() > 5) {
+          // Sort by creation time (oldest first)
+          backupFiles.sort();
+          int toRemove = backupFiles.size() - 5;
+          for (int i = 0; i < toRemove; ++i) {
+            backupFiles[i].deleteFile();
+            DBG("Auto-backup pruned: " << backupFiles[i].getFileName());
+          }
+        }
+      }
+    } else if (!m_sessionManager.isDirty()) {
+      m_autoBackupCounter = 0; // Reset counter when session is clean
+    }
   }
 }
 
