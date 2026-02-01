@@ -2,6 +2,7 @@
 
 #include "MainComponent.h"
 #include "Core/ApplicationPaths.h"
+#include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
 
 #if JUCE_MAC
@@ -1031,11 +1032,13 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       bool confirmed = juce::AlertWindow::showOkCancelBox(
           juce::AlertWindow::WarningIcon, "Remove Clip?",
           "Remove \"" + juce::String(clipData.displayName) + "\" from button " +
-              juce::String(buttonIndex + 1) + "?\n\n" + "This action cannot be undone.",
+              juce::String(buttonIndex + 1) + "?",
           "Remove", "Cancel");
 
       if (confirmed) {
-        m_sessionManager.removeClip(buttonIndex);
+        auto cmd = std::make_unique<orpheus::ClearClipCommand>(
+            &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex);
+        m_undoManager->executeCommand(std::move(cmd));
         updateButtonFromClip(buttonIndex);
         DBG("MainComponent: Removed clip from button " << buttonIndex);
       }
@@ -1043,11 +1046,14 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       // Toggle "stop others on play" mode
       m_stopOthersOnPlay[globalClipIndex] = !m_stopOthersOnPlay[globalClipIndex];
 
-      // CRITICAL: Persist to SessionManager
+      // CRITICAL: Persist to SessionManager (via UndoManager)
       if (m_sessionManager.hasClip(buttonIndex)) {
-        auto clipData = m_sessionManager.getClip(buttonIndex);
-        clipData.stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
-        m_sessionManager.setClip(buttonIndex, clipData);
+        auto oldData = m_sessionManager.getClip(buttonIndex);
+        auto newData = oldData;
+        newData.stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
+        auto cmd = std::make_unique<orpheus::EditClipCommand>(
+            &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+        m_undoManager->executeCommand(std::move(cmd));
       }
 
       // Update button visual state
@@ -1062,10 +1068,13 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       // Toggle loop mode
       m_loopEnabled[globalClipIndex] = !m_loopEnabled[globalClipIndex];
 
-      // CRITICAL: Persist to SessionManager
-      auto clipData = m_sessionManager.getClip(buttonIndex);
-      clipData.loopEnabled = m_loopEnabled[globalClipIndex];
-      m_sessionManager.setClip(buttonIndex, clipData);
+      // CRITICAL: Persist to SessionManager (via UndoManager)
+      auto oldData = m_sessionManager.getClip(buttonIndex);
+      auto newData = oldData;
+      newData.loopEnabled = m_loopEnabled[globalClipIndex];
+      auto cmd = std::make_unique<orpheus::EditClipCommand>(
+          &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+      m_undoManager->executeCommand(std::move(cmd));
 
       // Sync to AudioEngine (CRITICAL: Must update SDK loop state!)
       if (m_audioEngine) {
@@ -1109,7 +1118,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
                                  " files starting at button " + juce::String(buttonIndex + 1) +
                                  " will overwrite " + juce::String(overwriteCount) +
                                  " existing clip" + (overwriteCount > 1 ? "s" : "") + ".\n\n" +
-                                 "This action cannot be undone.\n\n" + "Do you want to continue?";
+                                 "Do you want to continue?";
 
           shouldLoad = juce::AlertWindow::showOkCancelBox(
               juce::AlertWindow::WarningIcon,
@@ -1279,11 +1288,14 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
           button->setClipColor(newColor);
         }
 
-        // CRITICAL: Persist color to SessionManager (otherwise Edit Dialog will overwrite it)
+        // CRITICAL: Persist color to SessionManager (via UndoManager)
         if (m_sessionManager.hasClip(buttonIndex)) {
-          auto clipData = m_sessionManager.getClip(buttonIndex);
-          clipData.color = newColor;
-          m_sessionManager.setClip(buttonIndex, clipData);
+          auto oldData = m_sessionManager.getClip(buttonIndex);
+          auto newData = oldData;
+          newData.color = newColor;
+          auto cmd = std::make_unique<orpheus::EditClipCommand>(
+              &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+          m_undoManager->executeCommand(std::move(cmd));
         }
 
         DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
@@ -1462,8 +1474,11 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.loopEnabled = edited.loopEnabled;
     clipData.stopOthersEnabled = edited.stopOthersEnabled;
 
-    // Persist to SessionManager
-    m_sessionManager.setClip(buttonIndex, clipData);
+    // Persist to SessionManager (via UndoManager)
+    auto oldClipData = m_sessionManager.getClip(buttonIndex);
+    auto editCmd = std::make_unique<orpheus::EditClipCommand>(
+        &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldClipData, clipData);
+    m_undoManager->executeCommand(std::move(editCmd));
 
     // Apply trim/fade metadata to AudioEngine (use global index for multi-tab isolation)
     if (m_audioEngine) {
@@ -1753,8 +1768,11 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
         << targetButtonIndex << ", global: " << targetGlobalIndex << ") before swap");
   }
 
-  // Swap clips in SessionManager
-  m_sessionManager.swapClips(sourceButtonIndex, targetButtonIndex);
+  // Swap clips in SessionManager (via UndoManager)
+  auto swapCmd = std::make_unique<orpheus::SwapClipsCommand>(&m_sessionManager,
+                                                             getGlobalClipIndex(sourceButtonIndex),
+                                                             getGlobalClipIndex(targetButtonIndex));
+  m_undoManager->executeCommand(std::move(swapCmd));
 
   // Swap stop-others mode flags (use global indices)
   std::swap(m_stopOthersOnPlay[sourceGlobalIndex], m_stopOthersOnPlay[targetGlobalIndex]);
@@ -2182,7 +2200,6 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     bool confirmed =
         juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, "Clear All Clips?",
                                            "This will remove all clips from all tabs.\n\n"
-                                           "This action cannot be undone.\n\n"
                                            "Are you sure?",
                                            "Clear All", "Cancel");
 
@@ -2192,7 +2209,9 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         m_audioEngine->stopAllClips();
       }
 
-      m_sessionManager.clearSession();
+      auto clearAllCmd = std::make_unique<orpheus::ClearButtonsCommand>(&m_sessionManager, 0, 383);
+      m_undoManager->executeCommand(std::move(clearAllCmd));
+
       for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
         auto button = m_clipGrid->getButton(i);
         if (button)
@@ -2285,8 +2304,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
     // Warn user before clearing tab
     juce::String message = "This will remove all " + juce::String(clipCount) + " clips from Tab " +
-                           juce::String(currentTab + 1) + ".\n\n" +
-                           "This action cannot be undone.\n\n" + "Are you sure?";
+                           juce::String(currentTab + 1) + ".\n\n" + "Are you sure?";
 
     bool confirmed = juce::AlertWindow::showOkCancelBox(
         juce::AlertWindow::WarningIcon, "Clear Tab " + juce::String(currentTab + 1) + "?", message,
@@ -2304,20 +2322,19 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         }
       }
 
-      // Clear all clips on current tab
-      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-        if (m_sessionManager.hasClip(i)) {
-          m_sessionManager.removeClip(i);
-          auto button = m_clipGrid->getButton(i);
-          if (button) {
-            button->clearClip();
-          }
+      // Clear all clips on current tab (via UndoManager)
+      auto clearTabCmd = std::make_unique<orpheus::ClearPageCommand>(
+          &m_sessionManager, m_sessionManager.getActiveTab());
+      m_undoManager->executeCommand(std::move(clearTabCmd));
 
-          // Clear internal state for this button's global index
-          int globalIndex = getGlobalClipIndex(i);
-          m_loopEnabled[globalIndex] = false;
-          m_stopOthersOnPlay[globalIndex] = false;
-        }
+      // Update UI
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        auto button = m_clipGrid->getButton(i);
+        if (button)
+          button->clearClip();
+        int globalIndex = getGlobalClipIndex(i);
+        m_loopEnabled[globalIndex] = false;
+        m_stopOthersOnPlay[globalIndex] = false;
       }
 
       DBG("MainComponent: Cleared " << clipCount << " clips from Tab " << (currentTab + 1));
