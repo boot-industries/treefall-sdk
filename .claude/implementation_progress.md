@@ -1,8 +1,69 @@
 # ORP068 Implementation Progress
 
-**Last Updated:** 2026-01-25 (Session: Wireframes & Documentation Update)
+**Last Updated:** 2026-02-01 (Session: OCC Backend Polish Sprint)
 **Current Phase:** Phase 4 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | ORP121 Quality Improvements ✅ Complete | shmui-juce v2.0.0 Integrated
+**Overall Progress:** C++ SDK Production-Ready | OCC Backend Polish Sprint ✅ Complete | shmui-juce v2.0.0 Integrated
+
+---
+
+## 🔧 OCC Backend Polish Sprint (2026-02-01)
+
+**Scope:** Wire existing but disconnected features for trust and polish. No new features.
+**Branch:** `refactor/occ-code-simplifier-audit`
+**Plan:** `.claude/plans/ticklish-pondering-kazoo.md`
+
+### Completed Tasks (8/8 - 100%)
+
+| # | Task | LOC | Commit |
+|---|------|-----|--------|
+| 1 | Wire MIDI manager to AudioEngine (3 lines) | +3 | `303f721b` |
+| 2 | Feed LevelMetersWindow audio data (4 lines) | +4 | `303f721b` |
+| 3 | Quick fixes: Cmd+N, Cmd+O shortcuts, stale help text | +15 | `303f721b` |
+| 4 | Fix HotKeyManager::findClipsForHotKey() placeholder | +30 | `43796864` |
+| 5 | Dirty flag + title bar indicator + save-before-quit dialog | +60 | `245cbe2a` |
+| 6 | Wire UndoManager to 8 destructive operations | +200 | `d452db92` |
+| 7 | Auto-backup dirty sessions every 60s (prune to 5) | +37 | `88a653e7` |
+| 8 | Wire display preferences (bevel width, button text mode) | +110 | `d30e35e1` |
+
+**Total: 10 files changed, 336 insertions, 84 deletions (6 commits)**
+
+### Files Modified
+
+| File | Tasks | Changes |
+|------|-------|---------|
+| `Source/MainComponent.cpp` | 1-8 | +220 lines (MIDI wiring, meters, shortcuts, undo, backup, display prefs) |
+| `Source/MainComponent.h` | 5,7 | +10 lines (dirty flag API, backup counter) |
+| `Source/Session/SessionManager.h` | 5 | +15 lines (dirty flag API) |
+| `Source/Session/SessionManager.cpp` | 5 | +9 lines (dirty flag in mutations) |
+| `Source/Main.cpp` | 5 | +14 lines (save-before-quit dialog) |
+| `Source/Core/HotKeyManager.cpp` | 4 | +40 lines (fixed stubbed findClipsForHotKey) |
+| `Source/ClipGrid/ClipButton.h` | 8 | +15 lines (bevel/text mode setters) |
+| `Source/ClipGrid/ClipButton.cpp` | 8 | +77 lines (bevel rendering, text mode logic) |
+| `Source/ClipGrid/ClipGrid.h` | 8 | +4 lines (pass-through declarations) |
+| `Source/ClipGrid/ClipGrid.cpp` | 8 | +16 lines (pass-through implementations) |
+
+### Key Features Wired
+
+1. **UndoManager (Task 6):** All 11 command types in ClipCommands.h now active. Cmd+Z/Shift+Z works for: Remove Clip, Toggle Stop Others, Toggle Loop, Set Color, Edit Dialog, Drag-swap, Clear All, Clear Tab. Removed "cannot be undone" from 4 dialogs.
+
+2. **Dirty Flag (Task 5):** `SessionManager::isDirty()` tracks unsaved changes. Title bar shows " *" when dirty. `closeButtonPressed()` shows Save/Don't Save/Cancel dialog.
+
+3. **Auto-backup (Task 7):** Every 60s when dirty, saves timestamped backup to `ApplicationPaths::getBackupsDir()`. Keeps 5 most recent, prunes older backups. Re-marks dirty after backup.
+
+4. **Display Preferences (Task 8):** `DisplayPreferences::getBevelWidth()` and `getButtonTextMode()` now reach ClipButton via ClipGrid pass-through. Bevel renders 3D raised effect (highlight top/left, shadow bottom/right). Text mode supports None/HotKey/MidiNote.
+
+### Verification
+
+Manual test sequence:
+1. Load clip → title shows " *" → Cmd+Z removes clip → Cmd+Shift+Z restores
+2. Right-click > Remove Clip → Cmd+Z restores
+3. Cmd+S saves → asterisk gone → load clip → asterisk back → Cmd+Q shows save dialog
+4. Right-click > Assign HotKey > press K → K triggers clip
+5. Setup > MIDI Devices > enable → Right-click > MIDI Learn → note triggers clip
+6. Display > Level Meters → play clip → meters move
+7. Display > Bevel Width > None → buttons flat → Button Text > HotKey → shows keys
+8. Wait 60s with dirty session → check Backups/ directory
+9. Cmd+N creates new → Cmd+O opens session
 
 ---
 
