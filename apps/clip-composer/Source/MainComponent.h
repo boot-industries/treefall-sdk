@@ -158,5 +158,9 @@ private:
   // OCC144: Track clip start times for elapsed time logging
   std::unordered_map<int, juce::Time> m_clipStartTimes;
 
+  // Auto-backup: save dirty sessions every 60 seconds
+  int m_autoBackupCounter = 0;
+  juce::Time m_lastAutoBackupTime;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
