@@ -30,6 +30,7 @@ std::string SessionManager::getTabLabel(int tabIndex) const {
 void SessionManager::setTabLabel(int tabIndex, const std::string& label) {
   if (tabIndex >= 0 && tabIndex < NUM_TABS) {
     m_tabLabels[tabIndex] = label;
+    m_isDirty = true;
     DBG("SessionManager: Tab " << tabIndex << " label set to: " << label);
   }
 }
@@ -58,6 +59,7 @@ bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
   // Store in map with composite key (tab, button)
   int key = makeKey(m_currentTab, buttonIndex);
   m_clips[key] = clipData;
+  m_isDirty = true;
 
   DBG("SessionManager: Loaded clip " << clipData.displayName << " onto tab " << m_currentTab
                                      << ", button " << buttonIndex << " (" << clipData.sampleRate
@@ -70,6 +72,7 @@ bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData) {
   int key = makeKey(m_currentTab, buttonIndex);
   m_clips[key] = clipData;
+  m_isDirty = true;
 
   DBG("SessionManager: Updated clip metadata for tab " << m_currentTab << ", button " << buttonIndex
                                                        << " - Name: " << clipData.displayName
@@ -82,10 +85,12 @@ void SessionManager::removeClip(int buttonIndex) {
   if (it != m_clips.end()) {
     DBG("SessionManager: Removed clip from tab " << m_currentTab << ", button " << buttonIndex);
     m_clips.erase(it);
+    m_isDirty = true;
   }
 }
 
 void SessionManager::swapClips(int buttonIndex1, int buttonIndex2) {
+  m_isDirty = true;
   int key1 = makeKey(m_currentTab, buttonIndex1);
   int key2 = makeKey(m_currentTab, buttonIndex2);
 
@@ -147,6 +152,7 @@ bool SessionManager::hasClip(int buttonIndex, int tabIndex) const {
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData, int tabIndex) {
   int key = makeKey(tabIndex, buttonIndex);
   m_clips[key] = clipData;
+  m_isDirty = true;
 
   DBG("SessionManager: Updated clip metadata for tab " << tabIndex << ", button " << buttonIndex
                                                        << " - Name: " << clipData.displayName
@@ -257,6 +263,7 @@ bool SessionManager::saveSession(const juce::File& file) {
 
   if (file.replaceWithText(jsonString)) {
     m_currentFile = file;
+    m_isDirty = false;
     DBG("SessionManager: Saved session to: " << file.getFullPathName());
     return true;
   }
@@ -370,12 +377,14 @@ bool SessionManager::loadSession(const juce::File& file) {
   }
 
   m_currentFile = file;
+  m_isDirty = false;
   DBG("SessionManager: Loaded session from: " << file.getFullPathName());
   return true;
 }
 
 void SessionManager::clearSession() {
   m_clips.clear();
+  m_isDirty = true;
   m_sessionName = "Untitled";
   m_currentFile = juce::File();
 

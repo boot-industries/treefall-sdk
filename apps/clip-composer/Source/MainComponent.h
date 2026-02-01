@@ -54,6 +54,11 @@ public:
   MainComponent();
   ~MainComponent() override;
 
+  bool isSessionDirty() const {
+    return m_sessionManager.isDirty();
+  }
+  void saveCurrentSession();
+
   //==============================================================================
   void paint(juce::Graphics&) override;
   void resized() override;
@@ -90,6 +95,7 @@ private:
   void onClipDraggedToButton(int sourceButtonIndex, int targetButtonIndex);
   void onStopAll();
   void onPanic();
+  void updateWindowTitle();
 
   // Tab management
   void onTabSelected(int tabIndex);

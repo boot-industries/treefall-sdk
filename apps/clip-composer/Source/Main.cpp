@@ -79,7 +79,19 @@ public:
     }
 
     void closeButtonPressed() override {
-      // This is called when user presses window close button
+      auto* mainComp = dynamic_cast<MainComponent*>(getContentComponent());
+      if (mainComp && mainComp->isSessionDirty()) {
+        int result = juce::AlertWindow::showYesNoCancelBox(
+            juce::AlertWindow::QuestionIcon, "Unsaved Changes",
+            "Do you want to save changes before closing?", "Save", "Don't Save", "Cancel");
+
+        if (result == 0) // Cancel
+          return;
+        if (result == 1) { // Save
+          mainComp->saveCurrentSession();
+        }
+        // result == 2 means Don't Save - fall through to quit
+      }
       JUCEApplication::getInstance()->systemRequestedQuit();
     }
 

@@ -200,6 +200,44 @@ void MainComponent::resized() {
 }
 
 //==============================================================================
+void MainComponent::updateWindowTitle() {
+  if (auto* topLevel = getTopLevelComponent()) {
+    juce::String title = "Clip Composer";
+    if (m_sessionManager.isDirty())
+      title += " *";
+    auto sessionFile = m_sessionManager.getCurrentFile();
+    if (sessionFile != juce::File())
+      title += " - " + sessionFile.getFileNameWithoutExtension();
+#ifdef DEBUG
+    title += " [DEBUG]";
+#endif
+    title += " - v0.2.1";
+    topLevel->setName(title);
+  }
+}
+
+//==============================================================================
+void MainComponent::saveCurrentSession() {
+  auto currentFile = m_sessionManager.getCurrentFile();
+  if (currentFile != juce::File()) {
+    m_sessionManager.saveSession(currentFile);
+  } else {
+    // No file set yet - use Save As
+    auto chooser = std::make_shared<juce::FileChooser>(
+        "Save Session", orpheus::ApplicationPaths::getSessionsDir(), "*.json");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode |
+                             juce::FileBrowserComponent::canSelectFiles,
+                         [this, chooser](const juce::FileChooser& fc) {
+                           auto file = fc.getResult();
+                           if (file != juce::File()) {
+                             m_sessionManager.saveSession(file);
+                             updateWindowTitle();
+                           }
+                         });
+  }
+}
+
+//==============================================================================
 void MainComponent::timerCallback() {
   // OCC144: Update VU meter at 30Hz
   // Note: Until clip group routing is implemented, all bars show master RMS level
@@ -225,6 +263,9 @@ void MainComponent::timerCallback() {
   // Only update performance display once per second (30 ticks at 30Hz)
   if (performanceUpdateCounter >= 30) {
     performanceUpdateCounter = 0;
+
+    // Update window title (dirty flag, session name) at 1Hz
+    updateWindowTitle();
 
     // OCC130 Sprint B: Update latency/performance info in merged TabSwitcher
     if (m_tabSwitcher && m_audioEngine) {
