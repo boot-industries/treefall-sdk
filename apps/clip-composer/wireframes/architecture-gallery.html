@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Composer Architecture Gallery v0.2.0</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <style>
+        /* Input Sans */
+        @font-face {
+            font-family: 'InputSans-Regular';
+            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Regular.ttf') format('truetype');
+            font-weight: 400;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'InputSans-Medium';
+            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Medium.ttf') format('truetype');
+            font-weight: 500;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'InputSans-Bold';
+            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Bold.ttf') format('truetype');
+            font-weight: 700;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'InputSans-Light';
+            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Light.ttf') format('truetype');
+            font-weight: 300;
+            font-display: swap;
+        }
+        /* Input Mono */
+        @font-face {
+            font-family: 'InputMono-Regular';
+            src: url('../../../../shared-fonts/input/InputMono/InputMono/InputMono-Regular.ttf') format('truetype');
+            font-weight: 400;
+            font-display: swap;
+        }
+
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #242424;
+            --bg-card: #2a2a2a;
+            --accent: #FF9800;
+            --accent-secondary: #E65100;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --border: #333;
+            --success: #4ade80;
+            --warning: #fbbf24;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'InputSans-Regular', 'Input Sans', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            padding: 1rem 2rem;
+        }
+
+        /* Header - Minimal single line */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .version-badge {
+            background: var(--accent);
+            color: white;
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 1rem;
+        }
+
+        .header-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-left: 0.75rem;
+            padding-left: 0.75rem;
+            border-left: 1px solid var(--border);
+        }
+
+        /* Quick Nav + Legend Row */
+        .nav-legend-row {
+            display: flex;
+            gap: 0.35rem;
+            margin: 0.75rem 0 1rem 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .quick-nav {
+            display: flex;
+            gap: 0.3rem;
+            padding: 0.25rem 0.5rem;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            align-items: center;
+        }
+
+        .quick-nav a {
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 0.2rem 0.5rem;
+            background: var(--bg-card);
+            border-radius: 3px;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .quick-nav a:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Diagram Cards */
+        .diagram-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            margin-bottom: 1.25rem;
+            overflow: hidden;
+            transition: border-color 0.2s;
+            scroll-margin-top: 1.5rem;
+            scroll-margin-bottom: 1.5rem;
+        }
+
+        .diagram-card:hover {
+            border-color: var(--accent-secondary);
+        }
+
+        .diagram-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.8rem 1.5rem;
+            background: var(--bg-card);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .diagram-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex: 1;
+        }
+
+        .diagram-badge {
+            font-size: 0.9rem;
+            padding: 0.3rem 0.6rem;
+            background: var(--accent-secondary);
+            border-radius: 6px;
+            color: white;
+        }
+
+        .diagram-toggle {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            transition: transform 0.3s;
+            font-size: 1.5rem;
+        }
+
+        .diagram-card.collapsed .diagram-toggle {
+            transform: rotate(-90deg);
+        }
+
+        .diagram-content {
+            padding: 1.5rem;
+            overflow-x: auto;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+        }
+
+        .diagram-card.collapsed .diagram-content {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            overflow: hidden;
+        }
+
+        .diagram-description {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+            font-family: 'InputSans-Light', 'Input Sans', system-ui, sans-serif;
+            font-weight: 300;
+        }
+
+        .mermaid {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            min-height: 200px;
+            overflow-x: auto;
+            overflow-y: visible;
+        }
+
+        .mermaid svg {
+            min-width: 900px;
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Color Legend - Compact inline */
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.3rem 0.5rem;
+        }
+
+        .legend h3 {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .legend-grid {
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        /* Mermaid edge label styling - bubble cells */
+        .mermaid .edgeLabel foreignObject {
+            overflow: visible;
+        }
+        .mermaid .edgeLabel div {
+            padding: 4px 10px;
+            background: #3a2a1a !important;
+            border-radius: 3px;
+        }
+        .mermaid .edgeLabel rect,
+        .mermaid .labelBkg {
+            fill: #3a2a1a !important;
+            rx: 3px;
+            ry: 3px;
+        }
+
+        /* Mermaid line and border thickness */
+        .mermaid .flowchart-link,
+        .mermaid .edgePath path,
+        .mermaid .transition path {
+            stroke-width: 2px !important;
+        }
+        .mermaid .node rect,
+        .mermaid .node circle,
+        .mermaid .node polygon,
+        .mermaid .cluster rect,
+        .mermaid .statediagram-state rect {
+            stroke-width: 2px !important;
+        }
+
+        /* Mermaid node text - prevent clipping */
+        .mermaid .cluster-label {
+            white-space: nowrap;
+            padding: 8px 12px;
+        }
+        .mermaid .cluster-label .nodeLabel {
+            white-space: nowrap;
+            padding: 4px 8px;
+        }
+        .mermaid .nodeLabel {
+            white-space: nowrap;
+        }
+        .mermaid .label foreignObject {
+            overflow: visible;
+        }
+        .mermaid .cluster rect {
+            rx: 8px;
+            ry: 8px;
+        }
+        /* Ensure cluster titles have breathing room */
+        .mermaid .cluster .label {
+            margin-bottom: 12px;
+        }
+        .mermaid .cluster foreignObject {
+            overflow: visible;
+        }
+
+        /* Keyboard Hints */
+        .keyboard-hints {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .keyboard-hints div {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .keyboard-hints kbd {
+            background: var(--bg-primary);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            border: 1px solid var(--border);
+            font-family: monospace;
+            font-size: 0.7rem;
+            min-width: 1.2rem;
+            text-align: center;
+        }
+
+        /* Selected diagram card for keyboard nav */
+        .diagram-card.selected {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .nav-legend-row {
+                flex-direction: column;
+                gap: 0.35rem;
+                align-items: flex-start;
+            }
+            .mermaid svg {
+                min-width: auto;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 0.5rem; }
+            header { padding: 0.4rem 0.6rem; }
+            header h1 { font-size: 1rem; }
+            .version-badge {
+                font-size: 0.6rem;
+                padding: 0.1rem 0.3rem;
+                margin-left: 0.5rem;
+            }
+            .header-subtitle { display: none; }
+            .quick-nav {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+            .quick-nav a {
+                font-size: 0.7rem;
+                padding: 0.15rem 0.4rem;
+            }
+            .legend {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+            .legend h3 { font-size: 0.65rem; }
+            .legend-item { font-size: 0.65rem; }
+            .diagram-header {
+                padding: 0.6rem 1rem;
+                gap: 0.5rem;
+            }
+            .diagram-header h2 { font-size: 1rem; }
+            .diagram-badge {
+                font-size: 0.7rem;
+                padding: 0.2rem 0.4rem;
+            }
+            .diagram-toggle {
+                width: 28px;
+                height: 28px;
+                font-size: 1.2rem;
+            }
+            .diagram-content { padding: 1rem; }
+            .diagram-description { font-size: 0.85rem; }
+            .mermaid {
+                padding: 1rem;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .mermaid svg {
+                min-width: auto;
+                max-width: none;
+            }
+            .keyboard-hints { display: none; }
+            footer {
+                padding: 1rem;
+                font-size: 0.7rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Clip Composer Architecture Gallery</h1>
+            <span class="version-badge">v0.2.0</span>
+            <span class="header-subtitle">Orpheus SDK Clip Composer - Professional Audio Clip Management</span>
+        </header>
+
+        <div class="nav-legend-row">
+            <nav class="quick-nav">
+                <a href="#component-architecture">Component Architecture</a>
+                <a href="#data-flow">Data Flow</a>
+                <a href="#threading-model">Threading Model</a>
+                <a href="#build-dependencies">Build &amp; Dependencies</a>
+                <a href="#session-management">Session Management</a>
+            </nav>
+            <div class="legend">
+                <h3>Legend:</h3>
+                <div class="legend-grid">
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #FF9800"></span>
+                        UI / JUCE Components
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #E65100"></span>
+                        Application Logic
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #1E90FF"></span>
+                        Orpheus SDK
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #2E7D32"></span>
+                        Platform / Hardware
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #7B1FA2"></span>
+                        External / Storage
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 1: Component Architecture -->
+        <div class="diagram-card" id="component-architecture">
+            <div class="diagram-header" onclick="toggleDiagram(this)">
+                <h2>
+                    <span class="diagram-badge">1</span>
+                    Component Architecture
+                </h2>
+                <div class="diagram-toggle">&#9660;</div>
+            </div>
+            <div class="diagram-content">
+                <div class="diagram-description">
+                    5-layer architecture from JUCE UI components down to platform audio I/O.
+                    Layers 1-2 are OCC-specific, Layers 3-5 are shared Orpheus SDK infrastructure.
+                    ClipGrid supports 10x12 buttons across 8 tabs (960 clips total).
+                </div>
+                <div class="mermaid">
+flowchart TB
+    subgraph L1["Layer 1: UI Components (JUCE)"]
+        direction LR
+        CG["ClipGrid\n10x12 x 8 tabs\n960 clips"]
+        WD["WaveformDisplay"]
+        TC["TransportControls"]
+        RP["RoutingPanel"]
+        TS["TabSwitcher"]
+        AS["AudioSettingsDialog"]
+        CE["ClipEditDialog"]
+        HI["HeartbeatIndicator"]
+        SM_UI["shmui-juce\nVisualizers"]
+    end
+
+    subgraph L2["Layer 2: Application Logic"]
+        direction LR
+        SesM["SessionManager\nJSON sessions"]
+        CM["ClipManager\nMetadata & assignments"]
+        RM["RoutingManager\n4 Clip Groups"]
+        PM["PreferencesManager"]
+        AE["AudioEngine"]
+        UM["UndoManager"]
+        DB["Database\nSQLite"]
+        EL["EventLogger"]
+        PL["PlayoutLogger"]
+        HK["HotKeyManager"]
+        MIDI["MIDIDeviceManager"]
+    end
+
+    subgraph L3["Layer 3: Orpheus SDK Integration"]
+        direction LR
+        ITC["ITransportController\nClip playback"]
+        IAFR["IAudioFileReader\nWAV/AIFF/FLAC"]
+        IRM["IRoutingMatrix\nMulti-channel"]
+        IPM["IPerformanceMonitor\nCPU/latency"]
+    end
+
+    subgraph L4["Layer 4: Real-Time Audio Processing"]
+        direction LR
+        IAD["IAudioDriver\nCoreAudio/ASIO/WASAPI"]
+        MIX["Mixing Engine\nGain smoothing, fade-out"]
+        SAT["Sample-Accurate Timing\n+/- 1 sample"]
+    end
+
+    subgraph L5["Layer 5: Platform Audio I/O"]
+        direction LR
+        AI["Audio Interfaces\n2-32 channels"]
+        DRV["ASIO / CoreAudio\nWASAPI drivers"]
+    end
+
+    L1 -->|"Message Thread"| L2
+    L2 -->|"Lock-Free Commands"| L3
+    L3 -->|"Audio Thread"| L4
+    L4 -->|"Hardware"| L5
+
+    style L1 fill:#3a2510,stroke:#FF9800,color:#eaeaea
+    style L2 fill:#3a1a08,stroke:#E65100,color:#eaeaea
+    style L3 fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style L4 fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style L5 fill:#0a300a,stroke:#2E7D32,color:#eaeaea
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Data Flow -->
+        <div class="diagram-card collapsed" id="data-flow">
+            <div class="diagram-header" onclick="toggleDiagram(this)">
+                <h2>
+                    <span class="diagram-badge">2</span>
+                    Audio Clip Data Flow
+                </h2>
+                <div class="diagram-toggle">&#9660;</div>
+            </div>
+            <div class="diagram-content">
+                <div class="diagram-description">
+                    How audio clips flow through the system from file import to hardware output.
+                    File I/O happens on background thread, playback commands traverse lock-free queues,
+                    and audio processing runs on the real-time audio thread with zero allocations.
+                </div>
+                <div class="mermaid">
+flowchart LR
+    subgraph Import["File Import"]
+        FS["Filesystem\nWAV / AIFF / FLAC"]
+        SCAN["Directory Scanner\nBackground Thread"]
+    end
+
+    subgraph Decode["Decoding"]
+        AFR["IAudioFileReader\nlibsndfile"]
+        WF["Waveform Calculator\nBackground Thread"]
+        META["Clip Metadata\nJSON Schema"]
+    end
+
+    subgraph Session["Session State"]
+        SESS["SessionManager\nJSON persistence"]
+        CLIP["ClipManager\nButton assignments"]
+        GRID["ClipGrid UI\n960 buttons"]
+    end
+
+    subgraph Playback["Playback Pipeline"]
+        TRIG["Trigger Command\nLock-free queue"]
+        TRANS["TransportController\nStart / Stop / Loop"]
+        ROUTE["RoutingMatrix\n4 Clip Groups"]
+    end
+
+    subgraph Output["Audio Output"]
+        MIX["Mixer\nGain + Fade"]
+        DRIVER["AudioDriver\nCoreAudio / ASIO"]
+        HW["Hardware\nAudio Interface"]
+    end
+
+    FS --> SCAN
+    SCAN --> AFR
+    AFR --> WF
+    AFR --> META
+    META --> SESS
+    SESS --> CLIP
+    CLIP --> GRID
+    GRID -->|"User click"| TRIG
+    TRIG -->|"Lock-free"| TRANS
+    TRANS --> ROUTE
+    ROUTE --> MIX
+    MIX --> DRIVER
+    DRIVER --> HW
+    WF -->|"callAsync"| GRID
+
+    style Import fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
+    style Decode fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style Session fill:#3a1a08,stroke:#E65100,color:#eaeaea
+    style Playback fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style Output fill:#0a300a,stroke:#2E7D32,color:#eaeaea
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 3: Threading Model -->
+        <div class="diagram-card collapsed" id="threading-model">
+            <div class="diagram-header" onclick="toggleDiagram(this)">
+                <h2>
+                    <span class="diagram-badge">3</span>
+                    Threading Model
+                </h2>
+                <div class="diagram-toggle">&#9660;</div>
+            </div>
+            <div class="diagram-content">
+                <div class="diagram-description">
+                    Three-thread architecture ensuring real-time audio performance. The Message Thread
+                    handles UI events, the Audio Thread processes audio with zero allocations (no locks,
+                    no I/O), and the File I/O Thread handles background loading. Communication between
+                    threads uses lock-free queues and atomic operations only.
+                </div>
+                <div class="mermaid">
+flowchart TB
+    subgraph MT["Message Thread (UI)"]
+        direction TB
+        JUCE_MM["JUCE MessageManager"]
+        UI_EVT["UI Events\nButton clicks, keyboard"]
+        UI_UPD["Visual Updates\nWaveforms, meters, transport"]
+        SDK_CB["SDK Callbacks\nonClipStarted, onClipStopped"]
+        IO_OPS["I/O Operations\nSession save/load"]
+    end
+
+    subgraph AT["Audio Thread (Real-Time)"]
+        direction TB
+        PROC["processAudio()\n~10ms @ 512 samples"]
+        READ["IAudioFileReader"]
+        MIX_A["IRoutingMatrix\nMix clips"]
+        POS["Atomic transport\nposition update"]
+        CB_POST["Post callbacks\nLock-free queue"]
+    end
+
+    subgraph FT["File I/O Thread (Background)"]
+        direction TB
+        PRELOAD["Pre-load audio files"]
+        SCAN_D["Scan directories"]
+        WAVE_C["Calculate waveform data"]
+        WRITE_R["Write recorded audio"]
+    end
+
+    MT -->|"Lock-Free\nCommands"| AT
+    AT -->|"Lock-Free\nCallbacks"| MT
+    FT -->|"callAsync()"| MT
+
+    style MT fill:#3a2510,stroke:#FF9800,color:#eaeaea
+    style AT fill:#300a0a,stroke:#ef4444,color:#eaeaea
+    style FT fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 4: Build & Dependencies -->
+        <div class="diagram-card collapsed" id="build-dependencies">
+            <div class="diagram-header" onclick="toggleDiagram(this)">
+                <h2>
+                    <span class="diagram-badge">4</span>
+                    Build &amp; Dependencies
+                </h2>
+                <div class="diagram-toggle">&#9660;</div>
+            </div>
+            <div class="diagram-content">
+                <div class="diagram-description">
+                    CMake build graph showing the orpheus_clip_composer_app target, its dependencies
+                    on JUCE 8.0.4 modules, Orpheus SDK static libraries, shmui-juce visualization
+                    package, SQLite3, libsndfile, and platform frameworks. C++20 required.
+                </div>
+                <div class="mermaid">
+flowchart TB
+    subgraph Target["CMake Target"]
+        APP["orpheus_clip_composer_app\nC++20 | JUCE GUI App"]
+    end
+
+    subgraph JUCE_Mods["JUCE 8.0.4 Modules"]
+        direction LR
+        JGE["juce_gui_extra"]
+        JAB["juce_audio_basics"]
+        JAD["juce_audio_devices"]
+        JAF["juce_audio_formats"]
+        JAU["juce_audio_utils"]
+        JEV["juce_events"]
+    end
+
+    subgraph SDK_Libs["Orpheus SDK Static Libraries"]
+        direction LR
+        OT["liborpheus_transport.a"]
+        OA["liborpheus_audio_io.a"]
+        OR["liborpheus_routing.a"]
+        OD["liborpheus_audio_driver_coreaudio.a"]
+    end
+
+    subgraph Packages["First-Party Packages"]
+        SHMUI["orpheus_shmui_juce\nAudio Visualizers"]
+    end
+
+    subgraph ExtDeps["External Dependencies"]
+        direction LR
+        SQL["SQLite3\nFetchContent"]
+        LSF["libsndfile\nSystem library"]
+        GT["GoogleTest v1.14\nFetchContent"]
+    end
+
+    subgraph Platform["Platform Frameworks (macOS)"]
+        direction LR
+        CA["CoreAudio.framework"]
+        ATB["AudioToolbox.framework"]
+        AU["AudioUnit.framework"]
+    end
+
+    subgraph Source["Source Modules"]
+        direction LR
+        S_MAIN["Main.cpp\nMainComponent"]
+        S_GRID["ClipGrid/\nClipButton"]
+        S_AUDIO["Audio/\nAudioEngine"]
+        S_SESS["Session/\nSessionManager"]
+        S_TRANS["Transport/\nTransportControls"]
+        S_UI["UI/\nDialogs, Displays"]
+        S_CORE["Core/\nDatabase, Logging,\nUndo, HotKeys, MIDI"]
+    end
+
+    Source --> APP
+    APP --> JUCE_Mods
+    APP --> SDK_Libs
+    APP --> Packages
+    APP --> ExtDeps
+    APP --> Platform
+
+    style Target fill:#3a2510,stroke:#FF9800,color:#eaeaea
+    style JUCE_Mods fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style SDK_Libs fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style Packages fill:#3a1a08,stroke:#E65100,color:#eaeaea
+    style ExtDeps fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
+    style Platform fill:#0a300a,stroke:#2E7D32,color:#eaeaea
+    style Source fill:#3a2510,stroke:#FF9800,color:#eaeaea
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 5: Session Management -->
+        <div class="diagram-card collapsed" id="session-management">
+            <div class="diagram-header" onclick="toggleDiagram(this)">
+                <h2>
+                    <span class="diagram-badge">5</span>
+                    Session Management
+                </h2>
+                <div class="diagram-toggle">&#9660;</div>
+            </div>
+            <div class="diagram-content">
+                <div class="diagram-description">
+                    Session lifecycle from creation through save/load. Sessions persist as JSON files
+                    containing clip metadata, routing configuration, and user preferences. SQLite
+                    database provides session history and playout logging for broadcast compliance.
+                </div>
+                <div class="mermaid">
+flowchart LR
+    subgraph Create["Session Creation"]
+        NEW["New Session"]
+        LOAD["Load Session\nJSON file"]
+        HIST["Session History\nSQLite DB"]
+    end
+
+    subgraph State["Runtime State"]
+        SM["SessionManager"]
+        CLIPS["Clip Assignments\n960 slots"]
+        ROUTING["Routing Config\n4 Groups"]
+        PREFS["User Preferences"]
+        UNDO["UndoManager\nAction history"]
+    end
+
+    subgraph Persist["Persistence"]
+        JSON["Session JSON\nMetadata + Routing"]
+        DB["SQLite Database\nHistory + Playout"]
+        LOG["PlayoutLogger\nBroadcast compliance"]
+    end
+
+    subgraph Output_S["Session Output"]
+        SAVE["Save Session"]
+        EXPORT["Export Session"]
+        BACKUP["Auto-backup"]
+    end
+
+    NEW --> SM
+    LOAD --> SM
+    HIST --> SM
+    SM --> CLIPS
+    SM --> ROUTING
+    SM --> PREFS
+    SM --> UNDO
+    CLIPS --> JSON
+    ROUTING --> JSON
+    PREFS --> JSON
+    SM --> DB
+    SM --> LOG
+    JSON --> SAVE
+    JSON --> EXPORT
+    DB --> BACKUP
+
+    style Create fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
+    style State fill:#3a1a08,stroke:#E65100,color:#eaeaea
+    style Persist fill:#0a2040,stroke:#1E90FF,color:#eaeaea
+    style Output_S fill:#0a300a,stroke:#2E7D32,color:#eaeaea
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            Clip Composer Architecture Gallery v0.2.0 |
+            <a href="../docs/occ/INDEX.md">OCC Documentation Index</a> |
+            <a href="../CLAUDE.md">Development Guide</a> |
+            Generated 2026-02-01
+        </footer>
+    </div>
+
+    <div class="keyboard-hints">
+        <div><kbd>&uarr;</kbd><kbd>&darr;</kbd> Navigate</div>
+        <div><kbd>&larr;</kbd> Collapse</div>
+        <div><kbd>&rarr;</kbd> Expand</div>
+        <div><kbd>Esc</kbd> Collapse all</div>
+        <div><kbd>A</kbd> Expand all</div>
+    </div>
+
+    <script>
+        // Initialize Mermaid with dark theme
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                fontFamily: '"InputMono-Regular", "SF Mono", "Fira Code", monospace',
+                primaryColor: '#E65100',
+                primaryTextColor: '#eaeaea',
+                primaryBorderColor: '#333',
+                lineColor: '#FF9800',
+                secondaryColor: '#7B1FA2',
+                tertiaryColor: '#1a1a1a',
+                background: '#1a1a1a',
+                mainBkg: '#E65100',
+                nodeBorder: '#333',
+                clusterBkg: '#242424',
+                clusterBorder: '#333',
+                titleColor: '#eaeaea',
+                edgeLabelBackground: '#3a2a1a',
+                lineWidth: 2
+            },
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'monotoneY',
+                nodeSpacing: 80,
+                rankSpacing: 100,
+                padding: 30
+            },
+            stateDiagram: {
+                useMaxWidth: true,
+                nodeSpacing: 60,
+                rankSpacing: 50
+            }
+        });
+
+        // Keyboard navigation state
+        let selectedIndex = -1;
+        const cards = document.querySelectorAll('.diagram-card');
+
+        function selectCard(index) {
+            cards.forEach(c => c.classList.remove('selected'));
+            if (index >= 0 && index < cards.length) {
+                selectedIndex = index;
+                cards[index].classList.add('selected');
+                cards[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function toggleDiagram(header) {
+            const card = header.closest('.diagram-card');
+            card.classList.toggle('collapsed');
+            // Set as active for keyboard nav
+            const index = Array.from(cards).indexOf(card);
+            selectCard(index);
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                cards.forEach(card => card.classList.add('collapsed'));
+                cards.forEach(c => c.classList.remove('selected'));
+                selectedIndex = -1;
+            } else if (e.key.toLowerCase() === 'a' && !e.ctrlKey && !e.metaKey) {
+                cards.forEach(card => card.classList.remove('collapsed'));
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectCard(selectedIndex < cards.length - 1 ? selectedIndex + 1 : 0);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectCard(selectedIndex > 0 ? selectedIndex - 1 : cards.length - 1);
+            } else if (e.key === 'ArrowRight' && selectedIndex >= 0) {
+                e.preventDefault();
+                cards[selectedIndex].classList.remove('collapsed');
+            } else if (e.key === 'ArrowLeft' && selectedIndex >= 0) {
+                e.preventDefault();
+                cards[selectedIndex].classList.add('collapsed');
+            }
+        });
+
+        // Smooth scroll for quick nav
+        document.querySelectorAll('.quick-nav a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = document.querySelector(link.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    target.classList.remove('collapsed');
+                    // Set as active for keyboard nav
+                    const index = Array.from(cards).indexOf(target);
+                    selectCard(index);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
