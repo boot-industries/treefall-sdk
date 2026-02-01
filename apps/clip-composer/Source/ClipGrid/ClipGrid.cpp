@@ -290,6 +290,22 @@ void ClipGrid::triggerPlayboxButton() {
 }
 
 //==============================================================================
+// Display preferences pass-through
+void ClipGrid::setBevelWidthPercent(float percent) {
+  for (auto& button : m_buttons) {
+    if (button)
+      button->setBevelWidthPercent(percent);
+  }
+}
+
+void ClipGrid::setButtonTextMode(int mode) {
+  for (auto& button : m_buttons) {
+    if (button)
+      button->setButtonTextMode(mode);
+  }
+}
+
+//==============================================================================
 void ClipGrid::timerCallback() {
   // Sync button states from AudioEngine at 75fps (broadcast standard timing)
   // Timer runs continuously to ensure atomic state synchronization from ANY source:

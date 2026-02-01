@@ -53,6 +53,22 @@ void ClipButton::setBeatOffset(const juce::String& beatOffset) {
   repaint();
 }
 
+void ClipButton::setBevelWidthPercent(float percent) {
+  float clamped = juce::jlimit(0.0f, 0.2f, percent);
+  if (std::abs(m_bevelWidthPercent - clamped) > 0.001f) {
+    m_bevelWidthPercent = clamped;
+    repaint();
+  }
+}
+
+void ClipButton::setButtonTextMode(int mode) {
+  int clamped = juce::jlimit(0, 2, mode);
+  if (m_buttonTextMode != clamped) {
+    m_buttonTextMode = clamped;
+    repaint();
+  }
+}
+
 void ClipButton::clearClip() {
   m_state = State::Empty;
   m_clipName.clear();
@@ -217,6 +233,30 @@ void ClipButton::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, kPlayboxBorderWidth);
   }
 
+  // Draw bevel effect (3D raised appearance)
+  if (m_bevelWidthPercent > 0.001f && m_state != State::Empty) {
+    float bevelWidth = std::min(bounds.getWidth(), bounds.getHeight()) * m_bevelWidthPercent;
+    auto innerBounds = bounds.reduced(BORDER_THICKNESS);
+
+    // Top highlight (lighter)
+    g.setColour(juce::Colours::white.withAlpha(0.15f));
+    g.fillRect(innerBounds.getX() + CORNER_RADIUS, innerBounds.getY(),
+               innerBounds.getWidth() - CORNER_RADIUS * 2.0f, bevelWidth);
+
+    // Left highlight (lighter)
+    g.fillRect(innerBounds.getX(), innerBounds.getY() + CORNER_RADIUS, bevelWidth,
+               innerBounds.getHeight() - CORNER_RADIUS * 2.0f);
+
+    // Bottom shadow (darker)
+    g.setColour(juce::Colours::black.withAlpha(0.2f));
+    g.fillRect(innerBounds.getX() + CORNER_RADIUS, innerBounds.getBottom() - bevelWidth,
+               innerBounds.getWidth() - CORNER_RADIUS * 2.0f, bevelWidth);
+
+    // Right shadow (darker)
+    g.fillRect(innerBounds.getRight() - bevelWidth, innerBounds.getY() + CORNER_RADIUS, bevelWidth,
+               innerBounds.getHeight() - CORNER_RADIUS * 2.0f);
+  }
+
   if (m_state == State::Empty) {
     // Button index (larger, more prominent)
     // Feature 4: Use consecutive numbering across tabs
@@ -286,25 +326,32 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
       g.drawText(beatDisplay, beatArea, juce::Justification::centredLeft, false);
     }
 
-    // OCC130 Sprint A.4: Keyboard shortcut indicator (top-right corner)
-    // Thin outline box, transparent background, adaptive color
-    if (m_keyboardShortcut.isNotEmpty()) {
-      g.setFont(juce::FontOptions("HK Grotesk", kFontHotkey, juce::Font::bold));
+    // Display text based on button text mode preference
+    if (m_buttonTextMode > 0) {
+      juce::String displayText;
+      if (m_buttonTextMode == 1 && m_keyboardShortcut.isNotEmpty()) {
+        displayText = m_keyboardShortcut; // HotKey mode
+      } else if (m_buttonTextMode == 2) {
+        displayText = "MIDI"; // MidiNote mode (placeholder until per-clip MIDI note data)
+      }
 
-      auto hotkeyBox = topRow.removeFromRight(kIndicatorBoxWidth).withHeight(kIndicatorBoxHeight);
+      if (displayText.isNotEmpty()) {
+        g.setFont(juce::FontOptions("HK Grotesk", kFontHotkey, juce::Font::bold));
 
-      // Draw thin outline (adaptive color)
-      // Light outline on dark buttons, dark outline on light buttons
-      juce::Colour outlineColor = brightness > kBrightnessThreshold
-                                      ? juce::Colours::black.withAlpha(0.6f)
-                                      : juce::Colours::white.withAlpha(kGroupBadgeAlpha);
+        auto hotkeyBox = topRow.removeFromRight(kIndicatorBoxWidth).withHeight(kIndicatorBoxHeight);
 
-      g.setColour(outlineColor);
-      g.drawRoundedRectangle(hotkeyBox, OCC::Design::kRadiusMD, kPlayboxBorderWidth);
+        // Draw thin outline (adaptive color)
+        juce::Colour outlineColor = brightness > kBrightnessThreshold
+                                        ? juce::Colours::black.withAlpha(0.6f)
+                                        : juce::Colours::white.withAlpha(kGroupBadgeAlpha);
 
-      // Draw text (adaptive color)
-      g.setColour(textColor);
-      g.drawText(m_keyboardShortcut, hotkeyBox, juce::Justification::centred, false);
+        g.setColour(outlineColor);
+        g.drawRoundedRectangle(hotkeyBox, OCC::Design::kRadiusMD, kPlayboxBorderWidth);
+
+        // Draw text (adaptive color)
+        g.setColour(textColor);
+        g.drawText(displayText, hotkeyBox, juce::Justification::centred, false);
+      }
     }
 
     currentY = topRow.getBottom() + 2.0f;

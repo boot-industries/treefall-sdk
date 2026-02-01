@@ -114,6 +114,18 @@ public:
   void setBeatOffset(const juce::String& beatOffset);
 
   /**
+   * @brief Set bevel width as a percentage of button short dimension.
+   * @param percent 0.0 = no bevel, 0.05 = 5%, up to 0.20 = 20%
+   */
+  void setBevelWidthPercent(float percent);
+
+  /**
+   * @brief Set button text display mode.
+   * @param mode 0=None, 1=HotKey, 2=MidiNote
+   */
+  void setButtonTextMode(int mode);
+
+  /**
    * @brief Clear all clip data and reset to Empty state.
    */
   void clearClip();
@@ -265,6 +277,9 @@ private:
   int m_clipGroup = 0; // 0-3 for routing groups
   juce::String m_keyboardShortcut;
   juce::String m_beatOffset; // Optional: "3+", "2", "4-", etc.
+
+  float m_bevelWidthPercent = 0.1f; // Default 10% bevel
+  int m_buttonTextMode = 1;         // 0=None, 1=HotKey, 2=MidiNote
 
   // Playback state
   float m_playbackProgress = 0.0f; // 0.0 to 1.0
