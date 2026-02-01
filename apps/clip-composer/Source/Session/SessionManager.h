@@ -258,6 +258,20 @@ public:
   }
 
   //==============================================================================
+  /// @name Dirty Flag (unsaved changes tracking)
+  /// @{
+  bool isDirty() const {
+    return m_isDirty;
+  }
+  void markClean() {
+    m_isDirty = false;
+  }
+  void markDirty() {
+    m_isDirty = true;
+  }
+  /// @}
+
+  //==============================================================================
   // Clip Group management (Item 29)
 
   /**
@@ -288,6 +302,7 @@ private:
   ClipData extractMetadata(const juce::String& filePath);
 
   //==============================================================================
+  bool m_isDirty = false;          // Unsaved changes tracking
   std::map<int, ClipData> m_clips; // composite key (tab*100 + button) → ClipData
   std::string m_sessionName = "Untitled";
   juce::File m_currentFile; // Last saved/loaded file
