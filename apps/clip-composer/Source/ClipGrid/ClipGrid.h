@@ -84,6 +84,10 @@ public:
   void movePlayboxRight();
   void triggerPlayboxButton(); // Trigger button at playbox position (Enter key)
 
+  // Display preferences pass-through to all buttons
+  void setBevelWidthPercent(float percent);
+  void setButtonTextMode(int mode);
+
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;

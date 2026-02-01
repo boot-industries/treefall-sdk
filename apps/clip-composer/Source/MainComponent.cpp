@@ -354,11 +354,21 @@ void MainComponent::applyDisplayPreferences() {
     m_tabSwitcher->setTabHeight(tabHeight);
   }
 
-  // TODO: Apply additional preferences to ClipButton/ClipGrid:
+  // Apply button appearance preferences to ClipGrid
+  if (m_clipGrid) {
+    // Bevel width (None=0.0, 5%=0.05, 10%=0.10, 15%=0.15, 20%=0.20)
+    float bevelPercent =
+        orpheus::DisplayPreferences::getBevelWidthPercent(m_displayPreferences->getBevelWidth());
+    m_clipGrid->setBevelWidthPercent(bevelPercent);
+
+    // Button text mode (0=None, 1=HotKey, 2=MidiNote)
+    int textMode = static_cast<int>(m_displayPreferences->getButtonTextMode());
+    m_clipGrid->setButtonTextMode(textMode);
+  }
+
+  // TODO: Remaining preferences to wire:
   // - buttonTriggerSize
   // - showButtonTriggers
-  // - buttonTextMode
-  // - bevelWidth
   // - edgedText
   // - elapsedTimeMode
 
