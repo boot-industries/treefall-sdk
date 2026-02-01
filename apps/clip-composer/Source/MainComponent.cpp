@@ -701,6 +701,14 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     return true;
   }
 
+  // OCC144: Check custom hotkey assignments before keyboard grid
+  if (m_hotKeyManager) {
+    bool triggered = m_hotKeyManager->triggerHotKey(key, m_sessionManager.getActiveTab(),
+                                                    &m_sessionManager, m_audioEngine.get());
+    if (triggered)
+      return true;
+  }
+
   // Map key to button index
   int buttonIndex = getButtonIndexFromKey(key);
   if (buttonIndex >= 0 && buttonIndex < m_clipGrid->getButtonCount()) {

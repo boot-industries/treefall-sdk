@@ -53,34 +53,20 @@ std::vector<int> HotKeyManager::findClipsForHotKey(const juce::KeyPress& key, in
     return matchingClips;
   }
 
-  // Determine tab range based on scope
-  int startTab = (m_scope == Scope::Paged) ? currentTab : 0;
-  int endTab = (m_scope == Scope::Paged) ? currentTab : 7;
+  for (const auto& [buttonIndex, assignedKey] : m_buttonHotKeys) {
+    // Scope check: if Paged, only match buttons on the current tab
+    int tabForButton = buttonIndex / 48;
+    if (m_scope == Scope::Paged && tabForButton != currentTab)
+      continue;
 
-  for (int tabIndex = startTab; tabIndex <= endTab; ++tabIndex) {
-    for (int buttonIndex = 0; buttonIndex < 48; ++buttonIndex) {
-      // Calculate global clip index
-      int globalIndex = tabIndex * 48 + buttonIndex;
-
-      // Get clip data - need to temporarily switch tabs to query
-      // Note: This is a simplified implementation. In practice,
-      // SessionManager should provide a method to query by global index.
-      // For now, we'll store the original tab and restore it.
-      int originalTab = sessionManager->getActiveTab();
-      const_cast<SessionManager*>(sessionManager)->setActiveTab(tabIndex);
-
-      auto clipData = sessionManager->getClip(buttonIndex);
-
-      const_cast<SessionManager*>(sessionManager)->setActiveTab(originalTab);
-
-      if (!clipData.isValid()) {
-        continue;
+    // Key match
+    if (assignedKey.getKeyCode() == key.getKeyCode() &&
+        assignedKey.getModifiers() == key.getModifiers()) {
+      // Verify the button actually has a clip loaded
+      int localButtonIndex = buttonIndex % 48;
+      if (sessionManager->hasClip(localButtonIndex, tabForButton)) {
+        matchingClips.push_back(buttonIndex);
       }
-
-      // Check if this clip's hotkey matches
-      // Note: ClipData needs a hotKey field - for now we match by keyboard layout
-      // The actual hotkey is determined by button position in the grid
-      // This is a placeholder - real implementation would check clip-specific hotkey
     }
   }
 
