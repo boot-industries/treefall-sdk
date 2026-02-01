@@ -584,14 +584,15 @@
         <footer>
             <p><strong>Note:</strong> This is a local reference page. Commands are safe to run in your development environment.</p>
             <p>Generated for: <strong>orpheus-sdk</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
-        <p style="margin-top: 1rem;">⌨️ <strong>Keyboard Navigation:</strong> Use <strong>↑↓</strong> to navigate sections, <strong>→</strong> to expand, <strong>←</strong> to collapse, <strong>Space/Enter</strong> to toggle, <strong>Cmd+Click</strong> to collapse all others.</p>
+        <p style="margin-top: 1rem;">⌨️ <strong>Keyboard Navigation:</strong> ↑↓ navigate | →/← expand/collapse | Space/Enter toggle | Cmd+Click collapse others | A expand all | Esc collapse all</p>
         </footer>
     </div>
 
     <script>
         // Click-to-copy functionality
         document.querySelectorAll('.command').forEach(cmd => {
-            cmd.addEventListener('click', async function() {
+            cmd.addEventListener('click', async function(e) {
+                e.stopPropagation();
                 const text = this.textContent.replace('📋', '').trim();
                 try {
                     await navigator.clipboard.writeText(text);
@@ -634,6 +635,22 @@
             const rows = document.querySelectorAll(`.section-row[data-section="${section}"]`);
             rows.forEach(row => {
                 row.classList.toggle('hidden');
+            });
+        }
+
+        function expandAll() {
+            sectionHeaders.forEach(h => {
+                h.classList.remove('collapsed');
+                document.querySelectorAll(`.section-row[data-section="${h.dataset.section}"]`)
+                    .forEach(row => row.classList.remove('hidden'));
+            });
+        }
+
+        function collapseAll() {
+            sectionHeaders.forEach(h => {
+                h.classList.add('collapsed');
+                document.querySelectorAll(`.section-row[data-section="${h.dataset.section}"]`)
+                    .forEach(row => row.classList.add('hidden'));
             });
         }
 
@@ -713,6 +730,18 @@
                         e.preventDefault();
                         toggleSection(focusedHeader, e.metaKey || e.ctrlKey);
                     }
+                    break;
+
+                case 'a':
+                    if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault();
+                        expandAll();
+                    }
+                    break;
+
+                case 'Escape':
+                    e.preventDefault();
+                    collapseAll();
                     break;
             }
         });
