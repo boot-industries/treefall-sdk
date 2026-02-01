@@ -135,6 +135,11 @@ MainComponent::MainComponent() {
     }
   }
 
+  // Wire MIDI device manager to audio engine and session manager (Plan Task 7)
+  m_midiDeviceManager->setAudioEngine(m_audioEngine.get());
+  m_midiDeviceManager->setSessionManager(&m_sessionManager);
+  m_midiDeviceManager->setCurrentTab(m_sessionManager.getActiveTab());
+
   // Start timer for VU meter updates (30Hz) and performance display (1Hz subset)
   startTimerHz(30);
 
@@ -203,6 +208,14 @@ void MainComponent::timerCallback() {
     // Show master level on all 4 bars (no group routing yet)
     std::vector<float> levels = {masterLevel, masterLevel, masterLevel, masterLevel};
     m_barVisualizer->setVolumeBands(levels);
+  }
+
+  // Feed LevelMetersWindow with audio data (Plan Task 6)
+  if (m_levelMetersWindow && m_levelMetersWindow->isVisible() && m_audioEngine) {
+    std::array<float, 4> groupLevels;
+    m_audioEngine->getGroupLevels(groupLevels);
+    float masterLevel = m_audioEngine->getMasterRmsLevel();
+    m_levelMetersWindow->updateLevels(groupLevels, masterLevel);
   }
 
   // Static counter for 1Hz performance updates (every 30 timer ticks at 30Hz)
@@ -542,6 +555,18 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     // Cmd+Z = Undo
     if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
       menuItemSelected(100, 1); // Trigger Undo menu item
+      return true;
+    }
+
+    // Cmd+N = New Session (Plan Task 8b)
+    if (key == juce::KeyPress('n', juce::ModifierKeys::commandModifier, 0)) {
+      menuItemSelected(1, 0); // Trigger "New Session" menu item
+      return true;
+    }
+
+    // Cmd+O = Open Session (Plan Task 8c)
+    if (key == juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0)) {
+      menuItemSelected(2, 0); // Trigger "Open Session" menu item
       return true;
     }
 
@@ -1843,6 +1868,10 @@ void MainComponent::onTabSelected(int tabIndex) {
   // Update SessionManager's active tab
   m_sessionManager.setActiveTab(tabIndex);
 
+  // Update MIDI device manager's current tab for Paged scope (Plan Task 7)
+  if (m_midiDeviceManager)
+    m_midiDeviceManager->setCurrentTab(tabIndex);
+
   // Feature 4: Update tab index on all buttons for consecutive numbering
   // Tab 1 = clips 1-48, Tab 2 = clips 49-96, Tab 3 = clips 97-144, etc.
   for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
@@ -2147,7 +2176,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
     shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
     shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
-    shortcuts += "  Cmd/Ctrl+, ...... Preferences (coming soon)\n";
+    shortcuts += "  Cmd/Ctrl+, ...... Audio I/O Settings\n";
     shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
     shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
     shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
@@ -2547,7 +2576,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
     shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
     shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
-    shortcuts += "  Cmd/Ctrl+, ...... Preferences (coming soon)\n";
+    shortcuts += "  Cmd/Ctrl+, ...... Audio I/O Settings\n";
     shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
     shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
     shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
