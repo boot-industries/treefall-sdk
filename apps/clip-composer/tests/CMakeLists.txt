@@ -54,9 +54,11 @@ target_link_libraries(clip_composer_tests
 # Use SDK_ROOT defined above for consistent path resolution
 set(SDK_LIB_DIR "${SDK_ROOT}/build/src/core")
 set(SDK_PLATFORM_LIB_DIR "${SDK_ROOT}/build/src/platform/audio_drivers")
+set(SDK_CORE_LIB_DIR "${SDK_ROOT}/build/src")
 
 target_link_libraries(clip_composer_tests
   PRIVATE
+    ${SDK_CORE_LIB_DIR}/liborpheus_session.dylib
     ${SDK_LIB_DIR}/transport/liborpheus_transport.a
     ${SDK_LIB_DIR}/audio_io/liborpheus_audio_io.a
     ${SDK_LIB_DIR}/routing/liborpheus_routing.a
