@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "GridConstants.h"
 #include <functional>
 #include <juce_core/juce_core.h>
 #include <juce_data_structures/juce_data_structures.h>
@@ -182,7 +183,7 @@ private:
   // Key: global button index (0-383), Value: assigned KeyPress
   std::map<int, juce::KeyPress> m_buttonHotKeys;
 
-  static constexpr int MAX_BUTTONS = 384; // 8 tabs × 48 buttons
+  static constexpr int MAX_BUTTONS = occ::TOTAL_BUTTONS;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HotKeyManager)
 };

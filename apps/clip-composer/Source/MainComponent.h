@@ -55,7 +55,7 @@ public:
   ~MainComponent() override;
 
   bool isSessionDirty() const {
-    return m_sessionManager.isDirty();
+    return m_sessionManager->isDirty();
   }
   void saveCurrentSession();
 
@@ -106,25 +106,25 @@ private:
 
   // Global clip index calculation (buttonIndex 0-47 + current tab → 0-383)
   int getGlobalClipIndex(int buttonIndex) const {
-    return m_sessionManager.getActiveTab() * 48 + buttonIndex;
+    return m_sessionManager->getActiveTab() * 48 + buttonIndex;
   }
 
   //==============================================================================
-  // Core Services (Ownership)
-  std::unique_ptr<AudioEngine> m_audioEngine;
-  SessionManager m_sessionManager; // Stack allocated in v0.1, maybe change to unique_ptr later
+  // Core Services (registered in ServiceContext for cross-component access)
+  std::shared_ptr<AudioEngine> m_audioEngine;
+  std::shared_ptr<SessionManager> m_sessionManager;
 
   // Infrastructure (Sprint 0-2)
-  std::unique_ptr<orpheus::Database> m_database;
-  std::unique_ptr<orpheus::EventLogger> m_eventLogger;
-  std::unique_ptr<orpheus::PlayoutLogger> m_playoutLogger;
-  std::unique_ptr<orpheus::UndoManager> m_undoManager;
+  std::shared_ptr<orpheus::Database> m_database;
+  std::shared_ptr<orpheus::EventLogger> m_eventLogger;
+  std::shared_ptr<orpheus::PlayoutLogger> m_playoutLogger;
+  std::shared_ptr<orpheus::UndoManager> m_undoManager;
 
   // Managers (OCC116/OCC117)
-  std::unique_ptr<orpheus::DisplayPreferences> m_displayPreferences;
-  std::unique_ptr<orpheus::ExternalToolManager> m_externalToolManager;
-  std::unique_ptr<orpheus::HotKeyManager> m_hotKeyManager;
-  std::unique_ptr<orpheus::MIDIDeviceManager> m_midiDeviceManager;
+  std::shared_ptr<orpheus::DisplayPreferences> m_displayPreferences;
+  std::shared_ptr<orpheus::ExternalToolManager> m_externalToolManager;
+  std::shared_ptr<orpheus::HotKeyManager> m_hotKeyManager;
+  std::shared_ptr<orpheus::MIDIDeviceManager> m_midiDeviceManager;
 
   //==============================================================================
   // UI Components

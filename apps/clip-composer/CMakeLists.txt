@@ -151,19 +151,13 @@ target_link_libraries(orpheus_clip_composer_app
     orpheus_shmui_juce # Link against shmui-juce library
 )
 
-# Link against Orpheus SDK modules
-# Note: These libraries are built by the SDK CMakeLists.txt in src/core/
-# Use SDK_ROOT defined earlier for consistent path resolution
-set(SDK_LIB_DIR "${SDK_ROOT}/build/src/core")
-set(SDK_PLATFORM_LIB_DIR "${SDK_ROOT}/build/src/platform/audio_drivers")
-
-# Core SDK libraries (static linking for now)
+# Link against Orpheus SDK modules (CMake targets from root add_subdirectory(src))
 target_link_libraries(orpheus_clip_composer_app
   PRIVATE
-    ${SDK_LIB_DIR}/transport/liborpheus_transport.a
-    ${SDK_LIB_DIR}/audio_io/liborpheus_audio_io.a
-    ${SDK_LIB_DIR}/routing/liborpheus_routing.a
-    ${SDK_PLATFORM_LIB_DIR}/liborpheus_audio_driver_coreaudio.a
+    orpheus_transport
+    orpheus_audio_io
+    orpheus_routing
+    $<$<PLATFORM_ID:Darwin>:orpheus_audio_driver_coreaudio>
 )
 
 # Link libsndfile (required by audio_io)

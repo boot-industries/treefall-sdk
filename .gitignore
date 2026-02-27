@@ -87,6 +87,7 @@ docs/api/
 
 # User backups
 ~/Archives/
+*.backup
 
 # Claude Code local overrides
 .claude/settings.local.json

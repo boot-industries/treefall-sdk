@@ -3,6 +3,7 @@
 #include "AudioEngine.h"
 #include "../../../src/core/transport/transport_controller.h" // Concrete class for extended API
 #include <algorithm>                                          // For std::find
+#include <chrono>
 #include <orpheus/audio_driver.h>
 
 //==============================================================================
@@ -68,6 +69,9 @@ bool AudioEngine::initialize(uint32_t sampleRate) {
 
   // Log which driver we're actually using
   DBG("AudioEngine: Using audio driver: " << m_audioDriver->getDriverName());
+
+  // Create SDK PerformanceMonitor for CPU/latency tracking
+  m_performanceMonitor = orpheus::createPerformanceMonitor(nullptr);
 
   m_initialized = true;
   DBG("AudioEngine: Initialized successfully (" << static_cast<int>(sampleRate) << " Hz)");
@@ -434,6 +438,13 @@ uint32_t AudioEngine::getLatencySamples() const {
 
 uint32_t AudioEngine::getBufferSize() const {
   return m_bufferSize;
+}
+
+orpheus::PerformanceMetrics AudioEngine::getPerformanceMetrics() const {
+  if (m_performanceMonitor)
+    return m_performanceMonitor->getMetrics();
+
+  return orpheus::PerformanceMetrics{0.0f, 0.0f, 0, 0, 0, 0.0};
 }
 
 uint32_t AudioEngine::getSampleRate() const {
@@ -862,6 +873,10 @@ void AudioEngine::onClipLooped(orpheus::ClipHandle handle, orpheus::TransportPos
 }
 
 void AudioEngine::onBufferUnderrun(orpheus::TransportPosition position) {
+  // Record underrun in SDK PerformanceMonitor (audio-thread-safe, atomic)
+  if (m_performanceMonitor)
+    m_performanceMonitor->reportUnderrun();
+
   juce::MessageManager::callAsync([this]() {
     DBG("AudioEngine: Buffer underrun!");
     if (onBufferUnderrunDetected)
@@ -873,7 +888,7 @@ void AudioEngine::onBufferUnderrun(orpheus::TransportPosition position) {
 void AudioEngine::processAudio(const float** input_buffers, float** output_buffers,
                                size_t num_channels, size_t num_frames) {
   // BROADCAST-SAFE: No allocations, no locks, no I/O in audio thread
-  // Removed debug file I/O for production safety (see OCC044 Sprint 1)
+  auto callbackStart = std::chrono::high_resolution_clock::now();
 
   if (!m_transportController) {
     // No transport - output silence
@@ -907,6 +922,15 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
 
   // Process any pending callbacks (posts to UI thread)
   m_transportController->processCallbacks();
+
+  // Record performance metrics (atomic, no allocations)
+  if (m_performanceMonitor) {
+    auto callbackEnd = std::chrono::high_resolution_clock::now();
+    auto durationUs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(callbackEnd - callbackStart).count());
+    uint64_t bufferUs = (num_frames * 1'000'000ULL) / m_sampleRate;
+    m_performanceMonitor->recordAudioCallback(durationUs, bufferUs, 0, m_sampleRate, m_bufferSize);
+  }
 }
 
 //==============================================================================
