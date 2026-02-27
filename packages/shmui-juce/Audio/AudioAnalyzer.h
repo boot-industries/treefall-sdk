@@ -254,7 +254,7 @@ private:
 
   // Pre-allocated buffer for mono mixdown (avoids allocation on audio thread)
   // Buffer is pre-sized in constructor to kMaxBufferSize
-  std::vector<float> monoMixBuffer{kMaxBufferSize, 0.0f};
+  std::vector<float> monoMixBuffer = std::vector<float>(kMaxBufferSize, 0.0f);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioAnalyzer)
 };
