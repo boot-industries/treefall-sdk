@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainComponent.h"
-#include "Core/ApplicationPaths.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
+#include <orpheus/app/ApplicationPaths.h>
 
 #if JUCE_MAC
 #include <mach/mach.h>

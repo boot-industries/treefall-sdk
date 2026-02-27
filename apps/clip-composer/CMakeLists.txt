@@ -55,13 +55,16 @@ configure_file(
   @ONLY
 )
 
-# Add shmui-juce as a subdirectory
+# Add shared packages as subdirectories
 # CMAKE_SOURCE_DIR points to different locations depending on build context:
 # - SDK root when building from /build
 # - apps/clip-composer when building standalone
 # Use CMAKE_CURRENT_SOURCE_DIR (always apps/clip-composer) for reliable path resolution
 set(SHMUI_JUCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/shmui-juce")
 add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
+
+set(OCC_APP_PLATFORM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/occ-app-platform")
+add_subdirectory(${OCC_APP_PLATFORM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/occ-app-platform)
 
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app
@@ -88,16 +91,7 @@ set(CLIP_COMPOSER_SOURCES
   Source/UI/WaveformDisplay.cpp
   Source/UI/PreviewPlayer.cpp
   Source/Audio/AudioEngine.cpp
-  # Core Infrastructure (Sprint 0)
-  Source/Core/ApplicationPaths.cpp
-  Source/Core/Database.cpp
-  Source/Core/EventLogger.cpp
-  Source/Core/PlayoutLogger.cpp
-  Source/Core/UndoManager.cpp
-
-  # Core Managers (OCC116/OCC117)
-  Source/Core/DisplayPreferences.cpp
-  Source/Core/ExternalToolManager.cpp
+  # Core Managers (OCC-specific, not extracted to occ-app-platform)
   Source/Core/HotKeyManager.cpp
   Source/Core/MIDIDeviceManager.cpp
   Source/Core/ClipCommands.cpp
@@ -148,7 +142,8 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_utils
     juce::juce_events
     sqlite3
-    orpheus_shmui_juce # Link against shmui-juce library
+    orpheus_shmui_juce    # shmui-juce audio visualization
+    occ_app_platform      # Shared app infrastructure (ServiceContext, Database, UndoManager, etc.)
 )
 
 # Link against Orpheus SDK modules (CMake targets from root add_subdirectory(src))

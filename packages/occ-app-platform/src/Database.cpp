@@ -8,7 +8,7 @@
   ==============================================================================
 */
 
-#include "Database.h"
+#include <orpheus/app/Database.h>
 
 // If we are using system sqlite, this include should work.
 // If we use the amalgamation, we'll need to ensure it's in the path.

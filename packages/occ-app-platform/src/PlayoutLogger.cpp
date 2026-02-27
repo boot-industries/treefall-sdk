@@ -8,8 +8,8 @@
   ==============================================================================
 */
 
-#include "PlayoutLogger.h"
-#include "ApplicationPaths.h"
+#include <orpheus/app/ApplicationPaths.h>
+#include <orpheus/app/PlayoutLogger.h>
 
 namespace orpheus {
 

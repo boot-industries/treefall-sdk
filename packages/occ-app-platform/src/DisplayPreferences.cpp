@@ -10,7 +10,7 @@
   ==============================================================================
 */
 
-#include "DisplayPreferences.h"
+#include <orpheus/app/DisplayPreferences.h>
 
 namespace orpheus {
 

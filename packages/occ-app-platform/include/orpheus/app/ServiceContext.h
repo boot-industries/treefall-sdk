@@ -12,24 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-// Forward declarations for existing global classes
-class SessionManager;
-class AudioEngine;
-
 namespace orpheus {
-
-// Forward declarations for future orpheus namespace classes
-class EventLogger;
-class PlayoutLogger;
-class SettingsService;
-class UndoManager;
-class DisplayPreferences;
-class HotKeyManager;
-class MIDIDeviceManager;
-class ExternalToolManager;
-class ApplicationPaths;
-class Database;
-class UndoManager;
 
 /**
  * @brief Dependency injection container for managing application services.

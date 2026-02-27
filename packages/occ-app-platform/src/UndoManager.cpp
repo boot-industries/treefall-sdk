@@ -8,7 +8,7 @@
   ==============================================================================
 */
 
-#include "UndoManager.h"
+#include <orpheus/app/UndoManager.h>
 
 namespace orpheus {
 
