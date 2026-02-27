@@ -1,8 +1,8 @@
 # ORP068 Implementation Progress
 
 **Last Updated:** 2026-02-27 (Session: Architecture Refactor Sprint)
-**Current Phase:** Phase 5 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-5 ✅ Complete | Multi-App Validated
+**Current Phase:** Phase 6 ✅ Complete | SDK v1.0.0-rc.1 Released
+**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-6 ✅ All Complete | Multi-App Validated
 
 ---
 
@@ -116,9 +116,27 @@ packages/occ-app-platform/
 - `cmake --preset all-apps-debug` → Both apps build, shared packages linked once
 - `cmake --preset occ-debug` → Clip Composer still builds independently (40/40 SDK tests pass)
 
-### Remaining Plan Items
+#### Phase 6: Documentation Cleanup
 
-- **Phase 6:** Documentation cleanup (status vocabulary, cross-reference matrix)
+| Task | Description | Status |
+|------|------------|--------|
+| 6.1 | Define status vocabulary (authoritative/complete/superseded/historical/draft/reference) | ✅ |
+| 6.2 | Create ORP124 Architecture Cross-Reference Matrix (SDK → occ-app-platform → Apps) | ✅ |
+| 6.3 | Update ORP INDEX.md with ORP123, ORP124 | ✅ |
+
+### All Phases Complete
+
+The 6-phase architecture refactor plan (`.claude/plans/twinkling-brewing-robin.md`) is fully executed:
+
+| Phase | Scope | Commits |
+|-------|-------|---------|
+| 0 | Build system (target linking, presets, backup removal, CI cleanup) | `d4b69d48`, `b64ab87d` |
+| 1 | Grid constants (384/960 consistency, GridConstants.h) | `d4b69d48` |
+| 2 | ServiceContext DI migration (10 services, shared_ptr) | `d4b69d48` |
+| 3 | SDK PerformanceMonitor wiring (real CPU %) | `d4b69d48` |
+| 4 | Module extraction (9 services → packages/occ-app-platform/) | `b64ab87d` |
+| 5 | Multi-app validation (Wave Finder PoC, all-apps-debug preset) | `bb34fafd` |
+| 6 | Documentation (ORP124 cross-reference, status vocabulary) | (pending) |
 
 ---
 
