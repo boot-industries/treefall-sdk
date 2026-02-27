@@ -131,3 +131,19 @@ add_test(NAME abi_link COMMAND orpheus_abi_link)
 if(NOT ORP_BUILD_SHARED_CORE)
   set_tests_properties(abi_link PROPERTIES DISABLED ON)
 endif()
+
+# On macOS with ASan + dlopen, interceptors fail unless the ASan dylib is
+# preloaded via DYLD_INSERT_LIBRARIES. Detect the runtime path from the
+# compiler and set it for the abi_link test (which uses dlopen internally).
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_BUILD_TYPE MATCHES "Debug")
+  execute_process(
+    COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libclang_rt.asan_osx_dynamic.dylib
+    OUTPUT_VARIABLE ASAN_DYLIB_PATH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(EXISTS "${ASAN_DYLIB_PATH}")
+    set_tests_properties(abi_link PROPERTIES
+      ENVIRONMENT "DYLD_INSERT_LIBRARIES=${ASAN_DYLIB_PATH}"
+    )
+  endif()
+endif()
