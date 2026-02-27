@@ -8,11 +8,11 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP124 Architecture Cross-Reference Matrix]]
+- [[ORP123 Wireframes and Documentation Update]]
 - [[ORP122 Phase 4 Quality Improvements Implementation Report]]
 - [[ORP121 Audio Backend Refactoring Master Plan]]
 - [[ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration]]
-- [[ORP119 Shmui Integration Strategy]]
-- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
 
 ## All Documents
 
@@ -60,6 +60,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration]]
 - [[ORP121 Audio Backend Refactoring Master Plan]]
 - [[ORP122 Phase 4 Quality Improvements Implementation Report]]
+- [[ORP123 Wireframes and Documentation Update]]
+- [[ORP124 Architecture Cross-Reference Matrix]]
 
 ## Archived Documents
 
