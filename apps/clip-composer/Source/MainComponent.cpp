@@ -187,7 +187,9 @@ void MainComponent::paint(juce::Graphics& g) {
 }
 
 void MainComponent::resized() {
-  grabKeyboardFocus(); // Ensure we get keyboard events
+  // Only grab keyboard focus if we're visible (avoid assertion during construction)
+  if (isShowing())
+    grabKeyboardFocus();
   auto bounds = getLocalBounds();
 
   // OCC130 Sprint B: Merged tab switcher + transport controls at top (40px)
