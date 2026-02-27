@@ -57,6 +57,32 @@
       }
     },
     {
+      "name": "wave-finder-debug",
+      "displayName": "Wave Finder Debug",
+      "description": "SDK + Wave Finder proof-of-concept app",
+      "binaryDir": "${sourceDir}/build-wf-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON"
+      }
+    },
+    {
+      "name": "all-apps-debug",
+      "displayName": "All Apps Debug",
+      "description": "SDK + all applications, debug build",
+      "binaryDir": "${sourceDir}/build-all-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON"
+      }
+    },
+    {
       "name": "ci-ubuntu",
       "displayName": "CI Ubuntu",
       "description": "CI configuration for Ubuntu runners",
@@ -66,6 +92,7 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "OFF",
         "ORP_ENABLE_UBSAN": "ON"
       }
     },
@@ -79,6 +106,7 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
         "ORP_ENABLE_UBSAN": "ON"
       }
     }
@@ -99,6 +127,14 @@
     {
       "name": "occ-release",
       "configurePreset": "occ-release"
+    },
+    {
+      "name": "wave-finder-debug",
+      "configurePreset": "wave-finder-debug"
+    },
+    {
+      "name": "all-apps-debug",
+      "configurePreset": "all-apps-debug"
     },
     {
       "name": "ci-ubuntu",
