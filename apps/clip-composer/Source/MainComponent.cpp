@@ -14,15 +14,19 @@ MainComponent::MainComponent() {
   // Sprint 0: Ensure application directories exist
   orpheus::ApplicationPaths::ensureDirectoriesExist();
 
-  // Initialize Core Services
-  m_audioEngine = std::make_unique<AudioEngine>();
-  m_undoManager = std::make_unique<orpheus::UndoManager>();
+  // Initialize ServiceContext and register all services
+  auto& ctx = orpheus::ServiceContext::getInstance();
 
-  // Initialize Managers (OCC116/OCC117)
-  m_displayPreferences = std::make_unique<orpheus::DisplayPreferences>();
-  m_externalToolManager = std::make_unique<orpheus::ExternalToolManager>();
-  m_hotKeyManager = std::make_unique<orpheus::HotKeyManager>();
-  m_midiDeviceManager = std::make_unique<orpheus::MIDIDeviceManager>();
+  // Core Services
+  m_audioEngine = std::make_shared<AudioEngine>();
+  m_sessionManager = std::make_shared<SessionManager>();
+  m_undoManager = std::make_shared<orpheus::UndoManager>();
+
+  // Managers (OCC116/OCC117)
+  m_displayPreferences = std::make_shared<orpheus::DisplayPreferences>();
+  m_externalToolManager = std::make_shared<orpheus::ExternalToolManager>();
+  m_hotKeyManager = std::make_shared<orpheus::HotKeyManager>();
+  m_midiDeviceManager = std::make_shared<orpheus::MIDIDeviceManager>();
 
   // OCC144: Wire up DisplayPreferences callback to update UI when settings change
   m_displayPreferences->onPreferencesChanged = [this]() {
@@ -31,7 +35,7 @@ MainComponent::MainComponent() {
   };
 
   // Initialize Database & Logging (Sprint 2)
-  m_database = std::make_unique<orpheus::Database>();
+  m_database = std::make_shared<orpheus::Database>();
   auto dbFile = orpheus::ApplicationPaths::getLogsDir().getChildFile("app.db");
   auto result = m_database->open(dbFile);
 
@@ -39,14 +43,26 @@ MainComponent::MainComponent() {
     DBG("Failed to open database: " << result.getErrorMessage());
     // Fallback or fatal error handling? For now, we proceed without logging.
   } else {
-    m_eventLogger = std::make_unique<orpheus::EventLogger>(*m_database);
-    m_playoutLogger = std::make_unique<orpheus::PlayoutLogger>(*m_database);
+    m_eventLogger = std::make_shared<orpheus::EventLogger>(*m_database);
+    m_playoutLogger = std::make_shared<orpheus::PlayoutLogger>(*m_database);
 
     // Log startup
     m_eventLogger->log(orpheus::EventType::Startup, "MainComponent", "Application started");
   }
 
-  // Note: Additional services (SettingsService, etc.) will be added in future sprints
+  // Register all services in ServiceContext for cross-component access
+  ctx.registerService<AudioEngine>(m_audioEngine);
+  ctx.registerService<SessionManager>(m_sessionManager);
+  ctx.registerService<orpheus::UndoManager>(m_undoManager);
+  ctx.registerService<orpheus::DisplayPreferences>(m_displayPreferences);
+  ctx.registerService<orpheus::ExternalToolManager>(m_externalToolManager);
+  ctx.registerService<orpheus::HotKeyManager>(m_hotKeyManager);
+  ctx.registerService<orpheus::MIDIDeviceManager>(m_midiDeviceManager);
+  ctx.registerService<orpheus::Database>(m_database);
+  if (m_eventLogger)
+    ctx.registerService<orpheus::EventLogger>(m_eventLogger);
+  if (m_playoutLogger)
+    ctx.registerService<orpheus::PlayoutLogger>(m_playoutLogger);
 
   // Set HK Grotesk font as default for all components
   setLookAndFeel(&m_hkGroteskLookAndFeel);
@@ -138,8 +154,8 @@ MainComponent::MainComponent() {
 
   // Wire MIDI device manager to audio engine and session manager (Plan Task 7)
   m_midiDeviceManager->setAudioEngine(m_audioEngine.get());
-  m_midiDeviceManager->setSessionManager(&m_sessionManager);
-  m_midiDeviceManager->setCurrentTab(m_sessionManager.getActiveTab());
+  m_midiDeviceManager->setSessionManager(m_sessionManager.get());
+  m_midiDeviceManager->setCurrentTab(m_sessionManager->getActiveTab());
 
   // Start timer for VU meter updates (30Hz) and performance display (1Hz subset)
   startTimerHz(30);
@@ -160,7 +176,8 @@ MainComponent::~MainComponent() {
   // Clear LookAndFeel before destruction
   setLookAndFeel(nullptr);
 
-  // Component cleanup handled by std::unique_ptr destructors
+  // Shutdown ServiceContext (reverse-order cleanup of all registered services)
+  orpheus::ServiceContext::getInstance().shutdown();
 }
 
 //==============================================================================
@@ -204,9 +221,9 @@ void MainComponent::resized() {
 void MainComponent::updateWindowTitle() {
   if (auto* topLevel = getTopLevelComponent()) {
     juce::String title = "Clip Composer";
-    if (m_sessionManager.isDirty())
+    if (m_sessionManager->isDirty())
       title += " *";
-    auto sessionFile = m_sessionManager.getCurrentFile();
+    auto sessionFile = m_sessionManager->getCurrentFile();
     if (sessionFile != juce::File())
       title += " - " + sessionFile.getFileNameWithoutExtension();
 #ifdef DEBUG
@@ -219,9 +236,9 @@ void MainComponent::updateWindowTitle() {
 
 //==============================================================================
 void MainComponent::saveCurrentSession() {
-  auto currentFile = m_sessionManager.getCurrentFile();
+  auto currentFile = m_sessionManager->getCurrentFile();
   if (currentFile != juce::File()) {
-    m_sessionManager.saveSession(currentFile);
+    m_sessionManager->saveSession(currentFile);
   } else {
     // No file set yet - use Save As
     auto chooser = std::make_shared<juce::FileChooser>(
@@ -231,7 +248,7 @@ void MainComponent::saveCurrentSession() {
                          [this, chooser](const juce::FileChooser& fc) {
                            auto file = fc.getResult();
                            if (file != juce::File()) {
-                             m_sessionManager.saveSession(file);
+                             m_sessionManager->saveSession(file);
                              updateWindowTitle();
                            }
                          });
@@ -280,35 +297,26 @@ void MainComponent::timerCallback() {
 
       m_tabSwitcher->setLatencyInfo(latencyMs, bufferSize, sampleRate);
 
-      // OCC109 v0.2.2: Update CPU and memory display (1Hz refresh rate)
-      // CRITICAL: JUCE doesn't provide getCpuUsage() or getMemoryUsageInMegabytes()
-      // Use platform-specific APIs instead
+      // CPU usage from SDK PerformanceMonitor (cross-platform, audio-thread-accurate)
+      auto perfMetrics = m_audioEngine->getPerformanceMetrics();
+      float cpuPercent = perfMetrics.cpuUsagePercent;
+
+      // Memory via platform API (PerformanceMonitor tracks audio, not process memory)
+      int memoryMB = 0;
 #if JUCE_MAC
-      // Get process memory usage via macOS mach API
       struct mach_task_basic_info info;
       mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
       if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) ==
           KERN_SUCCESS) {
-        int memoryMB = static_cast<int>(info.resident_size / (1024 * 1024));
-
-        // CPU: Placeholder until SDK IPerformanceMonitor integration in v0.3.0
-        // SDK will provide per-thread CPU metrics for audio vs UI threads
-        float cpuPercent = 0.0f; // TODO: Integrate SDK PerformanceMonitor (ORP110 Feature 3)
-
-        m_tabSwitcher->setPerformanceInfo(cpuPercent, memoryMB);
-      } else {
-        // Fallback if mach API fails
-        m_tabSwitcher->setPerformanceInfo(0.0f, 0);
+        memoryMB = static_cast<int>(info.resident_size / (1024 * 1024));
       }
-#else
-      // Non-macOS platforms: Placeholder
-      m_tabSwitcher->setPerformanceInfo(0.0f, 0);
 #endif
+      m_tabSwitcher->setPerformanceInfo(cpuPercent, memoryMB);
     }
 
     // Auto-backup: save dirty sessions every 60 seconds (60 × 1Hz ticks)
     m_autoBackupCounter++;
-    if (m_autoBackupCounter >= 60 && m_sessionManager.isDirty()) {
+    if (m_autoBackupCounter >= 60 && m_sessionManager->isDirty()) {
       m_autoBackupCounter = 0;
 
       // Generate timestamped backup filename
@@ -317,9 +325,9 @@ void MainComponent::timerCallback() {
       auto timestamp = now.formatted("%Y%m%d_%H%M%S");
       auto backupFile = backupDir.getChildFile("session_backup_" + timestamp + ".json");
 
-      if (m_sessionManager.saveSession(backupFile)) {
+      if (m_sessionManager->saveSession(backupFile)) {
         // Re-mark dirty since backup shouldn't clear dirty state
-        m_sessionManager.markDirty();
+        m_sessionManager->markDirty();
         DBG("Auto-backup saved: " << backupFile.getFullPathName());
 
         // Prune old backups: keep only 5 most recent
@@ -335,7 +343,7 @@ void MainComponent::timerCallback() {
           }
         }
       }
-    } else if (!m_sessionManager.isDirty()) {
+    } else if (!m_sessionManager->isDirty()) {
       m_autoBackupCounter = 0; // Reset counter when session is clean
     }
   }
@@ -421,16 +429,16 @@ void MainComponent::wireUpClipGridCallbacks() {
 
   // 75fps clip existence check (prevents orphaned states)
   m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
-    return m_sessionManager.hasClip(buttonIndex);
+    return m_sessionManager->hasClip(buttonIndex);
   };
 
   // 75fps clip state tracking (ensures fade, loop, stop-others persist)
   m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
                                      bool& fadeOutEnabled, bool& stopOthersEnabled) {
-    if (!m_sessionManager.hasClip(buttonIndex))
+    if (!m_sessionManager->hasClip(buttonIndex))
       return;
 
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
     int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
     // Query clip metadata (these are CLIP properties, not button properties)
@@ -442,11 +450,11 @@ void MainComponent::wireUpClipGridCallbacks() {
 
   // 75fps playback position tracking (for elapsed time display)
   m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
-    if (!m_audioEngine || !m_sessionManager.hasClip(buttonIndex))
+    if (!m_audioEngine || !m_sessionManager->hasClip(buttonIndex))
       return 0.0f;
 
     int globalClipIndex = getGlobalClipIndex(buttonIndex);
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
 
     // Get current sample position (absolute)
     int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
@@ -489,10 +497,10 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
   double fadeOutSeconds = 0.0;
 
   // Get clip metadata from session manager (need to temporarily switch tabs)
-  int currentTab = m_sessionManager.getActiveTab();
-  m_sessionManager.setActiveTab(tabIndex);
-  if (m_sessionManager.hasClip(localIndex)) {
-    auto clipData = m_sessionManager.getClip(localIndex);
+  int currentTab = m_sessionManager->getActiveTab();
+  m_sessionManager->setActiveTab(tabIndex);
+  if (m_sessionManager->hasClip(localIndex)) {
+    auto clipData = m_sessionManager->getClip(localIndex);
     if (clipData.displayName.empty()) {
       // Extract filename from filePath
       juce::File file(clipData.filePath);
@@ -508,7 +516,7 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
     fadeInSeconds = clipData.fadeInSeconds;
     fadeOutSeconds = clipData.fadeOutSeconds;
   }
-  m_sessionManager.setActiveTab(currentTab);
+  m_sessionManager->setActiveTab(currentTab);
 
   // Helper lambda: format samples as MM:SS.mmm
   auto formatTime = [](int64_t samples, int sr) -> juce::String {
@@ -671,8 +679,8 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     // Cmd+C = Copy clip at playbox position
     if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0)) {
       int playboxIndex = m_clipGrid->getPlayboxIndex();
-      if (m_sessionManager.hasClip(playboxIndex)) {
-        m_clipboardData = m_sessionManager.getClip(playboxIndex);
+      if (m_sessionManager->hasClip(playboxIndex)) {
+        m_clipboardData = m_sessionManager->getClip(playboxIndex);
         m_hasClipInClipboard = true;
         DBG("MainComponent: Copied clip from button " << playboxIndex << " - "
                                                       << m_clipboardData.displayName);
@@ -690,7 +698,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
         int playboxIndex = m_clipGrid->getPlayboxIndex();
 
         // Check if target has a clip and warn about overwrite
-        if (m_sessionManager.hasClip(playboxIndex)) {
+        if (m_sessionManager->hasClip(playboxIndex)) {
           bool confirmed = juce::AlertWindow::showOkCancelBox(
               juce::AlertWindow::WarningIcon, "Replace Clip?",
               "Button " + juce::String(playboxIndex + 1) + " already has a clip.\n\n" +
@@ -706,9 +714,9 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
         loadClipToButton(playboxIndex, juce::String(m_clipboardData.filePath));
 
         // Only proceed if clip was successfully loaded (user didn't cancel copy/link dialog)
-        if (m_sessionManager.hasClip(playboxIndex)) {
+        if (m_sessionManager->hasClip(playboxIndex)) {
           // Copy all metadata
-          auto clipData = m_sessionManager.getClip(playboxIndex);
+          auto clipData = m_sessionManager->getClip(playboxIndex);
           clipData.displayName = m_clipboardData.displayName;
           clipData.color = m_clipboardData.color;
           clipData.clipGroup = m_clipboardData.clipGroup;
@@ -721,7 +729,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
           clipData.gainDb = m_clipboardData.gainDb;
           clipData.loopEnabled = m_clipboardData.loopEnabled;
           clipData.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
-          m_sessionManager.setClip(playboxIndex, clipData);
+          m_sessionManager->setClip(playboxIndex, clipData);
 
           // Update button visually
           updateButtonFromClip(playboxIndex);
@@ -788,8 +796,8 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
 
   // OCC144: Check custom hotkey assignments before keyboard grid
   if (m_hotKeyManager) {
-    bool triggered = m_hotKeyManager->triggerHotKey(key, m_sessionManager.getActiveTab(),
-                                                    &m_sessionManager, m_audioEngine.get());
+    bool triggered = m_hotKeyManager->triggerHotKey(key, m_sessionManager->getActiveTab(),
+                                                    m_sessionManager.get(), m_audioEngine.get());
     if (triggered)
       return true;
   }
@@ -969,12 +977,12 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   // Show context menu (inherits HK Grotesk font from LookAndFeel)
   juce::PopupMenu menu;
 
-  bool hasClip = m_sessionManager.hasClip(buttonIndex);
+  bool hasClip = m_sessionManager->hasClip(buttonIndex);
   int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
   if (hasClip) {
     // Clip is loaded - show options
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
 
     // Edit Clip at the top (most important action)
     menu.addItem(5, "Edit Clip...");
@@ -1049,7 +1057,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       // Item 9: Warning if replacing existing clip
       bool shouldLoad = true;
       if (hasClip) {
-        auto clipData = m_sessionManager.getClip(buttonIndex);
+        auto clipData = m_sessionManager->getClip(buttonIndex);
         shouldLoad = juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::WarningIcon, "Replace Clip?",
             "Button " + juce::String(buttonIndex + 1) + " already has a clip:\n\"" +
@@ -1071,7 +1079,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     } else if (result == 2 && hasClip) {
       // Remove clip
       // Item 9: Warning before removing clip
-      auto clipData = m_sessionManager.getClip(buttonIndex);
+      auto clipData = m_sessionManager->getClip(buttonIndex);
       bool confirmed = juce::AlertWindow::showOkCancelBox(
           juce::AlertWindow::WarningIcon, "Remove Clip?",
           "Remove \"" + juce::String(clipData.displayName) + "\" from button " +
@@ -1080,7 +1088,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
 
       if (confirmed) {
         auto cmd = std::make_unique<orpheus::ClearClipCommand>(
-            &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex);
+            m_sessionManager.get(), m_sessionManager->getActiveTab(), buttonIndex);
         m_undoManager->executeCommand(std::move(cmd));
         updateButtonFromClip(buttonIndex);
         DBG("MainComponent: Removed clip from button " << buttonIndex);
@@ -1090,12 +1098,13 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       m_stopOthersOnPlay[globalClipIndex] = !m_stopOthersOnPlay[globalClipIndex];
 
       // CRITICAL: Persist to SessionManager (via UndoManager)
-      if (m_sessionManager.hasClip(buttonIndex)) {
-        auto oldData = m_sessionManager.getClip(buttonIndex);
+      if (m_sessionManager->hasClip(buttonIndex)) {
+        auto oldData = m_sessionManager->getClip(buttonIndex);
         auto newData = oldData;
         newData.stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
-        auto cmd = std::make_unique<orpheus::EditClipCommand>(
-            &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+        auto cmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
+                                                              m_sessionManager->getActiveTab(),
+                                                              buttonIndex, oldData, newData);
         m_undoManager->executeCommand(std::move(cmd));
       }
 
@@ -1112,11 +1121,11 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       m_loopEnabled[globalClipIndex] = !m_loopEnabled[globalClipIndex];
 
       // CRITICAL: Persist to SessionManager (via UndoManager)
-      auto oldData = m_sessionManager.getClip(buttonIndex);
+      auto oldData = m_sessionManager->getClip(buttonIndex);
       auto newData = oldData;
       newData.loopEnabled = m_loopEnabled[globalClipIndex];
       auto cmd = std::make_unique<orpheus::EditClipCommand>(
-          &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+          m_sessionManager.get(), m_sessionManager->getActiveTab(), buttonIndex, oldData, newData);
       m_undoManager->executeCommand(std::move(cmd));
 
       // Sync to AudioEngine (CRITICAL: Must update SDK loop state!)
@@ -1151,7 +1160,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
 
         // Check how many existing clips would be overwritten
         for (int i = buttonIndex; i < juce::jmin(buttonIndex + filesToLoad, totalButtons); ++i) {
-          if (m_sessionManager.hasClip(i)) {
+          if (m_sessionManager->hasClip(i)) {
             overwriteCount++;
           }
         }
@@ -1283,7 +1292,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       }
     } else if (result == 9 && hasClip) {
       // OCC144: Show in Finder/Explorer - reveal audio file in native file manager
-      auto clipData = m_sessionManager.getClip(buttonIndex);
+      auto clipData = m_sessionManager->getClip(buttonIndex);
       juce::File audioFile(clipData.filePath);
       if (audioFile.existsAsFile()) {
         audioFile.revealToUser();
@@ -1295,7 +1304,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       }
     } else if (result == 10 && hasClip) {
       // OCC144: Edit in External Editor - launch configured WAV editor with file
-      auto clipData = m_sessionManager.getClip(buttonIndex);
+      auto clipData = m_sessionManager->getClip(buttonIndex);
       juce::File audioFile(clipData.filePath);
       if (audioFile.existsAsFile()) {
         if (m_externalToolManager->launchTool(orpheus::ExternalToolManager::ToolType::WAVEditor,
@@ -1318,8 +1327,8 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       auto* colorGrid = new ColorSwatchGrid();
 
       // Set current color if clip has one
-      if (m_sessionManager.hasClip(buttonIndex)) {
-        auto clipData = m_sessionManager.getClip(buttonIndex);
+      if (m_sessionManager->hasClip(buttonIndex)) {
+        auto clipData = m_sessionManager->getClip(buttonIndex);
         colorGrid->setSelectedColor(clipData.color);
       }
 
@@ -1332,12 +1341,13 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
         }
 
         // CRITICAL: Persist color to SessionManager (via UndoManager)
-        if (m_sessionManager.hasClip(buttonIndex)) {
-          auto oldData = m_sessionManager.getClip(buttonIndex);
+        if (m_sessionManager->hasClip(buttonIndex)) {
+          auto oldData = m_sessionManager->getClip(buttonIndex);
           auto newData = oldData;
           newData.color = newColor;
-          auto cmd = std::make_unique<orpheus::EditClipCommand>(
-              &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldData, newData);
+          auto cmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
+                                                                m_sessionManager->getActiveTab(),
+                                                                buttonIndex, oldData, newData);
           m_undoManager->executeCommand(std::move(cmd));
         }
 
@@ -1374,7 +1384,7 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     return;
 
   // Check if clip is loaded
-  if (!m_sessionManager.hasClip(buttonIndex)) {
+  if (!m_sessionManager->hasClip(buttonIndex)) {
     DBG("MainComponent: Button " + juce::String(buttonIndex) + " has no clip loaded");
     return;
   }
@@ -1438,7 +1448,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   DBG("MainComponent: Button " + juce::String(buttonIndex) + " double-clicked (edit dialog)");
 
   // Check if clip is loaded
-  if (!m_sessionManager.hasClip(buttonIndex)) {
+  if (!m_sessionManager->hasClip(buttonIndex)) {
     DBG("MainComponent: Button " + juce::String(buttonIndex) + " has no clip loaded");
     return;
   }
@@ -1456,7 +1466,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   }
 
   // Get clip metadata from SessionManager
-  auto clipData = m_sessionManager.getClip(buttonIndex);
+  auto clipData = m_sessionManager->getClip(buttonIndex);
 
   // Create edit dialog (pass AudioEngine and GLOBAL clip index for main grid clip control)
   auto* dialog = new ClipEditDialog(m_audioEngine.get(), globalClipIndex);
@@ -1495,7 +1505,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
   dialog->onOkClicked = [this, buttonIndex, globalClipIndex,
                          dialog](const ClipEditDialog::ClipMetadata& edited) {
     // Update SessionManager with edited metadata
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
     clipData.displayName = edited.displayName.toStdString();
     clipData.color = edited.color;
     clipData.clipGroup = edited.clipGroup;
@@ -1518,9 +1528,10 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.stopOthersEnabled = edited.stopOthersEnabled;
 
     // Persist to SessionManager (via UndoManager)
-    auto oldClipData = m_sessionManager.getClip(buttonIndex);
-    auto editCmd = std::make_unique<orpheus::EditClipCommand>(
-        &m_sessionManager, m_sessionManager.getActiveTab(), buttonIndex, oldClipData, clipData);
+    auto oldClipData = m_sessionManager->getClip(buttonIndex);
+    auto editCmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
+                                                              m_sessionManager->getActiveTab(),
+                                                              buttonIndex, oldClipData, clipData);
     m_undoManager->executeCommand(std::move(editCmd));
 
     // Apply trim/fade metadata to AudioEngine (use global index for multi-tab isolation)
@@ -1590,7 +1601,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     // Edits are live during preview, but must be reverted if user cancels
 
     // Restore SessionManager clip data
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
     clipData.displayName = metadata.displayName.toStdString();
     clipData.color = metadata.color;
     clipData.clipGroup = metadata.clipGroup;
@@ -1603,7 +1614,7 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     clipData.gainDb = metadata.gainDb;
     clipData.loopEnabled = metadata.loopEnabled;
     clipData.stopOthersEnabled = metadata.stopOthersEnabled;
-    m_sessionManager.setClip(buttonIndex, clipData);
+    m_sessionManager->setClip(buttonIndex, clipData);
 
     // Restore SDK state (trim points, fades, loop mode)
     if (m_audioEngine) {
@@ -1650,10 +1661,10 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     }
 
     // CRITICAL: Persist color to SessionManager (prevents Edit Dialog from overwriting it)
-    if (m_sessionManager.hasClip(buttonIndex)) {
-      auto clipData = m_sessionManager.getClip(buttonIndex);
+    if (m_sessionManager->hasClip(buttonIndex)) {
+      auto clipData = m_sessionManager->getClip(buttonIndex);
       clipData.color = newColor;
-      m_sessionManager.setClip(buttonIndex, clipData);
+      m_sessionManager->setClip(buttonIndex, clipData);
     }
 
     DBG("Button " << buttonIndex << ": Color changed in real-time to " << newColor.toString());
@@ -1741,7 +1752,7 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   }
 
   // Use SessionManager to load the clip (with final path)
-  bool success = m_sessionManager.loadClip(buttonIndex, finalPath);
+  bool success = m_sessionManager->loadClip(buttonIndex, finalPath);
 
   if (success) {
     // Calculate global clip index for multi-tab isolation
@@ -1812,7 +1823,7 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
   }
 
   // Swap clips in SessionManager (via UndoManager)
-  auto swapCmd = std::make_unique<orpheus::SwapClipsCommand>(&m_sessionManager,
+  auto swapCmd = std::make_unique<orpheus::SwapClipsCommand>(m_sessionManager.get(),
                                                              getGlobalClipIndex(sourceButtonIndex),
                                                              getGlobalClipIndex(targetButtonIndex));
   m_undoManager->executeCommand(std::move(swapCmd));
@@ -1828,7 +1839,7 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
   updateButtonFromClip(targetButtonIndex);
 
   // Restart clips at their NEW positions if they were playing
-  if (sourceWasPlaying && m_audioEngine && m_sessionManager.hasClip(targetButtonIndex)) {
+  if (sourceWasPlaying && m_audioEngine && m_sessionManager->hasClip(targetButtonIndex)) {
     m_audioEngine->startClip(targetGlobalIndex);
     if (targetButton) {
       targetButton->setState(ClipButton::State::Playing);
@@ -1836,7 +1847,7 @@ void MainComponent::onClipDraggedToButton(int sourceButtonIndex, int targetButto
     DBG("MainComponent: Restarted source clip at new position (button "
         << targetButtonIndex << ", global: " << targetGlobalIndex << ")");
   }
-  if (targetWasPlaying && m_audioEngine && m_sessionManager.hasClip(sourceButtonIndex)) {
+  if (targetWasPlaying && m_audioEngine && m_sessionManager->hasClip(sourceButtonIndex)) {
     m_audioEngine->startClip(sourceGlobalIndex);
     if (sourceButton) {
       sourceButton->setState(ClipButton::State::Playing);
@@ -1851,12 +1862,12 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
   if (!button)
     return;
 
-  if (m_sessionManager.hasClip(buttonIndex)) {
+  if (m_sessionManager->hasClip(buttonIndex)) {
     // Calculate global clip index for multi-tab isolation
     int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
     // Get real clip metadata from SessionManager
-    auto clipData = m_sessionManager.getClip(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
 
     // Load clip into audio engine first (use global index)
     if (m_audioEngine) {
@@ -1976,7 +1987,7 @@ void MainComponent::onTabSelected(int tabIndex) {
   DBG("MainComponent: Tab " << tabIndex << " selected");
 
   // Update SessionManager's active tab
-  m_sessionManager.setActiveTab(tabIndex);
+  m_sessionManager->setActiveTab(tabIndex);
 
   // Update MIDI device manager's current tab for Paged scope (Plan Task 7)
   if (m_midiDeviceManager)
@@ -2137,7 +2148,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
       m_audioEngine->stopAllClips();
     }
 
-    m_sessionManager.clearSession();
+    m_sessionManager->clearSession();
     // Clear all buttons
     for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
       auto button = m_clipGrid->getButton(i);
@@ -2156,7 +2167,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
     if (chooser.browseForFileToOpen()) {
       auto file = chooser.getResult();
-      if (m_sessionManager.loadSession(file)) {
+      if (m_sessionManager->loadSession(file)) {
         // Update all buttons from loaded session
         for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
           updateButtonFromClip(i);
@@ -2174,10 +2185,10 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   case 3: // Save Session (OCC144: Now tracks current file)
   {
     // Check if session has been saved before
-    auto currentFile = m_sessionManager.getCurrentFile();
+    auto currentFile = m_sessionManager->getCurrentFile();
     if (currentFile.existsAsFile()) {
       // Save to existing file without prompting
-      if (m_sessionManager.saveSession(currentFile)) {
+      if (m_sessionManager->saveSession(currentFile)) {
         DBG("MainComponent: Successfully saved session: " + currentFile.getFileName());
       } else {
         juce::AlertWindow::showMessageBoxAsync(
@@ -2197,7 +2208,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         if (!file.hasFileExtension(".json"))
           file = file.withFileExtension(".json");
 
-        if (m_sessionManager.saveSession(file)) {
+        if (m_sessionManager->saveSession(file)) {
           DBG("MainComponent: Successfully saved session: " + file.getFileName());
         } else {
           juce::AlertWindow::showMessageBoxAsync(
@@ -2222,7 +2233,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
       if (!file.hasFileExtension(".json"))
         file = file.withFileExtension(".json");
 
-      if (m_sessionManager.saveSession(file)) {
+      if (m_sessionManager->saveSession(file)) {
         DBG("MainComponent: Successfully saved session as: " + file.getFileName());
       } else {
         juce::AlertWindow::showMessageBoxAsync(
@@ -2252,7 +2263,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         m_audioEngine->stopAllClips();
       }
 
-      auto clearAllCmd = std::make_unique<orpheus::ClearButtonsCommand>(&m_sessionManager, 0, 383);
+      auto clearAllCmd =
+          std::make_unique<orpheus::ClearButtonsCommand>(m_sessionManager.get(), 0, 383);
       m_undoManager->executeCommand(std::move(clearAllCmd));
 
       for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
@@ -2328,12 +2340,12 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   case 14: // Clear Current Tab (Item 8)
   {
     // Get current tab index
-    int currentTab = m_sessionManager.getActiveTab();
+    int currentTab = m_sessionManager->getActiveTab();
     int clipCount = 0;
 
     // Count how many clips are on current tab
     for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-      if (m_sessionManager.hasClip(i)) {
+      if (m_sessionManager->hasClip(i)) {
         clipCount++;
       }
     }
@@ -2367,7 +2379,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
       // Clear all clips on current tab (via UndoManager)
       auto clearTabCmd = std::make_unique<orpheus::ClearPageCommand>(
-          &m_sessionManager, m_sessionManager.getActiveTab());
+          m_sessionManager.get(), m_sessionManager->getActiveTab());
       m_undoManager->executeCommand(std::move(clearTabCmd));
 
       // Update UI
@@ -2472,8 +2484,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
       break;
     }
 
-    auto* dialog =
-        new PasteSpecialDialog(&m_sessionManager, m_clipboardData, m_sessionManager.getActiveTab());
+    auto* dialog = new PasteSpecialDialog(m_sessionManager.get(), m_clipboardData,
+                                          m_sessionManager->getActiveTab());
     dialog->onOkClicked = [this, dialog]() {
       auto options = dialog->getOptions();
       auto targetIndices = dialog->getTargetIndices();
@@ -2484,8 +2496,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         int tabIndex = targetIndex / 48;
 
         // Only paste if target has a clip
-        if (m_sessionManager.hasClip(buttonIndex, tabIndex)) {
-          auto targetClip = m_sessionManager.getClip(buttonIndex, tabIndex);
+        if (m_sessionManager->hasClip(buttonIndex, tabIndex)) {
+          auto targetClip = m_sessionManager->getClip(buttonIndex, tabIndex);
 
           // Apply selected options
           if (options.gainAbsolute) {
@@ -2520,7 +2532,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
             targetClip.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
           }
 
-          m_sessionManager.setClip(buttonIndex, targetClip, tabIndex);
+          m_sessionManager->setClip(buttonIndex, targetClip, tabIndex);
         }
       }
 

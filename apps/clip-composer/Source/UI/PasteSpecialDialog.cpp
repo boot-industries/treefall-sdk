@@ -11,6 +11,7 @@
 */
 
 #include "PasteSpecialDialog.h"
+#include "../Core/GridConstants.h"
 
 PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
                                        const SessionManager::ClipData& sourceClip, int currentTab)
@@ -137,7 +138,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   m_rangeDashLabel.setJustificationType(juce::Justification::centred);
 
   addAndMakeVisible(m_rangeEndEditor);
-  m_rangeEndEditor.setText("384"); // 8 tabs × 48 buttons
+  m_rangeEndEditor.setText(juce::String(occ::TOTAL_BUTTONS));
   m_rangeEndEditor.setInputRestrictions(3, "0123456789");
 
   // Buttons
@@ -272,8 +273,8 @@ std::vector<int> PasteSpecialDialog::getTargetIndices() const {
       indices.push_back(startIndex + i);
     }
   } else if (m_scopeAllPagesRadio.getToggleState()) {
-    // All pages (0-383)
-    for (int i = 0; i < 384; ++i) {
+    // All pages
+    for (int i = 0; i < occ::TOTAL_BUTTONS; ++i) {
       indices.push_back(i);
     }
   } else if (m_scopeRangeRadio.getToggleState()) {
@@ -281,8 +282,8 @@ std::vector<int> PasteSpecialDialog::getTargetIndices() const {
     int start = m_rangeStartEditor.getText().getIntValue() - 1; // Convert to 0-based
     int end = m_rangeEndEditor.getText().getIntValue() - 1;
 
-    start = juce::jlimit(0, 383, start);
-    end = juce::jlimit(0, 383, end);
+    start = juce::jlimit(0, occ::TOTAL_BUTTONS - 1, start);
+    end = juce::jlimit(0, occ::TOTAL_BUTTONS - 1, end);
 
     if (start > end)
       std::swap(start, end);

@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "GridConstants.h"
 #include <functional>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_core/juce_core.h>
@@ -141,7 +142,7 @@ public:
   //==============================================================================
   // OCC144: Per-Button MIDI Note Assignment
 
-  static constexpr int MAX_BUTTONS = 960; // 8 tabs × 10×12 buttons
+  static constexpr int MAX_BUTTONS = occ::TOTAL_BUTTONS;
 
   /** Assign a MIDI note to a button */
   void assignMidiNote(int globalButtonIndex, int note, int channel = 1);

@@ -1,0 +1,142 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "sdk-debug",
+      "displayName": "SDK Debug",
+      "description": "SDK only, debug build with sanitizers",
+      "binaryDir": "${sourceDir}/build-sdk-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF"
+      }
+    },
+    {
+      "name": "sdk-release",
+      "displayName": "SDK Release",
+      "description": "SDK only, optimized release build",
+      "binaryDir": "${sourceDir}/build-sdk-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
+        "ENABLE_LTO": "ON"
+      }
+    },
+    {
+      "name": "occ-debug",
+      "displayName": "Clip Composer Debug",
+      "description": "SDK + Clip Composer, debug build",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON"
+      }
+    },
+    {
+      "name": "occ-release",
+      "displayName": "Clip Composer Release",
+      "description": "SDK + Clip Composer, optimized release build",
+      "binaryDir": "${sourceDir}/build-occ-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
+        "ENABLE_LTO": "ON"
+      }
+    },
+    {
+      "name": "ci-ubuntu",
+      "displayName": "CI Ubuntu",
+      "description": "CI configuration for Ubuntu runners",
+      "binaryDir": "${sourceDir}/build-ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
+        "ORP_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "ci-macos",
+      "displayName": "CI macOS",
+      "description": "CI configuration for macOS runners",
+      "binaryDir": "${sourceDir}/build-ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "ON",
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
+        "ORP_ENABLE_UBSAN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "sdk-debug",
+      "configurePreset": "sdk-debug"
+    },
+    {
+      "name": "sdk-release",
+      "configurePreset": "sdk-release"
+    },
+    {
+      "name": "occ-debug",
+      "configurePreset": "occ-debug"
+    },
+    {
+      "name": "occ-release",
+      "configurePreset": "occ-release"
+    },
+    {
+      "name": "ci-ubuntu",
+      "configurePreset": "ci-ubuntu"
+    },
+    {
+      "name": "ci-macos",
+      "configurePreset": "ci-macos"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "sdk-debug",
+      "configurePreset": "sdk-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "occ-debug",
+      "configurePreset": "occ-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-ubuntu",
+      "configurePreset": "ci-ubuntu",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-macos",
+      "configurePreset": "ci-macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

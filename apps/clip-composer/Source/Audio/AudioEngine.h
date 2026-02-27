@@ -10,8 +10,11 @@
 #include <optional>
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_file_reader.h>
+#include <orpheus/performance_monitor.h>
 #include <orpheus/transport_controller.h>
 #include <unordered_map>
+
+#include "Core/GridConstants.h"
 
 // Forward declare concrete class for extended API
 namespace orpheus {
@@ -46,9 +49,9 @@ public:
   //==============================================================================
   // Constants
 
-  /// Maximum number of clip buttons (8 tabs × 10×12 buttons per tab = 960)
-  /// Per OCC product specification for full 960-clip capacity
-  static constexpr int MAX_CLIP_BUTTONS = 960;
+  /// Maximum number of clip buttons (pre-allocated for v1.0 capacity)
+  /// Uses occ::MAX_AUDIO_SLOTS from GridConstants.h
+  static constexpr int MAX_CLIP_BUTTONS = occ::MAX_AUDIO_SLOTS;
 
   /// Maximum number of cue busses for preview playback (pool-based, no runtime allocation)
   /// Typically only 1-2 needed (Edit Dialog previews), 8 provides headroom
@@ -178,6 +181,10 @@ public:
   /// Get configured sample rate
   /// @return Sample rate in Hz
   uint32_t getSampleRate() const;
+
+  /// Get SDK performance metrics (CPU %, latency, underruns, active clips)
+  /// @return PerformanceMetrics snapshot (thread-safe, atomic reads)
+  orpheus::PerformanceMetrics getPerformanceMetrics() const;
 
   /// Get audio analyzer for VU meter visualization
   /// @return Pointer to AudioAnalyzer (valid after initialize())
@@ -370,6 +377,9 @@ private:
   uint32_t m_bufferSize = 512;
   bool m_initialized = false;
   std::string m_currentDeviceName = "Default Device"; // Current audio device name
+
+  // SDK Performance Monitor (CPU %, latency, underruns)
+  std::unique_ptr<orpheus::IPerformanceMonitor> m_performanceMonitor;
 
   // Audio analysis for VU meter
   std::unique_ptr<shmui::AudioAnalyzer> m_audioAnalyzer;
