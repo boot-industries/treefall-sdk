@@ -61,10 +61,14 @@ configure_file(
 # - apps/clip-composer when building standalone
 # Use CMAKE_CURRENT_SOURCE_DIR (always apps/clip-composer) for reliable path resolution
 set(SHMUI_JUCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/shmui-juce")
-add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
+if(NOT TARGET orpheus_shmui_juce)
+  add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
+endif()
 
 set(OCC_APP_PLATFORM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/occ-app-platform")
-add_subdirectory(${OCC_APP_PLATFORM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/occ-app-platform)
+if(NOT TARGET occ_app_platform)
+  add_subdirectory(${OCC_APP_PLATFORM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/occ-app-platform)
+endif()
 
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app

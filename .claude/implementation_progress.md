@@ -1,8 +1,124 @@
 # ORP068 Implementation Progress
 
-**Last Updated:** 2026-02-01 (Session: OCC Backend Polish Sprint)
-**Current Phase:** Phase 4 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | OCC Backend Polish Sprint ✅ Complete | shmui-juce v2.0.0 Integrated
+**Last Updated:** 2026-02-27 (Session: Architecture Refactor Sprint)
+**Current Phase:** Phase 5 ✅ Complete | SDK v1.0.0-rc.1 Released
+**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-5 ✅ Complete | Multi-App Validated
+
+---
+
+## 🏗️ Architecture Refactor Sprint (2026-02-27)
+
+**Scope:** Build system fixes, grid constant consistency, ServiceContext DI migration, SDK PerformanceMonitor wiring, module extraction to shared package
+**Branch:** `refactor/occ-code-simplifier-audit`
+**Plan:** `.claude/plans/twinkling-brewing-robin.md`
+
+### Completed Phases
+
+#### Phase 0: Build System Foundation
+
+| Task | Description | Commit |
+|------|------------|--------|
+| 0.1 | Fix hardcoded `.a` library paths → CMake target linking | `d4b69d48` |
+| 0.2 | Create `CMakePresets.json` (6 presets: sdk/occ debug/release, ci-ubuntu/macos) | `d4b69d48` |
+| 0.3 | Delete `transport_controller.cpp.backup` (1,386 LOC), add `*.backup` to .gitignore | `d4b69d48` |
+| 0.3 | Delete redundant `ci.yml` (Ubuntu-only, duplicates ci-pipeline.yml) | `b64ab87d` |
+
+#### Phase 1: Grid Constant Consistency
+
+| Task | Description | Commit |
+|------|------------|--------|
+| 1.1 | Create `GridConstants.h` (BUTTONS_PER_TAB=48, NUM_TABS=8, TOTAL_BUTTONS=384, MAX_AUDIO_SLOTS=960) | `d4b69d48` |
+| 1.2 | Fix `MIDIDeviceManager.h` MAX_BUTTONS (960→384 via `occ::TOTAL_BUTTONS`) | `d4b69d48` |
+| 1.2 | Update `HotKeyManager.h`, `AudioEngine.h`, `PasteSpecialDialog.cpp` to use GridConstants | `d4b69d48` |
+
+#### Phase 2: ServiceContext Migration
+
+| Task | Description | Commit |
+|------|------------|--------|
+| 2.1 | Change all service members from `unique_ptr` to `shared_ptr` | `d4b69d48` |
+| 2.2 | Migrate `SessionManager` from stack-allocated to `shared_ptr` (77+ `.`→`->`, 11 `&`→`.get()`) | `d4b69d48` |
+| 2.3 | Register all 10 services in `ServiceContext::getInstance()` | `d4b69d48` |
+| 2.4 | Add `ServiceContext::shutdown()` in destructor | `d4b69d48` |
+
+#### Phase 3: Wire SDK PerformanceMonitor
+
+| Task | Description | Commit |
+|------|------------|--------|
+| 3.1 | Create `IPerformanceMonitor` in `AudioEngine::initialize()` | `d4b69d48` |
+| 3.2 | Instrument `processAudio()` with `std::chrono` timing | `d4b69d48` |
+| 3.3 | Replace platform-specific CPU placeholder with SDK `getPerformanceMetrics()` | `d4b69d48` |
+
+#### Phase 4: Module Extraction (occ-app-platform)
+
+| Task | Description | Commit |
+|------|------------|--------|
+| 4.1 | Create `packages/occ-app-platform/` with CMakeLists.txt (static library) | `b64ab87d` |
+| 4.2 | Extract 9 services (Command, UndoManager, ServiceContext, ApplicationPaths, Database, DisplayPreferences, ExternalToolManager, EventLogger, PlayoutLogger) | `b64ab87d` |
+| 4.3 | Update include paths: `"Core/X.h"` → `<orpheus/app/X.h>` | `b64ab87d` |
+| 4.4 | OCC links `occ_app_platform` target instead of compiling sources directly | `b64ab87d` |
+
+### Files Summary
+
+**Commit `d4b69d48` (Phases 0-3):** 12 files changed, 349 insertions, 1533 deletions
+
+**Commit `b64ab87d` (Phase 0.3 + 4):** 22 files changed, 67 insertions, 194 deletions
+- Deleted: `.github/workflows/ci.yml`
+- Created: `packages/occ-app-platform/CMakeLists.txt`
+- Moved: 9 `.h` + 7 `.cpp` from `apps/clip-composer/Source/Core/` → `packages/occ-app-platform/`
+- Updated: `MainComponent.h`, `MainComponent.cpp`, `ClipCommands.h`, `CMakeLists.txt`
+
+### Package Structure
+
+```
+packages/occ-app-platform/
+├── CMakeLists.txt              # Static library, links JUCE + SQLite
+├── include/orpheus/app/
+│   ├── ApplicationPaths.h      # XDG-compatible directory management
+│   ├── Command.h               # GoF Command interface
+│   ├── Database.h              # SQLite wrapper (pImpl)
+│   ├── DisplayPreferences.h    # PropertiesFile persistence
+│   ├── EventLogger.h           # SQLite-backed event logging
+│   ├── ExternalToolManager.h   # External app launcher
+│   ├── PlayoutLogger.h         # Playout reporting (PRO export)
+│   ├── ServiceContext.h        # DI container (singleton, thread-safe)
+│   └── UndoManager.h           # Undo/redo history
+└── src/
+    ├── ApplicationPaths.cpp
+    ├── Database.cpp
+    ├── DisplayPreferences.cpp
+    ├── EventLogger.cpp
+    ├── ExternalToolManager.cpp
+    ├── PlayoutLogger.cpp
+    └── UndoManager.cpp
+```
+
+### What Stays in OCC (app-specific)
+
+- `ClipCommands.h/cpp` — depends on SessionManager
+- `HotKeyManager.h/cpp` — coupled to ClipGrid/AudioEngine
+- `MIDIDeviceManager.h/cpp` — coupled to button mapping
+- `GridConstants.h` — app-specific dimensions
+
+#### Phase 5: Multi-App Validation
+
+| Task | Description | Status |
+|------|------------|--------|
+| 5.1 | Scaffold `apps/wave-finder/` (JUCE GUI app, 3 source files) | ✅ |
+| 5.2 | Wave Finder links `occ-app-platform` + `orpheus_shmui_juce` + SDK targets | ✅ |
+| 5.3 | ServiceContext, Database, EventLogger exercised in second app | ✅ |
+| 5.4 | Guard `add_subdirectory` calls with `if(NOT TARGET ...)` for multi-app builds | ✅ |
+| 5.5 | Add `ORPHEUS_ENABLE_APP_WAVE_FINDER` option to root CMakeLists.txt | ✅ |
+| 5.6 | Add CMakePresets: `wave-finder-debug`, `all-apps-debug` | ✅ |
+| 5.7 | Both apps build from `cmake --preset all-apps-debug` | ✅ Verified |
+
+**Build verification results:**
+- `cmake --preset wave-finder-debug` → Configures + builds cleanly
+- `cmake --preset all-apps-debug` → Both apps build, shared packages linked once
+- `cmake --preset occ-debug` → Clip Composer still builds independently (40/40 SDK tests pass)
+
+### Remaining Plan Items
+
+- **Phase 6:** Documentation cleanup (status vocabulary, cross-reference matrix)
 
 ---
 
