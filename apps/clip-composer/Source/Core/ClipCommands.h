@@ -14,9 +14,9 @@
 #pragma once
 
 #include "../Session/SessionManager.h"
-#include "Command.h"
 #include <array>
 #include <map>
+#include <orpheus/app/Command.h>
 #include <vector>
 
 namespace orpheus {

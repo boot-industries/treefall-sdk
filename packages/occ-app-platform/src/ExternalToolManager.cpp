@@ -10,7 +10,7 @@
   ==============================================================================
 */
 
-#include "ExternalToolManager.h"
+#include <orpheus/app/ExternalToolManager.h>
 
 namespace orpheus {
 

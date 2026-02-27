@@ -8,7 +8,7 @@
   ==============================================================================
 */
 
-#include "EventLogger.h"
+#include <orpheus/app/EventLogger.h>
 
 namespace orpheus {
 

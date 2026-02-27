@@ -4,15 +4,8 @@
 
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
-#include "Core/Database.h"
-#include "Core/DisplayPreferences.h"
-#include "Core/EventLogger.h"
-#include "Core/ExternalToolManager.h"
 #include "Core/HotKeyManager.h"
 #include "Core/MIDIDeviceManager.h"
-#include "Core/PlayoutLogger.h"
-#include "Core/ServiceContext.h"
-#include "Core/UndoManager.h"
 #include "Session/SessionManager.h"
 #include "UI/AboutDialog.h"
 #include "UI/AudioSettingsDialog.h"
@@ -28,6 +21,13 @@
 #include "UI/SessionHistoryWindow.h"
 #include "UI/TabSwitcher.h"
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <orpheus/app/Database.h>
+#include <orpheus/app/DisplayPreferences.h>
+#include <orpheus/app/EventLogger.h>
+#include <orpheus/app/ExternalToolManager.h>
+#include <orpheus/app/PlayoutLogger.h>
+#include <orpheus/app/ServiceContext.h>
+#include <orpheus/app/UndoManager.h>
 
 // shmui visualizers (all components included via ShmUI.h)
 #include <ShmUI.h>

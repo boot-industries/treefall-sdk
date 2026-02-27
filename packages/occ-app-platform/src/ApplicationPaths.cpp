@@ -8,7 +8,7 @@
   ==============================================================================
 */
 
-#include "ApplicationPaths.h"
+#include <orpheus/app/ApplicationPaths.h>
 
 namespace orpheus {
 

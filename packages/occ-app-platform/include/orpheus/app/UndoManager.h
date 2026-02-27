@@ -10,9 +10,9 @@
 
 #pragma once
 
-#include "Command.h"
 #include <functional>
 #include <memory>
+#include <orpheus/app/Command.h>
 #include <vector>
 
 namespace orpheus {
