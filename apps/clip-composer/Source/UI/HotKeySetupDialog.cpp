@@ -18,13 +18,13 @@ HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
   // Title
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("HotKey Configuration", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+  m_titleLabel.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
   m_titleLabel.setJustificationType(juce::Justification::centred);
 
   // Scope section
   addAndMakeVisible(m_scopeLabel);
   m_scopeLabel.setText("Define scope of HotKeys:", juce::dontSendNotification);
-  m_scopeLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_scopeLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_globalScopeButton);
   m_globalScopeButton.setButtonText("Global");
@@ -51,7 +51,7 @@ HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
   addAndMakeVisible(m_actionLabel);
   m_actionLabel.setText("Define action when multiple buttons have same HotKey:",
                         juce::dontSendNotification);
-  m_actionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_actionLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_gangedActionButton);
   m_gangedActionButton.setButtonText("Ganged");

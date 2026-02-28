@@ -3,6 +3,47 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus_clip_composer LANGUAGES C CXX)
 
+set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(ORPHEUS_SDK_BUILD_DIR "" CACHE PATH
+    "Path to a configured Orpheus SDK build tree for standalone Clip Composer builds")
+
+function(resolve_orpheus_sdk)
+  if(TARGET Orpheus::core)
+    return()
+  endif()
+
+  if(ORPHEUS_SDK_BUILD_DIR)
+    find_package(OrpheusSDK CONFIG REQUIRED
+      PATHS "${ORPHEUS_SDK_BUILD_DIR}"
+      NO_DEFAULT_PATH)
+    return()
+  endif()
+
+  find_package(OrpheusSDK CONFIG QUIET
+    PATHS
+      "${SDK_ROOT}/build"
+      "${SDK_ROOT}/build-sdk-debug"
+      "${SDK_ROOT}/build-sdk-release"
+    NO_DEFAULT_PATH)
+
+  if(TARGET Orpheus::core)
+    return()
+  endif()
+
+  set(ORPHEUS_ENABLE_APP_CLIP_COMPOSER OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_APP_WAVE_FINDER OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_APP_JUCE_HOST OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(ORP_WITH_TESTS OFF CACHE BOOL "" FORCE)
+  add_subdirectory("${SDK_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/orpheus-sdk" EXCLUDE_FROM_ALL)
+
+  if(NOT TARGET Orpheus::core)
+    message(FATAL_ERROR "Failed to resolve Orpheus SDK targets for Clip Composer.")
+  endif()
+endfunction()
+
+resolve_orpheus_sdk()
+
 # Fetch JUCE if not already available
 include(FetchContent)
 
@@ -119,12 +160,9 @@ target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
 target_compile_features(orpheus_clip_composer_app PRIVATE cxx_std_20)
 
 # Include directories
-# Note: CMAKE_SOURCE_DIR varies based on build context, use relative path from app
-set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 target_include_directories(orpheus_clip_composer_app
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${SDK_ROOT}/include  # Orpheus SDK public headers
 )
 
 # JUCE compile definitions
@@ -145,36 +183,10 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_events
-    sqlite3
     orpheus_shmui_juce    # shmui-juce audio visualization
     occ_app_platform      # Shared app infrastructure (ServiceContext, Database, UndoManager, etc.)
+    Orpheus::core
 )
-
-# Link against Orpheus SDK modules (CMake targets from root add_subdirectory(src))
-target_link_libraries(orpheus_clip_composer_app
-  PRIVATE
-    orpheus_transport
-    orpheus_audio_io
-    orpheus_routing
-    $<$<PLATFORM_ID:Darwin>:orpheus_audio_driver_coreaudio>
-)
-
-# Link libsndfile (required by audio_io)
-find_library(LIBSNDFILE_LIBRARY sndfile)
-if(LIBSNDFILE_LIBRARY)
-  target_link_libraries(orpheus_clip_composer_app PRIVATE ${LIBSNDFILE_LIBRARY})
-else()
-  message(FATAL_ERROR "libsndfile not found. Install with: brew install libsndfile")
-endif()
-
-# Link CoreAudio framework (required by audio_driver_coreaudio)
-if(APPLE)
-  target_link_libraries(orpheus_clip_composer_app PRIVATE
-    "-framework CoreAudio"
-    "-framework AudioToolbox"
-    "-framework AudioUnit"
-  )
-endif()
 
 # Output name
 set_target_properties(orpheus_clip_composer_app PROPERTIES

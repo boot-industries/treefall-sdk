@@ -13,6 +13,14 @@
 
 namespace shmui {
 
+namespace {
+float measureTextWidth(const juce::Font& font, const juce::String& text) {
+  juce::GlyphArrangement glyphs;
+  glyphs.addLineOfText(font, text, 0.0f, 0.0f);
+  return glyphs.getBoundingBox(0, -1, true).getWidth();
+}
+} // namespace
+
 //==============================================================================
 TextButton::TextButton(const juce::String& text) : m_text(text) {}
 
@@ -57,8 +65,8 @@ int TextButton::getPreferredWidth() const {
   const float iconSize = getIconSizeForButton(getButtonSize());
   const float iconGap = 6.0f;
 
-  juce::Font font(fontSize);
-  float textWidth = font.getStringWidthFloat(m_text);
+  juce::Font font{juce::FontOptions(fontSize)};
+  float textWidth = measureTextWidth(font, m_text);
 
   float totalWidth = padding * 2.0f + textWidth;
 
@@ -81,10 +89,10 @@ void TextButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
   const float iconGap = 6.0f;
 
   g.setColour(foregroundColor);
-  juce::Font font(fontSize);
+  juce::Font font{juce::FontOptions(fontSize)};
   g.setFont(font);
 
-  float contentWidth = font.getStringWidthFloat(m_text);
+  float contentWidth = measureTextWidth(font, m_text);
   if (m_hasLeadingIcon)
     contentWidth += iconSize + iconGap;
   if (m_hasTrailingIcon)
@@ -102,7 +110,7 @@ void TextButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
   }
 
   // Draw text
-  float textWidth = font.getStringWidthFloat(m_text);
+  float textWidth = measureTextWidth(font, m_text);
   g.drawText(m_text, juce::Rectangle<float>(x, bounds.getY(), textWidth, bounds.getHeight()),
              juce::Justification::centredLeft, false);
   x += textWidth;

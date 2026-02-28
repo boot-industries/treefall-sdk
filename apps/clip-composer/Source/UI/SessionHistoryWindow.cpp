@@ -19,7 +19,7 @@ SessionHistoryWindow::SessionHistoryWindow()
   m_historyDisplay.setColour(juce::TextEditor::backgroundColourId, juce::Colours::black);
   m_historyDisplay.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
   m_historyDisplay.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-  m_historyDisplay.setFont(juce::Font(14.0f, juce::Font::plain));
+  m_historyDisplay.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::plain)));
 
   setContentOwned(&m_historyDisplay, false);
 

@@ -2,7 +2,12 @@
 
 #include "BuildInfo.h" // Include the generated build info
 #include "MainComponent.h"
+#include <algorithm>
+#include <chrono>
+#include <iostream>
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <optional>
+#include <sstream>
 
 //==============================================================================
 /**
@@ -27,11 +32,22 @@ public:
 
   //==============================================================================
   void initialise(const juce::String& commandLine) override {
-    // Ignore command line for now (MVP)
-    juce::ignoreUnused(commandLine);
+    parseCommandLine(commandLine);
 
     // Create main window
+    auto windowStart = std::chrono::steady_clock::now();
     mainWindow.reset(new MainWindow(getApplicationName()));
+    auto windowReady = std::chrono::steady_clock::now();
+
+    if (auto* mainComponent = mainWindow->getMainComponent()) {
+      auto windowReadyMs =
+          std::chrono::duration<double, std::milli>(windowReady - windowStart).count();
+      logStartupMetrics(*mainComponent, windowReadyMs);
+    }
+
+    if (smokeTestDurationSeconds.has_value()) {
+      juce::Timer::callAfterDelay(*smokeTestDurationSeconds * 1000, [this]() { quit(); });
+    }
   }
 
   void shutdown() override {
@@ -48,6 +64,10 @@ public:
   void anotherInstanceStarted(const juce::String& commandLine) override {
     // Another instance attempted to start (moreThanOneInstanceAllowed() = false)
     juce::ignoreUnused(commandLine);
+  }
+
+  bool isSmokeTestMode() const {
+    return smokeTestDurationSeconds.has_value();
   }
 
   //==============================================================================
@@ -79,6 +99,12 @@ public:
     }
 
     void closeButtonPressed() override {
+      auto* app = dynamic_cast<ClipComposerApplication*>(juce::JUCEApplication::getInstance());
+      if (app && app->isSmokeTestMode()) {
+        JUCEApplication::getInstance()->systemRequestedQuit();
+        return;
+      }
+
       auto* mainComp = dynamic_cast<MainComponent*>(getContentComponent());
       if (mainComp && mainComp->isSessionDirty()) {
         int result = juce::AlertWindow::showYesNoCancelBox(
@@ -112,12 +138,46 @@ public:
       setName(title);
     }
 
+    MainComponent* getMainComponent() const {
+      return dynamic_cast<MainComponent*>(getContentComponent());
+    }
+
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
   };
 
 private:
+  void parseCommandLine(const juce::String& commandLine) {
+    juce::StringArray args;
+    args.addTokens(commandLine, true);
+    args.trim();
+    args.removeEmptyStrings();
+
+    for (const auto& arg : args) {
+      if (arg == "--smoke-test") {
+        smokeTestDurationSeconds = 3;
+      } else if (arg.startsWith("--smoke-test=")) {
+        auto value = arg.fromFirstOccurrenceOf("=", false, false).getIntValue();
+        smokeTestDurationSeconds = std::max(1, value);
+      }
+    }
+  }
+
+  void logStartupMetrics(const MainComponent& mainComponent, double windowReadyMs) const {
+    std::ostringstream stream;
+    stream << "STARTUP_METRICS"
+           << " window_ready_ms=" << windowReadyMs
+           << " audio_engine_init_ms=" << mainComponent.getAudioEngineInitializationMs()
+           << " session_history_window_created="
+           << (mainComponent.hasSessionHistoryWindow() ? 1 : 0)
+           << " midi_monitor_window_created=" << (mainComponent.hasMidiMonitorWindow() ? 1 : 0)
+           << " level_meters_window_created=" << (mainComponent.hasLevelMetersWindow() ? 1 : 0)
+           << " smoke_test_mode=" << (isSmokeTestMode() ? 1 : 0);
+    std::cout << stream.str() << std::endl;
+  }
+
   std::unique_ptr<MainWindow> mainWindow;
+  std::optional<int> smokeTestDurationSeconds;
 };
 
 //==============================================================================

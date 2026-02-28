@@ -20,7 +20,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   // Title
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("Paste Special", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+  m_titleLabel.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
   m_titleLabel.setJustificationType(juce::Justification::centred);
 
   addAndMakeVisible(m_sourceLabel);
@@ -32,7 +32,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   // Levels section
   addAndMakeVisible(m_levelsLabel);
   m_levelsLabel.setText("Levels", juce::dontSendNotification);
-  m_levelsLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_levelsLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_gainAbsoluteCheckbox);
   m_gainAbsoluteCheckbox.setButtonText("Gain (Absolute)");
@@ -67,7 +67,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   // Fades section
   addAndMakeVisible(m_fadesLabel);
   m_fadesLabel.setText("Fades", juce::dontSendNotification);
-  m_fadesLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_fadesLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_fadeInCheckbox);
   m_fadeInCheckbox.setButtonText("Fade In Time");
@@ -94,7 +94,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   // Misc section
   addAndMakeVisible(m_miscLabel);
   m_miscLabel.setText("Misc", juce::dontSendNotification);
-  m_miscLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_miscLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_colorCheckbox);
   m_colorCheckbox.setButtonText("Color");
@@ -111,7 +111,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   // Scope section
   addAndMakeVisible(m_scopeLabel);
   m_scopeLabel.setText("Paste To:", juce::dontSendNotification);
-  m_scopeLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_scopeLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_scopeCurrentPageRadio);
   m_scopeCurrentPageRadio.setButtonText("Current Page");

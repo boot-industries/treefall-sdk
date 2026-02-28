@@ -55,7 +55,7 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
   // Title label
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("Level Meters", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(16.0f, juce::Font::bold));
+  m_titleLabel.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
   m_titleLabel.setJustificationType(juce::Justification::centred);
 
   // History text area
@@ -66,8 +66,8 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
   m_historyText.setCaretVisible(false);
   m_historyText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1a1a1a));
   m_historyText.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
-  m_historyText.setFont(
-      juce::Font(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+  m_historyText.setFont(juce::Font(
+      juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
 
   // Initialize peak hold times
   auto now = juce::Time::getCurrentTime();
@@ -160,7 +160,7 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
 
   // Label
   g.setColour(juce::Colours::white);
-  g.setFont(juce::Font(11.0f));
+  g.setFont(juce::Font(juce::FontOptions(11.0f)));
   g.drawText(label, labelArea, juce::Justification::centred);
 }
 
@@ -178,7 +178,7 @@ void LevelMetersWindow::Content::resized() {
   // History label
   auto historyLabelArea = area.removeFromTop(20);
   juce::Graphics g(juce::Image(juce::Image::RGB, 1, 1, false));
-  g.setFont(juce::Font(12.0f, juce::Font::bold));
+  g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
 
   // History text takes remaining space
   m_historyText.setBounds(area);

@@ -45,6 +45,7 @@ target_compile_features(orpheus_audio_driver_manager PUBLIC cxx_std_20)
 set_target_properties(orpheus_audio_driver_manager PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 orpheus_enable_warnings(orpheus_audio_driver_manager)
+orpheus_enable_sanitizers(orpheus_audio_driver_manager)
 
 message(STATUS "Orpheus: Audio Driver Manager enabled")
 
@@ -78,6 +79,7 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     )
 
     orpheus_enable_warnings(orpheus_audio_driver_coreaudio)
+    orpheus_enable_sanitizers(orpheus_audio_driver_coreaudio)
 
     message(STATUS "Orpheus: CoreAudio driver enabled")
 endif()
@@ -112,6 +114,7 @@ if(ORPHEUS_ENABLE_WASAPI)
     )
 
     orpheus_enable_warnings(orpheus_audio_driver_wasapi)
+    orpheus_enable_sanitizers(orpheus_audio_driver_wasapi)
 
     message(STATUS "Orpheus: WASAPI driver enabled")
 endif()
@@ -151,6 +154,7 @@ if(ORPHEUS_ENABLE_ASIO)
     )
 
     orpheus_enable_warnings(orpheus_audio_driver_asio)
+    orpheus_enable_sanitizers(orpheus_audio_driver_asio)
 
     message(STATUS "Orpheus: ASIO driver enabled (SDK path: ${ASIO_SDK_PATH})")
 endif()

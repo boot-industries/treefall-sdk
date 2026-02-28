@@ -248,7 +248,7 @@ void TransportBar::setupButtons() {
   // Position label
   m_positionLabel = std::make_unique<juce::Label>();
   m_positionLabel->setText("0:00.000", juce::dontSendNotification);
-  m_positionLabel->setFont(juce::Font(14.0f, juce::Font::bold));
+  m_positionLabel->setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
   m_positionLabel->setColour(juce::Label::textColourId, m_style.textColor);
   m_positionLabel->setJustificationType(juce::Justification::centredRight);
   addAndMakeVisible(*m_positionLabel);
@@ -256,7 +256,7 @@ void TransportBar::setupButtons() {
   // Duration label
   m_durationLabel = std::make_unique<juce::Label>();
   m_durationLabel->setText("0:00.000", juce::dontSendNotification);
-  m_durationLabel->setFont(juce::Font(14.0f));
+  m_durationLabel->setFont(juce::Font(juce::FontOptions(14.0f)));
   m_durationLabel->setColour(juce::Label::textColourId, m_style.dimTextColor);
   m_durationLabel->setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(*m_durationLabel);
@@ -264,7 +264,7 @@ void TransportBar::setupButtons() {
   // Tempo label
   m_tempoLabel = std::make_unique<juce::Label>();
   m_tempoLabel->setText("120.0 BPM", juce::dontSendNotification);
-  m_tempoLabel->setFont(juce::Font(12.0f));
+  m_tempoLabel->setFont(juce::Font(juce::FontOptions(12.0f)));
   m_tempoLabel->setColour(juce::Label::textColourId, m_style.dimTextColor);
   m_tempoLabel->setJustificationType(juce::Justification::centred);
   addAndMakeVisible(*m_tempoLabel);

@@ -15,19 +15,15 @@ add_executable(clip_composer_tests
 target_compile_features(clip_composer_tests PRIVATE cxx_std_20)
 
 # Include directories
-# Use relative path from tests directory to SDK root (consistent with main CMakeLists.txt)
-set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 target_include_directories(clip_composer_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Source
-    ${SDK_ROOT}/include  # Orpheus SDK headers
-    ${SDK_ROOT}/packages/shmui-juce  # ShmUI audio visualization components
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../packages/shmui-juce  # ShmUI audio visualization components
 )
 
 # Link against GoogleTest
 target_link_libraries(clip_composer_tests
   PRIVATE
-    GTest::gtest
     GTest::gtest_main
     GTest::gmock
 )
@@ -51,36 +47,10 @@ target_link_libraries(clip_composer_tests
 )
 
 # Link against Orpheus SDK modules
-# Use SDK_ROOT defined above for consistent path resolution
-set(SDK_LIB_DIR "${SDK_ROOT}/build/src/core")
-set(SDK_PLATFORM_LIB_DIR "${SDK_ROOT}/build/src/platform/audio_drivers")
-set(SDK_CORE_LIB_DIR "${SDK_ROOT}/build/src")
-
 target_link_libraries(clip_composer_tests
   PRIVATE
-    ${SDK_CORE_LIB_DIR}/liborpheus_session.dylib
-    ${SDK_LIB_DIR}/transport/liborpheus_transport.a
-    ${SDK_LIB_DIR}/audio_io/liborpheus_audio_io.a
-    ${SDK_LIB_DIR}/routing/liborpheus_routing.a
-    ${SDK_PLATFORM_LIB_DIR}/liborpheus_audio_driver_coreaudio.a
+    Orpheus::core
 )
-
-# Link libsndfile
-find_library(LIBSNDFILE_LIBRARY sndfile)
-if(LIBSNDFILE_LIBRARY)
-  target_link_libraries(clip_composer_tests PRIVATE ${LIBSNDFILE_LIBRARY})
-else()
-  message(FATAL_ERROR "libsndfile not found. Install with: brew install libsndfile")
-endif()
-
-# Link CoreAudio framework (macOS)
-if(APPLE)
-  target_link_libraries(clip_composer_tests PRIVATE
-    "-framework CoreAudio"
-    "-framework AudioToolbox"
-    "-framework AudioUnit"
-  )
-endif()
 
 # JUCE compile definitions
 target_compile_definitions(clip_composer_tests
