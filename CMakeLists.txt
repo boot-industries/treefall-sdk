@@ -78,23 +78,7 @@ elseif(UNIX)
   set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}")
 endif()
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  add_compile_options("$<$<CONFIG:Debug>:-fsanitize=address>")
-  add_link_options("$<$<CONFIG:Debug>:-fsanitize=address>")
-else()
-  message(STATUS "Sanitizers are not enabled on this compiler.")
-endif()
-
-option(ORP_ENABLE_UBSAN "Enable Undefined Behavior Sanitizer in Debug" ON)
-
-if(ORP_ENABLE_UBSAN AND CMAKE_BUILD_TYPE MATCHES "Debug" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  add_compile_options(-fsanitize=undefined)
-  add_link_options(-fsanitize=undefined)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    # GCC-based UBSan builds sometimes require explicit runtime linkage.
-    set(ORP_EXTRA_UBSAN_LIB ubsan)
-  endif()
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/Sanitizers.cmake)
 
 if(ENABLE_LTO)
   include(CheckIPOSupported)
@@ -196,6 +180,9 @@ if(ORPHEUS_ENABLE_REALTIME)
 endif()
 
 install(TARGETS orpheus_core
+  EXPORT OrpheusSDKTargets)
+
+install(TARGETS orpheus_sanitizers
   EXPORT OrpheusSDKTargets)
 
 if(ORPHEUS_ENABLE_ADAPTER_MINHOST)

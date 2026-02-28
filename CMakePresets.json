@@ -15,7 +15,9 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF"
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
+        "ORP_ENABLE_ASAN": "ON",
+        "ORP_ENABLE_UBSAN": "ON"
       }
     },
     {
@@ -28,7 +30,9 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
-        "ENABLE_LTO": "ON"
+        "ENABLE_LTO": "ON",
+        "ORP_ENABLE_ASAN": "OFF",
+        "ORP_ENABLE_UBSAN": "OFF"
       }
     },
     {
@@ -40,7 +44,9 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON"
+        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
+        "ORP_ENABLE_ASAN": "ON",
+        "ORP_ENABLE_UBSAN": "ON"
       }
     },
     {
@@ -53,7 +59,9 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
-        "ENABLE_LTO": "ON"
+        "ENABLE_LTO": "ON",
+        "ORP_ENABLE_ASAN": "OFF",
+        "ORP_ENABLE_UBSAN": "OFF"
       }
     },
     {
@@ -66,7 +74,9 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
-        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON"
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
+        "ORP_ENABLE_ASAN": "ON",
+        "ORP_ENABLE_UBSAN": "ON"
       }
     },
     {
@@ -79,7 +89,9 @@
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
-        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON"
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
+        "ORP_ENABLE_ASAN": "ON",
+        "ORP_ENABLE_UBSAN": "ON"
       }
     },
     {
@@ -93,6 +105,7 @@
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "OFF",
+        "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
       }
     },
@@ -107,6 +120,7 @@
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
         "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
+        "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
       }
     }

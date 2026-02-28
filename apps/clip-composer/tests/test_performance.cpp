@@ -3,7 +3,10 @@
 
 #include "../Source/Audio/AudioEngine.h"
 #include <chrono>
+#include <cmath>
+#include <filesystem>
 #include <gtest/gtest.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <thread>
 
 #if defined(__APPLE__)
@@ -46,7 +49,36 @@ size_t getProcessMemoryMB() {
 
 class PerformanceTest : public ::testing::Test {
 protected:
+  static void writeTestWavFile(const juce::File& file) {
+    juce::WavAudioFormat format;
+    auto stream = file.createOutputStream();
+    ASSERT_NE(stream, nullptr);
+
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        format.createWriterFor(stream.release(), 48000.0, 2, 16, {}, 0));
+    ASSERT_NE(writer, nullptr);
+
+    constexpr int numSamples = 48000;
+    juce::AudioBuffer<float> buffer(2, numSamples);
+    for (int sample = 0; sample < numSamples; ++sample) {
+      auto value =
+          0.2f * std::sin(2.0 * juce::MathConstants<double>::pi * 440.0 * sample / 48000.0);
+      buffer.setSample(0, sample, value);
+      buffer.setSample(1, sample, value);
+    }
+
+    ASSERT_TRUE(writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples()));
+  }
+
   void SetUp() override {
+    auto uniqueName = "clip-composer-performance-" +
+                      juce::String(juce::Time::getMillisecondCounterHiRes(), 0) + "-" +
+                      juce::String(juce::Random::getSystemRandom().nextInt()) + ".wav";
+    auto tempDirectory = juce::File(std::filesystem::temp_directory_path().string());
+    m_testAudioFile = tempDirectory.getChildFile(uniqueName);
+    m_testAudioFile.getParentDirectory().createDirectory();
+    writeTestWavFile(m_testAudioFile);
+
     m_engine = std::make_unique<AudioEngine>();
     if (!m_engine->initialize(48000)) {
       GTEST_SKIP() << "Audio device not available";
@@ -55,9 +87,13 @@ protected:
 
   void TearDown() override {
     m_engine.reset();
+    if (m_testAudioFile.existsAsFile()) {
+      m_testAudioFile.deleteFile();
+    }
   }
 
   std::unique_ptr<AudioEngine> m_engine;
+  juce::File m_testAudioFile;
 };
 
 TEST_F(PerformanceTest, MemoryUsageIdle) {
@@ -69,10 +105,8 @@ TEST_F(PerformanceTest, MemoryUsageIdle) {
 }
 
 TEST_F(PerformanceTest, MemoryUsageWith48Clips) {
-  // Simulate loading 48 clips (1 full tab)
-  // Note: Will fail to load since files don't exist, but metadata structures allocated
   for (int i = 0; i < 48; ++i) {
-    m_engine->loadClip(i, "/tmp/dummy.wav");
+    ASSERT_TRUE(m_engine->loadClip(i, m_testAudioFile.getFullPathName()));
   }
 
   size_t memoryMB = getProcessMemoryMB();
@@ -82,9 +116,8 @@ TEST_F(PerformanceTest, MemoryUsageWith48Clips) {
 }
 
 TEST_F(PerformanceTest, MemoryUsageWith384Clips) {
-  // Simulate loading all 384 clips (8 tabs full)
   for (int i = 0; i < 384; ++i) {
-    m_engine->loadClip(i, "/tmp/dummy.wav");
+    ASSERT_TRUE(m_engine->loadClip(i, m_testAudioFile.getFullPathName()));
   }
 
   size_t memoryMB = getProcessMemoryMB();

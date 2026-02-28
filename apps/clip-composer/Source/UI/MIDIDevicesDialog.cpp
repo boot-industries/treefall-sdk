@@ -18,13 +18,13 @@ MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
   // Title
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("MIDI Device Configuration", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+  m_titleLabel.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
   m_titleLabel.setJustificationType(juce::Justification::centred);
 
   // MIDI In section
   addAndMakeVisible(m_midiInLabel);
   m_midiInLabel.setText("MIDI Input Devices:", juce::dontSendNotification);
-  m_midiInLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_midiInLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_midiInList);
   m_midiInList.setModel(this);
@@ -34,7 +34,7 @@ MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
   // MIDI Out section
   addAndMakeVisible(m_midiOutLabel);
   m_midiOutLabel.setText("MIDI Output Devices:", juce::dontSendNotification);
-  m_midiOutLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_midiOutLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   addAndMakeVisible(m_midiOutList);
   m_midiOutList.setRowHeight(24);

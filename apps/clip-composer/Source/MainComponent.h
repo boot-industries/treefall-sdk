@@ -63,6 +63,18 @@ public:
   void paint(juce::Graphics&) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
+  double getAudioEngineInitializationMs() const {
+    return m_audioEngineInitializationMs;
+  }
+  bool hasSessionHistoryWindow() const {
+    return m_sessionHistoryWindow != nullptr;
+  }
+  bool hasMidiMonitorWindow() const {
+    return m_midiMonitorWindow != nullptr;
+  }
+  bool hasLevelMetersWindow() const {
+    return m_levelMetersWindow != nullptr;
+  }
 
   //==============================================================================
   // MenuBarModel overrides
@@ -96,6 +108,9 @@ private:
   void onStopAll();
   void onPanic();
   void updateWindowTitle();
+  SessionHistoryWindow* getOrCreateSessionHistoryWindow();
+  MIDIMonitorWindow* getOrCreateMidiMonitorWindow();
+  LevelMetersWindow* getOrCreateLevelMetersWindow();
 
   // Tab management
   void onTabSelected(int tabIndex);
@@ -161,6 +176,7 @@ private:
   // Auto-backup: save dirty sessions every 60 seconds
   int m_autoBackupCounter = 0;
   juce::Time m_lastAutoBackupTime;
+  double m_audioEngineInitializationMs = 0.0;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

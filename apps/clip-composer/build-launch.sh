@@ -1,11 +1,13 @@
 #!/bin/bash
 # Orpheus Clip Composer - Build & Launch
-# Usage: ./build-and-launch.sh [debug|release]
+# Usage: ./build-and-launch.sh [debug|release] [app-args...]
 
 set -e
 
 BUILD_TYPE="${1:-debug}"
 BUILD_TYPE_UPPER=$(echo "$BUILD_TYPE" | tr '[:lower:]' '[:upper:]')
+shift || true
+APP_ARGS=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -64,6 +66,11 @@ fi
 echo "✅ Build complete"
 echo ""
 
+if [[ "$BUILD_TYPE_UPPER" == "DEBUG" && "$(uname -s)" == "Darwin" && -z "${ASAN_OPTIONS:-}" ]]; then
+    export ASAN_OPTIONS="halt_on_error=0:detect_leaks=0:abort_on_error=0"
+    echo "🩺 Using macOS GUI ASan policy: $ASAN_OPTIONS"
+fi
+
 # Clear macOS caches
 echo "🧹 Clearing macOS app cache..."
 rm -rf "$APP_PATH/Contents/_CodeSignature" 2>/dev/null || true
@@ -77,7 +84,7 @@ echo "🚀 Launching OrpheusClipComposer..."
 echo "📝 Logs: $LOG_FILE"
 echo ""
 
-"$EXECUTABLE" > "$LOG_FILE" 2>&1 &
+"$EXECUTABLE" "${APP_ARGS[@]}" > "$LOG_FILE" 2>&1 &
 APP_PID=$!
 
 sleep 1

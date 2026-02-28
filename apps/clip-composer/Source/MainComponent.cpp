@@ -87,10 +87,6 @@ MainComponent::MainComponent() {
   // Note: Do NOT connect to AudioAnalyzer - we feed levels manually via setVolumeBands()
   addAndMakeVisible(m_barVisualizer.get());
 
-  // Session History Window (initially hidden)
-  m_sessionHistoryWindow = std::make_unique<SessionHistoryWindow>();
-  m_sessionHistoryWindow->setVisible(false);
-
   // Wire up ClipGrid callbacks (moved to helper method for readability)
   wireUpClipGridCallbacks();
 
@@ -126,6 +122,7 @@ MainComponent::MainComponent() {
       << savedDevice << ", SR: " << savedSampleRate << " Hz, Buffer: " << savedBufferSize);
 
   // Initialize with saved sample rate
+  auto audioInitStart = std::chrono::steady_clock::now();
   if (!m_audioEngine->initialize(savedSampleRate)) {
     DBG("MainComponent: Failed to initialize audio engine!");
   } else {
@@ -151,6 +148,9 @@ MainComponent::MainComponent() {
       DBG("MainComponent: Failed to start audio engine");
     }
   }
+  auto audioInitEnd = std::chrono::steady_clock::now();
+  m_audioEngineInitializationMs =
+      std::chrono::duration<double, std::milli>(audioInitEnd - audioInitStart).count();
 
   // Wire MIDI device manager to audio engine and session manager (Plan Task 7)
   m_midiDeviceManager->setAudioEngine(m_audioEngine.get());
@@ -178,6 +178,31 @@ MainComponent::~MainComponent() {
 
   // Shutdown ServiceContext (reverse-order cleanup of all registered services)
   orpheus::ServiceContext::getInstance().shutdown();
+}
+
+SessionHistoryWindow* MainComponent::getOrCreateSessionHistoryWindow() {
+  if (!m_sessionHistoryWindow) {
+    m_sessionHistoryWindow = std::make_unique<SessionHistoryWindow>();
+    m_sessionHistoryWindow->setVisible(false);
+  }
+
+  return m_sessionHistoryWindow.get();
+}
+
+MIDIMonitorWindow* MainComponent::getOrCreateMidiMonitorWindow() {
+  if (!m_midiMonitorWindow) {
+    m_midiMonitorWindow = std::make_unique<MIDIMonitorWindow>(m_midiDeviceManager.get());
+  }
+
+  return m_midiMonitorWindow.get();
+}
+
+LevelMetersWindow* MainComponent::getOrCreateLevelMetersWindow() {
+  if (!m_levelMetersWindow) {
+    m_levelMetersWindow = std::make_unique<LevelMetersWindow>(m_audioEngine.get());
+  }
+
+  return m_levelMetersWindow.get();
 }
 
 //==============================================================================
@@ -2053,7 +2078,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
     menu.addSeparator();
     menu.addItem(13, "Keyboard Shortcuts...");
     menu.addSeparator();
-    menu.addItem(15, "Toggle Session History Window", true, m_sessionHistoryWindow->isVisible());
+    menu.addItem(15, "Toggle Session History Window", true,
+                 m_sessionHistoryWindow != nullptr && m_sessionHistoryWindow->isVisible());
   } else if (topLevelMenuIndex == 3) // Setup menu (OCC116, updated OCC144)
   {
     // OCC144: Removed Search Utility and File Browser (use native Finder via context menu)
@@ -2401,8 +2427,9 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
   case 15: // Toggle Session History Window
   {
-    bool isVisible = m_sessionHistoryWindow->isVisible();
-    m_sessionHistoryWindow->setVisible(!isVisible);
+    auto* sessionHistoryWindow = getOrCreateSessionHistoryWindow();
+    bool isVisible = sessionHistoryWindow->isVisible();
+    sessionHistoryWindow->setVisible(!isVisible);
     DBG("MainComponent: Session History Window visibility toggled to "
         << (!isVisible ? "visible" : "hidden"));
     break;
@@ -2607,11 +2634,9 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     };
     dialog->onMonitorClicked = [this, dialog]() {
       // Open MIDI Monitor window
-      if (!m_midiMonitorWindow) {
-        m_midiMonitorWindow = std::make_unique<MIDIMonitorWindow>(m_midiDeviceManager.get());
-      }
-      m_midiMonitorWindow->setVisible(true);
-      m_midiMonitorWindow->toFront(true);
+      auto* midiMonitorWindow = getOrCreateMidiMonitorWindow();
+      midiMonitorWindow->setVisible(true);
+      midiMonitorWindow->toFront(true);
     };
 
     dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
@@ -2622,11 +2647,9 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
   case 205: // MIDI Monitor
   {
-    if (!m_midiMonitorWindow) {
-      m_midiMonitorWindow = std::make_unique<MIDIMonitorWindow>(m_midiDeviceManager.get());
-    }
-    m_midiMonitorWindow->setVisible(true);
-    m_midiMonitorWindow->toFront(true);
+    auto* midiMonitorWindow = getOrCreateMidiMonitorWindow();
+    midiMonitorWindow->setVisible(true);
+    midiMonitorWindow->toFront(true);
     break;
   }
 
@@ -2680,11 +2703,9 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
 
   case 340: // Level Meters
   {
-    if (!m_levelMetersWindow) {
-      m_levelMetersWindow = std::make_unique<LevelMetersWindow>(m_audioEngine.get());
-    }
-    m_levelMetersWindow->setVisible(true);
-    m_levelMetersWindow->toFront(true);
+    auto* levelMetersWindow = getOrCreateLevelMetersWindow();
+    levelMetersWindow->setVisible(true);
+    levelMetersWindow->toFront(true);
     break;
   }
 

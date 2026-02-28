@@ -59,7 +59,7 @@ MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
   // Status label
   addAndMakeVisible(m_statusLabel);
   m_statusLabel.setText("MIDI Monitor - Running", juce::dontSendNotification);
-  m_statusLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  m_statusLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
 
   // Log text area
   addAndMakeVisible(m_logText);
@@ -69,8 +69,8 @@ MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
   m_logText.setCaretVisible(false);
   m_logText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1a1a1a));
   m_logText.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
-  m_logText.setFont(
-      juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+  m_logText.setFont(juce::Font(
+      juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain)));
 
   // Buttons
   addAndMakeVisible(m_runButton);
