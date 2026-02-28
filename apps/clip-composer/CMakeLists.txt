@@ -183,8 +183,9 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_events
-    orpheus_shmui_juce    # shmui-juce audio visualization
-    occ_app_platform      # Shared app infrastructure (ServiceContext, Database, UndoManager, etc.)
+    orpheus_shmui_juce              # shmui-juce audio visualization
+    occ_app_platform                # Shared app infrastructure (ServiceContext, Database, UndoManager, etc.)
+    orpheus_audio_driver_manager    # Device enumeration (createAudioDriverManager)
     Orpheus::core
 )
 

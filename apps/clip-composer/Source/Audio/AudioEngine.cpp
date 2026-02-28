@@ -5,6 +5,7 @@
 #include <algorithm>                                          // For std::find
 #include <chrono>
 #include <orpheus/audio_driver.h>
+#include <orpheus/audio_driver_manager.h>
 
 //==============================================================================
 AudioEngine::AudioEngine() {
@@ -504,13 +505,20 @@ void AudioEngine::getGroupLevels(std::array<float, 4>& groupLevels) const {
 // Audio Device Management (for Audio Settings Dialog)
 
 std::vector<std::string> AudioEngine::getAvailableDevices() const {
-  // Currently CoreAudio driver doesn't expose device enumeration in SDK
-  // Return a placeholder list for now
-  // TODO: Add device enumeration API to IAudioDriver interface
-  std::vector<std::string> devices;
-  devices.push_back("Default Device");
-  // In a full implementation, this would call m_audioDriver->enumerateDevices()
-  return devices;
+  auto manager = orpheus::createAudioDriverManager();
+  if (!manager) {
+    return {"Default Device"};
+  }
+
+  std::vector<std::string> names;
+  names.push_back("Default Device"); // Always first — lets user follow system default
+
+  for (const auto& device : manager->enumerateDevices()) {
+    if (device.driverType == "CoreAudio") {
+      names.push_back(device.name);
+    }
+  }
+  return names;
 }
 
 std::string AudioEngine::getCurrentDeviceName() const {
@@ -562,6 +570,10 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
   config.buffer_size = bufferSize;
   config.num_inputs = 0;  // No input for now
   config.num_outputs = 2; // Stereo output
+  // Pass device name; empty string → CoreAudio default, exact name → named device
+  if (deviceName != "Default Device") {
+    config.device_name = deviceName;
+  }
 
   auto result = m_audioDriver->initialize(config);
   if (result != orpheus::SessionGraphError::OK) {

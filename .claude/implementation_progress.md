@@ -1,8 +1,23 @@
 # ORP068 Implementation Progress
 
-**Last Updated:** 2026-02-27 (Session: Architecture Refactor Sprint)
+**Last Updated:** 2026-02-27 (Session: Audio Device Selection Fix)
 **Current Phase:** Phase 6 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-6 ✅ All Complete | Multi-App Validated
+**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-6 ✅ All Complete | Multi-App Validated | Audio output confirmed working
+
+---
+
+## 🔊 Audio Device Selection Fix (2026-02-27)
+
+**Scope:** Fix silent audio output and hardcoded "Default Device" in Audio Settings dialog
+**Doc:** `apps/clip-composer/docs/OCC/OCC145 Audio Device Selection Fix.md`
+
+| Task | Description | Result |
+|------|-------------|--------|
+| Fix `getAvailableDevices()` | Replace hardcoded stub with `createAudioDriverManager()->enumerateDevices()` | Real devices listed |
+| Fix `setAudioDevice()` | Pass `deviceName` → `config.device_name` (skip for "Default Device") | Named device selected |
+| Add include | `#include <orpheus/audio_driver_manager.h>` to AudioEngine.cpp | Compiles |
+| Fix linker | Add `orpheus_audio_driver_manager` to app `target_link_libraries` | Links |
+| **Result** | **Audio is audible** ✅ | Device dropdown verification pending |
 
 ---
 
