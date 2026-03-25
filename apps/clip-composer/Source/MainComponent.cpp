@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainComponent.h"
+#include "AppShell/AppCommandIds.h"
+#include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
 #include <orpheus/app/ApplicationPaths.h>
@@ -99,11 +101,6 @@ MainComponent::MainComponent() {
   // Set window size (1400×900 for better screen fit)
   setSize(1400, 900);
 
-// Set up menu bar (macOS native)
-#if JUCE_MAC
-  juce::MenuBarModel::setMacMainMenu(this);
-#endif
-
   // AudioEngine is already initialized at top of constructor
   // m_audioEngine = std::make_unique<AudioEngine>();
 
@@ -168,11 +165,6 @@ MainComponent::MainComponent() {
 }
 
 MainComponent::~MainComponent() {
-// Clear menu bar
-#if JUCE_MAC
-  juce::MenuBarModel::setMacMainMenu(nullptr);
-#endif
-
   // Clear LookAndFeel before destruction
   setLookAndFeel(nullptr);
 
@@ -248,38 +240,153 @@ void MainComponent::resized() {
 void MainComponent::updateWindowTitle() {
   if (auto* topLevel = getTopLevelComponent()) {
     juce::String title = "Clip Composer";
+    auto sessionLabel = getCurrentSessionLabel();
+    if (sessionLabel.isNotEmpty())
+      title += " - " + sessionLabel;
     if (m_sessionManager->isDirty())
       title += " *";
-    auto sessionFile = m_sessionManager->getCurrentFile();
-    if (sessionFile != juce::File())
-      title += " - " + sessionFile.getFileNameWithoutExtension();
 #ifdef DEBUG
     title += " [DEBUG]";
 #endif
-    title += " - v0.2.1";
+    title += " - v";
+    title += occ::BuildInfo::version;
+    title += " [";
+    title += occ::BuildInfo::gitHash;
+    title += "]";
     topLevel->setName(title);
   }
 }
 
 //==============================================================================
-void MainComponent::saveCurrentSession() {
+juce::String MainComponent::getCurrentSessionLabel() const {
   auto currentFile = m_sessionManager->getCurrentFile();
   if (currentFile != juce::File()) {
-    m_sessionManager->saveSession(currentFile);
-  } else {
-    // No file set yet - use Save As
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Save Session", orpheus::ApplicationPaths::getSessionsDir(), "*.json");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode |
-                             juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser](const juce::FileChooser& fc) {
-                           auto file = fc.getResult();
-                           if (file != juce::File()) {
-                             m_sessionManager->saveSession(file);
-                             updateWindowTitle();
-                           }
-                         });
+    return currentFile.getFileNameWithoutExtension();
   }
+
+  auto sessionName = juce::String(m_sessionManager->getSessionName());
+  return sessionName.isNotEmpty() ? sessionName : "Untitled";
+}
+
+//==============================================================================
+bool MainComponent::saveSessionToFile(const juce::File& file) {
+  auto targetFile = file;
+  if (targetFile == juce::File()) {
+    return false;
+  }
+
+  if (!targetFile.hasFileExtension(".json")) {
+    targetFile = targetFile.withFileExtension(".json");
+  }
+
+  if (m_sessionManager->saveSession(targetFile)) {
+    updateWindowTitle();
+    return true;
+  }
+
+  juce::AlertWindow::showMessageBoxAsync(
+      juce::AlertWindow::WarningIcon, "Save Failed",
+      "Could not save session file:\n" + targetFile.getFullPathName(), "OK");
+  return false;
+}
+
+//==============================================================================
+bool MainComponent::saveCurrentSession() {
+  auto currentFile = m_sessionManager->getCurrentFile();
+  if (currentFile != juce::File()) {
+    return saveSessionToFile(currentFile);
+  }
+
+  return saveCurrentSessionAs();
+}
+
+//==============================================================================
+bool MainComponent::saveCurrentSessionAs() {
+  juce::FileChooser chooser("Save Session As", orpheus::ApplicationPaths::getSessionsDir(),
+                            "*.json");
+
+  if (!chooser.browseForFileToSave(true)) {
+    return false;
+  }
+
+  return saveSessionToFile(chooser.getResult());
+}
+
+//==============================================================================
+bool MainComponent::loadSessionFromFile(const juce::File& file) {
+  if (file == juce::File()) {
+    return false;
+  }
+
+  if (m_audioEngine) {
+    m_audioEngine->stopAllClips();
+  }
+
+  if (!m_sessionManager->loadSession(file)) {
+    return false;
+  }
+
+  m_loopEnabled.fill(false);
+  m_stopOthersOnPlay.fill(false);
+
+  constexpr int numTabs = AudioEngine::MAX_CLIP_BUTTONS / 48;
+  auto activeTab = juce::jlimit(0, numTabs - 1, m_sessionManager->getActiveTab());
+  for (int tabIndex = 0; tabIndex < numTabs; ++tabIndex) {
+    m_sessionManager->setActiveTab(tabIndex);
+    for (int buttonIndex = 0; buttonIndex < m_clipGrid->getButtonCount(); ++buttonIndex) {
+      updateButtonFromClip(buttonIndex);
+    }
+  }
+
+  onTabSelected(activeTab);
+  updateWindowTitle();
+  return true;
+}
+
+//==============================================================================
+bool MainComponent::openSessionInteractive() {
+  juce::FileChooser chooser("Open Session", orpheus::ApplicationPaths::getSessionsDir(),
+                            "*.json");
+
+  if (!chooser.browseForFileToOpen()) {
+    return false;
+  }
+
+  auto file = chooser.getResult();
+  if (loadSessionFromFile(file)) {
+    DBG("MainComponent: Successfully loaded session: " + file.getFileName());
+    return true;
+  }
+
+  juce::AlertWindow::showMessageBoxAsync(
+      juce::AlertWindow::WarningIcon, "Load Failed",
+      "Could not load session file:\n" + file.getFullPathName(), "OK");
+  return false;
+}
+
+//==============================================================================
+void MainComponent::createNewSession() {
+  if (m_audioEngine) {
+    m_audioEngine->stopAllClips();
+  }
+
+  m_sessionManager->clearSession();
+  m_sessionManager->setActiveTab(0);
+  m_loopEnabled.fill(false);
+  m_stopOthersOnPlay.fill(false);
+
+  if (m_tabSwitcher) {
+    m_tabSwitcher->setActiveTab(0);
+  }
+
+  for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+    if (auto* button = m_clipGrid->getButton(i)) {
+      button->clearClip();
+    }
+  }
+
+  onTabSelected(0);
+  updateWindowTitle();
 }
 
 //==============================================================================
@@ -678,27 +785,39 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
       return true;
     }
 
-    // Cmd+N = New Session (Plan Task 8b)
     if (key == juce::KeyPress('n', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(1, 0); // Trigger "New Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::newSession);
+      } else {
+        menuItemSelected(1, 0);
+      }
       return true;
     }
 
-    // Cmd+O = Open Session (Plan Task 8c)
     if (key == juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(2, 0); // Trigger "Open Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::openSession);
+      } else {
+        menuItemSelected(2, 0);
+      }
       return true;
     }
 
-    // Cmd+S = Save Session
     if (key == juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(3, 0); // Trigger "Save Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::saveSession);
+      } else {
+        menuItemSelected(3, 0);
+      }
       return true;
     }
-    // Cmd+, = Preferences (OCC144: Opens Audio I/O Settings as primary settings dialog)
+
     if (key == juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0)) {
-      DBG("MainComponent: Cmd+, pressed - Opening Audio I/O Settings");
-      menuItemSelected(20, 5); // Trigger Audio I/O Settings dialog
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::showAudioSettings);
+      } else {
+        menuItemSelected(20, 5);
+      }
       return true;
     }
 
@@ -778,7 +897,11 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     if (key ==
         juce::KeyPress('s', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
                        0)) {
-      menuItemSelected(4, 0); // Trigger "Save Session As" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::saveSessionAs);
+      } else {
+        menuItemSelected(4, 0);
+      }
       return true;
     }
     // Cmd+Shift+Z = Redo
@@ -2171,106 +2294,21 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
 void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) {
   switch (menuItemID) {
   case 1: // New Session
-    // Stop all playing audio first
-    if (m_audioEngine) {
-      m_audioEngine->stopAllClips();
-    }
-
-    m_sessionManager->clearSession();
-    // Clear all buttons
-    for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-      auto button = m_clipGrid->getButton(i);
-      if (button)
-        button->clearClip();
-    }
+    createNewSession();
     DBG("MainComponent: New session created");
     break;
 
   case 2: // Open Session
-  {
-    juce::FileChooser chooser("Open Session",
-                              juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                  .getChildFile("Orpheus Clip Composer/Sessions"),
-                              "*.json");
-
-    if (chooser.browseForFileToOpen()) {
-      auto file = chooser.getResult();
-      if (m_sessionManager->loadSession(file)) {
-        // Update all buttons from loaded session
-        for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-          updateButtonFromClip(i);
-        }
-        DBG("MainComponent: Successfully loaded session: " + file.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Load Failed",
-            "Could not load session file:\\n" + file.getFullPathName(), "OK");
-      }
-    }
+    openSessionInteractive();
     break;
-  }
 
   case 3: // Save Session (OCC144: Now tracks current file)
-  {
-    // Check if session has been saved before
-    auto currentFile = m_sessionManager->getCurrentFile();
-    if (currentFile.existsAsFile()) {
-      // Save to existing file without prompting
-      if (m_sessionManager->saveSession(currentFile)) {
-        DBG("MainComponent: Successfully saved session: " + currentFile.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Save Failed",
-            "Could not save session file:\n" + currentFile.getFullPathName(), "OK");
-      }
-    } else {
-      // No previous file - show save dialog (same as Save As)
-      juce::FileChooser chooser("Save Session",
-                                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                    .getChildFile("Orpheus Clip Composer/Sessions"),
-                                "*.json");
-
-      if (chooser.browseForFileToSave(true)) {
-        auto file = chooser.getResult();
-        // Ensure .json extension
-        if (!file.hasFileExtension(".json"))
-          file = file.withFileExtension(".json");
-
-        if (m_sessionManager->saveSession(file)) {
-          DBG("MainComponent: Successfully saved session: " + file.getFileName());
-        } else {
-          juce::AlertWindow::showMessageBoxAsync(
-              juce::AlertWindow::WarningIcon, "Save Failed",
-              "Could not save session file:\n" + file.getFullPathName(), "OK");
-        }
-      }
-    }
+    saveCurrentSession();
     break;
-  }
 
   case 4: // Save Session As
-  {
-    juce::FileChooser chooser("Save Session As",
-                              juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                  .getChildFile("Orpheus Clip Composer/Sessions"),
-                              "*.json");
-
-    if (chooser.browseForFileToSave(true)) {
-      auto file = chooser.getResult();
-      // Ensure .json extension
-      if (!file.hasFileExtension(".json"))
-        file = file.withFileExtension(".json");
-
-      if (m_sessionManager->saveSession(file)) {
-        DBG("MainComponent: Successfully saved session as: " + file.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Save Failed",
-            "Could not save session file:\\n" + file.getFullPathName(), "OK");
-      }
-    }
+    saveCurrentSessionAs();
     break;
-  }
 
   case 5: // Quit
     juce::JUCEApplication::getInstance()->systemRequestedQuit();

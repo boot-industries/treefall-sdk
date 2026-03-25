@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus VERSION 0.2.0 LANGUAGES CXX)
 
+set(ORPHEUS_ROOT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
 option(ORP_WITH_TESTS "Build Orpheus tests" ON)
 option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
@@ -78,7 +80,7 @@ elseif(UNIX)
   set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}")
 endif()
 
-include(${CMAKE_SOURCE_DIR}/cmake/Sanitizers.cmake)
+include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/Sanitizers.cmake)
 
 if(ENABLE_LTO)
   include(CheckIPOSupported)
@@ -115,7 +117,7 @@ endif()
 
 include(CTest)
 if(ORP_WITH_TESTS)
-  include(${CMAKE_SOURCE_DIR}/cmake/Dependencies.cmake)
+  include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/Dependencies.cmake)
   enable_testing()
 endif()
 
@@ -219,7 +221,7 @@ install(EXPORT OrpheusSDKTargets
   DESTINATION ${INSTALL_CONFIGDIR})
 
 configure_package_config_file(
-  ${CMAKE_SOURCE_DIR}/cmake/OrpheusSDKConfig.cmake.in
+  ${ORPHEUS_ROOT_SOURCE_DIR}/cmake/OrpheusSDKConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKConfig.cmake
   INSTALL_DESTINATION ${INSTALL_CONFIGDIR})
 
@@ -242,7 +244,7 @@ set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_FILE_NAME "orpheus-sdk-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_GENERATOR "ZIP")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${ORPHEUS_ROOT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${ORPHEUS_ROOT_SOURCE_DIR}/README.md")
 
 include(CPack)
