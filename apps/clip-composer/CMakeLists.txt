@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus_clip_composer LANGUAGES C CXX)
 
+set(OCC_APP_VERSION "0.2.1")
 set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(ORPHEUS_SDK_BUILD_DIR "" CACHE PATH
     "Path to a configured Orpheus SDK build tree for standalone Clip Composer builds")
@@ -47,6 +48,25 @@ resolve_orpheus_sdk()
 # Fetch JUCE if not already available
 include(FetchContent)
 
+set(OCC_LOCAL_DEPENDENCY_DIRS)
+if(ORPHEUS_SDK_BUILD_DIR)
+  list(APPEND OCC_LOCAL_DEPENDENCY_DIRS "${ORPHEUS_SDK_BUILD_DIR}/_deps")
+endif()
+list(APPEND OCC_LOCAL_DEPENDENCY_DIRS "${SDK_ROOT}/build/_deps")
+
+foreach(dep_root IN LISTS OCC_LOCAL_DEPENDENCY_DIRS)
+  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_JUCE AND EXISTS "${dep_root}/juce-src/CMakeLists.txt")
+    set(FETCHCONTENT_SOURCE_DIR_JUCE "${dep_root}/juce-src")
+  endif()
+  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_SQLITE3 AND EXISTS "${dep_root}/sqlite3-src/sqlite3.c")
+    set(FETCHCONTENT_SOURCE_DIR_SQLITE3 "${dep_root}/sqlite3-src")
+  endif()
+  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_GOOGLETEST
+     AND EXISTS "${dep_root}/googletest-src/CMakeLists.txt")
+    set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "${dep_root}/googletest-src")
+  endif()
+endforeach()
+
 if(NOT TARGET juce::juce_gui_basics)
   FetchContent_Declare(
     juce
@@ -77,22 +97,37 @@ if(NOT sqlite3_POPULATED)
 endif()
 
 
-# Get Git commit hash
-execute_process(COMMAND git rev-parse --short HEAD
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                OUTPUT_VARIABLE APP_COMMIT_HASH
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
+set(OCC_GIT_WORKTREE "${SDK_ROOT}")
+execute_process(
+  COMMAND git rev-parse --short HEAD
+  WORKING_DIRECTORY "${OCC_GIT_WORKTREE}"
+  OUTPUT_VARIABLE OCC_APP_GIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT OCC_APP_GIT_HASH)
+  set(OCC_APP_GIT_HASH "unknown")
+endif()
 
-# Get build date and time
-execute_process(COMMAND git log -1 --format=%cd --date=format:'%y%m%d-%H%M'
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                OUTPUT_VARIABLE APP_BUILD_DATE
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(
+  COMMAND git describe --always --dirty --tags
+  WORKING_DIRECTORY "${OCC_GIT_WORKTREE}"
+  OUTPUT_VARIABLE OCC_APP_GIT_DESCRIBE
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT OCC_APP_GIT_DESCRIBE)
+  set(OCC_APP_GIT_DESCRIBE "${OCC_APP_GIT_HASH}")
+endif()
 
-# Configure BuildInfo.h
+string(TIMESTAMP OCC_APP_BUILD_DATE "%Y-%m-%d %H:%M:%S %Z")
+
+set(OCC_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${OCC_GENERATED_INCLUDE_DIR}")
+
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/Source/BuildInfo.h.in
-  ${CMAKE_CURRENT_SOURCE_DIR}/Source/BuildInfo.h
+  ${OCC_GENERATED_INCLUDE_DIR}/BuildInfo.h
   @ONLY
 )
 
@@ -114,7 +149,7 @@ endif()
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_clip_composer_app
   PRODUCT_NAME "Orpheus Clip Composer"
-  VERSION 0.2.0
+  VERSION ${OCC_APP_VERSION}
   COMPANY_NAME "Orpheus"
   BUNDLE_ID "com.orpheus.clipcomposer"
   NEEDS_CURL FALSE
@@ -163,6 +198,7 @@ target_compile_features(orpheus_clip_composer_app PRIVATE cxx_std_20)
 target_include_directories(orpheus_clip_composer_app
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
+    ${OCC_GENERATED_INCLUDE_DIR}
 )
 
 # JUCE compile definitions
@@ -183,11 +219,21 @@ target_link_libraries(orpheus_clip_composer_app
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_events
-    orpheus_shmui_juce              # shmui-juce audio visualization
-    occ_app_platform                # Shared app infrastructure (ServiceContext, Database, UndoManager, etc.)
-    orpheus_audio_driver_manager    # Device enumeration (createAudioDriverManager)
+    orpheus_shmui_juce
+    occ_app_platform
     Orpheus::core
 )
+
+if(TARGET orpheus_audio_driver_manager)
+  target_link_libraries(orpheus_clip_composer_app PRIVATE orpheus_audio_driver_manager)
+else()
+  target_sources(orpheus_clip_composer_app PRIVATE
+    "${SDK_ROOT}/src/platform/audio_drivers/driver_manager.cpp"
+  )
+  if(APPLE)
+    target_link_libraries(orpheus_clip_composer_app PRIVATE "-framework CoreAudio")
+  endif()
+endif()
 
 # Output name
 set_target_properties(orpheus_clip_composer_app PROPERTIES

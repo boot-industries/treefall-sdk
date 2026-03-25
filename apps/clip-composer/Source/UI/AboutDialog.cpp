@@ -11,7 +11,7 @@
 */
 
 #include "AboutDialog.h"
-#include "../BuildInfo.h"
+#include "BuildInfo.h"
 
 //==============================================================================
 AboutDialog::AboutDialog() {
@@ -24,7 +24,8 @@ AboutDialog::AboutDialog() {
 
   // Version
   addAndMakeVisible(m_versionLabel);
-  m_versionLabel.setText("Version 0.2.0-alpha", juce::dontSendNotification);
+  m_versionLabel.setText("Version " + juce::String(occ::BuildInfo::version),
+                         juce::dontSendNotification);
   m_versionLabel.setFont(juce::Font(juce::FontOptions(14.0f)));
   m_versionLabel.setJustificationType(juce::Justification::centred);
   m_versionLabel.setColour(juce::Label::textColourId, juce::Colour(0xffcccccc));
@@ -32,9 +33,11 @@ AboutDialog::AboutDialog() {
   // Build info
   addAndMakeVisible(m_buildLabel);
   juce::String buildInfo = "Build: ";
-  buildInfo += APP_BUILD_DATE;
+  buildInfo += occ::BuildInfo::buildDate;
+  buildInfo += "\n";
+  buildInfo += occ::BuildInfo::gitDescribe;
   buildInfo += " (";
-  buildInfo += APP_COMMIT_HASH;
+  buildInfo += occ::BuildInfo::gitHash;
   buildInfo += ")";
   m_buildLabel.setText(buildInfo, juce::dontSendNotification);
   m_buildLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -108,7 +111,7 @@ void AboutDialog::resized() {
   bounds.removeFromTop(2);
 
   // Build info
-  m_buildLabel.setBounds(bounds.removeFromTop(18));
+  m_buildLabel.setBounds(bounds.removeFromTop(32));
   bounds.removeFromTop(10);
 
   // Copyright
