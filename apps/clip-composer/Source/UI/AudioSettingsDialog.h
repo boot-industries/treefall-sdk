@@ -18,10 +18,16 @@ public:
 private:
   void applySettings();
   void populateDeviceList();
-  void populateSampleRates();
-  void populateBufferSizes();
+  void populateSampleRates(const std::vector<uint32_t>& supportedRates = {},
+                           uint32_t preferredRate = 48000);
+  void populateBufferSizes(const std::vector<uint32_t>& supportedBufferSizes = {},
+                           uint32_t preferredBufferSize = 512);
   void loadSavedSettings();
   void saveSettings(const std::string& deviceName, uint32_t sampleRate, uint32_t bufferSize);
+  void syncSupportedOptionsForDevice();
+  void refreshStatusLabels(const juce::String& transientStatus = {});
+  static int idForValue(uint32_t value, const std::vector<uint32_t>& values);
+  static uint32_t selectedValueFor(const juce::ComboBox& comboBox, uint32_t fallback);
 
   AudioEngine* m_audioEngine;
 
@@ -37,6 +43,7 @@ private:
   juce::TextButton m_applyButton;
   juce::TextButton m_closeButton;
   juce::Label m_statusLabel;
+  juce::Label m_detailLabel;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
 };
