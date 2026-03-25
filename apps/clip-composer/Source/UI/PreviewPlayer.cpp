@@ -10,7 +10,7 @@ PreviewPlayer::PreviewPlayer(AudioEngine* audioEngine, int buttonIndex)
     return;
   }
 
-  if (m_buttonIndex < 0 || m_buttonIndex >= 48) {
+  if (m_buttonIndex < 0 || m_buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS) {
     DBG("PreviewPlayer: WARNING - Invalid button index: " << m_buttonIndex);
     return;
   }
@@ -190,18 +190,22 @@ void PreviewPlayer::jumpTo(int64_t samplePosition) {
 }
 
 bool PreviewPlayer::isPlaying() const {
-  if (!m_audioEngine)
-    return false;
-
-  return m_audioEngine->isClipPlaying(m_buttonIndex);
+  return getPlaybackSnapshot().isPlaying;
 }
 
 int64_t PreviewPlayer::getCurrentPosition() const {
-  if (!m_audioEngine)
-    return 0;
+  return getPlaybackSnapshot().currentPositionSamples;
+}
 
-  // Use AudioEngine's sample-accurate position tracking
-  return m_audioEngine->getClipPosition(m_buttonIndex);
+occ::ui::PreviewPlaybackUiSnapshot PreviewPlayer::getPlaybackSnapshot() const {
+  occ::ui::PreviewPlaybackUiSnapshot snapshot;
+
+  if (!m_audioEngine)
+    return snapshot;
+
+  snapshot.isPlaying = m_audioEngine->isClipPlaying(m_buttonIndex);
+  snapshot.currentPositionSamples = m_audioEngine->getClipPosition(m_buttonIndex);
+  return snapshot;
 }
 
 //==============================================================================
@@ -216,19 +220,13 @@ void PreviewPlayer::stopPositionTimer() {
 }
 
 void PreviewPlayer::timerCallback() {
-  // CRITICAL: Always poll SDK state - timer runs continuously when Edit Dialog is open
-  // This ensures playhead tracks play state regardless of trigger source:
-  // 1. Main grid keyboard/click
-  // 2. SPACE bar (stop/play)
-  // 3. Edit Dialog PLAY/STOP buttons
-
-  if (!isPlaying()) {
+  const auto snapshot = getPlaybackSnapshot();
+  if (!snapshot.isPlaying) {
     // Clip stopped - do not update playhead position
     return;
   }
 
-  // Query SDK for sample-accurate position (75 FPS polling)
-  int64_t currentPos = getCurrentPosition();
+  const int64_t currentPos = snapshot.currentPositionSamples;
 
   // DIAGNOSTIC: Warn if position escapes trim boundaries (SDK should prevent this)
   // DO NOT clamp - UI must always show actual SDK position (never lie to user)

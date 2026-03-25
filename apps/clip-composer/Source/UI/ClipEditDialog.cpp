@@ -5,17 +5,23 @@
 
 using namespace OCC::Design;
 
+namespace {
+occ::ui::PreviewPlaybackUiSnapshot getPreviewSnapshot(const std::unique_ptr<PreviewPlayer>& previewPlayer) {
+  if (!previewPlayer)
+    return {};
+
+  return previewPlayer->getPlaybackSnapshot();
+}
+}
+
 //==============================================================================
 ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
     : m_audioEngine(audioEngine), m_buttonIndex(buttonIndex) {
-  // Create preview player with AudioEngine reference and buttonIndex (controls main grid clip)
+  // PreviewPlayer controls the same clip slot as the main grid and only mirrors its state.
   m_previewPlayer = std::make_unique<PreviewPlayer>(m_audioEngine, m_buttonIndex);
 
-  // CRITICAL: Start position timer immediately (runs continuously while Edit Dialog is open)
-  // Timer will automatically track playback state from ANY source:
-  // - Main grid keyboard/click
-  // - SPACE bar (stop/play)
-  // - Edit Dialog PLAY/STOP buttons
+  // Keep the 75fps preview timer running while the dialog is open so this view
+  // follows the shared transport state regardless of which controller changed it.
   m_previewPlayer->startPositionTimer();
 
   // Build Phase 1 UI (basic metadata)
@@ -31,15 +37,12 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
 }
 
 ClipEditDialog::~ClipEditDialog() {
-  // CRITICAL: Clear all callbacks BEFORE PreviewPlayer is destroyed
-  // Prevents heap-use-after-free when audio thread tries to access destroyed dialog
+  // Clear callbacks before PreviewPlayer is destroyed to avoid dangling UI calls.
   if (m_previewPlayer) {
     m_previewPlayer->onPositionChanged = nullptr;
     m_previewPlayer->onPlaybackStopped = nullptr;
-    // NOTE: DO NOT stop playback here - Edit Dialog is just a view, not a controller
-    // Main grid clip should continue playing when dialog closes
+    // The dialog is a view, so closing it must not stop the shared clip transport.
   }
-  // PreviewPlayer destructor cleanup is safe (no Cue Buss to release)
 }
 
 //==============================================================================
@@ -82,14 +85,10 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
   // Set initial transport button colors
   updateTransportButtonColors();
 
-  // CRITICAL: Check if clip is already playing BEFORE loading waveform and preview player
-  // This allows seamless continuity when Edit Dialog opens during playback
-  bool wasAlreadyPlaying = false;
-  if (m_previewPlayer) {
-    wasAlreadyPlaying = m_previewPlayer->isPlaying();
-    DBG("ClipEditDialog::setClipMetadata() - Clip was "
-        << (wasAlreadyPlaying ? "ALREADY PLAYING" : "stopped") << " when dialog opened");
-  }
+  const auto previewSnapshot = getPreviewSnapshot(m_previewPlayer);
+  const bool wasAlreadyPlaying = previewSnapshot.isPlaying;
+  DBG("ClipEditDialog::setClipMetadata() - Clip was "
+      << (wasAlreadyPlaying ? "ALREADY PLAYING" : "stopped") << " when dialog opened");
 
   // Load waveform display and preview player
   if (m_waveformDisplay && m_metadata.filePath.isNotEmpty()) {
@@ -100,8 +99,7 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
                                                                      ? m_metadata.trimOutSamples
                                                                      : m_metadata.durationSamples);
 
-      // Configure preview player (metadata already loaded from main grid clip via AudioEngine)
-      // NOTE: setTrimPoints/setFades DO NOT stop/restart playback - they just update metadata
+      // Configure preview player without breaking shared playback continuity.
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples > 0
                                                                      ? m_metadata.trimOutSamples
@@ -122,8 +120,6 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
     m_previewPlayer->setLoopEnabled(m_metadata.loopEnabled);
   }
 
-  // CRITICAL: If clip was already playing when dialog opened, start position timer
-  // This ensures playhead continues updating in Edit Dialog without interrupting playback
   if (wasAlreadyPlaying && m_previewPlayer) {
     m_previewPlayer->startPositionTimer();
     DBG("ClipEditDialog::setClipMetadata() - Started position timer (clip was already playing)");
@@ -275,14 +271,11 @@ void ClipEditDialog::updateZoomLabel() {
 }
 
 void ClipEditDialog::enforceOutPointEditLaw() {
-  // EDIT LAW: If OUT point is set to <= playhead position, jump playhead to IN and restart
-  // This prevents playback from escaping the OUT boundary
-  // The interruption is acceptable in an edit scenario - we guarantee playback never occurs >= OUT
-
-  if (!m_previewPlayer || !m_previewPlayer->isPlaying())
+  const auto previewSnapshot = getPreviewSnapshot(m_previewPlayer);
+  if (!previewSnapshot.isPlaying)
     return; // Only enforce during playback
 
-  int64_t currentPos = m_previewPlayer->getCurrentPosition();
+  const int64_t currentPos = previewSnapshot.currentPositionSamples;
 
   if (currentPos >= m_metadata.trimOutSamples) {
     // Playhead is at or past new OUT point - jump to IN and restart
@@ -294,7 +287,7 @@ void ClipEditDialog::enforceOutPointEditLaw() {
 
 void ClipEditDialog::restartPlayback() {
   // Restart playback from current IN point (used for edit law enforcement)
-  if (m_previewPlayer && m_previewPlayer->isPlaying()) {
+  if (getPreviewSnapshot(m_previewPlayer).isPlaying && m_previewPlayer) {
     m_previewPlayer->play(); // play() restarts from IN point
   }
 }
@@ -1239,7 +1232,7 @@ void ClipEditDialog::buildPhase2UI() {
   m_fileInfoPanel->setColour(juce::Label::outlineColourId, juce::Colour(kBorderDefault));
   addAndMakeVisible(m_fileInfoPanel.get());
 
-  // Gain Control (Feature 5: -30dB to +10dB, default 0dB) - Converted to dial/knob
+  // Gain Control (Feature 5: -30dB to +10dB, persisted through the clip metadata path)
   m_gainLabel = std::make_unique<juce::Label>("gainLabel", "Gain:");
   m_gainLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
   m_gainLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
@@ -1252,14 +1245,9 @@ void ClipEditDialog::buildPhase2UI() {
   m_gainSlider->setValue(0.0);              // Default 0dB
   m_gainSlider->setDoubleClickReturnValue(true, 0.0); // Double-click resets to 0dB
   m_gainSlider->onValueChange = [this]() {
-    // Update gain value label
     double gain = m_gainSlider->getValue();
     m_gainValueLabel->setText(juce::String(gain, 1) + " dB", juce::dontSendNotification);
-
-    // Update metadata
     m_metadata.gainDb = gain;
-
-    // TODO (User note): Wire to AudioEngine gain attenuation
   };
   addAndMakeVisible(m_gainSlider.get());
 
@@ -1270,7 +1258,6 @@ void ClipEditDialog::buildPhase2UI() {
   m_gainValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_gainValueLabel->setEditable(true);
   m_gainValueLabel->onTextChange = [this]() {
-    // Parse text input (accept single integer like "3" or decimal like "3.0")
     juce::String text = m_gainValueLabel->getText()
                             .trimCharactersAtStart("+-")
                             .upToFirstOccurrenceOf("dB", false, true)
@@ -1283,47 +1270,28 @@ void ClipEditDialog::buildPhase2UI() {
   };
   addAndMakeVisible(m_gainValueLabel.get());
 
-  // Pitch dial (Item 26 - second dial for pitch adjustment)
-  m_placeholderLabel = std::make_unique<juce::Label>("placeholderLabel", "Pitch:");
+  // Deferred pitch placeholder: visible for layout continuity, but disabled until
+  // AudioEngine exposes real pitch-shift support.
+  m_placeholderLabel = std::make_unique<juce::Label>("placeholderLabel", "Pitch (deferred):");
   m_placeholderLabel->setFont(juce::FontOptions("HK Grotesk", kFontMD, juce::Font::bold));
-  m_placeholderLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
+  m_placeholderLabel->setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
   addAndMakeVisible(m_placeholderLabel.get());
 
   m_placeholderDial =
       std::make_unique<juce::Slider>(juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
-  m_placeholderDial->setRange(-12.0, 12.0, 0.1); // -12 to +12 semitones in 0.1 semitone steps
-  m_placeholderDial->setValue(0.0);              // Default 0 (no pitch shift)
-  m_placeholderDial->setDoubleClickReturnValue(true, 0.0); // Double-click resets to 0
-  m_placeholderDial->setEnabled(true);                     // Enabled now
-  m_placeholderDial->onValueChange = [this]() {
-    // Update pitch value label
-    double value = m_placeholderDial->getValue();
-    juce::String suffix = value >= 0 ? " st" : " st"; // semitones
-    m_placeholderValueLabel->setText(juce::String(value, 1) + suffix, juce::dontSendNotification);
-
-    // TODO: Wire to pitch shifting in AudioEngine
-  };
+  m_placeholderDial->setRange(-12.0, 12.0, 0.1);
+  m_placeholderDial->setValue(0.0);
+  m_placeholderDial->setDoubleClickReturnValue(true, 0.0);
+  m_placeholderDial->setEnabled(false);
+  m_placeholderDial->setTooltip("Pitch shifting is deferred until AudioEngine pitch support lands.");
   addAndMakeVisible(m_placeholderDial.get());
 
-  // Text input field for pitch (below the dial)
-  m_placeholderValueLabel = std::make_unique<juce::Label>("placeholderValueLabel", "0.0 st");
+  m_placeholderValueLabel = std::make_unique<juce::Label>("placeholderValueLabel", "Deferred");
   m_placeholderValueLabel->setFont(juce::FontOptions("HK Grotesk", kFontSM, juce::Font::plain));
   m_placeholderValueLabel->setJustificationType(juce::Justification::centred);
-  m_placeholderValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
-  m_placeholderValueLabel->setEditable(true); // Editable
-  m_placeholderValueLabel->onTextChange = [this]() {
-    // Parse text input for pitch
-    juce::String text = m_placeholderValueLabel->getText()
-                            .trimCharactersAtStart("+-")
-                            .upToFirstOccurrenceOf("st", false, true)
-                            .trim();
-    double pitch = text.getDoubleValue();
-    pitch = juce::jlimit(-12.0, 12.0, pitch);
-    m_placeholderDial->setValue(pitch, juce::dontSendNotification);
-    m_placeholderValueLabel->setText(juce::String(pitch, 1) + " st", juce::dontSendNotification);
-
-    // TODO: Update metadata for pitch value
-  };
+  m_placeholderValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
+  m_placeholderValueLabel->setEditable(false);
+  m_placeholderValueLabel->setTooltip("Pitch shifting is deferred until AudioEngine pitch support lands.");
   addAndMakeVisible(m_placeholderValueLabel.get());
 }
 
@@ -2347,7 +2315,7 @@ void ClipEditDialog::updateTransportButtonColors() {
   if (!m_previewPlayer)
     return;
 
-  bool isPlaying = m_previewPlayer->isPlaying();
+  const bool isPlaying = getPreviewSnapshot(m_previewPlayer).isPlaying;
   bool isLoopEnabled = m_metadata.loopEnabled;
 
   const juce::Colour DARK_INACTIVE = juce::Colour(kBgComponent);

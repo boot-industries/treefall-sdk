@@ -5,11 +5,17 @@
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
+#include <algorithm>
 #include <orpheus/app/ApplicationPaths.h>
 
 #if JUCE_MAC
 #include <mach/mach.h>
 #endif
+
+//==============================================================================
+namespace {
+constexpr int kButtonsPerTab = occ::ui::SessionUiSnapshot::kButtonsPerTab;
+}
 
 //==============================================================================
 MainComponent::MainComponent() {
@@ -391,21 +397,16 @@ void MainComponent::createNewSession() {
 
 //==============================================================================
 void MainComponent::timerCallback() {
-  // OCC144: Update VU meter at 30Hz
-  // Note: Until clip group routing is implemented, all bars show master RMS level
-  if (m_barVisualizer && m_audioEngine) {
-    float masterLevel = m_audioEngine->getMasterRmsLevel();
-    // Show master level on all 4 bars (no group routing yet)
-    std::vector<float> levels = {masterLevel, masterLevel, masterLevel, masterLevel};
+  refreshUiSnapshot();
+
+  if (m_barVisualizer) {
+    std::vector<float> levels(m_uiSnapshot.audio.groupLevels.begin(), m_uiSnapshot.audio.groupLevels.end());
     m_barVisualizer->setVolumeBands(levels);
   }
 
-  // Feed LevelMetersWindow with audio data (Plan Task 6)
-  if (m_levelMetersWindow && m_levelMetersWindow->isVisible() && m_audioEngine) {
-    std::array<float, 4> groupLevels;
-    m_audioEngine->getGroupLevels(groupLevels);
-    float masterLevel = m_audioEngine->getMasterRmsLevel();
-    m_levelMetersWindow->updateLevels(groupLevels, masterLevel);
+  if (m_levelMetersWindow && m_levelMetersWindow->isVisible()) {
+    m_levelMetersWindow->updateLevels(m_uiSnapshot.audio.groupLevels,
+                                      m_uiSnapshot.audio.masterRmsLevel);
   }
 
   // Static counter for 1Hz performance updates (every 30 timer ticks at 30Hz)
@@ -552,58 +553,9 @@ void MainComponent::wireUpClipGridCallbacks() {
     onClipDraggedToButton(sourceIndex, targetIndex);
   };
 
-  // 75fps playback state sync (uses global clip index for multi-tab isolation)
-  m_clipGrid->getClipState = [this](int buttonIndex) -> orpheus::PlaybackState {
-    if (m_audioEngine) {
-      int globalClipIndex = getGlobalClipIndex(buttonIndex);
-      return m_audioEngine->getClipState(globalClipIndex);
-    }
-    return orpheus::PlaybackState::Stopped;
-  };
-
-  // 75fps clip existence check (prevents orphaned states)
-  m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
-    return m_sessionManager->hasClip(buttonIndex);
-  };
-
-  // 75fps clip state tracking (ensures fade, loop, stop-others persist)
-  m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
-                                     bool& fadeOutEnabled, bool& stopOthersEnabled) {
-    if (!m_sessionManager->hasClip(buttonIndex))
-      return;
-
-    auto clipData = m_sessionManager->getClip(buttonIndex);
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-
-    // Query clip metadata (these are CLIP properties, not button properties)
-    loopEnabled = m_loopEnabled[globalClipIndex];
-    fadeInEnabled = (clipData.fadeInSeconds > 0.0);
-    fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
-    stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
-  };
-
-  // 75fps playback position tracking (for elapsed time display)
-  m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
-    if (!m_audioEngine || !m_sessionManager->hasClip(buttonIndex))
-      return 0.0f;
-
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-    auto clipData = m_sessionManager->getClip(buttonIndex);
-
-    // Get current sample position (absolute)
-    int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
-
-    // Calculate trimmed duration in samples
-    int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
-
-    // Normalize to 0.0-1.0 progress within trimmed region
-    if (trimmedSamples > 0) {
-      float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
-                       static_cast<float>(trimmedSamples);
-      return juce::jlimit(0.0f, 1.0f, progress);
-    }
-
-    return 0.0f;
+  m_clipGrid->getClipSnapshot = [this](int buttonIndex, occ::ui::ClipUiSnapshot& snapshot) {
+    snapshot = buildClipUiSnapshot(buttonIndex);
+    return true;
   };
 }
 
@@ -615,7 +567,6 @@ void MainComponent::wireUpTransportCallbacks() {
 void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state) {
   // Get clip info for logging
   int tabIndex = buttonIndex / 48;
-  int localIndex = buttonIndex % 48;
 
   // Build history entry with timestamp
   auto now = juce::Time::getCurrentTime();
@@ -630,11 +581,8 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
   double fadeInSeconds = 0.0;
   double fadeOutSeconds = 0.0;
 
-  // Get clip metadata from session manager (need to temporarily switch tabs)
-  int currentTab = m_sessionManager->getActiveTab();
-  m_sessionManager->setActiveTab(tabIndex);
-  if (m_sessionManager->hasClip(localIndex)) {
-    auto clipData = m_sessionManager->getClip(localIndex);
+  auto clipData = m_sessionManager->getClipByGlobalIndex(buttonIndex);
+  if (clipData.isValid()) {
     if (clipData.displayName.empty()) {
       // Extract filename from filePath
       juce::File file(clipData.filePath);
@@ -650,7 +598,6 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
     fadeInSeconds = clipData.fadeInSeconds;
     fadeOutSeconds = clipData.fadeOutSeconds;
   }
-  m_sessionManager->setActiveTab(currentTab);
 
   // Helper lambda: format samples as MM:SS.mmm
   auto formatTime = [](int64_t samples, int sr) -> juce::String {
@@ -743,6 +690,73 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
     entry.triggerSource = "User";
     m_playoutLogger->logPlaybackStart(entry);
   }
+}
+
+void MainComponent::refreshUiSnapshot() {
+  m_uiSnapshot = {};
+
+  if (!m_sessionManager)
+    return;
+
+  const int activeTab = m_sessionManager->getActiveTab();
+  m_uiSnapshot.session.activeTab = activeTab;
+
+  for (int buttonIndex = 0; buttonIndex < kButtonsPerTab; ++buttonIndex) {
+    auto clipSnapshot = buildClipUiSnapshot(buttonIndex);
+    m_uiSnapshot.session.clips[buttonIndex] = clipSnapshot;
+
+    if (clipSnapshot.playbackState == orpheus::PlaybackState::Playing ||
+        clipSnapshot.playbackState == orpheus::PlaybackState::Stopping) {
+      m_uiSnapshot.session.hasActivePlayback = true;
+    }
+  }
+
+  if (m_audioEngine) {
+    m_uiSnapshot.audio.masterRmsLevel = m_audioEngine->getMasterRmsLevel();
+    m_audioEngine->getGroupLevels(m_uiSnapshot.audio.groupLevels);
+  }
+}
+
+occ::ui::ClipUiSnapshot MainComponent::buildClipUiSnapshot(int buttonIndex) const {
+  occ::ui::ClipUiSnapshot snapshot;
+  snapshot.tabIndex = m_sessionManager ? m_sessionManager->getActiveTab() : 0;
+  snapshot.buttonIndex = buttonIndex;
+  snapshot.globalClipIndex = (snapshot.tabIndex * kButtonsPerTab) + buttonIndex;
+
+  if (!m_sessionManager || buttonIndex < 0 || buttonIndex >= kButtonsPerTab)
+    return snapshot;
+
+  const auto clipData = m_sessionManager->getClipByGlobalIndex(snapshot.globalClipIndex);
+  snapshot.hasClip = clipData.isValid();
+  if (!snapshot.hasClip)
+    return snapshot;
+
+  snapshot.loopEnabled = m_loopEnabled[snapshot.globalClipIndex];
+  snapshot.fadeInEnabled = clipData.fadeInSeconds > 0.0;
+  snapshot.fadeOutEnabled = clipData.fadeOutSeconds > 0.0;
+  snapshot.stopOthersEnabled = m_stopOthersOnPlay[snapshot.globalClipIndex];
+  snapshot.playbackProgress = calculateClipProgress(clipData, snapshot.globalClipIndex);
+
+  if (m_audioEngine) {
+    snapshot.playbackState = m_audioEngine->getClipState(snapshot.globalClipIndex);
+  }
+
+  return snapshot;
+}
+
+float MainComponent::calculateClipProgress(const SessionManager::ClipData& clipData,
+                                           int globalClipIndex) const {
+  if (!m_audioEngine || !clipData.isValid())
+    return 0.0f;
+
+  const int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
+  const int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
+  if (trimmedSamples <= 0)
+    return 0.0f;
+
+  const float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
+                         static_cast<float>(trimmedSamples);
+  return juce::jlimit(0.0f, 1.0f, progress);
 }
 
 //==============================================================================

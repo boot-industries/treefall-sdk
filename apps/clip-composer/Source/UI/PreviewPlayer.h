@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../Audio/AudioEngine.h"
+#include "../UIState/ClipComposerUiSnapshot.h"
 #include <atomic>
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -16,7 +17,7 @@ class AudioEngine;
  * ARCHITECTURE (v0.2.1):
  * - Edit Dialog is a "zoomed view" of the main grid clip
  * - PreviewPlayer is NOT a separate playback instance
- * - Controls the main grid clip via buttonIndex (ONE clip, TWO views)
+ * - Controls the main grid clip via global clip index (ONE clip, TWO views)
  * - NO Cue Buss allocation (deferred to future routing requirements)
  * - Edits apply to the main grid clip in real-time
  *
@@ -77,6 +78,9 @@ public:
   /// Get current playback position in samples
   int64_t getCurrentPosition() const;
 
+  /// Read the current preview playback snapshot from AudioEngine.
+  occ::ui::PreviewPlaybackUiSnapshot getPlaybackSnapshot() const;
+
   /// Start position timer (for UI playhead updates at 75 FPS)
   /// NOTE: Automatically started by play(), but can be called manually
   /// if clip is already playing when Edit Dialog opens
@@ -98,7 +102,7 @@ private:
   //==============================================================================
   // Main grid clip control (view controller pattern)
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
-  int m_buttonIndex = -1;               // Button index (0-47) of main grid clip
+  int m_buttonIndex = -1;               // Global clip index of the main grid clip
 
   // Playback state (synchronized with main grid clip)
   bool m_loopEnabled = false;
