@@ -5,7 +5,6 @@
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
-#include <algorithm>
 #include <orpheus/app/ApplicationPaths.h>
 
 #if JUCE_MAC
@@ -1754,6 +1753,8 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
         << " Fade: [" << clipData.fadeInSeconds << "s " << clipData.fadeInCurve << ", "
         << clipData.fadeOutSeconds << "s " << clipData.fadeOutCurve << "]");
 
+    refreshUiSnapshot();
+
     // Close dialog and clear reference
     dialog->setVisible(false);
     delete dialog;
@@ -1810,6 +1811,8 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     }
 
     DBG("MainComponent: CANCEL - Restored original metadata for button " << buttonIndex);
+
+    refreshUiSnapshot();
 
     // Close dialog
     dialog->setVisible(false);
@@ -2172,6 +2175,7 @@ void MainComponent::onTabSelected(int tabIndex) {
     updateButtonFromClip(i);
   }
 
+  refreshUiSnapshot();
   repaint();
 }
 
@@ -2472,6 +2476,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         m_stopOthersOnPlay[globalIndex] = false;
       }
 
+      refreshUiSnapshot();
       DBG("MainComponent: Cleared " << clipCount << " clips from Tab " << (currentTab + 1));
     }
     break;
