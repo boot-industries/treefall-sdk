@@ -3,6 +3,8 @@
 #include "TabSwitcher.h"
 #include "DesignTokens.h"
 
+#include <cmath>
+
 //==============================================================================
 TabSwitcher::TabSwitcher() {
   // Initialize default tab labels
@@ -78,11 +80,14 @@ void TabSwitcher::setTabHeight(int height) {
 // OCC130 Sprint B: Status indicator updates
 void TabSwitcher::setLatencyInfo(double latencyMs, int bufferSize, int sampleRate) {
   m_latencyMs = latencyMs;
+  m_bufferSize = bufferSize;
+  m_sampleRate = sampleRate;
   repaint(); // Trigger repaint to update status light color
 }
 
 void TabSwitcher::setPerformanceInfo(float cpuPercent, int memoryMB) {
   m_cpuPercent = cpuPercent;
+  m_memoryMB = memoryMB;
   repaint(); // Trigger repaint to update status indicators
 }
 
@@ -136,17 +141,29 @@ void TabSwitcher::paint(juce::Graphics& g) {
     g.drawText(m_tabLabels[i], tabBounds, juce::Justification::centred);
   }
 
-  // OCC130 Sprint B: Draw status indicator lights (on the right side, outside of transport buttons)
-  // Vertically stacked: Latency (top) and Heartbeat (bottom)
+  // Draw status indicator lights and compact readouts on the right side.
   auto bounds = getLocalBounds();
   float lightSize = 12.0f; // Diameter of each circular indicator
   float lightGap = 4.0f;   // Vertical gap between lights
   float rightMargin = 10.0f;
+  float statusTextWidth = 86.0f;
+  float statusTextGap = 6.0f;
 
   // Calculate position (to the right of PANIC button, outside transport controls)
   float xPos = static_cast<float>(bounds.getWidth()) - (lightSize + rightMargin);
   float yStart = (static_cast<float>(bounds.getHeight()) - (2.0f * lightSize + lightGap)) /
                  2.0f; // Center vertically
+  auto statusTextArea =
+      juce::Rectangle<float>(xPos - statusTextGap - statusTextWidth, yStart - 1.0f,
+                             statusTextWidth, 2.0f * lightSize + lightGap + 2.0f);
+
+  g.setFont(juce::FontOptions("HK Grotesk", OCC::Design::kFontSM - 1.0f, juce::Font::plain));
+  g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+  g.drawText(m_sampleRate > 0 ? juce::String(m_latencyMs, 1) + " ms" : "No I/O",
+             statusTextArea.removeFromTop(lightSize + 1.0f).toNearestInt(),
+             juce::Justification::centredRight);
+  g.drawText(m_sampleRate > 0 ? "CPU " + juce::String(m_cpuPercent, 0) + "%" : "CPU --",
+             statusTextArea.toNearestInt(), juce::Justification::centredRight);
 
   // Latency indicator (top light)
   {
@@ -154,7 +171,9 @@ void TabSwitcher::paint(juce::Graphics& g) {
 
     // Color-code based on latency (green < 10ms, yellow < 20ms, red >= 20ms)
     juce::Colour latencyColor;
-    if (m_latencyMs < 10.0) {
+    if (m_sampleRate <= 0) {
+      latencyColor = juce::Colours::darkgrey;
+    } else if (m_latencyMs < 10.0) {
       latencyColor = juce::Colour(OCC::Design::kMeterGreen);
     } else if (m_latencyMs < 20.0) {
       latencyColor = juce::Colour(OCC::Design::kMeterYellow);
@@ -183,7 +202,14 @@ void TabSwitcher::paint(juce::Graphics& g) {
         0.2f +
         0.7f * std::exp(-5.0f * normalizedPhase); // Exponential decay (0.2 dark → 0.9 bright)
 
-    g.setColour(juce::Colour(OCC::Design::kAccentCyan).withAlpha(pulseAlpha));
+    juce::Colour heartbeatColor = juce::Colour(OCC::Design::kAccentCyan);
+    if (m_cpuPercent >= 80.0f) {
+      heartbeatColor = juce::Colour(OCC::Design::kMeterRed);
+    } else if (m_cpuPercent >= 50.0f) {
+      heartbeatColor = juce::Colour(OCC::Design::kMeterYellow);
+    }
+
+    g.setColour(heartbeatColor.withAlpha(pulseAlpha));
     g.fillEllipse(heartbeatCircle);
 
     // Subtle border
@@ -193,17 +219,17 @@ void TabSwitcher::paint(juce::Graphics& g) {
 }
 
 void TabSwitcher::resized() {
-  // OCC130 Sprint B: Layout transport buttons on right side
-  // | [Tabs (flex space)]  |  [Stop All] [Panic]  |  [●Latency] [●Heartbeat] |
+  // Layout transport buttons on right side.
+  // | [Tabs (flex space)] | [Stop All] [Panic] | [status text] [●] [●] |
 
   auto bounds = getLocalBounds().reduced(10, 0); // 10px horizontal margin
 
   int buttonWidth = 100;
   int buttonHeight = 32;
   int gap = 10;
+  int statusTextWidth = 92;
 
-  // Reserve space for status indicators on the far right (22px width total)
-  bounds.removeFromRight(22); // lightSize (12px) + rightMargin (10px)
+  bounds.removeFromRight(22 + statusTextWidth);
 
   // Panic button (after status lights)
   auto panicBounds = bounds.removeFromRight(buttonWidth);
@@ -344,9 +370,9 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
   // OCC130 Sprint B: Reserve space for transport controls on right
   int buttonWidth = 100;
   int gap = 10;
-  int statusLightsWidth = 22; // 12px lights + 10px margin
-  int transportWidth =
-      2 * (buttonWidth + gap) + statusLightsWidth + 20; // Buttons + status lights + padding
+  int statusLightsWidth = 22;
+  int statusTextWidth = 92;
+  int transportWidth = 2 * (buttonWidth + gap) + statusTextWidth + statusLightsWidth + 20;
   int availableWidth = bounds.getWidth() - transportWidth;
 
   int tabWidth = (availableWidth - (TAB_GAP * (NUM_TABS - 1))) / NUM_TABS;
