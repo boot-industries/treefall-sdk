@@ -1,17 +1,83 @@
 // SPDX-License-Identifier: MIT
 
 #include "AudioEngine.h"
+#define private public
 #include "../../../src/core/transport/transport_controller.h" // Concrete class for extended API
+#undef private
 #include <algorithm>                                          // For std::find
 #include <chrono>
+#include <cmath>
+#include <dlfcn.h>
+#include <limits>
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
+
+namespace {
+
+constexpr const char* kDefaultDeviceName = "Default Device";
+
+std::unique_ptr<orpheus::IAudioDriverManager> tryCreateAudioDriverManager() {
+  using CreateAudioDriverManagerFn = std::unique_ptr<orpheus::IAudioDriverManager> (*)();
+  auto* symbol = dlsym(RTLD_DEFAULT, "__ZN7orpheus24createAudioDriverManagerEv");
+  if (symbol == nullptr) {
+    return nullptr;
+  }
+
+  auto* createManager = reinterpret_cast<CreateAudioDriverManagerFn>(symbol);
+  return createManager();
+}
+
+float dbToLinear(float db) {
+  if (!std::isfinite(db) || db <= -90.0f) {
+    return 0.0f;
+  }
+
+  return std::pow(10.0f, db / 20.0f);
+}
+
+orpheus::FadeCurve toFadeCurve(const juce::String& curveName) {
+  if (curveName == "EqualPower")
+    return orpheus::FadeCurve::EqualPower;
+  if (curveName == "Exponential")
+    return orpheus::FadeCurve::Exponential;
+  return orpheus::FadeCurve::Linear;
+}
+
+std::string describeGraphError(orpheus::SessionGraphError error) {
+  switch (error) {
+  case orpheus::SessionGraphError::OK:
+    return "OK";
+  case orpheus::SessionGraphError::InvalidHandle:
+    return "Invalid handle";
+  case orpheus::SessionGraphError::InvalidParameter:
+    return "Invalid parameter";
+  case orpheus::SessionGraphError::NotReady:
+    return "Not ready";
+  case orpheus::SessionGraphError::NotSupported:
+    return "Not supported";
+  case orpheus::SessionGraphError::NotInitialized:
+    return "Not initialized";
+  case orpheus::SessionGraphError::InvalidClipTrimPoints:
+    return "Invalid trim points";
+  case orpheus::SessionGraphError::InvalidFadeDuration:
+    return "Invalid fade duration";
+  case orpheus::SessionGraphError::ClipNotRegistered:
+    return "Clip not registered";
+  case orpheus::SessionGraphError::InternalError:
+    return "Internal error";
+  }
+
+  return "Unknown error";
+}
+
+} // namespace
 
 //==============================================================================
 AudioEngine::AudioEngine() {
   // Initialize clip handles to invalid
   m_clipHandles.fill(0);
   m_audioAnalyzer = std::make_unique<shmui::AudioAnalyzer>();
+  updateDeviceStatus(kDefaultDeviceName, {});
 }
 
 AudioEngine::~AudioEngine() {
@@ -19,62 +85,237 @@ AudioEngine::~AudioEngine() {
 }
 
 //==============================================================================
+bool AudioEngine::createConfiguredTransport(
+    uint32_t sampleRate, std::unique_ptr<orpheus::TransportController>& transport,
+    std::string& errorMessage) const {
+  transport = std::unique_ptr<orpheus::TransportController>(
+      static_cast<orpheus::TransportController*>(
+          orpheus::createTransportController(nullptr, sampleRate).release()));
+
+  if (!transport) {
+    errorMessage = "Failed to create transport controller";
+    return false;
+  }
+
+  transport->setCallback(const_cast<AudioEngine*>(this));
+  return true;
+}
+
+bool AudioEngine::createConfiguredDriver(const std::string& deviceName, uint32_t sampleRate,
+                                        uint32_t bufferSize,
+                                        std::unique_ptr<orpheus::IAudioDriver>& driver,
+                                        std::string& errorMessage,
+                                        bool& usingFallbackDriver) const {
+  usingFallbackDriver = false;
+
+  driver = orpheus::createCoreAudioDriver();
+  if (!driver) {
+    driver = orpheus::createDummyAudioDriver();
+    usingFallbackDriver = true;
+  }
+
+  if (!driver) {
+    errorMessage = "Failed to create audio driver";
+    return false;
+  }
+
+  orpheus::AudioDriverConfig config;
+  config.sample_rate = sampleRate;
+  config.buffer_size = static_cast<uint16_t>(bufferSize);
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+
+  if (!deviceName.empty() && deviceName != kDefaultDeviceName) {
+    config.device_name = deviceName;
+  }
+
+  const auto result = driver->initialize(config);
+  if (result != orpheus::SessionGraphError::OK) {
+    errorMessage = "Failed to initialize audio driver: " + describeGraphError(result);
+    return false;
+  }
+
+  return true;
+}
+
+void AudioEngine::updateCachedClipMetadata(int buttonIndex) {
+  if (buttonIndex < 0 || buttonIndex >= MAX_CLIP_BUTTONS || !m_transportController) {
+    return;
+  }
+
+  const auto handle = m_clipHandles[buttonIndex];
+  if (handle == 0 || !m_clipRegistrations[buttonIndex].has_value()) {
+    return;
+  }
+
+  if (auto metadata = m_transportController->getClipMetadata(handle)) {
+    m_clipRegistrations[buttonIndex]->metadata = *metadata;
+  }
+}
+
+void AudioEngine::updateCachedCueMetadata(int cueSlot) {
+  if (cueSlot < 0 || cueSlot >= MAX_CUE_BUSSES || !m_transportController) {
+    return;
+  }
+
+  const auto handle = m_cueBussPool[cueSlot].handle;
+  if (handle == 0) {
+    return;
+  }
+
+  if (auto metadata = m_transportController->getClipMetadata(handle)) {
+    m_cueBussPool[cueSlot].transportMetadata = *metadata;
+  }
+}
+
+bool AudioEngine::rehydrateTransportState(orpheus::TransportController& transport,
+                                          const orpheus::TransportController* previousTransport,
+                                          std::vector<orpheus::ClipHandle>& handlesToRestart,
+                                          std::string& errorMessage) const {
+  for (int buttonIndex = 0; buttonIndex < MAX_CLIP_BUTTONS; ++buttonIndex) {
+    const auto handle = m_clipHandles[buttonIndex];
+    if (handle == 0 || !m_clipRegistrations[buttonIndex].has_value()) {
+      continue;
+    }
+
+    const auto& registration = *m_clipRegistrations[buttonIndex];
+    auto result = transport.registerClipAudio(handle, registration.filePath.toStdString());
+    if (result != orpheus::SessionGraphError::OK) {
+      errorMessage = "Failed to restore clip " + std::to_string(buttonIndex) + ": " +
+                     describeGraphError(result);
+      return false;
+    }
+
+    result = transport.updateClipMetadata(handle, registration.metadata);
+    if (result != orpheus::SessionGraphError::OK) {
+      errorMessage = "Failed to restore clip metadata for slot " + std::to_string(buttonIndex) +
+                     ": " + describeGraphError(result);
+      return false;
+    }
+
+    if (previousTransport && previousTransport->isClipPlaying(handle)) {
+      handlesToRestart.push_back(handle);
+    }
+  }
+
+  for (int cueSlot = 0; cueSlot < MAX_CUE_BUSSES; ++cueSlot) {
+    const auto handle = m_cueBussPool[cueSlot].handle;
+    if (handle == 0 || m_cueBussPool[cueSlot].filePath.isEmpty()) {
+      continue;
+    }
+
+    auto result = transport.registerClipAudio(handle, m_cueBussPool[cueSlot].filePath.toStdString());
+    if (result != orpheus::SessionGraphError::OK) {
+      errorMessage = "Failed to restore preview bus " + std::to_string(cueSlot) + ": " +
+                     describeGraphError(result);
+      return false;
+    }
+
+    result = transport.updateClipMetadata(handle, m_cueBussPool[cueSlot].transportMetadata);
+    if (result != orpheus::SessionGraphError::OK) {
+      errorMessage = "Failed to restore preview metadata for slot " + std::to_string(cueSlot) +
+                     ": " + describeGraphError(result);
+      return false;
+    }
+
+    if (previousTransport && previousTransport->isClipPlaying(handle)) {
+      handlesToRestart.push_back(handle);
+    }
+  }
+
+  return true;
+}
+
+std::optional<orpheus::AudioDeviceInfo>
+AudioEngine::findDeviceDetails(const std::string& deviceName) const {
+  auto manager = tryCreateAudioDriverManager();
+  if (!manager) {
+    return std::nullopt;
+  }
+
+  const auto devices = manager->enumerateDevices();
+  if (deviceName.empty() || deviceName == kDefaultDeviceName) {
+    const auto defaultIt = std::find_if(devices.begin(), devices.end(), [](const auto& device) {
+      return device.driverType == "CoreAudio" && device.isDefaultDevice;
+    });
+    if (defaultIt != devices.end()) {
+      return *defaultIt;
+    }
+
+    return std::nullopt;
+  }
+
+  const auto it = std::find_if(devices.begin(), devices.end(), [&deviceName](const auto& device) {
+    return device.driverType == "CoreAudio" && device.name == deviceName;
+  });
+  if (it != devices.end()) {
+    return *it;
+  }
+
+  return std::nullopt;
+}
+
+void AudioEngine::updateDeviceStatus(const std::string& requestedDeviceName,
+                                     const std::string& errorMessage) {
+  m_deviceStatus.initialized = m_initialized;
+  m_deviceStatus.running = isRunning();
+  m_deviceStatus.requestedDeviceName =
+      requestedDeviceName.empty() ? std::string(kDefaultDeviceName) : requestedDeviceName;
+  m_deviceStatus.requestedDefaultDevice =
+      m_deviceStatus.requestedDeviceName == kDefaultDeviceName;
+  m_deviceStatus.activeDeviceName = m_currentDeviceName.empty() ? std::string(kDefaultDeviceName)
+                                                                : m_currentDeviceName;
+  m_deviceStatus.driverName = m_audioDriver ? m_audioDriver->getDriverName() : "Unavailable";
+  m_deviceStatus.usingFallbackDriver = (m_deviceStatus.driverName == "Dummy");
+  m_deviceStatus.sampleRate = m_sampleRate;
+  m_deviceStatus.bufferSize = m_bufferSize;
+  m_deviceStatus.latencySamples = getLatencySamples();
+  m_deviceStatus.lastError = errorMessage;
+
+  if (!errorMessage.empty()) {
+    m_deviceStatus.summary = errorMessage;
+  } else if (!m_initialized) {
+    m_deviceStatus.summary = "Audio engine not initialized";
+  } else {
+    const double latencyMs =
+        (static_cast<double>(m_deviceStatus.latencySamples) / std::max(1u, m_sampleRate)) *
+        1000.0;
+    m_deviceStatus.summary =
+        m_deviceStatus.activeDeviceName + " via " + m_deviceStatus.driverName + " @ " +
+        std::to_string(m_sampleRate) + " Hz / " + std::to_string(m_bufferSize) + " samples (" +
+        juce::String(latencyMs, 2).toStdString() + " ms)";
+  }
+}
+
 bool AudioEngine::initialize(uint32_t sampleRate) {
   if (m_initialized)
     return true;
 
   m_sampleRate = sampleRate;
+  m_bufferSize = 512;
 
-  // Initialize RMS/Peak level vectors for stereo output
   m_rmsLevels.resize(2, 0.0f);
   m_peakLevels.resize(2, 0.0f);
 
-  // Create transport controller (concrete class for extended API)
-  // TODO: Pass SessionGraph once integrated
-  m_transportController =
-      std::unique_ptr<orpheus::TransportController>(static_cast<orpheus::TransportController*>(
-          orpheus::createTransportController(nullptr, sampleRate).release()));
-  if (!m_transportController) {
-    DBG("AudioEngine: Failed to create transport controller");
+  std::string errorMessage;
+  if (!createConfiguredTransport(sampleRate, m_transportController, errorMessage)) {
+    DBG("AudioEngine: " << errorMessage);
+    updateDeviceStatus(kDefaultDeviceName, errorMessage);
     return false;
   }
 
-  // Register callback for transport events
-  m_transportController->setCallback(this);
-
-  // Create CoreAudio driver (macOS) for real audio output
-  m_audioDriver = orpheus::createCoreAudioDriver();
-  if (!m_audioDriver) {
-    DBG("AudioEngine: Failed to create CoreAudio driver, falling back to dummy");
-    m_audioDriver = orpheus::createDummyAudioDriver();
-    if (!m_audioDriver) {
-      DBG("AudioEngine: Failed to create audio driver");
-      return false;
-    }
-  }
-
-  // Configure driver
-  orpheus::AudioDriverConfig config;
-  config.sample_rate = sampleRate;
-  config.buffer_size = 512; // Balanced for professional low-latency use (10.7ms @ 48kHz)
-  config.num_inputs = 0;    // No input for now
-  config.num_outputs = 2;   // Stereo output
-
-  m_bufferSize = config.buffer_size; // Store for latency queries
-
-  auto result = m_audioDriver->initialize(config);
-  if (result != orpheus::SessionGraphError::OK) {
-    DBG("AudioEngine: Failed to initialize audio driver");
+  bool usingFallbackDriver = false;
+  if (!createConfiguredDriver(kDefaultDeviceName, sampleRate, m_bufferSize, m_audioDriver,
+                              errorMessage, usingFallbackDriver)) {
+    DBG("AudioEngine: " << errorMessage);
+    updateDeviceStatus(kDefaultDeviceName, errorMessage);
     return false;
   }
 
-  // Log which driver we're actually using
-  DBG("AudioEngine: Using audio driver: " << m_audioDriver->getDriverName());
-
-  // Create SDK PerformanceMonitor for CPU/latency tracking
   m_performanceMonitor = orpheus::createPerformanceMonitor(nullptr);
-
   m_initialized = true;
+
+  updateDeviceStatus(kDefaultDeviceName, {});
   DBG("AudioEngine: Initialized successfully (" << static_cast<int>(sampleRate) << " Hz)");
   return true;
 }
@@ -91,9 +332,12 @@ bool AudioEngine::start() {
   auto result = m_audioDriver->start(this);
   if (result != orpheus::SessionGraphError::OK) {
     DBG("AudioEngine: Failed to start audio driver");
+    updateDeviceStatus(m_currentDeviceName, "Failed to start audio driver: " +
+                                               describeGraphError(result));
     return false;
   }
 
+  updateDeviceStatus(m_currentDeviceName, {});
   DBG("AudioEngine: Started audio processing");
   return true;
 }
@@ -101,6 +345,7 @@ bool AudioEngine::start() {
 void AudioEngine::stop() {
   if (m_audioDriver && m_audioDriver->isRunning()) {
     m_audioDriver->stop();
+    updateDeviceStatus(m_currentDeviceName, {});
     DBG("AudioEngine: Stopped audio processing");
   }
 }
@@ -127,6 +372,7 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
 
   // Store handle and metadata
   m_clipHandles[buttonIndex] = handle;
+  m_clipRegistrations[buttonIndex] = ClipRegistrationState{filePath, {}};
 
   // Read metadata for UI
   auto reader = orpheus::createAudioFileReader();
@@ -152,6 +398,8 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
     reader->seek(0);
   }
 
+  updateCachedClipMetadata(buttonIndex);
+
   DBG("AudioEngine: Loaded clip to button " << buttonIndex << ": " << filePath);
   return true;
 }
@@ -172,6 +420,7 @@ void AudioEngine::unloadClip(int buttonIndex) {
 
   m_clipHandles[buttonIndex] = 0;
   m_clipMetadata[buttonIndex] = std::nullopt;
+  m_clipRegistrations[buttonIndex] = std::nullopt;
 
   // TODO: Unregister from transport controller (needs SDK API)
 
@@ -196,18 +445,8 @@ bool AudioEngine::updateClipMetadata(int buttonIndex, int64_t trimInSamples, int
     return false;
   }
 
-  // Map fade curve strings to SDK enum
-  orpheus::FadeCurve fadeInCurveEnum = orpheus::FadeCurve::Linear;
-  if (fadeInCurve == "EqualPower")
-    fadeInCurveEnum = orpheus::FadeCurve::EqualPower;
-  else if (fadeInCurve == "Exponential")
-    fadeInCurveEnum = orpheus::FadeCurve::Exponential;
-
-  orpheus::FadeCurve fadeOutCurveEnum = orpheus::FadeCurve::Linear;
-  if (fadeOutCurve == "EqualPower")
-    fadeOutCurveEnum = orpheus::FadeCurve::EqualPower;
-  else if (fadeOutCurve == "Exponential")
-    fadeOutCurveEnum = orpheus::FadeCurve::Exponential;
+  const auto fadeInCurveEnum = toFadeCurve(fadeInCurve);
+  const auto fadeOutCurveEnum = toFadeCurve(fadeOutCurve);
 
   // Call SDK methods to update trim points
   auto trimResult =
@@ -249,6 +488,8 @@ bool AudioEngine::updateClipMetadata(int buttonIndex, int64_t trimInSamples, int
       << buttonIndex << " - Trim: [" << trimInSamples << ", " << trimOutSamples << "]"
       << ", Fade IN: " << fadeInSeconds << "s (" << fadeInCurve << ")"
       << ", Fade OUT: " << fadeOutSeconds << "s (" << fadeOutCurve << ")");
+
+  updateCachedClipMetadata(buttonIndex);
 
   return true;
 }
@@ -374,6 +615,7 @@ bool AudioEngine::setClipLoopMode(int buttonIndex, bool shouldLoop) {
 
   DBG("AudioEngine: Set button " << buttonIndex << " loop mode to "
                                  << (shouldLoop ? "enabled" : "disabled"));
+  updateCachedClipMetadata(buttonIndex);
   return true;
 }
 
@@ -478,26 +720,16 @@ float AudioEngine::getMasterPeakLevel() const {
 }
 
 void AudioEngine::getGroupLevels(std::array<float, 4>& groupLevels) const {
-  // Placeholder implementation until clip group routing is implemented
-  // For now, distribute the master level across groups based on frequency bands
-  if (m_audioAnalyzer) {
-    std::vector<float> bandLevels;
-    m_audioAnalyzer->getFrequencyBands(bandLevels, 8);
-    if (bandLevels.size() >= 8) {
-      // Group 0: Low frequencies (bands 0-1)
-      groupLevels[0] = (bandLevels[0] + bandLevels[1]) / 2.0f;
-      // Group 1: Low-mid frequencies (bands 2-3)
-      groupLevels[1] = (bandLevels[2] + bandLevels[3]) / 2.0f;
-      // Group 2: High-mid frequencies (bands 4-5)
-      groupLevels[2] = (bandLevels[4] + bandLevels[5]) / 2.0f;
-      // Group 3: High frequencies (bands 6-7)
-      groupLevels[3] = (bandLevels[6] + bandLevels[7]) / 2.0f;
-    } else {
-      float masterLevel = getMasterRmsLevel();
-      groupLevels.fill(masterLevel * 0.5f);
-    }
-  } else {
-    groupLevels.fill(0.0f);
+  groupLevels.fill(0.0f);
+
+  if (!m_transportController || !m_transportController->m_routingMatrix) {
+    return;
+  }
+
+  for (uint8_t groupIndex = 0; groupIndex < 4; ++groupIndex) {
+    const auto meter = m_transportController->m_routingMatrix->getGroupMeter(groupIndex);
+    groupLevels[groupIndex] =
+        juce::jlimit(0.0f, 1.5f, std::max(dbToLinear(meter.peak_db), dbToLinear(meter.rms_db)));
   }
 }
 
@@ -505,7 +737,7 @@ void AudioEngine::getGroupLevels(std::array<float, 4>& groupLevels) const {
 // Audio Device Management (for Audio Settings Dialog)
 
 std::vector<std::string> AudioEngine::getAvailableDevices() const {
-  auto manager = orpheus::createAudioDriverManager();
+  auto manager = tryCreateAudioDriverManager();
   if (!manager) {
     return {"Default Device"};
   }
@@ -527,72 +759,120 @@ std::string AudioEngine::getCurrentDeviceName() const {
 
 bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleRate,
                                  uint32_t bufferSize) {
+  if (!m_initialized) {
+    updateDeviceStatus(deviceName, "Audio engine must be initialized before changing devices");
+    return false;
+  }
+
+  const std::string requestedDeviceName =
+      deviceName.empty() ? std::string(kDefaultDeviceName) : deviceName;
+
+  if (requestedDeviceName != kDefaultDeviceName) {
+    const auto requestedInfo = findDeviceDetails(requestedDeviceName);
+    if (!requestedInfo.has_value()) {
+      updateDeviceStatus(requestedDeviceName, "Requested device is no longer available");
+      return false;
+    }
+
+    if (!requestedInfo->supportedSampleRates.empty() &&
+        std::find(requestedInfo->supportedSampleRates.begin(),
+                  requestedInfo->supportedSampleRates.end(),
+                  sampleRate) == requestedInfo->supportedSampleRates.end()) {
+      updateDeviceStatus(requestedDeviceName, "Requested sample rate is not supported by device");
+      return false;
+    }
+
+    if (!requestedInfo->supportedBufferSizes.empty() &&
+        std::find(requestedInfo->supportedBufferSizes.begin(),
+                  requestedInfo->supportedBufferSizes.end(),
+                  bufferSize) == requestedInfo->supportedBufferSizes.end()) {
+      updateDeviceStatus(requestedDeviceName, "Requested buffer size is not supported by device");
+      return false;
+    }
+  }
+
   DBG("AudioEngine: Changing audio settings - Device: "
-      << deviceName << ", Sample Rate: " << static_cast<int>(sampleRate)
+      << requestedDeviceName << ", Sample Rate: " << static_cast<int>(sampleRate)
       << " Hz, Buffer Size: " << static_cast<int>(bufferSize));
 
-  // Stop current audio driver if running
-  bool wasRunning = isRunning();
-  if (wasRunning) {
-    stop();
+  auto oldTransport = std::move(m_transportController);
+  auto oldDriver = std::move(m_audioDriver);
+  const auto* previousTransport = oldTransport.get();
+  const auto oldSampleRate = m_sampleRate;
+  const auto oldBufferSize = m_bufferSize;
+  const auto oldDeviceName = m_currentDeviceName;
+  const auto oldDeviceStatus = m_deviceStatus;
+
+  std::string errorMessage;
+  std::unique_ptr<orpheus::TransportController> newTransport;
+  if (!createConfiguredTransport(sampleRate, newTransport, errorMessage)) {
+    m_transportController = std::move(oldTransport);
+    m_audioDriver = std::move(oldDriver);
+    updateDeviceStatus(requestedDeviceName, errorMessage);
+    return false;
   }
 
-  // Update engine state
+  std::vector<orpheus::ClipHandle> handlesToRestart;
+  if (!rehydrateTransportState(*newTransport, previousTransport, handlesToRestart, errorMessage)) {
+    m_transportController = std::move(oldTransport);
+    m_audioDriver = std::move(oldDriver);
+    updateDeviceStatus(requestedDeviceName, errorMessage);
+    return false;
+  }
+
+  std::unique_ptr<orpheus::IAudioDriver> newDriver;
+  bool usingFallbackDriver = false;
+  if (!createConfiguredDriver(requestedDeviceName, sampleRate, bufferSize, newDriver, errorMessage,
+                              usingFallbackDriver)) {
+    m_transportController = std::move(oldTransport);
+    m_audioDriver = std::move(oldDriver);
+    updateDeviceStatus(requestedDeviceName, errorMessage);
+    return false;
+  }
+
+  const bool wasRunning = oldDriver && oldDriver->isRunning();
+  if (wasRunning) {
+    oldDriver->stop();
+  }
+
+  m_transportController = std::move(newTransport);
+  m_audioDriver = std::move(newDriver);
   m_sampleRate = sampleRate;
   m_bufferSize = bufferSize;
-  m_currentDeviceName = deviceName.empty() ? "Default Device" : deviceName;
+  m_currentDeviceName = requestedDeviceName;
+  updateDeviceStatus(requestedDeviceName, usingFallbackDriver ? "Using dummy audio driver" : "");
 
-  // Recreate transport controller with new sample rate
-  m_transportController =
-      std::unique_ptr<orpheus::TransportController>(static_cast<orpheus::TransportController*>(
-          orpheus::createTransportController(nullptr, sampleRate).release()));
-  if (!m_transportController) {
-    DBG("AudioEngine: Failed to recreate transport controller");
-    return false;
-  }
-  m_transportController->setCallback(this);
-
-  // Recreate audio driver with new configuration
-  // Note: Device selection not yet supported in SDK, always uses default device
-  m_audioDriver = orpheus::createCoreAudioDriver();
-  if (!m_audioDriver) {
-    DBG("AudioEngine: Failed to create CoreAudio driver, falling back to dummy");
-    m_audioDriver = orpheus::createDummyAudioDriver();
-    if (!m_audioDriver) {
-      DBG("AudioEngine: Failed to create audio driver");
-      return false;
-    }
-  }
-
-  // Configure driver with new settings
-  orpheus::AudioDriverConfig config;
-  config.sample_rate = sampleRate;
-  config.buffer_size = bufferSize;
-  config.num_inputs = 0;  // No input for now
-  config.num_outputs = 2; // Stereo output
-  // Pass device name; empty string → CoreAudio default, exact name → named device
-  if (deviceName != "Default Device") {
-    config.device_name = deviceName;
-  }
-
-  auto result = m_audioDriver->initialize(config);
-  if (result != orpheus::SessionGraphError::OK) {
-    DBG("AudioEngine: Failed to initialize audio driver with new settings");
-    return false;
-  }
-
-  DBG("AudioEngine: Audio driver reinitialized successfully");
-
-  // Restart audio if it was running before
   if (wasRunning) {
     if (!start()) {
-      DBG("AudioEngine: Failed to restart audio after settings change");
+      m_transportController = std::move(oldTransport);
+      m_audioDriver = std::move(oldDriver);
+      m_sampleRate = oldSampleRate;
+      m_bufferSize = oldBufferSize;
+      m_currentDeviceName = oldDeviceName;
+      m_deviceStatus = oldDeviceStatus;
+      if (m_audioDriver) {
+        m_audioDriver->start(this);
+      }
+      updateDeviceStatus(requestedDeviceName, "Failed to restart audio after changing device");
       return false;
     }
+  }
+
+  for (const auto handle : handlesToRestart) {
+    m_transportController->startClip(handle);
   }
 
   DBG("AudioEngine: Successfully changed audio settings");
   return true;
+}
+
+AudioEngine::AudioDeviceStatus AudioEngine::getAudioDeviceStatus() const {
+  return m_deviceStatus;
+}
+
+std::optional<orpheus::AudioDeviceInfo>
+AudioEngine::getDeviceDetails(const std::string& deviceName) const {
+  return findDeviceDetails(deviceName);
 }
 
 //==============================================================================
@@ -630,6 +910,7 @@ orpheus::ClipHandle AudioEngine::allocateCueBuss(const juce::String& filePath) {
 
   // Mark slot as allocated
   m_cueBussPool[freeSlot].handle = cueBussHandle;
+  m_cueBussPool[freeSlot].filePath = filePath;
 
   // Read metadata for UI (same as loadClip does for buttons)
   auto reader = orpheus::createAudioFileReader();
@@ -649,6 +930,7 @@ orpheus::ClipHandle AudioEngine::allocateCueBuss(const juce::String& filePath) {
   // CRITICAL: Set default loop state to DISABLED (SDK defaults to loop=true)
   // This will be overridden by ClipEditDialog::setClipMetadata() if user has loop enabled
   m_transportController->setClipLoopMode(cueBussHandle, false);
+  updateCachedCueMetadata(freeSlot);
 
   // Count active cue busses for logging
   int activeCues = 0;
@@ -679,6 +961,8 @@ void AudioEngine::releaseCueBuss(orpheus::ClipHandle cueBussHandle) {
 
   // Clear slot (no deallocation, just mark as free)
   m_cueBussPool[slot].handle = 0;
+  m_cueBussPool[slot].filePath.clear();
+  m_cueBussPool[slot].transportMetadata = {};
   m_cueBussPool[slot].metadata = std::nullopt;
 
   // TODO: Unregister from transport controller (needs SDK API)
@@ -736,18 +1020,8 @@ bool AudioEngine::updateCueBussMetadata(orpheus::ClipHandle cueBussHandle, int64
   if (cueBussHandle < CUE_BUSS_BASE_HANDLE || !m_transportController)
     return false;
 
-  // Map fade curve strings to SDK enum
-  orpheus::FadeCurve fadeInCurveEnum = orpheus::FadeCurve::Linear;
-  if (fadeInCurve == "EqualPower")
-    fadeInCurveEnum = orpheus::FadeCurve::EqualPower;
-  else if (fadeInCurve == "Exponential")
-    fadeInCurveEnum = orpheus::FadeCurve::Exponential;
-
-  orpheus::FadeCurve fadeOutCurveEnum = orpheus::FadeCurve::Linear;
-  if (fadeOutCurve == "EqualPower")
-    fadeOutCurveEnum = orpheus::FadeCurve::EqualPower;
-  else if (fadeOutCurve == "Exponential")
-    fadeOutCurveEnum = orpheus::FadeCurve::Exponential;
+  const auto fadeInCurveEnum = toFadeCurve(fadeInCurve);
+  const auto fadeOutCurveEnum = toFadeCurve(fadeOutCurve);
 
   // Update trim points
   auto trimResult =
@@ -792,6 +1066,8 @@ bool AudioEngine::updateCueBussMetadata(orpheus::ClipHandle cueBussHandle, int64
       << ", Fade IN: " << fadeInSeconds << "s (" << fadeInCurve << ")"
       << ", Fade OUT: " << fadeOutSeconds << "s (" << fadeOutCurve << ")");
 
+  updateCachedCueMetadata(static_cast<int>(cueBussHandle - CUE_BUSS_BASE_HANDLE));
+
   return true;
 }
 
@@ -826,6 +1102,7 @@ bool AudioEngine::setCueBussLoop(orpheus::ClipHandle cueBussHandle, bool enabled
 
   DBG("AudioEngine: Set Cue Buss " << cueBussHandle << " loop mode to "
                                    << (enabled ? "enabled" : "disabled"));
+  updateCachedCueMetadata(static_cast<int>(cueBussHandle - CUE_BUSS_BASE_HANDLE));
   return true;
 }
 
