@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.22)
 project(orpheus_clip_composer LANGUAGES C CXX)
 
 set(OCC_APP_VERSION "0.2.1")
+
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
 set(SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(ORPHEUS_SDK_BUILD_DIR "" CACHE PATH
     "Path to a configured Orpheus SDK build tree for standalone Clip Composer builds")
@@ -34,6 +39,9 @@ function(resolve_orpheus_sdk)
   set(ORPHEUS_ENABLE_APP_CLIP_COMPOSER OFF CACHE BOOL "" FORCE)
   set(ORPHEUS_ENABLE_APP_WAVE_FINDER OFF CACHE BOOL "" FORCE)
   set(ORPHEUS_ENABLE_APP_JUCE_HOST OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_ADAPTERS OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_ADAPTER_MINHOST OFF CACHE BOOL "" FORCE)
+  set(ORPHEUS_ENABLE_ADAPTER_REAPER OFF CACHE BOOL "" FORCE)
   set(ORPHEUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(ORP_WITH_TESTS OFF CACHE BOOL "" FORCE)
   add_subdirectory("${SDK_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/orpheus-sdk" EXCLUDE_FROM_ALL)
@@ -54,16 +62,33 @@ if(ORPHEUS_SDK_BUILD_DIR)
 endif()
 list(APPEND OCC_LOCAL_DEPENDENCY_DIRS "${SDK_ROOT}/build/_deps")
 
+execute_process(
+  COMMAND git rev-parse --path-format=absolute --git-common-dir
+  WORKING_DIRECTORY "${SDK_ROOT}"
+  OUTPUT_VARIABLE OCC_GIT_COMMON_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(OCC_GIT_COMMON_DIR)
+  cmake_path(GET OCC_GIT_COMMON_DIR PARENT_PATH OCC_GIT_COMMON_ROOT)
+  list(APPEND OCC_LOCAL_DEPENDENCY_DIRS "${OCC_GIT_COMMON_ROOT}/build/_deps")
+endif()
+
 foreach(dep_root IN LISTS OCC_LOCAL_DEPENDENCY_DIRS)
-  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_JUCE AND EXISTS "${dep_root}/juce-src/CMakeLists.txt")
-    set(FETCHCONTENT_SOURCE_DIR_JUCE "${dep_root}/juce-src")
+  if((NOT FETCHCONTENT_SOURCE_DIR_JUCE OR FETCHCONTENT_SOURCE_DIR_JUCE STREQUAL "")
+     AND EXISTS "${dep_root}/juce-src/CMakeLists.txt")
+    set(FETCHCONTENT_SOURCE_DIR_JUCE "${dep_root}/juce-src" CACHE PATH "" FORCE)
+    set(FETCHCONTENT_SOURCE_DIR_juce "${dep_root}/juce-src" CACHE PATH "" FORCE)
   endif()
-  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_SQLITE3 AND EXISTS "${dep_root}/sqlite3-src/sqlite3.c")
-    set(FETCHCONTENT_SOURCE_DIR_SQLITE3 "${dep_root}/sqlite3-src")
+  if((NOT FETCHCONTENT_SOURCE_DIR_SQLITE3 OR FETCHCONTENT_SOURCE_DIR_SQLITE3 STREQUAL "")
+     AND EXISTS "${dep_root}/sqlite3-src/sqlite3.c")
+    set(FETCHCONTENT_SOURCE_DIR_SQLITE3 "${dep_root}/sqlite3-src" CACHE PATH "" FORCE)
+    set(FETCHCONTENT_SOURCE_DIR_sqlite3 "${dep_root}/sqlite3-src" CACHE PATH "" FORCE)
   endif()
-  if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_GOOGLETEST
+  if((NOT FETCHCONTENT_SOURCE_DIR_GOOGLETEST OR FETCHCONTENT_SOURCE_DIR_GOOGLETEST STREQUAL "")
      AND EXISTS "${dep_root}/googletest-src/CMakeLists.txt")
-    set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "${dep_root}/googletest-src")
+    set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "${dep_root}/googletest-src" CACHE PATH "" FORCE)
+    set(FETCHCONTENT_SOURCE_DIR_googletest "${dep_root}/googletest-src" CACHE PATH "" FORCE)
   endif()
 endforeach()
 
@@ -159,6 +184,9 @@ juce_add_gui_app(orpheus_clip_composer_app
 # Source files
 set(CLIP_COMPOSER_SOURCES
   Source/Main.cpp
+  Source/AppShell/ClipComposerMenuModel.cpp
+  Source/AppShell/ClipComposerSessionController.cpp
+  Source/AppShell/ClipComposerWindowController.cpp
   Source/MainComponent.cpp
   Source/ClipGrid/ClipButton.cpp
   Source/ClipGrid/ClipGrid.cpp
@@ -194,11 +222,16 @@ target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
 # C++20 required (matches Orpheus SDK)
 target_compile_features(orpheus_clip_composer_app PRIVATE cxx_std_20)
 
+target_compile_options(orpheus_clip_composer_app
+  PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-include${OCC_GENERATED_INCLUDE_DIR}/BuildInfo.h>
+)
+
 # Include directories
 target_include_directories(orpheus_clip_composer_app
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/Source
     ${OCC_GENERATED_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
 )
 
 # JUCE compile definitions
