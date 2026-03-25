@@ -3,7 +3,6 @@
 #include "MainComponent.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
-#include <algorithm>
 #include <orpheus/app/ApplicationPaths.h>
 
 #if JUCE_MAC
