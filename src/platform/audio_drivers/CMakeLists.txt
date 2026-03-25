@@ -22,10 +22,10 @@ add_library(orpheus_audio_driver_manager STATIC
 
 target_include_directories(orpheus_audio_driver_manager
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/core
+        ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
 )
 
 target_link_libraries(orpheus_audio_driver_manager
@@ -57,10 +57,10 @@ if(ORPHEUS_ENABLE_COREAUDIO)
 
     target_include_directories(orpheus_audio_driver_coreaudio
         PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
         PRIVATE
-            ${CMAKE_SOURCE_DIR}/src/core
+            ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
     )
 
     target_link_libraries(orpheus_audio_driver_coreaudio
@@ -92,10 +92,10 @@ if(ORPHEUS_ENABLE_WASAPI)
 
     target_include_directories(orpheus_audio_driver_wasapi
         PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
         PRIVATE
-            ${CMAKE_SOURCE_DIR}/src/core
+            ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
     )
 
     target_link_libraries(orpheus_audio_driver_wasapi
@@ -131,10 +131,10 @@ if(ORPHEUS_ENABLE_ASIO)
 
     target_include_directories(orpheus_audio_driver_asio
         PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
         PRIVATE
-            ${CMAKE_SOURCE_DIR}/src/core
+            ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
             ${ASIO_SDK_PATH}/common
             ${ASIO_SDK_PATH}/host
             ${ASIO_SDK_PATH}/host/pc

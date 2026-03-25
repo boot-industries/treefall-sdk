@@ -52,6 +52,10 @@ target_link_libraries(clip_composer_tests
     Orpheus::core
 )
 
+if(TARGET orpheus_audio_driver_manager)
+  target_link_libraries(clip_composer_tests PRIVATE orpheus_audio_driver_manager)
+endif()
+
 # JUCE compile definitions
 target_compile_definitions(clip_composer_tests
   PRIVATE
