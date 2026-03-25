@@ -102,7 +102,10 @@ private:
 
   // OCC130 Sprint B: Status indicator state
   double m_latencyMs = 0.0;
+  int m_bufferSize = 0;
+  int m_sampleRate = 0;
   float m_cpuPercent = 0.0f;
+  int m_memoryMB = 0;
   int m_heartbeatPhase = 0; // For pulse animation (0-100)
 
   // OCC130 Sprint B.4: Tab renaming support
