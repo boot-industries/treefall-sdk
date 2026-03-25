@@ -57,7 +57,19 @@ public:
   bool isSessionDirty() const {
     return m_sessionManager->isDirty();
   }
-  void saveCurrentSession();
+  bool saveCurrentSession();
+  bool saveCurrentSessionAs();
+  bool saveSessionToFile(const juce::File& file);
+  bool loadSessionFromFile(const juce::File& file);
+  bool openSessionInteractive();
+  void createNewSession();
+  juce::File getCurrentSessionFile() const {
+    return m_sessionManager->getCurrentFile();
+  }
+  juce::String getCurrentSessionLabel() const;
+  void setAppCommandHandler(std::function<void(int)> handler) {
+    m_appCommandHandler = std::move(handler);
+  }
 
   //==============================================================================
   void paint(juce::Graphics&) override;
@@ -177,6 +189,7 @@ private:
   int m_autoBackupCounter = 0;
   juce::Time m_lastAutoBackupTime;
   double m_audioEngineInitializationMs = 0.0;
+  std::function<void(int)> m_appCommandHandler;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -8,10 +8,10 @@ target_compile_features(orpheus_transport PUBLIC cxx_std_20)
 
 target_include_directories(orpheus_transport
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/core
+        ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
 )
 
 target_link_libraries(orpheus_transport
@@ -24,7 +24,7 @@ target_link_libraries(orpheus_transport
 set_target_properties(orpheus_transport PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Apply compiler warnings
-include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_transport)
 
 # Install public headers are handled by root CMakeLists.txt
