@@ -37,6 +37,15 @@ void SessionManager::setTabLabel(int tabIndex, const std::string& label) {
 
 //==============================================================================
 bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
+  return loadClipForTab(buttonIndex, filePath, m_currentTab);
+}
+
+bool SessionManager::loadClipForTab(int buttonIndex, const juce::String& filePath, int tabIndex) {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS) {
+    DBG("SessionManager: Invalid tab index " << tabIndex << " for loadClip");
+    return false;
+  }
+
   juce::File audioFile(filePath);
 
   // Validate file exists
@@ -54,14 +63,14 @@ bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
   }
 
   // Set tab index
-  clipData.tabIndex = m_currentTab;
+  clipData.tabIndex = tabIndex;
 
   // Store in map with composite key (tab, button)
-  int key = makeKey(m_currentTab, buttonIndex);
+  int key = makeKey(tabIndex, buttonIndex);
   m_clips[key] = clipData;
   m_isDirty = true;
 
-  DBG("SessionManager: Loaded clip " << clipData.displayName << " onto tab " << m_currentTab
+  DBG("SessionManager: Loaded clip " << clipData.displayName << " onto tab " << tabIndex
                                      << ", button " << buttonIndex << " (" << clipData.sampleRate
                                      << " Hz, " << clipData.numChannels << " ch, "
                                      << clipData.durationSamples << " samples)");
@@ -71,19 +80,28 @@ bool SessionManager::loadClip(int buttonIndex, const juce::String& filePath) {
 
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData) {
   int key = makeKey(m_currentTab, buttonIndex);
-  m_clips[key] = clipData;
+  auto clipWithTab = clipData;
+  clipWithTab.tabIndex = m_currentTab;
+  m_clips[key] = clipWithTab;
   m_isDirty = true;
 
   DBG("SessionManager: Updated clip metadata for tab " << m_currentTab << ", button " << buttonIndex
-                                                       << " - Name: " << clipData.displayName
-                                                       << ", Group: " << clipData.clipGroup);
+                                                       << " - Name: " << clipWithTab.displayName
+                                                       << ", Group: " << clipWithTab.clipGroup);
 }
 
 void SessionManager::removeClip(int buttonIndex) {
-  int key = makeKey(m_currentTab, buttonIndex);
+  removeClip(buttonIndex, m_currentTab);
+}
+
+void SessionManager::removeClip(int buttonIndex, int tabIndex) {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS)
+    return;
+
+  int key = makeKey(tabIndex, buttonIndex);
   auto it = m_clips.find(key);
   if (it != m_clips.end()) {
-    DBG("SessionManager: Removed clip from tab " << m_currentTab << ", button " << buttonIndex);
+    DBG("SessionManager: Removed clip from tab " << tabIndex << ", button " << buttonIndex);
     m_clips.erase(it);
     m_isDirty = true;
   }
@@ -144,19 +162,61 @@ SessionManager::ClipData SessionManager::getClip(int buttonIndex, int tabIndex) 
   return ClipData(); // Empty/invalid
 }
 
+SessionManager::ClipData SessionManager::getClipByGlobalIndex(int globalClipIndex) const {
+  if (globalClipIndex < 0)
+    return ClipData();
+
+  const int tabIndex = globalClipIndex / BUTTONS_PER_TAB;
+  const int buttonIndex = globalClipIndex % BUTTONS_PER_TAB;
+  return getClip(buttonIndex, tabIndex);
+}
+
 bool SessionManager::hasClip(int buttonIndex, int tabIndex) const {
   int key = makeKey(tabIndex, buttonIndex);
   return m_clips.find(key) != m_clips.end();
 }
 
+bool SessionManager::hasClipByGlobalIndex(int globalClipIndex) const {
+  if (globalClipIndex < 0)
+    return false;
+
+  const int tabIndex = globalClipIndex / BUTTONS_PER_TAB;
+  const int buttonIndex = globalClipIndex % BUTTONS_PER_TAB;
+  return hasClip(buttonIndex, tabIndex);
+}
+
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData, int tabIndex) {
   int key = makeKey(tabIndex, buttonIndex);
-  m_clips[key] = clipData;
+  auto clipWithTab = clipData;
+  clipWithTab.tabIndex = tabIndex;
+  m_clips[key] = clipWithTab;
   m_isDirty = true;
 
   DBG("SessionManager: Updated clip metadata for tab " << tabIndex << ", button " << buttonIndex
-                                                       << " - Name: " << clipData.displayName
-                                                       << ", Group: " << clipData.clipGroup);
+                                                       << " - Name: " << clipWithTab.displayName
+                                                       << ", Group: " << clipWithTab.clipGroup);
+}
+
+bool SessionManager::clearTab(int tabIndex) {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS)
+    return false;
+
+  bool removedAnyClips = false;
+  for (int buttonIndex = 0; buttonIndex < BUTTONS_PER_TAB; ++buttonIndex) {
+    const int key = makeKey(tabIndex, buttonIndex);
+    auto it = m_clips.find(key);
+    if (it != m_clips.end()) {
+      m_clips.erase(it);
+      removedAnyClips = true;
+    }
+  }
+
+  if (removedAnyClips) {
+    m_isDirty = true;
+    DBG("SessionManager: Cleared tab " << tabIndex);
+  }
+
+  return removedAnyClips;
 }
 
 //==============================================================================
@@ -247,6 +307,7 @@ bool SessionManager::saveSession(const juce::File& file) {
     clipObj->setProperty("fadeOutCurve", juce::var(clipData.fadeOutCurve));
 
     // Playback modes
+    clipObj->setProperty("gainDb", juce::var(clipData.gainDb));
     clipObj->setProperty("loopEnabled", juce::var(clipData.loopEnabled));
     clipObj->setProperty("stopOthersEnabled", juce::var(clipData.stopOthersEnabled));
 
@@ -317,12 +378,8 @@ bool SessionManager::loadSession(const juce::File& file) {
       int buttonIndex = clipObj->getProperty("buttonIndex");
       juce::String filePath = clipObj->getProperty("filePath").toString();
 
-      // Set active tab temporarily to load clip to correct tab
-      int savedTab = m_currentTab;
-      m_currentTab = tabIndex;
-
-      // Load clip (validates file and extracts metadata)
-      if (loadClip(buttonIndex, filePath)) {
+      // Load clip into the requested tab without mutating the active UI tab.
+      if (loadClipForTab(buttonIndex, filePath, tabIndex)) {
         // Restore additional metadata from session
         int key = makeKey(tabIndex, buttonIndex);
         auto& clipData = m_clips[key];
@@ -358,6 +415,9 @@ bool SessionManager::loadSession(const juce::File& file) {
         }
 
         // Restore playback modes
+        if (clipObj->hasProperty("gainDb")) {
+          clipData.gainDb = static_cast<double>(clipObj->getProperty("gainDb"));
+        }
         if (clipObj->hasProperty("loopEnabled")) {
           clipData.loopEnabled = static_cast<bool>(clipObj->getProperty("loopEnabled"));
         }
@@ -370,9 +430,6 @@ bool SessionManager::loadSession(const juce::File& file) {
           clipData.color = juce::Colour::fromString(clipObj->getProperty("color").toString());
         }
       }
-
-      // Restore original active tab
-      m_currentTab = savedTab;
     }
   }
 

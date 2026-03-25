@@ -7,6 +7,7 @@
 #include "Core/HotKeyManager.h"
 #include "Core/MIDIDeviceManager.h"
 #include "Session/SessionManager.h"
+#include "UIState/ClipComposerUiSnapshot.h"
 #include "UI/AboutDialog.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
@@ -95,6 +96,9 @@ private:
   void wireUpClipGridCallbacks();
   void wireUpTransportCallbacks();
   void handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state);
+  void refreshUiSnapshot();
+  occ::ui::ClipUiSnapshot buildClipUiSnapshot(int buttonIndex) const;
+  float calculateClipProgress(const SessionManager::ClipData& clipData, int globalClipIndex) const;
 
   //==============================================================================
   // Core Functionality
@@ -177,6 +181,7 @@ private:
   int m_autoBackupCounter = 0;
   juce::Time m_lastAutoBackupTime;
   double m_audioEngineInitializationMs = 0.0;
+  occ::ui::ClipComposerUiSnapshot m_uiSnapshot;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
