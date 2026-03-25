@@ -63,9 +63,8 @@ private:
 /**
  * ClipEditDialog - Modal dialog for editing clip metadata
  *
- * ARCHITECTURE CHANGE (v0.2.0):
- * - PreviewPlayer now uses Cue Buss instead of separate audio device
- * - Requires AudioEngine reference for Cue Buss allocation
+ * Edit Dialog is a second view onto the live grid clip. Preview playback polls
+ * the shared clip state from AudioEngine rather than owning a separate transport.
  *
  * Features (phased implementation):
  * - Phase 1: File metadata (name, color, clip group)
@@ -182,7 +181,7 @@ private:
   //==============================================================================
   ClipMetadata m_metadata;
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
-  int m_buttonIndex = -1;               // Button index (0-47) of main grid clip
+  int m_buttonIndex = -1;               // Global clip index of the main grid clip
 
   // Phase 1: Basic metadata controls
   std::unique_ptr<juce::Label> m_nameLabel;
@@ -238,9 +237,9 @@ private:
   std::unique_ptr<juce::Slider> m_gainSlider; // Now a rotary dial/knob
   std::unique_ptr<juce::Label> m_gainValueLabel;
 
-  // Pitch control (-12 to +12 semitones)
-  std::unique_ptr<juce::Label> m_placeholderLabel; // Using placeholder names for now
-  std::unique_ptr<juce::Slider> m_placeholderDial; // Will rename when feature is finalized
+  // Deferred pitch control placeholder (explicitly disabled until engine support lands)
+  std::unique_ptr<juce::Label> m_placeholderLabel;
+  std::unique_ptr<juce::Slider> m_placeholderDial;
   std::unique_ptr<juce::Label> m_placeholderValueLabel;
 
   // Phase 3: Fade time controls
