@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <orpheus/transport_controller.h>
 
 namespace occ::ui {
@@ -19,6 +20,9 @@ struct ClipUiSnapshot {
   bool fadeOutEnabled = false;
   bool stopOthersEnabled = false;
   float playbackProgress = 0.0f;
+  juce::String displayName;
+  juce::Colour color{juce::Colours::transparentBlack};
+  int clipGroup = 0;
 
   /// Compare snapshots for repaint gating (progress quantized to 1%)
   bool visuallyEquals(const ClipUiSnapshot& other) const {
@@ -41,6 +45,8 @@ struct SessionUiSnapshot {
 struct AudioEngineUiSnapshot {
   float masterRmsLevel = 0.0f;
   std::array<float, 4> groupLevels{};
+  bool routeAssignmentsAdjusted = false;
+  juce::String activeDeviceIdentifier;
 };
 
 struct ClipComposerUiSnapshot {
