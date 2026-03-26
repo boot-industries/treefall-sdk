@@ -299,6 +299,7 @@ void ClipGrid::setButtonTextMode(int mode) {
 void ClipGrid::timerCallback() {
   // Poll the consolidated clip snapshot at 75fps so button visuals stay coherent
   // without the grid reaching into multiple services directly.
+  // Repaint gating: only repaint buttons whose visual snapshot changed (P3-10).
   int buttonCount = static_cast<int>(m_buttons.size());
   for (int i = 0; i < buttonCount; ++i) {
     auto button = getButton(i);
@@ -310,6 +311,9 @@ void ClipGrid::timerCallback() {
       continue;
     }
 
+    const bool snapshotChanged = !snapshot.visuallyEquals(m_prevSnapshots[i]);
+    m_prevSnapshots[i] = snapshot;
+
     auto currentState = button->getState();
 
     if (!snapshot.hasClip) {
@@ -320,12 +324,15 @@ void ClipGrid::timerCallback() {
       continue;
     }
 
+    bool stateChanged = false;
     if (snapshot.playbackState == orpheus::PlaybackState::Playing &&
         currentState != ClipButton::State::Playing) {
       button->setState(ClipButton::State::Playing);
+      stateChanged = true;
     } else if (snapshot.playbackState == orpheus::PlaybackState::Stopped &&
                currentState == ClipButton::State::Playing) {
       button->setState(ClipButton::State::Loaded);
+      stateChanged = true;
     }
 
     button->setLoopEnabled(snapshot.loopEnabled);
@@ -335,6 +342,12 @@ void ClipGrid::timerCallback() {
 
     if (button->getState() == ClipButton::State::Playing) {
       button->setPlaybackProgress(snapshot.playbackProgress);
+    }
+
+    // Only repaint if something visually changed — avoids up to 48 unnecessary
+    // repaint regions per timer tick (freqfinder PartialButton pattern).
+    if (snapshotChanged || stateChanged) {
+      button->repaint();
     }
   }
 }
