@@ -113,5 +113,8 @@ private:
   bool m_hasActiveClips = false; // Track if any clips are playing
   int m_playboxIndex = 0;        // Current playbox position (Item 60: arrow key navigation)
 
+  // Repaint gating: only repaint buttons whose snapshot changed since last frame
+  std::array<occ::ui::ClipUiSnapshot, 48> m_prevSnapshots{};
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

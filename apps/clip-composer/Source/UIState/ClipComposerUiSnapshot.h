@@ -19,6 +19,15 @@ struct ClipUiSnapshot {
   bool fadeOutEnabled = false;
   bool stopOthersEnabled = false;
   float playbackProgress = 0.0f;
+
+  /// Compare snapshots for repaint gating (progress quantized to 1%)
+  bool visuallyEquals(const ClipUiSnapshot& other) const {
+    return hasClip == other.hasClip && playbackState == other.playbackState &&
+           loopEnabled == other.loopEnabled && fadeInEnabled == other.fadeInEnabled &&
+           fadeOutEnabled == other.fadeOutEnabled && stopOthersEnabled == other.stopOthersEnabled &&
+           static_cast<int>(playbackProgress * 100.0f) ==
+               static_cast<int>(other.playbackProgress * 100.0f);
+  }
 };
 
 struct SessionUiSnapshot {

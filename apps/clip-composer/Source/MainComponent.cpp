@@ -553,8 +553,11 @@ void MainComponent::wireUpClipGridCallbacks() {
   };
 
   m_clipGrid->getClipSnapshot = [this](int buttonIndex, occ::ui::ClipUiSnapshot& snapshot) {
-    snapshot = buildClipUiSnapshot(buttonIndex);
-    return true;
+    if (buttonIndex >= 0 && buttonIndex < kButtonsPerTab) {
+      snapshot = m_uiSnapshot.session.clips[buttonIndex];
+      return true;
+    }
+    return false;
   };
 }
 
