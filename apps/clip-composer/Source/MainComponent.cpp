@@ -716,6 +716,9 @@ void MainComponent::refreshUiSnapshot() {
   if (m_audioEngine) {
     m_uiSnapshot.audio.masterRmsLevel = m_audioEngine->getMasterRmsLevel();
     m_audioEngine->getGroupLevels(m_uiSnapshot.audio.groupLevels);
+    // P3-11: routing fields will be wired when AudioEngine exposes these APIs
+    // m_uiSnapshot.audio.routeAssignmentsAdjusted = m_audioEngine->areRouteAssignmentsAdjusted();
+    // m_uiSnapshot.audio.activeDeviceIdentifier = m_audioEngine->getCurrentDeviceIdentifier();
   }
 }
 
@@ -737,6 +740,9 @@ occ::ui::ClipUiSnapshot MainComponent::buildClipUiSnapshot(int buttonIndex) cons
   snapshot.fadeInEnabled = clipData.fadeInSeconds > 0.0;
   snapshot.fadeOutEnabled = clipData.fadeOutSeconds > 0.0;
   snapshot.stopOthersEnabled = m_stopOthersOnPlay[snapshot.globalClipIndex];
+  snapshot.displayName = juce::String(clipData.displayName);
+  snapshot.color = clipData.color;
+  snapshot.clipGroup = clipData.clipGroup;
   snapshot.playbackProgress = calculateClipProgress(clipData, snapshot.globalClipIndex);
 
   if (m_audioEngine) {
@@ -752,7 +758,9 @@ float MainComponent::calculateClipProgress(const SessionManager::ClipData& clipD
     return 0.0f;
 
   const int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
-  const int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
+  const int64_t effectiveTrimOut =
+      (clipData.trimOutSamples > 0) ? clipData.trimOutSamples : clipData.durationSamples;
+  const int64_t trimmedSamples = effectiveTrimOut - clipData.trimInSamples;
   if (trimmedSamples <= 0)
     return 0.0f;
 
