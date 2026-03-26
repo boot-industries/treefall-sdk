@@ -49,7 +49,7 @@
  * - Communicates with audio thread via lock-free commands
  * - Never blocks the audio thread
  */
-class MainComponent : public juce::Component, public juce::MenuBarModel, private juce::Timer {
+class MainComponent : public juce::Component, private juce::Timer {
 public:
   //==============================================================================
   MainComponent();
@@ -90,10 +90,12 @@ public:
   }
 
   //==============================================================================
-  // MenuBarModel overrides
-  juce::StringArray getMenuBarNames() override;
-  juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
-  void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
+  // Menu helpers (delegated from ClipComposerMenuModel)
+  juce::StringArray getAppMenuBarNames();
+  juce::PopupMenu getAppMenuForIndex(int topLevelMenuIndex, const juce::String& menuName);
+  void handleMenuItemSelected(int menuItemID, int topLevelMenuIndex);
+  void showAudioSettings();
+  void showKeyboardShortcutsDialog();
 
 private:
   //==============================================================================

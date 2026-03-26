@@ -49,7 +49,7 @@ juce::PopupMenu ClipComposerMenuModel::getMenuForIndex(int topLevelMenuIndex,
   case 3:
   case 4:
   case 5:
-    return m_mainComponent.getMenuForIndex(topLevelMenuIndex, menuName);
+    return m_mainComponent.getAppMenuForIndex(topLevelMenuIndex, menuName);
   case 6:
     return buildWindowMenu();
   case 7:
@@ -72,7 +72,7 @@ void ClipComposerMenuModel::menuItemSelected(int menuItemID, int topLevelMenuInd
   }
 
   if (topLevelMenuIndex >= 1 && topLevelMenuIndex <= 5) {
-    m_mainComponent.menuItemSelected(menuItemID, topLevelMenuIndex);
+    m_mainComponent.handleMenuItemSelected(menuItemID, topLevelMenuIndex);
   }
 }
 
@@ -192,7 +192,7 @@ bool ClipComposerMenuModel::perform(const InvocationInfo& info) {
         !m_sessionController.getRestoreLastSessionOnLaunch());
     return true;
   case occ::AppCommandIds::showAudioSettings:
-    m_mainComponent.menuItemSelected(20, 5);
+    m_mainComponent.showAudioSettings();
     return true;
   case occ::AppCommandIds::quitApplication:
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
@@ -210,7 +210,7 @@ bool ClipComposerMenuModel::perform(const InvocationInfo& info) {
     m_windowController.bringAllToFront();
     return true;
   case occ::AppCommandIds::showKeyboardShortcuts:
-    m_mainComponent.menuItemSelected(400, 7);
+    m_mainComponent.showKeyboardShortcutsDialog();
     return true;
   case occ::AppCommandIds::showAbout:
     m_windowController.showAboutDialog();
