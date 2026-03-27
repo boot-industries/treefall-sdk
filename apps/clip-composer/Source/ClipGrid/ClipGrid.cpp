@@ -6,12 +6,8 @@
 ClipGrid::ClipGrid() {
   createButtons();
 
-  // CRITICAL: Start timer immediately for atomic state synchronization
-  // Timer runs continuously at 75fps to sync button states with SDK
-  // This ensures buttons reflect playback from ANY source:
-  // - Main grid keyboard/click
-  // - Edit Dialog play/stop
-  // - SPACE bar (stop all)
+  // Keep the 75fps polling model running continuously so the grid stays in sync
+  // with shared playback state regardless of which controller initiated the change.
   startTimer(13); // 75 FPS (13ms interval)
 
   // Item 60: Initialize playbox on first button
@@ -97,16 +93,10 @@ void ClipGrid::setGridSize(int columns, int rows) {
 
 //==============================================================================
 void ClipGrid::setHasActiveClips(bool hasActive) {
-  if (hasActive != m_hasActiveClips) {
-    m_hasActiveClips = hasActive;
+  m_hasActiveClips = hasActive;
 
-    if (m_hasActiveClips) {
-      startTimer(13); // Start 75fps updates when clips are active
-      DBG("ClipGrid: Started 75fps timer (clips active)");
-    } else {
-      stopTimer(); // Stop 75fps updates when no clips active
-      DBG("ClipGrid: Stopped 75fps timer (no active clips)");
-    }
+  if (!isTimerRunning()) {
+    startTimer(13);
   }
 }
 
@@ -307,85 +297,57 @@ void ClipGrid::setButtonTextMode(int mode) {
 
 //==============================================================================
 void ClipGrid::timerCallback() {
-  // Sync button states from AudioEngine at 75fps (broadcast standard timing)
-  // Timer runs continuously to ensure atomic state synchronization from ANY source:
-  // - Main grid keyboard/click
-  // - Edit Dialog play/stop
-  // - SPACE bar (stop all)
+  // Poll the consolidated clip snapshot at 75fps so button visuals stay coherent
+  // without the grid reaching into multiple services directly.
+  // Repaint gating: only repaint buttons whose visual snapshot changed (P3-10).
   int buttonCount = static_cast<int>(m_buttons.size());
   for (int i = 0; i < buttonCount; ++i) {
     auto button = getButton(i);
     if (!button)
       continue;
 
-    // CRITICAL: Check if clip still exists (prevents orphaned play states)
-    if (hasClip) {
-      bool clipExists = hasClip(i);
-      auto currentState = button->getState();
+    occ::ui::ClipUiSnapshot snapshot;
+    if (!getClipSnapshot || !getClipSnapshot(i, snapshot)) {
+      continue;
+    }
 
-      // If clip was removed, ensure button goes to Empty state
-      if (!clipExists && currentState != ClipButton::State::Empty) {
+    const bool snapshotChanged = !snapshot.visuallyEquals(m_prevSnapshots[i]);
+    m_prevSnapshots[i] = snapshot;
+
+    auto currentState = button->getState();
+
+    if (!snapshot.hasClip) {
+      if (currentState != ClipButton::State::Empty) {
         button->setState(ClipButton::State::Empty);
-        button->clearClip(); // Clear visual indicators
-        // setState and clearClip already call repaint internally
-        continue; // Skip to next button
+        button->clearClip();
       }
-
-      // If no clip, skip playback state check
-      if (!clipExists)
-        continue;
+      continue;
     }
 
-    // Query AudioEngine for atomic playback state
-    if (getClipState) {
-      auto sdkState = getClipState(i);
-      auto currentState = button->getState();
-
-      // CRITICAL: Only update button state if it doesn't conflict with user actions
-      // - Playing → set button to Playing (clip started elsewhere, e.g., Edit Dialog)
-      // - Stopped → set button to Loaded (natural clip end)
-      // - Stopping → DO NOTHING (user already stopped, let fade finish without overriding)
-      if (sdkState == orpheus::PlaybackState::Playing &&
-          currentState != ClipButton::State::Playing) {
-        button->setState(ClipButton::State::Playing);
-        // setState already calls repaint internally
-      } else if (sdkState == orpheus::PlaybackState::Stopped &&
-                 currentState == ClipButton::State::Playing) {
-        // Clip stopped (fade complete) - reset to Loaded (NOT Empty)
-        button->setState(ClipButton::State::Loaded);
-        // setState already calls repaint internally
-      }
-      // If sdkState == Stopping, do NOT override button state (user already set it to Loaded)
+    bool stateChanged = false;
+    if (snapshot.playbackState == orpheus::PlaybackState::Playing &&
+        currentState != ClipButton::State::Playing) {
+      button->setState(ClipButton::State::Playing);
+      stateChanged = true;
+    } else if (snapshot.playbackState == orpheus::PlaybackState::Stopped &&
+               currentState == ClipButton::State::Playing) {
+      button->setState(ClipButton::State::Loaded);
+      stateChanged = true;
     }
 
-    // CRITICAL: Sync clip metadata indicators at 75fps (loop, fade, stop-others)
-    // This ensures clip states persist and follow clips during drag-to-reorder
-    if (getClipStates) {
-      bool loopEnabled = false;
-      bool fadeInEnabled = false;
-      bool fadeOutEnabled = false;
-      bool stopOthersEnabled = false;
+    button->setLoopEnabled(snapshot.loopEnabled);
+    button->setFadeInEnabled(snapshot.fadeInEnabled);
+    button->setFadeOutEnabled(snapshot.fadeOutEnabled);
+    button->setStopOthersEnabled(snapshot.stopOthersEnabled);
 
-      getClipStates(i, loopEnabled, fadeInEnabled, fadeOutEnabled, stopOthersEnabled);
-
-      // Update button indicators (these are CLIP properties, not button properties)
-      // These setters already check for changes and only repaint if needed
-      button->setLoopEnabled(loopEnabled);
-      button->setFadeInEnabled(fadeInEnabled);
-      button->setFadeOutEnabled(fadeOutEnabled);
-      button->setStopOthersEnabled(stopOthersEnabled);
+    if (button->getState() == ClipButton::State::Playing) {
+      button->setPlaybackProgress(snapshot.playbackProgress);
     }
 
-    // Update playback progress for playing clips (75fps smooth animation)
-    if (getClipPosition && button->getState() == ClipButton::State::Playing) {
-      float progress = getClipPosition(i);
-      button->setPlaybackProgress(progress);
-      // setPlaybackProgress already calls repaint() internally for playing clips
-      // No additional repaint needed here
+    // Only repaint if something visually changed — avoids up to 48 unnecessary
+    // repaint regions per timer tick (freqfinder PartialButton pattern).
+    if (snapshotChanged || stateChanged) {
+      button->repaint();
     }
-
-    // NOTE: All state setters (setState, setLoopEnabled, etc.) already handle repaint internally
-    // No manual repaint() calls needed - everything goes through setters that manage their own
-    // repainting
   }
 }

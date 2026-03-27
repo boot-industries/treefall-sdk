@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainComponent.h"
+#include "AppShell/AppCommandIds.h"
+#include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
 #include <orpheus/app/ApplicationPaths.h>
@@ -8,6 +10,11 @@
 #if JUCE_MAC
 #include <mach/mach.h>
 #endif
+
+//==============================================================================
+namespace {
+constexpr int kButtonsPerTab = occ::ui::SessionUiSnapshot::kButtonsPerTab;
+}
 
 //==============================================================================
 MainComponent::MainComponent() {
@@ -99,11 +106,6 @@ MainComponent::MainComponent() {
   // Set window size (1400×900 for better screen fit)
   setSize(1400, 900);
 
-// Set up menu bar (macOS native)
-#if JUCE_MAC
-  juce::MenuBarModel::setMacMainMenu(this);
-#endif
-
   // AudioEngine is already initialized at top of constructor
   // m_audioEngine = std::make_unique<AudioEngine>();
 
@@ -168,11 +170,6 @@ MainComponent::MainComponent() {
 }
 
 MainComponent::~MainComponent() {
-// Clear menu bar
-#if JUCE_MAC
-  juce::MenuBarModel::setMacMainMenu(nullptr);
-#endif
-
   // Clear LookAndFeel before destruction
   setLookAndFeel(nullptr);
 
@@ -248,57 +245,167 @@ void MainComponent::resized() {
 void MainComponent::updateWindowTitle() {
   if (auto* topLevel = getTopLevelComponent()) {
     juce::String title = "Clip Composer";
+    auto sessionLabel = getCurrentSessionLabel();
+    if (sessionLabel.isNotEmpty())
+      title += " - " + sessionLabel;
     if (m_sessionManager->isDirty())
       title += " *";
-    auto sessionFile = m_sessionManager->getCurrentFile();
-    if (sessionFile != juce::File())
-      title += " - " + sessionFile.getFileNameWithoutExtension();
 #ifdef DEBUG
     title += " [DEBUG]";
 #endif
-    title += " - v0.2.1";
+    title += " - v";
+    title += occ::BuildInfo::version;
+    title += " [";
+    title += occ::BuildInfo::gitHash;
+    title += "]";
     topLevel->setName(title);
   }
 }
 
 //==============================================================================
-void MainComponent::saveCurrentSession() {
+juce::String MainComponent::getCurrentSessionLabel() const {
   auto currentFile = m_sessionManager->getCurrentFile();
   if (currentFile != juce::File()) {
-    m_sessionManager->saveSession(currentFile);
-  } else {
-    // No file set yet - use Save As
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Save Session", orpheus::ApplicationPaths::getSessionsDir(), "*.json");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode |
-                             juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser](const juce::FileChooser& fc) {
-                           auto file = fc.getResult();
-                           if (file != juce::File()) {
-                             m_sessionManager->saveSession(file);
-                             updateWindowTitle();
-                           }
-                         });
+    return currentFile.getFileNameWithoutExtension();
   }
+
+  auto sessionName = juce::String(m_sessionManager->getSessionName());
+  return sessionName.isNotEmpty() ? sessionName : "Untitled";
+}
+
+//==============================================================================
+bool MainComponent::saveSessionToFile(const juce::File& file) {
+  auto targetFile = file;
+  if (targetFile == juce::File()) {
+    return false;
+  }
+
+  if (!targetFile.hasFileExtension(".json")) {
+    targetFile = targetFile.withFileExtension(".json");
+  }
+
+  if (m_sessionManager->saveSession(targetFile)) {
+    updateWindowTitle();
+    return true;
+  }
+
+  juce::AlertWindow::showMessageBoxAsync(
+      juce::AlertWindow::WarningIcon, "Save Failed",
+      "Could not save session file:\n" + targetFile.getFullPathName(), "OK");
+  return false;
+}
+
+//==============================================================================
+bool MainComponent::saveCurrentSession() {
+  auto currentFile = m_sessionManager->getCurrentFile();
+  if (currentFile != juce::File()) {
+    return saveSessionToFile(currentFile);
+  }
+
+  return saveCurrentSessionAs();
+}
+
+//==============================================================================
+bool MainComponent::saveCurrentSessionAs() {
+  juce::FileChooser chooser("Save Session As", orpheus::ApplicationPaths::getSessionsDir(),
+                            "*.json");
+
+  if (!chooser.browseForFileToSave(true)) {
+    return false;
+  }
+
+  return saveSessionToFile(chooser.getResult());
+}
+
+//==============================================================================
+bool MainComponent::loadSessionFromFile(const juce::File& file) {
+  if (file == juce::File()) {
+    return false;
+  }
+
+  if (m_audioEngine) {
+    m_audioEngine->stopAllClips();
+  }
+
+  if (!m_sessionManager->loadSession(file)) {
+    return false;
+  }
+
+  m_loopEnabled.fill(false);
+  m_stopOthersOnPlay.fill(false);
+
+  constexpr int numTabs = AudioEngine::MAX_CLIP_BUTTONS / 48;
+  auto activeTab = juce::jlimit(0, numTabs - 1, m_sessionManager->getActiveTab());
+  for (int tabIndex = 0; tabIndex < numTabs; ++tabIndex) {
+    m_sessionManager->setActiveTab(tabIndex);
+    for (int buttonIndex = 0; buttonIndex < m_clipGrid->getButtonCount(); ++buttonIndex) {
+      updateButtonFromClip(buttonIndex);
+    }
+  }
+
+  onTabSelected(activeTab);
+  updateWindowTitle();
+  return true;
+}
+
+//==============================================================================
+bool MainComponent::openSessionInteractive() {
+  juce::FileChooser chooser("Open Session", orpheus::ApplicationPaths::getSessionsDir(),
+                            "*.json");
+
+  if (!chooser.browseForFileToOpen()) {
+    return false;
+  }
+
+  auto file = chooser.getResult();
+  if (loadSessionFromFile(file)) {
+    DBG("MainComponent: Successfully loaded session: " + file.getFileName());
+    return true;
+  }
+
+  juce::AlertWindow::showMessageBoxAsync(
+      juce::AlertWindow::WarningIcon, "Load Failed",
+      "Could not load session file:\n" + file.getFullPathName(), "OK");
+  return false;
+}
+
+//==============================================================================
+void MainComponent::createNewSession() {
+  if (m_audioEngine) {
+    m_audioEngine->stopAllClips();
+  }
+
+  m_sessionManager->clearSession();
+  m_sessionManager->setActiveTab(0);
+  m_loopEnabled.fill(false);
+  m_stopOthersOnPlay.fill(false);
+
+  if (m_tabSwitcher) {
+    m_tabSwitcher->setActiveTab(0);
+  }
+
+  for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+    if (auto* button = m_clipGrid->getButton(i)) {
+      button->clearClip();
+    }
+  }
+
+  onTabSelected(0);
+  updateWindowTitle();
 }
 
 //==============================================================================
 void MainComponent::timerCallback() {
-  // OCC144: Update VU meter at 30Hz
-  // Note: Until clip group routing is implemented, all bars show master RMS level
-  if (m_barVisualizer && m_audioEngine) {
-    float masterLevel = m_audioEngine->getMasterRmsLevel();
-    // Show master level on all 4 bars (no group routing yet)
-    std::vector<float> levels = {masterLevel, masterLevel, masterLevel, masterLevel};
+  refreshUiSnapshot();
+
+  if (m_barVisualizer) {
+    std::vector<float> levels(m_uiSnapshot.audio.groupLevels.begin(), m_uiSnapshot.audio.groupLevels.end());
     m_barVisualizer->setVolumeBands(levels);
   }
 
-  // Feed LevelMetersWindow with audio data (Plan Task 6)
-  if (m_levelMetersWindow && m_levelMetersWindow->isVisible() && m_audioEngine) {
-    std::array<float, 4> groupLevels;
-    m_audioEngine->getGroupLevels(groupLevels);
-    float masterLevel = m_audioEngine->getMasterRmsLevel();
-    m_levelMetersWindow->updateLevels(groupLevels, masterLevel);
+  if (m_levelMetersWindow && m_levelMetersWindow->isVisible()) {
+    m_levelMetersWindow->updateLevels(m_uiSnapshot.audio.groupLevels,
+                                      m_uiSnapshot.audio.masterRmsLevel);
   }
 
   // Static counter for 1Hz performance updates (every 30 timer ticks at 30Hz)
@@ -445,58 +552,12 @@ void MainComponent::wireUpClipGridCallbacks() {
     onClipDraggedToButton(sourceIndex, targetIndex);
   };
 
-  // 75fps playback state sync (uses global clip index for multi-tab isolation)
-  m_clipGrid->getClipState = [this](int buttonIndex) -> orpheus::PlaybackState {
-    if (m_audioEngine) {
-      int globalClipIndex = getGlobalClipIndex(buttonIndex);
-      return m_audioEngine->getClipState(globalClipIndex);
+  m_clipGrid->getClipSnapshot = [this](int buttonIndex, occ::ui::ClipUiSnapshot& snapshot) {
+    if (buttonIndex >= 0 && buttonIndex < kButtonsPerTab) {
+      snapshot = m_uiSnapshot.session.clips[buttonIndex];
+      return true;
     }
-    return orpheus::PlaybackState::Stopped;
-  };
-
-  // 75fps clip existence check (prevents orphaned states)
-  m_clipGrid->hasClip = [this](int buttonIndex) -> bool {
-    return m_sessionManager->hasClip(buttonIndex);
-  };
-
-  // 75fps clip state tracking (ensures fade, loop, stop-others persist)
-  m_clipGrid->getClipStates = [this](int buttonIndex, bool& loopEnabled, bool& fadeInEnabled,
-                                     bool& fadeOutEnabled, bool& stopOthersEnabled) {
-    if (!m_sessionManager->hasClip(buttonIndex))
-      return;
-
-    auto clipData = m_sessionManager->getClip(buttonIndex);
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-
-    // Query clip metadata (these are CLIP properties, not button properties)
-    loopEnabled = m_loopEnabled[globalClipIndex];
-    fadeInEnabled = (clipData.fadeInSeconds > 0.0);
-    fadeOutEnabled = (clipData.fadeOutSeconds > 0.0);
-    stopOthersEnabled = m_stopOthersOnPlay[globalClipIndex];
-  };
-
-  // 75fps playback position tracking (for elapsed time display)
-  m_clipGrid->getClipPosition = [this](int buttonIndex) -> float {
-    if (!m_audioEngine || !m_sessionManager->hasClip(buttonIndex))
-      return 0.0f;
-
-    int globalClipIndex = getGlobalClipIndex(buttonIndex);
-    auto clipData = m_sessionManager->getClip(buttonIndex);
-
-    // Get current sample position (absolute)
-    int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
-
-    // Calculate trimmed duration in samples
-    int64_t trimmedSamples = clipData.trimOutSamples - clipData.trimInSamples;
-
-    // Normalize to 0.0-1.0 progress within trimmed region
-    if (trimmedSamples > 0) {
-      float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
-                       static_cast<float>(trimmedSamples);
-      return juce::jlimit(0.0f, 1.0f, progress);
-    }
-
-    return 0.0f;
+    return false;
   };
 }
 
@@ -508,7 +569,6 @@ void MainComponent::wireUpTransportCallbacks() {
 void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state) {
   // Get clip info for logging
   int tabIndex = buttonIndex / 48;
-  int localIndex = buttonIndex % 48;
 
   // Build history entry with timestamp
   auto now = juce::Time::getCurrentTime();
@@ -523,11 +583,8 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
   double fadeInSeconds = 0.0;
   double fadeOutSeconds = 0.0;
 
-  // Get clip metadata from session manager (need to temporarily switch tabs)
-  int currentTab = m_sessionManager->getActiveTab();
-  m_sessionManager->setActiveTab(tabIndex);
-  if (m_sessionManager->hasClip(localIndex)) {
-    auto clipData = m_sessionManager->getClip(localIndex);
+  auto clipData = m_sessionManager->getClipByGlobalIndex(buttonIndex);
+  if (clipData.isValid()) {
     if (clipData.displayName.empty()) {
       // Extract filename from filePath
       juce::File file(clipData.filePath);
@@ -543,7 +600,6 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
     fadeInSeconds = clipData.fadeInSeconds;
     fadeOutSeconds = clipData.fadeOutSeconds;
   }
-  m_sessionManager->setActiveTab(currentTab);
 
   // Helper lambda: format samples as MM:SS.mmm
   auto formatTime = [](int64_t samples, int sr) -> juce::String {
@@ -638,6 +694,81 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
   }
 }
 
+void MainComponent::refreshUiSnapshot() {
+  m_uiSnapshot = {};
+
+  if (!m_sessionManager)
+    return;
+
+  const int activeTab = m_sessionManager->getActiveTab();
+  m_uiSnapshot.session.activeTab = activeTab;
+
+  for (int buttonIndex = 0; buttonIndex < kButtonsPerTab; ++buttonIndex) {
+    auto clipSnapshot = buildClipUiSnapshot(buttonIndex);
+    m_uiSnapshot.session.clips[buttonIndex] = clipSnapshot;
+
+    if (clipSnapshot.playbackState == orpheus::PlaybackState::Playing ||
+        clipSnapshot.playbackState == orpheus::PlaybackState::Stopping) {
+      m_uiSnapshot.session.hasActivePlayback = true;
+    }
+  }
+
+  if (m_audioEngine) {
+    m_uiSnapshot.audio.masterRmsLevel = m_audioEngine->getMasterRmsLevel();
+    m_audioEngine->getGroupLevels(m_uiSnapshot.audio.groupLevels);
+    // P3-11: routing fields will be wired when AudioEngine exposes these APIs
+    // m_uiSnapshot.audio.routeAssignmentsAdjusted = m_audioEngine->areRouteAssignmentsAdjusted();
+    // m_uiSnapshot.audio.activeDeviceIdentifier = m_audioEngine->getCurrentDeviceIdentifier();
+  }
+}
+
+occ::ui::ClipUiSnapshot MainComponent::buildClipUiSnapshot(int buttonIndex) const {
+  occ::ui::ClipUiSnapshot snapshot;
+  snapshot.tabIndex = m_sessionManager ? m_sessionManager->getActiveTab() : 0;
+  snapshot.buttonIndex = buttonIndex;
+  snapshot.globalClipIndex = (snapshot.tabIndex * kButtonsPerTab) + buttonIndex;
+
+  if (!m_sessionManager || buttonIndex < 0 || buttonIndex >= kButtonsPerTab)
+    return snapshot;
+
+  const auto clipData = m_sessionManager->getClipByGlobalIndex(snapshot.globalClipIndex);
+  snapshot.hasClip = clipData.isValid();
+  if (!snapshot.hasClip)
+    return snapshot;
+
+  snapshot.loopEnabled = m_loopEnabled[snapshot.globalClipIndex];
+  snapshot.fadeInEnabled = clipData.fadeInSeconds > 0.0;
+  snapshot.fadeOutEnabled = clipData.fadeOutSeconds > 0.0;
+  snapshot.stopOthersEnabled = m_stopOthersOnPlay[snapshot.globalClipIndex];
+  snapshot.displayName = juce::String(clipData.displayName);
+  snapshot.color = clipData.color;
+  snapshot.clipGroup = clipData.clipGroup;
+  snapshot.playbackProgress = calculateClipProgress(clipData, snapshot.globalClipIndex);
+
+  if (m_audioEngine) {
+    snapshot.playbackState = m_audioEngine->getClipState(snapshot.globalClipIndex);
+  }
+
+  return snapshot;
+}
+
+float MainComponent::calculateClipProgress(const SessionManager::ClipData& clipData,
+                                           int globalClipIndex) const {
+  if (!m_audioEngine || !clipData.isValid())
+    return 0.0f;
+
+  const int64_t currentSample = m_audioEngine->getClipPosition(globalClipIndex);
+  const int64_t effectiveTrimOut =
+      (clipData.trimOutSamples > 0) ? clipData.trimOutSamples : clipData.durationSamples;
+  const int64_t trimmedSamples = effectiveTrimOut - clipData.trimInSamples;
+  if (trimmedSamples <= 0)
+    return 0.0f;
+
+  const float progress = static_cast<float>(currentSample - clipData.trimInSamples) /
+                         static_cast<float>(trimmedSamples);
+  return juce::jlimit(0.0f, 1.0f, progress);
+}
+
 //==============================================================================
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
   // CRITICAL: Suspend main grid hotkeys when Clip Edit dialog is open
@@ -674,31 +805,43 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
   if (key.getModifiers().isCommandDown() && !key.getModifiers().isShiftDown()) {
     // Cmd+Z = Undo
     if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(100, 1); // Trigger Undo menu item
+      handleMenuItemSelected(100, 1); // Trigger Undo menu item
       return true;
     }
 
-    // Cmd+N = New Session (Plan Task 8b)
     if (key == juce::KeyPress('n', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(1, 0); // Trigger "New Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::newSession);
+      } else {
+        handleMenuItemSelected(1, 0);
+      }
       return true;
     }
 
-    // Cmd+O = Open Session (Plan Task 8c)
     if (key == juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(2, 0); // Trigger "Open Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::openSession);
+      } else {
+        handleMenuItemSelected(2, 0);
+      }
       return true;
     }
 
-    // Cmd+S = Save Session
     if (key == juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0)) {
-      menuItemSelected(3, 0); // Trigger "Save Session" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::saveSession);
+      } else {
+        handleMenuItemSelected(3, 0);
+      }
       return true;
     }
-    // Cmd+, = Preferences (OCC144: Opens Audio I/O Settings as primary settings dialog)
+
     if (key == juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0)) {
-      DBG("MainComponent: Cmd+, pressed - Opening Audio I/O Settings");
-      menuItemSelected(20, 5); // Trigger Audio I/O Settings dialog
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::showAudioSettings);
+      } else {
+        showAudioSettings();
+      }
       return true;
     }
 
@@ -778,14 +921,18 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     if (key ==
         juce::KeyPress('s', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
                        0)) {
-      menuItemSelected(4, 0); // Trigger "Save Session As" menu item
+      if (m_appCommandHandler) {
+        m_appCommandHandler(occ::AppCommandIds::saveSessionAs);
+      } else {
+        handleMenuItemSelected(4, 0);
+      }
       return true;
     }
     // Cmd+Shift+Z = Redo
     if (key ==
         juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
                        0)) {
-      menuItemSelected(101, 1); // Trigger Redo menu item
+      handleMenuItemSelected(101, 1); // Trigger Redo menu item
       return true;
     }
   }
@@ -1617,6 +1764,8 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
         << " Fade: [" << clipData.fadeInSeconds << "s " << clipData.fadeInCurve << ", "
         << clipData.fadeOutSeconds << "s " << clipData.fadeOutCurve << "]");
 
+    refreshUiSnapshot();
+
     // Close dialog and clear reference
     dialog->setVisible(false);
     delete dialog;
@@ -1673,6 +1822,8 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     }
 
     DBG("MainComponent: CANCEL - Restored original metadata for button " << buttonIndex);
+
+    refreshUiSnapshot();
 
     // Close dialog
     dialog->setVisible(false);
@@ -2035,17 +2186,18 @@ void MainComponent::onTabSelected(int tabIndex) {
     updateButtonFromClip(i);
   }
 
+  refreshUiSnapshot();
   repaint();
 }
 
 //==============================================================================
 // Menu Bar Implementation
-juce::StringArray MainComponent::getMenuBarNames() {
+juce::StringArray MainComponent::getAppMenuBarNames() {
   return {"File", "Edit", "Session", "Setup", "Display", "Audio", "Help"};
 }
 
-juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
-                                               const juce::String& /*menuName*/) {
+juce::PopupMenu MainComponent::getAppMenuForIndex(int topLevelMenuIndex,
+                                                  const juce::String& /*menuName*/) {
   juce::PopupMenu menu;
 
   if (topLevelMenuIndex == 0) // File menu
@@ -2168,109 +2320,82 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex,
   return menu;
 }
 
-void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) {
+void MainComponent::showAudioSettings() {
+  auto* dialog = new AudioSettingsDialog(m_audioEngine.get());
+  dialog->onCloseClicked = [this, dialog]() {
+    dialog->setVisible(false);
+    delete dialog;
+  };
+  dialog->setSize(500, 300);
+  dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
+  addAndMakeVisible(dialog);
+  dialog->toFront(true);
+  DBG("MainComponent: Audio I/O Settings dialog opened");
+}
+
+void MainComponent::showKeyboardShortcutsDialog() {
+  juce::String shortcuts = "=== ORPHEUS CLIP COMPOSER - KEYBOARD SHORTCUTS ===\n\n";
+  shortcuts += "GLOBAL SHORTCUTS:\n";
+  shortcuts += "  \xe2\x86\x91 \xe2\x86\x93 \xe2\x86\x90 \xe2\x86\x92 ......... Move playbox around grid\n";
+  shortcuts += "  Space/Enter ..... Trigger playbox button\n";
+  shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
+  shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
+  shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
+  shortcuts += "  Cmd/Ctrl+, ...... Audio I/O Settings\n";
+  shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
+  shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
+  shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
+  shortcuts += "  Z X C V B N ..... Trigger clips (Row 2)\n";
+  shortcuts += "  1-6, 7-0, -=, [];',. Trigger clips (Rows 3-5)\n";
+  shortcuts += "  F1-F12 .......... Trigger clips (Rows 6-7)\n\n";
+  shortcuts += "EDIT DIALOG SHORTCUTS:\n";
+  shortcuts += "  Space ........... Toggle Play/Pause\n";
+  shortcuts += "  Enter ........... Save & Close (OK)\n";
+  shortcuts += "  Esc ............. Cancel & Close\n";
+  shortcuts += "  ? ............... Toggle Loop\n\n";
+  shortcuts += "TRIM POINTS:\n";
+  shortcuts += "  I ............... Set IN point (at playhead)\n";
+  shortcuts += "  O ............... Set OUT point (at playhead)\n";
+  shortcuts += "  [ ............... Nudge IN point left (-1 tick)\n";
+  shortcuts += "  ] ............... Nudge IN point right (+1 tick)\n";
+  shortcuts += "  Shift+[ ......... Nudge IN point left (-15 ticks)\n";
+  shortcuts += "  Shift+] ......... Nudge IN point right (+15 ticks)\n";
+  shortcuts += "  ; ............... Nudge OUT point left (-1 tick)\n";
+  shortcuts += "  ' ............... Nudge OUT point right (+1 tick)\n";
+  shortcuts += "  Shift+; ......... Nudge OUT point left (-15 ticks)\n";
+  shortcuts += "  Shift+' ......... Nudge OUT point right (+15 ticks)\n\n";
+  shortcuts += "WAVEFORM ZOOM:\n";
+  shortcuts += "  Cmd/Ctrl + Plus .. Zoom in (1x \xe2\x86\x92 16x)\n";
+  shortcuts += "  Cmd/Ctrl + Minus . Zoom out (16x \xe2\x86\x92 1x)\n\n";
+  shortcuts += "FADE TIMES (Edit Dialog only):\n";
+  shortcuts += "  Cmd/Ctrl+Shift+[1-9] ... Set OUT fade (0.1s-0.9s)\n";
+  shortcuts += "  Cmd/Ctrl+Shift+0 ....... Set OUT fade (1.0s)\n";
+  shortcuts += "  Cmd/Ctrl+Opt+Shift+[1-9] Set IN fade (0.1s-0.9s)\n";
+  shortcuts += "  Cmd/Ctrl+Opt+Shift+0 ... Set IN fade (1.0s)\n\n";
+  shortcuts += "NOTE: Hold < > buttons in Edit Dialog for auto-repeat";
+
+  juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Keyboard Shortcuts",
+                                         shortcuts, "OK");
+}
+
+void MainComponent::handleMenuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) {
   switch (menuItemID) {
   case 1: // New Session
-    // Stop all playing audio first
-    if (m_audioEngine) {
-      m_audioEngine->stopAllClips();
-    }
-
-    m_sessionManager->clearSession();
-    // Clear all buttons
-    for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-      auto button = m_clipGrid->getButton(i);
-      if (button)
-        button->clearClip();
-    }
+    createNewSession();
     DBG("MainComponent: New session created");
     break;
 
   case 2: // Open Session
-  {
-    juce::FileChooser chooser("Open Session",
-                              juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                  .getChildFile("Orpheus Clip Composer/Sessions"),
-                              "*.json");
-
-    if (chooser.browseForFileToOpen()) {
-      auto file = chooser.getResult();
-      if (m_sessionManager->loadSession(file)) {
-        // Update all buttons from loaded session
-        for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-          updateButtonFromClip(i);
-        }
-        DBG("MainComponent: Successfully loaded session: " + file.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Load Failed",
-            "Could not load session file:\\n" + file.getFullPathName(), "OK");
-      }
-    }
+    openSessionInteractive();
     break;
-  }
 
   case 3: // Save Session (OCC144: Now tracks current file)
-  {
-    // Check if session has been saved before
-    auto currentFile = m_sessionManager->getCurrentFile();
-    if (currentFile.existsAsFile()) {
-      // Save to existing file without prompting
-      if (m_sessionManager->saveSession(currentFile)) {
-        DBG("MainComponent: Successfully saved session: " + currentFile.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Save Failed",
-            "Could not save session file:\n" + currentFile.getFullPathName(), "OK");
-      }
-    } else {
-      // No previous file - show save dialog (same as Save As)
-      juce::FileChooser chooser("Save Session",
-                                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                    .getChildFile("Orpheus Clip Composer/Sessions"),
-                                "*.json");
-
-      if (chooser.browseForFileToSave(true)) {
-        auto file = chooser.getResult();
-        // Ensure .json extension
-        if (!file.hasFileExtension(".json"))
-          file = file.withFileExtension(".json");
-
-        if (m_sessionManager->saveSession(file)) {
-          DBG("MainComponent: Successfully saved session: " + file.getFileName());
-        } else {
-          juce::AlertWindow::showMessageBoxAsync(
-              juce::AlertWindow::WarningIcon, "Save Failed",
-              "Could not save session file:\n" + file.getFullPathName(), "OK");
-        }
-      }
-    }
+    saveCurrentSession();
     break;
-  }
 
   case 4: // Save Session As
-  {
-    juce::FileChooser chooser("Save Session As",
-                              juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                  .getChildFile("Orpheus Clip Composer/Sessions"),
-                              "*.json");
-
-    if (chooser.browseForFileToSave(true)) {
-      auto file = chooser.getResult();
-      // Ensure .json extension
-      if (!file.hasFileExtension(".json"))
-        file = file.withFileExtension(".json");
-
-      if (m_sessionManager->saveSession(file)) {
-        DBG("MainComponent: Successfully saved session as: " + file.getFileName());
-      } else {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Save Failed",
-            "Could not save session file:\\n" + file.getFullPathName(), "OK");
-      }
-    }
+    saveCurrentSessionAs();
     break;
-  }
 
   case 5: // Quit
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
@@ -2319,51 +2444,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
     break;
 
   case 13: // Keyboard Shortcuts
-  {
-    juce::String shortcuts = "=== ORPHEUS CLIP COMPOSER - KEYBOARD SHORTCUTS ===\n\n";
-    shortcuts += "GLOBAL SHORTCUTS:\n";
-    shortcuts += "  ↑ ↓ ← → ......... Move playbox around grid\n";
-    shortcuts += "  Space/Enter ..... Trigger playbox button\n";
-    shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
-    shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
-    shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
-    shortcuts += "  Cmd/Ctrl+, ...... Audio I/O Settings\n";
-    shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
-    shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
-    shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
-    shortcuts += "  Z X C V B N ..... Trigger clips (Row 2)\n";
-    shortcuts += "  1-6, 7-0, -=, [];\\',.  Trigger clips (Rows 3-5)\n";
-    shortcuts += "  F1-F12 .......... Trigger clips (Rows 6-7)\n\n";
-    shortcuts += "EDIT DIALOG SHORTCUTS:\n";
-    shortcuts += "  Space ........... Toggle Play/Pause\n";
-    shortcuts += "  Enter ........... Save & Close (OK)\n";
-    shortcuts += "  Esc ............. Cancel & Close\n";
-    shortcuts += "  ? ............... Toggle Loop\n\n";
-    shortcuts += "TRIM POINTS:\n";
-    shortcuts += "  I ............... Set IN point (at playhead)\n";
-    shortcuts += "  O ............... Set OUT point (at playhead)\n";
-    shortcuts += "  [ ............... Nudge IN point left (-1 tick)\n";
-    shortcuts += "  ] ............... Nudge IN point right (+1 tick)\n";
-    shortcuts += "  Shift+[ ......... Nudge IN point left (-15 ticks)\n";
-    shortcuts += "  Shift+] ......... Nudge IN point right (+15 ticks)\n";
-    shortcuts += "  ; ............... Nudge OUT point left (-1 tick)\n";
-    shortcuts += "  ' ............... Nudge OUT point right (+1 tick)\n";
-    shortcuts += "  Shift+; ......... Nudge OUT point left (-15 ticks)\n";
-    shortcuts += "  Shift+' ......... Nudge OUT point right (+15 ticks)\n\n";
-    shortcuts += "WAVEFORM ZOOM:\n";
-    shortcuts += "  Cmd/Ctrl + Plus .. Zoom in (1x → 16x)\n";
-    shortcuts += "  Cmd/Ctrl + Minus . Zoom out (16x → 1x)\n\n";
-    shortcuts += "FADE TIMES (Edit Dialog only):\n";
-    shortcuts += "  Cmd/Ctrl+Shift+[1-9] ... Set OUT fade (0.1s-0.9s)\n";
-    shortcuts += "  Cmd/Ctrl+Shift+0 ....... Set OUT fade (1.0s)\n";
-    shortcuts += "  Cmd/Ctrl+Opt+Shift+[1-9]  Set IN fade (0.1s-0.9s)\n";
-    shortcuts += "  Cmd/Ctrl+Opt+Shift+0 .... Set IN fade (1.0s)\n\n";
-    shortcuts += "NOTE: Hold < > buttons in Edit Dialog for auto-repeat";
-
-    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Keyboard Shortcuts",
-                                           shortcuts, "OK");
+    showKeyboardShortcutsDialog();
     break;
-  }
 
   case 14: // Clear Current Tab (Item 8)
   {
@@ -2420,6 +2502,7 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
         m_stopOthersOnPlay[globalIndex] = false;
       }
 
+      refreshUiSnapshot();
       DBG("MainComponent: Cleared " << clipCount << " clips from Tab " << (currentTab + 1));
     }
     break;
@@ -2436,21 +2519,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   }
 
   case 20: // Audio I/O Settings
-  {
-    // Create and show Audio I/O Settings Dialog
-    auto* dialog = new AudioSettingsDialog(m_audioEngine.get());
-    dialog->onCloseClicked = [this, dialog]() {
-      dialog->setVisible(false);
-      delete dialog;
-    };
-    dialog->setSize(500, 300); // Match AudioSettingsDialog's preferred size
-    dialog->setCentrePosition(getWidth() / 2, getHeight() / 2);
-    addAndMakeVisible(dialog);
-    dialog->toFront(true);
-
-    DBG("MainComponent: Audio I/O Settings dialog opened");
+    showAudioSettings();
     break;
-  }
 
   case 21: // Show Audio Engine Info
   {
@@ -2712,51 +2782,8 @@ void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/) 
   //==============================================================================
   // Help Menu (OCC144)
   case 400: // Keyboard Shortcuts (duplicated from Session menu for discoverability)
-  {
-    juce::String shortcuts = "=== ORPHEUS CLIP COMPOSER - KEYBOARD SHORTCUTS ===\n\n";
-    shortcuts += "GLOBAL SHORTCUTS:\n";
-    shortcuts += "  ↑ ↓ ← → ......... Move playbox around grid\n";
-    shortcuts += "  Space/Enter ..... Trigger playbox button\n";
-    shortcuts += "  Esc ............. Stop All Clips (with fade)\n";
-    shortcuts += "  Cmd/Ctrl+S ...... Save Session\n";
-    shortcuts += "  Cmd/Ctrl+Shift+S  Save Session As\n";
-    shortcuts += "  Cmd/Ctrl+, ...... Audio I/O Settings\n";
-    shortcuts += "  Cmd/Ctrl+Shift+[1-8] ... Switch to Tab 1-8\n";
-    shortcuts += "  Q W E R T Y ..... Trigger clips (Row 0)\n";
-    shortcuts += "  A S D F G H ..... Trigger clips (Row 1)\n";
-    shortcuts += "  Z X C V B N ..... Trigger clips (Row 2)\n";
-    shortcuts += "  1-6, 7-0, -=, [];',. Trigger clips (Rows 3-5)\n";
-    shortcuts += "  F1-F12 .......... Trigger clips (Rows 6-7)\n\n";
-    shortcuts += "EDIT DIALOG SHORTCUTS:\n";
-    shortcuts += "  Space ........... Toggle Play/Pause\n";
-    shortcuts += "  Enter ........... Save & Close (OK)\n";
-    shortcuts += "  Esc ............. Cancel & Close\n";
-    shortcuts += "  ? ............... Toggle Loop\n\n";
-    shortcuts += "TRIM POINTS:\n";
-    shortcuts += "  I ............... Set IN point (at playhead)\n";
-    shortcuts += "  O ............... Set OUT point (at playhead)\n";
-    shortcuts += "  [ ............... Nudge IN point left (-1 tick)\n";
-    shortcuts += "  ] ............... Nudge IN point right (+1 tick)\n";
-    shortcuts += "  Shift+[ ......... Nudge IN point left (-15 ticks)\n";
-    shortcuts += "  Shift+] ......... Nudge IN point right (+15 ticks)\n";
-    shortcuts += "  ; ............... Nudge OUT point left (-1 tick)\n";
-    shortcuts += "  ' ............... Nudge OUT point right (+1 tick)\n";
-    shortcuts += "  Shift+; ......... Nudge OUT point left (-15 ticks)\n";
-    shortcuts += "  Shift+' ......... Nudge OUT point right (+15 ticks)\n\n";
-    shortcuts += "WAVEFORM ZOOM:\n";
-    shortcuts += "  Cmd/Ctrl + Plus .. Zoom in (1x → 16x)\n";
-    shortcuts += "  Cmd/Ctrl + Minus . Zoom out (16x → 1x)\n\n";
-    shortcuts += "FADE TIMES (Edit Dialog only):\n";
-    shortcuts += "  Cmd/Ctrl+Shift+[1-9] ... Set OUT fade (0.1s-0.9s)\n";
-    shortcuts += "  Cmd/Ctrl+Shift+0 ....... Set OUT fade (1.0s)\n";
-    shortcuts += "  Cmd/Ctrl+Opt+Shift+[1-9] Set IN fade (0.1s-0.9s)\n";
-    shortcuts += "  Cmd/Ctrl+Opt+Shift+0 ... Set IN fade (1.0s)\n\n";
-    shortcuts += "NOTE: Hold < > buttons in Edit Dialog for auto-repeat";
-
-    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Keyboard Shortcuts",
-                                           shortcuts, "OK");
+    showKeyboardShortcutsDialog();
     break;
-  }
 
   case 401: // About Orpheus Clip Composer
   {

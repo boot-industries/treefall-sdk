@@ -54,7 +54,7 @@ foreach(target ${ORPHEUS_CORE_TARGETS})
   set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
-include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_core_runtime)
 foreach(target ${ORPHEUS_CORE_TARGETS})
   orpheus_enable_warnings(${target})

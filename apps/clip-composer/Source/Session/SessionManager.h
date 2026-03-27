@@ -150,6 +150,13 @@ public:
   void removeClip(int buttonIndex);
 
   /**
+   * @brief Remove clip from button in a specific tab.
+   * @param buttonIndex Button index to clear
+   * @param tabIndex Tab index (0-7)
+   */
+  void removeClip(int buttonIndex, int tabIndex);
+
+  /**
    * @brief Swap clips between two buttons in current tab.
    * @param buttonIndex1 First button index
    * @param buttonIndex2 Second button index
@@ -172,6 +179,13 @@ public:
   ClipData getClip(int buttonIndex, int tabIndex) const;
 
   /**
+   * @brief Get clip data using a global clip index.
+   * @param globalClipIndex Global index (tab*48 + button)
+   * @return ClipData if assigned, or ClipData with empty filePath if not
+   */
+  ClipData getClipByGlobalIndex(int globalClipIndex) const;
+
+  /**
    * @brief Check if button has a clip assigned in current tab.
    * @param buttonIndex Button index within current tab
    * @return true if button has a valid clip
@@ -187,12 +201,26 @@ public:
   bool hasClip(int buttonIndex, int tabIndex) const;
 
   /**
+   * @brief Check if a global clip index is assigned.
+   * @param globalClipIndex Global index (tab*48 + button)
+   * @return true if the slot contains a valid clip
+   */
+  bool hasClipByGlobalIndex(int globalClipIndex) const;
+
+  /**
    * @brief Update clip metadata for a button in a specific tab.
    * @param buttonIndex Button index within the tab
    * @param clipData Updated clip metadata
    * @param tabIndex Tab index (0-7)
    */
   void setClip(int buttonIndex, const ClipData& clipData, int tabIndex);
+
+  /**
+   * @brief Clear every clip on a specific tab.
+   * @param tabIndex Tab index (0-7)
+   * @return true if any clips were removed
+   */
+  bool clearTab(int tabIndex);
 
   /**
    * @brief Get all assigned clips (for session save).
@@ -300,6 +328,9 @@ private:
 
   // Helper: Extract metadata from audio file
   ClipData extractMetadata(const juce::String& filePath);
+
+  // Helper: Load a clip into an explicit tab without mutating active-tab state.
+  bool loadClipForTab(int buttonIndex, const juce::String& filePath, int tabIndex);
 
   //==============================================================================
   bool m_isDirty = false;          // Unsaved changes tracking

@@ -1,0 +1,131 @@
+# OCC - Orpheus Clip Composer
+
+Project documentation index for orpheus-sdk/apps/clip-composer.
+
+**Next Available Number:** OCC147
+
+## Recent Documents
+
+- [[OCC146 Post-Codex Integration Sprint Guide]]
+- [[OCC145 Audio Device Selection Fix]]
+- [[OCC144 Menu Functionality Gaps Fix]]
+- [[OCC143 Sprint 0 Foundation Implementation Report]]
+- [[OCC142 Backend Recovery and Sprint 0 Planning]]
+
+## All Documents
+
+- [[OCC090 v020 Sprint]]
+- [[OCC091]]
+- [[OCC092]]
+- [[OCC093 v020 Sprint - Completion Report]]
+- [[OCC096 SDK Integration Patterns]]
+- [[OCC097 Session Format and Loading]]
+- [[OCC098 UI Components Reference]]
+- [[OCC099 Testing Strategy]]
+- [[OCC100 Performance Requirements and Optimization]]
+- [[OCC101 Troubleshooting Guide]]
+- [[OCC102 OCC Track v020 Release & v021 Planning]]
+- [[OCC103 QA v020 Tests]]
+- [[OCC104 v021 Sprint Plan]]
+- [[OCC105 QA v020 Manual Test Log]]
+- [[OCC106 v021 Sprint A - CCW Cloud Tasks]]
+- [[OCC107 v021 Sprint B - CLI Local Tasks]]
+- [[OCC108 v021 Sprint Report]]
+- [[OCC109 v022 Sprint Report]]
+- [[OCC110 SDK Integration Guide - Transport State and Loop Features]]
+- [[OCC111 Gap Audit Report - v0.2.2 Missed Tasks and Technical Debt]]
+- [[OCC112 Sprint Roadmap - Gap Closure and Forward Progress]]
+- [[OCC113 Sprint A4 Report - Automated Testing Foundation]]
+- [[OCC114 Backend Infrastructure Audit - Current State]]
+- [[OCC115 File Menu Backend Features - Sprint Plan]]
+- [[OCC116 Setup Menu Backend Features - Sprint Plan]]
+- [[OCC117 Display and Edit Menu Backend Features - Sprint Plan]]
+- [[OCC118 Search Menu Backend Features - Sprint Plan]]
+- [[OCC119 Global Menu Backend Features - Sprint Plan]]
+- [[OCC120 Options Menu Backend Features - Sprint Plan]]
+- [[OCC121 Info Menu Backend Features - Sprint Plan]]
+- [[OCC122 Engineering Menu Backend Features - Sprint Plan]]
+- [[OCC123 Admin Menu Backend Features - Sprint Plan]]
+- [[OCC124 Pending Features Glossary and Navigation Guide]]
+- [[OCC125 Backend Feature Analysis and Recommendations]]
+- [[OCC126 Backend Master Plan - Architecture and Roadmap]]
+- [[OCC127 State Synchronization Architecture - Continuous Polling Pattern]]
+- [[OCC128 Session Report - v0.2.1 UX Fixes (2025-01-13)]]
+- [[OCC129 Clip Button Rapid-Fire Behavior and Fade Distortion - Technical Reference]]
+- [[OCC129 Lost CL Notes v021]]
+- [[OCC130A Session Report - v0.2.1 UX Polish Sprint (2025-01-14)]]
+- [[OCC130B Sprint Plan - UX Refinements v022]]
+- [[OCC130 Session Report - v0.2.1 UX Polish Sprint (2025-01-14)]]
+- [[OCC130 Sprint Plan - UX Refinements v021]]
+- [[OCC131 Lost CL Notes v021]]
+- [[OCC132 Gap Analysis - OCC131 Lost CL Notes Implementation Status]]
+- [[OCC133 Critical CPU Fix - 75fps Timer Optimization]]
+- [[OCC134 Session Report - CPU Fix and Playbox Navigation Implementation]]
+- [[OCC135 Comprehensive Sprint Report - OCC132 Gap Analysis Implementation]]
+- [[OCC135 Sprint Report - OCC132 Gap Analysis Implementation (Items 22, 26, 29)]]
+- [[OCC136 Loop Fade Regression Debug Session - INCOMPLETE]]
+- [[OCC137 Critical Gain Staging Bug Investigation and Fix]]
+- [[OCC138 Post-Fix Testing and Validation Plan]]
+- [[OCC139 Frontend UI Overhaul - Design Tokens and shmui Integration]]
+- [[OCC140 ORP121 Phase 4 OCC Tasks Handoff]]
+- [[OCC141 ORP121 Phase 4 OCC Implementation Report]]
+- [[OCC142 Backend Recovery and Sprint 0 Planning]]
+- [[OCC143 Sprint 0 Foundation Implementation Report]]
+- [[OCC144 Menu Functionality Gaps Fix]]
+- [[OCC145 Audio Device Selection Fix]]
+- [[OCC146 Post-Codex Integration Sprint Guide]]
+
+## Archived Documents
+
+- [[archive/OCC001 Cursor Agent Prompt v1]]
+- [[archive/OCC008 Cursor Agent Prompt v7]]
+- [[archive/OCC009 Session Metadata Manifest]]
+- [[archive/OCC010 Wireframes v1]]
+- [[archive/OCC011 Wireframes v2]]
+- [[archive/OCC012 Cursor Agent Prompt v8]]
+- [[archive/OCC013 Advanced Audio Driver Integration for a Professional Soundboard Application]]
+- [[archive/OCC014 Cursor Agent Prompt v9]]
+- [[archive/OCC015 Appendix_ Best Practices for Apple Silicon vs_ Intel Chips]]
+- [[archive/OCC016 Appendix_ Best Practices for Deploying on Windows Platforms]]
+- [[archive/OCC017 Security Best Practices for a Professional Soundboard Application]]
+- [[archive/OCC019 Cursor Agent Prompt v10]]
+- [[archive/OCC021 Orpheus Clip Composer - Product Vision]]
+- [[archive/OCC022 Clip Metadata Schema v1.0]]
+- [[archive/OCC023 Component Architecture v1.0]]
+- [[archive/OCC024 User Interaction Flows v1.0]]
+- [[archive/OCC025 UI Framework Decision - JUCE vs Electron v1.0]]
+- [[archive/OCC026 Milestone 1 - MVP Definition v1.0]]
+- [[archive/OCC027]]
+- [[archive/OCC028 DSP Library Evaluation - Time-Stretch and Pitch-Shift v1.0]]
+- [[archive/OCC029]]
+- [[archive/OCC030]]
+- [[archive/OCC031]]
+- [[archive/OCC032]]
+- [[archive/OCC033]]
+- [[archive/OCC034]]
+- [[archive/OCC035]]
+- [[archive/OCC036]]
+- [[archive/OCC037]]
+- [[archive/OCC038]]
+- [[archive/OCC039]]
+- [[archive/OCC040]]
+- [[archive/OCC041]]
+- [[archive/OCC042]]
+- [[archive/OCC043]]
+- [[archive/OCC044]]
+- [[archive/OCC045]]
+- [[archive/OCC_RELEASE_HANDOFF]]
+
+## Navigation
+
+- **Vault:** [[../../vault|Return to Vault]]
+- **Repo:** orpheus-sdk/apps/clip-composer
+- **Docs:** `apps/clip-composer/docs/occ/`
+
+## Tags
+
+#project-index #occ
+
+---
+
+**Last Generated:** 2026-03-26

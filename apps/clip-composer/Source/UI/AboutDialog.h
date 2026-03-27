@@ -40,7 +40,7 @@ public:
     return 400;
   }
   static constexpr int getPreferredHeight() {
-    return 300;
+    return 320;
   }
 
 private:

@@ -162,6 +162,12 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
   g.setColour(juce::Colours::white);
   g.setFont(juce::Font(juce::FontOptions(11.0f)));
   g.drawText(label, labelArea, juce::Justification::centred);
+
+  auto valueArea = bounds.removeFromTop(16);
+  g.setColour(juce::Colours::lightgrey);
+  g.setFont(juce::Font(juce::FontOptions(10.0f)));
+  g.drawText(juce::String(level * 100.0f, 0) + "%", valueArea,
+             juce::Justification::centredTop);
 }
 
 void LevelMetersWindow::Content::resized() {
