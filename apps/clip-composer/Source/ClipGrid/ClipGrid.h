@@ -2,10 +2,10 @@
 
 #pragma once
 
+#include "../UIState/ClipComposerUiSnapshot.h"
 #include "ClipButton.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
-#include <orpheus/transport_controller.h> // For PlaybackState enum
 #include <vector>
 
 //==============================================================================
@@ -55,18 +55,8 @@ public:
   std::function<void(int sourceButtonIndex, int targetButtonIndex)>
       onButtonDraggedToButton; // Drag clip to different button
 
-  // Callback to get clip playback state (for 75fps visual sync)
-  std::function<orpheus::PlaybackState(int)> getClipState;
-
-  // Callback to check if clip exists (for 75fps state validation)
-  std::function<bool(int)> hasClip;
-
-  // Callback to get clip metadata (for 75fps state persistence)
-  std::function<void(int, bool&, bool&, bool&, bool&)>
-      getClipStates; // buttonIndex → (loop, fadeIn, fadeOut, stopOthers)
-
-  // Callback to get clip playback position (for elapsed time display)
-  std::function<float(int)> getClipPosition; // buttonIndex → progress (0.0-1.0)
+  // Callback to poll the current clip snapshot for a button.
+  std::function<bool(int, occ::ui::ClipUiSnapshot&)> getClipSnapshot;
 
   //==============================================================================
   // Timer management for performance optimization
@@ -102,7 +92,8 @@ private:
   void handleButtonLeftClick(int buttonIndex);
   void handleButtonRightClick(int buttonIndex);
 
-  // Timer callback for 75fps visual updates (broadcast standard)
+  // Timer callback for 75fps visual updates. The timing stays continuous; only the
+  // source of truth is consolidated into a snapshot per button.
   void timerCallback() override;
 
   //==============================================================================
@@ -121,6 +112,9 @@ private:
 
   bool m_hasActiveClips = false; // Track if any clips are playing
   int m_playboxIndex = 0;        // Current playbox position (Item 60: arrow key navigation)
+
+  // Repaint gating: only repaint buttons whose snapshot changed since last frame
+  std::array<occ::ui::ClipUiSnapshot, 48> m_prevSnapshots{};
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

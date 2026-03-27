@@ -7,6 +7,7 @@
 #include "Core/HotKeyManager.h"
 #include "Core/MIDIDeviceManager.h"
 #include "Session/SessionManager.h"
+#include "UIState/ClipComposerUiSnapshot.h"
 #include "UI/AboutDialog.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
@@ -48,7 +49,7 @@
  * - Communicates with audio thread via lock-free commands
  * - Never blocks the audio thread
  */
-class MainComponent : public juce::Component, public juce::MenuBarModel, private juce::Timer {
+class MainComponent : public juce::Component, private juce::Timer {
 public:
   //==============================================================================
   MainComponent();
@@ -57,7 +58,19 @@ public:
   bool isSessionDirty() const {
     return m_sessionManager->isDirty();
   }
-  void saveCurrentSession();
+  bool saveCurrentSession();
+  bool saveCurrentSessionAs();
+  bool saveSessionToFile(const juce::File& file);
+  bool loadSessionFromFile(const juce::File& file);
+  bool openSessionInteractive();
+  void createNewSession();
+  juce::File getCurrentSessionFile() const {
+    return m_sessionManager->getCurrentFile();
+  }
+  juce::String getCurrentSessionLabel() const;
+  void setAppCommandHandler(std::function<void(int)> handler) {
+    m_appCommandHandler = std::move(handler);
+  }
 
   //==============================================================================
   void paint(juce::Graphics&) override;
@@ -77,10 +90,12 @@ public:
   }
 
   //==============================================================================
-  // MenuBarModel overrides
-  juce::StringArray getMenuBarNames() override;
-  juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
-  void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
+  // Menu helpers (delegated from ClipComposerMenuModel)
+  juce::StringArray getAppMenuBarNames();
+  juce::PopupMenu getAppMenuForIndex(int topLevelMenuIndex, const juce::String& menuName);
+  void handleMenuItemSelected(int menuItemID, int topLevelMenuIndex);
+  void showAudioSettings();
+  void showKeyboardShortcutsDialog();
 
 private:
   //==============================================================================
@@ -95,6 +110,9 @@ private:
   void wireUpClipGridCallbacks();
   void wireUpTransportCallbacks();
   void handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state);
+  void refreshUiSnapshot();
+  occ::ui::ClipUiSnapshot buildClipUiSnapshot(int buttonIndex) const;
+  float calculateClipProgress(const SessionManager::ClipData& clipData, int globalClipIndex) const;
 
   //==============================================================================
   // Core Functionality
@@ -177,6 +195,8 @@ private:
   int m_autoBackupCounter = 0;
   juce::Time m_lastAutoBackupTime;
   double m_audioEngineInitializationMs = 0.0;
+  std::function<void(int)> m_appCommandHandler;
+  occ::ui::ClipComposerUiSnapshot m_uiSnapshot;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

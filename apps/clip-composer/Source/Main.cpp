@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-#include "BuildInfo.h" // Include the generated build info
+#include "AppShell/ClipComposerMenuModel.h"
+#include "AppShell/ClipComposerSessionController.h"
+#include "AppShell/ClipComposerWindowController.h"
+#include <BuildInfo.h>
 #include "MainComponent.h"
 #include <algorithm>
 #include <chrono>
@@ -17,14 +20,11 @@
  */
 class ClipComposerApplication : public juce::JUCEApplication {
 public:
-  //==============================================================================
-  ClipComposerApplication() = default;
-
   const juce::String getApplicationName() override {
-    return "Clip Composer"; // Item 51: Removed "Orpheus" from title
+    return "Clip Composer";
   }
   const juce::String getApplicationVersion() override {
-    return "0.2.1"; // Item 51: Updated version for Sprint A/B fixes
+    return occ::BuildInfo::version;
   }
   bool moreThanOneInstanceAllowed() override {
     return false;
@@ -34,9 +34,8 @@ public:
   void initialise(const juce::String& commandLine) override {
     parseCommandLine(commandLine);
 
-    // Create main window
     auto windowStart = std::chrono::steady_clock::now();
-    mainWindow.reset(new MainWindow(getApplicationName()));
+    mainWindow = std::make_unique<MainWindow>(*this);
     auto windowReady = std::chrono::steady_clock::now();
 
     if (auto* mainComponent = mainWindow->getMainComponent()) {
@@ -51,18 +50,16 @@ public:
   }
 
   void shutdown() override {
-    // Clean up main window before application exits
     mainWindow = nullptr;
   }
 
-  //==============================================================================
   void systemRequestedQuit() override {
-    // User requested quit (Cmd+Q, close button, etc.)
-    quit();
+    if (mainWindow == nullptr || mainWindow->requestQuit()) {
+      quit();
+    }
   }
 
   void anotherInstanceStarted(const juce::String& commandLine) override {
-    // Another instance attempted to start (moreThanOneInstanceAllowed() = false)
     juce::ignoreUnused(commandLine);
   }
 
@@ -71,78 +68,104 @@ public:
   }
 
   //==============================================================================
-  /**
-   * Main application window that hosts the MainComponent
-   */
   class MainWindow : public juce::DocumentWindow {
   public:
-    explicit MainWindow(juce::String name)
-        : DocumentWindow(name,
+    explicit MainWindow(ClipComposerApplication& owner)
+        : DocumentWindow(owner.getApplicationName(),
                          juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(
                              juce::ResizableWindow::backgroundColourId),
-                         DocumentWindow::allButtons) {
+                         DocumentWindow::allButtons),
+          m_owner(owner) {
       setUsingNativeTitleBar(true);
-      auto* mainComponent = new MainComponent();
-      setContentOwned(mainComponent, true);
 
-      // Item 51: Dynamic application title
-      updateTitle();
+      auto* mainComponent = new MainComponent();
+      m_mainComponent = mainComponent;
+      setContentOwned(mainComponent, true);
 
 #if JUCE_IOS || JUCE_ANDROID
       setFullScreen(true);
 #else
       setResizable(true, true);
-      centreWithSize(getWidth(), getHeight());
 #endif
 
+      m_sessionController = std::make_unique<ClipComposerSessionController>(*mainComponent);
+      m_windowController =
+          std::make_unique<ClipComposerWindowController>(*this, *m_sessionController);
+      m_menuModel = std::make_unique<ClipComposerMenuModel>(*mainComponent, *m_sessionController,
+                                                            *m_windowController);
+      m_mainComponent->setAppCommandHandler(
+          [this](int commandId) { m_menuModel->invokeCommand(commandId); });
+      m_menuModel->install();
+
+#if !JUCE_MAC
+      setMenuBar(m_menuModel.get());
+#endif
+
+      if (auto* keyMappings = m_menuModel->getCommandManager().getKeyMappings()) {
+        addKeyListener(keyMappings);
+        mainComponent->addKeyListener(keyMappings);
+      }
+
+      m_windowController->restoreWindowState();
       setVisible(true);
+      m_sessionController->restoreLastSessionIfAvailable();
+      m_windowController->refreshTitleNow();
+    }
+
+    ~MainWindow() override {
+      if (m_menuModel) {
+#if !JUCE_MAC
+        setMenuBar(nullptr);
+#endif
+        if (auto* keyMappings = m_menuModel->getCommandManager().getKeyMappings()) {
+          if (m_mainComponent != nullptr) {
+            m_mainComponent->removeKeyListener(keyMappings);
+          }
+          removeKeyListener(keyMappings);
+        }
+        if (m_mainComponent != nullptr) {
+          m_mainComponent->setAppCommandHandler({});
+        }
+        m_menuModel->uninstall();
+      }
+    }
+
+    bool requestQuit() {
+      if (m_owner.isSmokeTestMode()) {
+        return true;
+      }
+      return m_windowController != nullptr && m_windowController->requestQuit();
     }
 
     void closeButtonPressed() override {
-      auto* app = dynamic_cast<ClipComposerApplication*>(juce::JUCEApplication::getInstance());
-      if (app && app->isSmokeTestMode()) {
-        JUCEApplication::getInstance()->systemRequestedQuit();
-        return;
-      }
-
-      auto* mainComp = dynamic_cast<MainComponent*>(getContentComponent());
-      if (mainComp && mainComp->isSessionDirty()) {
-        int result = juce::AlertWindow::showYesNoCancelBox(
-            juce::AlertWindow::QuestionIcon, "Unsaved Changes",
-            "Do you want to save changes before closing?", "Save", "Don't Save", "Cancel");
-
-        if (result == 0) // Cancel
-          return;
-        if (result == 1) { // Save
-          mainComp->saveCurrentSession();
-        }
-        // result == 2 means Don't Save - fall through to quit
-      }
-      JUCEApplication::getInstance()->systemRequestedQuit();
+      m_owner.systemRequestedQuit();
     }
 
-    // Item 51: Update window title with session info
-    void updateTitle() {
-      juce::String title = "Clip Composer"; // Item 51: Removed "Orpheus"
+    void moved() override {
+      DocumentWindow::moved();
+      if (m_windowController != nullptr) {
+        m_windowController->persistWindowState();
+      }
+    }
 
-// TODO: Add session name when SessionManager supports it
-// For now, just show version and build info
-#ifdef DEBUG
-      title += " [DEBUG]";
-#endif
-
-      title += " - v0.2.1"; // Updated version for Sprint A/B fixes
-      title += " [" + juce::String(APP_BUILD_DATE) + "-" + juce::String(APP_COMMIT_HASH) +
-               "]"; // Add build info
-
-      setName(title);
+    void resized() override {
+      DocumentWindow::resized();
+      if (m_windowController != nullptr) {
+        m_windowController->persistWindowState();
+      }
     }
 
     MainComponent* getMainComponent() const {
-      return dynamic_cast<MainComponent*>(getContentComponent());
+      return m_mainComponent;
     }
 
   private:
+    ClipComposerApplication& m_owner;
+    MainComponent* m_mainComponent = nullptr;
+    std::unique_ptr<ClipComposerSessionController> m_sessionController;
+    std::unique_ptr<ClipComposerWindowController> m_windowController;
+    std::unique_ptr<ClipComposerMenuModel> m_menuModel;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
   };
 
@@ -166,6 +189,10 @@ private:
   void logStartupMetrics(const MainComponent& mainComponent, double windowReadyMs) const {
     std::ostringstream stream;
     stream << "STARTUP_METRICS"
+           << " version=" << occ::BuildInfo::version
+           << " git_hash=" << occ::BuildInfo::gitHash
+           << " git_describe=" << occ::BuildInfo::gitDescribe
+           << " build_date=" << occ::BuildInfo::buildDate
            << " window_ready_ms=" << windowReadyMs
            << " audio_engine_init_ms=" << mainComponent.getAudioEngineInitializationMs()
            << " session_history_window_created="

@@ -3,16 +3,20 @@
 #pragma once
 
 #include <ShmUI.h> // Include ShmUI for AudioAnalyzer
+#include <array>
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_events/juce_events.h>
 #include <memory>
 #include <optional>
+#include <orpheus/audio_driver_manager.h>
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/performance_monitor.h>
 #include <orpheus/transport_controller.h>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Core/GridConstants.h"
 
@@ -46,6 +50,21 @@ class TransportController;
  */
 class AudioEngine : public orpheus::ITransportCallback, public orpheus::IAudioCallback {
 public:
+  struct AudioDeviceStatus {
+    bool initialized = false;
+    bool running = false;
+    bool usingFallbackDriver = false;
+    bool requestedDefaultDevice = true;
+    std::string requestedDeviceName = "Default Device";
+    std::string activeDeviceName = "Default Device";
+    std::string driverName = "Unavailable";
+    std::string summary = "Audio engine not initialized";
+    std::string lastError;
+    uint32_t sampleRate = 0;
+    uint32_t bufferSize = 0;
+    uint32_t latencySamples = 0;
+  };
+
   //==============================================================================
   // Constants
 
@@ -225,6 +244,12 @@ public:
   /// @return true on success, false if device initialization failed
   bool setAudioDevice(const std::string& deviceName, uint32_t sampleRate, uint32_t bufferSize);
 
+  /// Get detailed device/driver status for UI display
+  AudioDeviceStatus getAudioDeviceStatus() const;
+
+  /// Get enumeration details for a specific device name
+  std::optional<orpheus::AudioDeviceInfo> getDeviceDetails(const std::string& deviceName) const;
+
   //==============================================================================
   /// @name Cue Buss Management
   /// Pool-based preview playback for Edit Dialog (broadcast-safe, no runtime allocations).
@@ -341,10 +366,30 @@ public:
                     size_t num_frames) override;
 
 private:
+  struct ClipRegistrationState {
+    juce::String filePath;
+    orpheus::ClipMetadata metadata;
+  };
+
   //==============================================================================
   // Helper methods
   orpheus::ClipHandle getClipHandle(int buttonIndex) const;
   int getButtonIndexFromHandle(orpheus::ClipHandle handle) const;
+  bool createConfiguredTransport(uint32_t sampleRate,
+                                 std::unique_ptr<orpheus::TransportController>& transport,
+                                 std::string& errorMessage) const;
+  bool createConfiguredDriver(const std::string& deviceName, uint32_t sampleRate,
+                              uint32_t bufferSize,
+                              std::unique_ptr<orpheus::IAudioDriver>& driver,
+                              std::string& errorMessage, bool& usingFallbackDriver) const;
+  bool rehydrateTransportState(orpheus::TransportController& transport,
+                               const orpheus::TransportController* previousTransport,
+                               std::vector<orpheus::ClipHandle>& handlesToRestart,
+                               std::string& errorMessage) const;
+  void updateCachedClipMetadata(int buttonIndex);
+  void updateCachedCueMetadata(int cueSlot);
+  void updateDeviceStatus(const std::string& requestedDeviceName, const std::string& errorMessage);
+  std::optional<orpheus::AudioDeviceInfo> findDeviceDetails(const std::string& deviceName) const;
 
   //==============================================================================
   // SDK Components
@@ -358,6 +403,7 @@ private:
 
   // Clip metadata cache (for UI queries)
   std::array<std::optional<orpheus::AudioFileMetadata>, MAX_CLIP_BUTTONS> m_clipMetadata;
+  std::array<std::optional<ClipRegistrationState>, MAX_CLIP_BUTTONS> m_clipRegistrations;
 
   /**
    * @brief Cue Buss slot in pre-allocated pool.
@@ -366,7 +412,9 @@ private:
    * CUE_BUSS_BASE_HANDLE+MAX_CUE_BUSSES-1
    */
   struct CueBussSlot {
-    orpheus::ClipHandle handle = 0;                     ///< 0 = free, 10001+ = allocated
+    orpheus::ClipHandle handle = 0;                      ///< 0 = free, 10001+ = allocated
+    juce::String filePath;                               ///< Cached source path for rehydration
+    orpheus::ClipMetadata transportMetadata;             ///< Cached transport metadata
     std::optional<orpheus::AudioFileMetadata> metadata; ///< Cached audio file metadata
   };
   std::array<CueBussSlot, MAX_CUE_BUSSES> m_cueBussPool; ///< Pre-allocated Cue Buss pool
@@ -377,6 +425,7 @@ private:
   uint32_t m_bufferSize = 512;
   bool m_initialized = false;
   std::string m_currentDeviceName = "Default Device"; // Current audio device name
+  AudioDeviceStatus m_deviceStatus;
 
   // SDK Performance Monitor (CPU %, latency, underruns)
   std::unique_ptr<orpheus::IPerformanceMonitor> m_performanceMonitor;
