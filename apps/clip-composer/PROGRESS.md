@@ -1,7 +1,7 @@
 # Orpheus Clip Composer - Implementation Progress
 
-**Last Updated:** 2026-03-27
-**Current Phase:** v0.2.0 Sprint Complete (OCC093)
+**Last Updated:** 2026-03-28
+**Current Phase:** Competitive-gap sprint integration
 **Application Status:** v0.1.0-alpha Released, v0.2.0-alpha Pending QA
 **Framework:** JUCE 8.0.4
 **SDK:** Orpheus SDK M2 (real-time infrastructure)
@@ -19,28 +19,22 @@
 
 ## Current Work
 
-**v0.2.0 Sprint (OCC093) Complete!** ✅
+**Competitive-gap sprint:** in integration
 
-Implemented 6 critical UX fixes:
+Delivered app-local playout/prep improvements on top of the current shell baseline:
 
-1. ✅ Stop Others fade distortion fix (smooth fade-outs, no zigzag)
-2. ✅ 75fps button state tracking (real-time visual sync)
-3. ✅ Edit Dialog time counter collision fix (vertical spacing)
-4. ✅ `[` `]` keyboard shortcuts restart playback
-5. ✅ Transport spam fix (single command per action, gap-free seeking)
-6. ✅ Trim point edit laws (playhead constraint enforcement)
+1. ✅ Operator mode strip for Playout, Edit, Routing, and Preferences
+2. ✅ Richer button actions for Copy, Paste, Swap, and Paste Special
+3. ✅ Dedicated cue-buss audition path for Edit Dialog preview/rehearsal
+4. ✅ Audio setup details now surface playout/audition path and device validation
+5. ✅ Health/status strip now exposes latency, CPU, memory, dropouts, and active device summary
+6. ✅ Session confidence slice landed with lineage, missing-media recovery, and package reopen tests
 
 **Next Steps:**
 
-- Final QA testing for v0.2.0-alpha release
-- Address any critical bugs discovered in QA
-- Release v0.2.0-alpha to beta testers
-
-**Session confidence slice:** in progress
-
-- Added app-local lineage and missing-media metadata to `SessionManager`
-- Added portable package export/import helpers in `SessionManager`
-- Added recovery-focused tests for missing media, relink, and package reopen
+- Manual smoke for preview-vs-playout separation and new operator actions
+- Investigate pre-existing AudioEngine ASan failure in CoreAudio driver test setup
+- Cut follow-up backlog for deferred enterprise/show-control items
 
 ---
 

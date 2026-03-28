@@ -100,10 +100,15 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ✅ Session save/load (JSON format with full metadata)
 - ✅ Session save/load with lineage and missing-media recovery metadata
 - ✅ Portable session package export/import helpers (`Save Copy In`-style media bundle)
+- ✅ Operator modes for Playout, Edit, Routing, and Preferences
 - ✅ Transport controls (Stop All, Panic)
+- ✅ Button context actions for Copy, Paste, Swap, and Paste Special
 - ✅ Clip editing: Name, color, clip group assignment
 - ✅ Waveform visualization with real-time trim markers
+- ✅ Dedicated cue-buss audition path in the Edit Dialog preview flow
 - ✅ Fade In/Out times (0.0-3.0s) with curve selection
+- ✅ Audio device selection UI with playout/audition status details
+- ✅ Always-visible top-strip health status (latency, CPU, memory, dropouts, device summary)
 - ✅ UI polish: Inter typeface, 20% larger fonts, 3-line text wrapping
 - ✅ Drag-to-reorder clips (240ms hold time)
 - ✅ Stop Others On Play mode (per-clip solo)
@@ -121,7 +126,6 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ⚠️ Sample rate locked to 48kHz (auto-conversion coming)
 - ⚠️ Trim handles not interactive (slider-based only)
 - ⚠️ Fade curves stored but not applied during playback
-- ⚠️ No audio device selection UI (uses system default)
 - ⚠️ Portable session package export/import is app-local in `SessionManager` and not yet wired to a dedicated UI flow
 
 **Timeline:**

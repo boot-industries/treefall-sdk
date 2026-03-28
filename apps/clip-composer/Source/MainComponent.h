@@ -71,6 +71,10 @@ public:
   void setAppCommandHandler(std::function<void(int)> handler) {
     m_appCommandHandler = std::move(handler);
   }
+  void setOperatorViewMode(occ::ui::OperatorViewMode mode);
+  occ::ui::OperatorViewMode getOperatorViewMode() const {
+    return m_operatorViewMode;
+  }
 
   //==============================================================================
   void paint(juce::Graphics&) override;
@@ -113,6 +117,8 @@ private:
   void refreshUiSnapshot();
   occ::ui::ClipUiSnapshot buildClipUiSnapshot(int buttonIndex) const;
   float calculateClipProgress(const SessionManager::ClipData& clipData, int globalClipIndex) const;
+  void handleClipButtonAction(int buttonIndex, ClipButtonAction action);
+  void showRoutingInfoForClip(int globalClipIndex) const;
 
   //==============================================================================
   // Core Functionality
@@ -180,6 +186,11 @@ private:
 
   // Per-button loop mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
   std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_loopEnabled = {};
+
+  // Explicit operator view mode
+  occ::ui::OperatorViewMode m_operatorViewMode = occ::ui::OperatorViewMode::Playout;
+  std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_playNextEnabled = {};
+  int m_pendingPlayNextGlobalIndex = -1;
 
   // Single Edit Dialog tracking (ensures only one dialog open at a time)
   ClipEditDialog* m_currentEditDialog = nullptr;

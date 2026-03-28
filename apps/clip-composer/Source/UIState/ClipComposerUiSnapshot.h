@@ -9,6 +9,13 @@
 
 namespace occ::ui {
 
+enum class OperatorViewMode {
+  Playout = 0,
+  Edit,
+  Routing,
+  Preferences,
+};
+
 struct ClipUiSnapshot {
   int tabIndex = 0;
   int buttonIndex = -1;
@@ -43,13 +50,42 @@ struct SessionUiSnapshot {
 };
 
 struct AudioEngineUiSnapshot {
+  struct AuditionRouteConfig {
+    bool usesDedicatedBus = false;
+    juce::String routeLabel;
+    juce::String validationMessage;
+  };
+
+  struct DeviceRouteStatus {
+    bool initialized = false;
+    bool running = false;
+    bool usingFallbackDriver = false;
+    bool routesAvailable = true;
+    juce::String activeDeviceIdentifier;
+    juce::String playoutRouteLabel;
+    juce::String deviceSummary;
+  };
+
+  struct HealthStripSnapshot {
+    float cpuPercent = 0.0f;
+    int memoryMB = 0;
+    int bufferSize = 0;
+    int sampleRate = 0;
+    int dropoutCount = 0;
+    juce::String statusText;
+  };
+
   float masterRmsLevel = 0.0f;
   std::array<float, 4> groupLevels{};
   bool routeAssignmentsAdjusted = false;
   juce::String activeDeviceIdentifier;
+  DeviceRouteStatus device;
+  AuditionRouteConfig audition;
+  HealthStripSnapshot health;
 };
 
 struct ClipComposerUiSnapshot {
+  OperatorViewMode activeViewMode = OperatorViewMode::Playout;
   AudioEngineUiSnapshot audio;
   SessionUiSnapshot session;
 };

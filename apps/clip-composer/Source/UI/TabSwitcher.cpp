@@ -5,6 +5,12 @@
 
 #include <cmath>
 
+namespace {
+constexpr int kLeftMargin = 10;
+constexpr int kRightMargin = 10;
+constexpr int kModeStripSpacing = 10;
+}
+
 //==============================================================================
 TabSwitcher::TabSwitcher() {
   // Initialize default tab labels
@@ -13,6 +19,28 @@ TabSwitcher::TabSwitcher() {
   for (int i = 0; i < NUM_TABS; ++i) {
     m_tabLabels.add(juce::String(defaultLabels[i]));
   }
+
+  auto makeModeButton = [this](std::unique_ptr<juce::TextButton>& button, const juce::String& label,
+                               occ::ui::OperatorViewMode mode) {
+    button = std::make_unique<juce::TextButton>(label);
+    button->setButtonText(label);
+    button->setClickingTogglesState(true);
+    button->onClick = [this, mode]() {
+      setOperatorViewMode(mode);
+      if (onOperatorViewModeSelected)
+        onOperatorViewModeSelected(mode);
+    };
+    button->setColour(juce::TextButton::buttonColourId, juce::Colour(OCC::Design::kBgComponent));
+    button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(OCC::Design::kAccentTeal));
+    button->setColour(juce::TextButton::textColourOffId, juce::Colour(OCC::Design::kTextSecondary));
+    button->setColour(juce::TextButton::textColourOnId, juce::Colour(OCC::Design::kTextPrimary));
+    addAndMakeVisible(button.get());
+  };
+
+  makeModeButton(m_playoutButton, "Playout", occ::ui::OperatorViewMode::Playout);
+  makeModeButton(m_editButton, "Edit", occ::ui::OperatorViewMode::Edit);
+  makeModeButton(m_routingButton, "Routing", occ::ui::OperatorViewMode::Routing);
+  makeModeButton(m_preferencesButton, "Prefs", occ::ui::OperatorViewMode::Preferences);
 
   // OCC130 Sprint B: Create Stop All button
   m_stopAllButton = std::make_unique<juce::TextButton>("Stop All");
@@ -39,6 +67,48 @@ TabSwitcher::TabSwitcher() {
   startTimer(10); // 10ms intervals for smooth 1Hz pulse animation
 
   setSize(800, m_tabHeight);
+  updateModeButtonStates();
+}
+
+void TabSwitcher::setOperatorViewMode(occ::ui::OperatorViewMode mode) {
+  m_operatorViewMode = mode;
+  updateModeButtonStates();
+  repaint();
+}
+
+void TabSwitcher::updateModeButtonStates() {
+  if (m_playoutButton)
+    m_playoutButton->setToggleState(m_operatorViewMode == occ::ui::OperatorViewMode::Playout,
+                                    juce::dontSendNotification);
+  if (m_editButton)
+    m_editButton->setToggleState(m_operatorViewMode == occ::ui::OperatorViewMode::Edit,
+                                 juce::dontSendNotification);
+  if (m_routingButton)
+    m_routingButton->setToggleState(m_operatorViewMode == occ::ui::OperatorViewMode::Routing,
+                                    juce::dontSendNotification);
+  if (m_preferencesButton)
+    m_preferencesButton->setToggleState(
+        m_operatorViewMode == occ::ui::OperatorViewMode::Preferences, juce::dontSendNotification);
+}
+
+void TabSwitcher::setHealthSnapshot(
+    const occ::ui::AudioEngineUiSnapshot::HealthStripSnapshot& snapshot) {
+  m_cpuPercent = snapshot.cpuPercent;
+  m_memoryMB = snapshot.memoryMB;
+  m_bufferSize = snapshot.bufferSize;
+  m_sampleRate = snapshot.sampleRate;
+  m_dropoutCount = snapshot.dropoutCount;
+  if (snapshot.statusText.isNotEmpty()) {
+    m_deviceSummary = snapshot.statusText;
+  }
+  repaint();
+}
+
+void TabSwitcher::setDeviceRouteStatus(
+    const occ::ui::AudioEngineUiSnapshot::DeviceRouteStatus& status) {
+  m_deviceSummary = status.deviceSummary;
+  m_playoutRouteLabel = status.playoutRouteLabel;
+  repaint();
 }
 
 //==============================================================================
@@ -146,7 +216,7 @@ void TabSwitcher::paint(juce::Graphics& g) {
   float lightSize = 12.0f; // Diameter of each circular indicator
   float lightGap = 4.0f;   // Vertical gap between lights
   float rightMargin = 10.0f;
-  float statusTextWidth = 86.0f;
+  float statusTextWidth = 190.0f;
   float statusTextGap = 6.0f;
 
   // Calculate position (to the right of PANIC button, outside transport controls)
@@ -159,10 +229,17 @@ void TabSwitcher::paint(juce::Graphics& g) {
 
   g.setFont(juce::FontOptions("HK Grotesk", OCC::Design::kFontSM - 1.0f, juce::Font::plain));
   g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-  g.drawText(m_sampleRate > 0 ? juce::String(m_latencyMs, 1) + " ms" : "No I/O",
+  g.drawText(m_sampleRate > 0 ? juce::String(m_latencyMs, 1) + " ms / " +
+                                  juce::String(m_dropoutCount) + " drop"
+                            : "No I/O",
              statusTextArea.removeFromTop(lightSize + 1.0f).toNearestInt(),
              juce::Justification::centredRight);
-  g.drawText(m_sampleRate > 0 ? "CPU " + juce::String(m_cpuPercent, 0) + "%" : "CPU --",
+  g.drawText(m_sampleRate > 0 ? "CPU " + juce::String(m_cpuPercent, 0) + "% / " +
+                                    juce::String(m_memoryMB) + " MB"
+                              : "CPU --",
+             statusTextArea.removeFromTop(lightSize + 2.0f).toNearestInt(),
+             juce::Justification::centredRight);
+  g.drawText(m_playoutRouteLabel.isNotEmpty() ? m_playoutRouteLabel : m_deviceSummary,
              statusTextArea.toNearestInt(), juce::Justification::centredRight);
 
   // Latency indicator (top light)
@@ -222,12 +299,31 @@ void TabSwitcher::resized() {
   // Layout transport buttons on right side.
   // | [Tabs (flex space)] | [Stop All] [Panic] | [status text] [●] [●] |
 
-  auto bounds = getLocalBounds().reduced(10, 0); // 10px horizontal margin
+  auto bounds = getLocalBounds().reduced(kLeftMargin, 0); // 10px horizontal margin
+
+  int modeStripWidth = (NUM_OPERATOR_MODES * OPERATOR_MODE_WIDTH) +
+                       ((NUM_OPERATOR_MODES - 1) * OPERATOR_MODE_GAP) + kModeStripSpacing;
+  auto modeArea = bounds.removeFromLeft(modeStripWidth);
+
+  auto placeModeButton = [](juce::TextButton* button, juce::Rectangle<int>& area) {
+    if (!button)
+      return;
+
+    auto buttonBounds = area.removeFromLeft(OPERATOR_MODE_WIDTH).withSizeKeepingCentre(
+        OPERATOR_MODE_WIDTH, OPERATOR_MODE_HEIGHT);
+    button->setBounds(buttonBounds);
+    area.removeFromLeft(OPERATOR_MODE_GAP);
+  };
+
+  placeModeButton(m_playoutButton.get(), modeArea);
+  placeModeButton(m_editButton.get(), modeArea);
+  placeModeButton(m_routingButton.get(), modeArea);
+  placeModeButton(m_preferencesButton.get(), modeArea);
 
   int buttonWidth = 100;
   int buttonHeight = 32;
   int gap = 10;
-  int statusTextWidth = 92;
+  int statusTextWidth = 196;
 
   bounds.removeFromRight(22 + statusTextWidth);
 
@@ -367,17 +463,21 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
 
   auto bounds = getLocalBounds();
 
+  int modeStripWidth = (NUM_OPERATOR_MODES * OPERATOR_MODE_WIDTH) +
+                       ((NUM_OPERATOR_MODES - 1) * OPERATOR_MODE_GAP) + kModeStripSpacing +
+                       kLeftMargin;
+
   // OCC130 Sprint B: Reserve space for transport controls on right
   int buttonWidth = 100;
   int gap = 10;
   int statusLightsWidth = 22;
-  int statusTextWidth = 92;
+  int statusTextWidth = 196;
   int transportWidth = 2 * (buttonWidth + gap) + statusTextWidth + statusLightsWidth + 20;
-  int availableWidth = bounds.getWidth() - transportWidth;
+  int availableWidth = bounds.getWidth() - transportWidth - modeStripWidth - kRightMargin;
 
   int tabWidth = (availableWidth - (TAB_GAP * (NUM_TABS - 1))) / NUM_TABS;
 
-  int x = tabIndex * (tabWidth + TAB_GAP);
+  int x = modeStripWidth + tabIndex * (tabWidth + TAB_GAP);
   int y = 0;
 
   return juce::Rectangle<int>(x, y, tabWidth, m_tabHeight);

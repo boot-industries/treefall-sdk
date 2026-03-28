@@ -313,6 +313,14 @@ void AudioSettingsDialog::refreshStatusLabels(const juce::String& transientStatu
     details << "\nFallback driver active";
   }
 
+  details << "\nPlayout: Groups 1-4 via " << juce::String(status.activeDeviceName);
+  details << "\nAudition: Dedicated cue buss via " << juce::String(status.activeDeviceName);
+  if (!status.lastError.empty()) {
+    details << "\nValidation: " << juce::String(status.lastError);
+  } else if (status.initialized) {
+    details << "\nValidation: Device and routing available";
+  }
+
   m_detailLabel.setText(details, juce::dontSendNotification);
 }
 

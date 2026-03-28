@@ -12,14 +12,12 @@
 class AudioEngine;
 
 /**
- * PreviewPlayer - View controller for Edit Dialog (controls main grid clip)
+ * PreviewPlayer - audition controller for Edit Dialog
  *
  * ARCHITECTURE (v0.2.1):
- * - Edit Dialog is a "zoomed view" of the main grid clip
- * - PreviewPlayer is NOT a separate playback instance
- * - Controls the main grid clip via global clip index (ONE clip, TWO views)
- * - NO Cue Buss allocation (deferred to future routing requirements)
- * - Edits apply to the main grid clip in real-time
+ * - Edit Dialog uses a dedicated cue-buss audition path when a source file is available
+ * - Falls back to the main grid clip only if audition routing cannot be created
+ * - Preserves live trim/fade metadata updates so the edit surface stays coherent
  *
  * INTEGRATION WITH SDK:
  * - OUT point enforcement is SDK-managed (automatic stop/loop at OUT)
@@ -36,7 +34,7 @@ class AudioEngine;
  */
 class PreviewPlayer : private juce::Timer {
 public:
-  PreviewPlayer(AudioEngine* audioEngine, int buttonIndex);
+  PreviewPlayer(AudioEngine* audioEngine, int buttonIndex, const juce::String& sourceFilePath = {});
   ~PreviewPlayer();
 
   //==============================================================================
@@ -81,6 +79,12 @@ public:
   /// Read the current preview playback snapshot from AudioEngine.
   occ::ui::PreviewPlaybackUiSnapshot getPlaybackSnapshot() const;
 
+  /// Update or clear the dedicated audition source file used for cue-buss playback.
+  void setAuditionSource(const juce::String& sourceFilePath);
+
+  /// Returns true when the preview is using a dedicated cue-buss audition path.
+  bool isUsingDedicatedAuditionBuss() const;
+
   /// Start position timer (for UI playhead updates at 75 FPS)
   /// NOTE: Automatically started by play(), but can be called manually
   /// if clip is already playing when Edit Dialog opens
@@ -99,13 +103,18 @@ public:
   std::function<void()> onPlaybackStopped;
 
 private:
+  void releaseAuditionBuss();
+
   //==============================================================================
   // Main grid clip control (view controller pattern)
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
   int m_buttonIndex = -1;               // Global clip index of the main grid clip
+  juce::String m_sourceFilePath;
+  orpheus::ClipHandle m_auditionHandle = 0;
 
   // Playback state (synchronized with main grid clip)
   bool m_loopEnabled = false;
+  bool m_lastPlayingState = false;
 
   // Trim points (atomic for thread-safe access from timer callback)
   std::atomic<int64_t> m_trimInSamples{0};

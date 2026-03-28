@@ -17,7 +17,7 @@ occ::ui::PreviewPlaybackUiSnapshot getPreviewSnapshot(const std::unique_ptr<Prev
 //==============================================================================
 ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
     : m_audioEngine(audioEngine), m_buttonIndex(buttonIndex) {
-  // PreviewPlayer controls the same clip slot as the main grid and only mirrors its state.
+  // PreviewPlayer drives the edit dialog audition path and mirrors metadata changes back to the clip.
   m_previewPlayer = std::make_unique<PreviewPlayer>(m_audioEngine, m_buttonIndex);
 
   // Keep the 75fps preview timer running while the dialog is open so this view
@@ -108,6 +108,10 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
                                   m_metadata.fadeInCurve, m_metadata.fadeOutCurve);
       }
     }
+  }
+
+  if (m_previewPlayer) {
+    m_previewPlayer->setAuditionSource(m_metadata.filePath);
   }
 
   // Sync loop button to metadata
