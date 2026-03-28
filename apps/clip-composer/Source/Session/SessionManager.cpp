@@ -19,7 +19,7 @@ juce::String makeIsoUtcTimestamp() {
 }
 
 juce::String makeUuidString() {
-  return juce::Uuid().toString().trim().toStdString();
+  return juce::Uuid().toString().trim();
 }
 
 juce::String sanitizeFileName(juce::String fileName) {

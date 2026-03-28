@@ -6,6 +6,7 @@
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
 #include <orpheus/app/ApplicationPaths.h>
+#include <optional>
 
 #if JUCE_MAC
 #include <mach/mach.h>
@@ -14,6 +15,41 @@
 //==============================================================================
 namespace {
 constexpr int kButtonsPerTab = occ::ui::SessionUiSnapshot::kButtonsPerTab;
+
+int getProcessMemoryMb() {
+#if JUCE_MAC
+  struct mach_task_basic_info info;
+  mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
+  if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) ==
+      KERN_SUCCESS) {
+    return static_cast<int>(info.resident_size / (1024 * 1024));
+  }
+#endif
+  return 0;
+}
+
+constexpr int kMenuCopyClip = 50;
+constexpr int kMenuPasteClip = 51;
+constexpr int kMenuSwapClip = 52;
+constexpr int kMenuPasteSpecial = 53;
+constexpr int kMenuPreviewClip = 54;
+constexpr int kMenuRoutingInfo = 55;
+constexpr int kMenuPlayNext = 56;
+
+std::optional<ClipButtonAction> clipButtonActionForMenuItem(int result) {
+  switch (result) {
+  case kMenuCopyClip:
+    return ClipButtonAction::Copy;
+  case kMenuPasteClip:
+    return ClipButtonAction::Paste;
+  case kMenuSwapClip:
+    return ClipButtonAction::Swap;
+  case kMenuPasteSpecial:
+    return ClipButtonAction::PasteSpecial;
+  default:
+    return std::nullopt;
+  }
+}
 }
 
 //==============================================================================
@@ -80,6 +116,10 @@ MainComponent::MainComponent() {
 
   // Wire up tab selection callback
   m_tabSwitcher->onTabSelected = [this](int tabIndex) { onTabSelected(tabIndex); };
+  m_tabSwitcher->onOperatorViewModeSelected = [this](occ::ui::OperatorViewMode mode) {
+    setOperatorViewMode(mode);
+  };
+  m_tabSwitcher->setOperatorViewMode(m_operatorViewMode);
 
   // Create clip grid (6×8 = 48 buttons per tab)
   m_clipGrid = std::make_unique<ClipGrid>();
@@ -333,6 +373,8 @@ bool MainComponent::loadSessionFromFile(const juce::File& file) {
 
   m_loopEnabled.fill(false);
   m_stopOthersOnPlay.fill(false);
+  m_playNextEnabled.fill(false);
+  m_pendingPlayNextGlobalIndex = -1;
 
   constexpr int numTabs = AudioEngine::MAX_CLIP_BUTTONS / 48;
   auto activeTab = juce::jlimit(0, numTabs - 1, m_sessionManager->getActiveTab());
@@ -379,6 +421,8 @@ void MainComponent::createNewSession() {
   m_sessionManager->setActiveTab(0);
   m_loopEnabled.fill(false);
   m_stopOthersOnPlay.fill(false);
+  m_playNextEnabled.fill(false);
+  m_pendingPlayNextGlobalIndex = -1;
 
   if (m_tabSwitcher) {
     m_tabSwitcher->setActiveTab(0);
@@ -430,22 +474,10 @@ void MainComponent::timerCallback() {
       double latencyMs = ((latencySamples / 2.0) / static_cast<double>(sampleRate)) * 1000.0;
 
       m_tabSwitcher->setLatencyInfo(latencyMs, bufferSize, sampleRate);
-
-      // CPU usage from SDK PerformanceMonitor (cross-platform, audio-thread-accurate)
-      auto perfMetrics = m_audioEngine->getPerformanceMetrics();
-      float cpuPercent = perfMetrics.cpuUsagePercent;
-
-      // Memory via platform API (PerformanceMonitor tracks audio, not process memory)
-      int memoryMB = 0;
-#if JUCE_MAC
-      struct mach_task_basic_info info;
-      mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-      if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) ==
-          KERN_SUCCESS) {
-        memoryMB = static_cast<int>(info.resident_size / (1024 * 1024));
-      }
-#endif
-      m_tabSwitcher->setPerformanceInfo(cpuPercent, memoryMB);
+      m_tabSwitcher->setPerformanceInfo(m_uiSnapshot.audio.health.cpuPercent,
+                                        m_uiSnapshot.audio.health.memoryMB);
+      m_tabSwitcher->setHealthSnapshot(m_uiSnapshot.audio.health);
+      m_tabSwitcher->setDeviceRouteStatus(m_uiSnapshot.audio.device);
     }
 
     // Auto-backup: save dirty sessions every 60 seconds (60 × 1Hz ticks)
@@ -692,10 +724,34 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
     entry.triggerSource = "User";
     m_playoutLogger->logPlaybackStart(entry);
   }
+
+  if (state == orpheus::PlaybackState::Stopped && m_pendingPlayNextGlobalIndex >= 0 && m_audioEngine) {
+    bool anyPlaybackActive = false;
+    for (int clipIndex = 0; clipIndex < AudioEngine::MAX_CLIP_BUTTONS; ++clipIndex) {
+      if (m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Playing ||
+          m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Stopping) {
+        anyPlaybackActive = true;
+        break;
+      }
+    }
+
+    if (!anyPlaybackActive) {
+      const int nextGlobalIndex = m_pendingPlayNextGlobalIndex;
+      m_pendingPlayNextGlobalIndex = -1;
+      m_audioEngine->startClip(nextGlobalIndex);
+      if ((nextGlobalIndex / kButtonsPerTab) == m_sessionManager->getActiveTab()) {
+        if (auto* nextButton = m_clipGrid->getButton(nextGlobalIndex % kButtonsPerTab)) {
+          nextButton->setState(ClipButton::State::Playing);
+        }
+      }
+      DBG("MainComponent: Play Next fired for clip " << nextGlobalIndex);
+    }
+  }
 }
 
 void MainComponent::refreshUiSnapshot() {
   m_uiSnapshot = {};
+  m_uiSnapshot.activeViewMode = m_operatorViewMode;
 
   if (!m_sessionManager)
     return;
@@ -714,11 +770,30 @@ void MainComponent::refreshUiSnapshot() {
   }
 
   if (m_audioEngine) {
+    const auto deviceStatus = m_audioEngine->getAudioDeviceStatus();
+    const auto perfMetrics = m_audioEngine->getPerformanceMetrics();
     m_uiSnapshot.audio.masterRmsLevel = m_audioEngine->getMasterRmsLevel();
     m_audioEngine->getGroupLevels(m_uiSnapshot.audio.groupLevels);
-    // P3-11: routing fields will be wired when AudioEngine exposes these APIs
-    // m_uiSnapshot.audio.routeAssignmentsAdjusted = m_audioEngine->areRouteAssignmentsAdjusted();
-    // m_uiSnapshot.audio.activeDeviceIdentifier = m_audioEngine->getCurrentDeviceIdentifier();
+    m_uiSnapshot.audio.activeDeviceIdentifier = juce::String(deviceStatus.activeDeviceName);
+    m_uiSnapshot.audio.device.initialized = deviceStatus.initialized;
+    m_uiSnapshot.audio.device.running = deviceStatus.running;
+    m_uiSnapshot.audio.device.usingFallbackDriver = deviceStatus.usingFallbackDriver;
+    m_uiSnapshot.audio.device.routesAvailable = deviceStatus.initialized;
+    m_uiSnapshot.audio.device.activeDeviceIdentifier = juce::String(deviceStatus.activeDeviceName);
+    m_uiSnapshot.audio.device.playoutRouteLabel =
+        "Playout: Groups 1-4 via " + juce::String(deviceStatus.activeDeviceName);
+    m_uiSnapshot.audio.device.deviceSummary = juce::String(deviceStatus.summary);
+    m_uiSnapshot.audio.audition.usesDedicatedBus = true;
+    m_uiSnapshot.audio.audition.routeLabel =
+        "Audition: cue buss via " + juce::String(deviceStatus.activeDeviceName);
+    m_uiSnapshot.audio.audition.validationMessage =
+        deviceStatus.lastError.empty() ? juce::String() : juce::String(deviceStatus.lastError);
+    m_uiSnapshot.audio.health.cpuPercent = perfMetrics.cpuUsagePercent;
+    m_uiSnapshot.audio.health.memoryMB = getProcessMemoryMb();
+    m_uiSnapshot.audio.health.bufferSize = static_cast<int>(deviceStatus.bufferSize);
+    m_uiSnapshot.audio.health.sampleRate = static_cast<int>(deviceStatus.sampleRate);
+    m_uiSnapshot.audio.health.dropoutCount = static_cast<int>(perfMetrics.bufferUnderrunCount);
+    m_uiSnapshot.audio.health.statusText = juce::String(deviceStatus.summary);
   }
 }
 
@@ -842,6 +917,23 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
       } else {
         showAudioSettings();
       }
+      return true;
+    }
+
+    if (key == juce::KeyPress('1', juce::ModifierKeys::commandModifier, 0)) {
+      setOperatorViewMode(occ::ui::OperatorViewMode::Playout);
+      return true;
+    }
+    if (key == juce::KeyPress('2', juce::ModifierKeys::commandModifier, 0)) {
+      setOperatorViewMode(occ::ui::OperatorViewMode::Edit);
+      return true;
+    }
+    if (key == juce::KeyPress('3', juce::ModifierKeys::commandModifier, 0)) {
+      setOperatorViewMode(occ::ui::OperatorViewMode::Routing);
+      return true;
+    }
+    if (key == juce::KeyPress('4', juce::ModifierKeys::commandModifier, 0)) {
+      setOperatorViewMode(occ::ui::OperatorViewMode::Preferences);
       return true;
     }
 
@@ -1162,6 +1254,16 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     menu.addItem(5, "Edit Clip...");
     menu.addSeparator();
 
+    menu.addItem(kMenuCopyClip, "Copy Clip");
+    menu.addItem(kMenuPasteClip, "Paste Clipboard", m_hasClipInClipboard);
+    menu.addItem(kMenuSwapClip, "Swap With Clipboard", m_hasClipInClipboard);
+    menu.addItem(kMenuPasteSpecial, "Paste Special...", m_hasClipInClipboard);
+    menu.addSeparator();
+    menu.addItem(kMenuPreviewClip, "Preview / Audition");
+    menu.addItem(kMenuRoutingInfo, "Routing / Output Info");
+    menu.addItem(kMenuPlayNext, "Play Next", true, m_playNextEnabled[globalClipIndex]);
+    menu.addSeparator();
+
     menu.addItem(1, "Load New Audio File...");
     menu.addItem(6, "Load Multiple Audio Files...");
     menu.addSeparator();
@@ -1216,6 +1318,9 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
     // Empty button - only show load option
     menu.addItem(1, "Load Audio File...");
     menu.addItem(6, "Load Multiple Audio Files...");
+    menu.addSeparator();
+    menu.addItem(kMenuPasteClip, "Paste Clipboard", m_hasClipInClipboard);
+    menu.addItem(kMenuPasteSpecial, "Paste Special...", m_hasClipInClipboard);
   }
 
   // Ensure menu uses HK Grotesk aesthetic (inherited from MainComponent's LookAndFeel)
@@ -1223,6 +1328,28 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
 
   menu.showMenuAsync(juce::PopupMenu::Options(), [this, buttonIndex, hasClip,
                                                   globalClipIndex](int result) {
+    if (auto action = clipButtonActionForMenuItem(result)) {
+      handleClipButtonAction(buttonIndex, *action);
+      return;
+    }
+
+    if (result == kMenuPreviewClip && hasClip) {
+      setOperatorViewMode(occ::ui::OperatorViewMode::Edit);
+      onClipDoubleClicked(buttonIndex);
+      return;
+    }
+
+    if (result == kMenuRoutingInfo && hasClip) {
+      showRoutingInfoForClip(globalClipIndex);
+      setOperatorViewMode(occ::ui::OperatorViewMode::Routing);
+      return;
+    }
+
+    if (result == kMenuPlayNext && hasClip) {
+      m_playNextEnabled[globalClipIndex] = !m_playNextEnabled[globalClipIndex];
+      return;
+    }
+
     if (result == 5 && hasClip) {
       // Edit Clip - open edit dialog
       onClipDoubleClicked(buttonIndex);
@@ -1582,6 +1709,25 @@ void MainComponent::onClipTriggered(int buttonIndex) {
     DBG("Button " + juce::String(buttonIndex) + " (global: " + juce::String(globalClipIndex) +
         "): Stopped via keyboard/click");
   } else if (currentState == ClipButton::State::Loaded) {
+    if (m_playNextEnabled[globalClipIndex] && m_audioEngine) {
+      bool anotherClipActive = false;
+      for (int clipIndex = 0; clipIndex < AudioEngine::MAX_CLIP_BUTTONS; ++clipIndex) {
+        if (clipIndex == globalClipIndex)
+          continue;
+        if (m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Playing ||
+            m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Stopping) {
+          anotherClipActive = true;
+          break;
+        }
+      }
+
+      if (anotherClipActive) {
+        m_pendingPlayNextGlobalIndex = globalClipIndex;
+        DBG("MainComponent: Queued Play Next for clip " << globalClipIndex);
+        return;
+      }
+    }
+
     // Check if "stop others on play" mode is enabled for this button (use global index)
     if (m_stopOthersOnPlay[globalClipIndex]) {
       // Stop all other playing clips ON THIS TAB
@@ -2121,6 +2267,7 @@ void MainComponent::updateButtonFromClip(int buttonIndex) {
   } else {
     // Clear button
     button->clearClip();
+    m_playNextEnabled[getGlobalClipIndex(buttonIndex)] = false;
   }
 }
 
@@ -2188,6 +2335,98 @@ void MainComponent::onTabSelected(int tabIndex) {
 
   refreshUiSnapshot();
   repaint();
+}
+
+void MainComponent::setOperatorViewMode(occ::ui::OperatorViewMode mode) {
+  if (m_operatorViewMode == mode)
+    return;
+
+  m_operatorViewMode = mode;
+
+  if (m_tabSwitcher)
+    m_tabSwitcher->setOperatorViewMode(mode);
+
+  DBG("MainComponent: Operator view mode set to " << static_cast<int>(mode));
+  repaint();
+}
+
+void MainComponent::showRoutingInfoForClip(int globalClipIndex) const {
+  if (!m_sessionManager || !m_audioEngine)
+    return;
+
+  const auto clipData = m_sessionManager->getClipByGlobalIndex(globalClipIndex);
+  const auto deviceStatus = m_audioEngine->getAudioDeviceStatus();
+  juce::String message;
+  message << "Clip: " << juce::String(clipData.displayName) << "\n";
+  message << "Group Output: G" << juce::String(clipData.clipGroup + 1) << "\n";
+  message << "Playout Path: Groups 1-4 via " << juce::String(deviceStatus.activeDeviceName)
+          << "\n";
+  message << "Audition Path: Dedicated cue buss via " << juce::String(deviceStatus.activeDeviceName)
+          << "\n";
+  if (!deviceStatus.lastError.empty()) {
+    message << "Validation: " << juce::String(deviceStatus.lastError) << "\n";
+  } else {
+    message << "Validation: Routing available\n";
+  }
+
+  juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Routing / Output Info",
+                                         message, "OK");
+}
+
+void MainComponent::handleClipButtonAction(int buttonIndex, ClipButtonAction action) {
+  if (buttonIndex < 0 || buttonIndex >= m_clipGrid->getButtonCount())
+    return;
+
+  auto clipExists = m_sessionManager->hasClip(buttonIndex);
+
+  switch (action) {
+  case ClipButtonAction::Copy:
+    if (clipExists) {
+      m_clipboardData = m_sessionManager->getClip(buttonIndex);
+      m_hasClipInClipboard = true;
+      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+        updateButtonFromClip(i);
+      }
+      DBG("MainComponent: Copied clip from button " << buttonIndex << " - "
+                                                    << m_clipboardData.displayName);
+    }
+    break;
+
+  case ClipButtonAction::Paste:
+    if (m_hasClipInClipboard) {
+      auto oldData = m_sessionManager->hasClip(buttonIndex) ? m_sessionManager->getClip(buttonIndex)
+                                                            : SessionManager::ClipData{};
+      auto newData = m_clipboardData;
+      auto cmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
+                                                            m_sessionManager->getActiveTab(),
+                                                            buttonIndex, oldData, newData);
+      m_undoManager->executeCommand(std::move(cmd));
+      updateButtonFromClip(buttonIndex);
+      DBG("MainComponent: Pasted clipboard clip to button " << buttonIndex);
+    }
+    break;
+
+  case ClipButtonAction::Swap:
+    if (m_hasClipInClipboard && clipExists) {
+      auto oldData = m_sessionManager->getClip(buttonIndex);
+      auto newData = m_clipboardData;
+      auto cmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
+                                                            m_sessionManager->getActiveTab(),
+                                                            buttonIndex, oldData, newData);
+      m_undoManager->executeCommand(std::move(cmd));
+      m_clipboardData = oldData;
+      updateButtonFromClip(buttonIndex);
+      DBG("MainComponent: Swapped clipboard clip with button " << buttonIndex);
+    }
+    break;
+
+  case ClipButtonAction::PasteSpecial:
+    handleMenuItemSelected(102, 1);
+    break;
+
+  default:
+    break;
+  }
 }
 
 //==============================================================================
@@ -2589,55 +2828,54 @@ void MainComponent::handleMenuItemSelected(int menuItemID, int /*topLevelMenuInd
       auto options = dialog->getOptions();
       auto targetIndices = dialog->getTargetIndices();
 
-      // Apply paste special to all target indices
-      for (int targetIndex : targetIndices) {
-        int buttonIndex = targetIndex % 48;
-        int tabIndex = targetIndex / 48;
+      if (!targetIndices.empty()) {
+        // Apply paste special to all target indices
+        for (int targetIndex : targetIndices) {
+          int buttonIndex = targetIndex % 48;
+          int tabIndex = targetIndex / 48;
 
-        // Only paste if target has a clip
-        if (m_sessionManager->hasClip(buttonIndex, tabIndex)) {
-          auto targetClip = m_sessionManager->getClip(buttonIndex, tabIndex);
+          if (m_sessionManager->hasClip(buttonIndex, tabIndex)) {
+            auto targetClip = m_sessionManager->getClip(buttonIndex, tabIndex);
 
-          // Apply selected options
-          if (options.gainAbsolute) {
-            targetClip.gainDb = m_clipboardData.gainDb;
-          } else if (options.gainRelative) {
-            targetClip.gainDb += options.gainRelativeDb;
-          }
+            if (options.gainAbsolute) {
+              targetClip.gainDb = m_clipboardData.gainDb;
+            } else if (options.gainRelative) {
+              targetClip.gainDb += options.gainRelativeDb;
+            }
 
-          if (options.fadeIn) {
-            targetClip.fadeInSeconds = m_clipboardData.fadeInSeconds;
-          }
-          if (options.fadeInCurve) {
-            targetClip.fadeInCurve = m_clipboardData.fadeInCurve;
-          }
-          if (options.fadeOut) {
-            targetClip.fadeOutSeconds = m_clipboardData.fadeOutSeconds;
-          }
-          if (options.fadeOutCurve) {
-            targetClip.fadeOutCurve = m_clipboardData.fadeOutCurve;
-          }
+            if (options.fadeIn) {
+              targetClip.fadeInSeconds = m_clipboardData.fadeInSeconds;
+            }
+            if (options.fadeInCurve) {
+              targetClip.fadeInCurve = m_clipboardData.fadeInCurve;
+            }
+            if (options.fadeOut) {
+              targetClip.fadeOutSeconds = m_clipboardData.fadeOutSeconds;
+            }
+            if (options.fadeOutCurve) {
+              targetClip.fadeOutCurve = m_clipboardData.fadeOutCurve;
+            }
 
-          if (options.color) {
-            targetClip.color = m_clipboardData.color;
-          }
-          if (options.clipGroup) {
-            targetClip.clipGroup = m_clipboardData.clipGroup;
-          }
-          if (options.loop) {
-            targetClip.loopEnabled = m_clipboardData.loopEnabled;
-          }
-          if (options.stopOthers) {
-            targetClip.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
-          }
+            if (options.color) {
+              targetClip.color = m_clipboardData.color;
+            }
+            if (options.clipGroup) {
+              targetClip.clipGroup = m_clipboardData.clipGroup;
+            }
+            if (options.loop) {
+              targetClip.loopEnabled = m_clipboardData.loopEnabled;
+            }
+            if (options.stopOthers) {
+              targetClip.stopOthersEnabled = m_clipboardData.stopOthersEnabled;
+            }
 
-          m_sessionManager->setClip(buttonIndex, targetClip, tabIndex);
+            m_sessionManager->setClip(buttonIndex, targetClip, tabIndex);
+          }
         }
-      }
 
-      // Refresh current tab display
-      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-        updateButtonFromClip(i);
+        for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+          updateButtonFromClip(i);
+        }
       }
 
       dialog->setVisible(false);
