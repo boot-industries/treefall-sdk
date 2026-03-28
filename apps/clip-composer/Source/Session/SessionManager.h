@@ -7,6 +7,7 @@
 #include <juce_graphics/juce_graphics.h>
 #include <map>
 #include <string>
+#include <vector>
 
 //==============================================================================
 /**
@@ -31,6 +32,47 @@
  */
 class SessionManager {
 public:
+  //==============================================================================
+  enum class MissingMediaState {
+    Resolved = 0,
+    Missing = 1,
+    Relinked = 2,
+  };
+
+  struct MissingMediaResolution {
+    int tabIndex = 0;
+    int buttonIndex = 0;
+    std::string originalPath;
+    std::string resolvedPath;
+    std::string candidatePath;
+    std::string reason;
+    bool matchedByFilename = false;
+    bool matchedByMetadata = false;
+  };
+
+  struct SessionLineage {
+    std::string sessionId;
+    std::string parentSessionId;
+    std::string packageId;
+    std::string sourceSessionPath;
+    std::string createdAtUtc;
+    std::string updatedAtUtc;
+  };
+
+  struct SessionPackageManifest {
+    std::string packageId;
+    std::string sessionId;
+    std::string sessionName;
+    std::string sessionVersion;
+    std::string sourceSessionPath;
+    std::string packagePath;
+    std::string mediaFolderName = "media";
+    std::string createdAtUtc;
+    int mediaCount = 0;
+    int missingMediaCount = 0;
+    bool copiedMedia = false;
+  };
+
   //==============================================================================
   /**
    * @brief Clip metadata stored per button in the session.
@@ -75,6 +117,8 @@ public:
     double gainDb = 0.0;            ///< Output gain in dB (-30 to +10, default 0)
     bool loopEnabled = false;       ///< Whether clip loops indefinitely
     bool stopOthersEnabled = false; ///< Stop all other clips when this one plays
+    bool mediaAvailable = true;     ///< False when the clip is unresolved/missing
+    std::string mediaStatus;        ///< Human-readable status for recovery/UI
     /// @}
 
     /**
@@ -261,6 +305,20 @@ public:
   bool loadSession(const juce::File& file);
 
   /**
+   * @brief Export the current session to a portable package directory.
+   *
+   * The package contains a session JSON file, a manifest, and copied media
+   * for clips that are available locally.
+   */
+  bool exportSessionPackage(const juce::File& packageDirectory,
+                            SessionPackageManifest* outManifest = nullptr);
+
+  /**
+   * @brief Import a session package directory created by exportSessionPackage().
+   */
+  bool importSessionPackage(const juce::File& packageDirectory);
+
+  /**
    * @brief Clear all clips and reset to new session state.
    */
   void clearSession();
@@ -284,6 +342,32 @@ public:
   juce::File getCurrentFile() const {
     return m_currentFile;
   }
+
+  const SessionLineage& getSessionLineage() const {
+    return m_sessionLineage;
+  }
+  void setSessionLineage(const SessionLineage& lineage);
+
+  const SessionPackageManifest& getLastPackageManifest() const {
+    return m_lastPackageManifest;
+  }
+
+  const std::vector<MissingMediaResolution>& getMissingMediaResolutions() const {
+    return m_missingMediaResolutions;
+  }
+  bool hasMissingMedia() const {
+    return !m_missingMediaResolutions.empty();
+  }
+  void clearMissingMedia();
+  bool relinkMissingMedia(int tabIndex, int buttonIndex, const juce::File& replacementFile,
+                          MissingMediaResolution* outResolution = nullptr);
+  bool relinkMissingMediaByGlobalIndex(int globalClipIndex, const juce::File& replacementFile,
+                                       MissingMediaResolution* outResolution = nullptr);
+  bool relinkMissingMediaFromSearchRoot(int tabIndex, int buttonIndex, const juce::File& searchRoot,
+                                        MissingMediaResolution* outResolution = nullptr);
+  juce::Array<juce::File> findMissingMediaCandidates(const ClipData& clip,
+                                                     const juce::File& searchRoot,
+                                                     int maxResults = 5) const;
 
   //==============================================================================
   /// @name Dirty Flag (unsaved changes tracking)
@@ -327,16 +411,37 @@ private:
   }
 
   // Helper: Extract metadata from audio file
-  ClipData extractMetadata(const juce::String& filePath);
+  ClipData extractMetadata(const juce::String& filePath, bool allowMissingMedia = false);
 
   // Helper: Load a clip into an explicit tab without mutating active-tab state.
-  bool loadClipForTab(int buttonIndex, const juce::String& filePath, int tabIndex);
+  bool loadClipForTab(int buttonIndex, const juce::String& filePath, int tabIndex,
+                      bool allowMissingMedia = false);
+
+  // Path helpers for portable session/package handling.
+  juce::File resolveSessionPath(const juce::String& path, const juce::File& baseDirectory) const;
+  juce::String makePortablePath(const juce::File& absoluteFile,
+                                const juce::File& baseDirectory) const;
+  juce::String makeUtcTimestamp() const;
+  juce::String makeUuidString() const;
+  void rebuildMissingMediaState();
+  void recordMissingMedia(int tabIndex, int buttonIndex, const juce::String& originalPath,
+                          const juce::String& reason, const juce::String& candidatePath = {},
+                          bool matchedByFilename = false, bool matchedByMetadata = false);
+  void serializeSessionMetadata(juce::DynamicObject& sessionObj) const;
+  void serializeClipArray(juce::DynamicObject& sessionObj, const juce::File& sessionBaseDir,
+                         const juce::File& packageMediaDir, bool packageMode,
+                         SessionPackageManifest* outManifest) const;
+  bool applySessionMetadata(const juce::DynamicObject& sessionObj, const juce::File& sourceFile);
 
   //==============================================================================
   bool m_isDirty = false;          // Unsaved changes tracking
   std::map<int, ClipData> m_clips; // composite key (tab*100 + button) → ClipData
   std::string m_sessionName = "Untitled";
   juce::File m_currentFile; // Last saved/loaded file
+
+  SessionLineage m_sessionLineage;
+  SessionPackageManifest m_lastPackageManifest;
+  std::vector<MissingMediaResolution> m_missingMediaResolutions;
 
   int m_currentTab = 0;                   // Currently active tab (0-7)
   std::array<std::string, 8> m_tabLabels; // Tab labels (default: "Tab 1", "Tab 2", etc.)

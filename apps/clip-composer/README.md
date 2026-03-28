@@ -98,6 +98,8 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ✅ Drag & drop audio file loading (WAV, AIFF, FLAC)
 - ✅ Keyboard shortcuts for all 48 buttons (QWERTY layout)
 - ✅ Session save/load (JSON format with full metadata)
+- ✅ Session save/load with lineage and missing-media recovery metadata
+- ✅ Portable session package export/import helpers (`Save Copy In`-style media bundle)
 - ✅ Transport controls (Stop All, Panic)
 - ✅ Clip editing: Name, color, clip group assignment
 - ✅ Waveform visualization with real-time trim markers
@@ -120,6 +122,7 @@ Orpheus Clip Composer is a **professional soundboard application** designed for:
 - ⚠️ Trim handles not interactive (slider-based only)
 - ⚠️ Fade curves stored but not applied during playback
 - ⚠️ No audio device selection UI (uses system default)
+- ⚠️ Portable session package export/import is app-local in `SessionManager` and not yet wired to a dedicated UI flow
 
 **Timeline:**
 
