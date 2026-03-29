@@ -20,24 +20,50 @@ if(NOT SNDFILE_FOUND)
     endif()
 endif()
 
-# Build orpheus_audio_io with available components
-set(ORPHEUS_AUDIO_IO_SOURCES
-    dummy_audio_driver.cpp
-)
+# Build audio utilities with available components
+set(ORPHEUS_AUDIO_UTILS_SOURCES)
 
 if(SNDFILE_FOUND)
-    list(APPEND ORPHEUS_AUDIO_IO_SOURCES audio_file_reader_libsndfile.cpp)
-    list(APPEND ORPHEUS_AUDIO_IO_SOURCES waveform_processor.cpp)
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES waveform_processor.cpp)
     message(STATUS "✓ libsndfile FOUND - audio file reading enabled (with waveform processing)")
 else()
     # Provide stub implementation when libsndfile is not available
     # This ensures createAudioFileReader() symbol exists for linking
-    list(APPEND ORPHEUS_AUDIO_IO_SOURCES create_audio_file_reader_stub.cpp)
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES create_audio_file_reader_stub.cpp)
     message(STATUS "✗ libsndfile NOT FOUND - using stub implementation (audio file reading disabled)")
 endif()
 
+add_library(orpheus_audio_utils STATIC
+    ${ORPHEUS_AUDIO_UTILS_SOURCES}
+    $<TARGET_OBJECTS:orpheus_channel_format_objects>
+)
+
+target_compile_features(orpheus_audio_utils PUBLIC cxx_std_20)
+
+target_include_directories(orpheus_audio_utils
+    PUBLIC
+        $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
+)
+
+if(SNDFILE_FOUND)
+    target_include_directories(orpheus_audio_utils PRIVATE ${SNDFILE_INCLUDE_DIRS})
+    target_link_libraries(orpheus_audio_utils PUBLIC ${SNDFILE_LIBRARIES})
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(orpheus_audio_utils PUBLIC ${SNDFILE_LIBRARY_DIRS})
+    endif()
+endif()
+
+set_target_properties(orpheus_audio_utils PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(Orpheus::audio_utils ALIAS orpheus_audio_utils)
+add_library(Orpheus::orpheus_audio_utils ALIAS orpheus_audio_utils)
+
 add_library(orpheus_audio_io STATIC
-    ${ORPHEUS_AUDIO_IO_SOURCES}
+    dummy_audio_driver.cpp
 )
 
 target_compile_features(orpheus_audio_io PUBLIC cxx_std_20)
@@ -52,19 +78,15 @@ target_include_directories(orpheus_audio_io
 
 target_link_libraries(orpheus_audio_io
     PUBLIC
-        orpheus_session  # For SessionGraphError
+        orpheus_audio_utils
+        orpheus_session
 )
-
-if(SNDFILE_FOUND)
-    target_include_directories(orpheus_audio_io PRIVATE ${SNDFILE_INCLUDE_DIRS})
-    target_link_libraries(orpheus_audio_io PUBLIC ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(orpheus_audio_io PUBLIC ${SNDFILE_LIBRARY_DIRS})
-    endif()
-endif()
 
 set_target_properties(orpheus_audio_io PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Apply compiler warnings
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+orpheus_enable_warnings(orpheus_audio_utils)
 orpheus_enable_warnings(orpheus_audio_io)
+orpheus_enable_sanitizers(orpheus_audio_utils)
+orpheus_enable_sanitizers(orpheus_audio_io)
