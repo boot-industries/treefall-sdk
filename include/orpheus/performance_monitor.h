@@ -148,4 +148,10 @@ public:
 /// @note The monitor automatically hooks into the audio callback to measure performance
 std::unique_ptr<IPerformanceMonitor> createPerformanceMonitor(core::SessionGraph* sessionGraph);
 
+/// Create a performance monitor that is not tied to a SessionGraph.
+///
+/// This is equivalent to createPerformanceMonitor(nullptr) but names the
+/// intent explicitly for lightweight consumers that do not own session state.
+std::unique_ptr<IPerformanceMonitor> createStandalonePerformanceMonitor();
+
 } // namespace orpheus
