@@ -37,6 +37,22 @@ ctest --test-dir build --output-on-failure
 - **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
+## Lightweight Integration Targets
+
+For downstream integrations that only need diagnostics or audio utilities, link the
+thin targets instead of the full session/transport stack:
+
+```cmake
+find_package(OrpheusSDK CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
+```
+
+- `Orpheus::diagnostics` exposes `performance_monitor.h` and `loudness_meter.h`. Use
+  `createStandalonePerformanceMonitor()` when no `SessionGraph` is involved.
+- `Orpheus::audio_utils` exposes `audio_file_reader.h`,
+  `audio_file_reader_extended.h`, and `channel_format.h` for file I/O and format
+  conversion helpers.
+
 ---
 
 ## Table of Contents
