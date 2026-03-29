@@ -155,6 +155,14 @@ if(ORPHEUS_ENABLE_REALTIME)
       RUNTIME DESTINATION bin)
   endif()
 
+  if(TARGET orpheus_audio_utils)
+    install(TARGETS orpheus_audio_utils
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+
   # Platform audio drivers
   if(TARGET orpheus_audio_driver_coreaudio)
     install(TARGETS orpheus_audio_driver_coreaudio
@@ -183,6 +191,12 @@ endif()
 
 install(TARGETS orpheus_core
   EXPORT OrpheusSDKTargets)
+
+install(TARGETS orpheus_diagnostics
+  EXPORT OrpheusSDKTargets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
 install(TARGETS orpheus_sanitizers
   EXPORT OrpheusSDKTargets)

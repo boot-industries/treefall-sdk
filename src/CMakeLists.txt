@@ -4,10 +4,37 @@ if(ORP_BUILD_SHARED_CORE)
   set(ORPHEUS_LIBRARY_TYPE SHARED)
 endif()
 
+add_library(orpheus_diagnostics_objects OBJECT
+  core/common/performance_monitor.cpp
+)
+
+target_compile_features(orpheus_diagnostics_objects PUBLIC cxx_std_20)
+target_include_directories(orpheus_diagnostics_objects
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/core
+)
+set_target_properties(orpheus_diagnostics_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(orpheus_channel_format_objects OBJECT
+  core/channel_format.cpp
+)
+
+target_compile_features(orpheus_channel_format_objects PUBLIC cxx_std_20)
+target_include_directories(orpheus_channel_format_objects
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/core
+)
+set_target_properties(orpheus_channel_format_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(orpheus_core_runtime OBJECT
   core/common/errors.cpp
   core/common/json_parser.cpp
-  core/common/performance_monitor.cpp
   core/adm/entity_graph.cpp
   core/render/pcm.cpp
   orpheus/render_tracks.cpp
@@ -16,7 +43,6 @@ add_library(orpheus_core_runtime OBJECT
   core/session/scene_manager.cpp
   core/otio/reconform_plan.cpp
   dsp/oscillator.cpp
-  core/channel_format.cpp  # ORP121 A-04/A-05: Multi-channel format abstraction
 )
 
 target_compile_features(orpheus_core_runtime PUBLIC cxx_std_20)
@@ -42,7 +68,11 @@ add_library(orpheus_render ${ORPHEUS_LIBRARY_TYPE}
 set(ORPHEUS_CORE_TARGETS orpheus_session orpheus_clipgrid orpheus_render)
 
 foreach(target ${ORPHEUS_CORE_TARGETS})
-  target_sources(${target} PRIVATE $<TARGET_OBJECTS:orpheus_core_runtime>)
+  target_sources(${target} PRIVATE
+    $<TARGET_OBJECTS:orpheus_core_runtime>
+    $<TARGET_OBJECTS:orpheus_diagnostics_objects>
+    $<TARGET_OBJECTS:orpheus_channel_format_objects>
+  )
   target_compile_features(${target} PUBLIC cxx_std_20)
   target_include_directories(${target}
     PUBLIC
@@ -54,18 +84,40 @@ foreach(target ${ORPHEUS_CORE_TARGETS})
   set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
+add_library(orpheus_diagnostics STATIC
+  $<TARGET_OBJECTS:orpheus_diagnostics_objects>
+)
+target_compile_features(orpheus_diagnostics PUBLIC cxx_std_20)
+target_include_directories(orpheus_diagnostics
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>
+)
+set_target_properties(orpheus_diagnostics PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(Orpheus::diagnostics ALIAS orpheus_diagnostics)
+add_library(Orpheus::orpheus_diagnostics ALIAS orpheus_diagnostics)
+
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+orpheus_enable_warnings(orpheus_diagnostics_objects)
+orpheus_enable_warnings(orpheus_channel_format_objects)
 orpheus_enable_warnings(orpheus_core_runtime)
 foreach(target ${ORPHEUS_CORE_TARGETS})
   orpheus_enable_warnings(${target})
 endforeach()
+orpheus_enable_warnings(orpheus_diagnostics)
 
+orpheus_enable_sanitizers(orpheus_diagnostics_objects)
+orpheus_enable_sanitizers(orpheus_channel_format_objects)
 orpheus_enable_sanitizers(orpheus_core_runtime)
 foreach(target ${ORPHEUS_CORE_TARGETS})
   orpheus_enable_sanitizers(${target})
 endforeach()
+orpheus_enable_sanitizers(orpheus_diagnostics)
 
 if(WIN32 AND ORP_BUILD_SHARED_CORE)
+  target_compile_definitions(orpheus_diagnostics_objects PRIVATE ORPHEUS_BUILDING_DLL)
+  target_compile_definitions(orpheus_channel_format_objects PRIVATE ORPHEUS_BUILDING_DLL)
   target_compile_definitions(orpheus_core_runtime PRIVATE ORPHEUS_BUILDING_DLL)
   foreach(target ${ORPHEUS_CORE_TARGETS})
     target_compile_definitions(${target} PRIVATE ORPHEUS_BUILDING_DLL)

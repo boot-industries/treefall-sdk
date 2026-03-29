@@ -159,4 +159,8 @@ std::unique_ptr<IPerformanceMonitor> createPerformanceMonitor(core::SessionGraph
   return std::make_unique<PerformanceMonitorImpl>(sessionGraph);
 }
 
+std::unique_ptr<IPerformanceMonitor> createStandalonePerformanceMonitor() {
+  return createPerformanceMonitor(nullptr);
+}
+
 } // namespace orpheus
