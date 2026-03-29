@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <orpheus/transport_controller.h> // For SessionGraphError
+#include <orpheus/errors.h>
 
 #include <cstddef>
 #include <cstdint>

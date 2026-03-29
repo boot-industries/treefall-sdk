@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/errors.h>
+
 #include <cstdint>
 #include <memory>
-#include <orpheus/transport_controller.h> // For SessionGraphError
-#include <stdexcept>
 #include <string>
 
 namespace orpheus {
@@ -32,33 +32,6 @@ struct AudioFileMetadata {
   /// Derived: Duration in seconds
   double durationSeconds() const {
     return static_cast<double>(duration_samples) / static_cast<double>(sample_rate);
-  }
-};
-
-/// Result wrapper for operations that can fail
-template <typename T> struct Result {
-  T value;                  ///< The result value (valid if error == OK)
-  SessionGraphError error;  ///< Error code
-  std::string errorMessage; ///< Human-readable error message
-
-  /// Check if operation succeeded
-  bool isOk() const {
-    return error == SessionGraphError::OK;
-  }
-
-  /// Get value (throws if error)
-  T& operator*() {
-    if (!isOk()) {
-      throw std::runtime_error("Result error: " + errorMessage);
-    }
-    return value;
-  }
-
-  const T& operator*() const {
-    if (!isOk()) {
-      throw std::runtime_error("Result error: " + errorMessage);
-    }
-    return value;
   }
 };
 
