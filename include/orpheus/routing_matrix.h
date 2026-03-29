@@ -4,13 +4,10 @@
 #include <cstdint>
 #include <memory>
 #include <orpheus/errors.h>
-#include <orpheus/transport_controller.h> // For SessionGraphError
 #include <string>
 #include <vector>
 
 namespace orpheus {
-
-// Note: SessionGraphError is defined in transport_controller.h
 
 // ============================================================================
 // Forward Declarations
