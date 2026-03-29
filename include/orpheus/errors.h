@@ -44,8 +44,47 @@ ORPHEUS_API void orpheus_set_telemetry_callback(orpheus_telemetry_callback callb
 
 #ifdef __cplusplus
 #include <string_view>
+#include <stdexcept>
+#include <string>
 
 namespace orpheus {
+
+enum class SessionGraphError : uint8_t {
+  OK = 0,
+  InvalidHandle = 1,
+  InvalidParameter = 2,
+  NotReady = 3,
+  NotSupported = 4,
+  NotInitialized = 5,
+  InvalidClipTrimPoints = 18,
+  InvalidFadeDuration = 19,
+  ClipNotRegistered = 20,
+  InternalError = 255
+};
+
+template <typename T> struct Result {
+  T value;
+  SessionGraphError error = SessionGraphError::OK;
+  std::string errorMessage;
+
+  bool isOk() const {
+    return error == SessionGraphError::OK;
+  }
+
+  T& operator*() {
+    if (!isOk()) {
+      throw std::runtime_error("Result error: " + errorMessage);
+    }
+    return value;
+  }
+
+  const T& operator*() const {
+    if (!isOk()) {
+      throw std::runtime_error("Result error: " + errorMessage);
+    }
+    return value;
+  }
+};
 
 ORPHEUS_API void Log(orpheus_log_level level, std::string_view message);
 ORPHEUS_API void EmitTelemetry(std::string_view event_name, std::string_view json_payload);

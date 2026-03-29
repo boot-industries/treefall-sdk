@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/errors.h>
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -21,20 +23,6 @@ enum class FadeCurve : uint8_t {
   Linear = 0,     ///< f(x) = x
   EqualPower = 1, ///< f(x) = sin(x * π/2) - constant power crossfades
   Exponential = 2 ///< f(x) = x² - dramatic effect
-};
-
-/// Error codes for session graph operations
-enum class SessionGraphError : uint8_t {
-  OK = 0,
-  InvalidHandle = 1,
-  InvalidParameter = 2,
-  NotReady = 3,
-  NotSupported = 4,
-  NotInitialized = 5,         ///< Added for routing matrix
-  InvalidClipTrimPoints = 18, ///< Trim IN >= trim OUT, or out of bounds
-  InvalidFadeDuration = 19,   ///< Fade duration > clip duration
-  ClipNotRegistered = 20,     ///< Clip handle not found
-  InternalError = 255
 };
 
 /// Playback state for clips
