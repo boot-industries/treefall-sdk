@@ -245,6 +245,17 @@ TEST_F(PerformanceMonitorTest, NullSessionGraph) {
   EXPECT_GE(metrics.uptimeSeconds, 0.0);
 }
 
+TEST(PerformanceMonitorStandaloneTest, StandaloneFactory) {
+  auto monitor = createStandalonePerformanceMonitor();
+  ASSERT_NE(monitor, nullptr);
+
+  monitor->recordAudioCallback(500, 1000, 2, 48000, 512);
+  auto metrics = monitor->getMetrics();
+
+  EXPECT_GE(metrics.cpuUsagePercent, 0.0f);
+  EXPECT_EQ(metrics.activeClipCount, 2u);
+}
+
 TEST_F(PerformanceMonitorTest, LongRunningUptime) {
   auto metrics1 = m_monitor->getMetrics();
   EXPECT_GE(metrics1.uptimeSeconds, 0.0);
