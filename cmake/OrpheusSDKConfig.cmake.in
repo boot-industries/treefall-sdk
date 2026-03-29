@@ -9,3 +9,15 @@ if(TARGET Orpheus::orpheus_core AND NOT TARGET Orpheus::core)
   add_library(Orpheus::core INTERFACE IMPORTED)
   set_property(TARGET Orpheus::core PROPERTY INTERFACE_LINK_LIBRARIES Orpheus::orpheus_core)
 endif()
+
+if(TARGET Orpheus::orpheus_diagnostics AND NOT TARGET Orpheus::diagnostics)
+  add_library(Orpheus::diagnostics INTERFACE IMPORTED)
+  set_property(TARGET Orpheus::diagnostics PROPERTY INTERFACE_LINK_LIBRARIES
+    Orpheus::orpheus_diagnostics)
+endif()
+
+if(TARGET Orpheus::orpheus_audio_utils AND NOT TARGET Orpheus::audio_utils)
+  add_library(Orpheus::audio_utils INTERFACE IMPORTED)
+  set_property(TARGET Orpheus::audio_utils PROPERTY INTERFACE_LINK_LIBRARIES
+    Orpheus::orpheus_audio_utils)
+endif()
