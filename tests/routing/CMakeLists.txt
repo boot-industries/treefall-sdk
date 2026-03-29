@@ -91,3 +91,21 @@ add_test(
     NAME multi_channel_routing_test
     COMMAND multi_channel_routing_test
 )
+
+if(TARGET Orpheus::diagnostics)
+    add_executable(loudness_meter_test
+        loudness_meter_test.cpp
+    )
+
+    target_link_libraries(loudness_meter_test
+        PRIVATE
+            Orpheus::diagnostics
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    add_test(
+        NAME loudness_meter_test
+        COMMAND loudness_meter_test
+    )
+endif()
