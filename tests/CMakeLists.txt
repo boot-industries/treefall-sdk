@@ -76,6 +76,24 @@ endif()
 include(GoogleTest)
 gtest_discover_tests(orpheus_tests)
 
+if(TARGET Orpheus::diagnostics)
+  add_executable(verify_diagnostics_standalone
+    verify_diagnostics_standalone.cpp
+  )
+  target_link_libraries(verify_diagnostics_standalone PRIVATE Orpheus::diagnostics)
+  orpheus_enable_warnings(verify_diagnostics_standalone)
+  add_test(NAME verify_diagnostics_standalone COMMAND verify_diagnostics_standalone)
+endif()
+
+if(TARGET Orpheus::audio_utils)
+  add_executable(verify_audio_utils_standalone
+    verify_audio_utils_standalone.cpp
+  )
+  target_link_libraries(verify_audio_utils_standalone PRIVATE Orpheus::audio_utils)
+  orpheus_enable_warnings(verify_audio_utils_standalone)
+  add_test(NAME verify_audio_utils_standalone COMMAND verify_audio_utils_standalone)
+endif()
+
 # M2: Real-time infrastructure tests
 if(ORPHEUS_ENABLE_REALTIME)
   add_subdirectory(common)
@@ -97,6 +115,7 @@ set(FIND_PACKAGE_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/find_package_build)
 add_test(NAME cmake_find_package
   COMMAND ${CMAKE_COMMAND}
     -DOrpheusSDK_DIR=${CMAKE_BINARY_DIR}
+    -Dbuild_type=$<CONFIG>
     -Dsource_dir=${FIND_PACKAGE_SOURCE_DIR}
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)

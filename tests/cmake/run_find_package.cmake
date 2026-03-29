@@ -10,8 +10,8 @@ set(configure_args
   -DORP_ENABLE_UBSAN=OFF
   -DCMAKE_CXX_STANDARD=17)
 
-if(CMAKE_BUILD_TYPE)
-  list(APPEND configure_args -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+if(DEFINED build_type AND NOT build_type STREQUAL "")
+  list(APPEND configure_args -DCMAKE_BUILD_TYPE=${build_type})
 endif()
 
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
