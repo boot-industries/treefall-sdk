@@ -68,25 +68,25 @@ Integration: `packages/shmui-juce/` (planned).
 
 ---
 
-## CI/CD (Phase 3 Complete)
+## CI/CD (All Phases Complete)
 
-Matrix builds (ubuntu/windows/macos x Debug/Release). 7 parallel jobs. Sanitizers on Debug. Performance budgets enforced. Chaos tests nightly.
+Matrix builds (ubuntu/windows/macos x Debug/Release). Sanitizers on Debug. Supply chain hardening: SHA-pinned Actions, `dep-audit.yml` (npm/PyPI age+download checks, bot detection), Husky dep-guard, `ignore-scripts` enforced.
 
 ---
 
 ## ORP068 Status
 
-**Progress:** 55/104 tasks (52.9%) — Phases 0-3 complete. Phase 4 (docs/productionization) pending.
-**Resume:** `.claude/implementation_progress.md` + `docs/ORP/ORP068 Implementation Plan (v2.0).md`
+**Progress:** All phases complete. C++ SDK v1.0.0-rc.1 released.
+**History:** `.claude/implementation_progress.md` + `docs/orp/ORP068 Implementation Plan (v2.0).md`
 
 ---
 
 ## OCC — Clip Composer
 
-**Status:** v0.2.0 Sprint Complete (OCC093)
-**Docs:** `apps/clip-composer/docs/OCC/` (12 docs, ~6,000 lines)
+**Status:** v0.2.1 active (OCC146) — operator modes, audition paths, session recovery in place.
+**Docs:** `apps/clip-composer/docs/occ/` (active) | `apps/clip-composer/docs/occ/archive/` (historical)
 
-Key docs: OCC021 (product vision), OCC026 (6-month MVP plan), OCC027 (API contracts), OCC093 (v0.2.0 sprint).
+Key docs: OCC021 (product vision), OCC026 (6-month MVP plan), OCC027 (API contracts), OCC146 (post-Codex sprint guide).
 
 ---
 
