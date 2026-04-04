@@ -217,7 +217,8 @@ private:
       // Process each sample and update corresponding pixel
       for (size_t i = 0; i < framesRead; ++i) {
         int64_t globalSampleIndex = samplesProcessed + static_cast<int64_t>(i);
-        uint32_t pixelIndex = static_cast<uint32_t>(globalSampleIndex / samplesPerPixel);
+        uint32_t pixelIndex =
+            static_cast<uint32_t>(static_cast<double>(globalSampleIndex) / samplesPerPixel);
 
         if (pixelIndex >= pixelWidth) {
           pixelIndex = pixelWidth - 1; // Clamp to last pixel
