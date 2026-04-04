@@ -1,5 +1,16 @@
 # ORP068 Implementation Progress
 
+## Current State (2026-04-04)
+
+- **C++ SDK:** v1.0.0-rc.1 — all ORP068 phases complete, 270+ tests passing, sanitizer-clean
+- **OCC App:** v0.2.1 — operator modes (Playout/Edit/Routing/Preferences), audition paths, session recovery in place (OCC146)
+- **Security:** Supply chain hardening complete — SHA-pinned Actions, dep-audit CI, Husky dep-guard, bot detection (see recent commits)
+- **Lightweight targets:** `Orpheus::diagnostics`, `Orpheus::audio_utils` exported for thin consumers
+- **Branch:** `feat/nr-suite-integration-targets` — doc checkpoint sprint underway
+- **Next:** Merge to main; resume OCC feature work from OCC147
+
+---
+
 **Last Updated:** 2026-02-27 (Session: Audio Device Selection Fix)
 **Current Phase:** Phase 6 ✅ Complete | SDK v1.0.0-rc.1 Released
 **Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-6 ✅ All Complete | Multi-App Validated | Audio output confirmed working

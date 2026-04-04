@@ -227,6 +227,29 @@ private:
 
 //==============================================================================
 /**
+    Command: Paste a clip payload from the clipboard to a target button.
+*/
+class PasteClipCommand : public Command {
+public:
+  PasteClipCommand(SessionManager* sessionManager, int tabIndex, int buttonIndex,
+                   const SessionManager::ClipData& clipboardData);
+
+  void execute() override;
+  void undo() override;
+  juce::String getDescription() const override;
+  size_t getSizeInBytes() const override;
+
+private:
+  SessionManager* m_sessionManager;
+  int m_tabIndex;
+  int m_buttonIndex;
+  SessionManager::ClipData m_clipboardData;
+  SessionManager::ClipData m_previousData;
+  bool m_hadPreviousClip = false;
+};
+
+//==============================================================================
+/**
     Options for Paste Special operation.
 */
 struct PasteSpecialOptions {

@@ -6,18 +6,20 @@
 using namespace OCC::Design;
 
 namespace {
-occ::ui::PreviewPlaybackUiSnapshot getPreviewSnapshot(const std::unique_ptr<PreviewPlayer>& previewPlayer) {
+occ::ui::PreviewPlaybackUiSnapshot
+getPreviewSnapshot(const std::unique_ptr<PreviewPlayer>& previewPlayer) {
   if (!previewPlayer)
     return {};
 
   return previewPlayer->getPlaybackSnapshot();
 }
-}
+} // namespace
 
 //==============================================================================
 ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
     : m_audioEngine(audioEngine), m_buttonIndex(buttonIndex) {
-  // PreviewPlayer controls the same clip slot as the main grid and only mirrors its state.
+  // PreviewPlayer drives the edit dialog audition path and mirrors metadata changes back to the
+  // clip.
   m_previewPlayer = std::make_unique<PreviewPlayer>(m_audioEngine, m_buttonIndex);
 
   // Keep the 75fps preview timer running while the dialog is open so this view
@@ -108,6 +110,10 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
                                   m_metadata.fadeInCurve, m_metadata.fadeOutCurve);
       }
     }
+  }
+
+  if (m_previewPlayer) {
+    m_previewPlayer->setAuditionSource(m_metadata.filePath);
   }
 
   // Sync loop button to metadata
@@ -1283,7 +1289,8 @@ void ClipEditDialog::buildPhase2UI() {
   m_placeholderDial->setValue(0.0);
   m_placeholderDial->setDoubleClickReturnValue(true, 0.0);
   m_placeholderDial->setEnabled(false);
-  m_placeholderDial->setTooltip("Pitch shifting is deferred until AudioEngine pitch support lands.");
+  m_placeholderDial->setTooltip(
+      "Pitch shifting is deferred until AudioEngine pitch support lands.");
   addAndMakeVisible(m_placeholderDial.get());
 
   m_placeholderValueLabel = std::make_unique<juce::Label>("placeholderValueLabel", "Deferred");
@@ -1291,7 +1298,8 @@ void ClipEditDialog::buildPhase2UI() {
   m_placeholderValueLabel->setJustificationType(juce::Justification::centred);
   m_placeholderValueLabel->setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
   m_placeholderValueLabel->setEditable(false);
-  m_placeholderValueLabel->setTooltip("Pitch shifting is deferred until AudioEngine pitch support lands.");
+  m_placeholderValueLabel->setTooltip(
+      "Pitch shifting is deferred until AudioEngine pitch support lands.");
   addAndMakeVisible(m_placeholderValueLabel.get());
 }
 
