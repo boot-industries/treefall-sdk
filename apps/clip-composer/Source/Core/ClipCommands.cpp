@@ -559,6 +559,56 @@ juce::String LoadClipCommand::getDescription() const {
 }
 
 //==============================================================================
+// PasteClipCommand
+
+PasteClipCommand::PasteClipCommand(SessionManager* sessionManager, int tabIndex, int buttonIndex,
+                                   const SessionManager::ClipData& clipboardData)
+    : m_sessionManager(sessionManager), m_tabIndex(tabIndex), m_buttonIndex(buttonIndex),
+      m_clipboardData(clipboardData) {
+  if (m_sessionManager) {
+    int originalTab = m_sessionManager->getActiveTab();
+    m_sessionManager->setActiveTab(m_tabIndex);
+    m_hadPreviousClip = m_sessionManager->hasClip(m_buttonIndex);
+    if (m_hadPreviousClip) {
+      m_previousData = m_sessionManager->getClip(m_buttonIndex);
+    }
+    m_sessionManager->setActiveTab(originalTab);
+  }
+}
+
+void PasteClipCommand::execute() {
+  if (!m_sessionManager)
+    return;
+
+  int originalTab = m_sessionManager->getActiveTab();
+  m_sessionManager->setActiveTab(m_tabIndex);
+  m_sessionManager->setClip(m_buttonIndex, m_clipboardData);
+  m_sessionManager->setActiveTab(originalTab);
+}
+
+void PasteClipCommand::undo() {
+  if (!m_sessionManager)
+    return;
+
+  int originalTab = m_sessionManager->getActiveTab();
+  m_sessionManager->setActiveTab(m_tabIndex);
+  if (m_hadPreviousClip) {
+    m_sessionManager->setClip(m_buttonIndex, m_previousData);
+  } else {
+    m_sessionManager->removeClip(m_buttonIndex);
+  }
+  m_sessionManager->setActiveTab(originalTab);
+}
+
+juce::String PasteClipCommand::getDescription() const {
+  return "Paste Clip";
+}
+
+size_t PasteClipCommand::getSizeInBytes() const {
+  return sizeof(PasteClipCommand);
+}
+
+//==============================================================================
 // PasteSpecialCommand
 
 PasteSpecialCommand::PasteSpecialCommand(SessionManager* sessionManager,

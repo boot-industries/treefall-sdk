@@ -145,8 +145,8 @@ void AudioSettingsDialog::applySettings() {
   const auto sampleRate = selectedValueFor(m_sampleRateCombo, 48000);
   const auto bufferSize = selectedValueFor(m_bufferSizeCombo, 512);
 
-  refreshStatusLabels("Applying " + juce::String(sampleRate) + " Hz / " +
-                      juce::String(bufferSize) + " samples...");
+  refreshStatusLabels("Applying " + juce::String(sampleRate) + " Hz / " + juce::String(bufferSize) +
+                      " samples...");
 
   const bool success = m_audioEngine->setAudioDevice(deviceName, sampleRate, bufferSize);
   if (success) {
@@ -258,8 +258,7 @@ void AudioSettingsDialog::syncSupportedOptionsForDevice() {
 
   const auto selectedDevice = m_deviceCombo.getText().toStdString();
   const auto preferredRate = selectedValueFor(m_sampleRateCombo, m_audioEngine->getSampleRate());
-  const auto preferredBuffer =
-      selectedValueFor(m_bufferSizeCombo, m_audioEngine->getBufferSize());
+  const auto preferredBuffer = selectedValueFor(m_bufferSizeCombo, m_audioEngine->getBufferSize());
 
   if (const auto details = m_audioEngine->getDeviceDetails(selectedDevice)) {
     populateSampleRates(details->supportedSampleRates, preferredRate);
@@ -282,8 +281,9 @@ void AudioSettingsDialog::refreshStatusLabels(const juce::String& transientStatu
   const auto status = m_audioEngine->getAudioDeviceStatus();
   const auto selectedRate = selectedValueFor(m_sampleRateCombo, status.sampleRate);
   const auto selectedBuffer = selectedValueFor(m_bufferSizeCombo, status.bufferSize);
-  const auto selectedDevice = m_deviceCombo.getText().isEmpty() ? juce::String(status.requestedDeviceName)
-                                                                : m_deviceCombo.getText();
+  const auto selectedDevice = m_deviceCombo.getText().isEmpty()
+                                  ? juce::String(status.requestedDeviceName)
+                                  : m_deviceCombo.getText();
 
   juce::String statusText = transientStatus;
   if (statusText.isEmpty()) {
@@ -311,6 +311,14 @@ void AudioSettingsDialog::refreshStatusLabels(const juce::String& transientStatu
 
   if (status.usingFallbackDriver) {
     details << "\nFallback driver active";
+  }
+
+  details << "\nPlayout: Groups 1-4 via " << juce::String(status.activeDeviceName);
+  details << "\nAudition: Dedicated cue buss via " << juce::String(status.activeDeviceName);
+  if (!status.lastError.empty()) {
+    details << "\nValidation: " << juce::String(status.lastError);
+  } else if (status.initialized) {
+    details << "\nValidation: Device and routing available";
   }
 
   m_detailLabel.setText(details, juce::dontSendNotification);

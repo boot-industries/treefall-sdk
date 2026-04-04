@@ -61,10 +61,10 @@ private:
 
 //==============================================================================
 /**
- * ClipEditDialog - Modal dialog for editing clip metadata
+ * ClipEditDialog - Modal dialog for editing clip metadata and auditioning via cue-buss preview
  *
- * Edit Dialog is a second view onto the live grid clip. Preview playback polls
- * the shared clip state from AudioEngine rather than owning a separate transport.
+ * Edit Dialog uses the shared clip metadata path while PreviewPlayer handles
+ * dedicated audition playback through a cue buss when available.
  *
  * Features (phased implementation):
  * - Phase 1: File metadata (name, color, clip group)

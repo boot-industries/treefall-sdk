@@ -2,10 +2,13 @@
 
 #pragma once
 
+#include "../UIState/ClipComposerUiSnapshot.h"
 #include <functional>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
 #include <vector>
+
+enum class ClipButtonAction { Copy = 0, Paste, Swap, PasteSpecial, Loop, StopOthers, Remove };
 
 //==============================================================================
 /**
@@ -32,6 +35,18 @@ public:
   //==============================================================================
   TabSwitcher();
   ~TabSwitcher() override = default;
+
+  //==============================================================================
+  // Operator view modes
+  void setOperatorViewMode(occ::ui::OperatorViewMode mode);
+  occ::ui::OperatorViewMode getOperatorViewMode() const {
+    return m_operatorViewMode;
+  }
+
+  void setHealthSnapshot(const occ::ui::AudioEngineUiSnapshot::HealthStripSnapshot& snapshot);
+  void setDeviceRouteStatus(const occ::ui::AudioEngineUiSnapshot::DeviceRouteStatus& status);
+
+  std::function<void(occ::ui::OperatorViewMode mode)> onOperatorViewModeSelected;
 
   //==============================================================================
   // Tab management
@@ -84,17 +99,35 @@ private:
   void showRenameEditor(int tabIndex);
   void hideRenameEditor();
   void showTabContextMenu(int tabIndex);
+  void updateModeButtonStates();
 
   //==============================================================================
   static constexpr int NUM_TABS = 8;
+  static constexpr int NUM_OPERATOR_MODES = 4;
+  static constexpr int OPERATOR_MODE_WIDTH = 84;
+  static constexpr int OPERATOR_MODE_GAP = 4;
+  static constexpr int OPERATOR_MODE_HEIGHT = 26;
   static constexpr int DEFAULT_TAB_HEIGHT = 36; // Medium default
   static constexpr int TAB_GAP = 2;
 
+  juce::String getOperatorViewModeLabel(occ::ui::OperatorViewMode mode) const;
+  int getOperatorModeIndex(occ::ui::OperatorViewMode mode) const;
+  occ::ui::OperatorViewMode getOperatorModeFromIndex(int index) const;
+  juce::Rectangle<int> getOperatorModeBounds(int modeIndex) const;
+
   int m_activeTab = 0;
+  occ::ui::OperatorViewMode m_operatorViewMode = occ::ui::OperatorViewMode::Playout;
   int m_tabHeight = DEFAULT_TAB_HEIGHT; // OCC144: Dynamic tab height
   int m_hoveredTab = -1;
+  int m_hoveredOperatorMode = -1;
 
   juce::Array<juce::String> m_tabLabels;
+
+  // Operator modes
+  std::unique_ptr<juce::TextButton> m_playoutButton;
+  std::unique_ptr<juce::TextButton> m_editButton;
+  std::unique_ptr<juce::TextButton> m_routingButton;
+  std::unique_ptr<juce::TextButton> m_preferencesButton;
 
   // OCC130 Sprint B: Transport controls
   std::unique_ptr<juce::TextButton> m_stopAllButton;
@@ -106,6 +139,9 @@ private:
   int m_sampleRate = 0;
   float m_cpuPercent = 0.0f;
   int m_memoryMB = 0;
+  int m_dropoutCount = 0;
+  juce::String m_deviceSummary = "Audio engine not initialized";
+  juce::String m_playoutRouteLabel = "Playout: Group outputs";
   int m_heartbeatPhase = 0; // For pulse animation (0-100)
 
   // OCC130 Sprint B.4: Tab renaming support

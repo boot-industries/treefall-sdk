@@ -1,2 +1,5 @@
 # Run lint-staged on changed files
 pnpm exec lint-staged
+
+# dep-guard: check for dangerous dependency patterns
+$HOME/dev/scripts/dep-guard.sh

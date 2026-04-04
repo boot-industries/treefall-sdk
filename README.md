@@ -21,7 +21,7 @@ cd orpheus-sdk
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j8
 
-# Run tests (32 tests, should complete in ~2 seconds)
+# Run tests (270+ unit tests, core suite ~2 seconds)
 ctest --test-dir build --output-on-failure
 ```
 
@@ -33,7 +33,7 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Integrate SDK:** See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+- **Integrate SDK:** See [`docs/orp/_process/archive/GETTING_STARTED.md`](docs/orp/_process/archive/GETTING_STARTED.md)
 - **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
@@ -225,7 +225,7 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 ├── src/                # Core library implementation (C++20)
 │   ├── core/           # Transport, routing, audio I/O, session
 │   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
-├── tests/              # GoogleTest unit tests (58 tests, 100% passing)
+├── tests/              # GoogleTest unit tests (270+ tests, sanitizer-clean)
 └── CHANGELOG.md        # Release notes and version history
 ```
 
@@ -294,7 +294,7 @@ configuration:
 Run all tests with detailed output:
 
 ```bash
-# All tests (32 tests, ~2 seconds)
+# All tests (270+ tests, core unit suite ~2 seconds)
 ctest --test-dir build --output-on-failure
 
 # Specific test suite
@@ -435,14 +435,13 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 
 **Professional soundboard for broadcast, theater, and live performance**
 
-- **Status:** Design phase complete, implementation starting (6-month MVP)
-- **Features:** Clip triggering (960 buttons), waveform editing, multi-channel routing, iOS remote control
+- **Status:** v0.2.1 — active development. Operator modes (Playout/Edit/Routing/Preferences), audition paths, session recovery, real-time health strip all in place.
+- **Features:** Clip triggering (384 buttons, 960-slot capacity), waveform editing, multi-channel routing, operator modes, cue-bus audition
 - **Market:** Broadcast playout, theater sound design, live performance
-- **Documentation:** [`apps/clip-composer/docs/OCC/`](apps/clip-composer/docs/OCC/) – Complete design package (11 documents, ~5,300 lines)
-  - [`OCC021 Product Vision`](apps/clip-composer/docs/OCC/OCC021%20Orpheus%20Clip%20Composer%20-%20Product%20Vision.md) – Market positioning, competitive analysis
-  - [`OCC026 MVP Definition`](apps/clip-composer/docs/OCC/OCC026%20Milestone%201%20-%20MVP%20Definition%20v1.0.md) – 6-month plan with deliverables
-  - [`OCC029 SDK Enhancements`](apps/clip-composer/docs/OCC/OCC029%20SDK%20Enhancement%20Recommendations%20for%20Clip%20Composer%20v1.0.md) – Required SDK modules
-  - [`PROGRESS.md`](apps/clip-composer/docs/OCC/PROGRESS.md) – Design phase complete report
+- **Documentation:** [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – 146+ docs; archive at `docs/occ/archive/`
+  - [`OCC021 Product Vision`](apps/clip-composer/docs/occ/archive/OCC021%20Orpheus%20Clip%20Composer%20-%20Product%20Vision.md) – Market positioning, competitive analysis
+  - [`OCC026 MVP Definition`](apps/clip-composer/docs/occ/archive/OCC026%20Milestone%201%20-%20MVP%20Definition%20v1.0.md) – MVP plan with deliverables
+  - [`OCC146 Post-Codex Sprint Guide`](apps/clip-composer/docs/occ/OCC146%20Post-Codex%20Integration%20Sprint%20Guide.md) – Current sprint status
 
 **SDK Requirements:** Real-time transport, audio drivers (CoreAudio/ASIO/WASAPI), routing matrix, performance monitor
 
@@ -450,14 +449,14 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 
 **Harmonic calculator and frequency scope for audio analysis**
 
-- **Status:** Planned for v1.0 (Months 7-12)
+- **Status:** In development (`apps/wave-finder/`)
 - **Features:** FFT analysis, harmonic detection, frequency visualization
 
 ### Orpheus FX Engine
 
 **LLM-powered effects processing and creative workflows**
 
-- **Status:** Planned for v1.0 (Months 10-12)
+- **Status:** Planned — not yet started
 - **Features:** DSP integration, real-time parameter automation, LLM hooks
 
 ---
@@ -468,7 +467,7 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 
 **ORP Docs (SDK):**
 **PREFIX:** ORP
-**Next Doc:** ORP098.md
+**Next Doc:** ORP126.md
 **Location:** `docs/orp/`
 
 **Discovery command:**
@@ -479,7 +478,7 @@ ls -1 docs/orp/ | grep -E "^ORP[0-9]{3,4}\.(md|mdx)$" | sort
 
 **OCC Docs (Clip Composer):**
 **PREFIX:** OCC
-**Next Doc:** OCC096.md
+**Next Doc:** OCC147.md
 **Location:** `apps/clip-composer/docs/occ/`
 
 **Discovery command:**
@@ -492,13 +491,13 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 
 ### Reference Documentation
 
-- [`docs/ADAPTERS.md`](docs/ADAPTERS.md) – adapter catalog, build flags, and
+- [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md) – adapter catalog, build flags, and
   host-specific notes.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
-- [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – Orpheus Clip Composer design documentation (complete)
-- [`AGENTS.md`](AGENTS.md) – coding assistant guidelines for AI tools
+- [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – Orpheus Clip Composer documentation (active)
+- [`docs/archive/AGENTS.md`](docs/archive/AGENTS.md) – coding assistant guidelines for AI tools
 - [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
 ## Contributing

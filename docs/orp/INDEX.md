@@ -8,11 +8,11 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP126 Codex Integration Audit and Checkpoint]]
+- [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP124 Architecture Cross-Reference Matrix]]
 - [[ORP123 Wireframes and Documentation Update]]
-- [[ORP122 Phase 4 Quality Improvements Implementation Report]]
-- [[ORP121 Audio Backend Refactoring Master Plan]]
-- [[ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration]]
+- [[ORP082 Loudness Metering and LUFS Implementation Note]]
 
 ## All Documents
 
@@ -62,6 +62,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP122 Phase 4 Quality Improvements Implementation Report]]
 - [[ORP123 Wireframes and Documentation Update]]
 - [[ORP124 Architecture Cross-Reference Matrix]]
+- [[ORP125 Architecture Refactor Sprint - Completion Report]]
+- [[ORP126 Codex Integration Audit and Checkpoint]]
 
 ## Archived Documents
 
