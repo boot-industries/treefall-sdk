@@ -1,3 +1,11 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - cmake-googletest-ci
+  - async_architecture_enables_modularity
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP125 Architecture Refactor Sprint — Completion Report
 
 **Status:** Complete ✅

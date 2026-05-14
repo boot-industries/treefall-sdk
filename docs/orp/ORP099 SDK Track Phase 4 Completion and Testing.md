@@ -1,3 +1,10 @@
+---
+related:
+  - cmake-googletest-ci
+  - deterministic_testing_enables_audio_reproducibility
+  - audio_processing_requires_determinism
+---
+
 # ORP099 - SDK Track: Phase 4 Completion & Testing
 
 **Created:** 2025-10-31

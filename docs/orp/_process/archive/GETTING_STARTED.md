@@ -1,3 +1,9 @@
+---
+related:
+  - cmake-googletest-ci
+  - cpp20_for_audio_dsp
+---
+
 # Getting Started with Orpheus SDK
 
 This guide walks you through preparing your environment, building the core, and running the UI preview referenced in ORP061 §Phase 0.

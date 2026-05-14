@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - audio_processing_requires_determinism
+  - data_pipeline_contracts_prevent_integration_failures
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP069 Implementation Plan v1.0: OCC-Aligned SDK Enhancements
 
 **Version:** 1.0

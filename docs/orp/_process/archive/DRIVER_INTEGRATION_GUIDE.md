@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - data_pipeline_contracts_prevent_integration_failures
+  - async_architecture_enables_modularity
+---
+
 # Driver Integration Guide
 
 **Audience:** Application developers integrating Orpheus SDK

@@ -1,3 +1,10 @@
+---
+related:
+  - juce_over_electron_for_desktop_audio
+  - audio_plugin_architecture_requires_thread_safety
+  - cpp20_for_audio_dsp
+---
+
 # ORP106: Wave Finder Architecture Assessment - JUCE vs SDK Integration
 
 **Status:** Assessment

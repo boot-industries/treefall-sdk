@@ -1,3 +1,10 @@
+---
+related:
+  - cmake-googletest-ci
+  - deterministic_testing_enables_audio_reproducibility
+  - audio_processing_requires_determinism
+---
+
 # ORP101 - Phase 4 Completion Report (ORP099 Tasks 1.1-3.5)
 
 **Created:** 2025-10-31

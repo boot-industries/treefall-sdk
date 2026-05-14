@@ -1,4 +1,10 @@
 <!-- SPDX-License-Identifier: MIT -->
+---
+related:
+  - cpp20_for_audio_dsp
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # Orpheus Adapters
 
 Orpheus ships with a compact, host-neutral core. Adapters provide thin shims

@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP088: SDK Team Answers — Edit Law Enforcement & Position Tracking
 
 **Date:** October 27, 2025

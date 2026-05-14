@@ -1,3 +1,9 @@
+---
+related:
+  - data_pipeline_contracts_prevent_integration_failures
+  - type-safe-api-contract
+---
+
 # Contract Development Guide
 
 **Audience:** SDK developers extending contract schemas

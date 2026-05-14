@@ -1,3 +1,10 @@
+---
+related:
+  - cmake-googletest-ci
+  - deterministic_testing_enables_audio_reproducibility
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # M2 Implementation - Validation Complete ✅
 
 **Date:** October 12, 2025

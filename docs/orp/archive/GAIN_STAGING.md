@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # Orpheus SDK Gain Staging Model
 
 **ORP121 A-06** | Last Updated: 2026-01-17

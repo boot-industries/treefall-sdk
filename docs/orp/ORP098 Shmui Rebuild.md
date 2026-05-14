@@ -1,3 +1,9 @@
+---
+related:
+  - component_libraries_reduce_cross_project_ui_debt
+  - async_architecture_enables_modularity
+---
+
 # ORP098 - Orpheus UI Component Library (Future Web Strategy)
 
 **Status:** Planning

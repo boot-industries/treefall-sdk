@@ -1,3 +1,10 @@
+---
+related:
+  - documentation_as_sprint_artifact_compounds_knowledge
+  - data_pipeline_contracts_prevent_integration_failures
+  - async_architecture_enables_modularity
+---
+
 # ORP124 Architecture Cross-Reference Matrix
 
 **Status:** Authoritative

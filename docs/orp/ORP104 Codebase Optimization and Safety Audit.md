@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - security_by_default_enables_production_confidence
+  - performance_optimization_requires_measurement
+---
+
 # ORP104 Codebase Optimization and Safety Audit
 
 **Date:** 2025-11-09

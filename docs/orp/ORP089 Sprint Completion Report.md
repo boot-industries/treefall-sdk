@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+  - deterministic_testing_enables_audio_reproducibility
+---
+
 # ORP089: Edit Law Enforcement & Seamless Seek API - Sprint Completion Report
 
 **Date:** October 27, 2025

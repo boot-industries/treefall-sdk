@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - deterministic_testing_enables_audio_reproducibility
+---
+
 # ORP094: Fix - Trim Point Boundary Enforcement Implementation
 
 **Date:** October 28, 2025

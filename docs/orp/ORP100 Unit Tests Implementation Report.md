@@ -1,3 +1,10 @@
+---
+related:
+  - cmake-googletest-ci
+  - deterministic_testing_enables_audio_reproducibility
+  - deterministic-audio-processing
+---
+
 # ORP100 - Unit Tests Implementation Report (ORP099 Tasks 1.1-1.3)
 
 **Created:** 2025-10-31

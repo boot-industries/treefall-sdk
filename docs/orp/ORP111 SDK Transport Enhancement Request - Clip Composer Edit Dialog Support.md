@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP111 SDK Transport Enhancement Request - Clip Composer Edit Dialog Support
 
 **Date:** 2025-11-11

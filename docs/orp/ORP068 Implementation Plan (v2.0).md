@@ -1,3 +1,10 @@
+---
+related:
+  - data_pipeline_contracts_prevent_integration_failures
+  - component_libraries_reduce_cross_project_ui_debt
+  - async_architecture_enables_modularity
+---
+
 # ORP068 Implementation Plan v2.0: Orpheus SDK × Shmui Integration
 
 **Document Type**: Implementation Specification (Consolidated)

@@ -1,0 +1,99 @@
+# ORP - Orpheus SDK
+
+Project documentation index for orpheus-sdk.
+
+## Recent Documents
+
+- [[ORP126 Codex Integration Audit and Checkpoint]]
+- [[ORP125 Architecture Refactor Sprint - Completion Report]]
+- [[ORP124 Architecture Cross-Reference Matrix]]
+- [[ORP123 Wireframes and Documentation Update]]
+- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+
+## All Documents
+
+- [[ORP019]]
+- [[ORP020 Sprint Plan]]
+- [[ORP021 New Sprint]]
+- [[ORP022 Cleanup Sprint]]
+- [[ORP026 Oscillator Module Development]]
+- [[ORP027 Visualization Module Development]]
+- [[ORP031 oscillator_hpp]]
+- [[ORP032 oscillator_cpp]]
+- [[ORP059 Orpheus SDK x Eleven Labs UI]]
+- [[ORP060 Integration Analysis_ Orpheus SDK vs_ Shmui (ElevenLabs UI)]]
+- [[ORP061 Migration Plan_ Consolidating Shmui UI into Orpheus SDK Monorepo]]
+- [[ORP062 Technical Addendum_ Engine Contracts, Drivers, and Integration Guardrails]]
+- [[ORP063 Technical Optimization_ Harmonizing Migration Strategy with Contract Architecture]]
+- [[ORP064 Implementation Plan v1.0 Orpheus SDK × Shmui Integration]]
+- [[ORP065 Implementation Plan v1.1 Orpheus SDK × Shmui Integration]]
+- [[ORP066 Technical Addendum_ Implementation Refinements for ORP065]]
+- [[ORP067 Appendix_ Task Numbering Reference]]
+- [[ORP068 Implementation Plan (v2.0)]]
+- [[ORP069 OCC Enhancements]]
+- [[ORP070 OCC MVP Sprint]]
+- [[ORP071 Shmui Enhancements for OCC Ecosystem]]
+- [[ORP072 AES67 Network Audio Driver]]
+- [[ORP073]]
+- [[ORP074]]
+- [[ORP075]]
+- [[ORP076]]
+- [[ORP081]]
+- [[ORP082 Loudness Metering and LUFS Implementation Note]]
+- [[ORP084]]
+- [[ORP085]]
+- [[ORP086 Feature Request - Seamless Clip Restart API]]
+- [[ORP087 Seamless Clip Restart API — Sprint Completion Report]]
+- [[ORP088 Edit Law Enforcement & Position Tracking]]
+- [[ORP089 Sprint Completion Report]]
+- [[ORP090 Sprint Summary + Loop Mode Verification]]
+- [[ORP091 SDK OUT Point Enforcement Not Working]]
+- [[ORP092 Fix - Non-Loop Clips Illegal Loop-to-Zero Bug]]
+- [[ORP093 Sprint - Trim Point Boundary Enforcement]]
+- [[ORP094 Fix - Trim Point Boundary Enforcement]]
+- [[ORP095 Hot Buffer Size Change Implementation]]
+- [[ORP096 Fix Use-After-Free Bug]]
+- [[ORP097 SDK Transport - Fade Bug Fixes for OCC v020]]
+- [[ORP098 Shmui Rebuild]]
+- [[ORP099 SDK Track Phase 4 Completion and Testing]]
+- [[ORP100 Unit Tests Implementation Report]]
+- [[ORP101 Phase 4 Completion Report]]
+- [[ORP102 Repository Analysis and Sprint Recommendations]]
+- [[ORP103 Build System Analysis and Optimization Recommendations]]
+- [[ORP104 Codebase Optimization and Safety Audit]]
+- [[ORP105 CI Infrastructure Diagnosis]]
+- [[ORP106 Wave Finder Architecture Assessment - JUCE vs SDK Integration]]
+- [[ORP107 FreqFinder Architecture Independence - ADR]]
+- [[ORP108 Network Audio Claims Cleanup]]
+- [[ORP109 SDK Feature Roadmap for Clip Composer Integration]]
+- [[ORP110A App-Level Integration Report]]
+- [[ORP110B Performance Monitor API Completion Report]]
+- [[ORP111 SDK Transport Enhancement Request - Clip Composer Edit Dialog Support]]
+- [[ORP112 SDK Transport Features Verification - ORP111 Complete]]
+- [[ORP113 Documentation Alignment Audit - ORP and OCC Planning vs Execution Analysis]]
+- [[ORP114 Critical Gain Staging Bug Investigation and Fix]]
+- [[ORP115 Thread-Safe Metadata Updates]]
+- [[ORP116 Bloat Remediation Sprint]]
+- [[ORP117 Modernization Audit]]
+- [[ORP117 Routing Matrix Technical Explainer]]
+- [[ORP118 Audio Architecture Audit Findings]]
+- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
+- [[ORP119 Shmui Integration Strategy]]
+- [[ORP123 Wireframes and Documentation Update]]
+- [[ORP124 Architecture Cross-Reference Matrix]]
+- [[ORP125 Architecture Refactor Sprint - Completion Report]]
+- [[ORP126 Codex Integration Audit and Checkpoint]]
+
+## Navigation
+
+- **Vault:** [[../../vault|Return to Vault]]
+- **Repo:** orpheus-sdk
+- **Docs:** `docs/orp/`
+
+## Tags
+
+#project-index #orp
+
+---
+
+**Last Generated:** 2026-05-01

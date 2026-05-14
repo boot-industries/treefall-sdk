@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+---
+
 # ORP121: Audio Backend Refactoring Master Plan
 
 **Status:** Planning Complete

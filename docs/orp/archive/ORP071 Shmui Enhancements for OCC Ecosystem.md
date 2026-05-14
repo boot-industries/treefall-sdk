@@ -1,3 +1,10 @@
+---
+related:
+  - ORP
+  - component_libraries_reduce_cross_project_ui_debt
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP071 - Shmui Enhancements for OCC Ecosystem
 
 **Document ID:** ORP071

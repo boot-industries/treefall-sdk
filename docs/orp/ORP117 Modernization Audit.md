@@ -1,3 +1,10 @@
+---
+related:
+  - cpp20_for_audio_dsp
+  - cmake-googletest-ci
+  - performance_optimization_requires_measurement
+---
+
 # Orpheus SDK Modernization Audit Report
 
 **Date:** November 18, 2025

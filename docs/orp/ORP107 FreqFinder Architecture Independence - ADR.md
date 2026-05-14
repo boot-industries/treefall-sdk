@@ -1,3 +1,10 @@
+---
+related:
+  - juce_over_electron_for_desktop_audio
+  - cpp20_for_audio_dsp
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP107: FreqFinder Architecture Independence (ADR)
 
 **Status:** Architecture Decision Record

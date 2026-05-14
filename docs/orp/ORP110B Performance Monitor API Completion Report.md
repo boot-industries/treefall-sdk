@@ -1,3 +1,9 @@
+---
+related:
+  - performance_optimization_requires_measurement
+  - measurement-first-optimization
+---
+
 # ORP110 - Performance Monitor API Completion Report (Feature 3)
 
 **Created:** 2025-11-11

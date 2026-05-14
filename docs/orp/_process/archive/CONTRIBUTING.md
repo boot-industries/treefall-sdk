@@ -1,3 +1,9 @@
+---
+related:
+  - cmake-googletest-ci
+  - cpp20_for_audio_dsp
+---
+
 # Contributing to Orpheus SDK
 
 **Version:** 1.0

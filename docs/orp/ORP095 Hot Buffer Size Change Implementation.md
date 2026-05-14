@@ -1,3 +1,9 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+---
+
 # ORP095: Hot Buffer Size Change Implementation
 
 **Status:** ❌ Not Implemented (Code Missing)

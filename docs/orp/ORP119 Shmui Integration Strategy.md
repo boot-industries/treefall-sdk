@@ -1,3 +1,10 @@
+---
+related:
+  - component_libraries_reduce_cross_project_ui_debt
+  - async_architecture_enables_modularity
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP119: Shmui Integration & Augmentation Strategy
 
 **Status:** Draft
