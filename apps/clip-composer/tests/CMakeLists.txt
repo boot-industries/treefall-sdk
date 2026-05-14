@@ -9,6 +9,7 @@ add_executable(clip_composer_tests
   test_audio_engine_multi_tab.cpp
   test_session_manager.cpp
   test_performance.cpp
+  test_display_preferences.cpp
 )
 
 # C++20 required (matches main application)
@@ -44,6 +45,7 @@ target_link_libraries(clip_composer_tests
 target_link_libraries(clip_composer_tests
   PRIVATE
     orpheus_shmui_juce
+    occ_app_platform
 )
 
 # Link against Orpheus SDK modules

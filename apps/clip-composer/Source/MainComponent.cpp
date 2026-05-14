@@ -5,6 +5,7 @@
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "UI/DesignTokens.h"
+#include <array>
 #include <optional>
 #include <orpheus/app/ApplicationPaths.h>
 
@@ -49,6 +50,119 @@ std::optional<ClipButtonAction> clipButtonActionForMenuItem(int result) {
   default:
     return std::nullopt;
   }
+}
+
+struct GridKeySpec {
+  int keyCode = 0;
+  juce::String label;
+  bool shift = false;
+  bool alt = false;
+};
+
+const std::array<std::array<GridKeySpec, 10>, 10>& gridKeyMap() {
+  static const std::array<std::array<GridKeySpec, 10>, 10> map{{
+      {{{'1', "1"},
+        {'2', "2"},
+        {'3', "3"},
+        {'4', "4"},
+        {'5', "5"},
+        {'6', "6"},
+        {'7', "7"},
+        {'8', "8"},
+        {'9', "9"},
+        {'0', "0"}}},
+      {{{'Q', "Q"},
+        {'W', "W"},
+        {'E', "E"},
+        {'R', "R"},
+        {'T', "T"},
+        {'Y', "Y"},
+        {'U', "U"},
+        {'I', "I"},
+        {'O', "O"},
+        {'P', "P"}}},
+      {{{'A', "A"},
+        {'S', "S"},
+        {'D', "D"},
+        {'F', "F"},
+        {'G', "G"},
+        {'H', "H"},
+        {'J', "J"},
+        {'K', "K"},
+        {'L', "L"},
+        {';', ";"}}},
+      {{{'Z', "Z"},
+        {'X', "X"},
+        {'C', "C"},
+        {'V', "V"},
+        {'B', "B"},
+        {'N', "N"},
+        {'M', "M"},
+        {',', ","},
+        {'.', "."},
+        {'/', "/"}}},
+      {{{juce::KeyPress::F1Key, "F1"},
+        {juce::KeyPress::F2Key, "F2"},
+        {juce::KeyPress::F3Key, "F3"},
+        {juce::KeyPress::F4Key, "F4"},
+        {juce::KeyPress::F5Key, "F5"},
+        {juce::KeyPress::F6Key, "F6"},
+        {juce::KeyPress::F7Key, "F7"},
+        {juce::KeyPress::F8Key, "F8"},
+        {juce::KeyPress::F9Key, "F9"},
+        {juce::KeyPress::F10Key, "F10"}}},
+      {{{'1', "S+1", true},
+        {'2', "S+2", true},
+        {'3', "S+3", true},
+        {'4', "S+4", true},
+        {'5', "S+5", true},
+        {'6', "S+6", true},
+        {'7', "S+7", true},
+        {'8', "S+8", true},
+        {'9', "S+9", true},
+        {'0', "S+0", true}}},
+      {{{'Q', "S+Q", true},
+        {'W', "S+W", true},
+        {'E', "S+E", true},
+        {'R', "S+R", true},
+        {'T', "S+T", true},
+        {'Y', "S+Y", true},
+        {'U', "S+U", true},
+        {'I', "S+I", true},
+        {'O', "S+O", true},
+        {'P', "S+P", true}}},
+      {{{'A', "S+A", true},
+        {'S', "S+S", true},
+        {'D', "S+D", true},
+        {'F', "S+F", true},
+        {'G', "S+G", true},
+        {'H', "S+H", true},
+        {'J', "S+J", true},
+        {'K', "S+K", true},
+        {'L', "S+L", true},
+        {';', "S+;", true}}},
+      {{{'Z', "S+Z", true},
+        {'X', "S+X", true},
+        {'C', "S+C", true},
+        {'V', "S+V", true},
+        {'B', "S+B", true},
+        {'N', "S+N", true},
+        {'M', "S+M", true},
+        {',', "S+,", true},
+        {'.', "S+.", true},
+        {'/', "S+/", true}}},
+      {{{'1', "O+1", false, true},
+        {'2', "O+2", false, true},
+        {'3', "O+3", false, true},
+        {'4', "O+4", false, true},
+        {'5', "O+5", false, true},
+        {'6', "O+6", false, true},
+        {'7', "O+7", false, true},
+        {'8', "O+8", false, true},
+        {'9', "O+9", false, true},
+        {'0', "O+0", false, true}}},
+  }};
+  return map;
 }
 } // namespace
 
@@ -110,7 +224,7 @@ MainComponent::MainComponent() {
   // Set HK Grotesk font as default for all components
   setLookAndFeel(&m_hkGroteskLookAndFeel);
 
-  // Create tab switcher (8 tabs for MAX_CLIP_BUTTONS total clips)
+  // Create tab switcher (8 tabs for logical clip pages)
   m_tabSwitcher = std::make_unique<TabSwitcher>();
   addAndMakeVisible(m_tabSwitcher.get());
 
@@ -121,9 +235,12 @@ MainComponent::MainComponent() {
   };
   m_tabSwitcher->setOperatorViewMode(m_operatorViewMode);
 
-  // Create clip grid (6×8 = 48 buttons per tab)
+  // Create clip grid (default 8 x 6 visible buttons per tab)
   m_clipGrid = std::make_unique<ClipGrid>();
   addAndMakeVisible(m_clipGrid.get());
+
+  m_transportControls = std::make_unique<TransportControls>();
+  addAndMakeVisible(m_transportControls.get());
 
   // Create BarVisualizer (shmui VU meter - 4 bars for master level)
   m_barVisualizer = std::make_unique<shmui::BarVisualizer>();
@@ -254,20 +371,33 @@ void MainComponent::resized() {
     grabKeyboardFocus();
   auto bounds = getLocalBounds();
 
-  // OCC130 Sprint B: Merged tab switcher + transport controls at top (40px)
-  auto tabArea = bounds.removeFromTop(40);
+  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
+  const int topStripHeight = livePlayout ? 36 : 44;
+  const int bottomStripHeight = livePlayout ? 52 : 0;
+
+  auto tabArea = bounds.removeFromTop(topStripHeight);
   if (m_tabSwitcher) {
     m_tabSwitcher->setBounds(tabArea); // Full width (no horizontal margin)
   }
 
-  // Main content area
-  auto contentArea = bounds.reduced(10); // 10px margin
+  if (m_transportControls) {
+    m_transportControls->setVisible(livePlayout);
+    if (livePlayout) {
+      m_transportControls->setBounds(bounds.removeFromBottom(bottomStripHeight));
+    }
+  }
 
-  // BarVisualizer on the right (60px wide with 10px left margin)
+  // Main content area
+  auto contentArea = bounds.reduced(livePlayout ? 6 : 10);
+
+  // BarVisualizer stays in the authoring shell; live playout gives the grid priority.
   if (m_barVisualizer) {
-    auto visualizerArea = contentArea.removeFromRight(60); // 60px wide for frequency bars
-    contentArea.removeFromRight(10);                       // 10px left margin
-    m_barVisualizer->setBounds(visualizerArea);
+    m_barVisualizer->setVisible(!livePlayout);
+    if (!livePlayout) {
+      auto visualizerArea = contentArea.removeFromRight(72);
+      contentArea.removeFromRight(10);
+      m_barVisualizer->setBounds(visualizerArea);
+    }
   }
 
   // Clip grid takes most of the space
@@ -376,7 +506,7 @@ bool MainComponent::loadSessionFromFile(const juce::File& file) {
   m_playNextEnabled.fill(false);
   m_pendingPlayNextGlobalIndex = -1;
 
-  constexpr int numTabs = AudioEngine::MAX_CLIP_BUTTONS / 48;
+  constexpr int numTabs = occ::NUM_TABS;
   auto activeTab = juce::jlimit(0, numTabs - 1, m_sessionManager->getActiveTab());
   for (int tabIndex = 0; tabIndex < numTabs; ++tabIndex) {
     m_sessionManager->setActiveTab(tabIndex);
@@ -478,6 +608,11 @@ void MainComponent::timerCallback() {
                                         m_uiSnapshot.audio.health.memoryMB);
       m_tabSwitcher->setHealthSnapshot(m_uiSnapshot.audio.health);
       m_tabSwitcher->setDeviceRouteStatus(m_uiSnapshot.audio.device);
+      if (m_transportControls) {
+        m_transportControls->setLatencyInfo(latencyMs, bufferSize, sampleRate);
+        m_transportControls->setPerformanceInfo(m_uiSnapshot.audio.health.cpuPercent,
+                                                m_uiSnapshot.audio.health.memoryMB);
+      }
     }
 
     // Auto-backup: save dirty sessions every 60 seconds (60 × 1Hz ticks)
@@ -530,6 +665,10 @@ void MainComponent::applyDisplayPreferences() {
 
   // Apply button appearance preferences to ClipGrid
   if (m_clipGrid) {
+    auto gridLayout = m_displayPreferences->getGridLayout();
+    m_clipGrid->setGridSize(orpheus::DisplayPreferences::getGridLayoutColumns(gridLayout),
+                            orpheus::DisplayPreferences::getGridLayoutRows(gridLayout));
+
     // Bevel width (None=0.0, 5%=0.05, 10%=0.10, 15%=0.15, 20%=0.20)
     float bevelPercent =
         orpheus::DisplayPreferences::getBevelWidthPercent(m_displayPreferences->getBevelWidth());
@@ -538,6 +677,13 @@ void MainComponent::applyDisplayPreferences() {
     // Button text mode (0=None, 1=HotKey, 2=MidiNote)
     int textMode = static_cast<int>(m_displayPreferences->getButtonTextMode());
     m_clipGrid->setButtonTextMode(textMode);
+
+    const int activeTab = m_sessionManager ? m_sessionManager->getActiveTab() : 0;
+    for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
+      if (auto* button = m_clipGrid->getButton(i))
+        button->setTabIndex(activeTab);
+      updateButtonFromClip(i);
+    }
   }
 
   // TODO: Remaining preferences to wire:
@@ -596,11 +742,15 @@ void MainComponent::wireUpClipGridCallbacks() {
 void MainComponent::wireUpTransportCallbacks() {
   m_tabSwitcher->onStopAll = [this]() { onStopAll(); };
   m_tabSwitcher->onPanic = [this]() { onPanic(); };
+  if (m_transportControls) {
+    m_transportControls->onStopAll = [this]() { onStopAll(); };
+    m_transportControls->onPanic = [this]() { onPanic(); };
+  }
 }
 
 void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackState state) {
   // Get clip info for logging
-  int tabIndex = buttonIndex / 48;
+  int tabIndex = buttonIndex / kButtonsPerTab;
 
   // Build history entry with timestamp
   auto now = juce::Time::getCurrentTime();
@@ -728,7 +878,7 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
   if (state == orpheus::PlaybackState::Stopped && m_pendingPlayNextGlobalIndex >= 0 &&
       m_audioEngine) {
     bool anyPlaybackActive = false;
-    for (int clipIndex = 0; clipIndex < AudioEngine::MAX_CLIP_BUTTONS; ++clipIndex) {
+    for (int clipIndex = 0; clipIndex < occ::TOTAL_BUTTONS; ++clipIndex) {
       if (m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Playing ||
           m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Stopping) {
         anyPlaybackActive = true;
@@ -1080,163 +1230,43 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
 }
 
 int MainComponent::getButtonIndexFromKey(const juce::KeyPress& key) const {
-  // Current grid: 6 columns × 8 rows = 48 buttons
-  // Keyboard layout (6 columns wide):
-  //
-  // Row 0: Q W E R T Y
-  // Row 1: A S D F G H
-  // Row 2: Z X C V B N
-  // Row 3: 1 2 3 4 5 6
-  // Row 4: 7 8 9 0 - =
-  // Row 5: [ ] ; ' , .
-  // Row 6: F1 F2 F3 F4 F5 F6
-  // Row 7: F7 F8 F9 F10 F11 F12
+  if (!m_clipGrid)
+    return -1;
 
-  int keyCode = key.getKeyCode();
+  const int columns = m_clipGrid->getColumns();
+  const int rows = m_clipGrid->getRows();
+  const int keyCode = key.getKeyCode();
+  const bool shiftDown = key.getModifiers().isShiftDown();
+  const bool altDown = key.getModifiers().isAltDown();
+  const auto& map = gridKeyMap();
 
-  // Row 0: Q W E R T Y
-  if (keyCode == 'Q')
-    return 0;
-  if (keyCode == 'W')
-    return 1;
-  if (keyCode == 'E')
-    return 2;
-  if (keyCode == 'R')
-    return 3;
-  if (keyCode == 'T')
-    return 4;
-  if (keyCode == 'Y')
-    return 5;
+  for (int row = 0; row < rows && row < static_cast<int>(map.size()); ++row) {
+    for (int col = 0; col < columns && col < static_cast<int>(map[row].size()); ++col) {
+      const auto& spec = map[row][col];
+      if (spec.keyCode == keyCode && spec.shift == shiftDown && spec.alt == altDown) {
+        return row * columns + col;
+      }
+    }
+  }
 
-  // Row 1: A S D F G H
-  if (keyCode == 'A')
-    return 6;
-  if (keyCode == 'S')
-    return 7;
-  if (keyCode == 'D')
-    return 8;
-  if (keyCode == 'F')
-    return 9;
-  if (keyCode == 'G')
-    return 10;
-  if (keyCode == 'H')
-    return 11;
-
-  // Row 2: Z X C V B N
-  if (keyCode == 'Z')
-    return 12;
-  if (keyCode == 'X')
-    return 13;
-  if (keyCode == 'C')
-    return 14;
-  if (keyCode == 'V')
-    return 15;
-  if (keyCode == 'B')
-    return 16;
-  if (keyCode == 'N')
-    return 17;
-
-  // Row 3: 1 2 3 4 5 6
-  if (keyCode == '1')
-    return 18;
-  if (keyCode == '2')
-    return 19;
-  if (keyCode == '3')
-    return 20;
-  if (keyCode == '4')
-    return 21;
-  if (keyCode == '5')
-    return 22;
-  if (keyCode == '6')
-    return 23;
-
-  // Row 4: 7 8 9 0 - =
-  if (keyCode == '7')
-    return 24;
-  if (keyCode == '8')
-    return 25;
-  if (keyCode == '9')
-    return 26;
-  if (keyCode == '0')
-    return 27;
-  if (keyCode == '-')
-    return 28;
-  if (keyCode == '=')
-    return 29;
-
-  // Row 5: [ ] ; ' , .
-  if (keyCode == '[')
-    return 30;
-  if (keyCode == ']')
-    return 31;
-  if (keyCode == ';')
-    return 32;
-  if (keyCode == '\'')
-    return 33;
-  if (keyCode == ',')
-    return 34;
-  if (keyCode == '.')
-    return 35;
-
-  // Row 6: F1 F2 F3 F4 F5 F6
-  if (keyCode == juce::KeyPress::F1Key)
-    return 36;
-  if (keyCode == juce::KeyPress::F2Key)
-    return 37;
-  if (keyCode == juce::KeyPress::F3Key)
-    return 38;
-  if (keyCode == juce::KeyPress::F4Key)
-    return 39;
-  if (keyCode == juce::KeyPress::F5Key)
-    return 40;
-  if (keyCode == juce::KeyPress::F6Key)
-    return 41;
-
-  // Row 7: F7 F8 F9 F10 F11 F12
-  if (keyCode == juce::KeyPress::F7Key)
-    return 42;
-  if (keyCode == juce::KeyPress::F8Key)
-    return 43;
-  if (keyCode == juce::KeyPress::F9Key)
-    return 44;
-  if (keyCode == juce::KeyPress::F10Key)
-    return 45;
-  if (keyCode == juce::KeyPress::F11Key)
-    return 46;
-  if (keyCode == juce::KeyPress::F12Key)
-    return 47;
-
-  return -1; // Key not mapped
+  return -1;
 }
 
 juce::String MainComponent::getKeyboardShortcutForButton(int buttonIndex) const {
-  // Return keyboard shortcut string for button index (inverse of getButtonIndexFromKey)
-  // Current grid: 6 columns × 8 rows = 48 buttons
-  //
-  // Row 0 (0-5): Q W E R T Y
-  // Row 1 (6-11): A S D F G H
-  // Row 2 (12-17): Z X C V B N
-  // Row 3 (18-23): 1 2 3 4 5 6
-  // Row 4 (24-29): 7 8 9 0 - =
-  // Row 5 (30-35): [ ] ; ' , .
-  // Row 6 (36-41): F1 F2 F3 F4 F5 F6
-  // Row 7 (42-47): F7 F8 F9 F10 F11 F12
+  if (!m_clipGrid || buttonIndex < 0 || buttonIndex >= m_clipGrid->getButtonCount())
+    return "";
 
-  const char* shortcuts[] = {
-      "Q",  "W",  "E",  "R",   "T",   "Y",  // Row 0 (0-5)
-      "A",  "S",  "D",  "F",   "G",   "H",  // Row 1 (6-11)
-      "Z",  "X",  "C",  "V",   "B",   "N",  // Row 2 (12-17)
-      "1",  "2",  "3",  "4",   "5",   "6",  // Row 3 (18-23)
-      "7",  "8",  "9",  "0",   "-",   "=",  // Row 4 (24-29)
-      "[",  "]",  ";",  "'",   ",",   ".",  // Row 5 (30-35)
-      "F1", "F2", "F3", "F4",  "F5",  "F6", // Row 6 (36-41)
-      "F7", "F8", "F9", "F10", "F11", "F12" // Row 7 (42-47)
-  };
+  const int columns = m_clipGrid->getColumns();
+  const int row = buttonIndex / columns;
+  const int col = buttonIndex % columns;
+  const auto& map = gridKeyMap();
 
-  if (buttonIndex >= 0 && buttonIndex < 48)
-    return juce::String(shortcuts[buttonIndex]);
+  if (row >= 0 && row < static_cast<int>(map.size()) && col >= 0 &&
+      col < static_cast<int>(map[row].size())) {
+    return map[row][col].label;
+  }
 
-  return ""; // Invalid button index
+  return "";
 }
 
 //==============================================================================
@@ -1449,7 +1479,7 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
 
       // Count how many clips would be overwritten
       int overwriteCount = 0;
-      int totalButtons = 48; // Per tab
+      int totalButtons = kButtonsPerTab;
       int filesToLoad = 0;
 
       juce::FileChooser chooser("Select Audio Files",
@@ -1694,7 +1724,7 @@ void MainComponent::onClipTriggered(int buttonIndex) {
   // Item 60: Move playbox to the triggered button (follows last clip launched)
   m_clipGrid->setPlayboxIndex(buttonIndex);
 
-  // Calculate global clip index (tab-aware: 0-383 for 8 tabs × 48 buttons)
+  // Calculate global clip index (tab-aware logical grid)
   int globalClipIndex = getGlobalClipIndex(buttonIndex);
 
   // Toggle play/stop based on current visual state
@@ -1712,7 +1742,7 @@ void MainComponent::onClipTriggered(int buttonIndex) {
   } else if (currentState == ClipButton::State::Loaded) {
     if (m_playNextEnabled[globalClipIndex] && m_audioEngine) {
       bool anotherClipActive = false;
-      for (int clipIndex = 0; clipIndex < AudioEngine::MAX_CLIP_BUTTONS; ++clipIndex) {
+      for (int clipIndex = 0; clipIndex < occ::TOTAL_BUTTONS; ++clipIndex) {
         if (clipIndex == globalClipIndex)
           continue;
         if (m_audioEngine->getClipState(clipIndex) == orpheus::PlaybackState::Playing ||
@@ -2320,7 +2350,7 @@ void MainComponent::onTabSelected(int tabIndex) {
     m_midiDeviceManager->setCurrentTab(tabIndex);
 
   // Feature 4: Update tab index on all buttons for consecutive numbering
-  // Tab 1 = clips 1-48, Tab 2 = clips 49-96, Tab 3 = clips 97-144, etc.
+  // Tab 1 = clips 1-100, Tab 2 = clips 101-200, etc.
   for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
     auto button = m_clipGrid->getButton(i);
     if (button) {
@@ -2348,6 +2378,7 @@ void MainComponent::setOperatorViewMode(occ::ui::OperatorViewMode mode) {
     m_tabSwitcher->setOperatorViewMode(mode);
 
   DBG("MainComponent: Operator view mode set to " << static_cast<int>(mode));
+  resized();
   repaint();
 }
 
@@ -2480,6 +2511,26 @@ juce::PopupMenu MainComponent::getAppMenuForIndex(int topLevelMenuIndex,
     menu.addItem(205, "MIDI Monitor...");
   } else if (topLevelMenuIndex == 4) // Display menu (OCC117)
   {
+    auto gridLayout = m_displayPreferences->getGridLayout();
+    auto addGridItem = [&gridLayout](juce::PopupMenu& gridMenu, int itemId,
+                                     const juce::String& label,
+                                     orpheus::DisplayPreferences::GridLayout layout) {
+      gridMenu.addItem(itemId, label, true, gridLayout == layout);
+    };
+
+    juce::PopupMenu gridMenu;
+    addGridItem(gridMenu, 350, "6 x 6", orpheus::DisplayPreferences::GridLayout::Columns6Rows6);
+    addGridItem(gridMenu, 351, "8 x 6", orpheus::DisplayPreferences::GridLayout::Columns8Rows6);
+    addGridItem(gridMenu, 352, "10 x 6", orpheus::DisplayPreferences::GridLayout::Columns10Rows6);
+    addGridItem(gridMenu, 353, "6 x 8", orpheus::DisplayPreferences::GridLayout::Columns6Rows8);
+    addGridItem(gridMenu, 354, "8 x 8", orpheus::DisplayPreferences::GridLayout::Columns8Rows8);
+    addGridItem(gridMenu, 355, "10 x 8", orpheus::DisplayPreferences::GridLayout::Columns10Rows8);
+    addGridItem(gridMenu, 356, "6 x 10", orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
+    addGridItem(gridMenu, 357, "8 x 10", orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
+    addGridItem(gridMenu, 358, "10 x 10", orpheus::DisplayPreferences::GridLayout::Columns10Rows10);
+    menu.addSubMenu("Clip Grid Layout", gridMenu);
+    menu.addSeparator();
+
     // Page Tabs submenu
     juce::PopupMenu pageTabsMenu;
     pageTabsMenu.addItem(300, "Small", true,
@@ -2830,8 +2881,8 @@ void MainComponent::handleMenuItemSelected(int menuItemID, int /*topLevelMenuInd
       if (!targetIndices.empty()) {
         // Apply paste special to all target indices
         for (int targetIndex : targetIndices) {
-          int buttonIndex = targetIndex % 48;
-          int tabIndex = targetIndex / 48;
+          int buttonIndex = targetIndex % kButtonsPerTab;
+          int tabIndex = targetIndex / kButtonsPerTab;
 
           if (m_sessionManager->hasClip(buttonIndex, tabIndex)) {
             auto targetClip = m_sessionManager->getClip(buttonIndex, tabIndex);
@@ -3015,6 +3066,34 @@ void MainComponent::handleMenuItemSelected(int menuItemID, int /*topLevelMenuInd
     levelMetersWindow->toFront(true);
     break;
   }
+
+  case 350:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns6Rows6);
+    break;
+  case 351:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns8Rows6);
+    break;
+  case 352:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns10Rows6);
+    break;
+  case 353:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns6Rows8);
+    break;
+  case 354:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns8Rows8);
+    break;
+  case 355:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns10Rows8);
+    break;
+  case 356:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
+    break;
+  case 357:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
+    break;
+  case 358:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns10Rows10);
+    break;
 
   //==============================================================================
   // Help Menu (OCC144)

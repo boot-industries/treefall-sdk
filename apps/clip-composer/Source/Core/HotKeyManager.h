@@ -117,7 +117,7 @@ public:
 
   /**
    * Assign a custom hotkey to a specific button position.
-   * @param globalButtonIndex Global button index (0-383 for 8 tabs × 48 buttons)
+   * @param globalButtonIndex Global button index across the logical tab capacity
    * @param key The key to assign (empty KeyPress to clear)
    */
   void assignHotKey(int globalButtonIndex, const juce::KeyPress& key);

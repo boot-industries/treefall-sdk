@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../../packages/shmui-juce/Utils/Interpolation.h"
+#include "../Core/GridConstants.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 // Forward declaration
@@ -207,7 +208,7 @@ public:
    * @return Display number: Tab 1 = 1-120, Tab 2 = 121-240, etc.
    */
   int getDisplayNumber() const {
-    return (m_tabIndex * 48) + m_buttonIndex + 1;
+    return (m_tabIndex * occ::BUTTONS_PER_TAB) + m_buttonIndex + 1;
   }
 
   /**

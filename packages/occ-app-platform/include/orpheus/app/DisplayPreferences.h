@@ -38,6 +38,18 @@ public:
 
   enum class LevelMeterOrientation { Horizontal, Vertical };
 
+  enum class GridLayout {
+    Columns6Rows6,
+    Columns8Rows6,
+    Columns10Rows6,
+    Columns6Rows8,
+    Columns8Rows8,
+    Columns10Rows8,
+    Columns6Rows10,
+    Columns8Rows10,
+    Columns10Rows10
+  };
+
   //==============================================================================
   DisplayPreferences();
   ~DisplayPreferences() = default;
@@ -69,6 +81,11 @@ public:
   void setButtonTriggerSize(Size size);
   Size getButtonTriggerSize() const {
     return m_buttonTriggerSize;
+  }
+
+  void setGridLayout(GridLayout layout);
+  GridLayout getGridLayout() const {
+    return m_gridLayout;
   }
 
   //==============================================================================
@@ -136,6 +153,9 @@ public:
   static juce::String levelMeterOrientationToString(LevelMeterOrientation orientation);
   static LevelMeterOrientation stringToLevelMeterOrientation(const juce::String& str);
 
+  static juce::String gridLayoutToString(GridLayout layout);
+  static GridLayout stringToGridLayout(const juce::String& str);
+
   //==============================================================================
   // Utility: Get pixel values for Size enum
 
@@ -143,6 +163,8 @@ public:
   static int getStatusBarHeightPixels(Size size);
   static int getButtonTriggerSizePixels(Size size);
   static float getBevelWidthPercent(BevelWidth width);
+  static int getGridLayoutColumns(GridLayout layout);
+  static int getGridLayoutRows(GridLayout layout);
 
 private:
   //==============================================================================
@@ -155,6 +177,7 @@ private:
   Size m_statusBarHeight = Size::Medium;
   BevelWidth m_bevelWidth = BevelWidth::Percent10;
   Size m_buttonTriggerSize = Size::Medium;
+  GridLayout m_gridLayout = GridLayout::Columns8Rows6;
   ButtonTextMode m_buttonTextMode = ButtonTextMode::HotKey;
   bool m_showButtonTriggers = true;
   bool m_edgedText = false;

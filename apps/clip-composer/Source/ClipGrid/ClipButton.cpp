@@ -163,25 +163,29 @@ void ClipButton::paint(juce::Graphics& g) {
   // Background color based on state
   juce::Colour bgColor;
   juce::Colour borderColor;
+  juce::Colour groupColors[4] = {
+      juce::Colour(OCC::Design::kGroupBlue), juce::Colour(OCC::Design::kGroupGreen),
+      juce::Colour(OCC::Design::kGroupOrange), juce::Colour(OCC::Design::kGroupRed)};
+  const auto groupColor = groupColors[juce::jlimit(0, 3, m_clipGroup)];
 
   switch (m_state) {
   case State::Empty:
-    bgColor = juce::Colour(OCC::Design::kBgComponent);
+    bgColor = juce::Colour(OCC::Design::kClipEmpty);
     borderColor = juce::Colour(OCC::Design::kBorderDefault);
     break;
 
   case State::Loaded:
-    bgColor = m_clipColor.withAlpha(kLoadedAlpha);
-    borderColor = m_clipColor.darker(0.2f);
+    bgColor = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(groupColor, 0.22f);
+    borderColor = juce::Colour(OCC::Design::kBorderDefault);
     break;
 
   case State::Playing:
-    bgColor = m_clipColor.withAlpha(kLoadedAlpha);
-    borderColor = juce::Colour(OCC::Design::kTextPrimary);
+    bgColor = juce::Colour(OCC::Design::kClipPlaying);
+    borderColor = juce::Colour(OCC::Design::kAccentGreen).brighter(0.35f);
     break;
 
   case State::Stopping:
-    bgColor = m_clipColor.withAlpha(kLoadedAlpha);
+    bgColor = juce::Colour(OCC::Design::kClipStopping);
     borderColor = juce::Colour(OCC::Design::kMeterOrange);
     break;
   }
@@ -197,6 +201,14 @@ void ClipButton::paint(juce::Graphics& g) {
   // Draw button background with rounded corners
   g.setColour(bgColor);
   g.fillRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS);
+
+  if (m_state != State::Empty) {
+    auto stripe = bounds.reduced(1.0f).withWidth(4.0f);
+    g.setColour(groupColor);
+    g.fillRoundedRectangle(stripe, CORNER_RADIUS);
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.drawVerticalLine(static_cast<int>(stripe.getRight()), stripe.getY(), stripe.getBottom());
+  }
 
   // Draw subtle hover glow (outer glow effect)
   if (m_hoverOpacity > 0.01f && m_state != State::Playing) {
@@ -261,7 +273,8 @@ void ClipButton::paint(juce::Graphics& g) {
     // Button index (larger, more prominent)
     // Feature 4: Use consecutive numbering across tabs
     g.setColour(juce::Colours::white.withAlpha(kTextShadowAlpha));
-    g.setFont(juce::FontOptions("HK Grotesk", kFontButtonNumber, juce::Font::bold));
+    const auto emptyFont = bounds.getHeight() < 78.0f ? 16.0f : kFontButtonNumber;
+    g.setFont(juce::FontOptions("JetBrains Mono", emptyFont, juce::Font::plain));
     g.drawText(juce::String(getDisplayNumber()), bounds, juce::Justification::centred, false);
 
     // No "Empty" text - just the button number on grey background is sufficient
@@ -274,7 +287,17 @@ void ClipButton::paint(juce::Graphics& g) {
 void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   using namespace OCC::Design::ClipButton;
   auto contentArea = bounds.reduced(PADDING);
+  contentArea.removeFromLeft(5.0f);
   float currentY = contentArea.getY();
+  const bool compactWidth = bounds.getWidth() < 112.0f;
+  const bool tightWidth = bounds.getWidth() < 92.0f;
+  const bool compactHeight = bounds.getHeight() < 78.0f;
+  const bool tightHeight = bounds.getHeight() < 62.0f;
+  const bool showHotkey = !tightWidth && !tightHeight;
+  const bool showIndicators = bounds.getWidth() >= 76.0f && bounds.getHeight() >= 50.0f;
+  const float nameFont =
+      tightHeight ? 11.0f : (compactWidth || compactHeight ? 13.0f : kFontClipName);
+  const int nameLines = compactHeight ? 1 : 2;
 
   // Determine text color based on background brightness
   // Skew towards white/light text (dark mode app) - only use black on VERY light backgrounds
@@ -283,7 +306,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   case State::Loaded:
   case State::Playing:
   case State::Stopping:
-    bgColor = m_clipColor.withAlpha(kLoadedAlpha);
+    bgColor = juce::Colour(OCC::Design::kBgComponent);
     break;
   default:
     bgColor = juce::Colours::darkgrey;
@@ -299,22 +322,26 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
 
   // === TOP ROW: Button Index (white rounded box) + Keyboard Shortcut ===
   {
-    auto topRow = contentArea.removeFromTop(kIndicatorBoxHeight);
+    auto topRow = contentArea.removeFromTop(tightHeight ? 12.0f : kIndicatorBoxHeight);
 
     // Button index in white rounded rectangle (Feature 3 - tighter margins)
     // Feature 4: Use consecutive numbering across tabs
     juce::String buttonNumber = juce::String(getDisplayNumber());
-    g.setFont(juce::FontOptions("HK Grotesk", kFontHotkey, juce::Font::bold));
+    g.setFont(
+        juce::FontOptions("JetBrains Mono", compactWidth ? 9.0f : kFontHotkey, juce::Font::plain));
 
-    auto numberBox = topRow.removeFromLeft(kIndicatorBoxWidth).withHeight(kIndicatorBoxHeight);
+    auto numberBox = topRow.removeFromLeft(tightWidth ? 0.0f : kIndicatorBoxWidth)
+                         .withHeight(topRow.getHeight());
 
     // Draw white rounded rectangle background (OCC130 Sprint A.4: 4px corner radius)
-    g.setColour(juce::Colours::white.withAlpha(0.95f));
-    g.fillRoundedRectangle(numberBox, OCC::Design::kRadiusMD);
+    if (!numberBox.isEmpty()) {
+      g.setColour(juce::Colours::white.withAlpha(0.95f));
+      g.fillRoundedRectangle(numberBox, OCC::Design::kRadiusMD);
 
-    // Draw black text
-    g.setColour(juce::Colours::black);
-    g.drawText(buttonNumber, numberBox, juce::Justification::centred, false);
+      // Draw black text
+      g.setColour(juce::Colours::black);
+      g.drawText(buttonNumber, numberBox, juce::Justification::centred, false);
+    }
 
     // OCC130 Sprint A.3: Beat indicator next to clip number (top-left)
     // Format: " // {value}" (e.g., " // 3+")
@@ -327,7 +354,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     }
 
     // Display text based on button text mode preference
-    if (m_buttonTextMode > 0) {
+    if (m_buttonTextMode > 0 && showHotkey) {
       juce::String displayText;
       if (m_buttonTextMode == 1 && m_keyboardShortcut.isNotEmpty()) {
         displayText = m_keyboardShortcut; // HotKey mode
@@ -336,7 +363,8 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
       }
 
       if (displayText.isNotEmpty()) {
-        g.setFont(juce::FontOptions("HK Grotesk", kFontHotkey, juce::Font::bold));
+        g.setFont(
+            juce::FontOptions("HK Grotesk", compactWidth ? 11.0f : kFontHotkey, juce::Font::bold));
 
         auto hotkeyBox = topRow.removeFromRight(kIndicatorBoxWidth).withHeight(kIndicatorBoxHeight);
 
@@ -360,12 +388,12 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // === MIDDLE: Clip Name (PRIMARY) + Duration (secondary) ===
   {
     // Give most space to clip name
-    float nameHeight = contentArea.getHeight() * 0.65f;
+    float nameHeight = contentArea.getHeight() * (tightHeight ? 0.88f : 0.65f);
     auto nameArea =
         juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
 
     // Clip Name (PRIMARY - MUCH larger, bold, 3 lines)
-    g.setFont(juce::FontOptions("HK Grotesk", kFontClipName, juce::Font::bold));
+    g.setFont(juce::FontOptions("HK Grotesk", nameFont, juce::Font::bold));
 
     // Reserve minimal space for duration
     auto nameOnlyArea = nameArea.withTrimmedBottom(12.0f);
@@ -373,20 +401,18 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     // Draw 1px shadow first
     g.setColour(juce::Colours::black.withAlpha(kTextShadowAlpha));
     g.drawFittedText(m_clipName, nameOnlyArea.translated(0, 1).toNearestInt(),
-                     juce::Justification::centred,
-                     3, // Allow up to 3 lines for name
-                     0.85f);
+                     juce::Justification::centred, nameLines, 0.85f);
 
     // Draw main text on top
     g.setColour(textColor);
     g.drawFittedText(m_clipName, nameOnlyArea.toNearestInt(), juce::Justification::centred,
-                     3, // Allow up to 3 lines for name
-                     0.85f);
+                     nameLines, 0.85f);
 
     // OCC130 Sprint A.2: Time display - show elapsed — remaining when playing, total when stopped
-    auto durationArea = nameArea.removeFromBottom(22.0f);
+    auto durationArea = nameArea.removeFromBottom(tightHeight ? 14.0f : 22.0f);
     if (m_durationSeconds > 0.0) {
-      g.setFont(juce::FontOptions("HK Grotesk", kFontTimeDisplay, juce::Font::plain));
+      g.setFont(juce::FontOptions("JetBrains Mono", compactHeight ? 9.0f : kFontTimeDisplay,
+                                  juce::Font::plain));
 
       juce::String timeDisplay;
 
@@ -436,7 +462,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   }
 
   // === BOTTOM ROW: Clip Group ===
-  {
+  if (!tightHeight) {
     auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 24.0f,
                                              contentArea.getWidth(), 24.0f);
 
@@ -487,9 +513,11 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // Draw status icons in bottom-left corner (Feature 2 - fixed grid layout)
   // Order: [PLAY] [STOP OTHERS] [LOOP] [FADE IN] [FADE OUT] [SPEED]
   // Grid is ALWAYS drawn - blank spaces shown for inactive states
-  auto indicatorArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 16.0f,
-                                              contentArea.getWidth(), 14.0f);
-  drawStatusIcons(g, indicatorArea);
+  if (showIndicators) {
+    auto indicatorArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 16.0f,
+                                                contentArea.getWidth(), 14.0f);
+    drawStatusIcons(g, indicatorArea);
+  }
 }
 
 void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bounds) {

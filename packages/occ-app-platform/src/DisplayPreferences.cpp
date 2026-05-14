@@ -54,6 +54,14 @@ void DisplayPreferences::setButtonTriggerSize(Size size) {
   }
 }
 
+void DisplayPreferences::setGridLayout(GridLayout layout) {
+  if (m_gridLayout != layout) {
+    m_gridLayout = layout;
+    save();
+    notifyChanged();
+  }
+}
+
 void DisplayPreferences::setButtonTextMode(ButtonTextMode mode) {
   if (m_buttonTextMode != mode) {
     m_buttonTextMode = mode;
@@ -114,6 +122,7 @@ void DisplayPreferences::save() {
   prefs.setValue("statusBarHeight", sizeToString(m_statusBarHeight));
   prefs.setValue("bevelWidth", bevelWidthToString(m_bevelWidth));
   prefs.setValue("buttonTriggerSize", sizeToString(m_buttonTriggerSize));
+  prefs.setValue("gridLayout", gridLayoutToString(m_gridLayout));
   prefs.setValue("buttonTextMode", buttonTextModeToString(m_buttonTextMode));
   prefs.setValue("showButtonTriggers", m_showButtonTriggers);
   prefs.setValue("edgedText", m_edgedText);
@@ -130,6 +139,7 @@ void DisplayPreferences::load() {
   m_statusBarHeight = stringToSize(prefs.getValue("statusBarHeight", "Medium"));
   m_bevelWidth = stringToBevelWidth(prefs.getValue("bevelWidth", "Percent10"));
   m_buttonTriggerSize = stringToSize(prefs.getValue("buttonTriggerSize", "Medium"));
+  m_gridLayout = stringToGridLayout(prefs.getValue("gridLayout", "8x6"));
   m_buttonTextMode = stringToButtonTextMode(prefs.getValue("buttonTextMode", "HotKey"));
   m_showButtonTriggers = prefs.getBoolValue("showButtonTriggers", true);
   m_edgedText = prefs.getBoolValue("edgedText", false);
@@ -143,6 +153,7 @@ void DisplayPreferences::resetToDefaults() {
   m_statusBarHeight = Size::Medium;
   m_bevelWidth = BevelWidth::Percent10;
   m_buttonTriggerSize = Size::Medium;
+  m_gridLayout = GridLayout::Columns8Rows6;
   m_buttonTextMode = ButtonTextMode::HotKey;
   m_showButtonTriggers = true;
   m_edgedText = false;
@@ -248,6 +259,50 @@ DisplayPreferences::stringToLevelMeterOrientation(const juce::String& str) {
   return LevelMeterOrientation::Horizontal;
 }
 
+juce::String DisplayPreferences::gridLayoutToString(GridLayout layout) {
+  switch (layout) {
+  case GridLayout::Columns6Rows6:
+    return "6x6";
+  case GridLayout::Columns8Rows6:
+    return "8x6";
+  case GridLayout::Columns10Rows6:
+    return "10x6";
+  case GridLayout::Columns6Rows8:
+    return "6x8";
+  case GridLayout::Columns8Rows8:
+    return "8x8";
+  case GridLayout::Columns10Rows8:
+    return "10x8";
+  case GridLayout::Columns6Rows10:
+    return "6x10";
+  case GridLayout::Columns8Rows10:
+    return "8x10";
+  case GridLayout::Columns10Rows10:
+    return "10x10";
+  }
+  return "8x6";
+}
+
+DisplayPreferences::GridLayout DisplayPreferences::stringToGridLayout(const juce::String& str) {
+  if (str == "6x6")
+    return GridLayout::Columns6Rows6;
+  if (str == "10x6")
+    return GridLayout::Columns10Rows6;
+  if (str == "6x8")
+    return GridLayout::Columns6Rows8;
+  if (str == "8x8")
+    return GridLayout::Columns8Rows8;
+  if (str == "10x8")
+    return GridLayout::Columns10Rows8;
+  if (str == "6x10")
+    return GridLayout::Columns6Rows10;
+  if (str == "8x10")
+    return GridLayout::Columns8Rows10;
+  if (str == "10x10")
+    return GridLayout::Columns10Rows10;
+  return GridLayout::Columns8Rows6;
+}
+
 //==============================================================================
 // Pixel values
 
@@ -301,6 +356,42 @@ float DisplayPreferences::getBevelWidthPercent(BevelWidth width) {
     return 0.20f;
   }
   return 0.10f;
+}
+
+int DisplayPreferences::getGridLayoutColumns(GridLayout layout) {
+  switch (layout) {
+  case GridLayout::Columns6Rows6:
+  case GridLayout::Columns6Rows8:
+  case GridLayout::Columns6Rows10:
+    return 6;
+  case GridLayout::Columns10Rows6:
+  case GridLayout::Columns10Rows8:
+  case GridLayout::Columns10Rows10:
+    return 10;
+  case GridLayout::Columns8Rows6:
+  case GridLayout::Columns8Rows8:
+  case GridLayout::Columns8Rows10:
+    return 8;
+  }
+  return 8;
+}
+
+int DisplayPreferences::getGridLayoutRows(GridLayout layout) {
+  switch (layout) {
+  case GridLayout::Columns6Rows6:
+  case GridLayout::Columns8Rows6:
+  case GridLayout::Columns10Rows6:
+    return 6;
+  case GridLayout::Columns6Rows10:
+  case GridLayout::Columns8Rows10:
+  case GridLayout::Columns10Rows10:
+    return 10;
+  case GridLayout::Columns6Rows8:
+  case GridLayout::Columns8Rows8:
+  case GridLayout::Columns10Rows8:
+    return 8;
+  }
+  return 6;
 }
 
 } // namespace orpheus

@@ -11,12 +11,13 @@
 */
 
 #include "MIDIMonitorWindow.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 // MIDIMonitorWindow
 
 MIDIMonitorWindow::MIDIMonitorWindow(orpheus::MIDIDeviceManager* midiManager)
-    : DocumentWindow("MIDI Monitor", juce::Colour(0xff2d2d2d),
+    : DocumentWindow("MIDI Monitor", juce::Colour(OCC::Design::kBgSurface),
                      DocumentWindow::closeButton | DocumentWindow::minimiseButton) {
 
   m_content = std::make_unique<Content>(midiManager);
@@ -67,8 +68,8 @@ MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
   m_logText.setReadOnly(true);
   m_logText.setScrollbarsShown(true);
   m_logText.setCaretVisible(false);
-  m_logText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1a1a1a));
-  m_logText.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
+  m_logText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(OCC::Design::kBgPrimary));
+  m_logText.setColour(juce::TextEditor::textColourId, juce::Colour(OCC::Design::kTextPrimary));
   m_logText.setFont(juce::Font(
       juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain)));
 
@@ -109,7 +110,7 @@ MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
 }
 
 void MIDIMonitorWindow::Content::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff2d2d2d));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 }
 
 void MIDIMonitorWindow::Content::resized() {

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "../Core/GridConstants.h"
 #include "../UIState/ClipComposerUiSnapshot.h"
 #include "ClipButton.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -12,11 +13,11 @@
 /**
  * ClipGrid - Grid of clip trigger buttons
  *
- * MVP: 6×8 = 48 buttons (preview of full 960-button system)
- * Full: 10×12 × 8 tabs = 960 buttons
+ * Visible grid presets span 6 x 6 through 10 x 10 while each tab keeps
+ * 100 logical slots for stable clip mapping.
  *
  * Layout:
- * - 6 columns × 8 rows
+ * - User-selected columns x rows
  * - Responsive sizing
  * - 2px gaps between buttons
  * - Visual updates at 75fps (broadcast standard timing)
@@ -29,7 +30,7 @@ public:
 
   //==============================================================================
   // Grid configuration (Item 22: Resizable grid)
-  void setGridSize(int columns, int rows); // Resize grid (5×4 to 12×8)
+  void setGridSize(int columns, int rows); // Resize visible grid (6 x 6 to 10 x 10)
   int getColumns() const {
     return m_columns;
   }
@@ -98,15 +99,15 @@ private:
 
   //==============================================================================
   // Grid dimensions (Item 22: now configurable, not constexpr)
-  int m_columns = 6; // Default 6, configurable 5-12
-  int m_rows = 8;    // Default 8, configurable 4-8
+  int m_columns = occ::DEFAULT_GRID_COLUMNS;
+  int m_rows = occ::DEFAULT_GRID_ROWS;
   static constexpr int GAP = 2;
 
   // Constraints for grid resizing
-  static constexpr int MIN_COLUMNS = 5;
-  static constexpr int MAX_COLUMNS = 12;
-  static constexpr int MIN_ROWS = 4;
-  static constexpr int MAX_ROWS = 8;
+  static constexpr int MIN_COLUMNS = occ::MIN_GRID_COLUMNS;
+  static constexpr int MAX_COLUMNS = occ::MAX_GRID_COLUMNS;
+  static constexpr int MIN_ROWS = occ::MIN_GRID_ROWS;
+  static constexpr int MAX_ROWS = occ::MAX_GRID_ROWS;
 
   std::vector<std::unique_ptr<ClipButton>> m_buttons;
 
@@ -114,7 +115,7 @@ private:
   int m_playboxIndex = 0;        // Current playbox position (Item 60: arrow key navigation)
 
   // Repaint gating: only repaint buttons whose snapshot changed since last frame
-  std::array<occ::ui::ClipUiSnapshot, 48> m_prevSnapshots{};
+  std::array<occ::ui::ClipUiSnapshot, occ::BUTTONS_PER_TAB> m_prevSnapshots{};
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipGrid)
 };

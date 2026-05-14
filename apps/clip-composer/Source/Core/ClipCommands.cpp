@@ -102,8 +102,8 @@ ClearButtonsCommand::ClearButtonsCommand(SessionManager* sessionManager, int sta
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex = m_startIndex; globalIndex <= m_endIndex; ++globalIndex) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       if (m_sessionManager->hasClip(buttonIndex)) {
@@ -120,8 +120,8 @@ void ClearButtonsCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex = m_startIndex; globalIndex <= m_endIndex; ++globalIndex) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       m_sessionManager->removeClip(buttonIndex);
@@ -136,8 +136,8 @@ void ClearButtonsCommand::undo() {
     int originalTab = m_sessionManager->getActiveTab();
 
     for (const auto& [globalIndex, clipData] : m_savedClips) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       m_sessionManager->setClip(buttonIndex, clipData);
@@ -172,8 +172,8 @@ FillButtonsCommand::FillButtonsCommand(SessionManager* sessionManager, int start
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex = m_startIndex; globalIndex <= m_endIndex; ++globalIndex) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       if (m_sessionManager->hasClip(buttonIndex)) {
@@ -190,8 +190,8 @@ void FillButtonsCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex = m_startIndex; globalIndex <= m_endIndex; ++globalIndex) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       m_sessionManager->loadClip(buttonIndex, m_audioFile.getFullPathName());
@@ -206,8 +206,8 @@ void FillButtonsCommand::undo() {
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex = m_startIndex; globalIndex <= m_endIndex; ++globalIndex) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
 
@@ -239,8 +239,9 @@ size_t FillButtonsCommand::getSizeInBytes() const {
 //==============================================================================
 // CopyPageCommand
 
-CopyPageCommand::CopyPageCommand(SessionManager* sessionManager, int sourceTabIndex,
-                                 std::array<SessionManager::ClipData, 48>* pageClipboard)
+CopyPageCommand::CopyPageCommand(
+    SessionManager* sessionManager, int sourceTabIndex,
+    std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB>* pageClipboard)
     : m_sessionManager(sessionManager), m_sourceTabIndex(sourceTabIndex),
       m_pageClipboard(pageClipboard) {
 
@@ -256,7 +257,7 @@ void CopyPageCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_sourceTabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       (*m_pageClipboard)[i] = m_sessionManager->getClip(i);
     }
 
@@ -277,8 +278,9 @@ juce::String CopyPageCommand::getDescription() const {
 //==============================================================================
 // PastePageCommand
 
-PastePageCommand::PastePageCommand(SessionManager* sessionManager, int targetTabIndex,
-                                   const std::array<SessionManager::ClipData, 48>& pageClipboard)
+PastePageCommand::PastePageCommand(
+    SessionManager* sessionManager, int targetTabIndex,
+    const std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB>& pageClipboard)
     : m_sessionManager(sessionManager), m_targetTabIndex(targetTabIndex),
       m_clipboardData(pageClipboard) {
 
@@ -287,7 +289,7 @@ PastePageCommand::PastePageCommand(SessionManager* sessionManager, int targetTab
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_targetTabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       m_previousData[i] = m_sessionManager->getClip(i);
     }
 
@@ -300,7 +302,7 @@ void PastePageCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_targetTabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       if (m_clipboardData[i].isValid()) {
         m_sessionManager->setClip(i, m_clipboardData[i]);
       } else {
@@ -317,7 +319,7 @@ void PastePageCommand::undo() {
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_targetTabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       if (m_previousData[i].isValid()) {
         m_sessionManager->setClip(i, m_previousData[i]);
       } else {
@@ -355,7 +357,7 @@ ClearPageCommand::ClearPageCommand(SessionManager* sessionManager, int tabIndex)
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_tabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       m_savedData[i] = m_sessionManager->getClip(i);
     }
 
@@ -368,7 +370,7 @@ void ClearPageCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_tabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       m_sessionManager->removeClip(i);
     }
 
@@ -381,7 +383,7 @@ void ClearPageCommand::undo() {
     int originalTab = m_sessionManager->getActiveTab();
     m_sessionManager->setActiveTab(m_tabIndex);
 
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       if (m_savedData[i].isValid()) {
         m_sessionManager->setClip(i, m_savedData[i]);
       }
@@ -414,21 +416,21 @@ void SwapPagesCommand::execute() {
     int originalTab = m_sessionManager->getActiveTab();
 
     // Get all clips from both tabs
-    std::array<SessionManager::ClipData, 48> page1, page2;
+    std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB> page1, page2;
 
     m_sessionManager->setActiveTab(m_tabIndex1);
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       page1[i] = m_sessionManager->getClip(i);
     }
 
     m_sessionManager->setActiveTab(m_tabIndex2);
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       page2[i] = m_sessionManager->getClip(i);
     }
 
     // Swap: page1 → tab2, page2 → tab1
     m_sessionManager->setActiveTab(m_tabIndex1);
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       if (page2[i].isValid()) {
         m_sessionManager->setClip(i, page2[i]);
       } else {
@@ -437,7 +439,7 @@ void SwapPagesCommand::execute() {
     }
 
     m_sessionManager->setActiveTab(m_tabIndex2);
-    for (int i = 0; i < 48; ++i) {
+    for (int i = 0; i < ::occ::BUTTONS_PER_TAB; ++i) {
       if (page1[i].isValid()) {
         m_sessionManager->setClip(i, page1[i]);
       } else {
@@ -470,10 +472,10 @@ void SwapClipsCommand::execute() {
   if (m_sessionManager && m_globalIndex1 != m_globalIndex2) {
     int originalTab = m_sessionManager->getActiveTab();
 
-    int tab1 = m_globalIndex1 / 48;
-    int btn1 = m_globalIndex1 % 48;
-    int tab2 = m_globalIndex2 / 48;
-    int btn2 = m_globalIndex2 % 48;
+    int tab1 = m_globalIndex1 / ::occ::BUTTONS_PER_TAB;
+    int btn1 = m_globalIndex1 % ::occ::BUTTONS_PER_TAB;
+    int tab2 = m_globalIndex2 / ::occ::BUTTONS_PER_TAB;
+    int btn2 = m_globalIndex2 % ::occ::BUTTONS_PER_TAB;
 
     // Get both clips
     m_sessionManager->setActiveTab(tab1);
@@ -623,8 +625,8 @@ PasteSpecialCommand::PasteSpecialCommand(SessionManager* sessionManager,
     int originalTab = m_sessionManager->getActiveTab();
 
     for (int globalIndex : m_targetIndices) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       m_savedClips[globalIndex] = m_sessionManager->getClip(buttonIndex);
@@ -640,8 +642,8 @@ void PasteSpecialCommand::execute() {
     int autoFillIndex = 0;
 
     for (int globalIndex : m_targetIndices) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       auto clipData = m_sessionManager->getClip(buttonIndex);
@@ -661,8 +663,8 @@ void PasteSpecialCommand::undo() {
     int originalTab = m_sessionManager->getActiveTab();
 
     for (const auto& [globalIndex, clipData] : m_savedClips) {
-      int tabIndex = globalIndex / 48;
-      int buttonIndex = globalIndex % 48;
+      int tabIndex = globalIndex / ::occ::BUTTONS_PER_TAB;
+      int buttonIndex = globalIndex % ::occ::BUTTONS_PER_TAB;
 
       m_sessionManager->setActiveTab(tabIndex);
       m_sessionManager->setClip(buttonIndex, clipData);

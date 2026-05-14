@@ -4,9 +4,11 @@
 
 #include "Audio/AudioEngine.h"
 #include "ClipGrid/ClipGrid.h"
+#include "Core/GridConstants.h"
 #include "Core/HotKeyManager.h"
 #include "Core/MIDIDeviceManager.h"
 #include "Session/SessionManager.h"
+#include "Transport/TransportControls.h"
 #include "UI/AboutDialog.h"
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
@@ -38,7 +40,7 @@
  * Main UI component for Orpheus Clip Composer
  *
  * This is the top-level component that hosts all UI elements:
- * - Clip Grid (48 buttons MVP, 960 buttons full version: 10×12 × 8 tabs)
+ * - Clip Grid (configurable visible density, 100 logical slots x 8 tabs)
  * - Transport Controls
  * - Routing Panel
  * - Waveform Display
@@ -143,9 +145,9 @@ private:
   int getButtonIndexFromKey(const juce::KeyPress& key) const;
   juce::String getKeyboardShortcutForButton(int buttonIndex) const;
 
-  // Global clip index calculation (buttonIndex 0-47 + current tab → 0-383)
+  // Global clip index calculation with 100 logical slots per tab.
   int getGlobalClipIndex(int buttonIndex) const {
-    return m_sessionManager->getActiveTab() * 48 + buttonIndex;
+    return m_sessionManager->getActiveTab() * occ::BUTTONS_PER_TAB + buttonIndex;
   }
 
   //==============================================================================
@@ -169,6 +171,7 @@ private:
   // UI Components
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
   std::unique_ptr<ClipGrid> m_clipGrid;
+  std::unique_ptr<TransportControls> m_transportControls;
   std::unique_ptr<shmui::BarVisualizer> m_barVisualizer; // shmui frequency visualizer
 
   std::unique_ptr<SessionHistoryWindow> m_sessionHistoryWindow;
@@ -181,10 +184,10 @@ private:
   // Custom Look and Feel (HK Grotesk font)
   HKGroteskLookAndFeel m_hkGroteskLookAndFeel;
 
-  // Per-button "stop others on play" mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
+  // Per-button "stop others on play" mode (audio slot indexed)
   std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_stopOthersOnPlay = {};
 
-  // Per-button loop mode (bitset for MAX_CLIP_BUTTONS clips: 48 buttons × 8 tabs)
+  // Per-button loop mode (audio slot indexed)
   std::array<bool, AudioEngine::MAX_CLIP_BUTTONS> m_loopEnabled = {};
 
   // Explicit operator view mode

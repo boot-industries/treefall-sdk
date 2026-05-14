@@ -14,8 +14,8 @@ enum class ClipButtonAction { Copy = 0, Paste, Swap, PasteSpecial, Loop, StopOth
 /**
  * TabSwitcher - Merged tab bar and transport controls (OCC130 Sprint B)
  *
- * Provides 8 tabs, each representing a page of 48 clips (6×8 grid).
- * Total capacity: 8 × 48 = MAX_CLIP_BUTTONS clips
+ * Provides 8 tabs, each representing up to 100 logical clip slots.
+ * Visible density is controlled by the user's grid layout preference.
  *
  * OCC130 Sprint B: Merged layout (single row):
  * | [Tab 1] [Tab 2] ... [Tab 8]  |  [●] [●]  |  [Stop All] [Panic] |

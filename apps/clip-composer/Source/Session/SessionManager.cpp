@@ -74,6 +74,10 @@ bool SessionManager::loadClipForTab(int buttonIndex, const juce::String& filePat
     DBG("SessionManager: Invalid tab index " << tabIndex << " for loadClip");
     return false;
   }
+  if (buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB) {
+    DBG("SessionManager: Invalid button index " << buttonIndex << " for loadClip");
+    return false;
+  }
 
   juce::File audioFile(filePath);
 
@@ -115,6 +119,9 @@ bool SessionManager::loadClipForTab(int buttonIndex, const juce::String& filePat
 }
 
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData) {
+  if (buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return;
+
   int key = makeKey(m_currentTab, buttonIndex);
   auto clipWithTab = clipData;
   clipWithTab.tabIndex = m_currentTab;
@@ -131,7 +138,7 @@ void SessionManager::removeClip(int buttonIndex) {
 }
 
 void SessionManager::removeClip(int buttonIndex, int tabIndex) {
-  if (tabIndex < 0 || tabIndex >= NUM_TABS)
+  if (tabIndex < 0 || tabIndex >= NUM_TABS || buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
     return;
 
   int key = makeKey(tabIndex, buttonIndex);
@@ -176,6 +183,9 @@ void SessionManager::swapClips(int buttonIndex1, int buttonIndex2) {
 }
 
 SessionManager::ClipData SessionManager::getClip(int buttonIndex) const {
+  if (buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return ClipData();
+
   int key = makeKey(m_currentTab, buttonIndex);
   auto it = m_clips.find(key);
   if (it != m_clips.end())
@@ -185,11 +195,17 @@ SessionManager::ClipData SessionManager::getClip(int buttonIndex) const {
 }
 
 bool SessionManager::hasClip(int buttonIndex) const {
+  if (buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return false;
+
   int key = makeKey(m_currentTab, buttonIndex);
   return m_clips.find(key) != m_clips.end();
 }
 
 SessionManager::ClipData SessionManager::getClip(int buttonIndex, int tabIndex) const {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS || buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return ClipData();
+
   int key = makeKey(tabIndex, buttonIndex);
   auto it = m_clips.find(key);
   if (it != m_clips.end())
@@ -208,6 +224,9 @@ SessionManager::ClipData SessionManager::getClipByGlobalIndex(int globalClipInde
 }
 
 bool SessionManager::hasClip(int buttonIndex, int tabIndex) const {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS || buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return false;
+
   int key = makeKey(tabIndex, buttonIndex);
   return m_clips.find(key) != m_clips.end();
 }
@@ -222,6 +241,9 @@ bool SessionManager::hasClipByGlobalIndex(int globalClipIndex) const {
 }
 
 void SessionManager::setClip(int buttonIndex, const ClipData& clipData, int tabIndex) {
+  if (tabIndex < 0 || tabIndex >= NUM_TABS || buttonIndex < 0 || buttonIndex >= BUTTONS_PER_TAB)
+    return;
+
   int key = makeKey(tabIndex, buttonIndex);
   auto clipWithTab = clipData;
   clipWithTab.tabIndex = tabIndex;

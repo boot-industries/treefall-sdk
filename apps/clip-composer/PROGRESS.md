@@ -1,8 +1,8 @@
 # Orpheus Clip Composer - Implementation Progress
 
-**Last Updated:** 2026-03-28
-**Current Phase:** Competitive-gap sprint integration
-**Application Status:** v0.1.0-alpha Released, v0.2.0-alpha Pending QA
+**Last Updated:** 2026-05-14
+**Current Phase:** Clip Composer UI refresh
+**Application Status:** v0.2.2-alpha UI refresh branch
 **Framework:** JUCE 8.0.4
 **SDK:** Orpheus SDK M2 (real-time infrastructure)
 
@@ -19,22 +19,24 @@
 
 ## Current Work
 
-**Competitive-gap sprint:** in integration
+**Clip Composer UI refresh:** in implementation on `codex/clip-composer-ui-refresh`
 
-Delivered app-local playout/prep improvements on top of the current shell baseline:
+Delivered the first implementation milestone:
 
-1. ✅ Operator mode strip for Playout, Edit, Routing, and Preferences
-2. ✅ Richer button actions for Copy, Paste, Swap, and Paste Special
-3. ✅ Dedicated cue-buss audition path for Edit Dialog preview/rehearsal
-4. ✅ Audio setup details now surface playout/audition path and device validation
-5. ✅ Health/status strip now exposes latency, CPU, memory, dropouts, and active device summary
-6. ✅ Session confidence slice landed with lineage, missing-media recovery, and package reopen tests
+1. ✅ Clean `main` checkpoint preserved before branch work
+2. ✅ New `codex/clip-composer-ui-refresh` working branch
+3. ✅ Grid layout preference added with 6x6 through 10x10 presets
+4. ✅ Per-tab logical capacity promoted to 100 stable button slots
+5. ✅ UI snapshots, keyboard mapping, page commands, paste special, hotkeys, and MIDI scope moved to shared grid constants
+6. ✅ Playout mode now uses compact top chrome, large grid area, and bottom transport strip
+7. ✅ Clip button rendering refreshed for density-aware Console styling
+8. ✅ macOS app bundle launch repaired for the generated build
 
 **Next Steps:**
 
-- Manual smoke for preview-vs-playout separation and new operator actions
-- Investigate pre-existing AudioEngine ASan failure in CoreAudio driver test setup
-- Cut follow-up backlog for deferred enterprise/show-control items
+- Continue the visual polish pass across the remaining secondary dialogs and callouts
+- Manual smoke every grid density preset and each operator mode
+- Expand any design-system updates in the design-system repo once that repo is writable in the current task context
 
 ---
 
@@ -54,7 +56,19 @@ Delivered app-local playout/prep improvements on top of the current shell baseli
 
 **Status:** Released to initial beta testers
 
-### v0.2.0-alpha (Pending Release)
+### v0.2.2-alpha (In Progress)
+
+**Enhancements:**
+
+- Adaptive grid layout preference with nine supported density presets
+- 100 logical slots per tab with backward-compatible session loading
+- Console-styled playout shell and bottom transport strip
+- Density-aware clip button rendering
+- Grid-capacity regression tests and legacy session coverage
+
+**Status:** Build and targeted Clip Composer tests passing on the UI refresh branch
+
+### v0.2.0-alpha
 
 **Enhancements:**
 
@@ -132,10 +146,11 @@ Delivered app-local playout/prep improvements on top of the current shell baseli
 
 ### Core Components
 
-**Clip Grid System:** ✅ Complete
+**Clip Grid System:** ✅ Complete, UI refresh in progress
 
-- 10×12 button layout per tab
-- 8 tabs (960 total buttons)
+- 8 tabs with 100 logical UI slots per tab
+- Visible density presets from 6x6 through 10x10
+- Audio pre-allocation remains at 960 slots for the deferred wider-capacity migration
 - Color coding and visual feedback
 - Keyboard shortcuts
 - Multi-tab isolation (v0.2.0)

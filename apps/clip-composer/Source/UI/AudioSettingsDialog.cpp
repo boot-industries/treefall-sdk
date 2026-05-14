@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "AudioSettingsDialog.h"
+#include "DesignTokens.h"
 
 #include <algorithm>
 
@@ -61,7 +62,7 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* engine) : m_audioEngine(en
 
   addAndMakeVisible(m_detailLabel);
   m_detailLabel.setJustificationType(juce::Justification::topLeft);
-  m_detailLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+  m_detailLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextSecondary));
 
   if (m_audioEngine) {
     const auto currentSampleRate = m_audioEngine->getSampleRate();
@@ -84,9 +85,9 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* engine) : m_audioEngine(en
 }
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff252525));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 
-  g.setColour(juce::Colours::white);
+  g.setColour(juce::Colour(OCC::Design::kTextPrimary));
   g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
   g.drawText("Audio I/O Settings", 0, 10, getWidth(), 30, juce::Justification::centred);
 }

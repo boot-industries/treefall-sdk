@@ -113,7 +113,7 @@ private:
 class CopyPageCommand : public Command {
 public:
   CopyPageCommand(SessionManager* sessionManager, int sourceTabIndex,
-                  std::array<SessionManager::ClipData, 48>* pageClipboard);
+                  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB>* pageClipboard);
 
   void execute() override;
   void undo() override;
@@ -122,8 +122,8 @@ public:
 private:
   SessionManager* m_sessionManager;
   int m_sourceTabIndex;
-  std::array<SessionManager::ClipData, 48>* m_pageClipboard;
-  std::array<SessionManager::ClipData, 48> m_previousClipboard;
+  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB>* m_pageClipboard;
+  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB> m_previousClipboard;
   bool m_hadPreviousClipboard = false;
 };
 
@@ -133,8 +133,9 @@ private:
 */
 class PastePageCommand : public Command {
 public:
-  PastePageCommand(SessionManager* sessionManager, int targetTabIndex,
-                   const std::array<SessionManager::ClipData, 48>& pageClipboard);
+  PastePageCommand(
+      SessionManager* sessionManager, int targetTabIndex,
+      const std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB>& pageClipboard);
 
   void execute() override;
   void undo() override;
@@ -144,8 +145,8 @@ public:
 private:
   SessionManager* m_sessionManager;
   int m_targetTabIndex;
-  std::array<SessionManager::ClipData, 48> m_clipboardData;
-  std::array<SessionManager::ClipData, 48> m_previousData;
+  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB> m_clipboardData;
+  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB> m_previousData;
 };
 
 //==============================================================================
@@ -164,7 +165,7 @@ public:
 private:
   SessionManager* m_sessionManager;
   int m_tabIndex;
-  std::array<SessionManager::ClipData, 48> m_savedData;
+  std::array<SessionManager::ClipData, ::occ::BUTTONS_PER_TAB> m_savedData;
 };
 
 //==============================================================================

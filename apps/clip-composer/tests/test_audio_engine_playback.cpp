@@ -50,7 +50,7 @@ TEST_F(AudioEnginePlaybackTest, StartClipInvalidIndex) {
   bool success = m_engine->startClip(-1);
   EXPECT_FALSE(success);
 
-  success = m_engine->startClip(384);
+  success = m_engine->startClip(AudioEngine::MAX_CLIP_BUTTONS);
   EXPECT_FALSE(success);
 }
 

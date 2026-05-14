@@ -55,7 +55,7 @@ std::vector<int> HotKeyManager::findClipsForHotKey(const juce::KeyPress& key, in
 
   for (const auto& [buttonIndex, assignedKey] : m_buttonHotKeys) {
     // Scope check: if Paged, only match buttons on the current tab
-    int tabForButton = buttonIndex / 48;
+    int tabForButton = buttonIndex / occ::BUTTONS_PER_TAB;
     if (m_scope == Scope::Paged && tabForButton != currentTab)
       continue;
 
@@ -63,7 +63,7 @@ std::vector<int> HotKeyManager::findClipsForHotKey(const juce::KeyPress& key, in
     if (assignedKey.getKeyCode() == key.getKeyCode() &&
         assignedKey.getModifiers() == key.getModifiers()) {
       // Verify the button actually has a clip loaded
-      int localButtonIndex = buttonIndex % 48;
+      int localButtonIndex = buttonIndex % occ::BUTTONS_PER_TAB;
       if (sessionManager->hasClip(localButtonIndex, tabForButton)) {
         matchingClips.push_back(buttonIndex);
       }

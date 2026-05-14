@@ -104,26 +104,27 @@ TEST_F(PerformanceTest, MemoryUsageIdle) {
   EXPECT_LT(memoryMB, 100) << "Idle memory usage: " << memoryMB << "MB";
 }
 
-TEST_F(PerformanceTest, MemoryUsageWith48Clips) {
-  for (int i = 0; i < 48; ++i) {
+TEST_F(PerformanceTest, MemoryUsageWithDefaultVisibleGridClips) {
+  constexpr int kDefaultVisibleSlots = occ::DEFAULT_GRID_COLUMNS * occ::DEFAULT_GRID_ROWS;
+  for (int i = 0; i < kDefaultVisibleSlots; ++i) {
     ASSERT_TRUE(m_engine->loadClip(i, m_testAudioFile.getFullPathName()));
   }
 
   size_t memoryMB = getProcessMemoryMB();
 
-  // Memory with 48 clip slots allocated should be reasonable (<150MB)
-  EXPECT_LT(memoryMB, 150) << "Memory with 48 clips: " << memoryMB << "MB";
+  // Memory with the default visible grid loaded should be reasonable (<150MB)
+  EXPECT_LT(memoryMB, 150) << "Memory with default visible grid clips: " << memoryMB << "MB";
 }
 
-TEST_F(PerformanceTest, MemoryUsageWith384Clips) {
-  for (int i = 0; i < 384; ++i) {
+TEST_F(PerformanceTest, MemoryUsageWithLogicalClipCapacity) {
+  for (int i = 0; i < occ::TOTAL_BUTTONS; ++i) {
     ASSERT_TRUE(m_engine->loadClip(i, m_testAudioFile.getFullPathName()));
   }
 
   size_t memoryMB = getProcessMemoryMB();
 
-  // Memory with 384 clip slots should be <200MB (OCC100 target)
-  EXPECT_LT(memoryMB, 200) << "Memory with 384 clips: " << memoryMB << "MB";
+  // Memory with the 8-tab logical UI capacity should remain bounded.
+  EXPECT_LT(memoryMB, 300) << "Memory with logical clip capacity: " << memoryMB << "MB";
 }
 
 TEST_F(PerformanceTest, EngineStartLatency) {
@@ -186,15 +187,15 @@ TEST_F(PerformanceTest, IsClipPlayingPerformance) {
 }
 
 TEST_F(PerformanceTest, MultipleClipStatusQueries) {
-  // Measure performance of querying all 384 clips
+  // Measure performance of querying every logical UI clip slot.
   auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < 384; ++i) {
+  for (int i = 0; i < occ::TOTAL_BUTTONS; ++i) {
     m_engine->isClipPlaying(i);
   }
   auto end = std::chrono::high_resolution_clock::now();
 
   auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 
-  // Querying all 384 clips should be <2ms (critical for UI refresh rate)
-  EXPECT_LT(totalUs, 2000) << "Query 384 clips time: " << totalUs << "µs";
+  // Querying all logical slots should be <2ms (critical for UI refresh rate)
+  EXPECT_LT(totalUs, 2000) << "Query logical clips time: " << totalUs << "µs";
 }
