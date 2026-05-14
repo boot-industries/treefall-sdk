@@ -1,3 +1,11 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - deterministic-audio-processing
+---
+
 # ORP118 Multi-Voice Architecture and Audio Summing Topology
 
 **Status:** Authoritative

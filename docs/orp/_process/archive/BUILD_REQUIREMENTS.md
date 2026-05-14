@@ -1,3 +1,9 @@
+---
+related:
+  - cmake-googletest-ci
+  - cpp20_for_audio_dsp
+---
+
 # Build Requirements
 
 ## C++ Build

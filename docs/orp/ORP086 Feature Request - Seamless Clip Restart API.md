@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # SDK Feature Request: Seamless Clip Restart API
 
 **Status:** Proposed

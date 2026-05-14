@@ -1,3 +1,9 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - security_by_default_enables_production_confidence
+---
+
 # ORP096: Fix Use-After-Free Bug in AudioEngine Destructor
 
 **Status:** ✅ Fixed

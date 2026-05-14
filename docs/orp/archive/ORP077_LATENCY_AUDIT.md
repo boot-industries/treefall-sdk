@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - performance_optimization_requires_measurement
+  - measurement-first-optimization
+  - audio_processing_requires_determinism
+---
+
 # ORP076 - Orpheus SDK Latency Audit & Optimization Report
 
 **Date:** 2025-10-23

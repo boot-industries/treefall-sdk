@@ -1,3 +1,9 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+---
+
 # ORP093: SDK Sprint - Trim Point Boundary Enforcement
 
 **Status:** ✅ COMPLETE (See ORP094.md for completion report)

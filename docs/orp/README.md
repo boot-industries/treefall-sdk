@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - cpp20_for_audio_dsp
+  - cmake-googletest-ci
+---
+
 # Orpheus Reference Plans (ORP) - Index
 
 This directory contains authoritative implementation plans for the Orpheus SDK ecosystem.

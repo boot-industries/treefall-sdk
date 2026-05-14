@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - single-writer-audio-state
+  - audio_processing_requires_determinism
+---
+
 # ORP115: Thread-Safe Metadata Updates via Command Queue
 
 **Status:** In Progress

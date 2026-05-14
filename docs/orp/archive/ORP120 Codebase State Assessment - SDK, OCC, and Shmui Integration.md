@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - audio_plugin_architecture_requires_thread_safety
+  - documentation_as_sprint_artifact_compounds_knowledge
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP120 Codebase State Assessment - SDK, OCC, and Shmui Integration
 
 **Date:** 2026-01-06

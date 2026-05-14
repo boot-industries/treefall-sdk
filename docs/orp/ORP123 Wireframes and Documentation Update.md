@@ -1,3 +1,8 @@
+---
+related:
+  - documentation_as_sprint_artifact_compounds_knowledge
+---
+
 # ORP123 Wireframes and Documentation Update
 
 **Date:** 2026-01-25

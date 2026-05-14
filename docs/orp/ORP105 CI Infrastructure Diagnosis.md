@@ -1,3 +1,9 @@
+---
+related:
+  - cmake-googletest-ci
+  - security_by_default_enables_production_confidence
+---
+
 # ORP105 CI Infrastructure Diagnosis
 
 **Date:** 2025-11-09

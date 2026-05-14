@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - audio_plugin_architecture_requires_thread_safety
+  - structured_error_handling_enables_recovery
+---
+
 # ORP091: SDK OUT Point Enforcement Not Working (Non-Loop Mode Looping)
 
 **Date:** October 27, 2025

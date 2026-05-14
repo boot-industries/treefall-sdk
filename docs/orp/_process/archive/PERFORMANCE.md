@@ -1,3 +1,10 @@
+---
+related:
+  - performance_optimization_requires_measurement
+  - measurement-first-optimization
+  - audio_processing_requires_determinism
+---
+
 # Performance Budgets
 
 Orpheus SDK enforces performance guardrails through the version-controlled [`budgets.json`](../budgets.json) file. The thresholds

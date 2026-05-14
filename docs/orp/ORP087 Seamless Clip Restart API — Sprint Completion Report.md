@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - deterministic_testing_enables_audio_reproducibility
+---
+
 # ORP087: Seamless Clip Restart API — Sprint Completion Report
 
 **Status:** ✅ COMPLETE

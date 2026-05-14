@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - cpp20_for_audio_dsp
+  - deterministic-audio-processing
+---
+
 # Oscillator Band-Limiting Overview
 
 The Orpheus oscillator relies on a lightweight, allocation-free signal chain designed for

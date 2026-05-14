@@ -1,3 +1,9 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP110 - ORP109 Implementation Report
 
 **Created:** 2025-11-11

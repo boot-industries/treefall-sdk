@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP097 - SDK Transport/Fade Bug Fixes for OCC v0.2.0
 
 **Status:** Pending Implementation

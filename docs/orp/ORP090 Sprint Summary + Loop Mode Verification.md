@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - deterministic_testing_enables_audio_reproducibility
+  - deterministic-audio-processing
+---
+
 # ORP090: ORP089 Sprint Summary + Loop Mode Verification
 
 **Date:** October 27, 2025

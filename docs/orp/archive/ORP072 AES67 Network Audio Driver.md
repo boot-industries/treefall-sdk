@@ -1,3 +1,11 @@
+---
+related:
+  - ORP
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+  - data_pipeline_contracts_prevent_integration_failures
+---
+
 # ORP072 AES67 Network Audio Driver Integration Plan
 
 AES67-native audio driver implementation for Orpheus SDK, enabling professional network audio infrastructure with broadcast-safe, deterministic IP audio streaming compatible with Dante, Ravenna, Q-LAN, and other AES67-compliant systems.

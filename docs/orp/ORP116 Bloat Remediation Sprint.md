@@ -1,3 +1,9 @@
+---
+related:
+  - performance_optimization_requires_measurement
+  - cpp20_for_audio_dsp
+---
+
 # ORP116: Bloat Remediation Sprint
 
 **Status:** Draft

@@ -1,3 +1,10 @@
+---
+related:
+  - documentation_as_sprint_artifact_compounds_knowledge
+  - prefix_docs_over_centralized_wiki
+  - prefix-doc-workflow
+---
+
 # Documentation Alignment Audit Report
 
 **Date:** 2025-01-13  

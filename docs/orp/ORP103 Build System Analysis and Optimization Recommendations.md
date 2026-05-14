@@ -1,3 +1,10 @@
+---
+related:
+  - cmake-googletest-ci
+  - cpp20_for_audio_dsp
+  - performance_optimization_requires_measurement
+---
+
 # ORP103 Build System Analysis and Optimization Recommendations
 
 **Date:** 2025-11-08

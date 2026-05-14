@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - audio_plugin_architecture_requires_thread_safety
+  - deterministic_testing_enables_audio_reproducibility
+---
+
 # ORP092: Fix - Non-Loop Clips Illegal Loop-to-Zero Bug
 
 **Date:** October 27, 2025

@@ -1,4 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
+---
+related:
+  - security_by_default_enables_production_confidence
+  - cpp20_for_audio_dsp
+---
 
 # Repository Audit
 

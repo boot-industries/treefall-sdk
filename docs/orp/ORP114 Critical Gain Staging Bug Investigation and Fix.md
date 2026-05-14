@@ -1,3 +1,10 @@
+---
+related:
+  - audio_plugin_architecture_requires_thread_safety
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+---
+
 # ORP114: Critical Gain Staging Bug Investigation and Fix
 
 **Status:** Investigation Complete, Fixes Pending

@@ -1,3 +1,10 @@
+---
+related:
+  - cpp20_for_audio_dsp
+  - cmake-googletest-ci
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP102 - Repository Analysis and Sprint Recommendations
 
 **Created:** 2025-11-05

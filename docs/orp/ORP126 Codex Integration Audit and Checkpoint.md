@@ -1,3 +1,10 @@
+---
+related:
+  - security_by_default_enables_production_confidence
+  - documentation_as_sprint_artifact_compounds_knowledge
+  - cmake-googletest-ci
+---
+
 # ORP126 Codex Integration Audit and Checkpoint
 
 **Date:** 2026-04-04

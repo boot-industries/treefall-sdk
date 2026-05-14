@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - deterministic_testing_enables_audio_reproducibility
+  - audio_plugin_architecture_requires_thread_safety
+---
+
 # ORP082 Loudness Metering and LUFS Implementation Note
 
 ## Summary

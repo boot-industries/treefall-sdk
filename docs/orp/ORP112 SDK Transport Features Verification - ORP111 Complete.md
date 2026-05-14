@@ -1,3 +1,10 @@
+---
+related:
+  - audio_processing_requires_determinism
+  - single-writer-audio-state
+  - deterministic_testing_enables_audio_reproducibility
+---
+
 # ORP112 SDK Transport Features Verification - ORP111 Complete
 
 **Date:** 2025-11-11
