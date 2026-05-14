@@ -12,6 +12,7 @@
 
 #include "AboutDialog.h"
 #include "BuildInfo.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 AboutDialog::AboutDialog() {
@@ -20,7 +21,7 @@ AboutDialog::AboutDialog() {
   m_titleLabel.setText("Orpheus Clip Composer", juce::dontSendNotification);
   m_titleLabel.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
   m_titleLabel.setJustificationType(juce::Justification::centred);
-  m_titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+  m_titleLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextPrimary));
 
   // Version
   addAndMakeVisible(m_versionLabel);
@@ -28,7 +29,7 @@ AboutDialog::AboutDialog() {
                          juce::dontSendNotification);
   m_versionLabel.setFont(juce::Font(juce::FontOptions(14.0f)));
   m_versionLabel.setJustificationType(juce::Justification::centred);
-  m_versionLabel.setColour(juce::Label::textColourId, juce::Colour(0xffcccccc));
+  m_versionLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextSecondary));
 
   // Build info
   addAndMakeVisible(m_buildLabel);
@@ -42,14 +43,14 @@ AboutDialog::AboutDialog() {
   m_buildLabel.setText(buildInfo, juce::dontSendNotification);
   m_buildLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
   m_buildLabel.setJustificationType(juce::Justification::centred);
-  m_buildLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
+  m_buildLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
 
   // Copyright
   addAndMakeVisible(m_copyrightLabel);
   m_copyrightLabel.setText("Copyright 2025-2026 Chris Lyons", juce::dontSendNotification);
   m_copyrightLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
   m_copyrightLabel.setJustificationType(juce::Justification::centred);
-  m_copyrightLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
+  m_copyrightLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextSecondary));
 
   // Credits
   addAndMakeVisible(m_creditsLabel);
@@ -61,7 +62,7 @@ AboutDialog::AboutDialog() {
   m_creditsLabel.setText(credits, juce::dontSendNotification);
   m_creditsLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
   m_creditsLabel.setJustificationType(juce::Justification::centred);
-  m_creditsLabel.setColour(juce::Label::textColourId, juce::Colour(0xff999999));
+  m_creditsLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
 
   // OK button
   addAndMakeVisible(m_okButton);
@@ -76,18 +77,19 @@ AboutDialog::AboutDialog() {
 
 void AboutDialog::paint(juce::Graphics& g) {
   // Dark background with subtle gradient
-  juce::ColourGradient gradient(juce::Colour(0xff2a2a2a), 0.0f, 0.0f, juce::Colour(0xff1e1e1e),
-                                0.0f, static_cast<float>(getHeight()), false);
+  juce::ColourGradient gradient(juce::Colour(OCC::Design::kBgSurface), 0.0f, 0.0f,
+                                juce::Colour(OCC::Design::kBgPrimary), 0.0f,
+                                static_cast<float>(getHeight()), false);
   g.setGradientFill(gradient);
   g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
 
   // Border
-  g.setColour(juce::Colour(0xff444444));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 8.0f, 1.0f);
 
   // App icon placeholder (cyan circle with O)
   auto iconBounds = juce::Rectangle<int>(0, 20, getWidth(), 60);
-  g.setColour(juce::Colour(0xff00bcd4)); // Accent cyan
+  g.setColour(juce::Colour(OCC::Design::kAccentCyan));
   g.fillEllipse(iconBounds.getCentreX() - 25.0f, iconBounds.getY() + 5.0f, 50.0f, 50.0f);
 
   g.setColour(juce::Colours::white);

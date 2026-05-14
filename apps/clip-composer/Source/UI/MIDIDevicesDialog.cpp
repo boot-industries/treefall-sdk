@@ -11,6 +11,7 @@
 */
 
 #include "MIDIDevicesDialog.h"
+#include "DesignTokens.h"
 
 MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
     : m_midiManager(midiManager) {
@@ -29,7 +30,8 @@ MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
   addAndMakeVisible(m_midiInList);
   m_midiInList.setModel(this);
   m_midiInList.setRowHeight(24);
-  m_midiInList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff3a3a3a));
+  m_midiInList.setColour(juce::ListBox::backgroundColourId,
+                         juce::Colour(OCC::Design::kBgComponent));
 
   // MIDI Out section
   addAndMakeVisible(m_midiOutLabel);
@@ -38,7 +40,8 @@ MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
 
   addAndMakeVisible(m_midiOutList);
   m_midiOutList.setRowHeight(24);
-  m_midiOutList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff3a3a3a));
+  m_midiOutList.setColour(juce::ListBox::backgroundColourId,
+                          juce::Colour(OCC::Design::kBgComponent));
 
   // Scope section
   addAndMakeVisible(m_scopeLabel);
@@ -121,10 +124,10 @@ MIDIDevicesDialog::MIDIDevicesDialog(orpheus::MIDIDeviceManager* midiManager)
 }
 
 void MIDIDevicesDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff2d2d2d));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 
   // Draw border
-  g.setColour(juce::Colour(0xff4a4a4a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRect(getLocalBounds(), 1);
 }
 

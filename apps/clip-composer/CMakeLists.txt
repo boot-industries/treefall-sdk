@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus_clip_composer LANGUAGES C CXX)
 
-set(OCC_APP_VERSION "0.2.1")
+set(OCC_APP_VERSION "0.2.2")
 
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
@@ -221,6 +221,15 @@ target_sources(orpheus_clip_composer_app PRIVATE ${CLIP_COMPOSER_SOURCES})
 
 # C++20 required (matches Orpheus SDK)
 target_compile_features(orpheus_clip_composer_app PRIVATE cxx_std_20)
+
+if(APPLE)
+  add_custom_command(TARGET orpheus_clip_composer_app POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:orpheus_clip_composer_app>"
+      "$<TARGET_FILE_DIR:orpheus_clip_composer_app>/Orpheus Clip Composer"
+    COMMENT "Aligning macOS bundle executable with CFBundleExecutable"
+  )
+endif()
 
 target_compile_options(orpheus_clip_composer_app
   PRIVATE

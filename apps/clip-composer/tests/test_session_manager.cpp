@@ -102,6 +102,63 @@ TEST_F(SessionManagerTest, SaveAndLoadSession) {
   EXPECT_EQ(newManager->getSessionName(), "Round Trip Session");
 }
 
+TEST_F(SessionManagerTest, SupportsHundredLogicalSlotsPerTab) {
+  SessionManager::ClipData clip;
+  clip.filePath = m_audioPath.getFullPathName().toStdString();
+  clip.displayName = "Slot 100";
+  clip.mediaAvailable = true;
+
+  m_sessionManager->setClip(99, clip, 0);
+  EXPECT_TRUE(m_sessionManager->hasClip(99, 0));
+  EXPECT_EQ(m_sessionManager->getClip(99, 0).displayName, "Slot 100");
+
+  EXPECT_FALSE(m_sessionManager->hasClip(100, 0));
+  m_sessionManager->setClip(100, clip, 0);
+  EXPECT_FALSE(m_sessionManager->hasClip(100, 0));
+}
+
+TEST_F(SessionManagerTest, GlobalIndexUsesHundredSlotPages) {
+  SessionManager::ClipData clip;
+  clip.filePath = m_audioPath.getFullPathName().toStdString();
+  clip.displayName = "Second Page First Slot";
+  clip.mediaAvailable = true;
+
+  m_sessionManager->setClip(0, clip, 1);
+  EXPECT_TRUE(m_sessionManager->hasClipByGlobalIndex(100));
+  EXPECT_EQ(m_sessionManager->getClipByGlobalIndex(100).displayName, "Second Page First Slot");
+  EXPECT_FALSE(m_sessionManager->hasClipByGlobalIndex(99));
+}
+
+TEST_F(SessionManagerTest, LoadsLegacyFortyEightVisibleSlotSessionWithoutRemapping) {
+  juce::var sessionJson = juce::var(new juce::DynamicObject());
+  auto* sessionObject = sessionJson.getDynamicObject();
+  ASSERT_NE(sessionObject, nullptr);
+
+  sessionObject->setProperty("version", "0.2.0-alpha");
+  sessionObject->setProperty("name", "Legacy 48 Slot Session");
+
+  juce::Array<juce::var> clips;
+  auto clipJson = juce::var(new juce::DynamicObject());
+  auto* clipObject = clipJson.getDynamicObject();
+  ASSERT_NE(clipObject, nullptr);
+  clipObject->setProperty("tabIndex", 1);
+  clipObject->setProperty("buttonIndex", 47);
+  clipObject->setProperty("filePath", m_audioPath.getFullPathName());
+  clipObject->setProperty("displayName", "Legacy Last Visible Slot");
+  clips.add(clipJson);
+  sessionObject->setProperty("clips", juce::var(clips));
+
+  ASSERT_TRUE(m_sessionPath.replaceWithText(juce::JSON::toString(sessionJson, true)));
+
+  SessionManager reloaded;
+  ASSERT_TRUE(reloaded.loadSession(m_sessionPath));
+
+  EXPECT_TRUE(reloaded.hasClip(47, 1));
+  EXPECT_EQ(reloaded.getClip(47, 1).displayName, "Legacy Last Visible Slot");
+  EXPECT_FALSE(reloaded.hasClipByGlobalIndex(95));
+  EXPECT_TRUE(reloaded.hasClipByGlobalIndex(147));
+}
+
 TEST_F(SessionManagerTest, GetSessionName) {
   m_sessionManager->clearSession();
   std::string name = m_sessionManager->getSessionName();

@@ -11,6 +11,7 @@
 */
 
 #include "HotKeySetupDialog.h"
+#include "DesignTokens.h"
 
 HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
     : m_hotKeyManager(hotKeyManager) {
@@ -38,7 +39,7 @@ HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
 
   addAndMakeVisible(m_scopeHintLabel);
   m_scopeHintLabel.setJustificationType(juce::Justification::centredLeft);
-  m_scopeHintLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+  m_scopeHintLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
 
   // Set current scope
   if (m_hotKeyManager && m_hotKeyManager->getScope() == orpheus::HotKeyManager::Scope::Global) {
@@ -65,7 +66,7 @@ HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
 
   addAndMakeVisible(m_actionHintLabel);
   m_actionHintLabel.setJustificationType(juce::Justification::centredLeft);
-  m_actionHintLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+  m_actionHintLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
 
   // Set current action
   if (m_hotKeyManager && m_hotKeyManager->getMultiButtonAction() ==
@@ -98,14 +99,14 @@ HotKeySetupDialog::HotKeySetupDialog(orpheus::HotKeyManager* hotKeyManager)
 }
 
 void HotKeySetupDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff2d2d2d));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 
   // Draw border
-  g.setColour(juce::Colour(0xff4a4a4a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRect(getLocalBounds(), 1);
 
   // Draw separator lines
-  g.setColour(juce::Colour(0xff3a3a3a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault).withAlpha(0.65f));
   g.drawHorizontalLine(45, 10, getWidth() - 10);
   g.drawHorizontalLine(165, 10, getWidth() - 10);
 }

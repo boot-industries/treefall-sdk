@@ -332,9 +332,9 @@ void MIDIDeviceManager::handleNoteOn(int noteNumber, int channel, int velocity,
   int endIndex = MAX_BUTTONS;
 
   if (m_scope == Scope::Paged) {
-    // Only search current tab (48 buttons per tab)
-    startIndex = m_currentTab * 48;
-    endIndex = startIndex + 48;
+    // Only search current tab.
+    startIndex = m_currentTab * occ::BUTTONS_PER_TAB;
+    endIndex = startIndex + occ::BUTTONS_PER_TAB;
   }
 
   for (const auto& [buttonIndex, noteAssignment] : m_buttonMidiNotes) {

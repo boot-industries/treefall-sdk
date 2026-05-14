@@ -7,6 +7,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <orpheus/transport_controller.h>
 
+#include "../Core/GridConstants.h"
+
 namespace occ::ui {
 
 enum class OperatorViewMode {
@@ -42,7 +44,7 @@ struct ClipUiSnapshot {
 };
 
 struct SessionUiSnapshot {
-  static constexpr int kButtonsPerTab = 48;
+  static constexpr int kButtonsPerTab = occ::BUTTONS_PER_TAB;
 
   int activeTab = 0;
   bool hasActivePlayback = false;

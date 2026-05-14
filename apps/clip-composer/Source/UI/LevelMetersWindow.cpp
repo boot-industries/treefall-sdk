@@ -11,12 +11,13 @@
 */
 
 #include "LevelMetersWindow.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 // LevelMetersWindow
 
 LevelMetersWindow::LevelMetersWindow(AudioEngine* audioEngine)
-    : DocumentWindow("Level Meters", juce::Colour(0xff2d2d2d),
+    : DocumentWindow("Level Meters", juce::Colour(OCC::Design::kBgSurface),
                      DocumentWindow::closeButton | DocumentWindow::minimiseButton) {
 
   m_content = std::make_unique<Content>(audioEngine);
@@ -64,8 +65,9 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
   m_historyText.setReadOnly(true);
   m_historyText.setScrollbarsShown(true);
   m_historyText.setCaretVisible(false);
-  m_historyText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1a1a1a));
-  m_historyText.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
+  m_historyText.setColour(juce::TextEditor::backgroundColourId,
+                          juce::Colour(OCC::Design::kBgPrimary));
+  m_historyText.setColour(juce::TextEditor::textColourId, juce::Colour(OCC::Design::kTextPrimary));
   m_historyText.setFont(juce::Font(
       juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
 
@@ -80,7 +82,7 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
 }
 
 void LevelMetersWindow::Content::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff2d2d2d));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 
   // Draw meters
   auto area = getLocalBounds().reduced(10);
@@ -116,11 +118,11 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
                                             float level, float peakLevel,
                                             const juce::String& label) {
   // Background
-  g.setColour(juce::Colour(0xff1a1a1a));
+  g.setColour(juce::Colour(OCC::Design::kBgPrimary));
   g.fillRect(bounds);
 
   // Border
-  g.setColour(juce::Colour(0xff4a4a4a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRect(bounds, 1);
 
   // Meter fill
@@ -166,8 +168,7 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
   auto valueArea = bounds.removeFromTop(16);
   g.setColour(juce::Colours::lightgrey);
   g.setFont(juce::Font(juce::FontOptions(10.0f)));
-  g.drawText(juce::String(level * 100.0f, 0) + "%", valueArea,
-             juce::Justification::centredTop);
+  g.drawText(juce::String(level * 100.0f, 0) + "%", valueArea, juce::Justification::centredTop);
 }
 
 void LevelMetersWindow::Content::resized() {

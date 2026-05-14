@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 #include "SessionHistoryWindow.h"
+#include "DesignTokens.h"
 
 //==============================================================================
 SessionHistoryWindow::SessionHistoryWindow()
-    : DocumentWindow("Session History", juce::Colours::darkgrey,
+    : DocumentWindow("Session History", juce::Colour(OCC::Design::kBgSurface),
                      juce::DocumentWindow::minimiseButton | juce::DocumentWindow::closeButton) {
   setUsingNativeTitleBar(true);
   setResizable(true, true);
@@ -16,8 +17,10 @@ SessionHistoryWindow::SessionHistoryWindow()
   m_historyDisplay.setScrollbarsShown(true);
   m_historyDisplay.setCaretVisible(false);
   m_historyDisplay.setPopupMenuEnabled(true);
-  m_historyDisplay.setColour(juce::TextEditor::backgroundColourId, juce::Colours::black);
-  m_historyDisplay.setColour(juce::TextEditor::textColourId, juce::Colours::lightgrey);
+  m_historyDisplay.setColour(juce::TextEditor::backgroundColourId,
+                             juce::Colour(OCC::Design::kBgPrimary));
+  m_historyDisplay.setColour(juce::TextEditor::textColourId,
+                             juce::Colour(OCC::Design::kTextPrimary));
   m_historyDisplay.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
   m_historyDisplay.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::plain)));
 

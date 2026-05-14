@@ -73,6 +73,7 @@ TabSwitcher::TabSwitcher() {
 void TabSwitcher::setOperatorViewMode(occ::ui::OperatorViewMode mode) {
   m_operatorViewMode = mode;
   updateModeButtonStates();
+  resized();
   repaint();
 }
 
@@ -298,6 +299,11 @@ void TabSwitcher::paint(juce::Graphics& g) {
 void TabSwitcher::resized() {
   // Layout transport buttons on right side.
   // | [Tabs (flex space)] | [Stop All] [Panic] | [status text] [●] [●] |
+  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
+  if (m_stopAllButton)
+    m_stopAllButton->setVisible(!livePlayout);
+  if (m_panicButton)
+    m_panicButton->setVisible(!livePlayout);
 
   auto bounds = getLocalBounds().reduced(kLeftMargin, 0); // 10px horizontal margin
 
@@ -327,17 +333,19 @@ void TabSwitcher::resized() {
 
   bounds.removeFromRight(22 + statusTextWidth);
 
-  // Panic button (after status lights)
-  auto panicBounds = bounds.removeFromRight(buttonWidth);
-  panicBounds = panicBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
-  m_panicButton->setBounds(panicBounds);
+  if (!livePlayout) {
+    // Panic button (after status lights)
+    auto panicBounds = bounds.removeFromRight(buttonWidth);
+    panicBounds = panicBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
+    m_panicButton->setBounds(panicBounds);
 
-  bounds.removeFromRight(gap);
+    bounds.removeFromRight(gap);
 
-  // Stop All button (left of Panic)
-  auto stopBounds = bounds.removeFromRight(buttonWidth);
-  stopBounds = stopBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
-  m_stopAllButton->setBounds(stopBounds);
+    // Stop All button (left of Panic)
+    auto stopBounds = bounds.removeFromRight(buttonWidth);
+    stopBounds = stopBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
+    m_stopAllButton->setBounds(stopBounds);
+  }
 
   // Tabs are laid out in paint() dynamically (flex space on left)
   // Status lights are drawn in paint() (on the far right, outside transport buttons)
@@ -472,7 +480,10 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
   int gap = 10;
   int statusLightsWidth = 22;
   int statusTextWidth = 196;
-  int transportWidth = 2 * (buttonWidth + gap) + statusTextWidth + statusLightsWidth + 20;
+  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
+  int transportWidth = statusTextWidth + statusLightsWidth + 20;
+  if (!livePlayout)
+    transportWidth += 2 * (buttonWidth + gap);
   int availableWidth = bounds.getWidth() - transportWidth - modeStripWidth - kRightMargin;
 
   int tabWidth = (availableWidth - (TAB_GAP * (NUM_TABS - 1))) / NUM_TABS;

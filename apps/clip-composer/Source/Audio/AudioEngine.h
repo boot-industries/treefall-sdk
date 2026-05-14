@@ -9,8 +9,8 @@
 #include <juce_events/juce_events.h>
 #include <memory>
 #include <optional>
-#include <orpheus/audio_driver_manager.h>
 #include <orpheus/audio_driver.h>
+#include <orpheus/audio_driver_manager.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/performance_monitor.h>
 #include <orpheus/transport_controller.h>
@@ -379,8 +379,7 @@ private:
                                  std::unique_ptr<orpheus::TransportController>& transport,
                                  std::string& errorMessage) const;
   bool createConfiguredDriver(const std::string& deviceName, uint32_t sampleRate,
-                              uint32_t bufferSize,
-                              std::unique_ptr<orpheus::IAudioDriver>& driver,
+                              uint32_t bufferSize, std::unique_ptr<orpheus::IAudioDriver>& driver,
                               std::string& errorMessage, bool& usingFallbackDriver) const;
   bool rehydrateTransportState(orpheus::TransportController& transport,
                                const orpheus::TransportController* previousTransport,
@@ -397,8 +396,9 @@ private:
   std::unique_ptr<orpheus::TransportController> m_transportController;
   std::unique_ptr<orpheus::IAudioDriver> m_audioDriver;
 
-  // Clip handle mapping (buttonIndex → ClipHandle)
-  // 8 tabs × 48 buttons per tab = MAX_CLIP_BUTTONS total clips
+  // Clip handle mapping (buttonIndex -> ClipHandle)
+  // UI uses 8 tabs x 100 logical slots; audio pre-allocation keeps 960 slots
+  // available for the deferred wider-capacity migration.
   std::array<orpheus::ClipHandle, MAX_CLIP_BUTTONS> m_clipHandles;
 
   // Clip metadata cache (for UI queries)
@@ -412,9 +412,9 @@ private:
    * CUE_BUSS_BASE_HANDLE+MAX_CUE_BUSSES-1
    */
   struct CueBussSlot {
-    orpheus::ClipHandle handle = 0;                      ///< 0 = free, 10001+ = allocated
-    juce::String filePath;                               ///< Cached source path for rehydration
-    orpheus::ClipMetadata transportMetadata;             ///< Cached transport metadata
+    orpheus::ClipHandle handle = 0;                     ///< 0 = free, 10001+ = allocated
+    juce::String filePath;                              ///< Cached source path for rehydration
+    orpheus::ClipMetadata transportMetadata;            ///< Cached transport metadata
     std::optional<orpheus::AudioFileMetadata> metadata; ///< Cached audio file metadata
   };
   std::array<CueBussSlot, MAX_CUE_BUSSES> m_cueBussPool; ///< Pre-allocated Cue Buss pool

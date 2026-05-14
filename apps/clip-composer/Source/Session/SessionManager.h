@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "../Core/GridConstants.h"
 #include <array>
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
@@ -224,7 +225,7 @@ public:
 
   /**
    * @brief Get clip data using a global clip index.
-   * @param globalClipIndex Global index (tab*48 + button)
+   * @param globalClipIndex Global index (tab*BUTTONS_PER_TAB + button)
    * @return ClipData if assigned, or ClipData with empty filePath if not
    */
   ClipData getClipByGlobalIndex(int globalClipIndex) const;
@@ -246,7 +247,7 @@ public:
 
   /**
    * @brief Check if a global clip index is assigned.
-   * @param globalClipIndex Global index (tab*48 + button)
+   * @param globalClipIndex Global index (tab*BUTTONS_PER_TAB + button)
    * @return true if the slot contains a valid clip
    */
   bool hasClipByGlobalIndex(int globalClipIndex) const;
@@ -450,7 +451,7 @@ private:
   std::array<std::string, 4> m_clipGroupNames = {"Group 1", "Group 2", "Group 3", "Group 4"};
 
   static constexpr int NUM_TABS = 8;
-  static constexpr int BUTTONS_PER_TAB = 48;
+  static constexpr int BUTTONS_PER_TAB = occ::BUTTONS_PER_TAB;
   static constexpr int NUM_CLIP_GROUPS = 4;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionManager)

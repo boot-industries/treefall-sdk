@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.2-alpha] - 2026-05-14
+
+### Added
+
+- **Adaptive grid density** - Added persisted Clip Grid Layout preferences for `6x6`, `8x6`, `10x6`, `6x8`, `8x8`, `10x8`, `6x10`, `8x10`, and `10x10`. The default remains `8x6`.
+- **100-slot logical tabs** - Promoted per-tab UI capacity from 48 to 100 logical slots while keeping `tabIndex` and `buttonIndex` stable for existing sessions.
+- **Playout transport strip** - Added a compact bottom transport strip for Playout mode with Stop All, Panic, latency, performance, and now-playing status.
+- **Grid density tests** - Added coverage for 100-slot tab capacity, global index conversion, grid layout persistence keys, supported density dimensions, and legacy 48-visible-slot session loading.
+
+### Changed
+
+- **Clip button rendering** - Refreshed clip buttons with neutral loaded chassis colors, persistent group stripes, high-contrast playing/stopping states, and density-aware HUD simplification.
+- **Keyboard and page operations** - Updated keyboard mapping, copy/paste/page commands, MIDI/hotkey scope, paste special, and UI snapshots to use shared grid constants.
+- **Console styling** - Restyled the live transport and grid surfaces around the Orpheus Console design tokens.
+
+### Fixed
+
+- **macOS app launch** - Added a post-build bundle alignment step so `CFBundleExecutable` resolves to an executable in the app bundle.
+
+---
+
 ## [0.2.0-alpha] - 2025-10-31
 
 ### Fixed

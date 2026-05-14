@@ -12,6 +12,7 @@
 
 #include "PasteSpecialDialog.h"
 #include "../Core/GridConstants.h"
+#include "DesignTokens.h"
 
 PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
                                        const SessionManager::ClipData& sourceClip, int currentTab)
@@ -27,7 +28,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
   m_sourceLabel.setText("Source: " + juce::String(sourceClip.displayName),
                         juce::dontSendNotification);
   m_sourceLabel.setJustificationType(juce::Justification::centred);
-  m_sourceLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+  m_sourceLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
 
   // Levels section
   addAndMakeVisible(m_levelsLabel);
@@ -165,14 +166,14 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
 }
 
 void PasteSpecialDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(0xff2d2d2d));
+  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
 
   // Draw border
-  g.setColour(juce::Colour(0xff4a4a4a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRect(getLocalBounds(), 1);
 
   // Draw section separators
-  g.setColour(juce::Colour(0xff3a3a3a));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault).withAlpha(0.65f));
   g.drawHorizontalLine(85, 10, getWidth() - 10);
   g.drawHorizontalLine(175, 10, getWidth() - 10);
   g.drawHorizontalLine(285, 10, getWidth() - 10);
@@ -268,8 +269,8 @@ std::vector<int> PasteSpecialDialog::getTargetIndices() const {
 
   if (m_scopeCurrentPageRadio.getToggleState()) {
     // Current page only
-    int startIndex = m_currentTab * 48;
-    for (int i = 0; i < 48; ++i) {
+    int startIndex = m_currentTab * occ::BUTTONS_PER_TAB;
+    for (int i = 0; i < occ::BUTTONS_PER_TAB; ++i) {
       indices.push_back(startIndex + i);
     }
   } else if (m_scopeAllPagesRadio.getToggleState()) {

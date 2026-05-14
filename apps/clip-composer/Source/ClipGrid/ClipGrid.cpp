@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipGrid.h"
+#include "../UI/DesignTokens.h"
 
 //==============================================================================
 ClipGrid::ClipGrid() {
@@ -59,7 +60,7 @@ ClipButton* ClipGrid::getButton(int index) {
 
 //==============================================================================
 void ClipGrid::setGridSize(int columns, int rows) {
-  // Validate grid size constraints (Item 22: 5×4 to 12×8)
+  // Validate grid size constraints (Item 22: 6 x 6 to 10 x 10)
   columns = juce::jlimit(MIN_COLUMNS, MAX_COLUMNS, columns);
   rows = juce::jlimit(MIN_ROWS, MAX_ROWS, rows);
 
@@ -68,7 +69,7 @@ void ClipGrid::setGridSize(int columns, int rows) {
     return;
   }
 
-  DBG("ClipGrid: Resizing from " << m_columns << "×" << m_rows << " to " << columns << "×" << rows);
+  DBG("ClipGrid: Resizing from " << m_columns << "x" << m_rows << " to " << columns << "x" << rows);
 
   // Store old playbox position (button index)
   int oldPlayboxIndex = m_playboxIndex;
@@ -120,7 +121,7 @@ void ClipGrid::handleButtonRightClick(int buttonIndex) {
 //==============================================================================
 void ClipGrid::paint(juce::Graphics& g) {
   // Grid background
-  g.fillAll(juce::Colour(0xff1a1a1a)); // Very dark grey
+  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
 }
 
 void ClipGrid::resized() {
@@ -344,7 +345,7 @@ void ClipGrid::timerCallback() {
       button->setPlaybackProgress(snapshot.playbackProgress);
     }
 
-    // Only repaint if something visually changed — avoids up to 48 unnecessary
+    // Only repaint if something visually changed - avoids unnecessary
     // repaint regions per timer tick (freqfinder PartialButton pattern).
     if (snapshotChanged || stateChanged) {
       button->repaint();
