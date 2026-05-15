@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "TabSwitcher.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
 
 #include <cmath>
@@ -63,7 +64,7 @@ TabSwitcher::TabSwitcher() {
   addAndMakeVisible(m_panicButton.get());
 
   // OCC130 Sprint B: Start heartbeat animation timer (1Hz pulse)
-  // Timer fires every 10ms, phase increments 0→100 in 1 second (100 steps × 10ms = 1000ms)
+  // Timer fires every 10ms, phase increments 0-100 in 1 second (100 steps x 10ms = 1000ms)
   startTimer(10); // 10ms intervals for smooth 1Hz pulse animation
 
   setSize(800, m_tabHeight);
@@ -170,189 +171,139 @@ void TabSwitcher::timerCallback() {
 
 //==============================================================================
 void TabSwitcher::paint(juce::Graphics& g) {
-  // Background
-  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
+  auto bounds = getLocalBounds().toFloat();
+  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
+
+  OCC::Console::fillVerticalGradient(g, bounds, juce::Colour(0xff1f2125), juce::Colour(0xff171a1d));
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.drawLine(0.0f, bounds.getBottom() - 1.0f, bounds.getRight(), bounds.getBottom() - 1.0f, 1.0f);
+
+  if (livePlayout) {
+    auto logo = juce::Rectangle<float>(10.0f, 7.0f, 22.0f, 22.0f);
+    OCC::Console::drawMatteCap(g, logo, juce::Colour(OCC::Design::kBgComponent),
+                               juce::Colour(OCC::Design::kBgInset), 3.0f);
+    g.setFont(OCC::Console::consoleFont(11.0f, juce::Font::bold));
+    g.setColour(juce::Colour(OCC::Design::kAmber));
+    g.drawText("CC", logo.toNearestInt(), juce::Justification::centred, false);
+
+    g.setFont(OCC::Console::monoFont(10.0f, juce::Font::plain));
+    g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+    g.drawText("UNTITLED.OCC  .  o", 40, 0, 196, getHeight(), juce::Justification::centredLeft,
+               false);
+  } else {
+    auto logo = juce::Rectangle<float>(16.0f, 11.0f, 26.0f, 26.0f);
+    OCC::Console::drawMatteCap(g, logo, juce::Colour(OCC::Design::kBgComponent),
+                               juce::Colour(OCC::Design::kBgInset), 4.0f);
+    g.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+    g.setColour(juce::Colour(OCC::Design::kAmber));
+    g.drawText("CC", logo.toNearestInt(), juce::Justification::centred, false);
+    g.setFont(OCC::Console::consoleFont(16.0f, juce::Font::bold));
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary));
+    g.drawText("Orpheus Clip Composer", 52, 0, 260, 48, juce::Justification::centredLeft, false);
+    g.setFont(OCC::Console::monoFont(10.0f));
+    g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+    g.drawText("v0.2.2-alpha", 246, 0, 100, 48, juce::Justification::centredLeft, false);
+
+    g.setColour(juce::Colour(OCC::Design::kBgSecondary));
+    g.fillRect(0, 48, getWidth(), 40);
+    g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+    g.drawLine(0, 48, getWidth(), 48, 1.0f);
+  }
 
   // Draw tabs
   for (int i = 0; i < NUM_TABS; ++i) {
-    auto tabBounds = getTabBounds(i);
+    auto tabBounds = getTabBounds(i).toFloat();
 
-    // Determine tab colors based on state
-    juce::Colour tabColor;
-    juce::Colour textColor;
+    const bool active = i == m_activeTab;
+    const bool hovered = i == m_hoveredTab;
+    auto top = active ? juce::Colour(OCC::Design::kNeveBlue).brighter(0.10f)
+                      : juce::Colour(OCC::Design::kBgInset).brighter(hovered ? 0.07f : 0.0f);
+    auto bottom = active ? juce::Colour(OCC::Design::kNeveBlueDark)
+                         : juce::Colour(OCC::Design::kBgInset).darker(0.04f);
+    OCC::Console::drawMatteCap(g, tabBounds, top, bottom, livePlayout ? 3.0f : 4.0f);
 
-    if (i == m_activeTab) {
-      // Active tab - bright highlight
-      tabColor = juce::Colour(OCC::Design::kAccentTeal);
-      textColor = juce::Colour(OCC::Design::kTextPrimary);
-    } else if (i == m_hoveredTab) {
-      // Hovered tab - subtle highlight
-      tabColor = juce::Colour(OCC::Design::kBgComponent);
-      textColor = juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.8f);
-    } else {
-      // Inactive tab - dark
-      tabColor = juce::Colour(OCC::Design::kBgSecondary).brighter(0.1f);
-      textColor = juce::Colour(OCC::Design::kTextSecondary);
-    }
-
-    // Draw tab background
-    g.setColour(tabColor);
-    g.fillRoundedRectangle(tabBounds.toFloat(), OCC::Design::kRadiusMD);
-
-    // Draw tab border (subtle)
-    if (i == m_activeTab) {
-      g.setColour(juce::Colour(OCC::Design::kBorderActive));
-      g.drawRoundedRectangle(tabBounds.toFloat(), OCC::Design::kRadiusMD,
-                             OCC::Design::kBorderMedium);
-    }
-
-    // Draw tab label (larger, centered)
-    g.setColour(textColor);
-    g.setFont(juce::FontOptions("HK Grotesk", OCC::Design::kFontMD + 1.0f, juce::Font::bold));
-    g.drawText(m_tabLabels[i], tabBounds, juce::Justification::centred);
+    g.setColour(active ? juce::Colours::white : juce::Colour(OCC::Design::kTextSecondary));
+    g.setFont(OCC::Console::consoleFont(livePlayout ? 11.0f : 12.0f, juce::Font::bold));
+    const auto label = livePlayout ? juce::String(i + 1).paddedLeft('0', 2)
+                                   : juce::String(i + 1).paddedLeft('0', 2) + " (" +
+                                         juce::String(i * occ::BUTTONS_PER_TAB + 1) + "-" +
+                                         juce::String((i + 1) * occ::BUTTONS_PER_TAB) + ")";
+    g.drawText(label, tabBounds.toNearestInt(), juce::Justification::centred, false);
   }
 
-  // Draw status indicator lights and compact readouts on the right side.
-  auto bounds = getLocalBounds();
-  float lightSize = 12.0f; // Diameter of each circular indicator
-  float lightGap = 4.0f;   // Vertical gap between lights
-  float rightMargin = 10.0f;
-  float statusTextWidth = 190.0f;
-  float statusTextGap = 6.0f;
-
-  // Calculate position (to the right of PANIC button, outside transport controls)
-  float xPos = static_cast<float>(bounds.getWidth()) - (lightSize + rightMargin);
-  float yStart = (static_cast<float>(bounds.getHeight()) - (2.0f * lightSize + lightGap)) /
-                 2.0f; // Center vertically
-  auto statusTextArea =
-      juce::Rectangle<float>(xPos - statusTextGap - statusTextWidth, yStart - 1.0f, statusTextWidth,
-                             2.0f * lightSize + lightGap + 2.0f);
-
-  g.setFont(juce::FontOptions("HK Grotesk", OCC::Design::kFontSM - 1.0f, juce::Font::plain));
-  g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-  g.drawText(m_sampleRate > 0
-                 ? juce::String(m_latencyMs, 1) + " ms / " + juce::String(m_dropoutCount) + " drop"
-                 : "No I/O",
-             statusTextArea.removeFromTop(lightSize + 1.0f).toNearestInt(),
-             juce::Justification::centredRight);
-  g.drawText(m_sampleRate > 0 ? "CPU " + juce::String(m_cpuPercent, 0) + "% / " +
-                                    juce::String(m_memoryMB) + " MB"
-                              : "CPU --",
-             statusTextArea.removeFromTop(lightSize + 2.0f).toNearestInt(),
-             juce::Justification::centredRight);
-  g.drawText(m_playoutRouteLabel.isNotEmpty() ? m_playoutRouteLabel : m_deviceSummary,
-             statusTextArea.toNearestInt(), juce::Justification::centredRight);
-
-  // Latency indicator (top light)
-  {
-    auto latencyCircle = juce::Rectangle<float>(xPos, yStart, lightSize, lightSize);
-
-    // Color-code based on latency (green < 10ms, yellow < 20ms, red >= 20ms)
-    juce::Colour latencyColor;
-    if (m_sampleRate <= 0) {
-      latencyColor = juce::Colours::darkgrey;
-    } else if (m_latencyMs < 10.0) {
-      latencyColor = juce::Colour(OCC::Design::kMeterGreen);
-    } else if (m_latencyMs < 20.0) {
-      latencyColor = juce::Colour(OCC::Design::kMeterYellow);
-    } else {
-      latencyColor = juce::Colour(OCC::Design::kMeterRed);
-    }
-
-    g.setColour(latencyColor.withAlpha(0.9f));
-    g.fillEllipse(latencyCircle);
-
-    // Subtle border
-    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.3f));
-    g.drawEllipse(latencyCircle, OCC::Design::kBorderThin);
+  // Health glance / status strip.
+  auto statusArea = livePlayout ? juce::Rectangle<int>(getWidth() - 380, 0, 256, getHeight())
+                                : juce::Rectangle<int>(12, 48, getWidth() - 24, 40);
+  g.setFont(OCC::Console::monoFont(10.0f, juce::Font::plain));
+  if (livePlayout) {
+    g.setColour(juce::Colour(OCC::Design::kMeterGreen));
+    g.fillEllipse(statusArea.getX(), 14, 7, 7);
+    g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+    g.drawText(juce::String(m_latencyMs, 1) + "ms  \xE2\x80\xA2  " + juce::String(m_cpuPercent, 0) +
+                   "%   ",
+               statusArea, juce::Justification::centredLeft, false);
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary));
+    g.drawText(m_sampleRate > 0
+                   ? juce::String(m_sampleRate / 1000) + "k/" + juce::String(m_bufferSize)
+                   : "NO I/O",
+               statusArea, juce::Justification::centredRight, false);
+  } else {
+    g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+    juce::String health = "LATENCY  ";
+    health += juce::String(m_latencyMs, 1) + " ms   |   CPU  " + juce::String(m_cpuPercent, 0) +
+              " %   |   MEM  " + juce::String(m_memoryMB) + " MB   |   DROPS  " +
+              juce::String(m_dropoutCount) + "   |   DEVICE  " +
+              (m_deviceSummary.isNotEmpty() ? m_deviceSummary : juce::String("Default Device"));
+    g.drawText(health, statusArea, juce::Justification::centredLeft, false);
   }
 
-  // Heartbeat indicator (bottom light)
-  {
-    auto heartbeatCircle =
-        juce::Rectangle<float>(xPos, yStart + lightSize + lightGap, lightSize, lightSize);
-
-    // Pulse animation: Sawtooth with exponential decay (light fast, fade once per second)
-    // Phase 0-100 represents one full 1-second cycle
-    // Light instantly at phase 0, then exponentially decay to dim
-    float normalizedPhase = m_heartbeatPhase / 100.0f; // 0.0 to 1.0
-    float pulseAlpha =
-        0.2f +
-        0.7f * std::exp(-5.0f * normalizedPhase); // Exponential decay (0.2 dark → 0.9 bright)
-
-    juce::Colour heartbeatColor = juce::Colour(OCC::Design::kAccentCyan);
-    if (m_cpuPercent >= 80.0f) {
-      heartbeatColor = juce::Colour(OCC::Design::kMeterRed);
-    } else if (m_cpuPercent >= 50.0f) {
-      heartbeatColor = juce::Colour(OCC::Design::kMeterYellow);
+  // Draw operator mode switcher.
+  for (int i = 0; i < NUM_OPERATOR_MODES; ++i) {
+    auto mode = getOperatorModeFromIndex(i);
+    auto b = getOperatorModeBounds(i).toFloat();
+    if (b.isEmpty())
+      continue;
+    const bool active = mode == m_operatorViewMode;
+    if (active) {
+      OCC::Console::drawMatteCap(g, b, juce::Colour(OCC::Design::kNeveBlue).brighter(0.08f),
+                                 juce::Colour(OCC::Design::kNeveBlueDark), 3.0f);
+      g.setColour(juce::Colours::white);
+    } else {
+      g.setColour(juce::Colour(OCC::Design::kTextSecondary));
     }
-
-    g.setColour(heartbeatColor.withAlpha(pulseAlpha));
-    g.fillEllipse(heartbeatCircle);
-
-    // Subtle border
-    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.3f));
-    g.drawEllipse(heartbeatCircle, OCC::Design::kBorderThin);
+    g.setFont(OCC::Console::consoleFont(livePlayout ? 10.0f : 11.0f, juce::Font::bold));
+    g.drawText(OCC::Console::operatorModeLabel(mode), b.toNearestInt(),
+               juce::Justification::centred, false);
   }
 }
 
 void TabSwitcher::resized() {
-  // Layout transport buttons on right side.
-  // | [Tabs (flex space)] | [Stop All] [Panic] | [status text] [●] [●] |
-  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
   if (m_stopAllButton)
-    m_stopAllButton->setVisible(!livePlayout);
+    m_stopAllButton->setVisible(false);
   if (m_panicButton)
-    m_panicButton->setVisible(!livePlayout);
-
-  auto bounds = getLocalBounds().reduced(kLeftMargin, 0); // 10px horizontal margin
-
-  int modeStripWidth = (NUM_OPERATOR_MODES * OPERATOR_MODE_WIDTH) +
-                       ((NUM_OPERATOR_MODES - 1) * OPERATOR_MODE_GAP) + kModeStripSpacing;
-  auto modeArea = bounds.removeFromLeft(modeStripWidth);
-
-  auto placeModeButton = [](juce::TextButton* button, juce::Rectangle<int>& area) {
-    if (!button)
-      return;
-
-    auto buttonBounds = area.removeFromLeft(OPERATOR_MODE_WIDTH)
-                            .withSizeKeepingCentre(OPERATOR_MODE_WIDTH, OPERATOR_MODE_HEIGHT);
-    button->setBounds(buttonBounds);
-    area.removeFromLeft(OPERATOR_MODE_GAP);
-  };
-
-  placeModeButton(m_playoutButton.get(), modeArea);
-  placeModeButton(m_editButton.get(), modeArea);
-  placeModeButton(m_routingButton.get(), modeArea);
-  placeModeButton(m_preferencesButton.get(), modeArea);
-
-  int buttonWidth = 100;
-  int buttonHeight = 32;
-  int gap = 10;
-  int statusTextWidth = 196;
-
-  bounds.removeFromRight(22 + statusTextWidth);
-
-  if (!livePlayout) {
-    // Panic button (after status lights)
-    auto panicBounds = bounds.removeFromRight(buttonWidth);
-    panicBounds = panicBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
-    m_panicButton->setBounds(panicBounds);
-
-    bounds.removeFromRight(gap);
-
-    // Stop All button (left of Panic)
-    auto stopBounds = bounds.removeFromRight(buttonWidth);
-    stopBounds = stopBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
-    m_stopAllButton->setBounds(stopBounds);
-  }
-
-  // Tabs are laid out in paint() dynamically (flex space on left)
-  // Status lights are drawn in paint() (on the far right, outside transport buttons)
+    m_panicButton->setVisible(false);
+  if (m_playoutButton)
+    m_playoutButton->setVisible(false);
+  if (m_editButton)
+    m_editButton->setVisible(false);
+  if (m_routingButton)
+    m_routingButton->setVisible(false);
+  if (m_preferencesButton)
+    m_preferencesButton->setVisible(false);
 }
 
 //==============================================================================
 void TabSwitcher::mouseDown(const juce::MouseEvent& e) {
+  for (int i = 0; i < NUM_OPERATOR_MODES; ++i) {
+    if (getOperatorModeBounds(i).contains(e.position.toInt())) {
+      auto mode = getOperatorModeFromIndex(i);
+      setOperatorViewMode(mode);
+      if (onOperatorViewModeSelected)
+        onOperatorViewModeSelected(mode);
+      return;
+    }
+  }
+
   int clickedTab = getTabAtPosition(e.x, e.y);
   if (clickedTab >= 0) {
     // OCC130 Sprint B.4: Right-click shows context menu
@@ -469,27 +420,61 @@ juce::Rectangle<int> TabSwitcher::getTabBounds(int tabIndex) const {
   if (tabIndex < 0 || tabIndex >= NUM_TABS)
     return {};
 
-  auto bounds = getLocalBounds();
-
-  int modeStripWidth = (NUM_OPERATOR_MODES * OPERATOR_MODE_WIDTH) +
-                       ((NUM_OPERATOR_MODES - 1) * OPERATOR_MODE_GAP) + kModeStripSpacing +
-                       kLeftMargin;
-
-  // OCC130 Sprint B: Reserve space for transport controls on right
-  int buttonWidth = 100;
-  int gap = 10;
-  int statusLightsWidth = 22;
-  int statusTextWidth = 196;
   const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
-  int transportWidth = statusTextWidth + statusLightsWidth + 20;
-  if (!livePlayout)
-    transportWidth += 2 * (buttonWidth + gap);
-  int availableWidth = bounds.getWidth() - transportWidth - modeStripWidth - kRightMargin;
+  if (livePlayout) {
+    const int tabWidth = 28;
+    const int x = 252 + tabIndex * (tabWidth + TAB_GAP);
+    return {x, 7, tabWidth, 22};
+  }
 
-  int tabWidth = (availableWidth - (TAB_GAP * (NUM_TABS - 1))) / NUM_TABS;
+  const int y = 56;
+  const int tabWidth = 96;
+  const int x = 10 + tabIndex * (tabWidth + TAB_GAP);
+  return {x, y, tabWidth, 28};
+}
 
-  int x = modeStripWidth + tabIndex * (tabWidth + TAB_GAP);
-  int y = 0;
+juce::String TabSwitcher::getOperatorViewModeLabel(occ::ui::OperatorViewMode mode) const {
+  return OCC::Console::operatorModeLabel(mode);
+}
 
-  return juce::Rectangle<int>(x, y, tabWidth, m_tabHeight);
+int TabSwitcher::getOperatorModeIndex(occ::ui::OperatorViewMode mode) const {
+  return static_cast<int>(mode);
+}
+
+occ::ui::OperatorViewMode TabSwitcher::getOperatorModeFromIndex(int index) const {
+  switch (index) {
+  case 0:
+    return occ::ui::OperatorViewMode::Playout;
+  case 1:
+    return occ::ui::OperatorViewMode::Edit;
+  case 2:
+    return occ::ui::OperatorViewMode::Routing;
+  case 3:
+    return occ::ui::OperatorViewMode::Preferences;
+  default:
+    return occ::ui::OperatorViewMode::Playout;
+  }
+}
+
+juce::Rectangle<int> TabSwitcher::getOperatorModeBounds(int modeIndex) const {
+  if (modeIndex < 0 || modeIndex >= NUM_OPERATOR_MODES)
+    return {};
+
+  const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
+  const int widths[NUM_OPERATOR_MODES] = {82, 56, 76, 110};
+  const int visibleModes = livePlayout ? 3 : NUM_OPERATOR_MODES;
+  if (modeIndex >= visibleModes)
+    return {};
+
+  int totalWidth = 0;
+  for (int i = 0; i < visibleModes; ++i)
+    totalWidth += widths[i] + (i > 0 ? 6 : 0);
+
+  int x = getWidth() - totalWidth - 10;
+  for (int i = 0; i < modeIndex; ++i)
+    x += widths[i] + 6;
+
+  const int y = livePlayout ? 7 : 10;
+  const int h = livePlayout ? 22 : 28;
+  return {x, y, widths[modeIndex], h};
 }

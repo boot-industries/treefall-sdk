@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipButton.h"
+#include "../UI/ConsoleTheme.h"
 #include "../UI/DesignTokens.h"
 #include "ClipGrid.h"
 
@@ -157,365 +158,210 @@ juce::String ClipButton::formatDuration(double seconds) const {
 }
 
 void ClipButton::paint(juce::Graphics& g) {
-  using namespace OCC::Design::ClipButton;
   auto bounds = getLocalBounds().toFloat();
+  if (bounds.isEmpty())
+    return;
 
-  // Background color based on state
-  juce::Colour bgColor;
-  juce::Colour borderColor;
   juce::Colour groupColors[4] = {
       juce::Colour(OCC::Design::kGroupBlue), juce::Colour(OCC::Design::kGroupGreen),
       juce::Colour(OCC::Design::kGroupOrange), juce::Colour(OCC::Design::kGroupRed)};
   const auto groupColor = groupColors[juce::jlimit(0, 3, m_clipGroup)];
 
+  auto face = bounds.reduced(1.0f);
+  juce::Colour top;
+  juce::Colour bottom;
+  juce::Colour border = juce::Colour(OCC::Design::kBorderDefault).withAlpha(0.72f);
+
   switch (m_state) {
   case State::Empty:
-    bgColor = juce::Colour(OCC::Design::kClipEmpty);
-    borderColor = juce::Colour(OCC::Design::kBorderDefault);
+    top = juce::Colour(OCC::Design::kClipEmpty).brighter(0.05f);
+    bottom = juce::Colour(OCC::Design::kClipEmpty).darker(0.08f);
     break;
-
   case State::Loaded:
-    bgColor = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(groupColor, 0.22f);
-    borderColor = juce::Colour(OCC::Design::kBorderDefault);
+    top = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(groupColor, 0.28f);
+    bottom = juce::Colour(OCC::Design::kBgSecondary).interpolatedWith(groupColor, 0.20f);
     break;
-
   case State::Playing:
-    bgColor = juce::Colour(OCC::Design::kClipPlaying);
-    borderColor = juce::Colour(OCC::Design::kAccentGreen).brighter(0.35f);
+    top = juce::Colour(OCC::Design::kClipPlaying).brighter(0.20f);
+    bottom = juce::Colour(OCC::Design::kClipPlaying).darker(0.06f);
+    border = juce::Colour(OCC::Design::kAccentGreen).brighter(0.26f);
     break;
-
   case State::Stopping:
-    bgColor = juce::Colour(OCC::Design::kClipStopping);
-    borderColor = juce::Colour(OCC::Design::kMeterOrange);
+    top = juce::Colour(OCC::Design::kClipStopping).brighter(0.15f);
+    bottom = juce::Colour(OCC::Design::kClipStopping).darker(0.08f);
+    border = juce::Colour(OCC::Design::kMeterOrange);
     break;
   }
 
-  // Apply hover brightness using shmui::Interpolation::lerp
-  // Subtle lift effect: brighten background and border on hover
   if (m_hoverOpacity > 0.01f) {
-    float hoverLift = m_hoverOpacity * kHoverBrightnessMax;
-    bgColor = bgColor.brighter(hoverLift);
-    borderColor = borderColor.brighter(hoverLift * 0.5f);
+    top = top.brighter(m_hoverOpacity * 0.10f);
+    bottom = bottom.brighter(m_hoverOpacity * 0.07f);
+    border = border.brighter(m_hoverOpacity * 0.18f);
   }
 
-  // Draw button background with rounded corners
-  g.setColour(bgColor);
-  g.fillRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS);
+  g.setGradientFill(OCC::Console::verticalGradient(top, bottom, face));
+  g.fillRoundedRectangle(face, CORNER_RADIUS);
+
+  g.setColour(juce::Colours::white.withAlpha(m_state == State::Empty ? 0.025f : 0.065f));
+  g.drawLine(face.getX() + 2.0f, face.getY() + 1.0f, face.getRight() - 2.0f, face.getY() + 1.0f,
+             1.0f);
+  g.setColour(juce::Colours::black.withAlpha(0.38f));
+  g.drawLine(face.getX() + 2.0f, face.getBottom() - 1.0f, face.getRight() - 2.0f,
+             face.getBottom() - 1.0f, 1.0f);
 
   if (m_state != State::Empty) {
-    auto stripe = bounds.reduced(1.0f).withWidth(4.0f);
+    auto stripe = face.withWidth(4.0f);
     g.setColour(groupColor);
     g.fillRoundedRectangle(stripe, CORNER_RADIUS);
     g.setColour(juce::Colours::black.withAlpha(0.28f));
     g.drawVerticalLine(static_cast<int>(stripe.getRight()), stripe.getY(), stripe.getBottom());
   }
 
-  // Draw subtle hover glow (outer glow effect)
-  if (m_hoverOpacity > 0.01f && m_state != State::Playing) {
-    // Soft Neve blue glow around button on hover
-    juce::Colour glowColor =
-        juce::Colour(OCC::Design::kNeveBlue).withAlpha(m_hoverOpacity * kHoverGlowAlpha);
-    g.setColour(glowColor);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS + 1, OCC::Design::kBorderMedium);
-  }
-
-  // Draw border (animated for Playing state)
   if (m_state == State::Playing) {
-    // Glowing pulsing border for playing state
-    // Use timestamp for pulsing animation
     auto now = juce::Time::getMillisecondCounterHiRes();
-    float pulsePhase = std::fmod(now / static_cast<double>(kPulseCycleMs), 1.0);
+    float pulsePhase =
+        std::fmod(now / static_cast<double>(OCC::Design::ClipButton::kPulseCycleMs), 1.0);
     float pulseAlpha = 0.6f + 0.4f * std::sin(pulsePhase * juce::MathConstants<float>::twoPi);
-
-    // Draw thick glowing border
-    g.setColour(borderColor.withAlpha(pulseAlpha));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, kPlayingBorderWidth);
-
-    // NOTE: Animation driven by 75fps timer in ClipGrid, NOT by repaint() here
-    // (calling repaint() from paint() would create infinite loop)
+    g.setColour(border.withAlpha(pulseAlpha));
+    g.drawRoundedRectangle(face, CORNER_RADIUS, 3.0f);
   } else {
-    // Normal border for other states
-    g.setColour(borderColor);
-    g.drawRoundedRectangle(bounds.reduced(1.0f), CORNER_RADIUS, BORDER_THICKNESS);
+    g.setColour(border);
+    g.drawRoundedRectangle(face, CORNER_RADIUS, 1.0f);
   }
 
-  // Item 60: Draw playbox outline (thin white border that follows arrow key navigation)
+  if (m_hoverOpacity > 0.01f && m_state != State::Playing) {
+    g.setColour(juce::Colour(OCC::Design::kNeveBlue).withAlpha(m_hoverOpacity * 0.22f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS + 1.0f, 1.5f);
+  }
+
   if (m_isPlaybox) {
-    g.setColour(juce::Colours::white);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, kPlayboxBorderWidth);
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.82f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, 1.5f);
   }
 
-  // Draw bevel effect (3D raised appearance)
-  if (m_bevelWidthPercent > 0.001f && m_state != State::Empty) {
+  if (m_bevelWidthPercent > 0.001f && m_state != State::Empty && m_bevelWidthPercent <= 0.12f) {
     float bevelWidth = std::min(bounds.getWidth(), bounds.getHeight()) * m_bevelWidthPercent;
     auto innerBounds = bounds.reduced(BORDER_THICKNESS);
-
-    // Top highlight (lighter)
-    g.setColour(juce::Colours::white.withAlpha(0.15f));
+    g.setColour(juce::Colours::white.withAlpha(0.06f));
     g.fillRect(innerBounds.getX() + CORNER_RADIUS, innerBounds.getY(),
                innerBounds.getWidth() - CORNER_RADIUS * 2.0f, bevelWidth);
-
-    // Left highlight (lighter)
-    g.fillRect(innerBounds.getX(), innerBounds.getY() + CORNER_RADIUS, bevelWidth,
-               innerBounds.getHeight() - CORNER_RADIUS * 2.0f);
-
-    // Bottom shadow (darker)
-    g.setColour(juce::Colours::black.withAlpha(0.2f));
+    g.setColour(juce::Colours::black.withAlpha(0.12f));
     g.fillRect(innerBounds.getX() + CORNER_RADIUS, innerBounds.getBottom() - bevelWidth,
                innerBounds.getWidth() - CORNER_RADIUS * 2.0f, bevelWidth);
-
-    // Right shadow (darker)
-    g.fillRect(innerBounds.getRight() - bevelWidth, innerBounds.getY() + CORNER_RADIUS, bevelWidth,
-               innerBounds.getHeight() - CORNER_RADIUS * 2.0f);
   }
 
   if (m_state == State::Empty) {
-    // Button index (larger, more prominent)
-    // Feature 4: Use consecutive numbering across tabs
-    g.setColour(juce::Colours::white.withAlpha(kTextShadowAlpha));
-    const auto emptyFont = bounds.getHeight() < 78.0f ? 16.0f : kFontButtonNumber;
-    g.setFont(juce::FontOptions("JetBrains Mono", emptyFont, juce::Font::plain));
-    g.drawText(juce::String(getDisplayNumber()), bounds, juce::Justification::centred, false);
+    const bool tightWidth = bounds.getWidth() < 90.0f;
+    const bool tightHeight = bounds.getHeight() < 64.0f;
+    auto meta = face.reduced(tightWidth ? 6.0f : 10.0f, tightHeight ? 5.0f : 8.0f);
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.34f));
+    g.setFont(OCC::Console::monoFont(tightHeight ? 12.0f : 18.0f, juce::Font::plain));
+    g.drawText(juce::String(getDisplayNumber()).paddedLeft('0', getDisplayNumber() < 100 ? 2 : 3),
+               meta.removeFromTop(tightHeight ? 16.0f : 22.0f).toNearestInt(),
+               juce::Justification::topLeft, false);
 
-    // No "Empty" text - just the button number on grey background is sufficient
+    if (!tightWidth && !tightHeight && m_keyboardShortcut.isNotEmpty()) {
+      auto hotkey = face.reduced(10.0f, 8.0f).removeFromTop(20.0f).removeFromRight(42.0f);
+      g.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+      g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.42f));
+      g.drawText(m_keyboardShortcut, hotkey.toNearestInt(), juce::Justification::topRight, false);
+    }
   } else {
-    // Modern HUD layout for loaded clips
-    drawClipHUD(g, bounds);
+    drawClipHUD(g, face);
   }
 }
 
 void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   using namespace OCC::Design::ClipButton;
-  auto contentArea = bounds.reduced(PADDING);
+  auto contentArea = bounds.reduced(10.0f, 8.0f);
   contentArea.removeFromLeft(5.0f);
-  float currentY = contentArea.getY();
-  const bool compactWidth = bounds.getWidth() < 112.0f;
   const bool tightWidth = bounds.getWidth() < 92.0f;
-  const bool compactHeight = bounds.getHeight() < 78.0f;
+  const bool compactWidth = bounds.getWidth() < 116.0f;
   const bool tightHeight = bounds.getHeight() < 62.0f;
-  const bool showHotkey = !tightWidth && !tightHeight;
-  const bool showIndicators = bounds.getWidth() >= 76.0f && bounds.getHeight() >= 50.0f;
-  const float nameFont =
-      tightHeight ? 11.0f : (compactWidth || compactHeight ? 13.0f : kFontClipName);
+  const bool compactHeight = bounds.getHeight() < 78.0f;
+  const bool showMeta = !tightHeight;
+  const bool showHotkey = !tightWidth && !tightHeight && m_buttonTextMode > 0;
+  const bool showIndicators = bounds.getWidth() >= 82.0f && bounds.getHeight() >= 54.0f;
+  const bool useDarkText = m_state == State::Playing || m_state == State::Stopping;
+  const auto textColor =
+      useDarkText ? juce::Colour(0xfff8eed7) : juce::Colour(OCC::Design::kTextPrimary);
+  const auto mutedText = textColor.withAlpha(useDarkText ? 0.78f : 0.62f);
+  const float nameFont = tightHeight ? 11.0f : (compactWidth || compactHeight ? 13.0f : 16.0f);
   const int nameLines = compactHeight ? 1 : 2;
 
-  // Determine text color based on background brightness
-  // Skew towards white/light text (dark mode app) - only use black on VERY light backgrounds
-  juce::Colour bgColor;
-  switch (m_state) {
-  case State::Loaded:
-  case State::Playing:
-  case State::Stopping:
-    bgColor = juce::Colour(OCC::Design::kBgComponent);
-    break;
-  default:
-    bgColor = juce::Colours::darkgrey;
-    break;
-  }
-
-  // Use black text ONLY on extremely light backgrounds, white otherwise
-  // This ensures readability while strongly favoring white text for dark mode aesthetic
-  float brightness = bgColor.getBrightness();
-  juce::Colour textColor = brightness > kBrightnessThreshold ? juce::Colours::black.withAlpha(0.95f)
-                                                             : juce::Colours::white;
-  juce::Colour subtleTextColor = textColor.withAlpha(0.6f);
-
-  // === TOP ROW: Button Index (white rounded box) + Keyboard Shortcut ===
-  {
-    auto topRow = contentArea.removeFromTop(tightHeight ? 12.0f : kIndicatorBoxHeight);
-
-    // Button index in white rounded rectangle (Feature 3 - tighter margins)
-    // Feature 4: Use consecutive numbering across tabs
+  if (showMeta) {
+    auto topRow = contentArea.removeFromTop(16.0f);
     juce::String buttonNumber = juce::String(getDisplayNumber());
-    g.setFont(
-        juce::FontOptions("JetBrains Mono", compactWidth ? 9.0f : kFontHotkey, juce::Font::plain));
+    g.setFont(OCC::Console::monoFont(compactWidth ? 9.0f : 10.0f, juce::Font::plain));
+    g.setColour(mutedText.withAlpha(0.58f));
+    g.drawText(buttonNumber.paddedLeft('0', buttonNumber.getIntValue() < 100 ? 2 : 3),
+               topRow.removeFromLeft(42.0f).toNearestInt(), juce::Justification::topLeft, false);
 
-    auto numberBox = topRow.removeFromLeft(tightWidth ? 0.0f : kIndicatorBoxWidth)
-                         .withHeight(topRow.getHeight());
-
-    // Draw white rounded rectangle background (OCC130 Sprint A.4: 4px corner radius)
-    if (!numberBox.isEmpty()) {
-      g.setColour(juce::Colours::white.withAlpha(0.95f));
-      g.fillRoundedRectangle(numberBox, OCC::Design::kRadiusMD);
-
-      // Draw black text
-      g.setColour(juce::Colours::black);
-      g.drawText(buttonNumber, numberBox, juce::Justification::centred, false);
-    }
-
-    // OCC130 Sprint A.3: Beat indicator next to clip number (top-left)
-    // Format: " // {value}" (e.g., " // 3+")
     if (m_beatOffset.isNotEmpty()) {
-      g.setColour(textColor); // Use adaptive text color (white/black based on bg)
-      g.setFont(juce::FontOptions("HK Grotesk", kFontBeatOffset, juce::Font::plain));
+      g.setFont(OCC::Console::consoleFont(10.0f, juce::Font::plain));
       juce::String beatDisplay = " // " + m_beatOffset;
-      auto beatArea = topRow.removeFromLeft(kBeatAreaWidth);
-      g.drawText(beatDisplay, beatArea, juce::Justification::centredLeft, false);
+      g.drawText(beatDisplay, topRow.removeFromLeft(42.0f).toNearestInt(),
+                 juce::Justification::topLeft, false);
     }
 
-    // Display text based on button text mode preference
-    if (m_buttonTextMode > 0 && showHotkey) {
+    if (showHotkey) {
       juce::String displayText;
-      if (m_buttonTextMode == 1 && m_keyboardShortcut.isNotEmpty()) {
-        displayText = m_keyboardShortcut; // HotKey mode
-      } else if (m_buttonTextMode == 2) {
-        displayText = "MIDI"; // MidiNote mode (placeholder until per-clip MIDI note data)
-      }
-
+      if (m_buttonTextMode == 1 && m_keyboardShortcut.isNotEmpty())
+        displayText = m_keyboardShortcut;
+      else if (m_buttonTextMode == 2)
+        displayText = "MIDI";
       if (displayText.isNotEmpty()) {
-        g.setFont(
-            juce::FontOptions("HK Grotesk", compactWidth ? 11.0f : kFontHotkey, juce::Font::bold));
-
-        auto hotkeyBox = topRow.removeFromRight(kIndicatorBoxWidth).withHeight(kIndicatorBoxHeight);
-
-        // Draw thin outline (adaptive color)
-        juce::Colour outlineColor = brightness > kBrightnessThreshold
-                                        ? juce::Colours::black.withAlpha(0.6f)
-                                        : juce::Colours::white.withAlpha(kGroupBadgeAlpha);
-
-        g.setColour(outlineColor);
-        g.drawRoundedRectangle(hotkeyBox, OCC::Design::kRadiusMD, kPlayboxBorderWidth);
-
-        // Draw text (adaptive color)
+        g.setFont(OCC::Console::consoleFont(compactWidth ? 12.0f : 15.0f, juce::Font::bold));
         g.setColour(textColor);
-        g.drawText(displayText, hotkeyBox, juce::Justification::centred, false);
+        g.drawText(displayText, topRow.toNearestInt(), juce::Justification::topRight, false);
       }
     }
-
-    currentY = topRow.getBottom() + 2.0f;
   }
 
-  // === MIDDLE: Clip Name (PRIMARY) + Duration (secondary) ===
-  {
-    // Give most space to clip name
-    float nameHeight = contentArea.getHeight() * (tightHeight ? 0.88f : 0.65f);
-    auto nameArea =
-        juce::Rectangle<float>(contentArea.getX(), currentY, contentArea.getWidth(), nameHeight);
+  auto nameArea = contentArea;
+  if (!tightHeight && m_durationSeconds > 0.0)
+    nameArea.removeFromBottom(18.0f);
+  if (showIndicators)
+    nameArea.removeFromBottom(14.0f);
 
-    // Clip Name (PRIMARY - MUCH larger, bold, 3 lines)
-    g.setFont(juce::FontOptions("HK Grotesk", nameFont, juce::Font::bold));
+  g.setFont(OCC::Console::consoleFont(nameFont, juce::Font::bold));
+  g.setColour(juce::Colours::black.withAlpha(0.38f));
+  g.drawFittedText(m_clipName, nameArea.translated(0, 1).toNearestInt(),
+                   juce::Justification::centredLeft, nameLines, 0.86f);
+  g.setColour(textColor);
+  g.drawFittedText(m_clipName, nameArea.toNearestInt(), juce::Justification::centredLeft, nameLines,
+                   0.86f);
 
-    // Reserve minimal space for duration
-    auto nameOnlyArea = nameArea.withTrimmedBottom(12.0f);
-
-    // Draw 1px shadow first
-    g.setColour(juce::Colours::black.withAlpha(kTextShadowAlpha));
-    g.drawFittedText(m_clipName, nameOnlyArea.translated(0, 1).toNearestInt(),
-                     juce::Justification::centred, nameLines, 0.85f);
-
-    // Draw main text on top
-    g.setColour(textColor);
-    g.drawFittedText(m_clipName, nameOnlyArea.toNearestInt(), juce::Justification::centred,
-                     nameLines, 0.85f);
-
-    // OCC130 Sprint A.2: Time display - show elapsed — remaining when playing, total when stopped
-    auto durationArea = nameArea.removeFromBottom(tightHeight ? 14.0f : 22.0f);
-    if (m_durationSeconds > 0.0) {
-      g.setFont(juce::FontOptions("JetBrains Mono", compactHeight ? 9.0f : kFontTimeDisplay,
-                                  juce::Font::plain));
-
-      juce::String timeDisplay;
-
-      // Show different formats based on playback state
-      if (m_state == State::Playing || m_state == State::Stopping) {
-        // Playing/Stopping: show elapsed — remaining
-        // Elapsed = current playhead position within trimmed region (IN to OUT)
-        double elapsed = m_durationSeconds * m_playbackProgress;
-        double remaining = m_durationSeconds - elapsed;
-
-        // Format: "MM:SS — MM:SS" (HH:MM:SS if >60 min)
-        timeDisplay = formatDuration(elapsed) + " — " + formatDuration(remaining);
-
-        // Draw dark grey rounded rectangle backdrop with padding
-        auto backdropArea = durationArea.reduced(2.0f);
-        g.setColour(juce::Colour(OCC::Design::kBgComponent).withAlpha(kBackdropAlpha));
-        g.fillRoundedRectangle(backdropArea, OCC::Design::kRadiusMD);
-
-        // Color: green when playing, orange when stopping
-        juce::Colour timeColor =
-            m_state == State::Playing
-                ? juce::Colour(OCC::Design::kAccentGreen).withAlpha(kLoadedAlpha)
-                : juce::Colour(OCC::Design::kMeterOrange).withAlpha(kLoadedAlpha);
-
-        // Draw 2px shadow first
-        g.setColour(juce::Colours::black.withAlpha(0.6f));
-        g.drawText(timeDisplay, durationArea.translated(0, 2), juce::Justification::centred, false);
-
-        // Draw main text on top
-        g.setColour(timeColor);
-      } else {
-        // Loaded/Empty: show total duration only
-        timeDisplay = formatDuration(m_durationSeconds);
-
-        // Draw 1px shadow for loaded state
-        g.setColour(juce::Colours::black.withAlpha(kTextShadowAlpha));
-        g.drawText(timeDisplay, durationArea.translated(0, 1), juce::Justification::centred, false);
-
-        // Color: subtle text
-        g.setColour(subtleTextColor);
-      }
-
-      g.drawText(timeDisplay, durationArea, juce::Justification::centred, false);
+  if (!tightHeight && m_durationSeconds > 0.0) {
+    auto bottomRow = contentArea.removeFromBottom(18.0f);
+    juce::String timeDisplay;
+    if (m_state == State::Playing || m_state == State::Stopping) {
+      const double elapsed = m_durationSeconds * m_playbackProgress;
+      const double remaining = m_durationSeconds - elapsed;
+      timeDisplay = formatDuration(elapsed) + " / " + formatDuration(remaining);
+    } else {
+      timeDisplay = formatDuration(m_durationSeconds);
     }
-
-    currentY = nameArea.getBottom();
+    g.setFont(OCC::Console::monoFont(compactHeight ? 9.0f : 10.5f, juce::Font::plain));
+    g.setColour(mutedText.withAlpha(0.92f));
+    g.drawText(timeDisplay, bottomRow.toNearestInt(), juce::Justification::centredLeft, false);
   }
 
-  // === BOTTOM ROW: Clip Group ===
-  if (!tightHeight) {
-    auto bottomArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 24.0f,
-                                             contentArea.getWidth(), 24.0f);
-
-    // Item 29: Clip group indicator with 3-char abbreviations (right)
-    {
-      juce::Colour groupColors[4] = {
-          juce::Colour(OCC::Design::kGroupBlue), juce::Colour(OCC::Design::kGroupGreen),
-          juce::Colour(OCC::Design::kGroupOrange), juce::Colour(OCC::Design::kGroupRed)};
-
-      // Reserve 3 characters of width (consistent with other indicators)
-      auto groupBadge = bottomArea.removeFromRight(kIndicatorBoxWidth)
-                            .withTrimmedTop(4.0f)
-                            .withHeight(kIndicatorBoxHeight);
-
-      // Draw group badge background
-      g.setColour(groupColors[m_clipGroup].withAlpha(kGroupBadgeAlpha));
-      g.fillRoundedRectangle(groupBadge, OCC::Design::kRadiusMD);
-
-      // Draw group abbreviation (3 chars max)
-      // TODO: Get abbreviation from SessionManager when available
-      juce::String groupText = "G" + juce::String(m_clipGroup + 1);
-
-      g.setColour(juce::Colours::white);
-      g.setFont(juce::FontOptions("HK Grotesk", kFontGroupLabel, juce::Font::bold));
-      g.drawText(groupText, groupBadge, juce::Justification::centred, false);
-    }
-  }
-
-  // === PROGRESS BAR ===
   if ((m_state == State::Playing || m_state == State::Stopping) && m_playbackProgress > 0.0f) {
-    // Draw progress bar at the very bottom of the button
-    auto progressArea = bounds.removeFromBottom(OCC::Design::kBorderThick).reduced(1.0f, 0.0f);
+    auto progressArea = bounds.removeFromBottom(4.0f).reduced(1.0f, 0.5f);
     float progressWidth = progressArea.getWidth() * m_playbackProgress;
-
-    // Background (darker)
-    g.setColour(juce::Colours::black.withAlpha(kProgressBgAlpha));
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
     g.fillRoundedRectangle(progressArea, kPlayboxBorderWidth);
-
-    // Progress fill (bright accent color)
     if (progressWidth > 0.0f) {
       auto fillArea = progressArea.withWidth(progressWidth);
-      g.setColour(m_state == State::Playing ? juce::Colours::cyan : juce::Colours::orange);
+      g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.92f));
       g.fillRoundedRectangle(fillArea, kPlayboxBorderWidth);
     }
   }
 
-  // === STATUS INDICATORS ===
-  // Draw status icons in bottom-left corner (Feature 2 - fixed grid layout)
-  // Order: [PLAY] [STOP OTHERS] [LOOP] [FADE IN] [FADE OUT] [SPEED]
-  // Grid is ALWAYS drawn - blank spaces shown for inactive states
   if (showIndicators) {
-    auto indicatorArea = juce::Rectangle<float>(contentArea.getX(), contentArea.getBottom() - 16.0f,
-                                                contentArea.getWidth(), 14.0f);
+    auto indicatorArea =
+        juce::Rectangle<float>(bounds.getRight() - 54.0f, bounds.getBottom() - 22.0f, 48.0f, 14.0f);
     drawStatusIcons(g, indicatorArea);
   }
 }

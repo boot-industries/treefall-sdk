@@ -12,13 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Adaptive grid density** - Added persisted Clip Grid Layout preferences for `6x6`, `8x6`, `10x6`, `6x8`, `8x8`, `10x8`, `6x10`, `8x10`, and `10x10`. The default remains `8x6`.
+- **Live dense grid preset** - Added the mockup-backed `12x8` visible layout for 96 live cells while preserving 100 logical slots per tab. `10x12` remains deferred.
 - **100-slot logical tabs** - Promoted per-tab UI capacity from 48 to 100 logical slots while keeping `tabIndex` and `buttonIndex` stable for existing sessions.
 - **Playout transport strip** - Added a compact bottom transport strip for Playout mode with Stop All, Panic, latency, performance, and now-playing status.
+- **Full inspector shell** - Added a 420px Console inspector for Edit, Routing, and Preferences so authoring modes match the full-chassis mockups.
 - **Grid density tests** - Added coverage for 100-slot tab capacity, global index conversion, grid layout persistence keys, supported density dimensions, and legacy 48-visible-slot session loading.
 
 ### Changed
 
 - **Clip button rendering** - Refreshed clip buttons with neutral loaded chassis colors, persistent group stripes, high-contrast playing/stopping states, and density-aware HUD simplification.
+- **Mockup-faithful live chrome** - Reworked Playout around a 36px top strip and 52px bottom transport strip, with no right inspector and a grid-first canvas.
 - **Keyboard and page operations** - Updated keyboard mapping, copy/paste/page commands, MIDI/hotkey scope, paste special, and UI snapshots to use shared grid constants.
 - **Console styling** - Restyled the live transport and grid surfaces around the Orpheus Console design tokens.
 

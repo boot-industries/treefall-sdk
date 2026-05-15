@@ -13,6 +13,7 @@
 #include "UI/AudioSettingsDialog.h"
 #include "UI/ClipEditDialog.h"
 #include "UI/ColorSwatchPicker.h"
+#include "UI/ConsoleInspectorPanel.h"
 #include "UI/HKGroteskLookAndFeel.h"
 #include "UI/HeartbeatIndicator.h"
 #include "UI/HotKeySetupDialog.h"
@@ -172,6 +173,7 @@ private:
   std::unique_ptr<TabSwitcher> m_tabSwitcher;
   std::unique_ptr<ClipGrid> m_clipGrid;
   std::unique_ptr<TransportControls> m_transportControls;
+  std::unique_ptr<ConsoleInspectorPanel> m_inspectorPanel;
   std::unique_ptr<shmui::BarVisualizer> m_barVisualizer; // shmui frequency visualizer
 
   std::unique_ptr<SessionHistoryWindow> m_sessionHistoryWindow;

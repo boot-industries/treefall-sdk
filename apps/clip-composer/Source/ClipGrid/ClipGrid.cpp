@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipGrid.h"
+#include "../UI/ConsoleTheme.h"
 #include "../UI/DesignTokens.h"
 
 //==============================================================================
@@ -60,9 +61,13 @@ ClipButton* ClipGrid::getButton(int index) {
 
 //==============================================================================
 void ClipGrid::setGridSize(int columns, int rows) {
-  // Validate grid size constraints (Item 22: 6 x 6 to 10 x 10)
+  // Validate grid size constraints. Columns can reach 12 for the live 12 x 8
+  // density, but visible cells must never exceed the 100-slot logical tab model.
   columns = juce::jlimit(MIN_COLUMNS, MAX_COLUMNS, columns);
   rows = juce::jlimit(MIN_ROWS, MAX_ROWS, rows);
+  if (columns * rows > occ::BUTTONS_PER_TAB) {
+    rows = juce::jlimit(MIN_ROWS, MAX_ROWS, occ::BUTTONS_PER_TAB / columns);
+  }
 
   // Only recreate if size actually changed
   if (columns == m_columns && rows == m_rows) {
@@ -120,18 +125,18 @@ void ClipGrid::handleButtonRightClick(int buttonIndex) {
 
 //==============================================================================
 void ClipGrid::paint(juce::Graphics& g) {
-  // Grid background
   g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
 }
 
 void ClipGrid::resized() {
-  auto bounds = getLocalBounds();
+  auto bounds = getLocalBounds().reduced(getGridPadding());
 
   // Calculate button size based on grid dimensions
   // Item 22: Buttons stretch to fill available space
   // Constraint (width > height) is enforced by only offering valid grid dimension combinations
-  int availableWidth = bounds.getWidth() - (GAP * (m_columns + 1));
-  int availableHeight = bounds.getHeight() - (GAP * (m_rows + 1));
+  const int gap = getGridGap();
+  int availableWidth = bounds.getWidth() - (gap * (m_columns - 1));
+  int availableHeight = bounds.getHeight() - (gap * (m_rows - 1));
 
   int buttonWidth = availableWidth / m_columns;
   int buttonHeight = availableHeight / m_rows;
@@ -143,13 +148,23 @@ void ClipGrid::resized() {
       auto button = getButton(index);
 
       if (button) {
-        int x = GAP + col * (buttonWidth + GAP);
-        int y = GAP + row * (buttonHeight + GAP);
+        int x = bounds.getX() + col * (buttonWidth + gap);
+        int y = bounds.getY() + row * (buttonHeight + gap);
 
         button->setBounds(x, y, buttonWidth, buttonHeight);
       }
     }
   }
+}
+
+int ClipGrid::getGridGap() const {
+  return (m_columns >= 12 || m_rows >= 8) ? OCC::Console::Metrics::kGridGapDense
+                                          : OCC::Console::Metrics::kGridGapComfortable;
+}
+
+int ClipGrid::getGridPadding() const {
+  return (m_columns >= 12 || m_rows >= 8) ? OCC::Console::Metrics::kGridPaddingDense
+                                          : OCC::Console::Metrics::kGridPaddingComfortable;
 }
 
 //==============================================================================

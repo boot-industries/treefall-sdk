@@ -193,6 +193,7 @@ set(CLIP_COMPOSER_SOURCES
   Source/Session/SessionManager.cpp
   Source/Transport/TransportControls.cpp
   Source/UI/TabSwitcher.cpp
+  Source/UI/ConsoleInspectorPanel.cpp
   Source/UI/AudioSettingsDialog.cpp
   Source/UI/ClipEditDialog.cpp
   Source/UI/ColorSwatchPicker.cpp
