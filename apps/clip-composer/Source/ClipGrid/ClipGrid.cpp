@@ -26,10 +26,19 @@ void ClipGrid::createButtons() {
   }
   m_buttons.clear();
 
-  // Create buttons based on current grid size
+  // Create buttons based on current grid size.
   int buttonCount = m_columns * m_rows;
+
+  // Compute the grid-wide ordinal digit width — every cell in this grid pads
+  // to this many digits so the ordinal column reads uniformly. 48-cell grid →
+  // 2 digits, 100-cell grid → 3 digits. Matches design-kit totalDigits.
+  int displayDigits = 1;
+  for (int n = buttonCount; n >= 10; n /= 10)
+    ++displayDigits;
+
   for (int i = 0; i < buttonCount; ++i) {
     auto button = std::make_unique<ClipButton>(i);
+    button->setDisplayDigitWidth(displayDigits);
 
     // Wire up callbacks
     button->onClick = [this](int index) { handleButtonLeftClick(index); };
