@@ -245,6 +245,24 @@ MainComponent::MainComponent() {
 
   m_inspectorPanel = std::make_unique<ConsoleInspectorPanel>();
   m_inspectorPanel->setOperatorViewMode(m_operatorViewMode);
+  // Inspector Playout footer — Stop All + Cue Buss are real juce::Buttons that
+  // dispatch into the shared transport handlers.
+  m_inspectorPanel->onStopAll = [this]() { onStopAll(); };
+  m_inspectorPanel->onCueBuss = [this]() {
+    // TODO(occ149b-cue): dispatch to a real cue-buss handler once the engine exposes one.
+    DBG("[OCC149b] Cue Buss requested from inspector");
+  };
+  // Routing matrix mute/solo — real buttons, no-op until routing model exposes mute/solo.
+  m_inspectorPanel->onMutePressed = [](int group) {
+    juce::ignoreUnused(group);
+    // TODO(occ149b-routing): forward to routing model mute toggle.
+    DBG("[OCC149b] Routing mute pressed for group " << group);
+  };
+  m_inspectorPanel->onSoloPressed = [](int group) {
+    juce::ignoreUnused(group);
+    // TODO(occ149b-routing): forward to routing model solo toggle.
+    DBG("[OCC149b] Routing solo pressed for group " << group);
+  };
   addAndMakeVisible(m_inspectorPanel.get());
 
   // Create BarVisualizer (shmui VU meter - 4 bars for master level)

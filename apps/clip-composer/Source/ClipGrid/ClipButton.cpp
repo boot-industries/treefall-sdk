@@ -168,9 +168,14 @@ void ClipButton::paint(juce::Graphics& g) {
   const auto groupColor = groupColors[juce::jlimit(0, 3, m_clipGroup)];
 
   // Face tint comes from the per-clip swatch colour (visual identifier).
-  // Stripe comes from group colour (routing channel). These are independent.
-  const bool hasSwatch = !m_clipColor.isTransparent();
-  const auto swatchTint = hasSwatch ? m_clipColor : groupColor;
+  // Stripe comes from group colour (routing channel). These are independent dimensions.
+  // The constructor seeds m_clipColor to juce::Colours::darkgrey, which is opaque but
+  // visually neutral, so we treat both transparent and pure dark-grey as "no swatch set"
+  // and fall back to a neutral chassis tint (not the group colour — that lives on the stripe).
+  const bool hasSwatch = !m_clipColor.isTransparent() && m_clipColor != juce::Colours::darkgrey &&
+                         m_clipColor != juce::Colour(OCC::Design::kBgComponent);
+  const auto neutralChassisTint = juce::Colour(OCC::Design::kBgComponent);
+  const auto swatchTint = hasSwatch ? m_clipColor : neutralChassisTint;
 
   auto face = bounds.reduced(1.0f);
   juce::Colour top;
@@ -183,8 +188,17 @@ void ClipButton::paint(juce::Graphics& g) {
     bottom = juce::Colour(OCC::Design::kClipEmpty).darker(0.08f);
     break;
   case State::Loaded:
-    top = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(swatchTint, 0.28f);
-    bottom = juce::Colour(OCC::Design::kBgSecondary).interpolatedWith(swatchTint, 0.20f);
+    if (hasSwatch) {
+      // Saturated tint so the swatch reads at a glance across the grid. The stripe
+      // and inset chassis-to-swatch transition keep the chip from looking flat.
+      top = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(swatchTint, 0.55f);
+      bottom = juce::Colour(OCC::Design::kBgSecondary).interpolatedWith(swatchTint, 0.40f);
+    } else {
+      // No swatch — show the neutral loaded chassis (cell wells stay readable; the
+      // stripe alone communicates group routing).
+      top = juce::Colour(OCC::Design::kClipLoaded).brighter(0.04f);
+      bottom = juce::Colour(OCC::Design::kClipLoaded).darker(0.05f);
+    }
     break;
   case State::Playing:
     top = juce::Colour(OCC::Design::kClipPlaying).brighter(0.20f);

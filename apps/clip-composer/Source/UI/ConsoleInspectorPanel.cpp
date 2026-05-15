@@ -3,6 +3,56 @@
 #include "ConsoleInspectorPanel.h"
 #include "ConsoleTheme.h"
 
+ConsoleInspectorPanel::ConsoleInspectorPanel() {
+  // Playout footer — Stop All (danger coral) + Cue Buss (matte default). Real juce::Buttons
+  // so the live operator can mash them with the mouse or the keyboard. Wired through
+  // onStopAll / onCueBuss callbacks installed by MainComponent.
+  m_playoutStopAllButton = std::make_unique<ConsoleActionButton>(
+      "inspector-stop-all", ConsoleActionButton::Variant::Danger);
+  m_playoutStopAllButton->setButtonText("Stop All");
+  m_playoutStopAllButton->onClick = [this]() {
+    if (onStopAll)
+      onStopAll();
+  };
+  addChildComponent(*m_playoutStopAllButton);
+
+  m_playoutCueBussButton = std::make_unique<ConsoleActionButton>(
+      "inspector-cue-buss", ConsoleActionButton::Variant::Default);
+  m_playoutCueBussButton->setButtonText("Cue Buss");
+  m_playoutCueBussButton->onClick = [this]() {
+    if (onCueBuss)
+      onCueBuss();
+  };
+  addChildComponent(*m_playoutCueBussButton);
+
+  // Routing matrix mute/solo — one pair per group (A/B/C/D). Real buttons, no-op
+  // dispatch until the routing model exposes mute/solo state.
+  // TODO(occ149b-routing): wire onMutePressed / onSoloPressed to real routing model.
+  for (int i = 0; i < 4; ++i) {
+    auto mute = std::make_unique<ConsoleActionButton>("routing-mute-" + juce::String(i),
+                                                      ConsoleActionButton::Variant::Ghost);
+    mute->setButtonText("M");
+    mute->onClick = [this, i]() {
+      if (onMutePressed)
+        onMutePressed(i);
+    };
+    addChildComponent(*mute);
+    m_routingMuteButtons[i] = std::move(mute);
+
+    auto solo = std::make_unique<ConsoleActionButton>("routing-solo-" + juce::String(i),
+                                                      ConsoleActionButton::Variant::Ghost);
+    solo->setButtonText("S");
+    solo->onClick = [this, i]() {
+      if (onSoloPressed)
+        onSoloPressed(i);
+    };
+    addChildComponent(*solo);
+    m_routingSoloButtons[i] = std::move(solo);
+  }
+
+  updateChildVisibility();
+}
+
 void ConsoleInspectorPanel::setSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
   m_snapshot = snapshot;
   repaint();
@@ -12,7 +62,25 @@ void ConsoleInspectorPanel::setOperatorViewMode(occ::ui::OperatorViewMode mode) 
   if (m_mode == mode)
     return;
   m_mode = mode;
+  updateChildVisibility();
+  resized();
   repaint();
+}
+
+void ConsoleInspectorPanel::updateChildVisibility() {
+  const bool playoutMode = m_mode == occ::ui::OperatorViewMode::Playout;
+  const bool routingMode = m_mode == occ::ui::OperatorViewMode::Routing;
+
+  if (m_playoutStopAllButton)
+    m_playoutStopAllButton->setVisible(playoutMode);
+  if (m_playoutCueBussButton)
+    m_playoutCueBussButton->setVisible(playoutMode);
+  for (auto& b : m_routingMuteButtons)
+    if (b)
+      b->setVisible(routingMode);
+  for (auto& b : m_routingSoloButtons)
+    if (b)
+      b->setVisible(routingMode);
 }
 
 void ConsoleInspectorPanel::paint(juce::Graphics& g) {
@@ -35,6 +103,38 @@ void ConsoleInspectorPanel::paint(juce::Graphics& g) {
     drawPreferences(g, bounds);
     break;
   }
+}
+
+void ConsoleInspectorPanel::resized() {
+  // Children only need positioning when their mode is active. Other modes paint
+  // statically so layout is a no-op.
+  auto bounds = getLocalBounds().reduced(18, 16);
+  switch (m_mode) {
+  case occ::ui::OperatorViewMode::Playout: {
+    constexpr int kFooterHeight = 36;
+    auto footer = bounds.removeFromBottom(kFooterHeight);
+    layoutPlayoutFooter(footer);
+    break;
+  }
+  case occ::ui::OperatorViewMode::Routing: {
+    layoutRoutingButtons(bounds);
+    break;
+  }
+  case occ::ui::OperatorViewMode::Edit:
+  case occ::ui::OperatorViewMode::Preferences:
+  default:
+    break;
+  }
+}
+
+void ConsoleInspectorPanel::layoutPlayoutFooter(juce::Rectangle<int> footer) {
+  if (!m_playoutStopAllButton || !m_playoutCueBussButton)
+    return;
+  const int half = (footer.getWidth() - 8) / 2;
+  auto stopAll = footer.removeFromLeft(half);
+  footer.removeFromLeft(8);
+  m_playoutStopAllButton->setBounds(stopAll);
+  m_playoutCueBussButton->setBounds(footer);
 }
 
 void ConsoleInspectorPanel::drawSectionHeader(juce::Graphics& g, juce::Rectangle<int>& bounds,
@@ -71,13 +171,13 @@ void ConsoleInspectorPanel::drawRow(juce::Graphics& g, juce::Rectangle<int> row,
 }
 
 //==============================================================================
-// Playout
+// Playout — live operator's "now playing" summary + Stop All / Cue Buss footer.
 
 void ConsoleInspectorPanel::drawPlayout(juce::Graphics& g, juce::Rectangle<int> bounds) {
-  // Reserve the footer for the Stop All + Cue Buss action buttons.
+  // Reserve the footer (the real-button area, positioned in resized()).
   constexpr int kFooterHeight = 36;
   constexpr int kFooterGap = 12;
-  auto footer = bounds.removeFromBottom(kFooterHeight);
+  bounds.removeFromBottom(kFooterHeight);
   bounds.removeFromBottom(kFooterGap);
 
   drawSectionHeader(g, bounds, "Playout", "NOW PLAYING");
@@ -87,7 +187,7 @@ void ConsoleInspectorPanel::drawPlayout(juce::Graphics& g, juce::Rectangle<int> 
     if (!clip.hasClip || clip.playbackState == orpheus::PlaybackState::Stopped)
       continue;
     const auto row = bounds.removeFromTop(38);
-    // Stripe is the group routing colour (per OCC149 contract: stripe = group, not swatch).
+    // Stripe is the group routing colour (per OCC149 contract: stripe = group).
     const auto stripe = OCC::Console::groupColour(juce::jlimit(0, 3, clip.clipGroup));
     const auto time = juce::String(static_cast<int>(clip.playbackProgress * 100.0f)) + "%";
     drawRow(g, row, stripe,
@@ -103,21 +203,10 @@ void ConsoleInspectorPanel::drawPlayout(juce::Graphics& g, juce::Rectangle<int> 
     g.drawText("No clips playing", bounds.removeFromTop(32), juce::Justification::centredLeft,
                false);
   }
-
-  // Footer: Stop All (danger) + Cue Buss (default), equal flex.
-  const int half = (footer.getWidth() - 8) / 2;
-  auto stopAll = footer.removeFromLeft(half);
-  footer.removeFromLeft(8);
-  auto cueBuss = footer;
-  OCC::Console::drawActionButton(g, stopAll.toFloat(), "Stop All",
-                                 OCC::Console::ActionVariant::Danger);
-  OCC::Console::drawActionButton(g, cueBuss.toFloat(), "Cue Buss",
-                                 OCC::Console::ActionVariant::Default);
 }
 
 //==============================================================================
-// Edit — full editor mirror is built by ClipEditDialog primitives in phase 4.
-// For now this panel renders an instructional state with the same eyebrow.
+// Edit — entry point to the modal dialog. The dialog itself carries the editor anatomy.
 
 void ConsoleInspectorPanel::drawEdit(juce::Graphics& g, juce::Rectangle<int> bounds) {
   drawSectionHeader(g, bounds, "Edit", "SELECTED CLIP");
@@ -135,20 +224,71 @@ void ConsoleInspectorPanel::drawEdit(juce::Graphics& g, juce::Rectangle<int> bou
 
 //==============================================================================
 // Routing — 5-column table: GROUP | OUTPUT | GAIN | METER | M·S
+// Operator: engineer mapping the four groups onto outputs and trimming the bus.
+
+namespace {
+
+constexpr int kRoutingGroupColWidth = 80;
+constexpr int kRoutingOutputColWidth = 90;
+constexpr int kRoutingGainColWidth = 56;
+constexpr int kRoutingMeterColWidth = 96;
+constexpr int kRoutingHeaderHeight = 20;
+constexpr int kRoutingHeaderGap = 10; // 4 px separator gap + 6 px before rows
+constexpr int kRoutingRowHeight = 28;
+constexpr int kRoutingRowGap = 4;
+constexpr int kRoutingHeaderTotal =
+    kRoutingHeaderHeight + kRoutingHeaderGap; // total height consumed by the header band
+
+} // namespace
+
+void ConsoleInspectorPanel::layoutRoutingButtons(const juce::Rectangle<int>& tableArea) {
+  // Mirror the exact arithmetic used by drawRouting() so M/S buttons land on top of
+  // the M·S column for each row. paint() and resized() must agree — visual collisions
+  // are not acceptable.
+  auto bounds = tableArea;
+  // Section header in drawSectionHeader consumes: 18 (eyebrow) + 30 (title) + 10 (gap) = 58.
+  bounds.removeFromTop(58);
+  // Routing header band.
+  bounds.removeFromTop(kRoutingHeaderTotal);
+
+  for (int i = 0; i < 4; ++i) {
+    auto row = bounds.removeFromTop(kRoutingRowHeight);
+    // Walk through the columns the same way drawRouting does.
+    row.removeFromLeft(kRoutingGroupColWidth);
+    row.removeFromLeft(kRoutingOutputColWidth);
+    row.removeFromLeft(kRoutingGainColWidth);
+    row.removeFromLeft(kRoutingMeterColWidth);
+    // What remains is the M·S column.
+    constexpr int kMSButtonWidth = 28;
+    constexpr int kMSButtonGap = 4;
+    auto m = row.removeFromLeft(kMSButtonWidth);
+    row.removeFromLeft(kMSButtonGap);
+    auto s = row.removeFromLeft(kMSButtonWidth);
+    if (m_routingMuteButtons[i])
+      m_routingMuteButtons[i]->setBounds(m);
+    if (m_routingSoloButtons[i])
+      m_routingSoloButtons[i]->setBounds(s);
+    bounds.removeFromTop(kRoutingRowGap);
+  }
+}
 
 void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> bounds) {
   drawSectionHeader(g, bounds, "Routing", "GROUP OUTPUTS");
 
   // Header row.
   {
-    auto header = bounds.removeFromTop(20);
+    auto header = bounds.removeFromTop(kRoutingHeaderHeight);
     g.setFont(OCC::Console::consoleFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(OCC::Design::kTextSecondary));
     auto h = header;
-    g.drawText("GROUP", h.removeFromLeft(80), juce::Justification::centredLeft, false);
-    g.drawText("OUTPUT", h.removeFromLeft(90), juce::Justification::centredLeft, false);
-    g.drawText("GAIN", h.removeFromLeft(56), juce::Justification::centredLeft, false);
-    g.drawText("METER", h.removeFromLeft(96), juce::Justification::centredLeft, false);
+    g.drawText("GROUP", h.removeFromLeft(kRoutingGroupColWidth), juce::Justification::centredLeft,
+               false);
+    g.drawText("OUTPUT", h.removeFromLeft(kRoutingOutputColWidth), juce::Justification::centredLeft,
+               false);
+    g.drawText("GAIN", h.removeFromLeft(kRoutingGainColWidth), juce::Justification::centredLeft,
+               false);
+    g.drawText("METER", h.removeFromLeft(kRoutingMeterColWidth), juce::Justification::centredLeft,
+               false);
     g.drawText("M·S", h, juce::Justification::centredLeft, false);
     bounds.removeFromTop(4);
     g.setColour(juce::Colour(OCC::Design::kBorderDefault));
@@ -157,15 +297,16 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
     bounds.removeFromTop(6);
   }
 
-  const juce::String outputs[4] = {"Out 1-2", "Out 3-4", "Out 5-6", "Out 7-8"};
-  const float fakeGain[4] = {0.0f, -3.0f, -6.0f, -9.0f}; // placeholder until routing model wired
+  // No fake data. Output names and gain readouts show "—" until the routing model
+  // surfaces them through the snapshot. TODO(occ149b-routing): plumb real values.
+  const juce::String kPlaceholder("—");
 
   for (int i = 0; i < 4; ++i) {
-    auto row = bounds.removeFromTop(28);
+    auto row = bounds.removeFromTop(kRoutingRowHeight);
 
     // GROUP column: 12x12 swatch + label.
     {
-      auto col = row.removeFromLeft(80);
+      auto col = row.removeFromLeft(kRoutingGroupColWidth);
       const auto swatch = col.removeFromLeft(14).withSizeKeepingCentre(12, 12).toFloat();
       g.setColour(OCC::Console::groupColour(i));
       g.fillRoundedRectangle(swatch, 2.0f);
@@ -180,24 +321,23 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
 
     // OUTPUT column.
     {
-      auto col = row.removeFromLeft(90);
+      auto col = row.removeFromLeft(kRoutingOutputColWidth);
       g.setFont(OCC::Console::monoFont(11.0f));
       g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-      g.drawText(outputs[i], col, juce::Justification::centredLeft, false);
+      g.drawText(kPlaceholder, col, juce::Justification::centredLeft, false);
     }
 
     // GAIN column.
     {
-      auto col = row.removeFromLeft(56);
+      auto col = row.removeFromLeft(kRoutingGainColWidth);
       g.setFont(OCC::Console::monoFont(11.0f));
-      g.setColour(juce::Colour(OCC::Design::kTextPrimary));
-      g.drawText(juce::String(fakeGain[i], 1) + " dB", col, juce::Justification::centredLeft,
-                 false);
+      g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+      g.drawText(kPlaceholder, col, juce::Justification::centredLeft, false);
     }
 
-    // METER column: 90x10 bar with gradient fill clipped to level.
+    // METER column: 90x10 bar with gradient fill clipped to live level.
     {
-      auto col = row.removeFromLeft(96);
+      auto col = row.removeFromLeft(kRoutingMeterColWidth);
       auto bar = col.removeFromLeft(90).withSizeKeepingCentre(90, 10).toFloat();
       g.setColour(juce::Colour(OCC::Design::kBgInset));
       g.fillRoundedRectangle(bar, 2.0f);
@@ -224,22 +364,23 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
       }
     }
 
-    // M·S column: two ghost buttons.
+    // M·S column: the real ConsoleActionButton instances live here. resized()
+    // positions them; we just consume the same width so the row arithmetic
+    // matches.
     {
-      auto col = row;
-      auto m = col.removeFromLeft(28);
-      col.removeFromLeft(4);
-      auto s = col.removeFromLeft(28);
-      OCC::Console::drawActionButton(g, m.toFloat(), "M", OCC::Console::ActionVariant::Ghost);
-      OCC::Console::drawActionButton(g, s.toFloat(), "S", OCC::Console::ActionVariant::Ghost);
+      constexpr int kMSButtonWidth = 28;
+      constexpr int kMSButtonGap = 4;
+      row.removeFromLeft(kMSButtonWidth);
+      row.removeFromLeft(kMSButtonGap);
+      row.removeFromLeft(kMSButtonWidth);
     }
 
-    bounds.removeFromTop(4);
+    bounds.removeFromTop(kRoutingRowGap);
   }
 }
 
 //==============================================================================
-// Preferences — key/value list pulled from snapshot fields.
+// Preferences — key/value summary pulled from the live audio snapshot.
 
 void ConsoleInspectorPanel::drawPreferences(juce::Graphics& g, juce::Rectangle<int> bounds) {
   drawSectionHeader(g, bounds, "Preferences", "DEVICE & I/O");
@@ -258,9 +399,9 @@ void ConsoleInspectorPanel::drawPreferences(juce::Graphics& g, juce::Rectangle<i
           : (dev.activeDeviceIdentifier.isNotEmpty() ? dev.activeDeviceIdentifier
                                                      : juce::String("(no device)"));
   const juce::String sampleRateLabel =
-      health.sampleRate > 0 ? juce::String(health.sampleRate) + " Hz" : juce::String("--");
+      health.sampleRate > 0 ? juce::String(health.sampleRate) + " Hz" : juce::String("—");
   const juce::String bufferSizeLabel =
-      health.bufferSize > 0 ? juce::String(health.bufferSize) + " samples" : juce::String("--");
+      health.bufferSize > 0 ? juce::String(health.bufferSize) + " samples" : juce::String("—");
   const juce::String routeLabel =
       dev.playoutRouteLabel.isNotEmpty() ? dev.playoutRouteLabel : juce::String("(default)");
   const juce::String auditionLabel = m_snapshot.audio.audition.routeLabel.isNotEmpty()
