@@ -137,6 +137,16 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
     m_stopOthersButton->setToggleState(m_metadata.stopOthersEnabled, juce::dontSendNotification);
   }
 
+  // Sync FLAGS chips (the user-facing controls in the primary mockup anatomy).
+  if (m_loopChip)
+    m_loopChip->setToggleState(m_metadata.loopEnabled, juce::dontSendNotification);
+  if (m_fadeInChip)
+    m_fadeInChip->setToggleState(m_metadata.fadeInSeconds > 0.0, juce::dontSendNotification);
+  if (m_fadeOutChip)
+    m_fadeOutChip->setToggleState(m_metadata.fadeOutSeconds > 0.0, juce::dontSendNotification);
+  if (m_stopOthersChip)
+    m_stopOthersChip->setToggleState(m_metadata.stopOthersEnabled, juce::dontSendNotification);
+
   // Phase 3: Initialize fade combos using lookup table
   if (m_fadeInCombo) {
     m_fadeInCombo->setSelectedId(mapFadeTimeToComboId(m_metadata.fadeInSeconds));
@@ -417,6 +427,61 @@ void ClipEditDialog::buildPhase1UI() {
       onCancelClicked();
   };
   addAndMakeVisible(m_cancelButton.get());
+
+  // FLAGS chips — design-kit chip-style toggles, real focusable components.
+  // Each chip syncs its state to the metadata field and (for Loop / Stop Others)
+  // bridges to the legacy juce::Button so existing keyboard shortcuts /
+  // callbacks still fire.
+  m_loopChip = std::make_unique<ConsoleChipButton>("loopChip", "Loop");
+  m_loopChip->setToggleState(m_metadata.loopEnabled, juce::dontSendNotification);
+  m_loopChip->onClick = [this]() {
+    const bool enabled = m_loopChip->getToggleState();
+    m_metadata.loopEnabled = enabled;
+    if (m_loopButton && m_loopButton->getToggleState() != enabled)
+      m_loopButton->setToggleState(enabled, juce::sendNotification);
+  };
+  addAndMakeVisible(m_loopChip.get());
+
+  m_fadeInChip = std::make_unique<ConsoleChipButton>("fadeInChip", "Fade In");
+  m_fadeInChip->setToggleState(m_metadata.fadeInSeconds > 0.0, juce::dontSendNotification);
+  m_fadeInChip->onClick = [this]() {
+    // Chip enables a default 0.5 s fade when toggled on, clears it when off.
+    if (m_fadeInChip->getToggleState()) {
+      if (m_metadata.fadeInSeconds <= 0.0)
+        m_metadata.fadeInSeconds = 0.5;
+    } else {
+      m_metadata.fadeInSeconds = 0.0;
+    }
+    if (m_fadeInCombo)
+      m_fadeInCombo->setSelectedId(mapFadeTimeToComboId(m_metadata.fadeInSeconds),
+                                   juce::sendNotification);
+  };
+  addAndMakeVisible(m_fadeInChip.get());
+
+  m_fadeOutChip = std::make_unique<ConsoleChipButton>("fadeOutChip", "Fade Out");
+  m_fadeOutChip->setToggleState(m_metadata.fadeOutSeconds > 0.0, juce::dontSendNotification);
+  m_fadeOutChip->onClick = [this]() {
+    if (m_fadeOutChip->getToggleState()) {
+      if (m_metadata.fadeOutSeconds <= 0.0)
+        m_metadata.fadeOutSeconds = 0.5;
+    } else {
+      m_metadata.fadeOutSeconds = 0.0;
+    }
+    if (m_fadeOutCombo)
+      m_fadeOutCombo->setSelectedId(mapFadeTimeToComboId(m_metadata.fadeOutSeconds),
+                                    juce::sendNotification);
+  };
+  addAndMakeVisible(m_fadeOutChip.get());
+
+  m_stopOthersChip = std::make_unique<ConsoleChipButton>("stopOthersChip", "Stop Others");
+  m_stopOthersChip->setToggleState(m_metadata.stopOthersEnabled, juce::dontSendNotification);
+  m_stopOthersChip->onClick = [this]() {
+    const bool enabled = m_stopOthersChip->getToggleState();
+    m_metadata.stopOthersEnabled = enabled;
+    if (m_stopOthersButton && m_stopOthersButton->getToggleState() != enabled)
+      m_stopOthersButton->setToggleState(enabled, juce::sendNotification);
+  };
+  addAndMakeVisible(m_stopOthersChip.get());
 }
 
 void ClipEditDialog::buildPhase2UI() {
@@ -1509,10 +1574,31 @@ void ClipEditDialog::paint(juce::Graphics& g) {
   y += GRID * 3;
   y += kSectionGap;
 
-  // TRIM / FADE (single eyebrow over the 2x2 grid)
-  drawEyebrow("TRIM · FADE");
+  // TRIM / FADE — per-cell eyebrows over the 2x2 grid.
+  // Top row: TRIM IN / TRIM OUT above the time editors.
+  {
+    g.setColour(juce::Colour(kTextSecondary));
+    g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+    const int halfWidth = (getWidth() - GRID * 4 - kSectionGap) / 2;
+    g.drawText("TRIM IN", GRID * 2, y, halfWidth, kEyebrowHeight, juce::Justification::centredLeft,
+               false);
+    g.drawText("TRIM OUT", GRID * 2 + halfWidth + kSectionGap, y, halfWidth, kEyebrowHeight,
+               juce::Justification::centredLeft, false);
+    y += kEyebrowHeight + kEyebrowGap;
+  }
   y += GRID * 3; // top row height
   y += GRID;     // row gap
+  // Bottom row: FADE IN / FADE OUT above the fade combos.
+  {
+    g.setColour(juce::Colour(kTextSecondary));
+    g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+    const int halfWidth = (getWidth() - GRID * 4 - kSectionGap) / 2;
+    g.drawText("FADE IN", GRID * 2, y, halfWidth, kEyebrowHeight, juce::Justification::centredLeft,
+               false);
+    g.drawText("FADE OUT", GRID * 2 + halfWidth + kSectionGap, y, halfWidth, kEyebrowHeight,
+               juce::Justification::centredLeft, false);
+    y += kEyebrowHeight + kEyebrowGap;
+  }
   y += GRID * 3; // bottom row height
   y += kSectionGap;
 
@@ -1611,10 +1697,11 @@ void ClipEditDialog::resized() {
   contentArea.removeFromTop(kSectionGap);
 
   // ----- 2x2 TRIM / FADE GRID -----
-  // Eyebrow band reserved; below, four cells arranged as:
-  //   [TRIM IN ]   [TRIM OUT]
-  //   [FADE IN]   [FADE OUT]
-  // Each cell holds its primary editor (time field or combo).
+  // Per-cell eyebrows (TRIM IN / TRIM OUT / FADE IN / FADE OUT) painted in
+  // paint(); resized() walks the same arithmetic to reserve their bands.
+  //   eyebrow band → TRIM IN / TRIM OUT row
+  //   row gap
+  //   eyebrow band → FADE IN / FADE OUT row
   contentArea.removeFromTop(kEyebrowHeight);
   contentArea.removeFromTop(kEyebrowGap);
   {
@@ -1630,6 +1717,10 @@ void ClipEditDialog::resized() {
 
     contentArea.removeFromTop(GRID); // row gap
 
+    // Reserve eyebrow band for FADE IN / FADE OUT before laying out the combos.
+    contentArea.removeFromTop(kEyebrowHeight);
+    contentArea.removeFromTop(kEyebrowGap);
+
     auto bottomRow = contentArea.removeFromTop(kCellHeight);
     if (m_fadeInCombo)
       m_fadeInCombo->setBounds(bottomRow.removeFromLeft(halfWidth));
@@ -1640,23 +1731,37 @@ void ClipEditDialog::resized() {
   contentArea.removeFromTop(kSectionGap);
 
   // ----- FLAGS -----
-  // Existing toggles laid out as a chip-style row. The visual chip treatment
-  // requires a juce::Button subclass with custom paint, which is a follow-up
-  // (TODO(occ149c-chips)). For now lay them out as a clean horizontal row.
+  // Four design-kit ConsoleChipButton instances (real focusable components):
+  // Loop · Fade In · Fade Out · Stop Others. Amber-tinted when set, inset
+  // when not. The legacy m_loopButton / m_stopOthersButton are hidden but
+  // still wired so existing keyboard shortcuts continue to work.
   contentArea.removeFromTop(kEyebrowHeight);
   contentArea.removeFromTop(kEyebrowGap);
   {
     auto row = contentArea.removeFromTop(GRID * 3);
-    // Loop (DrawableButton) + Stop Others (ToggleButton) — Fade In/Out chips
-    // would be ideal here too, but the existing model wires them off the
-    // fade-time combos, not standalone toggles. Keep the two real toggles.
-    if (m_loopButton && m_stopOthersButton) {
-      const int chipWidth = (row.getWidth() - kSectionGap) / 2;
-      m_loopButton->setBounds(row.removeFromLeft(chipWidth));
-      row.removeFromLeft(kSectionGap);
-      m_stopOthersButton->setBounds(row);
+    const int chipGap = GRID;
+    const int chipWidth = (row.getWidth() - chipGap * 3) / 4;
+    if (m_loopChip) {
+      m_loopChip->setBounds(row.removeFromLeft(chipWidth));
+      row.removeFromLeft(chipGap);
+    }
+    if (m_fadeInChip) {
+      m_fadeInChip->setBounds(row.removeFromLeft(chipWidth));
+      row.removeFromLeft(chipGap);
+    }
+    if (m_fadeOutChip) {
+      m_fadeOutChip->setBounds(row.removeFromLeft(chipWidth));
+      row.removeFromLeft(chipGap);
+    }
+    if (m_stopOthersChip) {
+      m_stopOthersChip->setBounds(row);
     }
   }
+  // Hide the legacy toggle controls — they remain as model bridges only.
+  if (m_loopButton)
+    m_loopButton->setVisible(false);
+  if (m_stopOthersButton)
+    m_stopOthersButton->setVisible(false);
   contentArea.removeFromTop(kSectionGap);
 
   // ----- ADVANCED (gain · pitch · zoom · transport · SET/CLR/nudge) -----

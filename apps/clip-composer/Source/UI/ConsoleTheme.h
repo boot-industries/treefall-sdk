@@ -176,16 +176,27 @@ inline juce::String groupLabel(int index) {
 
 inline void drawGroupButton(juce::Graphics& g, juce::Rectangle<float> bounds, int groupIndex,
                             bool selected) {
+  // Design-kit channel-strip routing: selected = fully lit with the group's
+  // signature colour + cream halo (you can see this is the active routing).
+  // Unselected = backlit preview of the group colour so the operator can read
+  // all four channels at once without selecting them.
   const auto gc = groupColour(groupIndex);
   if (selected) {
-    g.setColour(gc);
-    g.fillRoundedRectangle(bounds, 3.0f);
-    g.setColour(gc.brighter(0.20f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    // Saturated fill, top→bottom gradient for tactile depth.
+    drawMatteCap(g, bounds, gc.brighter(0.10f), gc.darker(0.20f), 3.0f);
+    // Cream halo around the selected button — design-kit "lit channel" signal.
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.95f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.5f);
     g.setColour(juce::Colours::white);
   } else {
-    drawInsetField(g, bounds);
-    g.setColour(colour(OCC::Design::kTextSecondary));
+    // Backlit preview — the group colour shines through the inset chassis at
+    // low intensity so the operator sees what each channel represents.
+    auto base = juce::Colour(OCC::Design::kBgInset).interpolatedWith(gc, 0.30f);
+    g.setColour(base);
+    g.fillRoundedRectangle(bounds, 3.0f);
+    g.setColour(gc.withAlpha(0.55f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    g.setColour(colour(OCC::Design::kTextPrimary).withAlpha(0.85f));
   }
   g.setFont(consoleFont(13.0f, juce::Font::bold));
   g.drawText(groupLabel(groupIndex), bounds.toNearestInt(), juce::Justification::centred, false);
