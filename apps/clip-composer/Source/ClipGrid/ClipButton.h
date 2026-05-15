@@ -166,11 +166,22 @@ public:
   /** @brief Set fade-out indicator visibility. */
   void setFadeOutEnabled(bool enabled);
 
-  /** @brief Set effects indicator visibility. */
+  /** @brief Set effects (FX chain) indicator visibility. Drawn as the design-kit
+   *         "g-fx" sine-wave squiggle in the bottom-row indicator strip. */
   void setEffectsEnabled(bool enabled);
 
-  /** @brief Set stop-others indicator visibility. */
+  /** @brief Set stop-others indicator visibility. Drawn as the design-kit
+   *         "g-solo" shield-with-dot glyph. */
   void setStopOthersEnabled(bool enabled);
+
+  /** @brief Set trim indicator visibility — clip has non-default IN/OUT trim
+   *         points set. Drawn as the design-kit "g-trim" range-bracket glyph. */
+  void setTrimEnabled(bool enabled);
+
+  /** @brief Set lock indicator visibility — clip is protected from accidental
+   *         modification. Important for live operators preventing on-air
+   *         changes. Drawn as the design-kit "g-lock" padlock glyph. */
+  void setLockEnabled(bool enabled);
 
   /// @}
 
@@ -289,8 +300,10 @@ private:
   bool m_loopEnabled = false;
   bool m_fadeInEnabled = false;
   bool m_fadeOutEnabled = false;
-  bool m_effectsEnabled = false;
+  bool m_effectsEnabled = false; // a.k.a. FX chain
   bool m_stopOthersEnabled = false;
+  bool m_trimEnabled = false;
+  bool m_lockEnabled = false;
   bool m_isPlaybox = false; // Item 60: Arrow key navigation outline
 
   // Drag state (Cmd+Drag to rearrange clips)
