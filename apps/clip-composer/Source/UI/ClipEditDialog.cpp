@@ -102,6 +102,19 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
                                                                      ? m_metadata.trimOutSamples
                                                                      : m_metadata.durationSamples);
 
+      // Also feed the full-file overview minimap.
+      if (m_waveformOverview) {
+        juce::AudioFormatManager fmtMgr;
+        fmtMgr.registerBasicFormats();
+        if (auto* reader = fmtMgr.createReaderFor(audioFile)) {
+          m_waveformOverview->setAudioFile(reader);
+          m_waveformOverview->setTrimSamples(
+              m_metadata.trimInSamples, m_metadata.trimOutSamples > 0 ? m_metadata.trimOutSamples
+                                                                      : m_metadata.durationSamples);
+          delete reader;
+        }
+      }
+
       // Configure preview player without breaking shared playback continuity.
       if (m_previewPlayer) {
         m_previewPlayer->setTrimPoints(m_metadata.trimInSamples, m_metadata.trimOutSamples > 0
@@ -485,7 +498,11 @@ void ClipEditDialog::buildPhase1UI() {
 }
 
 void ClipEditDialog::buildPhase2UI() {
-  // Waveform Display (real component)
+  // Waveform Overview (full-file minimap, design-kit "overview minimap" pattern)
+  m_waveformOverview = std::make_unique<WaveformOverview>();
+  addAndMakeVisible(m_waveformOverview.get());
+
+  // Waveform Display (zoomed main view)
   m_waveformDisplay = std::make_unique<WaveformDisplay>();
   addAndMakeVisible(m_waveformDisplay.get());
 
@@ -1550,9 +1567,13 @@ void ClipEditDialog::paint(juce::Graphics& g) {
     y += kEyebrowHeight + kEyebrowGap;
   };
 
-  // WAVEFORM
+  // WAVEFORM block — eyebrow over the minimap + zoomed view + toolbar trio.
   drawEyebrow("WAVEFORM");
-  y += GRID * 14; // m_waveformDisplay height
+  y += 24; // overview minimap height
+  y += GRID / 2;
+  y += GRID * 11; // zoomed waveform height
+  y += GRID / 2;
+  y += GRID * 4; // transport toolbar height
   y += kSectionGap;
 
   // NAME
@@ -1661,12 +1682,60 @@ void ClipEditDialog::resized() {
   constexpr int kFieldHeight = GRID * 3; // Inset field / button row height
   (void)kFieldHeight;                    // Used implicitly via consistent removeFromTop arguments
 
-  // ----- WAVEFORM (~110-140 px) -----
-  // Eyebrow band reserved (painted), then the waveform display.
+  // ----- WAVEFORM BLOCK -----
+  // Three-tier design-kit pattern:
+  //   * 24 px overview minimap (full-file scrub)
+  //   * 110 px zoomed waveform (main editing surface, with amplitude scale)
+  //   * 36 px transport toolbar (skip / play / stop / skip + zoom + position)
+  // Transport sits immediately under the waveform per operator narrative:
+  // the sound designer scrubs the zoomed view and reaches straight down for
+  // play / zoom / skip. They never have to hunt across the dialog.
   contentArea.removeFromTop(kEyebrowHeight); // eyebrow band (painted)
   contentArea.removeFromTop(kEyebrowGap);
-  if (m_waveformDisplay) {
-    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 14));
+  if (m_waveformOverview)
+    m_waveformOverview->setBounds(contentArea.removeFromTop(24));
+  contentArea.removeFromTop(GRID / 2);
+  if (m_waveformDisplay)
+    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 11));
+  contentArea.removeFromTop(GRID / 2);
+  // Transport toolbar — restored to prominence directly beneath the waveform.
+  {
+    auto toolbar = contentArea.removeFromTop(GRID * 4);
+    // Three zones: left transport cluster, centre time readout, right zoom cluster.
+    constexpr int kIconBtn = 30;
+    constexpr int kGapInner = 4;
+    auto leftZone = toolbar.removeFromLeft(kIconBtn * 5 + kGapInner * 4 + GRID);
+    auto rightZone = toolbar.removeFromRight(GRID * 18);
+    auto centreZone = toolbar; // remaining middle
+
+    // Left cluster: ⏮ ▶ ⏹ ⏭ ↻ (skip start, play, stop, skip end, loop)
+    auto leftRow = leftZone;
+    if (m_skipToStartButton)
+      m_skipToStartButton->setBounds(leftRow.removeFromLeft(kIconBtn));
+    leftRow.removeFromLeft(kGapInner);
+    if (m_playButton)
+      m_playButton->setBounds(leftRow.removeFromLeft(kIconBtn));
+    leftRow.removeFromLeft(kGapInner);
+    if (m_stopButton)
+      m_stopButton->setBounds(leftRow.removeFromLeft(kIconBtn));
+    leftRow.removeFromLeft(kGapInner);
+    if (m_skipToEndButton)
+      m_skipToEndButton->setBounds(leftRow.removeFromLeft(kIconBtn));
+
+    // Centre: position readout label (e.g., "00:00:00.59 / 00:00:30.00").
+    if (m_transportPositionLabel)
+      m_transportPositionLabel->setBounds(centreZone.withSizeKeepingCentre(GRID * 18, GRID * 3));
+
+    // Right cluster: zoom controls.
+    auto rightRow = rightZone;
+    if (m_zoomOutButton)
+      m_zoomOutButton->setBounds(rightRow.removeFromLeft(GRID * 3));
+    rightRow.removeFromLeft(kGapInner);
+    if (m_zoomLabel)
+      m_zoomLabel->setBounds(rightRow.removeFromLeft(GRID * 5));
+    rightRow.removeFromLeft(kGapInner);
+    if (m_zoomInButton)
+      m_zoomInButton->setBounds(rightRow.removeFromLeft(GRID * 3));
   }
   contentArea.removeFromTop(kSectionGap);
 
@@ -1764,20 +1833,20 @@ void ClipEditDialog::resized() {
     m_stopOthersButton->setVisible(false);
   contentArea.removeFromTop(kSectionGap);
 
-  // ----- ADVANCED (gain · pitch · zoom · transport · SET/CLR/nudge) -----
-  // These controls live below the primary mockup anatomy because the operator
-  // still needs them for fine-grained editing. They render at smaller scale
-  // so the primary block stays readable.
+  // ----- ADVANCED -----
+  // Transport buttons and zoom now live in the waveform toolbar above. The
+  // Advanced section only carries the truly secondary controls: gain dial,
+  // deferred pitch, SET/CLR/nudge for sample-accurate trim, fade-curve combos,
+  // and the trim duration readout.
   contentArea.removeFromTop(kEyebrowHeight);
   contentArea.removeFromTop(kEyebrowGap);
 
-  // Sub-row: Gain dial · Pitch dial · Zoom controls · Transport scrub.
-  const int dialSize = 56; // smaller than legacy 64 to fit the advanced rail
+  // Sub-row: Gain · Pitch dials on the left, trim duration readout on the right.
+  const int dialSize = 56;
   {
     auto advRow = contentArea.removeFromTop(dialSize + GRID * 2);
     const int knobBlockW = dialSize + GRID * 2;
 
-    // Gain knob block (label, dial, value).
     if (m_gainSlider && m_gainValueLabel) {
       auto block = advRow.removeFromLeft(knobBlockW);
       auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
@@ -1786,44 +1855,22 @@ void ClipEditDialog::resized() {
     }
     advRow.removeFromLeft(GRID);
 
-    // Pitch knob block (deferred).
     if (m_placeholderDial && m_placeholderValueLabel) {
       auto block = advRow.removeFromLeft(knobBlockW);
       auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
       m_placeholderDial->setBounds(dial);
       m_placeholderValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
     }
-    advRow.removeFromLeft(GRID);
 
-    // Zoom + transport — flow them right in a compact rail.
-    if (m_zoomOutButton && m_zoomLabel && m_zoomInButton) {
-      auto zoomRow = advRow.removeFromTop(GRID * 3);
-      m_zoomOutButton->setBounds(zoomRow.removeFromLeft(GRID * 3));
-      zoomRow.removeFromLeft(GRID / 2);
-      m_zoomLabel->setBounds(zoomRow.removeFromLeft(GRID * 4));
-      zoomRow.removeFromLeft(GRID / 2);
-      m_zoomInButton->setBounds(zoomRow.removeFromLeft(GRID * 3));
-    }
-    if (m_transportPositionLabel) {
-      auto timeRow = advRow.removeFromTop(GRID * 2);
-      m_transportPositionLabel->setBounds(timeRow.withSizeKeepingCentre(GRID * 14, GRID * 2));
-    }
-    if (m_skipToStartButton && m_playButton && m_stopButton && m_skipToEndButton) {
-      auto tRow = advRow.removeFromTop(GRID * 3);
-      const int btn = GRID * 3;
-      m_skipToStartButton->setBounds(tRow.removeFromLeft(btn));
-      tRow.removeFromLeft(GRID / 2);
-      m_playButton->setBounds(tRow.removeFromLeft(btn));
-      tRow.removeFromLeft(GRID / 2);
-      m_stopButton->setBounds(tRow.removeFromLeft(btn));
-      tRow.removeFromLeft(GRID / 2);
-      m_skipToEndButton->setBounds(tRow.removeFromLeft(btn));
+    // Trim duration readout — pinned to the right side of this row.
+    if (m_trimInfoLabel) {
+      auto readout = advRow.removeFromRight(GRID * 24).withSizeKeepingCentre(GRID * 22, GRID * 3);
+      m_trimInfoLabel->setBounds(readout);
     }
   }
   contentArea.removeFromTop(GRID);
 
-  // Sub-row: SET / nudge / CLR for the two trim editors, laid out compactly
-  // below the trim fields they target.
+  // Sub-row: SET · < · > · CLR for trim-in (left) and trim-out (right).
   if (m_trimInHoldButton && m_trimInDecButton && m_trimInIncButton && m_trimInClearButton &&
       m_trimOutHoldButton && m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
     auto row = contentArea.removeFromTop(GRID * 3);
@@ -1832,7 +1879,7 @@ void ClipEditDialog::resized() {
     row.removeFromLeft(kSectionGap);
     auto rightHalf = row;
 
-    const int btnW = (leftHalf.getWidth() - GRID * 3) / 4; // SET · < · > · CLR
+    const int btnW = (leftHalf.getWidth() - GRID * 3) / 4;
     m_trimInHoldButton->setBounds(leftHalf.removeFromLeft(btnW));
     leftHalf.removeFromLeft(GRID);
     m_trimInDecButton->setBounds(leftHalf.removeFromLeft(btnW));
@@ -1851,14 +1898,7 @@ void ClipEditDialog::resized() {
     m_trimOutClearButton->setBounds(rightHalf.removeFromLeft(btnW2));
   }
 
-  // Trim info / duration label.
-  if (m_trimInfoLabel) {
-    auto labelRow = contentArea.removeFromTop(GRID * 2);
-    m_trimInfoLabel->setBounds(labelRow.withSizeKeepingCentre(GRID * 24, GRID * 2));
-  }
-
-  // Fade curve combos (less prominent than fade-time combos, so they live
-  // here in the advanced rail).
+  // Sub-row: fade curve combos for FADE IN / FADE OUT.
   if (m_fadeInCurveCombo && m_fadeOutCurveCombo) {
     contentArea.removeFromTop(GRID);
     auto curveRow = contentArea.removeFromTop(GRID * 3);
