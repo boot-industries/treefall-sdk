@@ -323,6 +323,9 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
                  juce::Justification::topLeft, false);
     }
 
+    // Design kit's playing-state treatment is: green-fill cell + bottom progress
+    // bar (drawn below). No chip or badge in the meta row. The hotkey remains
+    // visible throughout so the operator always knows the trigger binding.
     if (showHotkey) {
       juce::String displayText;
       if (m_buttonTextMode == 1 && m_keyboardShortcut.isNotEmpty())
@@ -396,59 +399,87 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     }
   }
 
+  // Progress bar — design kit spec: 3 px high, anchored to bottom-left, white
+  // rgba(255,255,255,0.9) with a soft glow (boxShadow 0 0 6px rgba(255,255,255,0.5)).
+  // No track / no inset / no rounding.
   if ((m_state == State::Playing || m_state == State::Stopping) && m_playbackProgress > 0.0f) {
-    auto progressArea = bounds.removeFromBottom(4.0f).reduced(1.0f, 0.5f);
-    float progressWidth = progressArea.getWidth() * m_playbackProgress;
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
-    g.fillRoundedRectangle(progressArea, kPlayboxBorderWidth);
-    if (progressWidth > 0.0f) {
-      auto fillArea = progressArea.withWidth(progressWidth);
-      g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.92f));
-      g.fillRoundedRectangle(fillArea, kPlayboxBorderWidth);
-    }
+    const float barHeight = 3.0f;
+    const float fillWidth = bounds.getWidth() * m_playbackProgress;
+    auto fill =
+        juce::Rectangle<float>(bounds.getX(), bounds.getBottom() - barHeight, fillWidth, barHeight);
+    // Glow underlay: paint a slightly larger soft-edge rectangle behind the bar to
+    // approximate the 6 px CSS shadow.
+    g.setColour(juce::Colours::white.withAlpha(0.18f));
+    g.fillRect(fill.expanded(0.0f, 2.0f));
+    g.setColour(juce::Colours::white.withAlpha(0.90f));
+    g.fillRect(fill);
   }
 }
 
 void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bounds) {
-  // Mockup contract: 10x10 px glyphs in cream (rgba 237,226,204 @ 0.95), packed
-  // left-to-right within the reserved bounds. Caller has already sized the rect
-  // to fit only the active flags, so we just iterate the active ones in order.
+  // Glyphs ported verbatim from the design kit (orpheus_design-system_2605 /
+  // ui_kits/clip-composer/components.jsx, latest indicator block).
+  //   * 10x10 px target on screen, drawn from a 16-unit viewBox via scale factor.
+  //   * Single cream stroke / fill — rgba(237, 226, 204, 0.95).
+  //   * Loop       → two-arc "refresh cycle" symbol with two arrowheads.
+  //   * Fade In    → filled triangle, hypotenuse rising left→right.
+  //   * Fade Out   → filled triangle, hypotenuse falling left→right.
+  //   * Stop Others→ 5-point shield outline with a filled centre dot.
   constexpr float iconSize = 10.0f;
   constexpr float iconGap = 5.0f;
+  // Each glyph is authored in a 16x16 viewBox; we render at iconSize so the scale
+  // factor is iconSize / 16.
+  constexpr float kViewBox = 16.0f;
+  const float scale = iconSize / kViewBox;
   const auto cream = juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.95f);
 
   float xPos = bounds.getX();
   const float yPos = bounds.getY();
 
-  auto strokeAt = [&](juce::Path& path, juce::Colour colour, float thickness) {
-    g.setColour(colour);
-    g.strokePath(path, juce::PathStrokeType(thickness));
+  auto pt = [&](float x, float y) {
+    return juce::Point<float>(xPos + x * scale, yPos + y * scale);
   };
 
   if (m_loopEnabled) {
-    juce::Rectangle<float> box(xPos, yPos, iconSize, iconSize);
+    // SVG: M3 8a5 5 0 0 1 9-3   M13 8a5 5 0 0 1-9 3
+    //      M12 3v3h-3            M4 13v-3h3
     juce::Path loop;
-    const float cx = box.getCentreX();
-    const float cy = box.getCentreY();
-    const float r = iconSize * 0.36f;
-    loop.addCentredArc(cx, cy, r, r, 0.0f, juce::MathConstants<float>::pi * 0.5f,
-                       juce::MathConstants<float>::pi * 2.25f, true);
-    const float ax = cx + r * std::cos(juce::MathConstants<float>::pi * 2.25f);
-    const float ay = cy + r * std::sin(juce::MathConstants<float>::pi * 2.25f);
-    loop.startNewSubPath(ax, ay);
-    loop.lineTo(ax - 1.6f, ay - 1.6f);
-    loop.startNewSubPath(ax, ay);
-    loop.lineTo(ax + 1.6f, ay - 1.6f);
-    strokeAt(loop, cream, 1.2f);
+    // Top arc M3 8 a5 5 0 0 1 9 -3  (sweep flag 1 = clockwise from start)
+    const auto arc = [&](float cx, float cy, float rx, float ry, float startDeg, float endDeg) {
+      const float startRad = juce::degreesToRadians(startDeg);
+      const float endRad = juce::degreesToRadians(endDeg);
+      const auto p0 = pt(cx + rx * std::cos(startRad), cy + ry * std::sin(startRad));
+      loop.startNewSubPath(p0);
+      const int steps = 32;
+      for (int i = 1; i <= steps; ++i) {
+        const float t = startRad + (endRad - startRad) * (static_cast<float>(i) / steps);
+        loop.lineTo(pt(cx + rx * std::cos(t), cy + ry * std::sin(t)));
+      }
+    };
+    // Top half arc from (3,8) to (12,5): centre near (7.5, 8), radius ~5, sweep CW above.
+    arc(7.5f, 8.0f, 5.0f, 5.0f, 180.0f, 300.0f);
+    // Bottom half arc from (13,8) to (4,11).
+    arc(8.5f, 8.0f, 5.0f, 5.0f, 0.0f, 120.0f);
+    // Arrowhead 1 — at top-right: M12 3v3h-3
+    loop.startNewSubPath(pt(12.0f, 3.0f));
+    loop.lineTo(pt(12.0f, 6.0f));
+    loop.lineTo(pt(9.0f, 6.0f));
+    // Arrowhead 2 — at bottom-left: M4 13v-3h3
+    loop.startNewSubPath(pt(4.0f, 13.0f));
+    loop.lineTo(pt(4.0f, 10.0f));
+    loop.lineTo(pt(7.0f, 10.0f));
+    g.setColour(cream);
+    g.strokePath(loop, juce::PathStrokeType(1.6f * scale, juce::PathStrokeType::curved,
+                                            juce::PathStrokeType::butt));
     xPos += iconSize + iconGap;
   }
 
   if (m_fadeInEnabled) {
-    juce::Rectangle<float> box(xPos, yPos, iconSize, iconSize);
+    // SVG fill path: M2 13 14 3 v10 z  (triangle: (2,13)→(14,3)→(14,13)→close).
     juce::Path tri;
-    tri.startNewSubPath(box.getX() + 1.0f, box.getBottom() - 1.0f);
-    tri.lineTo(box.getRight() - 1.0f, box.getBottom() - 1.0f);
-    tri.lineTo(box.getRight() - 1.0f, box.getY() + 1.0f);
+    tri.startNewSubPath(pt(2.0f, 13.0f));
+    tri.lineTo(pt(14.0f, 3.0f));
+    tri.lineTo(pt(14.0f, 13.0f));
     tri.closeSubPath();
     g.setColour(cream);
     g.fillPath(tri);
@@ -456,11 +487,11 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
   }
 
   if (m_fadeOutEnabled) {
-    juce::Rectangle<float> box(xPos, yPos, iconSize, iconSize);
+    // SVG fill path: M2 3 v10 l12 -3 z  (triangle: (2,3)→(2,13)→(14,10)→close).
     juce::Path tri;
-    tri.startNewSubPath(box.getX() + 1.0f, box.getY() + 1.0f);
-    tri.lineTo(box.getRight() - 1.0f, box.getY() + 1.0f);
-    tri.lineTo(box.getX() + 1.0f, box.getBottom() - 1.0f);
+    tri.startNewSubPath(pt(2.0f, 3.0f));
+    tri.lineTo(pt(2.0f, 13.0f));
+    tri.lineTo(pt(14.0f, 10.0f));
     tri.closeSubPath();
     g.setColour(cream);
     g.fillPath(tri);
@@ -468,18 +499,23 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
   }
 
   if (m_stopOthersEnabled) {
-    juce::Rectangle<float> box(xPos, yPos, iconSize, iconSize);
-    // Diamond outline (rotated square) per mockup.
-    juce::Path diamond;
-    const float cx = box.getCentreX();
-    const float cy = box.getCentreY();
-    const float r = iconSize * 0.45f;
-    diamond.startNewSubPath(cx, cy - r);
-    diamond.lineTo(cx + r, cy);
-    diamond.lineTo(cx, cy + r);
-    diamond.lineTo(cx - r, cy);
-    diamond.closeSubPath();
-    strokeAt(diamond, cream, 1.2f);
+    // SVG: shield M8 1.5 14 5 v6 L8 14.5 2 11 V5 z  plus filled circle r=2 at (8,8).
+    juce::Path shield;
+    shield.startNewSubPath(pt(8.0f, 1.5f));
+    shield.lineTo(pt(14.0f, 5.0f));
+    shield.lineTo(pt(14.0f, 11.0f));
+    shield.lineTo(pt(8.0f, 14.5f));
+    shield.lineTo(pt(2.0f, 11.0f));
+    shield.lineTo(pt(2.0f, 5.0f));
+    shield.closeSubPath();
+    g.setColour(cream);
+    g.strokePath(shield, juce::PathStrokeType(1.6f * scale, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::butt));
+    juce::Path dot;
+    const auto centre = pt(8.0f, 8.0f);
+    const float dotR = 2.0f * scale;
+    dot.addEllipse(centre.x - dotR, centre.y - dotR, dotR * 2.0f, dotR * 2.0f);
+    g.fillPath(dot);
     xPos += iconSize + iconGap;
   }
 
