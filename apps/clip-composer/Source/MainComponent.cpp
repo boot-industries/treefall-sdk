@@ -774,6 +774,12 @@ void MainComponent::wireUpTransportCallbacks() {
   if (m_transportControls) {
     m_transportControls->onStopAll = [this]() { onStopAll(); };
     m_transportControls->onPanic = [this]() { onPanic(); };
+    m_transportControls->onCue = [this]() {
+      // TODO(occ149b-cue): dispatch to a real cue-buss handler once the engine
+      // exposes one. For now the click is acknowledged so the operator sees
+      // their press registered.
+      DBG("[OCC149b] Cue requested from transport strip");
+    };
   }
 }
 

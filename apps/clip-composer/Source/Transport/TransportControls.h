@@ -45,6 +45,24 @@ public:
   void resized() override;
 
 private:
+  // Single source of truth for the transport strip geometry. Both paint() and
+  // resized() call this so a) they can never disagree and b) we can collapse
+  // surfaces gracefully under narrow widths without visual collisions.
+  struct Layout {
+    juce::Rectangle<int> stopAll;
+    juce::Rectangle<int> panic;
+    juce::Rectangle<int> latencyLabel;
+    juce::Rectangle<int> cpuLabel;
+    juce::Rectangle<int> memoryLabel;
+    juce::Rectangle<int> statusZone;    // "PLAYING ·" + clip names. Empty if collapsed.
+    juce::Rectangle<int> masterCluster; // MASTER label + meter + dB readout. Empty if collapsed.
+    juce::Rectangle<int> cueButton;
+    bool diagnosticsVisible = true;
+    bool statusVisible = true;
+    bool masterVisible = true;
+  };
+  Layout computeLayout() const;
+
   //==============================================================================
   std::unique_ptr<juce::TextButton> m_stopAllButton;
   std::unique_ptr<juce::TextButton> m_panicButton;
