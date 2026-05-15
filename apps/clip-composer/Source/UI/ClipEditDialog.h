@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ColorSwatchPicker.h"
+#include "ConsoleChipButton.h"
 #include "GroupSelector.h"
 #include "PreviewPlayer.h"
 #include "WaveformDisplay.h"
@@ -212,6 +213,15 @@ private:
   std::unique_ptr<juce::DrawableButton> m_skipToEndButton;
   std::unique_ptr<juce::DrawableButton> m_loopButton;
   std::unique_ptr<juce::ToggleButton> m_stopOthersButton;
+
+  // FLAGS row (the design-kit chip-style toggles). These are the user-facing
+  // controls in the primary mockup anatomy. The legacy m_loopButton / m_stopOthersButton
+  // above are kept hidden as model bridges (keyboard shortcuts and existing
+  // callbacks still reach them) but they don't paint in the new layout.
+  std::unique_ptr<ConsoleChipButton> m_loopChip;
+  std::unique_ptr<ConsoleChipButton> m_fadeInChip;
+  std::unique_ptr<ConsoleChipButton> m_fadeOutChip;
+  std::unique_ptr<ConsoleChipButton> m_stopOthersChip;
   std::unique_ptr<juce::Label> m_transportPositionLabel;
 
   // Preview audio player
