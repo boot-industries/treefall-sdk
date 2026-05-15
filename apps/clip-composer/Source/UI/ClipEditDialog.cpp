@@ -339,7 +339,12 @@ void ClipEditDialog::buildPhase1UI() {
   m_nameEditor->setMultiLine(false);                                // Single line only
   m_nameEditor->setScrollBarThickness(0);                           // No scrollbar
   m_nameEditor->setScrollToShowCursor(true);                        // Scroll to keep cursor visible
-  m_nameEditor->onTextChange = [this]() { m_metadata.displayName = m_nameEditor->getText(); };
+  m_nameEditor->onTextChange = [this]() {
+    m_metadata.displayName = m_nameEditor->getText();
+    // Title bar paints from m_metadata.displayName — repaint so the operator
+    // sees the title track their typing.
+    repaint();
+  };
   m_nameEditor->setReturnKeyStartsNewLine(false); // Enter should NOT insert newline
   m_nameEditor->onReturnKey = [this]() {
     // Enter key = Confirm value and blur field (remove focus)
@@ -1451,7 +1456,7 @@ void ClipEditDialog::paint(juce::Graphics& g) {
   g.setColour(juce::Colour(kTextPrimary));
   g.setFont(OCC::Console::consoleFont(20.0f, juce::Font::bold));
   g.drawText(m_metadata.displayName.isNotEmpty() ? m_metadata.displayName
-                                                 : juce::String("Untitled"),
+                                                 : juce::String("New Clip"),
              20, 20, getWidth() - 160, 26, juce::Justification::centredLeft, false);
 
   // Clip index (mono, right-aligned in title bar).
