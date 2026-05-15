@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipEditDialog.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
 
 using namespace OCC::Design;
@@ -58,8 +59,8 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
   if (m_filePathEditor)
     m_filePathEditor->setText(m_metadata.filePath, false);
 
-  if (m_groupComboBox)
-    m_groupComboBox->setSelectedId(m_metadata.clipGroup + 1, juce::dontSendNotification);
+  if (m_groupSelector)
+    m_groupSelector->setSelectedGroup(m_metadata.clipGroup);
 
   // Set color swatch picker based on metadata color
   if (m_colorSwatchPicker) {
@@ -384,31 +385,28 @@ void ClipEditDialog::buildPhase1UI() {
   m_groupLabel->setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   addAndMakeVisible(m_groupLabel.get());
 
-  m_groupComboBox = std::make_unique<juce::ComboBox>();
-  m_groupComboBox->addItem("Group 1 (Blue)", 1);
-  m_groupComboBox->addItem("Group 2 (Green)", 2);
-  m_groupComboBox->addItem("Group 3 (Orange)", 3);
-  m_groupComboBox->addItem("Group 4 (Red)", 4);
-  m_groupComboBox->onChange = [this]() {
-    m_metadata.clipGroup = m_groupComboBox->getSelectedId() - 1; // 0-3
-  };
-  addAndMakeVisible(m_groupComboBox.get());
+  m_groupSelector = std::make_unique<GroupSelector>();
+  m_groupSelector->setSelectedGroup(m_metadata.clipGroup);
+  m_groupSelector->onGroupChanged = [this](int group) { m_metadata.clipGroup = group; };
+  addAndMakeVisible(m_groupSelector.get());
 
   // Dialog buttons
+  // OK uses the Console primary (Neve blue gradient via LookAndFeel button paint).
   m_okButton = std::make_unique<juce::TextButton>("OK");
-  m_okButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kAccentGreen));
-  m_okButton->setColour(juce::TextButton::buttonOnColourId,
-                        juce::Colour(kAccentGreen).brighter(0.2f));
+  m_okButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kNeveBlue));
+  m_okButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(kNeveBlue).brighter(0.2f));
+  m_okButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+  m_okButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
   m_okButton->onClick = [this]() {
     if (onOkClicked)
       onOkClicked(m_metadata);
   };
   addAndMakeVisible(m_okButton.get());
 
+  // Cancel uses the Console matte grey (default variant).
   m_cancelButton = std::make_unique<juce::TextButton>("Cancel");
-  m_cancelButton->setColour(juce::TextButton::buttonColourId, juce::Colour(kMetalMid));
-  m_cancelButton->setColour(juce::TextButton::buttonOnColourId,
-                            juce::Colour(kMetalMid).brighter(0.2f));
+  m_cancelButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff383d40));
+  m_cancelButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff45494c));
   m_cancelButton->onClick = [this]() {
     if (onCancelClicked)
       onCancelClicked();
@@ -1425,26 +1423,44 @@ void ClipEditDialog::buildPhase3UI() {
 
 //==============================================================================
 void ClipEditDialog::paint(juce::Graphics& g) {
-  // Dark background (Neo-vintage console)
+  // Console chassis background.
   g.fillAll(juce::Colour(kBgPrimary));
 
-  // Styled outer border (professional 2px with Neve blue accent)
+  // Outer border with Neve accent.
   auto bounds = getLocalBounds().toFloat();
   g.setColour(juce::Colour(kNeveBlue).withAlpha(0.6f));
   g.drawRoundedRectangle(bounds.reduced(1.0f), kRadiusLG, kBorderMedium);
 
-  // Inner shadow/depth effect
+  // Inner shadow / depth.
   g.setColour(juce::Colours::black.withAlpha(0.3f));
   g.drawRoundedRectangle(bounds.reduced(3.0f), kRadiusMD, kBorderThin);
 
-  // Title bar
+  // Title bar — mockup spec: eyebrow ("EDIT CLIP") + bold title + clip index (mono, muted).
+  auto titleBar = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), 50.0f);
   g.setColour(juce::Colour(kBgSecondary));
-  g.fillRect(0, 0, getWidth(), 50);
+  g.fillRect(titleBar);
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.drawHorizontalLine(50, 0.0f, static_cast<float>(getWidth()));
 
-  // Title text (24pt bold - Dialog Title hierarchy)
+  // Eyebrow.
+  g.setColour(juce::Colour(kTextSecondary));
+  g.setFont(OCC::Console::monoFont(10.0f, juce::Font::plain));
+  g.drawText("EDIT CLIP", 20, 6, 200, 14, juce::Justification::centredLeft, false);
+
+  // Bold title.
   g.setColour(juce::Colour(kTextPrimary));
-  g.setFont(juce::FontOptions("HK Grotesk", kFont3XL, juce::Font::bold));
-  g.drawText("Clip Edit", 20, 0, 400, 50, juce::Justification::centredLeft, false);
+  g.setFont(OCC::Console::consoleFont(20.0f, juce::Font::bold));
+  g.drawText(m_metadata.displayName.isNotEmpty() ? m_metadata.displayName
+                                                 : juce::String("Untitled"),
+             20, 20, getWidth() - 160, 26, juce::Justification::centredLeft, false);
+
+  // Clip index (mono, right-aligned in title bar).
+  if (m_buttonIndex >= 0) {
+    g.setColour(juce::Colour(kTextSecondary));
+    g.setFont(OCC::Console::monoFont(11.0f, juce::Font::plain));
+    g.drawText("#" + juce::String(m_buttonIndex + 1).paddedLeft('0', 3), getWidth() - 110, 18, 90,
+               18, juce::Justification::centredRight, false);
+  }
 }
 
 void ClipEditDialog::resized() {
@@ -1746,11 +1762,11 @@ void ClipEditDialog::resized() {
     colorGroupRow.removeFromLeft(SPACING);
   }
 
-  // Group label + dropdown (flush with color controls)
-  if (m_groupLabel && m_groupComboBox) {
+  // Group label + A/B/C/D selector (flush with color controls)
+  if (m_groupLabel && m_groupSelector) {
     m_groupLabel->setBounds(colorGroupRow.removeFromLeft(GROUP_LABEL_WIDTH));
     colorGroupRow.removeFromLeft(SPACING / 2);
-    m_groupComboBox->setBounds(colorGroupRow); // Takes remaining width
+    m_groupSelector->setBounds(colorGroupRow); // Takes remaining width
   }
 
   contentArea.removeFromTop(GRID * 1.5); // Added bottom margin for color/group row

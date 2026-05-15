@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ColorSwatchPicker.h"
+#include "GroupSelector.h"
 #include "PreviewPlayer.h"
 #include "WaveformDisplay.h"
 #include <functional>
@@ -191,7 +192,7 @@ private:
   std::unique_ptr<ColorSwatchPicker> m_colorSwatchPicker;
 
   std::unique_ptr<juce::Label> m_groupLabel;
-  std::unique_ptr<juce::ComboBox> m_groupComboBox;
+  std::unique_ptr<GroupSelector> m_groupSelector;
 
   std::unique_ptr<juce::Label> m_filePathLabel;
   std::unique_ptr<juce::TextEditor> m_filePathEditor;
