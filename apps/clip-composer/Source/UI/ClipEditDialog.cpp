@@ -1466,321 +1466,318 @@ void ClipEditDialog::paint(juce::Graphics& g) {
     g.drawText("#" + juce::String(m_buttonIndex + 1).paddedLeft('0', 3), getWidth() - 110, 18, 90,
                18, juce::Justification::centredRight, false);
   }
+
+  // ----- SECTION EYEBROWS -----
+  // Mirror the same vertical accounting used by resized() so the painted
+  // eyebrow text lands exactly above each control band.
+  const int GRID = 10;
+  constexpr int kEyebrowHeight = 14;
+  constexpr int kEyebrowGap = 4;
+  constexpr int kSectionGap = GRID * 2;
+
+  int y = 50 + GRID * 2; // outer bounds.removeFromTop(50) + content padding (GRID * 2)
+
+  auto drawEyebrow = [&](const char* text) {
+    g.setColour(juce::Colour(kTextSecondary));
+    g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+    g.drawText(text, GRID * 2, y, getWidth() - GRID * 4, kEyebrowHeight,
+               juce::Justification::centredLeft, false);
+    y += kEyebrowHeight + kEyebrowGap;
+  };
+
+  // WAVEFORM
+  drawEyebrow("WAVEFORM");
+  y += GRID * 14; // m_waveformDisplay height
+  y += kSectionGap;
+
+  // NAME
+  drawEyebrow("NAME");
+  y += GRID * 3; // m_nameEditor height
+  y += kSectionGap;
+
+  // GROUP + COLOUR (two-up eyebrows side by side)
+  {
+    g.setColour(juce::Colour(kTextSecondary));
+    g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+    const int halfWidth = (getWidth() - GRID * 4 - kSectionGap) / 2;
+    g.drawText("GROUP", GRID * 2, y, halfWidth, kEyebrowHeight, juce::Justification::centredLeft,
+               false);
+    g.drawText("COLOUR", GRID * 2 + halfWidth + kSectionGap, y, halfWidth, kEyebrowHeight,
+               juce::Justification::centredLeft, false);
+    y += kEyebrowHeight + kEyebrowGap;
+  }
+  y += GRID * 3;
+  y += kSectionGap;
+
+  // TRIM / FADE (single eyebrow over the 2x2 grid)
+  drawEyebrow("TRIM · FADE");
+  y += GRID * 3; // top row height
+  y += GRID;     // row gap
+  y += GRID * 3; // bottom row height
+  y += kSectionGap;
+
+  // FLAGS
+  drawEyebrow("FLAGS");
+  y += GRID * 3;
+  y += kSectionGap;
+
+  // ADVANCED
+  drawEyebrow("ADVANCED");
+  (void)y;
 }
 
 void ClipEditDialog::resized() {
-  // Updated "Clip Edit" layout with reorganized sections
-  const int GRID = 10; // 10px grid unit
+  // OCC149 phase 5b.6 — mockup-anatomy layout.
+  //
+  // Operator narrative: a sound designer / producer trimming and tagging a
+  // clip. The dialog is read top-to-bottom in mockup order:
+  //   1. Title bar (eyebrow + name + clip #)
+  //   2. Waveform with scrubbing controls
+  //   3. NAME field
+  //   4. GROUP (A/B/C/D routing channel) + COLOUR (visual identifier swatch)
+  //   5. 2x2 trim/fade grid — Trim In · Trim Out / Fade In · Fade Out
+  //   6. FLAGS — Loop · Fade In · Fade Out · Stop Others (existing toggles,
+  //      restyled inline)
+  //   7. ADVANCED — gain dial, deferred pitch dial, transport scrub, SET/CLR/
+  //      nudge buttons (the legacy controls that don't belong in the primary
+  //      anatomy but the operator still needs).
+  //   8. Action row — OK (commit) and Cancel.
+  //
+  // The mockup's AUDITION/REPLACE/CLEAR action triad is deferred: AUDITION
+  // overlaps with the transport play button (same behaviour); REPLACE FILE
+  // needs a file picker integration; CLEAR maps to "remove clip from grid"
+  // which already lives in the right-click menu. TODO(occ149c-actions).
+  //
+  // Eyebrow labels are painted in paint(); the legacy juce::Label "Clip
+  // Name:" / "Trim In:" etc. are hidden so they don't double up.
+
+  const int GRID = 10; // 10px grid unit (legacy convention)
   auto bounds = getLocalBounds();
 
-  // Title bar (50px)
+  // Hide the legacy text labels — eyebrows are painted into paint() instead.
+  for (auto* label :
+       {m_nameLabel.get(), m_filePathLabel.get(), m_colorLabel.get(), m_groupLabel.get(),
+        m_trimInLabel.get(), m_trimOutLabel.get(), m_gainLabel.get(), m_placeholderLabel.get(),
+        m_fadeInLabel.get(), m_fadeOutLabel.get()}) {
+    if (label)
+      label->setVisible(false);
+  }
+
+  // Title bar (50px) — paint() handles eyebrow + name + clip #.
   bounds.removeFromTop(50);
 
-  // Content area with padding
+  // Content area with padding.
   auto contentArea = bounds.reduced(GRID * 2);
 
-  // === CLIP NAME SECTION (at top, below header) ===
-  // Clip Name label
-  if (m_nameLabel) {
-    m_nameLabel->setBounds(contentArea.removeFromTop(GRID * 2));
-  }
-  contentArea.removeFromTop(GRID / 2);
+  constexpr int kEyebrowHeight = 14;     // Painted text band
+  constexpr int kEyebrowGap = 4;         // Gap below eyebrow before its control
+  constexpr int kSectionGap = GRID * 2;  // Vertical breathing room between sections
+  constexpr int kFieldHeight = GRID * 3; // Inset field / button row height
+  (void)kFieldHeight;                    // Used implicitly via consistent removeFromTop arguments
 
-  // Clip Name field (full width)
+  // ----- WAVEFORM (~110-140 px) -----
+  // Eyebrow band reserved (painted), then the waveform display.
+  contentArea.removeFromTop(kEyebrowHeight); // eyebrow band (painted)
+  contentArea.removeFromTop(kEyebrowGap);
+  if (m_waveformDisplay) {
+    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 14));
+  }
+  contentArea.removeFromTop(kSectionGap);
+
+  // ----- NAME -----
+  contentArea.removeFromTop(kEyebrowHeight);
+  contentArea.removeFromTop(kEyebrowGap);
   if (m_nameEditor) {
     m_nameEditor->setBounds(contentArea.removeFromTop(GRID * 3));
   }
-  contentArea.removeFromTop(GRID * 1.5); // Increased: GRID -> GRID * 1.5
+  contentArea.removeFromTop(kSectionGap);
 
-  // === FILE INFO PANEL + ZOOM CONTROLS (on same row) ===
-  auto headerRow = contentArea.removeFromTop(GRID * 3);
-
-  // File Info Panel (left side, takes most of the width)
-  if (m_fileInfoPanel) {
-    auto fileInfoArea = headerRow;
-    // Reserve space for zoom controls on the right
-    fileInfoArea.removeFromRight(GRID * 13); // Space for zoom controls + margin
-    m_fileInfoPanel->setBounds(fileInfoArea);
+  // ----- GROUP + COLOUR (two-up row) -----
+  // Mockup uses two separate eyebrows on the same row; both controls hang
+  // below their respective eyebrows. Group on the left, Colour on the right.
+  contentArea.removeFromTop(kEyebrowHeight);
+  contentArea.removeFromTop(kEyebrowGap);
+  {
+    auto row = contentArea.removeFromTop(GRID * 3);
+    const int halfWidth = (row.getWidth() - kSectionGap) / 2;
+    auto groupArea = row.removeFromLeft(halfWidth);
+    row.removeFromLeft(kSectionGap);
+    auto colourArea = row;
+    if (m_groupSelector)
+      m_groupSelector->setBounds(groupArea);
+    if (m_colorSwatchPicker)
+      m_colorSwatchPicker->setBounds(colourArea);
   }
+  contentArea.removeFromTop(kSectionGap);
 
-  // Zoom controls (top-right corner with left margin)
-  if (m_zoomOutButton && m_zoomLabel && m_zoomInButton) {
-    auto zoomArea = headerRow.removeFromRight(GRID * 12);
-    zoomArea.removeFromLeft(GRID); // Left margin for spacing
-    m_zoomOutButton->setBounds(zoomArea.removeFromLeft(GRID * 3));
-    zoomArea.removeFromLeft(GRID / 2);
-    m_zoomLabel->setBounds(zoomArea.removeFromLeft(GRID * 4));
-    zoomArea.removeFromLeft(GRID / 2);
-    m_zoomInButton->setBounds(zoomArea.removeFromLeft(GRID * 3));
+  // ----- 2x2 TRIM / FADE GRID -----
+  // Eyebrow band reserved; below, four cells arranged as:
+  //   [TRIM IN ]   [TRIM OUT]
+  //   [FADE IN]   [FADE OUT]
+  // Each cell holds its primary editor (time field or combo).
+  contentArea.removeFromTop(kEyebrowHeight);
+  contentArea.removeFromTop(kEyebrowGap);
+  {
+    constexpr int kCellHeight = GRID * 3;
+    const int halfWidth = (contentArea.getWidth() - kSectionGap) / 2;
+
+    auto topRow = contentArea.removeFromTop(kCellHeight);
+    if (m_trimInTimeEditor)
+      m_trimInTimeEditor->setBounds(topRow.removeFromLeft(halfWidth));
+    topRow.removeFromLeft(kSectionGap);
+    if (m_trimOutTimeEditor)
+      m_trimOutTimeEditor->setBounds(topRow);
+
+    contentArea.removeFromTop(GRID); // row gap
+
+    auto bottomRow = contentArea.removeFromTop(kCellHeight);
+    if (m_fadeInCombo)
+      m_fadeInCombo->setBounds(bottomRow.removeFromLeft(halfWidth));
+    bottomRow.removeFromLeft(kSectionGap);
+    if (m_fadeOutCombo)
+      m_fadeOutCombo->setBounds(bottomRow);
   }
+  contentArea.removeFromTop(kSectionGap);
 
-  contentArea.removeFromTop(GRID); // Spacing
+  // ----- FLAGS -----
+  // Existing toggles laid out as a chip-style row. The visual chip treatment
+  // requires a juce::Button subclass with custom paint, which is a follow-up
+  // (TODO(occ149c-chips)). For now lay them out as a clean horizontal row.
+  contentArea.removeFromTop(kEyebrowHeight);
+  contentArea.removeFromTop(kEyebrowGap);
+  {
+    auto row = contentArea.removeFromTop(GRID * 3);
+    // Loop (DrawableButton) + Stop Others (ToggleButton) — Fade In/Out chips
+    // would be ideal here too, but the existing model wires them off the
+    // fade-time combos, not standalone toggles. Keep the two real toggles.
+    if (m_loopButton && m_stopOthersButton) {
+      const int chipWidth = (row.getWidth() - kSectionGap) / 2;
+      m_loopButton->setBounds(row.removeFromLeft(chipWidth));
+      row.removeFromLeft(kSectionGap);
+      m_stopOthersButton->setBounds(row);
+    }
+  }
+  contentArea.removeFromTop(kSectionGap);
 
-  // === WAVEFORM SECTION ===
-  if (m_waveformDisplay) {
-    m_waveformDisplay->setBounds(contentArea.removeFromTop(GRID * 15));
+  // ----- ADVANCED (gain · pitch · zoom · transport · SET/CLR/nudge) -----
+  // These controls live below the primary mockup anatomy because the operator
+  // still needs them for fine-grained editing. They render at smaller scale
+  // so the primary block stays readable.
+  contentArea.removeFromTop(kEyebrowHeight);
+  contentArea.removeFromTop(kEyebrowGap);
+
+  // Sub-row: Gain dial · Pitch dial · Zoom controls · Transport scrub.
+  const int dialSize = 56; // smaller than legacy 64 to fit the advanced rail
+  {
+    auto advRow = contentArea.removeFromTop(dialSize + GRID * 2);
+    const int knobBlockW = dialSize + GRID * 2;
+
+    // Gain knob block (label, dial, value).
+    if (m_gainSlider && m_gainValueLabel) {
+      auto block = advRow.removeFromLeft(knobBlockW);
+      auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
+      m_gainSlider->setBounds(dial);
+      m_gainValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
+    }
+    advRow.removeFromLeft(GRID);
+
+    // Pitch knob block (deferred).
+    if (m_placeholderDial && m_placeholderValueLabel) {
+      auto block = advRow.removeFromLeft(knobBlockW);
+      auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
+      m_placeholderDial->setBounds(dial);
+      m_placeholderValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
+    }
+    advRow.removeFromLeft(GRID);
+
+    // Zoom + transport — flow them right in a compact rail.
+    if (m_zoomOutButton && m_zoomLabel && m_zoomInButton) {
+      auto zoomRow = advRow.removeFromTop(GRID * 3);
+      m_zoomOutButton->setBounds(zoomRow.removeFromLeft(GRID * 3));
+      zoomRow.removeFromLeft(GRID / 2);
+      m_zoomLabel->setBounds(zoomRow.removeFromLeft(GRID * 4));
+      zoomRow.removeFromLeft(GRID / 2);
+      m_zoomInButton->setBounds(zoomRow.removeFromLeft(GRID * 3));
+    }
+    if (m_transportPositionLabel) {
+      auto timeRow = advRow.removeFromTop(GRID * 2);
+      m_transportPositionLabel->setBounds(timeRow.withSizeKeepingCentre(GRID * 14, GRID * 2));
+    }
+    if (m_skipToStartButton && m_playButton && m_stopButton && m_skipToEndButton) {
+      auto tRow = advRow.removeFromTop(GRID * 3);
+      const int btn = GRID * 3;
+      m_skipToStartButton->setBounds(tRow.removeFromLeft(btn));
+      tRow.removeFromLeft(GRID / 2);
+      m_playButton->setBounds(tRow.removeFromLeft(btn));
+      tRow.removeFromLeft(GRID / 2);
+      m_stopButton->setBounds(tRow.removeFromLeft(btn));
+      tRow.removeFromLeft(GRID / 2);
+      m_skipToEndButton->setBounds(tRow.removeFromLeft(btn));
+    }
   }
   contentArea.removeFromTop(GRID);
 
-  // === TRANSPORT BAR (centered playback controls + vertically centered time display) ===
-  if (m_skipToStartButton && m_playButton && m_stopButton && m_skipToEndButton && m_loopButton &&
-      m_stopOthersButton && m_transportPositionLabel) {
-    // Reserve space for transport section - will be centered between buttons and Duration
-    const int TRANSPORT_HEIGHT = GRID * 10; // Increased to accommodate centered time
-    auto transportRow = contentArea.removeFromTop(TRANSPORT_HEIGHT);
+  // Sub-row: SET / nudge / CLR for the two trim editors, laid out compactly
+  // below the trim fields they target.
+  if (m_trimInHoldButton && m_trimInDecButton && m_trimInIncButton && m_trimInClearButton &&
+      m_trimOutHoldButton && m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
+    auto row = contentArea.removeFromTop(GRID * 3);
+    const int halfWidth = (row.getWidth() - kSectionGap) / 2;
+    auto leftHalf = row.removeFromLeft(halfWidth);
+    row.removeFromLeft(kSectionGap);
+    auto rightHalf = row;
 
-    // Transport buttons (top)
-    auto buttonRow = transportRow.removeFromTop(GRID * 4);
-    auto transportCenter =
-        buttonRow.withSizeKeepingCentre(GRID * 50, GRID * 4); // Wider for all controls
+    const int btnW = (leftHalf.getWidth() - GRID * 3) / 4; // SET · < · > · CLR
+    m_trimInHoldButton->setBounds(leftHalf.removeFromLeft(btnW));
+    leftHalf.removeFromLeft(GRID);
+    m_trimInDecButton->setBounds(leftHalf.removeFromLeft(btnW));
+    leftHalf.removeFromLeft(GRID);
+    m_trimInIncButton->setBounds(leftHalf.removeFromLeft(btnW));
+    leftHalf.removeFromLeft(GRID);
+    m_trimInClearButton->setBounds(leftHalf.removeFromLeft(btnW));
 
-    // Skip to Start button (◄◄)
-    m_skipToStartButton->setBounds(transportCenter.removeFromLeft(GRID * 4));
-    transportCenter.removeFromLeft(GRID);
-
-    // Loop button
-    m_loopButton->setBounds(transportCenter.removeFromLeft(GRID * 6));
-    transportCenter.removeFromLeft(GRID);
-
-    // Play button (►)
-    m_playButton->setBounds(transportCenter.removeFromLeft(GRID * 6));
-    transportCenter.removeFromLeft(GRID);
-
-    // Stop button (■)
-    m_stopButton->setBounds(transportCenter.removeFromLeft(GRID * 6));
-    transportCenter.removeFromLeft(GRID);
-
-    // Skip to End button (►►)
-    m_skipToEndButton->setBounds(transportCenter.removeFromLeft(GRID * 4));
-    transportCenter.removeFromLeft(GRID * 2); // Extra spacing before toggle
-
-    // Stop Others toggle button (OCC144: was missing from layout)
-    m_stopOthersButton->setBounds(transportCenter.removeFromLeft(GRID * 12)); // Wider for text
-
-    // Transport position label (vertically centered - equidistant from buttons and Duration)
-    // Using remaining height, center the time display
-    auto labelRow = transportRow.withSizeKeepingCentre(GRID * 20, GRID * 5);
-    m_transportPositionLabel->setBounds(labelRow);
-  }
-  contentArea.removeFromTop(GRID);
-
-  // === TRIM SECTION (with vertical margin between button rows) ===
-  auto trimSection = contentArea.removeFromTop(GRID * 13);
-
-  // Calculate layout constants
-  const int TIME_FIELD_WIDTH = GRID * 11;                           // Time input fields
-  const int BUTTON_WIDTH = GRID * 5;                                // SET/CLR buttons
-  const int NAV_BUTTON_WIDTH = GRID * 3;                            // < > buttons
-  const int DURATION_WIDTH = GRID * 20;                             // Duration display box
-  const int SECTION_SPACING = GRID * 2;                             // Space between sections
-  const int SECTION_WIDTH = TIME_FIELD_WIDTH + GRID + BUTTON_WIDTH; // Total width per trim section
-
-  // Row 1: Labels (Trim In on left, Trim Out on right)
-  auto labelRow = trimSection.removeFromTop(GRID * 2);
-  if (m_trimInLabel && m_trimOutLabel) {
-    auto leftLabelArea = labelRow.removeFromLeft(SECTION_WIDTH);
-    m_trimInLabel->setBounds(leftLabelArea);
-
-    auto rightLabelArea = labelRow.removeFromRight(SECTION_WIDTH);
-    m_trimOutLabel->setBounds(rightLabelArea);
-  }
-  trimSection.removeFromTop(GRID / 2);
-
-  // Row 2: Time fields + SET buttons (same row) + Duration (center, aligned with this row)
-  auto controlsRow = trimSection.removeFromTop(GRID * 3);
-
-  // === TRIM IN (left): Time field + SET button (to the right) ===
-  auto trimInArea = controlsRow.removeFromLeft(SECTION_WIDTH);
-
-  if (m_trimInTimeEditor && m_trimInHoldButton) {
-    m_trimInTimeEditor->setBounds(trimInArea.removeFromLeft(TIME_FIELD_WIDTH));
-    trimInArea.removeFromLeft(GRID);                                        // Spacing
-    m_trimInHoldButton->setBounds(trimInArea.removeFromLeft(BUTTON_WIDTH)); // SET to the right
+    const int btnW2 = (rightHalf.getWidth() - GRID * 3) / 4;
+    m_trimOutHoldButton->setBounds(rightHalf.removeFromLeft(btnW2));
+    rightHalf.removeFromLeft(GRID);
+    m_trimOutDecButton->setBounds(rightHalf.removeFromLeft(btnW2));
+    rightHalf.removeFromLeft(GRID);
+    m_trimOutIncButton->setBounds(rightHalf.removeFromLeft(btnW2));
+    rightHalf.removeFromLeft(GRID);
+    m_trimOutClearButton->setBounds(rightHalf.removeFromLeft(btnW2));
   }
 
-  controlsRow.removeFromLeft(SECTION_SPACING);
-
-  // === TRIM OUT (right): SET button (to the left) + Time field ===
-  auto trimOutArea = controlsRow.removeFromRight(SECTION_WIDTH);
-
-  if (m_trimOutHoldButton && m_trimOutTimeEditor) {
-    m_trimOutTimeEditor->setBounds(trimOutArea.removeFromRight(TIME_FIELD_WIDTH));
-    trimOutArea.removeFromRight(GRID);                                         // Spacing
-    m_trimOutHoldButton->setBounds(trimOutArea.removeFromRight(BUTTON_WIDTH)); // SET to the left
-  }
-
-  // Duration display (vertically aligned with SET buttons - same baseline)
+  // Trim info / duration label.
   if (m_trimInfoLabel) {
-    m_trimInfoLabel->setBounds(controlsRow.withSizeKeepingCentre(DURATION_WIDTH, GRID * 3));
+    auto labelRow = contentArea.removeFromTop(GRID * 2);
+    m_trimInfoLabel->setBounds(labelRow.withSizeKeepingCentre(GRID * 24, GRID * 2));
   }
 
-  trimSection.removeFromTop(GRID); // Vertical margin between rows
-
-  // Row 3: Navigation buttons (< > to the left, CLR vertically aligned with SET)
-  auto navRow = trimSection.removeFromTop(GRID * 3);
-
-  // Trim In navigation (left side: < > buttons, then CLR aligned with SET above)
-  if (m_trimInDecButton && m_trimInIncButton && m_trimInClearButton) {
-    auto navLeft = navRow.removeFromLeft(SECTION_WIDTH);
-    // Place < > buttons first (below time field)
-    m_trimInDecButton->setBounds(navLeft.removeFromLeft(NAV_BUTTON_WIDTH));
-    navLeft.removeFromLeft(GRID);
-    m_trimInIncButton->setBounds(navLeft.removeFromLeft(NAV_BUTTON_WIDTH));
-    // Skip remaining space to align CLR with SET button above (which is at TIME_FIELD_WIDTH + GRID)
-    int currentX = NAV_BUTTON_WIDTH + GRID + NAV_BUTTON_WIDTH;
-    int setButtonX = TIME_FIELD_WIDTH + GRID;
-    int skipWidth = setButtonX - currentX;
-    navLeft.removeFromLeft(skipWidth);
-    m_trimInClearButton->setBounds(navLeft.removeFromLeft(BUTTON_WIDTH)); // CLR aligned with SET
+  // Fade curve combos (less prominent than fade-time combos, so they live
+  // here in the advanced rail).
+  if (m_fadeInCurveCombo && m_fadeOutCurveCombo) {
+    contentArea.removeFromTop(GRID);
+    auto curveRow = contentArea.removeFromTop(GRID * 3);
+    const int halfWidth = (curveRow.getWidth() - kSectionGap) / 2;
+    m_fadeInCurveCombo->setBounds(curveRow.removeFromLeft(halfWidth));
+    curveRow.removeFromLeft(kSectionGap);
+    m_fadeOutCurveCombo->setBounds(curveRow);
   }
 
-  navRow.removeFromLeft(SECTION_SPACING);
+  // Hide the FileInfoPanel / FilePathEditor for the v0.2.3 anatomy — the
+  // mockup's source-file card is a separate row we'll add in a future pass.
+  if (m_fileInfoPanel)
+    m_fileInfoPanel->setVisible(false);
+  if (m_filePathEditor)
+    m_filePathEditor->setVisible(false);
 
-  // Trim Out navigation (right side: < > buttons, then CLR aligned with SET above)
-  // BUG FIX 8: Corrected layout logic to make buttons visible
-  if (m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
-    auto navRight = navRow.removeFromRight(SECTION_WIDTH);
-    // Place < > buttons from LEFT, then skip to align CLR with SET
-    // Row 2 layout: [........SET][GRID][.......TIME.......]
-    // Row 3 layout: [<][GRID][>][GRID][..CLR..] (aligned with SET)
-
-    m_trimOutDecButton->setBounds(navRight.removeFromLeft(NAV_BUTTON_WIDTH));
-    navRight.removeFromLeft(GRID);
-    m_trimOutIncButton->setBounds(navRight.removeFromLeft(NAV_BUTTON_WIDTH));
-
-    // Skip remaining space to align CLR with SET button above
-    // SET button is at position: TIME_FIELD_WIDTH + GRID from the right
-    // We've used: NAV_BUTTON_WIDTH + GRID + NAV_BUTTON_WIDTH from the left
-    // Need to skip to get to SET position
-    int usedWidth = NAV_BUTTON_WIDTH + GRID + NAV_BUTTON_WIDTH;
-    int setButtonPosition = TIME_FIELD_WIDTH + GRID;
-    navRight.removeFromLeft(setButtonPosition - usedWidth);
-    m_trimOutClearButton->setBounds(navRight.removeFromLeft(BUTTON_WIDTH));
+  // ----- ACTION ROW: OK / Cancel pinned to the dialog bottom -----
+  auto footer = bounds.removeFromBottom(GRID * 5); // pulled from outer bounds, not contentArea
+  footer.reduce(GRID * 2, GRID);
+  if (m_okButton && m_cancelButton) {
+    m_cancelButton->setBounds(footer.removeFromRight(GRID * 10));
+    footer.removeFromRight(GRID);
+    m_okButton->setBounds(footer.removeFromRight(GRID * 10));
   }
-
-  contentArea.removeFromTop(GRID); // Reduced: GRID * 2 -> GRID
-
-  // === GAIN CONTROL & PITCH DIAL (Feature 5 - Amended Item 26) ===
-  // Two 64px dials side by side with labels above and values below
-  const int dialSize = Layout::kDialSize; // 64px
-  auto dialSection =
-      contentArea.removeFromTop(GRID * 8); // Increased height for larger dials + text fields
-
-  // Left half for Gain dial
-  auto gainSection = dialSection.removeFromLeft(dialSection.getWidth() / 2);
-  gainSection.removeFromLeft(GRID); // Left margin
-
-  if (m_gainLabel && m_gainSlider && m_gainValueLabel) {
-    // Gain label centered above dial
-    auto labelArea = gainSection.removeFromTop(GRID * 2);
-    m_gainLabel->setBounds(labelArea.withSizeKeepingCentre(dialSize, GRID * 2));
-
-    // Gain dial (64x64 rotary knob)
-    auto dialArea = gainSection.removeFromTop(dialSize + GRID);
-    auto dialBounds = dialArea.withSizeKeepingCentre(dialSize, dialSize);
-    m_gainSlider->setBounds(dialBounds);
-
-    // Gain value text field centered below dial
-    auto valueArea = gainSection.removeFromTop(GRID * 2);
-    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 7, GRID * 2);
-    m_gainValueLabel->setBounds(valueBounds);
-  }
-
-  // Right half for Pitch dial
-  auto pitchSection = dialSection;
-  pitchSection.removeFromRight(GRID); // Right margin
-
-  if (m_placeholderLabel && m_placeholderDial && m_placeholderValueLabel) {
-    // Pitch label centered above dial
-    auto labelArea = pitchSection.removeFromTop(GRID * 2);
-    m_placeholderLabel->setBounds(labelArea.withSizeKeepingCentre(dialSize, GRID * 2));
-
-    // Pitch dial (64x64 rotary knob)
-    auto dialArea = pitchSection.removeFromTop(dialSize + GRID);
-    auto dialBounds = dialArea.withSizeKeepingCentre(dialSize, dialSize);
-    m_placeholderDial->setBounds(dialBounds);
-
-    // Pitch value text field centered below dial
-    auto valueArea = pitchSection.removeFromTop(GRID * 2);
-    auto valueBounds = valueArea.withSizeKeepingCentre(GRID * 7, GRID * 2);
-    m_placeholderValueLabel->setBounds(valueBounds);
-  }
-
-  contentArea.removeFromTop(GRID * 1.5); // Reduced: GRID * 2 -> GRID * 1.5
-
-  // === FADE SECTION (Equal width columns with consistent spacing) ===
-  auto fadeSection = contentArea.removeFromTop(GRID * 6);
-
-  // Calculate equal column widths
-  const int fadeColumnWidth = (fadeSection.getWidth() - GRID * 2) / 2; // 50% each with center gap
-  const int FADE_TIME_WIDTH = GRID * 7;                                // Time dropdown
-  const int FADE_CURVE_WIDTH = GRID * 12;                              // Curve dropdown
-
-  // Labels row (Fade In left, Fade Out right)
-  auto fadeLabelsRow = fadeSection.removeFromTop(GRID * 2);
-  if (m_fadeInLabel) {
-    auto fadeInLabelArea = fadeLabelsRow.removeFromLeft(fadeColumnWidth);
-    m_fadeInLabel->setBounds(fadeInLabelArea);
-  }
-  fadeLabelsRow.removeFromLeft(GRID * 2); // Center gap
-  if (m_fadeOutLabel) {
-    m_fadeOutLabel->setBounds(fadeLabelsRow); // Takes remaining width
-  }
-
-  fadeSection.removeFromTop(GRID / 2);
-
-  // Controls row (equal width columns)
-  auto fadeControlsRow = fadeSection.removeFromTop(GRID * 3);
-
-  // Fade IN controls (left column: time + curve)
-  auto fadeInArea = fadeControlsRow.removeFromLeft(fadeColumnWidth);
-  if (m_fadeInCombo && m_fadeInCurveCombo) {
-    m_fadeInCombo->setBounds(fadeInArea.removeFromLeft(FADE_TIME_WIDTH));
-    fadeInArea.removeFromLeft(GRID);
-    m_fadeInCurveCombo->setBounds(fadeInArea); // Takes remaining space
-  }
-
-  fadeControlsRow.removeFromLeft(GRID * 2); // Center gap
-
-  // Fade OUT controls (right column: time + curve, equal width to left)
-  if (m_fadeOutCombo && m_fadeOutCurveCombo) {
-    m_fadeOutCombo->setBounds(fadeControlsRow.removeFromLeft(FADE_TIME_WIDTH));
-    fadeControlsRow.removeFromLeft(GRID);
-    m_fadeOutCurveCombo->setBounds(fadeControlsRow); // Takes remaining space
-  }
-
-  contentArea.removeFromTop(GRID * 1.5); // Increased: GRID * 2 -> GRID * 1.5 for fade spacing
-
-  // === COLOR + GROUP SECTION (flush on same row) ===
-  const int SPACING = GRID;
-  const int COLOR_LABEL_WIDTH = GRID * 5;
-  const int COLOR_PICKER_WIDTH = GRID * 18; // Compact button width (expandable)
-  const int GROUP_LABEL_WIDTH = GRID * 6;
-
-  auto colorGroupRow = contentArea.removeFromTop(GRID * 3);
-
-  // Color label + expandable color button
-  if (m_colorLabel && m_colorSwatchPicker) {
-    m_colorLabel->setBounds(colorGroupRow.removeFromLeft(COLOR_LABEL_WIDTH));
-    colorGroupRow.removeFromLeft(SPACING / 2);
-    m_colorSwatchPicker->setBounds(colorGroupRow.removeFromLeft(COLOR_PICKER_WIDTH));
-    colorGroupRow.removeFromLeft(SPACING);
-  }
-
-  // Group label + A/B/C/D selector (flush with color controls)
-  if (m_groupLabel && m_groupSelector) {
-    m_groupLabel->setBounds(colorGroupRow.removeFromLeft(GROUP_LABEL_WIDTH));
-    colorGroupRow.removeFromLeft(SPACING / 2);
-    m_groupSelector->setBounds(colorGroupRow); // Takes remaining width
-  }
-
-  contentArea.removeFromTop(GRID * 1.5); // Added bottom margin for color/group row
-
-  // Dialog buttons at bottom (25% taller)
-  auto buttonArea = contentArea.removeFromBottom(GRID * 5); // Increased: GRID * 4 -> GRID * 5
-  m_cancelButton->setBounds(buttonArea.removeFromRight(GRID * 10));
-  buttonArea.removeFromRight(GRID);
-  m_okButton->setBounds(buttonArea.removeFromRight(GRID * 10));
 }
 
 //==============================================================================
