@@ -1,6 +1,6 @@
 # Orpheus Clip Composer - Implementation Progress
 
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-15
 **Current Phase:** Clip Composer UI refresh
 **Application Status:** v0.2.2-alpha UI refresh branch
 **Framework:** JUCE 8.0.4
@@ -32,10 +32,18 @@ Delivered the first implementation milestone:
 7. ✅ Clip button rendering refreshed for density-aware Console styling
 8. ✅ macOS app bundle launch repaired for the generated build
 
+Corrective visual reset after mockup review:
+
+1. ✅ Reworked Playout as the true live chassis: 36px top strip, 52px bottom strip, no inspector
+2. ✅ Added full authoring shell for Edit/Routing/Preferences with 420px right inspector
+3. ✅ Added `12x8` visible density for the design-system live dense target while keeping 100 logical slots per tab
+4. ✅ Replaced raw prototype clip-cell treatment with matte Console wells, muted empty states, left group stripe, and density-aware text collapse
+5. ✅ Updated tests for `12x8`, 100-slot capacity, and deferred `10x12`
+
 **Next Steps:**
 
-- Continue the visual polish pass across the remaining secondary dialogs and callouts
-- Manual smoke every grid density preset and each operator mode
+- Continue the visual polish pass across deep secondary dialog internals where they still use old spacing assumptions
+- Manual smoke every grid density preset and each operator mode with a populated session
 - Expand any design-system updates in the design-system repo once that repo is writable in the current task context
 
 ---
@@ -149,7 +157,7 @@ Delivered the first implementation milestone:
 **Clip Grid System:** ✅ Complete, UI refresh in progress
 
 - 8 tabs with 100 logical UI slots per tab
-- Visible density presets from 6x6 through 10x10
+- Visible density presets from 6x6 through 10x10 plus the live-dense 12x8 preset
 - Audio pre-allocation remains at 960 slots for the deferred wider-capacity migration
 - Color coding and visual feedback
 - Keyboard shortcuts

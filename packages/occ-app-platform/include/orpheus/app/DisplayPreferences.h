@@ -45,6 +45,7 @@ public:
     Columns6Rows8,
     Columns8Rows8,
     Columns10Rows8,
+    Columns12Rows8,
     Columns6Rows10,
     Columns8Rows10,
     Columns10Rows10

@@ -273,6 +273,8 @@ juce::String DisplayPreferences::gridLayoutToString(GridLayout layout) {
     return "8x8";
   case GridLayout::Columns10Rows8:
     return "10x8";
+  case GridLayout::Columns12Rows8:
+    return "12x8";
   case GridLayout::Columns6Rows10:
     return "6x10";
   case GridLayout::Columns8Rows10:
@@ -294,6 +296,8 @@ DisplayPreferences::GridLayout DisplayPreferences::stringToGridLayout(const juce
     return GridLayout::Columns8Rows8;
   if (str == "10x8")
     return GridLayout::Columns10Rows8;
+  if (str == "12x8")
+    return GridLayout::Columns12Rows8;
   if (str == "6x10")
     return GridLayout::Columns6Rows10;
   if (str == "8x10")
@@ -368,6 +372,8 @@ int DisplayPreferences::getGridLayoutColumns(GridLayout layout) {
   case GridLayout::Columns10Rows8:
   case GridLayout::Columns10Rows10:
     return 10;
+  case GridLayout::Columns12Rows8:
+    return 12;
   case GridLayout::Columns8Rows6:
   case GridLayout::Columns8Rows8:
   case GridLayout::Columns8Rows10:
@@ -389,6 +395,7 @@ int DisplayPreferences::getGridLayoutRows(GridLayout layout) {
   case GridLayout::Columns6Rows8:
   case GridLayout::Columns8Rows8:
   case GridLayout::Columns10Rows8:
+  case GridLayout::Columns12Rows8:
     return 8;
   }
   return 6;

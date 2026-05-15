@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "TransportControls.h"
+#include "../UI/ConsoleTheme.h"
 #include "../UI/DesignTokens.h"
 
 //==============================================================================
@@ -53,53 +54,93 @@ TransportControls::TransportControls() {
 
 //==============================================================================
 void TransportControls::paint(juce::Graphics& g) {
-  // Background
-  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
+  auto bounds = getLocalBounds().toFloat();
+  OCC::Console::fillVerticalGradient(g, bounds, juce::Colour(OCC::Design::kBgSecondary),
+                                     juce::Colour(OCC::Design::kBgPrimary));
 
-  // Separator line at top
   g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawLine(0.0f, 0.0f, static_cast<float>(getWidth()), 0.0f, 1.0f);
+
+  auto status = getLocalBounds().reduced(10, 0);
+  status.removeFromLeft(398);
+  status.removeFromRight(350);
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.drawLine(status.getX() - 10.0f, 12.0f, status.getX() - 10.0f, getHeight() - 12.0f, 1.0f);
+
+  int playing = 0;
+  juce::StringArray names;
+  for (const auto& clip : m_snapshot.session.clips) {
+    if (clip.hasClip && clip.playbackState != orpheus::PlaybackState::Stopped) {
+      ++playing;
+      if (names.size() < 2 && clip.displayName.isNotEmpty())
+        names.add(clip.displayName);
+    }
+  }
+
+  g.setFont(OCC::Console::monoFont(10.5f));
+  g.setColour(playing > 0 ? juce::Colour(0xff5af070) : juce::Colour(OCC::Design::kTextMuted));
+  g.fillEllipse(status.getX(), getHeight() / 2 - 4, 8, 8);
+  g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+  g.drawText("PLAYING  .  " + juce::String(playing), status.withTrimmedLeft(18),
+             juce::Justification::centredLeft, false);
+  if (!names.isEmpty()) {
+    g.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+    g.setColour(juce::Colour(OCC::Design::kTextPrimary));
+    g.drawText(names.joinIntoString("   |   "), status.withTrimmedLeft(128),
+               juce::Justification::centredLeft, true);
+  }
+
+  auto meterArea = getLocalBounds().reduced(10, 0).removeFromRight(300);
+  g.setFont(OCC::Console::monoFont(11.0f, juce::Font::plain));
+  g.setColour(juce::Colour(OCC::Design::kTextSecondary));
+  g.drawText("MASTER", meterArea.removeFromLeft(70), juce::Justification::centredRight, false);
+  meterArea.removeFromLeft(12);
+  auto meter = meterArea.withSizeKeepingCentre(210, 14).toFloat();
+  g.setColour(juce::Colour(OCC::Design::kBgInset));
+  g.fillRoundedRectangle(meter, 2.0f);
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.drawRoundedRectangle(meter, 2.0f, 1.0f);
+  auto fill = meter.reduced(1.0f);
+  fill.setWidth(fill.getWidth() * juce::jlimit(0.0f, 1.0f, m_snapshot.audio.masterRmsLevel));
+  juce::ColourGradient grad(juce::Colour(OCC::Design::kMeterGreen), fill.getX(), fill.getY(),
+                            juce::Colour(OCC::Design::kMeterRed), fill.getRight(), fill.getY(),
+                            false);
+  grad.addColour(0.75, juce::Colour(OCC::Design::kMeterYellow));
+  g.setGradientFill(grad);
+  g.fillRoundedRectangle(fill, 2.0f);
 }
 
 void TransportControls::resized() {
   auto bounds = getLocalBounds().reduced(10);
 
-  // Layout buttons horizontally from right side
-  int buttonWidth = 116;
+  int stopWidth = 136;
+  int panicWidth = 116;
   int buttonHeight = 36;
   int gap = 10;
 
-  // Panic button (rightmost)
-  auto panicBounds = bounds.removeFromRight(buttonWidth);
-  panicBounds = panicBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
-  m_panicButton->setBounds(panicBounds);
-
-  bounds.removeFromRight(gap);
-
-  // Stop All button (left of Panic)
-  auto stopBounds = bounds.removeFromRight(buttonWidth);
-  stopBounds = stopBounds.withSizeKeepingCentre(buttonWidth, buttonHeight);
+  auto stopBounds = bounds.removeFromLeft(stopWidth);
+  stopBounds = stopBounds.withSizeKeepingCentre(stopWidth, buttonHeight);
   m_stopAllButton->setBounds(stopBounds);
 
-  // OCC109 v0.2.2: Performance labels (right side, before buttons)
-  bounds.removeFromRight(gap);
+  bounds.removeFromLeft(gap);
 
-  // Memory label
-  auto memoryBounds = bounds.removeFromRight(90);
-  memoryBounds = memoryBounds.withSizeKeepingCentre(90, buttonHeight);
-  m_memoryLabel->setBounds(memoryBounds);
+  auto panicBounds = bounds.removeFromLeft(panicWidth);
+  panicBounds = panicBounds.withSizeKeepingCentre(panicWidth, buttonHeight);
+  m_panicButton->setBounds(panicBounds);
 
-  bounds.removeFromRight(gap);
+  bounds.removeFromLeft(gap + 8);
 
-  // CPU label
-  auto cpuBounds = bounds.removeFromRight(80);
-  cpuBounds = cpuBounds.withSizeKeepingCentre(80, buttonHeight);
+  auto latencyBounds = bounds.removeFromLeft(160);
+  latencyBounds = latencyBounds.withSizeKeepingCentre(160, buttonHeight);
+  m_latencyLabel->setBounds(latencyBounds);
+
+  auto cpuBounds = bounds.removeFromLeft(90);
+  cpuBounds = cpuBounds.withSizeKeepingCentre(90, buttonHeight);
   m_cpuLabel->setBounds(cpuBounds);
 
-  // Latency label (left side)
-  auto latencyBounds = bounds.removeFromLeft(200);
-  latencyBounds = latencyBounds.withSizeKeepingCentre(200, buttonHeight);
-  m_latencyLabel->setBounds(latencyBounds);
+  auto memoryBounds = bounds.removeFromLeft(100);
+  memoryBounds = memoryBounds.withSizeKeepingCentre(100, buttonHeight);
+  m_memoryLabel->setBounds(memoryBounds);
 }
 
 void TransportControls::setLatencyInfo(double latencyMs, int bufferSize, int sampleRate) {
@@ -118,6 +159,11 @@ void TransportControls::setLatencyInfo(double latencyMs, int bufferSize, int sam
 
   m_latencyLabel->setText(text, juce::dontSendNotification);
   m_latencyLabel->setColour(juce::Label::textColourId, color);
+}
+
+void TransportControls::setTransportSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
+  m_snapshot = snapshot;
+  repaint();
 }
 
 void TransportControls::setPerformanceInfo(float cpuPercent, int memoryMB) {

@@ -29,7 +29,7 @@ class ClipGrid;
  *
  * @section numbering Button Numbering
  * Buttons are numbered consecutively across tabs (Feature 4):
- * Tab 1 = 1-120, Tab 2 = 121-240, etc.
+ * Tab 1 = 1-100, Tab 2 = 101-200, etc.
  */
 class ClipButton : public juce::Component, private juce::Timer {
 public:
@@ -205,7 +205,7 @@ public:
 
   /**
    * @brief Get display number (consecutive across all tabs).
-   * @return Display number: Tab 1 = 1-120, Tab 2 = 121-240, etc.
+   * @return Display number: Tab 1 = 1-100, Tab 2 = 101-200, etc.
    */
   int getDisplayNumber() const {
     return (m_tabIndex * occ::BUTTONS_PER_TAB) + m_buttonIndex + 1;

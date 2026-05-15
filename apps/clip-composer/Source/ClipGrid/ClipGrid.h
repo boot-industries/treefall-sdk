@@ -13,7 +13,7 @@
 /**
  * ClipGrid - Grid of clip trigger buttons
  *
- * Visible grid presets span 6 x 6 through 10 x 10 while each tab keeps
+ * Visible grid presets span 6 x 6 through 12 x 8 while each tab keeps
  * 100 logical slots for stable clip mapping.
  *
  * Layout:
@@ -30,7 +30,7 @@ public:
 
   //==============================================================================
   // Grid configuration (Item 22: Resizable grid)
-  void setGridSize(int columns, int rows); // Resize visible grid (6 x 6 to 10 x 10)
+  void setGridSize(int columns, int rows); // Resize visible grid, capped to 100 visible cells
   int getColumns() const {
     return m_columns;
   }
@@ -101,7 +101,8 @@ private:
   // Grid dimensions (Item 22: now configurable, not constexpr)
   int m_columns = occ::DEFAULT_GRID_COLUMNS;
   int m_rows = occ::DEFAULT_GRID_ROWS;
-  static constexpr int GAP = 2;
+  int getGridGap() const;
+  int getGridPadding() const;
 
   // Constraints for grid resizing
   static constexpr int MIN_COLUMNS = occ::MIN_GRID_COLUMNS;

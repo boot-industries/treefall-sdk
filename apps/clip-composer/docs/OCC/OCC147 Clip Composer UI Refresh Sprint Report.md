@@ -22,7 +22,7 @@ This sprint refreshes Clip Composer around the Orpheus Console design direction 
 
 ## Design System Notes
 
-- The sprint ceiling is `10x10` visible density. `10x12` and 960 visible UI slots remain deferred because the current stable page key is `tab * 100 + button`.
+- Superseded by OCC148: the sprint ceiling now includes `12x8` visible density because it fits the current 100-slot page key. `10x12` and 960 visible UI slots remain deferred because the current stable page key is `tab * 100 + button`.
 - ShmUI remains a support dependency for visualizers/interpolation. The Clip Composer controls were not refactored onto ShmUI.
 - The external Orpheus design-system repo is outside the writable roots for this task, so design-system guidance updates are recorded here instead of committed there.
 

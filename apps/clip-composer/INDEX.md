@@ -2,15 +2,15 @@
 
 Project documentation index for orpheus-sdk/apps/clip-composer.
 
-**Next Available Number:** OCC142
+**Next Available Number:** OCC149
 
 ## Recent Documents
 
+- [[OCC148 Clip Composer UI Refresh Corrective Pass]]
+- [[OCC147 Clip Composer UI Refresh Sprint Report]]
 - [[OCC141 ORP121 Phase 4 OCC Implementation Report]]
 - [[OCC140 ORP121 Phase 4 OCC Tasks Handoff]]
 - [[OCC139 Frontend UI Overhaul - Design Tokens and shmui Integration]]
-- [[OCC138 Post-Fix Testing and Validation Plan]]
-- [[OCC137 Critical Gain Staging Bug Investigation and Fix]]
 
 ## All Documents
 
@@ -69,6 +69,8 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 - [[docs/occ/OCC139 Frontend UI Overhaul - Design Tokens and shmui Integration]]
 - [[docs/occ/OCC140 ORP121 Phase 4 OCC Tasks Handoff]]
 - [[docs/occ/OCC141 ORP121 Phase 4 OCC Implementation Report]]
+- [[docs/occ/OCC147 Clip Composer UI Refresh Sprint Report]]
+- [[docs/occ/OCC148 Clip Composer UI Refresh Corrective Pass]]
 
 ## Archived Documents
 

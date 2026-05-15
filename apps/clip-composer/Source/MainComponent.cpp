@@ -4,6 +4,7 @@
 #include "AppShell/AppCommandIds.h"
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
+#include "UI/ConsoleTheme.h"
 #include "UI/DesignTokens.h"
 #include <array>
 #include <optional>
@@ -242,6 +243,10 @@ MainComponent::MainComponent() {
   m_transportControls = std::make_unique<TransportControls>();
   addAndMakeVisible(m_transportControls.get());
 
+  m_inspectorPanel = std::make_unique<ConsoleInspectorPanel>();
+  m_inspectorPanel->setOperatorViewMode(m_operatorViewMode);
+  addAndMakeVisible(m_inspectorPanel.get());
+
   // Create BarVisualizer (shmui VU meter - 4 bars for master level)
   m_barVisualizer = std::make_unique<shmui::BarVisualizer>();
   m_barVisualizer->setBarCount(4); // 4 bars showing master level (group routing TBD)
@@ -361,8 +366,7 @@ LevelMetersWindow* MainComponent::getOrCreateLevelMetersWindow() {
 
 //==============================================================================
 void MainComponent::paint(juce::Graphics& g) {
-  // Dark background (professional broadcast look)
-  g.fillAll(juce::Colour(OCC::Design::kBgSecondary));
+  g.fillAll(juce::Colour(OCC::Design::kBgPrimary));
 }
 
 void MainComponent::resized() {
@@ -372,8 +376,10 @@ void MainComponent::resized() {
   auto bounds = getLocalBounds();
 
   const bool livePlayout = m_operatorViewMode == occ::ui::OperatorViewMode::Playout;
-  const int topStripHeight = livePlayout ? 36 : 44;
-  const int bottomStripHeight = livePlayout ? 52 : 0;
+  const int topStripHeight = livePlayout ? OCC::Console::Metrics::kLiveTopStripHeight
+                                         : OCC::Console::Metrics::kFullChromeHeight;
+  const int bottomStripHeight = livePlayout ? OCC::Console::Metrics::kLiveBottomStripHeight
+                                            : OCC::Console::Metrics::kFullBottomStripHeight;
 
   auto tabArea = bounds.removeFromTop(topStripHeight);
   if (m_tabSwitcher) {
@@ -381,34 +387,31 @@ void MainComponent::resized() {
   }
 
   if (m_transportControls) {
-    m_transportControls->setVisible(livePlayout);
-    if (livePlayout) {
-      m_transportControls->setBounds(bounds.removeFromBottom(bottomStripHeight));
-    }
+    m_transportControls->setVisible(true);
+    m_transportControls->setBounds(bounds.removeFromBottom(bottomStripHeight));
   }
 
   // Main content area
-  auto contentArea = bounds.reduced(livePlayout ? 6 : 10);
+  auto contentArea = bounds;
+
+  if (m_inspectorPanel) {
+    m_inspectorPanel->setVisible(!livePlayout);
+    if (!livePlayout) {
+      m_inspectorPanel->setBounds(
+          contentArea.removeFromRight(OCC::Console::Metrics::kInspectorWidth));
+    }
+  }
 
   // BarVisualizer stays in the authoring shell; live playout gives the grid priority.
   if (m_barVisualizer) {
-    m_barVisualizer->setVisible(!livePlayout);
-    if (!livePlayout) {
-      auto visualizerArea = contentArea.removeFromRight(72);
-      contentArea.removeFromRight(10);
-      m_barVisualizer->setBounds(visualizerArea);
-    }
+    m_barVisualizer->setVisible(false);
+    m_barVisualizer->setBounds({});
   }
 
   // Clip grid takes most of the space
   if (m_clipGrid) {
     m_clipGrid->setBounds(contentArea);
   }
-
-  // Future layout:
-  // - Bottom 150px: Routing panel
-  // - Bottom 80px: Waveform display
-  // - Remaining: Clip grid
 }
 
 //==============================================================================
@@ -582,6 +585,13 @@ void MainComponent::timerCallback() {
                                       m_uiSnapshot.audio.masterRmsLevel);
   }
 
+  if (m_inspectorPanel) {
+    m_inspectorPanel->setSnapshot(m_uiSnapshot);
+  }
+  if (m_transportControls) {
+    m_transportControls->setTransportSnapshot(m_uiSnapshot);
+  }
+
   // Static counter for 1Hz performance updates (every 30 timer ticks at 30Hz)
   static int performanceUpdateCounter = 0;
   performanceUpdateCounter++;
@@ -612,6 +622,7 @@ void MainComponent::timerCallback() {
         m_transportControls->setLatencyInfo(latencyMs, bufferSize, sampleRate);
         m_transportControls->setPerformanceInfo(m_uiSnapshot.audio.health.cpuPercent,
                                                 m_uiSnapshot.audio.health.memoryMB);
+        m_transportControls->setTransportSnapshot(m_uiSnapshot);
       }
     }
 
@@ -2376,6 +2387,8 @@ void MainComponent::setOperatorViewMode(occ::ui::OperatorViewMode mode) {
 
   if (m_tabSwitcher)
     m_tabSwitcher->setOperatorViewMode(mode);
+  if (m_inspectorPanel)
+    m_inspectorPanel->setOperatorViewMode(mode);
 
   DBG("MainComponent: Operator view mode set to " << static_cast<int>(mode));
   resized();
@@ -2525,9 +2538,11 @@ juce::PopupMenu MainComponent::getAppMenuForIndex(int topLevelMenuIndex,
     addGridItem(gridMenu, 353, "6 x 8", orpheus::DisplayPreferences::GridLayout::Columns6Rows8);
     addGridItem(gridMenu, 354, "8 x 8", orpheus::DisplayPreferences::GridLayout::Columns8Rows8);
     addGridItem(gridMenu, 355, "10 x 8", orpheus::DisplayPreferences::GridLayout::Columns10Rows8);
-    addGridItem(gridMenu, 356, "6 x 10", orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
-    addGridItem(gridMenu, 357, "8 x 10", orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
-    addGridItem(gridMenu, 358, "10 x 10", orpheus::DisplayPreferences::GridLayout::Columns10Rows10);
+    addGridItem(gridMenu, 356, "12 x 8 (Live Dense)",
+                orpheus::DisplayPreferences::GridLayout::Columns12Rows8);
+    addGridItem(gridMenu, 357, "6 x 10", orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
+    addGridItem(gridMenu, 358, "8 x 10", orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
+    addGridItem(gridMenu, 359, "10 x 10", orpheus::DisplayPreferences::GridLayout::Columns10Rows10);
     menu.addSubMenu("Clip Grid Layout", gridMenu);
     menu.addSeparator();
 
@@ -3086,12 +3101,15 @@ void MainComponent::handleMenuItemSelected(int menuItemID, int /*topLevelMenuInd
     m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns10Rows8);
     break;
   case 356:
-    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns12Rows8);
     break;
   case 357:
-    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns6Rows10);
     break;
   case 358:
+    m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns8Rows10);
+    break;
+  case 359:
     m_displayPreferences->setGridLayout(orpheus::DisplayPreferences::GridLayout::Columns10Rows10);
     break;
 
