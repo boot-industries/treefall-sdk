@@ -167,6 +167,11 @@ void ClipButton::paint(juce::Graphics& g) {
       juce::Colour(OCC::Design::kGroupOrange), juce::Colour(OCC::Design::kGroupRed)};
   const auto groupColor = groupColors[juce::jlimit(0, 3, m_clipGroup)];
 
+  // Face tint comes from the per-clip swatch colour (visual identifier).
+  // Stripe comes from group colour (routing channel). These are independent.
+  const bool hasSwatch = !m_clipColor.isTransparent();
+  const auto swatchTint = hasSwatch ? m_clipColor : groupColor;
+
   auto face = bounds.reduced(1.0f);
   juce::Colour top;
   juce::Colour bottom;
@@ -178,8 +183,8 @@ void ClipButton::paint(juce::Graphics& g) {
     bottom = juce::Colour(OCC::Design::kClipEmpty).darker(0.08f);
     break;
   case State::Loaded:
-    top = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(groupColor, 0.28f);
-    bottom = juce::Colour(OCC::Design::kBgSecondary).interpolatedWith(groupColor, 0.20f);
+    top = juce::Colour(OCC::Design::kBgComponent).interpolatedWith(swatchTint, 0.28f);
+    bottom = juce::Colour(OCC::Design::kBgSecondary).interpolatedWith(swatchTint, 0.20f);
     break;
   case State::Playing:
     top = juce::Colour(OCC::Design::kClipPlaying).brighter(0.20f);
