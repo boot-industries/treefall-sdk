@@ -293,10 +293,10 @@ void ClipButton::paint(juce::Graphics& g) {
     auto meta = face.reduced(tightWidth ? 6.0f : 10.0f, tightHeight ? 5.0f : 8.0f);
     g.setColour(juce::Colour(OCC::Design::kTextPrimary).withAlpha(0.34f));
     g.setFont(OCC::Console::monoFont(tightHeight ? 12.0f : 18.0f, juce::Font::plain));
-    // Design kit pads to the width of the largest index in the grid (100-slot
-    // tabs → 3 digits) so the ordinal column stays visually aligned across the
-    // grid. Always 3-digit at our current logical capacity.
-    g.drawText(juce::String(getDisplayNumber()).paddedLeft('0', 3),
+    // Design kit pads to the digit-width of the largest visible ordinal in the
+    // grid (set by ClipGrid via setDisplayDigitWidth). 48-cell grid → 2 digits,
+    // 100-cell grid → 3 digits. Keeps the ordinal column uniformly aligned.
+    g.drawText(juce::String(getDisplayNumber()).paddedLeft('0', m_displayDigitWidth),
                meta.removeFromTop(tightHeight ? 16.0f : 22.0f).toNearestInt(),
                juce::Justification::topLeft, false);
 
@@ -334,9 +334,9 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
     juce::String buttonNumber = juce::String(getDisplayNumber());
     g.setFont(OCC::Console::monoFont(compactWidth ? 9.0f : 10.0f, juce::Font::plain));
     g.setColour(mutedText.withAlpha(0.58f));
-    // 3-digit ordinal (matches design kit's grid-wide padding for 100-slot tabs).
-    g.drawText(buttonNumber.paddedLeft('0', 3), topRow.removeFromLeft(42.0f).toNearestInt(),
-               juce::Justification::topLeft, false);
+    // Ordinal padded to the grid-wide digit width (set by ClipGrid).
+    g.drawText(buttonNumber.paddedLeft('0', m_displayDigitWidth),
+               topRow.removeFromLeft(42.0f).toNearestInt(), juce::Justification::topLeft, false);
 
     if (m_beatOffset.isNotEmpty()) {
       g.setFont(OCC::Console::consoleFont(10.0f, juce::Font::plain));

@@ -183,6 +183,19 @@ public:
    *         changes. Drawn as the design-kit "g-lock" padlock glyph. */
   void setLockEnabled(bool enabled);
 
+  /** @brief Set the width (in digits) used when padding the ordinal number.
+   *         Set by ClipGrid to the digit count of the largest visible ordinal,
+   *         so the ordinal column reads uniformly across the grid:
+   *         48-cell grid → 2 digits, 100-cell grid → 3 digits, etc.
+   *         Default 2. */
+  void setDisplayDigitWidth(int digits) {
+    int clamped = juce::jlimit(1, 4, digits);
+    if (m_displayDigitWidth != clamped) {
+      m_displayDigitWidth = clamped;
+      repaint();
+    }
+  }
+
   /// @}
 
   //==============================================================================
@@ -304,6 +317,10 @@ private:
   bool m_stopOthersEnabled = false;
   bool m_trimEnabled = false;
   bool m_lockEnabled = false;
+
+  // Digit width for the ordinal — driven by ClipGrid so all cells in the same
+  // grid pad uniformly. Defaults to 2 (covers the smallest supported grid).
+  int m_displayDigitWidth = 2;
   bool m_isPlaybox = false; // Item 60: Arrow key navigation outline
 
   // Drag state (Cmd+Drag to rearrange clips)
