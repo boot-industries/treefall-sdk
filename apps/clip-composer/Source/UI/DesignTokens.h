@@ -70,6 +70,16 @@ constexpr uint32_t kMeterOrange = 0xFFc57030; // Warm amber-orange
 constexpr uint32_t kMeterRed = 0xFFb53535;    // Deep coral red
 
 //==============================================================================
+// EXTENDED CONSOLE PALETTE (design-system named tokens)
+// Mirrors --console-* CSS vars from orpheus_design-system_2605/colors_and_type.css
+//==============================================================================
+
+constexpr uint32_t kConsoleCoral = 0xFFb04848;  // --console-coral (danger / Stop All)
+constexpr uint32_t kConsolePatina = 0xFF4a6b6f; // Oxidized teal accent
+constexpr uint32_t kConsoleWalnut = 0xFF3a2820; // Deep walnut cabinetry
+constexpr uint32_t kConsoleTan = 0xFFc4a87a;    // Tan label panel
+
+//==============================================================================
 // CLIP STATE COLORS (Console button aesthetic)
 //==============================================================================
 

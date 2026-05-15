@@ -60,6 +60,137 @@ inline juce::Font monoFont(float size, int style = juce::Font::plain) {
   return juce::FontOptions("JetBrains Mono", size, style);
 }
 
+// Eyebrow label: small UPPERCASE letter-spaced section header (e.g., "NAME", "GROUP").
+inline void drawEyebrow(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& text,
+                        juce::Colour colour = juce::Colour(OCC::Design::kTextSecondary)) {
+  g.setColour(colour);
+  g.setFont(consoleFont(10.0f, juce::Font::bold));
+  // JUCE doesn't expose letter-spacing on Graphics::drawText, so we widen via setHorizontalScale on
+  // the AttributedString path. Sufficient to use sentence-cap spacing visually for now.
+  g.drawText(text.toUpperCase(), bounds.toNearestInt(), juce::Justification::centredLeft, false);
+}
+
+// Inset field: recessed input well used for text editors and time fields in the Console flavor.
+inline void
+drawInsetField(juce::Graphics& g, juce::Rectangle<float> bounds,
+               juce::Colour borderOverride = juce::Colour(OCC::Design::kBorderDefault)) {
+  g.setColour(colour(OCC::Design::kBgInset));
+  g.fillRoundedRectangle(bounds, 3.0f);
+  g.setColour(borderOverride);
+  g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+}
+
+// Chip toggle: amber-tinted when enabled, inset/muted when disabled.
+inline void drawChip(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& label,
+                     bool enabled) {
+  const auto amber = colour(OCC::Design::kAmber);
+  const auto muted = colour(OCC::Design::kTextSecondary);
+  const auto cream = colour(OCC::Design::kTextPrimary);
+
+  if (enabled) {
+    g.setColour(amber.withAlpha(0.20f));
+    g.fillRoundedRectangle(bounds, 3.0f);
+    g.setColour(amber);
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    g.setColour(amber);
+  } else {
+    drawInsetField(g, bounds);
+    g.setColour(muted);
+  }
+
+  g.setFont(consoleFont(11.0f, juce::Font::bold));
+  g.drawText(label, bounds.toNearestInt(), juce::Justification::centred, false);
+  (void)cream;
+}
+
+// Action button: matte cap with variant treatment (primary blue, danger coral, amber, ghost).
+enum class ActionVariant { Default, Primary, Danger, Amber, Ghost };
+
+inline void drawActionButton(juce::Graphics& g, juce::Rectangle<float> bounds,
+                             const juce::String& label, ActionVariant variant, bool down = false,
+                             bool hover = false) {
+  juce::Colour top, bottom, text;
+  switch (variant) {
+  case ActionVariant::Primary:
+    top = colour(OCC::Design::kNeveBlue);
+    bottom = colour(OCC::Design::kNeveBlueDark);
+    text = juce::Colours::white;
+    break;
+  case ActionVariant::Danger:
+    top = colour(OCC::Design::kConsoleCoral);
+    bottom = colour(OCC::Design::kConsoleCoral).darker(0.35f);
+    text = juce::Colours::white;
+    break;
+  case ActionVariant::Amber:
+    top = colour(OCC::Design::kAmber);
+    bottom = colour(OCC::Design::kAmber).darker(0.30f);
+    text = juce::Colour(0xff1a1410);
+    break;
+  case ActionVariant::Ghost:
+    top = juce::Colours::transparentBlack;
+    bottom = juce::Colours::transparentBlack;
+    text = colour(OCC::Design::kTextSecondary);
+    break;
+  case ActionVariant::Default:
+  default:
+    top = juce::Colour(0xff383d40);
+    bottom = juce::Colour(0xff2a2e31);
+    text = colour(OCC::Design::kTextPrimary);
+    break;
+  }
+
+  if (variant != ActionVariant::Ghost) {
+    auto adjustedTop = down ? top.darker(0.10f) : (hover ? top.brighter(0.04f) : top);
+    auto adjustedBottom = down ? bottom.darker(0.10f) : bottom;
+    drawMatteCap(g, bounds, adjustedTop, adjustedBottom, 2.5f);
+  } else if (hover) {
+    g.setColour(juce::Colour(OCC::Design::kBorderDefault).withAlpha(0.35f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 2.5f, 1.0f);
+  }
+
+  g.setColour(text);
+  g.setFont(consoleFont(11.0f, juce::Font::bold));
+  g.drawText(label.toUpperCase(), bounds.toNearestInt(), juce::Justification::centred, false);
+}
+
+// Group selector (A/B/C/D channel buttons). Selected fills with that group's signature colour.
+inline juce::Colour groupColour(int index) {
+  switch (index) {
+  case 0:
+    return colour(OCC::Design::kGroupBlue);
+  case 1:
+    return colour(OCC::Design::kGroupGreen);
+  case 2:
+    return colour(OCC::Design::kGroupOrange);
+  case 3:
+    return colour(OCC::Design::kGroupRed);
+  default:
+    return colour(OCC::Design::kBorderDefault);
+  }
+}
+
+inline juce::String groupLabel(int index) {
+  static const char* labels[] = {"A", "B", "C", "D"};
+  return (index >= 0 && index < 4) ? juce::String(labels[index]) : juce::String();
+}
+
+inline void drawGroupButton(juce::Graphics& g, juce::Rectangle<float> bounds, int groupIndex,
+                            bool selected) {
+  const auto gc = groupColour(groupIndex);
+  if (selected) {
+    g.setColour(gc);
+    g.fillRoundedRectangle(bounds, 3.0f);
+    g.setColour(gc.brighter(0.20f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    g.setColour(juce::Colours::white);
+  } else {
+    drawInsetField(g, bounds);
+    g.setColour(colour(OCC::Design::kTextSecondary));
+  }
+  g.setFont(consoleFont(13.0f, juce::Font::bold));
+  g.drawText(groupLabel(groupIndex), bounds.toNearestInt(), juce::Justification::centred, false);
+}
+
 inline juce::String operatorModeLabel(occ::ui::OperatorViewMode mode) {
   switch (mode) {
   case occ::ui::OperatorViewMode::Playout:
