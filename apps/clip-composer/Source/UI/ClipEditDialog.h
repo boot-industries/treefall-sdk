@@ -7,6 +7,7 @@
 #include "GroupSelector.h"
 #include "PreviewPlayer.h"
 #include "WaveformDisplay.h"
+#include "WaveformOverview.h"
 #include <functional>
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -199,6 +200,7 @@ private:
   std::unique_ptr<juce::TextEditor> m_filePathEditor;
 
   // Phase 2: In/Out point controls
+  std::unique_ptr<WaveformOverview> m_waveformOverview;
   std::unique_ptr<WaveformDisplay> m_waveformDisplay;
   std::unique_ptr<juce::TextButton> m_zoomOutButton;
   std::unique_ptr<juce::Label> m_zoomLabel;
