@@ -30,6 +30,19 @@ TransportControls::TransportControls() {
   m_panicButton->setColour(juce::TextButton::textColourOffId, juce::Colours::black);
   addAndMakeVisible(m_panicButton.get());
 
+  // Cue button (ghost variant — matte grey, far right).
+  m_cueButton = std::make_unique<juce::TextButton>("Cue");
+  m_cueButton->setButtonText("CUE");
+  m_cueButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff383d40));
+  m_cueButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff45494c));
+  m_cueButton->setColour(juce::TextButton::textColourOffId,
+                         juce::Colour(OCC::Design::kTextSecondary));
+  m_cueButton->onClick = [this]() {
+    if (onCue)
+      onCue();
+  };
+  addAndMakeVisible(m_cueButton.get());
+
   // Create latency label
   m_latencyLabel = std::make_unique<juce::Label>("Latency", "Latency: -- ms");
   m_latencyLabel->setFont(juce::FontOptions(12.0f, juce::Font::plain));
@@ -90,33 +103,59 @@ void TransportControls::paint(juce::Graphics& g) {
                juce::Justification::centredLeft, true);
   }
 
-  auto meterArea = getLocalBounds().reduced(10, 0).removeFromRight(300);
+  // Master cluster: leave room on the far right for the CUE button (laid out in resized()).
+  auto meterArea = getLocalBounds().reduced(10, 0).removeFromRight(380);
+  meterArea.removeFromRight(72); // CUE button slot.
+
   g.setFont(OCC::Console::monoFont(11.0f, juce::Font::plain));
   g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-  g.drawText("MASTER", meterArea.removeFromLeft(70), juce::Justification::centredRight, false);
-  meterArea.removeFromLeft(12);
-  auto meter = meterArea.withSizeKeepingCentre(210, 14).toFloat();
+  g.drawText("MASTER", meterArea.removeFromLeft(64), juce::Justification::centredRight, false);
+  meterArea.removeFromLeft(10);
+
+  // Meter bar.
+  auto meter = meterArea.removeFromLeft(160).withSizeKeepingCentre(160, 12).toFloat();
   g.setColour(juce::Colour(OCC::Design::kBgInset));
   g.fillRoundedRectangle(meter, 2.0f);
   g.setColour(juce::Colour(OCC::Design::kBorderDefault));
   g.drawRoundedRectangle(meter, 2.0f, 1.0f);
-  auto fill = meter.reduced(1.0f);
-  fill.setWidth(fill.getWidth() * juce::jlimit(0.0f, 1.0f, m_snapshot.audio.masterRmsLevel));
-  juce::ColourGradient grad(juce::Colour(OCC::Design::kMeterGreen), fill.getX(), fill.getY(),
-                            juce::Colour(OCC::Design::kMeterRed), fill.getRight(), fill.getY(),
-                            false);
-  grad.addColour(0.75, juce::Colour(OCC::Design::kMeterYellow));
-  g.setGradientFill(grad);
-  g.fillRoundedRectangle(fill, 2.0f);
+
+  const float level = juce::jlimit(0.0f, 1.0f, m_snapshot.audio.masterRmsLevel);
+  if (level > 0.0f) {
+    auto fill = meter.reduced(1.0f);
+    fill = fill.withWidth(fill.getWidth() * level);
+    juce::ColourGradient grad(juce::Colour(OCC::Design::kMeterGreen), fill.getX(), fill.getY(),
+                              juce::Colour(OCC::Design::kMeterRed), meter.getRight(), fill.getY(),
+                              false);
+    grad.addColour(0.60, juce::Colour(OCC::Design::kMeterGreen));
+    grad.addColour(0.78, juce::Colour(OCC::Design::kMeterYellow));
+    grad.addColour(0.92, juce::Colour(OCC::Design::kMeterOrange));
+    g.setGradientFill(grad);
+    g.fillRoundedRectangle(fill, 2.0f);
+  }
+
+  // dB readout to the right of the meter (mono 11 pt, amber if signal present).
+  meterArea.removeFromLeft(10);
+  juce::String dbText;
+  if (level > 0.0001f) {
+    const float db = juce::jlimit(-60.0f, 6.0f, 20.0f * std::log10(level));
+    dbText = juce::String::formatted("%+.1f dB", static_cast<double>(db));
+  } else {
+    dbText = "-inf";
+  }
+  g.setFont(OCC::Console::monoFont(11.0f, juce::Font::plain));
+  g.setColour(level > 0.0001f ? juce::Colour(OCC::Design::kAmber)
+                              : juce::Colour(OCC::Design::kTextMuted));
+  g.drawText(dbText, meterArea.removeFromLeft(70), juce::Justification::centredLeft, false);
 }
 
 void TransportControls::resized() {
   auto bounds = getLocalBounds().reduced(10);
 
-  int stopWidth = 136;
-  int panicWidth = 116;
-  int buttonHeight = 36;
-  int gap = 10;
+  constexpr int stopWidth = 136;
+  constexpr int panicWidth = 116;
+  constexpr int buttonHeight = 36;
+  constexpr int gap = 10;
+  constexpr int cueWidth = 60;
 
   auto stopBounds = bounds.removeFromLeft(stopWidth);
   stopBounds = stopBounds.withSizeKeepingCentre(stopWidth, buttonHeight);
@@ -129,6 +168,15 @@ void TransportControls::resized() {
   m_panicButton->setBounds(panicBounds);
 
   bounds.removeFromLeft(gap + 8);
+
+  // CUE button on the far right.
+  auto cueBounds = bounds.removeFromRight(cueWidth);
+  cueBounds = cueBounds.withSizeKeepingCentre(cueWidth, 28);
+  if (m_cueButton)
+    m_cueButton->setBounds(cueBounds);
+
+  // The remaining 320 px on the right is reserved for the master meter (drawn in paint()).
+  bounds.removeFromRight(320);
 
   auto latencyBounds = bounds.removeFromLeft(160);
   latencyBounds = latencyBounds.withSizeKeepingCentre(160, buttonHeight);
