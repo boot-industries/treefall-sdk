@@ -29,6 +29,7 @@ public:
   // Callbacks for button events
   std::function<void()> onStopAll;
   std::function<void()> onPanic;
+  std::function<void()> onCue;
 
   //==============================================================================
   // Update latency display (call periodically from MainComponent)
@@ -47,6 +48,7 @@ private:
   //==============================================================================
   std::unique_ptr<juce::TextButton> m_stopAllButton;
   std::unique_ptr<juce::TextButton> m_panicButton;
+  std::unique_ptr<juce::TextButton> m_cueButton;
   std::unique_ptr<juce::Label> m_latencyLabel;
   std::unique_ptr<juce::Label> m_cpuLabel;    // OCC109 v0.2.2: CPU usage display
   std::unique_ptr<juce::Label> m_memoryLabel; // OCC109 v0.2.2: Memory usage display
