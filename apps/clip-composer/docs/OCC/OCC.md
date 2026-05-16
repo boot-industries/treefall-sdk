@@ -2,10 +2,14 @@
 
 Project documentation index for orpheus-sdk/apps/clip-composer.
 
-**Next Available Number:** OCC147
+**Next Available Number:** OCC150
 
 ## Recent Documents
 
+- [[OCC149b Phase 5b Remediation Plan]]
+- [[OCC149 Clip Composer Design-System Alignment Sprint]]
+- [[OCC148 Clip Composer UI Refresh Corrective Pass]]
+- [[OCC147 Clip Composer UI Refresh Sprint Report]]
 - [[OCC146 Post-Codex Integration Sprint Guide]]
 - [[OCC145 Audio Device Selection Fix]]
 - [[OCC144 Menu Functionality Gaps Fix]]
@@ -74,6 +78,10 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 - [[OCC144 Menu Functionality Gaps Fix]]
 - [[OCC145 Audio Device Selection Fix]]
 - [[OCC146 Post-Codex Integration Sprint Guide]]
+- [[OCC147 Clip Composer UI Refresh Sprint Report]]
+- [[OCC148 Clip Composer UI Refresh Corrective Pass]]
+- [[OCC149 Clip Composer Design-System Alignment Sprint]]
+- [[OCC149b Phase 5b Remediation Plan]]
 
 ## Archived Documents
 
@@ -128,4 +136,4 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 
 ---
 
-**Last Generated:** 2026-03-26
+**Last Generated:** 2026-05-15
