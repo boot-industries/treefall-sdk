@@ -228,11 +228,36 @@ public:
   }
 
   /**
-   * @brief Get display number (consecutive across all tabs).
-   * @return Display number: Tab 1 = 1-100, Tab 2 = 101-200, etc.
+   * @brief Get display number (consecutive across all tabs, reflecting the
+   *        visible grid density rather than the 100-slot logical capacity).
+   *
+   * Operator narrative: the operator sees a contiguous numbering across all
+   * tabs as if the grid spans the whole session. So an 8x10 (80-cell) grid
+   * has tab 1 = 1-80, tab 2 = 81-160, tab 3 = 161-240, etc. A 6x8 (48-cell)
+   * grid has tab 1 = 1-48, tab 2 = 49-96, and so on.
+   *
+   * The underlying m_buttonIndex stays inside its tab's logical 100-slot
+   * model (so session save/load keeps stable button slots), but the displayed
+   * ordinal is purely a function of how many cells the current density makes
+   * visible.
    */
   int getDisplayNumber() const {
-    return (m_tabIndex * occ::BUTTONS_PER_TAB) + m_buttonIndex + 1;
+    const int perTab =
+        m_visibleCellsPerTab > 0 ? m_visibleCellsPerTab : static_cast<int>(occ::BUTTONS_PER_TAB);
+    return (m_tabIndex * perTab) + m_buttonIndex + 1;
+  }
+
+  /**
+   * @brief Set the number of visible cells per tab — used to compute the
+   *        display ordinal across tabs. Set by ClipGrid whenever the grid
+   *        density changes.
+   */
+  void setVisibleCellsPerTab(int cellsPerTab) {
+    int clamped = juce::jmax(1, cellsPerTab);
+    if (m_visibleCellsPerTab != clamped) {
+      m_visibleCellsPerTab = clamped;
+      repaint();
+    }
   }
 
   /**
@@ -294,7 +319,8 @@ private:
 
   //==============================================================================
   int m_buttonIndex;
-  int m_tabIndex = 0; // Current tab index (for consecutive numbering - Feature 4)
+  int m_tabIndex = 0;           // Current tab index (for consecutive numbering - Feature 4)
+  int m_visibleCellsPerTab = 0; // 0 = fall back to BUTTONS_PER_TAB (set by ClipGrid)
   State m_state = State::Empty;
   juce::String m_clipName;
   juce::Colour m_clipColor = juce::Colours::darkgrey;

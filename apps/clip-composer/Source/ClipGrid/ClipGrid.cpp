@@ -29,15 +29,27 @@ void ClipGrid::createButtons() {
   // Create buttons based on current grid size.
   int buttonCount = m_columns * m_rows;
 
-  // Compute the grid-wide ordinal digit width — every cell in this grid pads
-  // to this many digits so the ordinal column reads uniformly. 48-cell grid →
-  // 2 digits, 100-cell grid → 3 digits. Matches design-kit totalDigits.
+  // The operator sees a single contiguous ordinal across all tabs based on
+  // the visible grid density:
+  //   * 8x10 grid (80 cells) → tab 1 = 1-80, tab 2 = 81-160, tab 3 = 161-240
+  //   * 6x8 grid (48 cells) → tab 1 = 1-48, tab 2 = 49-96, tab 3 = 97-144
+  //   * 10x10 grid (100 cells) → tab 1 = 1-100, tab 2 = 101-200, ...
+  //
+  // Underlying m_buttonIndex stays within the 100-slot logical tab capacity
+  // (so session save/load remains stable across density changes), but the
+  // *displayed* ordinal is purely a function of the visible cell count.
+  const int visibleCellsPerTab = buttonCount;
+  const int largestOrdinal = visibleCellsPerTab * occ::NUM_TABS;
+
+  // Pad every cell to the width of the largest ordinal in the whole session so
+  // the column reads uniformly across all tabs.
   int displayDigits = 1;
-  for (int n = buttonCount; n >= 10; n /= 10)
+  for (int n = largestOrdinal; n >= 10; n /= 10)
     ++displayDigits;
 
   for (int i = 0; i < buttonCount; ++i) {
     auto button = std::make_unique<ClipButton>(i);
+    button->setVisibleCellsPerTab(visibleCellsPerTab);
     button->setDisplayDigitWidth(displayDigits);
 
     // Wire up callbacks
