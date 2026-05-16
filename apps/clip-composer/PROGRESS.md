@@ -40,11 +40,29 @@ Corrective visual reset after mockup review:
 4. ✅ Replaced raw prototype clip-cell treatment with matte Console wells, muted empty states, left group stripe, and density-aware text collapse
 5. ✅ Updated tests for `12x8`, 100-slot capacity, and deferred `10x12`
 
+OCC149 / OCC149b Design-System Alignment Sprint (v0.2.3-alpha, in progress):
+
+1. ✅ `clang-format` hook PATH fixed via `xcrun`
+2. ✅ Console palette extended; shared paint primitives in `ConsoleTheme.h` (eyebrow, inset field, chip, action button, group button)
+3. ✅ Clip-button indicator glyphs — all 7 design-kit symbols ported verbatim (Loop / Stop Others / Fade In / Fade Out / FX / Trim / Lock)
+4. ✅ Per-clip swatch face tint restored (independent of group stripe)
+5. ✅ Grid-aware ordinal padding (digit width tracks grid size)
+6. ✅ Inspector painted controls replaced with real `juce::Button` components (`ConsoleActionButton`)
+7. ✅ Routing inspector — fake gain placeholder stripped, real meter wired
+8. ✅ Preferences inspector — key/value list driven by live audio snapshot
+9. ✅ Transport strip — master dB readout + CUE button, `computeLayout()` collision proofing
+10. ✅ Clip Edit dialog — full mockup-anatomy rewrite (Title → Waveform block → Name → Group/Colour → 2×2 Trim/Fade → Flags → Advanced → OK/Cancel)
+11. ✅ `WaveformOverview` — full-file 24 px minimap above the main zoomed waveform
+12. ✅ Transport toolbar restored to prominence directly under the waveform in the dialog
+13. ✅ `ConsoleChipButton` — real focusable flag chips (amber-tinted when set)
+14. ✅ `GroupSelector` — A/B/C/D channel-strip selector with lit selected state + backlit unselected preview
+15. ✅ Title bar live-tracks name editor
+
 **Next Steps:**
 
-- Continue the visual polish pass across deep secondary dialog internals where they still use old spacing assumptions
-- Manual smoke every grid density preset and each operator mode with a populated session
-- Expand any design-system updates in the design-system repo once that repo is writable in the current task context
+- Address OCC149c follow-ups (see CHANGELOG / OCC149 sprint report): ColorSwatchPicker reskin, action triad wiring, Advanced section collapse, interactive minimap scrub, cue markers, real routing model wiring
+- Manual smoke pass across operator modes with populated sessions and varied window widths
+- Secondary dialog audit (Audio Settings, About, Hotkey Setup, etc.) after the OCC149c follow-ups
 
 ---
 
