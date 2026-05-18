@@ -1,978 +1,1447 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clip Composer Architecture Gallery v0.2.0</title>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <style>
-        /* Input Sans */
-        @font-face {
-            font-family: 'InputSans-Regular';
-            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Regular.ttf') format('truetype');
-            font-weight: 400;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Medium';
-            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Medium.ttf') format('truetype');
-            font-weight: 500;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Bold';
-            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Bold.ttf') format('truetype');
-            font-weight: 700;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Light';
-            src: url('../../../../shared-fonts/input/InputSans/InputSans/InputSans-Light.ttf') format('truetype');
-            font-weight: 300;
-            font-display: swap;
-        }
-        /* Input Mono */
-        @font-face {
-            font-family: 'InputMono-Regular';
-            src: url('../../../../shared-fonts/input/InputMono/InputMono/InputMono-Regular.ttf') format('truetype');
-            font-weight: 400;
-            font-display: swap;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>clip-composer</title>
+<style>
+/* base.css — shared reset, CSS variables (3 themes), layout, typography */
 
-        :root {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #242424;
-            --bg-card: #2a2a2a;
-            --accent: #FF9800;
-            --accent-secondary: #E65100;
-            --text-primary: #eaeaea;
-            --text-secondary: #a0a0a0;
-            --border: #333;
-            --success: #4ade80;
-            --warning: #fbbf24;
-        }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+:root {
+  --bg: #0f1720;
+  --bg-gradient-top: #0c141d;
+  --bg-gradient-bottom: #121c28;
+  --bg-deep: #0b1219;
+  --bg-panel: #16202e;
+  --bg-panel-strong: #1c2a3b;
+  --bg-panel-hover: #23314a;
+  --surface-strong: rgba(22, 32, 46, 0.95);
+  --text: #e5edf6;
+  --text-dim: #9bb0c8;
+  --text-muted: #677a92;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.10);
+  --accent-border: rgba(88, 166, 255, 0.36);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.13);
+  --mermaid-neutral-fill: #151d29;
+  --mermaid-neutral-border: #46556c;
+  --mermaid-neutral-text: #e5edf6;
+  --mermaid-blue-fill: #22364c;
+  --mermaid-blue-border: #67aefc;
+  --mermaid-blue-text: #edf6ff;
+  --mermaid-green-fill: #233d32;
+  --mermaid-green-border: #6dc08d;
+  --mermaid-green-text: #effdf4;
+  --mermaid-amber-fill: #493523;
+  --mermaid-amber-border: #ffbf63;
+  --mermaid-amber-text: #fff8eb;
+  --mermaid-red-fill: #4a2b31;
+  --mermaid-red-border: #f18f9e;
+  --mermaid-red-text: #fff1f4;
+  --mermaid-violet-fill: #393048;
+  --mermaid-violet-border: #bc9af6;
+  --mermaid-violet-text: #f7f1ff;
+  --mermaid-line: #7fc0ff;
+  --mermaid-line-muted: rgba(127, 192, 255, 0.42);
+  --mermaid-label-fill: #0f1721;
+  --mermaid-label-text: #eef5fd;
+  --grid-size-primary: 31px 31px;
+  --grid-size-secondary: 23px 23px;
+  --grid-mask-top: rgba(0, 0, 0, 1);
+  --grid-mask-bottom: rgba(0, 0, 0, 0.82);
+  --dust-dot: rgba(103,122,146,0.26);
+  --dust-accent-dot: rgba(88,166,255,0.18);
+  --search-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.14), 0 0 4px rgba(88, 166, 255, 0.1);
+  --callout-info-ring: inset 0 0 0 1px rgba(88, 166, 255, 0.12);
+  --section-card-focus-shadow: 0 0 0 1px rgba(88, 166, 255, 0.16), 0 0 24px rgba(88, 166, 255, 0.12);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(88, 166, 255, 0.14), rgba(88, 166, 255, 0.06));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(88, 166, 255, 0.08);
+  --section-title-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.16);
+  --section-count-focus-bg: rgba(88, 166, 255, 0.08);
+  --row-divider: rgba(255,255,255,0.04);
+  --osc-text: #7dd3fc;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --shell-width: min(1400px, 92vw);
+  --radius: 14px;
+  --transition: 160ms cubic-bezier(0.2, 0.65, 0.2, 1);
+  --font-display: "Geist Pixel Square", ui-sans-serif, sans-serif;
+  --font-body: "Geist Mono UltraLight", ui-monospace, monospace;
+}
 
-        body {
-            font-family: 'InputSans-Regular', 'Input Sans', system-ui, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
+[data-theme="light"] {
+  --bg: #f4f7fb;
+  --bg-gradient-top: #eef3f8;
+  --bg-gradient-bottom: #fbfdff;
+  --bg-deep: #e9eef5;
+  --bg-panel: #ffffff;
+  --bg-panel-strong: #f6f9fd;
+  --bg-panel-hover: #eef4fb;
+  --surface-strong: rgba(248, 251, 255, 0.94);
+  --text: #122033;
+  --text-dim: #4c5f78;
+  --text-muted: #7d8da3;
+  --accent: #006adc;
+  --accent-soft: rgba(0, 106, 220, 0.08);
+  --accent-border: rgba(0, 106, 220, 0.24);
+  --border: rgba(10, 21, 39, 0.08);
+  --border-strong: rgba(10, 21, 39, 0.14);
+  --mermaid-neutral-fill: #ffffff;
+  --mermaid-neutral-border: #cbd6e3;
+  --mermaid-neutral-text: #122033;
+  --mermaid-blue-fill: #dcebff;
+  --mermaid-blue-border: #4f88d7;
+  --mermaid-blue-text: #16304f;
+  --mermaid-green-fill: #def4e7;
+  --mermaid-green-border: #59a173;
+  --mermaid-green-text: #183727;
+  --mermaid-amber-fill: #f8ead3;
+  --mermaid-amber-border: #d09a3b;
+  --mermaid-amber-text: #47311a;
+  --mermaid-red-fill: #f8dfe3;
+  --mermaid-red-border: #d27082;
+  --mermaid-red-text: #532330;
+  --mermaid-violet-fill: #ebe2fb;
+  --mermaid-violet-border: #8f74d1;
+  --mermaid-violet-text: #36234f;
+  --mermaid-line: #0057b8;
+  --mermaid-line-muted: rgba(0, 87, 184, 0.32);
+  --mermaid-label-fill: #ffffff;
+  --mermaid-label-text: #122033;
+  color-scheme: light;
+}
 
-        .container {
-            width: 100%;
-            padding: 1rem 2rem;
-        }
+[data-theme="ember"] {
+  --bg: #3e2e1e;
+  --bg-gradient-top: #3a2a1b;
+  --bg-gradient-bottom: #423222;
+  --bg-deep: rgba(56, 44, 32, 0.93);
+  --bg-panel: rgba(84, 64, 48, 0.95);
+  --bg-panel-strong: rgba(118, 92, 66, 0.95);
+  --bg-panel-hover: rgba(148, 118, 86, 0.95);
+  --surface-strong: rgba(84, 64, 48, 0.95);
+  --text: #FFFDF9;
+  --text-dim: #F8EDDE;
+  --text-muted: #E0CAAA;
+  --accent: #FFB800;
+  --accent-soft: rgba(255, 192, 32, 0.26);
+  --accent-border: rgba(224, 170, 80, 0.75);
+  --border: rgba(218, 168, 100, 0.46);
+  --border-strong: rgba(224, 170, 80, 0.75);
+  --mermaid-neutral-fill: #5a4433;
+  --mermaid-neutral-border: #d0a26c;
+  --mermaid-neutral-text: #fff8ef;
+  --mermaid-blue-fill: #3d5470;
+  --mermaid-blue-border: #91b8e5;
+  --mermaid-blue-text: #fffaf4;
+  --mermaid-green-fill: #465947;
+  --mermaid-green-border: #8fc59a;
+  --mermaid-green-text: #fffaf1;
+  --mermaid-amber-fill: #70543b;
+  --mermaid-amber-border: #f0bf6a;
+  --mermaid-amber-text: #fffaf3;
+  --mermaid-red-fill: #70464a;
+  --mermaid-red-border: #e8a4ab;
+  --mermaid-red-text: #fff7f3;
+  --mermaid-violet-fill: #5a4b68;
+  --mermaid-violet-border: #bea3dc;
+  --mermaid-violet-text: #fff9f7;
+  --mermaid-line: #ffd36b;
+  --mermaid-line-muted: rgba(255, 211, 107, 0.42);
+  --mermaid-label-fill: #594434;
+  --mermaid-label-text: #fffaf2;
+  --dust-dot: rgba(232, 206, 171, 0.24);
+  --dust-accent-dot: rgba(255, 184, 0, 0.22);
+  --search-focus-shadow: 0 0 12px rgba(255, 184, 0, 0.26), 0 0 4px rgba(255, 107, 53, 0.22);
+  --callout-info-ring: inset 0 0 0 1px rgba(224, 170, 80, 0.34);
+  --section-card-focus-shadow: 0 0 0 1px rgba(224, 170, 80, 0.42), 0 0 24px rgba(255, 107, 53, 0.18);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(255, 184, 0, 0.20), rgba(255, 107, 53, 0.14));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(255, 107, 53, 0.18);
+  --section-title-focus-shadow: 0 0 12px rgba(255, 107, 53, 0.24);
+  --section-count-focus-bg: rgba(255, 184, 0, 0.16);
+  --row-divider: rgba(210, 160, 105, 0.18);
+  --osc-text: #FF6B35;
+  color-scheme: dark;
+}
 
-        /* Header - Minimal single line */
-        header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            background: var(--bg-secondary);
-            border-radius: 6px;
-            border: 1px solid var(--border);
-        }
+html, body { min-height: 100%; }
 
-        header h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+body {
+  font-family: var(--font-body);
+  font-weight: 200;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--bg-gradient-top), var(--bg-gradient-bottom));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-        .version-badge {
-            background: var(--accent);
-            color: white;
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            margin-left: 1rem;
-        }
+/* Dust grid is now canvas-based — see /shared/dust.js */
 
-        .header-subtitle {
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            margin-left: 0.75rem;
-            padding-left: 0.75rem;
-            border-left: 1px solid var(--border);
-        }
+body > * { position: relative; z-index: 1; }
 
-        /* Quick Nav + Legend Row */
-        .nav-legend-row {
-            display: flex;
-            gap: 0.35rem;
-            margin: 0.75rem 0 1rem 0;
-            flex-wrap: wrap;
-            align-items: center;
-        }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+}
 
-        .quick-nav {
-            display: flex;
-            gap: 0.3rem;
-            padding: 0.25rem 0.5rem;
-            background: var(--bg-secondary);
-            border-radius: 4px;
-            border: 1px solid var(--border);
-            align-items: center;
-        }
+.site-header__inner,
+main,
+footer .inner {
+  width: var(--shell-width);
+  margin: 0 auto;
+}
 
-        .quick-nav a {
-            color: var(--text-primary);
-            text-decoration: none;
-            padding: 0.2rem 0.5rem;
-            background: var(--bg-card);
-            border-radius: 3px;
-            font-size: 0.8rem;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-        }
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
 
-        .quick-nav a:hover {
-            background: var(--accent);
-            border-color: var(--accent);
-        }
+.brand {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  text-decoration: none;
+}
 
-        /* Diagram Cards */
-        .diagram-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            margin-bottom: 1.25rem;
-            overflow: hidden;
-            transition: border-color 0.2s;
-            scroll-margin-top: 1.5rem;
-            scroll-margin-bottom: 1.5rem;
-        }
+.brand__title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text);
+  text-decoration: none;
+}
 
-        .diagram-card:hover {
-            border-color: var(--accent-secondary);
-        }
+.header-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 1;
+}
 
-        .diagram-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.8rem 1.5rem;
-            background: var(--bg-card);
-            cursor: pointer;
-            user-select: none;
-        }
+main {
+  padding: 22px 0 42px;
+  display: grid;
+  gap: 16px;
+  flex: 1 0 auto;
+  align-content: start;
+}
 
-        .diagram-header h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            flex: 1;
-        }
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 
-        .diagram-badge {
-            font-size: 0.9rem;
-            padding: 0.3rem 0.6rem;
-            background: var(--accent-secondary);
-            border-radius: 6px;
-            color: white;
-        }
+.hero {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  max-width: 72ch;
+}
 
-        .diagram-toggle {
-            width: 36px;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            transition: transform 0.3s;
-            font-size: 1.5rem;
-        }
+.hero-eyebrow {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 
-        .diagram-card.collapsed .diagram-toggle {
-            transform: rotate(-90deg);
-        }
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  margin-left: 4px;
+}
 
-        .diagram-content {
-            padding: 1.5rem;
-            overflow-x: auto;
-            transition: max-height 0.3s ease, padding 0.3s ease;
-        }
+.hero p {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: 4px;
+}
 
-        .diagram-card.collapsed .diagram-content {
-            max-height: 0;
-            padding-top: 0;
-            padding-bottom: 0;
-            overflow: hidden;
-        }
+.hero-meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-content: start;
+  flex: 0 1 540px;
+  min-width: 0;
+}
 
-        .diagram-description {
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.95rem;
-            font-family: 'InputSans-Light', 'Input Sans', system-ui, sans-serif;
-            font-weight: 300;
-        }
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
 
-        .mermaid {
-            background: var(--bg-primary);
-            border-radius: 12px;
-            padding: 1.5rem;
-            min-height: 200px;
-            overflow-x: auto;
-            overflow-y: visible;
-        }
+.meta-chip__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
-        .mermaid svg {
-            min-width: 900px;
-            display: block;
-            margin: 0 auto;
-        }
+.meta-chip__value {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 
-        /* Color Legend - Compact inline */
-        .legend {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 0.3rem 0.5rem;
-        }
+.surface-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
 
-        .legend h3 {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            white-space: nowrap;
-        }
+.surface-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
 
-        .legend-grid {
-            display: flex;
-            gap: 0.6rem;
-            flex-wrap: wrap;
-        }
+.callout-grid {
+  display: grid;
+  gap: 12px;
+}
 
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
+.callout {
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+}
 
-        .legend-color {
-            width: 9px;
-            height: 9px;
-            border-radius: 2px;
-            flex-shrink: 0;
-        }
+.callout h2 {
+  font-family: var(--font-display);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
 
-        /* Mermaid edge label styling - bubble cells */
-        .mermaid .edgeLabel foreignObject {
-            overflow: visible;
-        }
-        .mermaid .edgeLabel div {
-            padding: 4px 10px;
-            background: #3a2a1a !important;
-            border-radius: 3px;
-        }
-        .mermaid .edgeLabel rect,
-        .mermaid .labelBkg {
-            fill: #3a2a1a !important;
-            rx: 3px;
-            ry: 3px;
-        }
+.callout p {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
 
-        /* Mermaid line and border thickness */
-        .mermaid .flowchart-link,
-        .mermaid .edgePath path,
-        .mermaid .transition path {
-            stroke-width: 2px !important;
-        }
-        .mermaid .node rect,
-        .mermaid .node circle,
-        .mermaid .node polygon,
-        .mermaid .cluster rect,
-        .mermaid .statediagram-state rect {
-            stroke-width: 2px !important;
-        }
+.callout--info {
+  box-shadow: var(--callout-info-ring);
+}
 
-        /* Mermaid node text - prevent clipping */
-        .mermaid .cluster-label {
-            white-space: nowrap;
-            padding: 8px 12px;
-        }
-        .mermaid .cluster-label .nodeLabel {
-            white-space: nowrap;
-            padding: 4px 8px;
-        }
-        .mermaid .nodeLabel {
-            white-space: nowrap;
-        }
-        .mermaid .label foreignObject {
-            overflow: visible;
-        }
-        .mermaid .cluster rect {
-            rx: 8px;
-            ry: 8px;
-        }
-        /* Ensure cluster titles have breathing room */
-        .mermaid .cluster .label {
-            margin-bottom: 12px;
-        }
-        .mermaid .cluster foreignObject {
-            overflow: visible;
-        }
+.callout--warning {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+}
 
-        /* Keyboard Hints */
-        .keyboard-hints {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            gap: 0.35rem;
-        }
+.callout--success {
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.16);
+}
 
-        .keyboard-hints div {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
+.empty-state {
+  padding: 22px 20px;
+  display: grid;
+  gap: 8px;
+}
 
-        .keyboard-hints kbd {
-            background: var(--bg-primary);
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            border: 1px solid var(--border);
-            font-family: monospace;
-            font-size: 0.7rem;
-            min-width: 1.2rem;
-            text-align: center;
-        }
+.empty-state h2 {
+  font-family: var(--font-display);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
 
-        /* Selected diagram card for keyboard nav */
-        .diagram-card.selected {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-        }
+.empty-state p {
+  color: var(--text-dim);
+  max-width: 70ch;
+}
 
-        /* Footer */
-        footer {
-            text-align: center;
-            padding: 1.5rem;
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            border-top: 1px solid var(--border);
-            margin-top: 2rem;
-        }
+footer {
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  padding: 12px 0 14px;
+}
 
-        footer a {
-            color: var(--accent);
-            text-decoration: none;
-        }
+footer .inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
 
-        /* Responsive */
-        @media (max-width: 900px) {
-            .nav-legend-row {
-                flex-direction: column;
-                gap: 0.35rem;
-                align-items: flex-start;
-            }
-            .mermaid svg {
-                min-width: auto;
-            }
-        }
+.footer-notes {
+  width: var(--shell-width);
+  margin: 10px auto 0;
+  display: grid;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
 
-        @media (max-width: 600px) {
-            .container { padding: 0.5rem; }
-            header { padding: 0.4rem 0.6rem; }
-            header h1 { font-size: 1rem; }
-            .version-badge {
-                font-size: 0.6rem;
-                padding: 0.1rem 0.3rem;
-                margin-left: 0.5rem;
-            }
-            .header-subtitle { display: none; }
-            .quick-nav {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-            .quick-nav a {
-                font-size: 0.7rem;
-                padding: 0.15rem 0.4rem;
-            }
-            .legend {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-            .legend h3 { font-size: 0.65rem; }
-            .legend-item { font-size: 0.65rem; }
-            .diagram-header {
-                padding: 0.6rem 1rem;
-                gap: 0.5rem;
-            }
-            .diagram-header h2 { font-size: 1rem; }
-            .diagram-badge {
-                font-size: 0.7rem;
-                padding: 0.2rem 0.4rem;
-            }
-            .diagram-toggle {
-                width: 28px;
-                height: 28px;
-                font-size: 1.2rem;
-            }
-            .diagram-content { padding: 1rem; }
-            .diagram-description { font-size: 0.85rem; }
-            .mermaid {
-                padding: 1rem;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            .mermaid svg {
-                min-width: auto;
-                max-width: none;
-            }
-            .keyboard-hints { display: none; }
-            footer {
-                padding: 1rem;
-                font-size: 0.7rem;
-            }
-        }
-    </style>
+.footer-notes a {
+  color: var(--accent);
+}
+
+.footer-notes code {
+  font-family: var(--font-body);
+}
+
+@media (max-width: 900px) {
+  .hero-row {
+    flex-direction: column;
+  }
+
+  .site-header__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+    align-items: flex-start;
+  }
+
+  .hero-meta {
+    width: 100%;
+    justify-items: start;
+    display: none;
+  }
+
+  main,
+  .site-header__inner,
+  .footer-notes,
+  footer .inner {
+    width: 96vw;
+  }
+
+  footer .inner {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 20px;
+  }
+}
+
+</style>
+<style>
+/* gallery.css — gallery-only styles */
+
+.gallery-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nav-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.nav-group__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.nav-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+  transition: background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.nav-chip:hover,
+.nav-chip:focus-visible {
+  outline: none;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-border), 0 0 18px rgba(88, 166, 255, 0.12);
+}
+
+.section-block {
+  display: grid;
+  gap: 10px;
+}
+
+.section-heading {
+  padding: 0 4px;
+}
+
+.section-heading span {
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.diagram-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.diagram-card {
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.diagram-card.is-focused {
+  border-color: var(--accent-border);
+  box-shadow: var(--section-card-focus-shadow);
+}
+
+.diagram-header {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-strong);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  transition: background var(--transition), border-radius var(--transition), box-shadow var(--transition);
+}
+
+.diagram-header:hover {
+  background: var(--bg-panel-hover);
+}
+
+.diagram-header:focus,
+.diagram-header:focus-visible {
+  outline: none;
+  background: var(--section-header-focus-bg);
+}
+
+.diagram-header.collapsed {
+  border-radius: calc(var(--radius) - 1px);
+  border-bottom-color: transparent;
+}
+
+.diagram-arrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform var(--transition), color var(--transition);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.diagram-header.collapsed .diagram-arrow {
+  transform: rotate(-90deg);
+}
+
+.diagram-header__copy {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diagram-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.diagram-header:focus .diagram-title,
+.diagram-header:focus-visible .diagram-title {
+  text-shadow: var(--section-title-focus-shadow);
+}
+
+.diagram-description {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.diagram-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.diagram-content {
+  display: block;
+  padding: 0 0 16px;
+}
+
+.diagram-content.collapsed {
+  display: none;
+}
+
+.diagram-canvas {
+  margin: 14px 16px 16px;
+  padding: clamp(16px, 2vw, 22px);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.diagram-canvas svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.diagram-canvas svg text,
+.diagram-canvas svg tspan,
+.diagram-canvas .nodeLabel,
+.diagram-canvas .label {
+  font-family: "Geist Mono UltraLight", ui-monospace, monospace !important;
+  font-weight: 200 !important;
+}
+
+.diagram-loading,
+.diagram-error {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .gallery-nav {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .nav-group {
+    width: 100%;
+  }
+
+  .diagram-header {
+    padding: 12px 14px;
+  }
+
+  .diagram-canvas {
+    margin: 8px;
+    padding: 10px;
+    overflow-x: auto;
+  }
+
+  .diagram-canvas svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .nav-chip {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+}
+
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Clip Composer Architecture Gallery</h1>
-            <span class="version-badge">v0.2.0</span>
-            <span class="header-subtitle">Orpheus SDK Clip Composer - Professional Audio Clip Management</span>
-        </header>
-
-        <div class="nav-legend-row">
-            <nav class="quick-nav">
-                <a href="#component-architecture">Component Architecture</a>
-                <a href="#data-flow">Data Flow</a>
-                <a href="#threading-model">Threading Model</a>
-                <a href="#build-dependencies">Build &amp; Dependencies</a>
-                <a href="#session-management">Session Management</a>
-            </nav>
-            <div class="legend">
-                <h3>Legend:</h3>
-                <div class="legend-grid">
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #FF9800"></span>
-                        UI / JUCE Components
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #E65100"></span>
-                        Application Logic
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #1E90FF"></span>
-                        Orpheus SDK
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #2E7D32"></span>
-                        Platform / Hardware
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #7B1FA2"></span>
-                        External / Storage
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 1: Component Architecture -->
-        <div class="diagram-card" id="component-architecture">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <h2>
-                    <span class="diagram-badge">1</span>
-                    Component Architecture
-                </h2>
-                <div class="diagram-toggle">&#9660;</div>
-            </div>
-            <div class="diagram-content">
-                <div class="diagram-description">
-                    5-layer architecture from JUCE UI components down to platform audio I/O.
-                    Layers 1-2 are OCC-specific, Layers 3-5 are shared Orpheus SDK infrastructure.
-                    ClipGrid supports 10x12 buttons across 8 tabs (960 clips total).
-                </div>
-                <div class="mermaid">
-flowchart TB
-    subgraph L1["Layer 1: UI Components (JUCE)"]
-        direction LR
-        CG["ClipGrid\n10x12 x 8 tabs\n960 clips"]
-        WD["WaveformDisplay"]
-        TC["TransportControls"]
-        RP["RoutingPanel"]
-        TS["TabSwitcher"]
-        AS["AudioSettingsDialog"]
-        CE["ClipEditDialog"]
-        HI["HeartbeatIndicator"]
-        SM_UI["shmui-juce\nVisualizers"]
-    end
-
-    subgraph L2["Layer 2: Application Logic"]
-        direction LR
-        SesM["SessionManager\nJSON sessions"]
-        CM["ClipManager\nMetadata & assignments"]
-        RM["RoutingManager\n4 Clip Groups"]
-        PM["PreferencesManager"]
-        AE["AudioEngine"]
-        UM["UndoManager"]
-        DB["Database\nSQLite"]
-        EL["EventLogger"]
-        PL["PlayoutLogger"]
-        HK["HotKeyManager"]
-        MIDI["MIDIDeviceManager"]
-    end
-
-    subgraph L3["Layer 3: Orpheus SDK Integration"]
-        direction LR
-        ITC["ITransportController\nClip playback"]
-        IAFR["IAudioFileReader\nWAV/AIFF/FLAC"]
-        IRM["IRoutingMatrix\nMulti-channel"]
-        IPM["IPerformanceMonitor\nCPU/latency"]
-    end
-
-    subgraph L4["Layer 4: Real-Time Audio Processing"]
-        direction LR
-        IAD["IAudioDriver\nCoreAudio/ASIO/WASAPI"]
-        MIX["Mixing Engine\nGain smoothing, fade-out"]
-        SAT["Sample-Accurate Timing\n+/- 1 sample"]
-    end
-
-    subgraph L5["Layer 5: Platform Audio I/O"]
-        direction LR
-        AI["Audio Interfaces\n2-32 channels"]
-        DRV["ASIO / CoreAudio\nWASAPI drivers"]
-    end
-
-    L1 -->|"Message Thread"| L2
-    L2 -->|"Lock-Free Commands"| L3
-    L3 -->|"Audio Thread"| L4
-    L4 -->|"Hardware"| L5
-
-    style L1 fill:#3a2510,stroke:#FF9800,color:#eaeaea
-    style L2 fill:#3a1a08,stroke:#E65100,color:#eaeaea
-    style L3 fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style L4 fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style L5 fill:#0a300a,stroke:#2E7D32,color:#eaeaea
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 2: Data Flow -->
-        <div class="diagram-card collapsed" id="data-flow">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <h2>
-                    <span class="diagram-badge">2</span>
-                    Audio Clip Data Flow
-                </h2>
-                <div class="diagram-toggle">&#9660;</div>
-            </div>
-            <div class="diagram-content">
-                <div class="diagram-description">
-                    How audio clips flow through the system from file import to hardware output.
-                    File I/O happens on background thread, playback commands traverse lock-free queues,
-                    and audio processing runs on the real-time audio thread with zero allocations.
-                </div>
-                <div class="mermaid">
-flowchart LR
-    subgraph Import["File Import"]
-        FS["Filesystem\nWAV / AIFF / FLAC"]
-        SCAN["Directory Scanner\nBackground Thread"]
-    end
-
-    subgraph Decode["Decoding"]
-        AFR["IAudioFileReader\nlibsndfile"]
-        WF["Waveform Calculator\nBackground Thread"]
-        META["Clip Metadata\nJSON Schema"]
-    end
-
-    subgraph Session["Session State"]
-        SESS["SessionManager\nJSON persistence"]
-        CLIP["ClipManager\nButton assignments"]
-        GRID["ClipGrid UI\n960 buttons"]
-    end
-
-    subgraph Playback["Playback Pipeline"]
-        TRIG["Trigger Command\nLock-free queue"]
-        TRANS["TransportController\nStart / Stop / Loop"]
-        ROUTE["RoutingMatrix\n4 Clip Groups"]
-    end
-
-    subgraph Output["Audio Output"]
-        MIX["Mixer\nGain + Fade"]
-        DRIVER["AudioDriver\nCoreAudio / ASIO"]
-        HW["Hardware\nAudio Interface"]
-    end
-
-    FS --> SCAN
-    SCAN --> AFR
-    AFR --> WF
-    AFR --> META
-    META --> SESS
-    SESS --> CLIP
-    CLIP --> GRID
-    GRID -->|"User click"| TRIG
-    TRIG -->|"Lock-free"| TRANS
-    TRANS --> ROUTE
-    ROUTE --> MIX
-    MIX --> DRIVER
-    DRIVER --> HW
-    WF -->|"callAsync"| GRID
-
-    style Import fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
-    style Decode fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style Session fill:#3a1a08,stroke:#E65100,color:#eaeaea
-    style Playback fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style Output fill:#0a300a,stroke:#2E7D32,color:#eaeaea
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 3: Threading Model -->
-        <div class="diagram-card collapsed" id="threading-model">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <h2>
-                    <span class="diagram-badge">3</span>
-                    Threading Model
-                </h2>
-                <div class="diagram-toggle">&#9660;</div>
-            </div>
-            <div class="diagram-content">
-                <div class="diagram-description">
-                    Three-thread architecture ensuring real-time audio performance. The Message Thread
-                    handles UI events, the Audio Thread processes audio with zero allocations (no locks,
-                    no I/O), and the File I/O Thread handles background loading. Communication between
-                    threads uses lock-free queues and atomic operations only.
-                </div>
-                <div class="mermaid">
-flowchart TB
-    subgraph MT["Message Thread (UI)"]
-        direction TB
-        JUCE_MM["JUCE MessageManager"]
-        UI_EVT["UI Events\nButton clicks, keyboard"]
-        UI_UPD["Visual Updates\nWaveforms, meters, transport"]
-        SDK_CB["SDK Callbacks\nonClipStarted, onClipStopped"]
-        IO_OPS["I/O Operations\nSession save/load"]
-    end
-
-    subgraph AT["Audio Thread (Real-Time)"]
-        direction TB
-        PROC["processAudio()\n~10ms @ 512 samples"]
-        READ["IAudioFileReader"]
-        MIX_A["IRoutingMatrix\nMix clips"]
-        POS["Atomic transport\nposition update"]
-        CB_POST["Post callbacks\nLock-free queue"]
-    end
-
-    subgraph FT["File I/O Thread (Background)"]
-        direction TB
-        PRELOAD["Pre-load audio files"]
-        SCAN_D["Scan directories"]
-        WAVE_C["Calculate waveform data"]
-        WRITE_R["Write recorded audio"]
-    end
-
-    MT -->|"Lock-Free\nCommands"| AT
-    AT -->|"Lock-Free\nCallbacks"| MT
-    FT -->|"callAsync()"| MT
-
-    style MT fill:#3a2510,stroke:#FF9800,color:#eaeaea
-    style AT fill:#300a0a,stroke:#ef4444,color:#eaeaea
-    style FT fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 4: Build & Dependencies -->
-        <div class="diagram-card collapsed" id="build-dependencies">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <h2>
-                    <span class="diagram-badge">4</span>
-                    Build &amp; Dependencies
-                </h2>
-                <div class="diagram-toggle">&#9660;</div>
-            </div>
-            <div class="diagram-content">
-                <div class="diagram-description">
-                    CMake build graph showing the orpheus_clip_composer_app target, its dependencies
-                    on JUCE 8.0.4 modules, Orpheus SDK static libraries, shmui-juce visualization
-                    package, SQLite3, libsndfile, and platform frameworks. C++20 required.
-                </div>
-                <div class="mermaid">
-flowchart TB
-    subgraph Target["CMake Target"]
-        APP["orpheus_clip_composer_app\nC++20 | JUCE GUI App"]
-    end
-
-    subgraph JUCE_Mods["JUCE 8.0.4 Modules"]
-        direction LR
-        JGE["juce_gui_extra"]
-        JAB["juce_audio_basics"]
-        JAD["juce_audio_devices"]
-        JAF["juce_audio_formats"]
-        JAU["juce_audio_utils"]
-        JEV["juce_events"]
-    end
-
-    subgraph SDK_Libs["Orpheus SDK Static Libraries"]
-        direction LR
-        OT["liborpheus_transport.a"]
-        OA["liborpheus_audio_io.a"]
-        OR["liborpheus_routing.a"]
-        OD["liborpheus_audio_driver_coreaudio.a"]
-    end
-
-    subgraph Packages["First-Party Packages"]
-        SHMUI["orpheus_shmui_juce\nAudio Visualizers"]
-    end
-
-    subgraph ExtDeps["External Dependencies"]
-        direction LR
-        SQL["SQLite3\nFetchContent"]
-        LSF["libsndfile\nSystem library"]
-        GT["GoogleTest v1.14\nFetchContent"]
-    end
-
-    subgraph Platform["Platform Frameworks (macOS)"]
-        direction LR
-        CA["CoreAudio.framework"]
-        ATB["AudioToolbox.framework"]
-        AU["AudioUnit.framework"]
-    end
-
-    subgraph Source["Source Modules"]
-        direction LR
-        S_MAIN["Main.cpp\nMainComponent"]
-        S_GRID["ClipGrid/\nClipButton"]
-        S_AUDIO["Audio/\nAudioEngine"]
-        S_SESS["Session/\nSessionManager"]
-        S_TRANS["Transport/\nTransportControls"]
-        S_UI["UI/\nDialogs, Displays"]
-        S_CORE["Core/\nDatabase, Logging,\nUndo, HotKeys, MIDI"]
-    end
-
-    Source --> APP
-    APP --> JUCE_Mods
-    APP --> SDK_Libs
-    APP --> Packages
-    APP --> ExtDeps
-    APP --> Platform
-
-    style Target fill:#3a2510,stroke:#FF9800,color:#eaeaea
-    style JUCE_Mods fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style SDK_Libs fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style Packages fill:#3a1a08,stroke:#E65100,color:#eaeaea
-    style ExtDeps fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
-    style Platform fill:#0a300a,stroke:#2E7D32,color:#eaeaea
-    style Source fill:#3a2510,stroke:#FF9800,color:#eaeaea
-                </div>
-            </div>
-        </div>
-
-        <!-- Card 5: Session Management -->
-        <div class="diagram-card collapsed" id="session-management">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <h2>
-                    <span class="diagram-badge">5</span>
-                    Session Management
-                </h2>
-                <div class="diagram-toggle">&#9660;</div>
-            </div>
-            <div class="diagram-content">
-                <div class="diagram-description">
-                    Session lifecycle from creation through save/load. Sessions persist as JSON files
-                    containing clip metadata, routing configuration, and user preferences. SQLite
-                    database provides session history and playout logging for broadcast compliance.
-                </div>
-                <div class="mermaid">
-flowchart LR
-    subgraph Create["Session Creation"]
-        NEW["New Session"]
-        LOAD["Load Session\nJSON file"]
-        HIST["Session History\nSQLite DB"]
-    end
-
-    subgraph State["Runtime State"]
-        SM["SessionManager"]
-        CLIPS["Clip Assignments\n960 slots"]
-        ROUTING["Routing Config\n4 Groups"]
-        PREFS["User Preferences"]
-        UNDO["UndoManager\nAction history"]
-    end
-
-    subgraph Persist["Persistence"]
-        JSON["Session JSON\nMetadata + Routing"]
-        DB["SQLite Database\nHistory + Playout"]
-        LOG["PlayoutLogger\nBroadcast compliance"]
-    end
-
-    subgraph Output_S["Session Output"]
-        SAVE["Save Session"]
-        EXPORT["Export Session"]
-        BACKUP["Auto-backup"]
-    end
-
-    NEW --> SM
-    LOAD --> SM
-    HIST --> SM
-    SM --> CLIPS
-    SM --> ROUTING
-    SM --> PREFS
-    SM --> UNDO
-    CLIPS --> JSON
-    ROUTING --> JSON
-    PREFS --> JSON
-    SM --> DB
-    SM --> LOG
-    JSON --> SAVE
-    JSON --> EXPORT
-    DB --> BACKUP
-
-    style Create fill:#2a1040,stroke:#7B1FA2,color:#eaeaea
-    style State fill:#3a1a08,stroke:#E65100,color:#eaeaea
-    style Persist fill:#0a2040,stroke:#1E90FF,color:#eaeaea
-    style Output_S fill:#0a300a,stroke:#2E7D32,color:#eaeaea
-                </div>
-            </div>
-        </div>
-
-        <footer>
-            Clip Composer Architecture Gallery v0.2.0 |
-            <a href="../docs/occ/INDEX.md">OCC Documentation Index</a> |
-            <a href="../CLAUDE.md">Development Guide</a> |
-            Generated 2026-02-01
-        </footer>
+<header class="site-header">
+  <div class="site-header__inner">
+    <div class="brand">
+      <a class="brand__title" href="#">dreamfactory</a>
     </div>
+  </div>
+</header>
 
-    <div class="keyboard-hints">
-        <div><kbd>&uarr;</kbd><kbd>&darr;</kbd> Navigate</div>
-        <div><kbd>&larr;</kbd> Collapse</div>
-        <div><kbd>&rarr;</kbd> Expand</div>
-        <div><kbd>Esc</kbd> Collapse all</div>
-        <div><kbd>A</kbd> Expand all</div>
+<main>
+  <div class="hero-row">
+    <div class="hero">
+      <span class="hero-eyebrow">ARCHITECTURE GALLERY</span>
+      <h1>clip-composer</h1>
+      <p>Professional Audio Clip Management · JUCE 8.0.4</p>
     </div>
+    <div class="hero-meta"><div class="meta-chip"><span class="meta-chip__label">UPDATED</span><span class="meta-chip__value">2026-05-18</span></div><div class="meta-chip"><span class="meta-chip__label">VERSION</span><span class="meta-chip__value">0.2.1</span></div><div class="meta-chip"><span class="meta-chip__label">WIREFRAMES</span><span class="meta-chip__value">v2026-05-18</span></div></div>
+  </div>
+  <section class="gallery-nav"><div class="nav-group"><a class="nav-chip" href="#component-architecture" data-target="component-architecture">Component Architecture</a><a class="nav-chip" href="#data-flow" data-target="data-flow">Audio Clip Data Flow</a><a class="nav-chip" href="#threading-model" data-target="threading-model">Threading Model</a><a class="nav-chip" href="#build-dependencies" data-target="build-dependencies">Build &amp; Dependencies</a><a class="nav-chip" href="#session-management" data-target="session-management">Session Management</a></div></section>
 
-    <script>
-        // Initialize Mermaid with dark theme
-        mermaid.initialize({
-            startOnLoad: true,
-            theme: 'dark',
-            themeVariables: {
-                fontFamily: '"InputMono-Regular", "SF Mono", "Fira Code", monospace',
-                primaryColor: '#E65100',
-                primaryTextColor: '#eaeaea',
-                primaryBorderColor: '#333',
-                lineColor: '#FF9800',
-                secondaryColor: '#7B1FA2',
-                tertiaryColor: '#1a1a1a',
-                background: '#1a1a1a',
-                mainBkg: '#E65100',
-                nodeBorder: '#333',
-                clusterBkg: '#242424',
-                clusterBorder: '#333',
-                titleColor: '#eaeaea',
-                edgeLabelBackground: '#3a2a1a',
-                lineWidth: 2
-            },
-            flowchart: {
-                useMaxWidth: true,
-                htmlLabels: true,
-                curve: 'monotoneY',
-                nodeSpacing: 80,
-                rankSpacing: 100,
-                padding: 30
-            },
-            stateDiagram: {
-                useMaxWidth: true,
-                nodeSpacing: 60,
-                rankSpacing: 50
-            }
-        });
+  <section class="section-block" data-section="gallery-diagrams"><div class="diagram-stack">
 
-        // Keyboard navigation state
-        let selectedIndex = -1;
-        const cards = document.querySelectorAll('.diagram-card');
+    <article class="surface-card diagram-card" id="component-architecture" data-diagram-id="component-architecture"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Component Architecture</span><p class="diagram-description">5-layer architecture from JUCE UI components down to platform audio I/O. Layers 1-2 are OCC-specific, Layers 3-5 are shared Orpheus SDK infrastructure. ClipGrid supports 10x12 buttons across 8 tabs (960 clips total).</p></span><span class="diagram-kind">#1</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"flowchart TB\n    subgraph L1[\"Layer 1: UI Components (JUCE)\"]\n        direction LR\n        CG[\"ClipGrid\\n10x12 x 8 tabs\\n960 clips\"]\n        WD[\"WaveformDisplay\"]\n        TC[\"TransportControls\"]\n        RP[\"RoutingPanel\"]\n        TS[\"TabSwitcher\"]\n        AS[\"AudioSettingsDialog\"]\n        CE[\"ClipEditDialog\"]\n        HI[\"HeartbeatIndicator\"]\n        SM_UI[\"shmui-juce\\nVisualizers\"]\n    end\n\n    subgraph L2[\"Layer 2: Application Logic\"]\n        direction LR\n        SesM[\"SessionManager\\nJSON sessions\"]\n        CM[\"ClipManager\\nMetadata & assignments\"]\n        RM[\"RoutingManager\\n4 Clip Groups\"]\n        PM[\"PreferencesManager\"]\n        AE[\"AudioEngine\"]\n        UM[\"UndoManager\"]\n        DB[\"Database\\nSQLite\"]\n        EL[\"EventLogger\"]\n        PL[\"PlayoutLogger\"]\n        HK[\"HotKeyManager\"]\n        MIDI[\"MIDIDeviceManager\"]\n    end\n\n    subgraph L3[\"Layer 3: Orpheus SDK Integration\"]\n        direction LR\n        ITC[\"ITransportController\\nClip playback\"]\n        IAFR[\"IAudioFileReader\\nWAV/AIFF/FLAC\"]\n        IRM[\"IRoutingMatrix\\nMulti-channel\"]\n        IPM[\"IPerformanceMonitor\\nCPU/latency\"]\n    end\n\n    subgraph L4[\"Layer 4: Real-Time Audio Processing\"]\n        direction LR\n        IAD[\"IAudioDriver\\nCoreAudio/ASIO/WASAPI\"]\n        MIX[\"Mixing Engine\\nGain smoothing, fade-out\"]\n        SAT[\"Sample-Accurate Timing\\n+/- 1 sample\"]\n    end\n\n    subgraph L5[\"Layer 5: Platform Audio I/O\"]\n        direction LR\n        AI[\"Audio Interfaces\\n2-32 channels\"]\n        DRV[\"ASIO / CoreAudio\\nWASAPI drivers\"]\n    end\n\n    L1 -->|\"Message Thread\"| L2\n    L2 -->|\"Lock-Free Commands\"| L3\n    L3 -->|\"Audio Thread\"| L4\n    L4 -->|\"Hardware\"| L5\n\n    style L1 fill:#3a2510,stroke:#FF9800,color:#eaeaea\n    style L2 fill:#3a1a08,stroke:#E65100,color:#eaeaea\n    style L3 fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style L4 fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style L5 fill:#0a300a,stroke:#2E7D32,color:#eaeaea"</script></div></article>
 
-        function selectCard(index) {
-            cards.forEach(c => c.classList.remove('selected'));
-            if (index >= 0 && index < cards.length) {
-                selectedIndex = index;
-                cards[index].classList.add('selected');
-                cards[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+    <article class="surface-card diagram-card" id="data-flow" data-diagram-id="data-flow"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Audio Clip Data Flow</span><p class="diagram-description">How audio clips flow through the system from file import to hardware output. File I/O happens on background thread, playback commands traverse lock-free queues, and audio processing runs on the real-time audio thread with zero allocations.</p></span><span class="diagram-kind">#2</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"flowchart LR\n    subgraph Import[\"File Import\"]\n        FS[\"Filesystem\\nWAV / AIFF / FLAC\"]\n        SCAN[\"Directory Scanner\\nBackground Thread\"]\n    end\n\n    subgraph Decode[\"Decoding\"]\n        AFR[\"IAudioFileReader\\nlibsndfile\"]\n        WF[\"Waveform Calculator\\nBackground Thread\"]\n        META[\"Clip Metadata\\nJSON Schema\"]\n    end\n\n    subgraph Session[\"Session State\"]\n        SESS[\"SessionManager\\nJSON persistence\"]\n        CLIP[\"ClipManager\\nButton assignments\"]\n        GRID[\"ClipGrid UI\\n960 buttons\"]\n    end\n\n    subgraph Playback[\"Playback Pipeline\"]\n        TRIG[\"Trigger Command\\nLock-free queue\"]\n        TRANS[\"TransportController\\nStart / Stop / Loop\"]\n        ROUTE[\"RoutingMatrix\\n4 Clip Groups\"]\n    end\n\n    subgraph Output[\"Audio Output\"]\n        MIX[\"Mixer\\nGain + Fade\"]\n        DRIVER[\"AudioDriver\\nCoreAudio / ASIO\"]\n        HW[\"Hardware\\nAudio Interface\"]\n    end\n\n    FS --> SCAN\n    SCAN --> AFR\n    AFR --> WF\n    AFR --> META\n    META --> SESS\n    SESS --> CLIP\n    CLIP --> GRID\n    GRID -->|\"User click\"| TRIG\n    TRIG -->|\"Lock-free\"| TRANS\n    TRANS --> ROUTE\n    ROUTE --> MIX\n    MIX --> DRIVER\n    DRIVER --> HW\n    WF -->|\"callAsync\"| GRID\n\n    style Import fill:#2a1040,stroke:#7B1FA2,color:#eaeaea\n    style Decode fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style Session fill:#3a1a08,stroke:#E65100,color:#eaeaea\n    style Playback fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style Output fill:#0a300a,stroke:#2E7D32,color:#eaeaea"</script></div></article>
+
+    <article class="surface-card diagram-card" id="threading-model" data-diagram-id="threading-model"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Threading Model</span><p class="diagram-description">Three-thread architecture ensuring real-time audio performance. The Message Thread handles UI events, the Audio Thread processes audio with zero allocations (no locks, no I/O), and the File I/O Thread handles background loading. Communication between threads uses lock-free queues and atomic operations only.</p></span><span class="diagram-kind">#3</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"flowchart TB\n    subgraph MT[\"Message Thread (UI)\"]\n        direction TB\n        JUCE_MM[\"JUCE MessageManager\"]\n        UI_EVT[\"UI Events\\nButton clicks, keyboard\"]\n        UI_UPD[\"Visual Updates\\nWaveforms, meters, transport\"]\n        SDK_CB[\"SDK Callbacks\\nonClipStarted, onClipStopped\"]\n        IO_OPS[\"I/O Operations\\nSession save/load\"]\n    end\n\n    subgraph AT[\"Audio Thread (Real-Time)\"]\n        direction TB\n        PROC[\"processAudio()\\n~10ms @ 512 samples\"]\n        READ[\"IAudioFileReader\"]\n        MIX_A[\"IRoutingMatrix\\nMix clips\"]\n        POS[\"Atomic transport\\nposition update\"]\n        CB_POST[\"Post callbacks\\nLock-free queue\"]\n    end\n\n    subgraph FT[\"File I/O Thread (Background)\"]\n        direction TB\n        PRELOAD[\"Pre-load audio files\"]\n        SCAN_D[\"Scan directories\"]\n        WAVE_C[\"Calculate waveform data\"]\n        WRITE_R[\"Write recorded audio\"]\n    end\n\n    MT -->|\"Lock-Free\\nCommands\"| AT\n    AT -->|\"Lock-Free\\nCallbacks\"| MT\n    FT -->|\"callAsync()\"| MT\n\n    style MT fill:#3a2510,stroke:#FF9800,color:#eaeaea\n    style AT fill:#300a0a,stroke:#ef4444,color:#eaeaea\n    style FT fill:#2a1040,stroke:#7B1FA2,color:#eaeaea"</script></div></article>
+
+    <article class="surface-card diagram-card" id="build-dependencies" data-diagram-id="build-dependencies"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Build &amp; Dependencies</span><p class="diagram-description">CMake build graph showing the orpheus_clip_composer_app target, its dependencies on JUCE 8.0.4 modules, Orpheus SDK static libraries, shmui-juce visualization package, SQLite3, libsndfile, and platform frameworks. C++20 required.</p></span><span class="diagram-kind">#4</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"flowchart TB\n    subgraph Target[\"CMake Target\"]\n        APP[\"orpheus_clip_composer_app\\nC++20 | JUCE GUI App\"]\n    end\n\n    subgraph JUCE_Mods[\"JUCE 8.0.4 Modules\"]\n        direction LR\n        JGE[\"juce_gui_extra\"]\n        JAB[\"juce_audio_basics\"]\n        JAD[\"juce_audio_devices\"]\n        JAF[\"juce_audio_formats\"]\n        JAU[\"juce_audio_utils\"]\n        JEV[\"juce_events\"]\n    end\n\n    subgraph SDK_Libs[\"Orpheus SDK Static Libraries\"]\n        direction LR\n        OT[\"liborpheus_transport.a\"]\n        OA[\"liborpheus_audio_io.a\"]\n        OR[\"liborpheus_routing.a\"]\n        OD[\"liborpheus_audio_driver_coreaudio.a\"]\n    end\n\n    subgraph Packages[\"First-Party Packages\"]\n        SHMUI[\"orpheus_shmui_juce\\nAudio Visualizers\"]\n    end\n\n    subgraph ExtDeps[\"External Dependencies\"]\n        direction LR\n        SQL[\"SQLite3\\nFetchContent\"]\n        LSF[\"libsndfile\\nSystem library\"]\n        GT[\"GoogleTest v1.14\\nFetchContent\"]\n    end\n\n    subgraph Platform[\"Platform Frameworks (macOS)\"]\n        direction LR\n        CA[\"CoreAudio.framework\"]\n        ATB[\"AudioToolbox.framework\"]\n        AU[\"AudioUnit.framework\"]\n    end\n\n    subgraph Source[\"Source Modules\"]\n        direction LR\n        S_MAIN[\"Main.cpp\\nMainComponent\"]\n        S_GRID[\"ClipGrid/\\nClipButton\"]\n        S_AUDIO[\"Audio/\\nAudioEngine\"]\n        S_SESS[\"Session/\\nSessionManager\"]\n        S_TRANS[\"Transport/\\nTransportControls\"]\n        S_UI[\"UI/\\nDialogs, Displays\"]\n        S_CORE[\"Core/\\nDatabase, Logging,\\nUndo, HotKeys, MIDI\"]\n    end\n\n    Source --> APP\n    APP --> JUCE_Mods\n    APP --> SDK_Libs\n    APP --> Packages\n    APP --> ExtDeps\n    APP --> Platform\n\n    style Target fill:#3a2510,stroke:#FF9800,color:#eaeaea\n    style JUCE_Mods fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style SDK_Libs fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style Packages fill:#3a1a08,stroke:#E65100,color:#eaeaea\n    style ExtDeps fill:#2a1040,stroke:#7B1FA2,color:#eaeaea\n    style Platform fill:#0a300a,stroke:#2E7D32,color:#eaeaea\n    style Source fill:#3a2510,stroke:#FF9800,color:#eaeaea"</script></div></article>
+
+    <article class="surface-card diagram-card" id="session-management" data-diagram-id="session-management"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Session Management</span><p class="diagram-description">Session lifecycle from creation through save/load. Sessions persist as JSON files containing clip metadata, routing configuration, and user preferences. SQLite database provides session history and playout logging for broadcast compliance.</p></span><span class="diagram-kind">#5</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"flowchart LR\n    subgraph Create[\"Session Creation\"]\n        NEW[\"New Session\"]\n        LOAD[\"Load Session\\nJSON file\"]\n        HIST[\"Session History\\nSQLite DB\"]\n    end\n\n    subgraph State[\"Runtime State\"]\n        SM[\"SessionManager\"]\n        CLIPS[\"Clip Assignments\\n960 slots\"]\n        ROUTING[\"Routing Config\\n4 Groups\"]\n        PREFS[\"User Preferences\"]\n        UNDO[\"UndoManager\\nAction history\"]\n    end\n\n    subgraph Persist[\"Persistence\"]\n        JSON[\"Session JSON\\nMetadata + Routing\"]\n        DB[\"SQLite Database\\nHistory + Playout\"]\n        LOG[\"PlayoutLogger\\nBroadcast compliance\"]\n    end\n\n    subgraph Output_S[\"Session Output\"]\n        SAVE[\"Save Session\"]\n        EXPORT[\"Export Session\"]\n        BACKUP[\"Auto-backup\"]\n    end\n\n    NEW --> SM\n    LOAD --> SM\n    HIST --> SM\n    SM --> CLIPS\n    SM --> ROUTING\n    SM --> PREFS\n    SM --> UNDO\n    CLIPS --> JSON\n    ROUTING --> JSON\n    PREFS --> JSON\n    SM --> DB\n    SM --> LOG\n    JSON --> SAVE\n    JSON --> EXPORT\n    DB --> BACKUP\n\n    style Create fill:#2a1040,stroke:#7B1FA2,color:#eaeaea\n    style State fill:#3a1a08,stroke:#E65100,color:#eaeaea\n    style Persist fill:#0a2040,stroke:#1E90FF,color:#eaeaea\n    style Output_S fill:#0a300a,stroke:#2E7D32,color:#eaeaea"</script></div></article>
+
+  </div></section>
+</main>
+
+<footer>
+  <div class="footer-notes"><p>Source: <code>wireframes/v2026-05-18/*.mermaid.md</code> | Generated for: <strong>Clip Composer</strong> | Location: <code>~/dev/orpheus-sdk/apps/clip-composer</code> | <a href="../docs/occ/INDEX.md">OCC Docs Index</a> · <a href="../CLAUDE.md">CLAUDE.md</a> | <a href="./v2026-05-18/">View Wireframe Sources</a></p></div>
+</footer>
+
+<script>
+/* dust.js — per-mote jittering dust grid (canvas-based)
+   Single grid of individually animated particles with unique sub-pixel trembling. */
+
+(function () {
+  'use strict';
+
+  var GRID = 36;
+  var DOT_R = 0.8;
+  var JITTER_AMP = 2.4;
+  var JITTER_SPEED = 0.0008;
+  var DRIFT_SPEED = 0.0003;
+  var FPS_CAP = 15;
+  var FRAME_MS = 1000 / FPS_CAP;
+
+  function parseRGBA(str) {
+    var m = str.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    if (!m) return [128, 128, 128, 0.3];
+    return [+m[1], +m[2], +m[3], m[4] !== undefined ? +m[4] : 1];
+  }
+
+  function readColor() {
+    return parseRGBA(getComputedStyle(document.documentElement).getPropertyValue('--dust-dot').trim());
+  }
+
+  function init() {
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;z-index:0;pointer-events:none;';
+    document.body.insertBefore(canvas, document.body.firstChild);
+    var ctx = canvas.getContext('2d');
+    var dpr = window.devicePixelRatio || 1;
+    var w, h, motes;
+
+    function buildMotes() {
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      motes = [];
+      for (var y = 0; y < h + GRID; y += GRID) {
+        for (var x = 0; x < w + GRID; x += GRID) {
+          motes.push({
+            bx: x, by: y,
+            px: (x * 7.3 + y * 13.7) % 6.2832,
+            py: (x * 11.1 + y * 5.9) % 6.2832
+          });
         }
+      }
+    }
 
-        function toggleDiagram(header) {
-            const card = header.closest('.diagram-card');
-            card.classList.toggle('collapsed');
-            // Set as active for keyboard nav
-            const index = Array.from(cards).indexOf(card);
-            selectCard(index);
-        }
+    buildMotes();
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                cards.forEach(card => card.classList.add('collapsed'));
-                cards.forEach(c => c.classList.remove('selected'));
-                selectedIndex = -1;
-            } else if (e.key.toLowerCase() === 'a' && !e.ctrlKey && !e.metaKey) {
-                cards.forEach(card => card.classList.remove('collapsed'));
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                selectCard(selectedIndex < cards.length - 1 ? selectedIndex + 1 : 0);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                selectCard(selectedIndex > 0 ? selectedIndex - 1 : cards.length - 1);
-            } else if (e.key === 'ArrowRight' && selectedIndex >= 0) {
-                e.preventDefault();
-                cards[selectedIndex].classList.remove('collapsed');
-            } else if (e.key === 'ArrowLeft' && selectedIndex >= 0) {
-                e.preventDefault();
-                cards[selectedIndex].classList.add('collapsed');
-            }
-        });
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(buildMotes, 200);
+    });
 
-        // Smooth scroll for quick nav
-        document.querySelectorAll('.quick-nav a').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const target = document.querySelector(link.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    target.classList.remove('collapsed');
-                    // Set as active for keyboard nav
-                    const index = Array.from(cards).indexOf(target);
-                    selectCard(index);
-                }
-            });
-        });
-    </script>
+    var rgba = readColor();
+    var observer = new MutationObserver(function () { rgba = readColor(); });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    var lastFrame = 0;
+    var t0 = performance.now();
+
+    function draw(now) {
+      requestAnimationFrame(draw);
+      if (now - lastFrame < FRAME_MS) return;
+      lastFrame = now;
+
+      var elapsed = now - t0;
+      var driftX = (elapsed * DRIFT_SPEED) % GRID;
+      var driftY = (elapsed * DRIFT_SPEED * 2) % GRID;
+
+      ctx.clearRect(0, 0, w, h);
+
+      for (var i = 0, n = motes.length; i < n; i++) {
+        var m = motes[i];
+        var jx = Math.sin(elapsed * JITTER_SPEED + m.px) * JITTER_AMP;
+        var jy = Math.cos(elapsed * JITTER_SPEED * 1.3 + m.py) * JITTER_AMP;
+        var x = m.bx + jx + driftX;
+        var y = m.by + jy + driftY;
+
+        x = ((x % w) + w) % w;
+        y = ((y % h) + h) % h;
+
+        var fade = 1.0 - (y / h) * 0.18;
+        ctx.fillStyle = 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] * fade).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(x, y, DOT_R, 0, 6.2832);
+        ctx.fill();
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+</script>
+<script>
+/* theme.js — theme constants, apply/get/set/cycle, persistence, cssVar() helper */
+
+var THEME_KEY = "commandsheets-theme";
+var PORTAL_KEY = "factory-portal-theme";
+var THEME_ORDER = ["light", "dark", "ember"];
+
+function getDefaultTheme() {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function getSavedTheme() {
+  var saved = localStorage.getItem(PORTAL_KEY);
+  if (THEME_ORDER.includes(saved)) return saved;
+  saved = localStorage.getItem(THEME_KEY);
+  return THEME_ORDER.includes(saved) ? saved : null;
+}
+
+function getCurrentTheme() {
+  var current = document.documentElement.getAttribute("data-theme");
+  return THEME_ORDER.includes(current) ? current : getDefaultTheme();
+}
+
+function applyTheme(theme, persist) {
+  if (persist === undefined) persist = true;
+  var nextTheme = THEME_ORDER.includes(theme) ? theme : getDefaultTheme();
+  document.documentElement.setAttribute("data-theme", nextTheme);
+  if (persist) {
+    localStorage.setItem(THEME_KEY, nextTheme);
+    localStorage.setItem(PORTAL_KEY, nextTheme);
+  }
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+(function initTheme() {
+  applyTheme(getSavedTheme() || getDefaultTheme(), false);
+})();
+
+/* Re-sync theme when restored from bfcache (back/forward nav) */
+window.addEventListener("pageshow", function(e) {
+  if (e.persisted) {
+    var fresh = getSavedTheme();
+    if (fresh) applyTheme(fresh, false);
+  }
+});
+
+</script>
+<script type="module">
+/* gallery.js — Mermaid setup/rendering, color normalization, diagram interaction, keyboard wiring */
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+var diagramHeaders = Array.from(document.querySelectorAll(".diagram-header"));
+var currentHeaderIndex = -1;
+var renderRun = 0;
+
+function getMermaidTones() {
+  return {
+    neutral: {
+      fill: cssVar("--mermaid-neutral-fill"),
+      border: cssVar("--mermaid-neutral-border"),
+      text: cssVar("--mermaid-neutral-text"),
+    },
+    blue: {
+      fill: cssVar("--mermaid-blue-fill"),
+      border: cssVar("--mermaid-blue-border"),
+      text: cssVar("--mermaid-blue-text"),
+    },
+    green: {
+      fill: cssVar("--mermaid-green-fill"),
+      border: cssVar("--mermaid-green-border"),
+      text: cssVar("--mermaid-green-text"),
+    },
+    amber: {
+      fill: cssVar("--mermaid-amber-fill"),
+      border: cssVar("--mermaid-amber-border"),
+      text: cssVar("--mermaid-amber-text"),
+    },
+    red: {
+      fill: cssVar("--mermaid-red-fill"),
+      border: cssVar("--mermaid-red-border"),
+      text: cssVar("--mermaid-red-text"),
+    },
+    violet: {
+      fill: cssVar("--mermaid-violet-fill"),
+      border: cssVar("--mermaid-violet-border"),
+      text: cssVar("--mermaid-violet-text"),
+    },
+  };
+}
+
+function parseColorToken(token) {
+  var value = token.trim().toLowerCase();
+  if (!value) {
+    return null;
+  }
+  var match = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (match) {
+    var hex = match[1];
+    if (hex.length === 3) {
+      hex = hex.split("").map(function(part) { return part + part; }).join("");
+    }
+    if (hex.length === 8) {
+      hex = hex.slice(0, 6);
+    }
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+  match = value.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (match) {
+    return {
+      r: Number(match[1]),
+      g: Number(match[2]),
+      b: Number(match[3]),
+    };
+  }
+  return null;
+}
+
+function classifyColorToken(token) {
+  var parsed = parseColorToken(token);
+  if (!parsed) {
+    return "neutral";
+  }
+  var r = parsed.r, g = parsed.g, b = parsed.b;
+  var max = Math.max(r, g, b);
+  var min = Math.min(r, g, b);
+  var delta = max - min;
+  if (delta < 18) {
+    return "neutral";
+  }
+  var saturation = max === 0 ? 0 : delta / max;
+  if (saturation < 0.18) {
+    return "neutral";
+  }
+  var hue = 0;
+  if (delta !== 0) {
+    if (max === r) {
+      hue = ((g - b) / delta) % 6;
+    } else if (max === g) {
+      hue = (b - r) / delta + 2;
+    } else {
+      hue = (r - g) / delta + 4;
+    }
+    hue *= 60;
+    if (hue < 0) {
+      hue += 360;
+    }
+  }
+  if (hue < 18 || hue >= 338) {
+    return "red";
+  }
+  if (hue < 72) {
+    return "amber";
+  }
+  if (hue < 170) {
+    return "green";
+  }
+  if (hue < 255) {
+    return "blue";
+  }
+  return "violet";
+}
+
+function normalizeStyleProperties(propertyText) {
+  var tones = getMermaidTones();
+  var props = propertyText
+    .split(",")
+    .map(function(part) { return part.trim(); })
+    .filter(Boolean);
+  if (!props.length) {
+    return propertyText;
+  }
+  return props
+    .map(function(entry) {
+      var parts = entry.split(/:(.+)/);
+      if (parts.length < 3) {
+        return entry;
+      }
+      var key = parts[0].trim();
+      var value = parts[1].trim();
+      var tone = tones[classifyColorToken(value)] || tones.neutral;
+      if (/^fill$/i.test(key) || /bkg/i.test(key)) {
+        return key + ":" + tone.fill;
+      }
+      if (/^stroke$/i.test(key) || /border/i.test(key) || /line/i.test(key)) {
+        return key + ":" + tone.border;
+      }
+      if (/color/i.test(key) || /text/i.test(key)) {
+        return key + ":" + tone.text;
+      }
+      return entry;
+    })
+    .join(",");
+}
+
+function formatMermaidRectColor(token) {
+  var parsed = parseColorToken(token);
+  if (!parsed) {
+    return token;
+  }
+  return "rgb(" + Math.round(parsed.r) + ", " + Math.round(parsed.g) + ", " + Math.round(parsed.b) + ")";
+}
+
+function normalizeMermaidSource(raw) {
+  var tones = getMermaidTones();
+  var next = raw.replace(/%%\{init:[\s\S]*?%%\s*/g, "");
+  next = next.replace(/^(\s*rect\s+)(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))(.*)$/gm, function(_match, prefix, color, suffix) {
+    var tone = tones[classifyColorToken(color)] || tones.neutral;
+    return prefix + formatMermaidRectColor(tone.fill) + suffix;
+  });
+  next = next.replace(/^(\s*style\s+\S+\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  next = next.replace(/^(\s*classDef\s+[^\s]+\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  next = next.replace(/^(\s*linkStyle\s+.+?\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  return next;
+}
+
+function getMermaidThemeCss() {
+  var text = cssVar("--text");
+  var panel = cssVar("--bg-panel");
+  var border = cssVar("--border-strong");
+  var line = cssVar("--mermaid-line");
+  var lineMuted = cssVar("--mermaid-line-muted");
+  var labelFill = cssVar("--mermaid-label-fill");
+  var labelText = cssVar("--mermaid-label-text");
+  var accentSoft = cssVar("--accent-soft");
+  return "\n" +
+    "    svg {\n" +
+    "      color: " + text + " !important;\n" +
+    "    }\n" +
+    "    text,\n" +
+    "    tspan,\n" +
+    "    .nodeLabel,\n" +
+    "    .nodeLabel p,\n" +
+    "    .nodeLabel div,\n" +
+    "    .nodeLabel span,\n" +
+    "    .messageText,\n" +
+    "    .messageText tspan,\n" +
+    "    .loopText,\n" +
+    "    .loopText tspan,\n" +
+    "    .sectionTitle text,\n" +
+    "    .taskText,\n" +
+    "    .taskTextOutsideLeft,\n" +
+    "    .taskTextOutsideRight,\n" +
+    "    .actor text,\n" +
+    "    .actor tspan,\n" +
+    "    .classTitle,\n" +
+    "    .classTitle tspan,\n" +
+    "    .classText,\n" +
+    "    .entityLabel,\n" +
+    "    .cluster-label text {\n" +
+    "      fill: " + text + " !important;\n" +
+    "      color: " + text + " !important;\n" +
+    "      font-family: \"Geist Mono UltraLight\", ui-monospace, monospace !important;\n" +
+    "      font-weight: 200 !important;\n" +
+    "    }\n" +
+    "    .noteText,\n" +
+    "    .noteText tspan,\n" +
+    "    .label text,\n" +
+    "    .label foreignObject,\n" +
+    "    .label foreignObject div,\n" +
+    "    .label foreignObject span,\n" +
+    "    .edgeLabel text,\n" +
+    "    .edgeLabel foreignObject,\n" +
+    "    .edgeLabel span,\n" +
+    "    .edgeLabel p,\n" +
+    "    .labelText,\n" +
+    "    .boxText {\n" +
+    "      fill: " + labelText + " !important;\n" +
+    "      color: " + labelText + " !important;\n" +
+    "      font-family: \"Geist Mono UltraLight\", ui-monospace, monospace !important;\n" +
+    "      font-weight: 200 !important;\n" +
+    "    }\n" +
+    "    .node rect,\n" +
+    "    .node circle,\n" +
+    "    .node ellipse,\n" +
+    "    .node polygon,\n" +
+    "    .node path,\n" +
+    "    .classBox,\n" +
+    "    .entityBox {\n" +
+    "      stroke-width: 1.35px !important;\n" +
+    "    }\n" +
+    "    .cluster rect,\n" +
+    "    .cluster polygon,\n" +
+    "    .labelBox,\n" +
+    "    .note,\n" +
+    "    .actor rect,\n" +
+    "    .activation0,\n" +
+    "    .activation1,\n" +
+    "    .activation2,\n" +
+    "    .activation3,\n" +
+    "    .activation4 {\n" +
+    "      fill: " + panel + " !important;\n" +
+    "      stroke: " + border + " !important;\n" +
+    "    }\n" +
+    "    .edgeLabel rect,\n" +
+    "    .labelBkg,\n" +
+    "    .label-container rect {\n" +
+    "      fill: " + labelFill + " !important;\n" +
+    "      stroke: " + border + " !important;\n" +
+    "      opacity: 1 !important;\n" +
+    "    }\n" +
+    "    .messageLine0,\n" +
+    "    .messageLine1,\n" +
+    "    .relation,\n" +
+    "    .transition,\n" +
+    "    .flowchart-link,\n" +
+    "    .actor-line,\n" +
+    "    .loopLine,\n" +
+    "    .separator {\n" +
+    "      stroke: " + line + " !important;\n" +
+    "      stroke-width: 2px !important;\n" +
+    "    }\n" +
+    "    .messageLine0,\n" +
+    "    .messageLine1,\n" +
+    "    .relation,\n" +
+    "    .transition {\n" +
+    "      fill: none !important;\n" +
+    "    }\n" +
+    "    .marker,\n" +
+    "    .marker path,\n" +
+    "    .arrowheadPath,\n" +
+    "    .arrowMarkerPath {\n" +
+    "      fill: " + line + " !important;\n" +
+    "      stroke: " + line + " !important;\n" +
+    "    }\n" +
+    "    .actor-line,\n" +
+    "    .loopLine {\n" +
+    "      stroke: " + lineMuted + " !important;\n" +
+    "    }\n" +
+    "    .today {\n" +
+    "      fill: " + accentSoft + " !important;\n" +
+    "      stroke: " + line + " !important;\n" +
+    "    }\n" +
+    "  ";
+}
+
+function getMermaidConfig() {
+  var theme = getCurrentTheme();
+  return {
+    startOnLoad: false,
+    securityLevel: "loose",
+    theme: "base",
+    themeCSS: getMermaidThemeCss(),
+    themeVariables: {
+      darkMode: theme !== "light",
+      fontFamily: '"Geist Mono UltraLight", ui-monospace, monospace',
+      primaryColor: cssVar("--bg-panel"),
+      primaryTextColor: cssVar("--text"),
+      primaryBorderColor: cssVar("--border-strong"),
+      lineColor: cssVar("--mermaid-line"),
+      secondaryColor: cssVar("--bg-panel-strong"),
+      tertiaryColor: cssVar("--bg-panel-hover"),
+      background: cssVar("--bg-deep"),
+      mainBkg: cssVar("--bg-panel"),
+      secondBkg: cssVar("--bg-panel-strong"),
+      tertiaryBkg: cssVar("--bg-panel-hover"),
+      nodeBorder: cssVar("--border-strong"),
+      clusterBkg: cssVar("--bg-panel"),
+      clusterBorder: cssVar("--border-strong"),
+      titleColor: cssVar("--text"),
+      textColor: cssVar("--text"),
+      edgeLabelBackground: cssVar("--bg-deep"),
+      noteBkgColor: cssVar("--bg-panel"),
+      noteBorderColor: cssVar("--border-strong"),
+      actorBkg: cssVar("--bg-panel"),
+      actorBorder: cssVar("--border-strong"),
+      actorTextColor: cssVar("--text"),
+      actorLineColor: cssVar("--mermaid-line-muted"),
+      activationBkgColor: cssVar("--bg-panel-hover"),
+      activationBorderColor: cssVar("--border-strong"),
+      signalColor: cssVar("--mermaid-line"),
+      signalTextColor: cssVar("--mermaid-label-text"),
+      labelBoxBkgColor: cssVar("--mermaid-label-fill"),
+      labelBoxBorderColor: cssVar("--border-strong"),
+      labelTextColor: cssVar("--mermaid-label-text"),
+      loopTextColor: cssVar("--mermaid-label-text"),
+      noteTextColor: cssVar("--mermaid-label-text"),
+      sequenceNumberColor: cssVar("--mermaid-label-text"),
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: "basis",
+      nodeSpacing: 70,
+      rankSpacing: 90,
+      padding: 24,
+    },
+    sequence: {
+      useMaxWidth: true,
+      mirrorActors: false,
+      diagramMarginX: 40,
+      diagramMarginY: 20,
+      boxMargin: 10,
+      boxTextMargin: 8,
+      noteMargin: 10,
+      messageMargin: 35,
+    },
+    stateDiagram: { useMaxWidth: true },
+    classDiagram: { useMaxWidth: true },
+    er: { useMaxWidth: true },
+    gitGraph: { useMaxWidth: true },
+  };
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"]/g, function(char) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]; });
+}
+
+async function renderAllDiagrams() {
+  var cards = Array.from(document.querySelectorAll(".diagram-card[data-diagram-id]"));
+  if (!cards.length) {
+    return;
+  }
+  var runId = ++renderRun;
+  mermaid.initialize(getMermaidConfig());
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var sourceNode = card.querySelector(".mermaid-source");
+    var host = card.querySelector(".diagram-canvas");
+    var raw = "";
+    if (sourceNode) {
+      try {
+        raw = JSON.parse(sourceNode.textContent).trim();
+      } catch (_error) {
+        raw = sourceNode.textContent.trim();
+      }
+    }
+    if (!raw || !host) {
+      continue;
+    }
+    try {
+      var normalized = normalizeMermaidSource(raw);
+      var result = await mermaid.render("gallery-mermaid-" + runId + "-" + i, normalized);
+      if (runId !== renderRun) {
+        return;
+      }
+      host.innerHTML = result.svg;
+    } catch (error) {
+      host.innerHTML = '<pre class="diagram-error">' + escapeHtml(String(error)) + "</pre>";
+    }
+  }
+}
+
+function setFocusedCard(header) {
+  document.querySelectorAll(".diagram-card.is-focused").forEach(function(card) {
+    card.classList.remove("is-focused");
+  });
+  if (!header) {
+    return;
+  }
+  var card = header.closest(".diagram-card");
+  if (card) card.classList.add("is-focused");
+}
+
+function toggleDiagram(header, force) {
+  var card = header.closest(".diagram-card");
+  var content = card ? card.querySelector(".diagram-content") : null;
+  if (!card || !content) {
+    return;
+  }
+  var shouldCollapse = force !== undefined ? force : !card.classList.contains("collapsed");
+  card.classList.toggle("collapsed", shouldCollapse);
+  header.classList.toggle("collapsed", shouldCollapse);
+  content.classList.toggle("collapsed", shouldCollapse);
+  header.setAttribute("aria-expanded", String(!shouldCollapse));
+}
+
+function setAllDiagrams(collapsed) {
+  diagramHeaders.forEach(function(header) { toggleDiagram(header, collapsed); });
+}
+
+/* Default all diagrams to collapsed on load */
+setAllDiagrams(true);
+
+function focusHeader(index) {
+  if (!diagramHeaders.length) {
+    return;
+  }
+  currentHeaderIndex = Math.max(0, Math.min(index, diagramHeaders.length - 1));
+  var header = diagramHeaders[currentHeaderIndex];
+  header.focus();
+  header.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+diagramHeaders.forEach(function(header, index) {
+  header.addEventListener("click", function() {
+    toggleDiagram(header);
+    currentHeaderIndex = index;
+  });
+  header.addEventListener("focus", function() {
+    currentHeaderIndex = index;
+  });
+});
+
+document.addEventListener("focusin", function(event) {
+  var target = event.target;
+  var header = target instanceof Element ? target.closest(".diagram-header") : null;
+  setFocusedCard(header);
+});
+
+document.querySelectorAll(".nav-chip").forEach(function(link) {
+  link.addEventListener("click", function(event) {
+    event.preventDefault();
+    var targetId = link.getAttribute("data-target");
+    var card = targetId ? document.getElementById(targetId) : null;
+    var header = card ? card.querySelector(".diagram-header") : null;
+    if (!card || !header) {
+      return;
+    }
+    toggleDiagram(header, false);
+    header.scrollIntoView({ behavior: "smooth", block: "start" });
+    header.focus();
+  });
+});
+
+document.addEventListener("keydown", async function(event) {
+  var isTextField = event.target instanceof HTMLElement && (
+    event.target.tagName === "INPUT" ||
+    event.target.tagName === "TEXTAREA" ||
+    event.target.isContentEditable
+  );
+
+  if (!isTextField && !event.metaKey && !event.ctrlKey && !event.altKey && event.code === "Backslash") {
+    event.preventDefault();
+    var current = getCurrentTheme();
+    var next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
+    applyTheme(next);
+    await renderAllDiagrams();
+    return;
+  }
+
+  if (!isTextField && event.key === "Escape") {
+    event.preventDefault();
+    setAllDiagrams(true);
+    return;
+  }
+
+  if (!isTextField && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    setAllDiagrams(false);
+    return;
+  }
+
+  var focused = document.activeElement;
+  if (!(focused instanceof HTMLElement) || !focused.classList.contains("diagram-header")) {
+    if (event.key === "ArrowDown" && diagramHeaders.length) {
+      event.preventDefault();
+      focusHeader(0);
+    }
+    return;
+  }
+
+  var index = diagramHeaders.indexOf(focused);
+  if (index >= 0) {
+    currentHeaderIndex = index;
+  }
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      focusHeader(Math.min(currentHeaderIndex + 1, diagramHeaders.length - 1));
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      focusHeader(Math.max(currentHeaderIndex - 1, 0));
+      break;
+    case "ArrowRight":
+      event.preventDefault();
+      toggleDiagram(focused, false);
+      break;
+    case "ArrowLeft":
+      event.preventDefault();
+      toggleDiagram(focused, true);
+      break;
+    case "Enter":
+    case " ":
+      event.preventDefault();
+      toggleDiagram(focused);
+      break;
+    case "Home":
+      event.preventDefault();
+      focusHeader(0);
+      break;
+    case "End":
+      event.preventDefault();
+      focusHeader(diagramHeaders.length - 1);
+      break;
+  }
+});
+
+renderAllDiagrams();
+
+</script>
 </body>
 </html>
