@@ -1,756 +1,1494 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orpheus SDK - Command Reference</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>orpheus-sdk - Command Reference</title>
+<style>
+/* base.css — shared reset, CSS variables (3 themes), layout, typography */
 
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            padding: 1rem 2rem;
-            line-height: 1.5;
-            font-size: 0.75rem;
-        }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+:root {
+  --bg: #0f1720;
+  --bg-gradient-top: #0c141d;
+  --bg-gradient-bottom: #121c28;
+  --bg-deep: #0b1219;
+  --bg-panel: #16202e;
+  --bg-panel-strong: #1c2a3b;
+  --bg-panel-hover: #23314a;
+  --surface-strong: rgba(22, 32, 46, 0.95);
+  --text: #e5edf6;
+  --text-dim: #9bb0c8;
+  --text-muted: #677a92;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.10);
+  --accent-border: rgba(88, 166, 255, 0.36);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.13);
+  --mermaid-neutral-fill: #151d29;
+  --mermaid-neutral-border: #46556c;
+  --mermaid-neutral-text: #e5edf6;
+  --mermaid-blue-fill: #22364c;
+  --mermaid-blue-border: #67aefc;
+  --mermaid-blue-text: #edf6ff;
+  --mermaid-green-fill: #233d32;
+  --mermaid-green-border: #6dc08d;
+  --mermaid-green-text: #effdf4;
+  --mermaid-amber-fill: #493523;
+  --mermaid-amber-border: #ffbf63;
+  --mermaid-amber-text: #fff8eb;
+  --mermaid-red-fill: #4a2b31;
+  --mermaid-red-border: #f18f9e;
+  --mermaid-red-text: #fff1f4;
+  --mermaid-violet-fill: #393048;
+  --mermaid-violet-border: #bc9af6;
+  --mermaid-violet-text: #f7f1ff;
+  --mermaid-line: #7fc0ff;
+  --mermaid-line-muted: rgba(127, 192, 255, 0.42);
+  --mermaid-label-fill: #0f1721;
+  --mermaid-label-text: #eef5fd;
+  --grid-size-primary: 31px 31px;
+  --grid-size-secondary: 23px 23px;
+  --grid-mask-top: rgba(0, 0, 0, 1);
+  --grid-mask-bottom: rgba(0, 0, 0, 0.82);
+  --dust-dot: rgba(103,122,146,0.26);
+  --dust-accent-dot: rgba(88,166,255,0.18);
+  --search-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.14), 0 0 4px rgba(88, 166, 255, 0.1);
+  --callout-info-ring: inset 0 0 0 1px rgba(88, 166, 255, 0.12);
+  --section-card-focus-shadow: 0 0 0 1px rgba(88, 166, 255, 0.16), 0 0 24px rgba(88, 166, 255, 0.12);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(88, 166, 255, 0.14), rgba(88, 166, 255, 0.06));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(88, 166, 255, 0.08);
+  --section-title-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.16);
+  --section-count-focus-bg: rgba(88, 166, 255, 0.08);
+  --row-divider: rgba(255,255,255,0.04);
+  --osc-text: #7dd3fc;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --shell-width: min(1400px, 92vw);
+  --radius: 14px;
+  --transition: 160ms cubic-bezier(0.2, 0.65, 0.2, 1);
+  --font-display: "Geist Pixel Square", ui-sans-serif, sans-serif;
+  --font-body: "Geist Mono UltraLight", ui-monospace, monospace;
+}
 
-        h1 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            color: #fff;
-        }
+[data-theme="light"] {
+  --bg: #f4f7fb;
+  --bg-gradient-top: #eef3f8;
+  --bg-gradient-bottom: #fbfdff;
+  --bg-deep: #e9eef5;
+  --bg-panel: #ffffff;
+  --bg-panel-strong: #f6f9fd;
+  --bg-panel-hover: #eef4fb;
+  --surface-strong: rgba(248, 251, 255, 0.94);
+  --text: #122033;
+  --text-dim: #4c5f78;
+  --text-muted: #7d8da3;
+  --accent: #006adc;
+  --accent-soft: rgba(0, 106, 220, 0.08);
+  --accent-border: rgba(0, 106, 220, 0.24);
+  --border: rgba(10, 21, 39, 0.08);
+  --border-strong: rgba(10, 21, 39, 0.14);
+  --mermaid-neutral-fill: #ffffff;
+  --mermaid-neutral-border: #cbd6e3;
+  --mermaid-neutral-text: #122033;
+  --mermaid-blue-fill: #dcebff;
+  --mermaid-blue-border: #4f88d7;
+  --mermaid-blue-text: #16304f;
+  --mermaid-green-fill: #def4e7;
+  --mermaid-green-border: #59a173;
+  --mermaid-green-text: #183727;
+  --mermaid-amber-fill: #f8ead3;
+  --mermaid-amber-border: #d09a3b;
+  --mermaid-amber-text: #47311a;
+  --mermaid-red-fill: #f8dfe3;
+  --mermaid-red-border: #d27082;
+  --mermaid-red-text: #532330;
+  --mermaid-violet-fill: #ebe2fb;
+  --mermaid-violet-border: #8f74d1;
+  --mermaid-violet-text: #36234f;
+  --mermaid-line: #0057b8;
+  --mermaid-line-muted: rgba(0, 87, 184, 0.32);
+  --mermaid-label-fill: #ffffff;
+  --mermaid-label-text: #122033;
+  color-scheme: light;
+}
 
-        .subtitle {
-            color: #888;
-            margin-bottom: 0.75rem;
-            font-size: 0.675rem;
-        }
+[data-theme="ember"] {
+  --bg: #3e2e1e;
+  --bg-gradient-top: #3a2a1b;
+  --bg-gradient-bottom: #423222;
+  --bg-deep: rgba(56, 44, 32, 0.93);
+  --bg-panel: rgba(84, 64, 48, 0.95);
+  --bg-panel-strong: rgba(118, 92, 66, 0.95);
+  --bg-panel-hover: rgba(148, 118, 86, 0.95);
+  --surface-strong: rgba(84, 64, 48, 0.95);
+  --text: #FFFDF9;
+  --text-dim: #F8EDDE;
+  --text-muted: #E0CAAA;
+  --accent: #FFB800;
+  --accent-soft: rgba(255, 192, 32, 0.26);
+  --accent-border: rgba(224, 170, 80, 0.75);
+  --border: rgba(218, 168, 100, 0.46);
+  --border-strong: rgba(224, 170, 80, 0.75);
+  --mermaid-neutral-fill: #5a4433;
+  --mermaid-neutral-border: #d0a26c;
+  --mermaid-neutral-text: #fff8ef;
+  --mermaid-blue-fill: #3d5470;
+  --mermaid-blue-border: #91b8e5;
+  --mermaid-blue-text: #fffaf4;
+  --mermaid-green-fill: #465947;
+  --mermaid-green-border: #8fc59a;
+  --mermaid-green-text: #fffaf1;
+  --mermaid-amber-fill: #70543b;
+  --mermaid-amber-border: #f0bf6a;
+  --mermaid-amber-text: #fffaf3;
+  --mermaid-red-fill: #70464a;
+  --mermaid-red-border: #e8a4ab;
+  --mermaid-red-text: #fff7f3;
+  --mermaid-violet-fill: #5a4b68;
+  --mermaid-violet-border: #bea3dc;
+  --mermaid-violet-text: #fff9f7;
+  --mermaid-line: #ffd36b;
+  --mermaid-line-muted: rgba(255, 211, 107, 0.42);
+  --mermaid-label-fill: #594434;
+  --mermaid-label-text: #fffaf2;
+  --dust-dot: rgba(232, 206, 171, 0.24);
+  --dust-accent-dot: rgba(255, 184, 0, 0.22);
+  --search-focus-shadow: 0 0 12px rgba(255, 184, 0, 0.26), 0 0 4px rgba(255, 107, 53, 0.22);
+  --callout-info-ring: inset 0 0 0 1px rgba(224, 170, 80, 0.34);
+  --section-card-focus-shadow: 0 0 0 1px rgba(224, 170, 80, 0.42), 0 0 24px rgba(255, 107, 53, 0.18);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(255, 184, 0, 0.20), rgba(255, 107, 53, 0.14));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(255, 107, 53, 0.18);
+  --section-title-focus-shadow: 0 0 12px rgba(255, 107, 53, 0.24);
+  --section-count-focus-bg: rgba(255, 184, 0, 0.16);
+  --row-divider: rgba(210, 160, 105, 0.18);
+  --osc-text: #FF6B35;
+  color-scheme: dark;
+}
 
-        .last-updated {
-            color: #666;
-            font-size: 0.625rem;
-            margin-bottom: 0.75rem;
-        }
+html, body { min-height: 100%; }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: #242424;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
+body {
+  font-family: var(--font-body);
+  font-weight: 200;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--bg-gradient-top), var(--bg-gradient-bottom));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-        thead {
-            background: #2a2a2a;
-        }
+/* Dust grid is now canvas-based — see /shared/dust.js */
 
-        th {
-            padding: 0.75rem;
-            text-align: left;
-            font-weight: 600;
-            color: #fff;
-            border-bottom: 2px solid #333;
-            font-size: 0.75rem;
-        }
+body > * { position: relative; z-index: 1; }
 
-        th:nth-child(1) { width: 20%; }
-        th:nth-child(2) { width: 35%; }
-        th:nth-child(3) { width: 45%; }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+}
 
-        td {
-            padding: 0.75rem;
-            border-bottom: 1px solid #2a2a2a;
-            font-size: 0.75rem;
-        }
+.site-header__inner,
+main,
+footer .inner {
+  width: var(--shell-width);
+  margin: 0 auto;
+}
 
-        tr:last-child td {
-            border-bottom: none;
-        }
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
 
-        tr:hover {
-            background: #2a2a2a;
-        }
+.brand {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  text-decoration: none;
+}
 
-        .command {
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
-            background: #1a1a1a;
-            padding: 0.375rem 0.5rem;
-            border-radius: 3px;
-            font-size: 0.675rem;
-            color: #4fc3f7;
-            cursor: pointer;
-            display: inline-block;
-            transition: background 0.2s;
-            position: relative;
-        }
+.brand__title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text);
+  text-decoration: none;
+}
 
-        .command:hover {
-            background: #222;
-        }
+.header-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 1;
+}
 
-        .command:active {
-            background: #2a4858;
-        }
+main {
+  padding: 22px 0 42px;
+  display: grid;
+  gap: 16px;
+  flex: 1 0 auto;
+  align-content: start;
+}
 
-        .command::after {
-            content: '📋';
-            margin-left: 0.5rem;
-            opacity: 0.5;
-        }
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 
-        .copied {
-            animation: flash 0.3s;
-        }
+.hero {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  max-width: 72ch;
+}
 
-        @keyframes flash {
-            0%, 100% { background: #1a1a1a; }
-            50% { background: #2a5a3a; }
-        }
+.hero-eyebrow {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 
-        .description {
-            color: #b0b0b0;
-            font-size: 0.675rem;
-        }
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  margin-left: 4px;
+}
 
-        .job {
-            color: #fff;
-            font-weight: 500;
-            font-size: 0.75rem;
-        }
+.hero p {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: 4px;
+}
 
-        .section-header {
-            background: #2a2a2a;
-            font-weight: 600;
-            color: #fff;
-            cursor: pointer;
-            user-select: none;
-        }
+.hero-meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-content: start;
+  flex: 0 1 540px;
+  min-width: 0;
+}
 
-        .section-header:hover {
-            background: #333;
-        }
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
 
-        .section-header:focus {
-            outline: 2px solid #4fc3f7;
-            outline-offset: -2px;
-        }
+.meta-chip__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
-        .section-header td {
-            padding: 0.5rem 0.75rem;
-            border-bottom: 2px solid #333;
-            position: relative;
-            font-size: 0.75rem;
-        }
+.meta-chip__value {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 
-        .section-header td::before {
-            content: '▼';
-            margin-right: 0.375rem;
-            font-size: 0.5625rem;
-            transition: transform 0.2s;
-            display: inline-block;
-        }
+.surface-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
 
-        .section-header.collapsed td::before {
-            transform: rotate(-90deg);
-        }
+.surface-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
 
-        .section-row {
-            transition: opacity 0.2s;
-        }
+.callout-grid {
+  display: grid;
+  gap: 12px;
+}
 
-        .section-row.hidden {
-            display: none;
-        }
+.callout {
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+}
 
-        footer {
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid #333;
-            color: #666;
-            font-size: 0.625rem;
-        }
+.callout h2 {
+  font-family: var(--font-display);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
 
-        .warning {
-            background: #3a2a1a;
-            border-left: 3px solid #ff9800;
-            padding: 0.75rem;
-            margin-bottom: 0.75rem;
-            border-radius: 3px;
-            font-size: 0.675rem;
-        }
+.callout p {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
 
-        .warning-title {
-            color: #ff9800;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            font-size: 0.75rem;
-        }
+.callout--info {
+  box-shadow: var(--callout-info-ring);
+}
 
-        .keyboard-hint {
-            background: #2a2a2a;
-            border-left: 3px solid #4fc3f7;
-            padding: 0.75rem;
-            margin-bottom: 0.75rem;
-            border-radius: 3px;
-            font-size: 0.675rem;
-        }
+.callout--warning {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+}
 
-        .keyboard-hint-title {
-            color: #4fc3f7;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-    </style>
+.callout--success {
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.16);
+}
+
+.empty-state {
+  padding: 22px 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.empty-state h2 {
+  font-family: var(--font-display);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.empty-state p {
+  color: var(--text-dim);
+  max-width: 70ch;
+}
+
+footer {
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  padding: 12px 0 14px;
+}
+
+footer .inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.footer-notes {
+  width: var(--shell-width);
+  margin: 10px auto 0;
+  display: grid;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.footer-notes a {
+  color: var(--accent);
+}
+
+.footer-notes code {
+  font-family: var(--font-body);
+}
+
+@media (max-width: 900px) {
+  .hero-row {
+    flex-direction: column;
+  }
+
+  .site-header__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+    align-items: flex-start;
+  }
+
+  .hero-meta {
+    width: 100%;
+    justify-items: start;
+    display: none;
+  }
+
+  main,
+  .site-header__inner,
+  .footer-notes,
+  footer .inner {
+    width: 96vw;
+  }
+
+  footer .inner {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 20px;
+  }
+}
+
+</style>
+<style>
+/* commands.css — commands-only styles */
+
+.search-wrap {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 68px 0 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.search-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--search-focus-shadow);
+}
+
+.search-icon,
+.search-count {
+  position: absolute;
+  top: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.search-icon { left: 11px; }
+.search-count { right: 34px; font-size: 11px; }
+
+.search-clear {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.search-clear.visible { display: flex; }
+
+.search-clear:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.export-btn {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-right: 4px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.export-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text);
+}
+
+.export-btn.is-confirmed {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.12), 0 0 18px rgba(52, 211, 153, 0.18);
+  animation: export-confirm 420ms cubic-bezier(0.2, 0.65, 0.2, 1);
+}
+
+.export-btn.is-error {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.38);
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.1), 0 0 18px rgba(248, 113, 113, 0.14);
+}
+
+@keyframes export-confirm {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-1px) scale(1.03);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.section-card {
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.section-card.is-focused {
+  border-color: var(--accent-border);
+  box-shadow: var(--section-card-focus-shadow);
+}
+
+.section-card.is-hidden {
+  display: none;
+}
+
+.section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-strong);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  transition: background var(--transition), border-radius var(--transition), box-shadow var(--transition);
+}
+
+.section-header:hover {
+  background: var(--bg-panel-hover);
+}
+
+.section-header:focus,
+.section-header:focus-visible {
+  outline: none;
+  background: var(--section-header-focus-bg);
+}
+
+.section-header.collapsed {
+  border-radius: calc(var(--radius) - 1px);
+  border-bottom-color: transparent;
+}
+
+.section-arrow {
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.section-header.collapsed .section-arrow {
+  transform: rotate(-90deg);
+}
+
+.section-header:focus .section-arrow,
+.section-header:focus-visible .section-arrow {
+  color: var(--accent);
+}
+
+.section-title {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.section-header:focus .section-title,
+.section-header:focus-visible .section-title {
+  color: var(--text);
+  text-shadow: var(--section-title-focus-shadow);
+}
+
+.section-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.section-header:focus .section-count,
+.section-header:focus-visible .section-count {
+  border-color: var(--accent-border);
+  background: var(--section-count-focus-bg);
+  color: var(--text);
+}
+
+.section-body {
+  display: block;
+}
+
+.section-body.collapsed {
+  display: none;
+}
+
+.command-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.command-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 200;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.command-table th:nth-child(1) { width: 24%; }
+.command-table th:nth-child(2) { width: 38%; }
+.command-table th:nth-child(3) { width: 38%; }
+
+.command-row {
+  border-bottom: 1px solid var(--row-divider);
+}
+
+.command-row:last-child {
+  border-bottom: none;
+}
+
+.command-row.hidden {
+  display: none;
+}
+
+.command-row td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  font-size: 11px;
+}
+
+.command-row td:first-child {
+  padding-left: 40px;
+}
+
+.task-text {
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.row-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.value-block {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+}
+
+.value-block:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.value-block.copied {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.value-text {
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.value-block--keys .value-text {
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.value-block--osc .value-text {
+  color: var(--osc-text);
+}
+
+.inline-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 11px;
+}
+
+.key-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-join,
+.key-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.desc-text {
+  color: var(--text-dim);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .command-table,
+  .command-table thead,
+  .command-table tbody,
+  .command-table tr,
+  .command-table th,
+  .command-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .command-table thead {
+    display: none;
+  }
+
+  .command-row td {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .command-row td:first-child {
+    padding-left: 12px;
+    padding-bottom: 0;
+  }
+
+  .command-row td:nth-child(2) {
+    padding-top: 8px;
+    padding-bottom: 0;
+  }
+
+  .value-block {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .value-text {
+    word-break: break-all;
+  }
+
+  .desc-text {
+    display: block;
+    padding: 4px 12px 8px;
+  }
+}
+
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>Orpheus SDK - Command Reference</h1>
-        <p class="subtitle">Quick reference for common development tasks</p>
-        <p class="last-updated">Last updated: 2026-01-25</p>
-        </div>
-
-        <div class="warning">
-            <div class="warning-title">⚠️ Local Use Only</div>
-            This page is for local development reference. Click any command to copy it to clipboard.
-        </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Job</th>
-                    <th>Command</th>
-                    <th>Description</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Build Commands -->
-                <tr class="section-header" data-section="build" tabindex="0">
-                    <td colspan="3">Build & Compile</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Configure CMake</td>
-                    <td><code class="command">cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug</code></td>
-                    <td class="description">Configure CMake build system (Debug mode)</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Configure CMake (Release)</td>
-                    <td><code class="command">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release</code></td>
-                    <td class="description">Configure CMake build system (Release mode, optimized)</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Build SDK</td>
-                    <td><code class="command">cmake --build build</code></td>
-                    <td class="description">Build all SDK targets</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Build SDK (parallel)</td>
-                    <td><code class="command">cmake --build build -j$(sysctl -n hw.ncpu)</code></td>
-                    <td class="description">Build using all CPU cores for faster compilation</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Build Clip Composer</td>
-                    <td><code class="command">cmake --build build --target orpheus_clip_composer_app</code></td>
-                    <td class="description">Build only the Clip Composer application (Debug)</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Build Clip Composer (Release)</td>
-                    <td><code class="command">cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release --target orpheus_clip_composer_app</code></td>
-                    <td class="description">Build optimized Release version of Clip Composer</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Clean build</td>
-                    <td><code class="command">rm -rf build && cmake -S . -B build && cmake --build build</code></td>
-                    <td class="description">Full clean rebuild (use when build is corrupted)</td>
-                </tr>
-                <tr class="section-row" data-section="build">
-                    <td class="job">Clean build Clip Composer</td>
-                    <td><code class="command">rm -rf build/apps/clip-composer && cmake --build build --target orpheus_clip_composer_app</code></td>
-                    <td class="description">Clean rebuild only Clip Composer (preserves SDK build)</td>
-                </tr>
-
-                <!-- Test Commands -->
-                <tr class="section-header collapsed" data-section="testing" tabindex="0">
-                    <td colspan="3">Testing</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run all tests</td>
-                    <td><code class="command">ctest --test-dir build --output-on-failure</code></td>
-                    <td class="description">Run all unit and integration tests</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run tests (verbose)</td>
-                    <td><code class="command">ctest --test-dir build --output-on-failure --verbose</code></td>
-                    <td class="description">Run tests with detailed output</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run specific test</td>
-                    <td><code class="command">ctest --test-dir build -R TestName --output-on-failure</code></td>
-                    <td class="description">Run only tests matching TestName pattern</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run Clip Composer tests</td>
-                    <td><code class="command">ctest --test-dir build -R ClipComposer --output-on-failure</code></td>
-                    <td class="description">Run only Clip Composer-specific tests</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run OCC integration tests</td>
-                    <td><code class="command">ctest --test-dir build -R OCC_Integration --output-on-failure</code></td>
-                    <td class="description">Run OCC integration tests with SDK</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run routing matrix tests</td>
-                    <td><code class="command">./build/tests/routing/routing_matrix_test</code></td>
-                    <td class="description">Run routing matrix tests (HeadroomMode, true-peak metering)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run callback queue stress tests</td>
-                    <td><code class="command">./build/tests/transport/callback_queue_stress_test</code></td>
-                    <td class="description">Run SPSC callback queue stress tests (lock-free verification)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run transport tests</td>
-                    <td><code class="command">ctest --test-dir build -R transport --output-on-failure</code></td>
-                    <td class="description">Run all transport-related tests</td>
-                </tr>
-                <tr class="section-row hidden" data-section="testing">
-                    <td class="job">Run tests (parallel)</td>
-                    <td><code class="command">ctest --test-dir build --output-on-failure -j4</code></td>
-                    <td class="description">Run tests in parallel (4 jobs)</td>
-                </tr>
-
-                <!-- Run Commands -->
-                <tr class="section-header collapsed" data-section="run" tabindex="0">
-                    <td colspan="3">Run Applications</td>
-                </tr>
-                <tr class="section-row hidden" data-section="run">
-                    <td class="job">Run Clip Composer</td>
-                    <td><code class="command">open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app</code></td>
-                    <td class="description">Launch Clip Composer (macOS Debug build)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="run">
-                    <td class="job">Run Clip Composer (Release)</td>
-                    <td><code class="command">open build-release/apps/clip-composer/orpheus_clip_composer_app_artefacts/Release/OrpheusClipComposer.app</code></td>
-                    <td class="description">Launch Clip Composer (macOS Release build)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="run">
-                    <td class="job">Relaunch Clip Composer (clean)</td>
-                    <td><code class="command">./scripts/relaunch-occ.sh</code></td>
-                    <td class="description">Clear cache, rebuild, and relaunch Clip Composer (recommended development workflow)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="run">
-                    <td class="job">Start OCC instance</td>
-                    <td><code class="command">cd ~/dev/orpheus-sdk/apps/clip-composer && claude-code</code></td>
-                    <td class="description">Start isolated Claude Code instance for OCC development</td>
-                </tr>
-
-                <!-- Clip Composer Workflow -->
-                <tr class="section-header collapsed" data-section="occ" tabindex="0">
-                    <td colspan="3">Clip Composer (OCC) Workflow</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">Full OCC rebuild & launch</td>
-                    <td><code class="command">./scripts/relaunch-occ.sh</code></td>
-                    <td class="description">Recommended workflow: clean, rebuild, launch OCC</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">Quick OCC rebuild</td>
-                    <td><code class="command">cmake --build build --target orpheus_clip_composer_app && open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app</code></td>
-                    <td class="description">Fast rebuild and launch (no cache clear)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">View OCC logs</td>
-                    <td><code class="command">tail -f ~/Library/Logs/OrpheusClipComposer/*.log</code></td>
-                    <td class="description">Monitor OCC application logs in real-time</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">Clear OCC preferences</td>
-                    <td><code class="command">rm -rf ~/Library/Application\ Support/OrpheusClipComposer/</code></td>
-                    <td class="description">Reset OCC to default settings (removes sessions)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">OCC development instance</td>
-                    <td><code class="command">cd ~/dev/orpheus-sdk/apps/clip-composer && claude-code</code></td>
-                    <td class="description">Start isolated Claude Code instance for OCC work</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">View OCC docs index</td>
-                    <td><code class="command">cat apps/clip-composer/docs/occ/INDEX.md</code></td>
-                    <td class="description">Browse complete OCC documentation catalog</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">Check OCC version</td>
-                    <td><code class="command">grep -A 3 "PROJECT_VERSION" apps/clip-composer/CMakeLists.txt</code></td>
-                    <td class="description">Show current OCC version from CMake config</td>
-                </tr>
-                <tr class="section-row hidden" data-section="occ">
-                    <td class="job">OCC v0.2.0 QA checklist</td>
-                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC104*.md</code></td>
-                    <td class="description">View v0.2.0 sprint plan and QA checklist</td>
-                </tr>
-
-                <!-- Git Commands -->
-                <tr class="section-header collapsed" data-section="git" tabindex="0">
-                    <td colspan="3">Git Operations</td>
-                </tr>
-                <tr class="section-row hidden" data-section="git">
-                    <td class="job">Check status</td>
-                    <td><code class="command">git status</code></td>
-                    <td class="description">View current branch and changed files</td>
-                </tr>
-                <tr class="section-row hidden" data-section="git">
-                    <td class="job">View diff</td>
-                    <td><code class="command">git diff</code></td>
-                    <td class="description">See unstaged changes</td>
-                </tr>
-                <tr class="section-row hidden" data-section="git">
-                    <td class="job">View recent commits</td>
-                    <td><code class="command">git log --oneline -10</code></td>
-                    <td class="description">Show last 10 commits</td>
-                </tr>
-                <tr class="section-row hidden" data-section="git">
-                    <td class="job">Fetch updates</td>
-                    <td><code class="command">git fetch origin</code></td>
-                    <td class="description">Download latest changes from remote (doesn't merge)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="git">
-                    <td class="job">Pull latest</td>
-                    <td><code class="command">git pull origin main</code></td>
-                    <td class="description">Fetch and merge latest changes from main branch</td>
-                </tr>
-
-                <!-- Code Quality -->
-                <tr class="section-header collapsed" data-section="quality" tabindex="0">
-                    <td colspan="3">Code Quality</td>
-                </tr>
-                <tr class="section-row hidden" data-section="quality">
-                    <td class="job">Format all code</td>
-                    <td><code class="command">find src apps -name '*.cpp' -o -name '*.h' | xargs clang-format -i</code></td>
-                    <td class="description">Auto-format all C++ source files</td>
-                </tr>
-                <tr class="section-row hidden" data-section="quality">
-                    <td class="job">Check formatting</td>
-                    <td><code class="command">find src apps -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run -Werror</code></td>
-                    <td class="description">Verify code formatting without modifying files</td>
-                </tr>
-
-                <!-- Documentation -->
-                <tr class="section-header collapsed" data-section="docs" tabindex="0">
-                    <td colspan="3">Documentation</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View SDK progress</td>
-                    <td><code class="command">cat .claude/implementation_progress.md</code></td>
-                    <td class="description">View SDK implementation progress and ORP121 status</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View ORP121 master plan</td>
-                    <td><code class="command">cat "docs/orp/ORP121 Audio Backend Refactoring Master Plan.md"</code></td>
-                    <td class="description">View audio backend refactoring master plan</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View gain staging docs</td>
-                    <td><code class="command">cat docs/orp/GAIN_STAGING.md</code></td>
-                    <td class="description">View gain staging model documentation</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View wireframes</td>
-                    <td><code class="command">ls -la wireframes/v2026-01-18/</code></td>
-                    <td class="description">List current architecture wireframe diagrams</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View ORP index</td>
-                    <td><code class="command">cat docs/orp/INDEX.md</code></td>
-                    <td class="description">View Orpheus SDK documentation index</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">Find OCC docs</td>
-                    <td><code class="command">ls -1 apps/clip-composer/docs/occ/*.md</code></td>
-                    <td class="description">List all Clip Composer design documents</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View OCC progress</td>
-                    <td><code class="command">cat apps/clip-composer/.claude/implementation_progress.md</code></td>
-                    <td class="description">View Clip Composer implementation progress</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View OCC architecture</td>
-                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC023*.md</code></td>
-                    <td class="description">View OCC Component Architecture document</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View OCC API contracts</td>
-                    <td><code class="command">cat apps/clip-composer/docs/occ/OCC027*.md</code></td>
-                    <td class="description">View OCC API Contracts and SDK integration</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">List OCC session reports</td>
-                    <td><code class="command">ls -lt apps/clip-composer/docs/occ/OCC*Session*.md | head -5</code></td>
-                    <td class="description">Show 5 most recent OCC session reports</td>
-                </tr>
-                <tr class="section-row hidden" data-section="docs">
-                    <td class="job">View OCC README</td>
-                    <td><code class="command">cat apps/clip-composer/CLAUDE.md</code></td>
-                    <td class="description">View Clip Composer development guide</td>
-                </tr>
-
-                <!-- shmui-juce -->
-                <tr class="section-header collapsed" data-section="shmui" tabindex="0">
-                    <td colspan="3">shmui-juce (Audio Visualization)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="shmui">
-                    <td class="job">Sync shmui-juce</td>
-                    <td><code class="command">rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/</code></td>
-                    <td class="description">Sync shmui-juce from upstream repo (~/dev/shmui)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="shmui">
-                    <td class="job">Check shmui version</td>
-                    <td><code class="command">grep -A 3 "namespace Version" packages/shmui-juce/ShmUI.h</code></td>
-                    <td class="description">Show current shmui-juce version</td>
-                </tr>
-                <tr class="section-row hidden" data-section="shmui">
-                    <td class="job">List shmui components</td>
-                    <td><code class="command">ls -1 packages/shmui-juce/Components/</code></td>
-                    <td class="description">List available shmui visualization components</td>
-                </tr>
-                <tr class="section-row hidden" data-section="shmui">
-                    <td class="job">List shmui controls</td>
-                    <td><code class="command">ls -1 packages/shmui-juce/Controls/</code></td>
-                    <td class="description">List available shmui button/control components</td>
-                </tr>
-                <tr class="section-row hidden" data-section="shmui">
-                    <td class="job">View shmui main header</td>
-                    <td><code class="command">cat packages/shmui-juce/ShmUI.h</code></td>
-                    <td class="description">View main shmui include header with all components</td>
-                </tr>
-
-                <!-- Diagnostics -->
-                <tr class="section-header collapsed" data-section="diagnostics" tabindex="0">
-                    <td colspan="3">Diagnostics</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">Check CMake version</td>
-                    <td><code class="command">cmake --version</code></td>
-                    <td class="description">Verify CMake installation</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">Check build tree</td>
-                    <td><code class="command">tree build -L 3 -d</code></td>
-                    <td class="description">View build directory structure</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">List build targets</td>
-                    <td><code class="command">cmake --build build --target help</code></td>
-                    <td class="description">Show all available build targets</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">Check OCC build artifacts</td>
-                    <td><code class="command">ls -lh build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/</code></td>
-                    <td class="description">List OCC Debug build artifacts and app bundle</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">Verify OCC app bundle</td>
-                    <td><code class="command">file build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></td>
-                    <td class="description">Check OCC executable type and architecture</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">Check OCC dependencies</td>
-                    <td><code class="command">otool -L build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></td>
-                    <td class="description">List dynamic library dependencies for OCC (macOS)</td>
-                </tr>
-                <tr class="section-row hidden" data-section="diagnostics">
-                    <td class="job">View OCC build log</td>
-                    <td><code class="command">cmake --build build --target orpheus_clip_composer_app 2>&1 | tee occ-build.log</code></td>
-                    <td class="description">Build OCC and save output to log file</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <footer>
-            <p><strong>Note:</strong> This is a local reference page. Commands are safe to run in your development environment.</p>
-            <p>Generated for: <strong>orpheus-sdk</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
-        <p style="margin-top: 1rem;">⌨️ <strong>Keyboard Navigation:</strong> ↑↓ navigate | →/← expand/collapse | Space/Enter toggle | Cmd+Click collapse others | A expand all | Esc collapse all</p>
-        </footer>
+<header class="site-header">
+  <div class="site-header__inner">
+    <div class="brand">
+      <a class="brand__title" href="#">dreamfactory</a>
     </div>
+    <div class="header-actions"><button class="export-btn" id="export-btn" title="Copy visible results to clipboard as markdown">Export to Markdown</button></div>
+  </div>
+</header>
 
-    <script>
-        // Click-to-copy functionality
-        document.querySelectorAll('.command').forEach(cmd => {
-            cmd.addEventListener('click', async function(e) {
-                e.stopPropagation();
-                const text = this.textContent.replace('📋', '').trim();
-                try {
-                    await navigator.clipboard.writeText(text);
-                    this.classList.add('copied');
-                    setTimeout(() => this.classList.remove('copied'), 300);
-                } catch (err) {
-                    // Fallback for older browsers
-                    const textarea = document.createElement('textarea');
-                    textarea.value = text;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    this.classList.add('copied');
-                    setTimeout(() => this.classList.remove('copied'), 300);
-                }
-            });
-        });
+<main>
+  <div class="hero-row">
+    <div class="hero">
+      <span class="hero-eyebrow">COMMAND REFERENCE</span>
+      <h1>orpheus-sdk</h1>
+      <p>Professional C++20 audio SDK — deterministic transport + real-time infrastructure</p>
+    </div>
+    <div class="hero-meta"><div class="meta-chip"><span class="meta-chip__label">UPDATED</span><span class="meta-chip__value">2026-05-18</span></div><div class="meta-chip"><span class="meta-chip__label">VERSION</span><span class="meta-chip__value">1.0.0-rc.1</span></div><div class="meta-chip"><span class="meta-chip__label">REPO</span><span class="meta-chip__value">~/dev/orpheus-sdk</span></div></div>
+  </div>
+  <div class="search-wrap"><span class="search-icon">&#x2315;</span><input class="search-input" type="text" placeholder="Search commands, snippets, or notes…" id="search" autocomplete="off" spellcheck="false"><span class="search-count" id="search-count"></span><button class="search-clear" id="search-clear" title="Clear search">&times;</button></div>
 
-        // Section toggle functionality
-        const sectionHeaders = document.querySelectorAll('.section-header');
+  <section class="surface-card callout-grid"><div class="callout callout--warning"><h2>⚠️ Local Use Only</h2><p>This page is for local development reference. Click any command to copy it to clipboard.</p></div></section>
 
-        function toggleSection(header, collapseOthers = false) {
-            const section = header.dataset.section;
-            const isCollapsed = header.classList.contains('collapsed');
+  <section class="surface-card section-card" data-section="build"><button class="section-header" type="button" aria-expanded="true"><span class="section-arrow">&#x25BC;</span><span class="section-title">Build &amp; Compile</span><span class="section-count">8</span></button><div class="section-body"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="configure cmake cmake -s . -b build -dcmake_build_type=debug"><td><div class="task-text">Configure CMake</div></td><td><button class="value-block value-block--shell" data-copy="cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug" title="Copy value"><code class="value-text">cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug</code></button></td><td class="desc-text">Configure CMake build system (Debug mode)</td></tr>
+  <tr class="command-row" data-search="configure cmake (release) cmake -s . -b build -dcmake_build_type=release"><td><div class="task-text">Configure CMake (Release)</div></td><td><button class="value-block value-block--shell" data-copy="cmake -S . -B build -DCMAKE_BUILD_TYPE=Release" title="Copy value"><code class="value-text">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release</code></button></td><td class="desc-text">Configure CMake build system (Release mode, optimized)</td></tr>
+  <tr class="command-row" data-search="build sdk cmake --build build"><td><div class="task-text">Build SDK</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build" title="Copy value"><code class="value-text">cmake --build build</code></button></td><td class="desc-text">Build all SDK targets</td></tr>
+  <tr class="command-row" data-search="build sdk (parallel) cmake --build build -j$(sysctl -n hw.ncpu)"><td><div class="task-text">Build SDK (parallel)</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build -j$(sysctl -n hw.ncpu)" title="Copy value"><code class="value-text">cmake --build build -j$(sysctl -n hw.ncpu)</code></button></td><td class="desc-text">Build using all CPU cores for faster compilation</td></tr>
+  <tr class="command-row" data-search="build clip composer cmake --build build --target orpheus_clip_composer_app"><td><div class="task-text">Build Clip Composer</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build --target orpheus_clip_composer_app" title="Copy value"><code class="value-text">cmake --build build --target orpheus_clip_composer_app</code></button></td><td class="desc-text">Build only the Clip Composer application (Debug)</td></tr>
+  <tr class="command-row" data-search="build clip composer (release) cmake -s . -b build-release -dcmake_build_type=release &amp;&amp; cmake --build build-release --target orpheus_clip_composer_app"><td><div class="task-text">Build Clip Composer (Release)</div></td><td><button class="value-block value-block--shell" data-copy="cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build build-release --target orpheus_clip_composer_app" title="Copy value"><code class="value-text">cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build build-release --target orpheus_clip_composer_app</code></button></td><td class="desc-text">Build optimized Release version of Clip Composer</td></tr>
+  <tr class="command-row" data-search="clean build rm -rf build &amp;&amp; cmake -s . -b build &amp;&amp; cmake --build build"><td><div class="task-text">Clean build</div></td><td><button class="value-block value-block--shell" data-copy="rm -rf build &amp;&amp; cmake -S . -B build &amp;&amp; cmake --build build" title="Copy value"><code class="value-text">rm -rf build &amp;&amp; cmake -S . -B build &amp;&amp; cmake --build build</code></button></td><td class="desc-text">Full clean rebuild (use when build is corrupted)</td></tr>
+  <tr class="command-row" data-search="clean build clip composer rm -rf build/apps/clip-composer &amp;&amp; cmake --build build --target orpheus_clip_composer_app"><td><div class="task-text">Clean build Clip Composer</div></td><td><button class="value-block value-block--shell" data-copy="rm -rf build/apps/clip-composer &amp;&amp; cmake --build build --target orpheus_clip_composer_app" title="Copy value"><code class="value-text">rm -rf build/apps/clip-composer &amp;&amp; cmake --build build --target orpheus_clip_composer_app</code></button></td><td class="desc-text">Clean rebuild only Clip Composer (preserves SDK build)</td></tr>
+  </tbody></table></div></section>
 
-            if (collapseOthers) {
-                // Collapse all other sections
-                sectionHeaders.forEach(h => {
-                    if (h !== header) {
-                        h.classList.add('collapsed');
-                        document.querySelectorAll(`.section-row[data-section="${h.dataset.section}"]`)
-                            .forEach(row => row.classList.add('hidden'));
-                    }
-                });
-            }
+  <section class="surface-card section-card" data-section="testing"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Testing</span><span class="section-count">9</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="run all tests ctest --test-dir build --output-on-failure"><td><div class="task-text">Run all tests</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build --output-on-failure" title="Copy value"><code class="value-text">ctest --test-dir build --output-on-failure</code></button></td><td class="desc-text">Run all unit and integration tests</td></tr>
+  <tr class="command-row" data-search="run tests (verbose) ctest --test-dir build --output-on-failure --verbose"><td><div class="task-text">Run tests (verbose)</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build --output-on-failure --verbose" title="Copy value"><code class="value-text">ctest --test-dir build --output-on-failure --verbose</code></button></td><td class="desc-text">Run tests with detailed output</td></tr>
+  <tr class="command-row" data-search="run specific test ctest --test-dir build -r testname --output-on-failure"><td><div class="task-text">Run specific test</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build -R TestName --output-on-failure" title="Copy value"><code class="value-text">ctest --test-dir build -R TestName --output-on-failure</code></button></td><td class="desc-text">Run only tests matching TestName pattern</td></tr>
+  <tr class="command-row" data-search="run clip composer tests ctest --test-dir build -r clipcomposer --output-on-failure"><td><div class="task-text">Run Clip Composer tests</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build -R ClipComposer --output-on-failure" title="Copy value"><code class="value-text">ctest --test-dir build -R ClipComposer --output-on-failure</code></button></td><td class="desc-text">Run only Clip Composer-specific tests</td></tr>
+  <tr class="command-row" data-search="run occ integration tests ctest --test-dir build -r occ_integration --output-on-failure"><td><div class="task-text">Run OCC integration tests</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build -R OCC_Integration --output-on-failure" title="Copy value"><code class="value-text">ctest --test-dir build -R OCC_Integration --output-on-failure</code></button></td><td class="desc-text">Run OCC integration tests with SDK</td></tr>
+  <tr class="command-row" data-search="run routing matrix tests ./build/tests/routing/routing_matrix_test"><td><div class="task-text">Run routing matrix tests</div></td><td><button class="value-block value-block--shell" data-copy="./build/tests/routing/routing_matrix_test" title="Copy value"><code class="value-text">./build/tests/routing/routing_matrix_test</code></button></td><td class="desc-text">Run routing matrix tests (HeadroomMode, true-peak metering)</td></tr>
+  <tr class="command-row" data-search="run callback queue stress tests ./build/tests/transport/callback_queue_stress_test"><td><div class="task-text">Run callback queue stress tests</div></td><td><button class="value-block value-block--shell" data-copy="./build/tests/transport/callback_queue_stress_test" title="Copy value"><code class="value-text">./build/tests/transport/callback_queue_stress_test</code></button></td><td class="desc-text">Run SPSC callback queue stress tests (lock-free verification)</td></tr>
+  <tr class="command-row" data-search="run transport tests ctest --test-dir build -r transport --output-on-failure"><td><div class="task-text">Run transport tests</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build -R transport --output-on-failure" title="Copy value"><code class="value-text">ctest --test-dir build -R transport --output-on-failure</code></button></td><td class="desc-text">Run all transport-related tests</td></tr>
+  <tr class="command-row" data-search="run tests (parallel) ctest --test-dir build --output-on-failure -j4"><td><div class="task-text">Run tests (parallel)</div></td><td><button class="value-block value-block--shell" data-copy="ctest --test-dir build --output-on-failure -j4" title="Copy value"><code class="value-text">ctest --test-dir build --output-on-failure -j4</code></button></td><td class="desc-text">Run tests in parallel (4 jobs)</td></tr>
+  </tbody></table></div></section>
 
-            // Toggle current section
-            header.classList.toggle('collapsed');
-            const rows = document.querySelectorAll(`.section-row[data-section="${section}"]`);
-            rows.forEach(row => {
-                row.classList.toggle('hidden');
-            });
+  <section class="surface-card section-card" data-section="run"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Run Applications</span><span class="section-count">4</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="run clip composer open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/debug/orpheusclipcomposer.app"><td><div class="task-text">Run Clip Composer</div></td><td><button class="value-block value-block--shell" data-copy="open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app" title="Copy value"><code class="value-text">open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app</code></button></td><td class="desc-text">Launch Clip Composer (macOS Debug build)</td></tr>
+  <tr class="command-row" data-search="run clip composer (release) open build-release/apps/clip-composer/orpheus_clip_composer_app_artefacts/release/orpheusclipcomposer.app"><td><div class="task-text">Run Clip Composer (Release)</div></td><td><button class="value-block value-block--shell" data-copy="open build-release/apps/clip-composer/orpheus_clip_composer_app_artefacts/Release/OrpheusClipComposer.app" title="Copy value"><code class="value-text">open build-release/apps/clip-composer/orpheus_clip_composer_app_artefacts/Release/OrpheusClipComposer.app</code></button></td><td class="desc-text">Launch Clip Composer (macOS Release build)</td></tr>
+  <tr class="command-row" data-search="relaunch clip composer (clean) ./scripts/relaunch-occ.sh"><td><div class="task-text">Relaunch Clip Composer (clean)</div></td><td><button class="value-block value-block--shell" data-copy="./scripts/relaunch-occ.sh" title="Copy value"><code class="value-text">./scripts/relaunch-occ.sh</code></button></td><td class="desc-text">Clear cache, rebuild, and relaunch Clip Composer (recommended development workflow)</td></tr>
+  <tr class="command-row" data-search="start occ instance cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code"><td><div class="task-text">Start OCC instance</div></td><td><button class="value-block value-block--shell" data-copy="cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code" title="Copy value"><code class="value-text">cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code</code></button></td><td class="desc-text">Start isolated Claude Code instance for OCC development</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="occ"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Clip Composer (OCC) Workflow</span><span class="section-count">8</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="full occ rebuild &amp; launch ./scripts/relaunch-occ.sh"><td><div class="task-text">Full OCC rebuild &amp; launch</div></td><td><button class="value-block value-block--shell" data-copy="./scripts/relaunch-occ.sh" title="Copy value"><code class="value-text">./scripts/relaunch-occ.sh</code></button></td><td class="desc-text">Recommended workflow: clean, rebuild, launch OCC</td></tr>
+  <tr class="command-row" data-search="quick occ rebuild cmake --build build --target orpheus_clip_composer_app &amp;&amp; open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/debug/orpheusclipcomposer.app"><td><div class="task-text">Quick OCC rebuild</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build --target orpheus_clip_composer_app &amp;&amp; open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app" title="Copy value"><code class="value-text">cmake --build build --target orpheus_clip_composer_app &amp;&amp; open build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app</code></button></td><td class="desc-text">Fast rebuild and launch (no cache clear)</td></tr>
+  <tr class="command-row" data-search="view occ logs tail -f ~/library/logs/orpheusclipcomposer/*.log"><td><div class="task-text">View OCC logs</div></td><td><button class="value-block value-block--shell" data-copy="tail -f ~/Library/Logs/OrpheusClipComposer/*.log" title="Copy value"><code class="value-text">tail -f ~/Library/Logs/OrpheusClipComposer/*.log</code></button></td><td class="desc-text">Monitor OCC application logs in real-time</td></tr>
+  <tr class="command-row" data-search="clear occ preferences rm -rf ~/library/application\ support/orpheusclipcomposer/"><td><div class="task-text">Clear OCC preferences</div></td><td><button class="value-block value-block--shell" data-copy="rm -rf ~/Library/Application\ Support/OrpheusClipComposer/" title="Copy value"><code class="value-text">rm -rf ~/Library/Application\ Support/OrpheusClipComposer/</code></button></td><td class="desc-text">Reset OCC to default settings (removes sessions)</td></tr>
+  <tr class="command-row" data-search="occ development instance cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code"><td><div class="task-text">OCC development instance</div></td><td><button class="value-block value-block--shell" data-copy="cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code" title="Copy value"><code class="value-text">cd ~/dev/orpheus-sdk/apps/clip-composer &amp;&amp; claude-code</code></button></td><td class="desc-text">Start isolated Claude Code instance for OCC work</td></tr>
+  <tr class="command-row" data-search="view occ docs index cat apps/clip-composer/docs/occ/index.md"><td><div class="task-text">View OCC docs index</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/docs/occ/INDEX.md" title="Copy value"><code class="value-text">cat apps/clip-composer/docs/occ/INDEX.md</code></button></td><td class="desc-text">Browse complete OCC documentation catalog</td></tr>
+  <tr class="command-row" data-search="check occ version grep -a 3 &quot;project_version&quot; apps/clip-composer/cmakelists.txt"><td><div class="task-text">Check OCC version</div></td><td><button class="value-block value-block--shell" data-copy="grep -A 3 &quot;PROJECT_VERSION&quot; apps/clip-composer/CMakeLists.txt" title="Copy value"><code class="value-text">grep -A 3 "PROJECT_VERSION" apps/clip-composer/CMakeLists.txt</code></button></td><td class="desc-text">Show current OCC version from CMake config</td></tr>
+  <tr class="command-row" data-search="occ v0.2.0 qa checklist cat apps/clip-composer/docs/occ/occ104*.md"><td><div class="task-text">OCC v0.2.0 QA checklist</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/docs/occ/OCC104*.md" title="Copy value"><code class="value-text">cat apps/clip-composer/docs/occ/OCC104*.md</code></button></td><td class="desc-text">View v0.2.0 sprint plan and QA checklist</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="git"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Git Operations</span><span class="section-count">5</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="check status git status"><td><div class="task-text">Check status</div></td><td><button class="value-block value-block--shell" data-copy="git status" title="Copy value"><code class="value-text">git status</code></button></td><td class="desc-text">View current branch and changed files</td></tr>
+  <tr class="command-row" data-search="view diff git diff"><td><div class="task-text">View diff</div></td><td><button class="value-block value-block--shell" data-copy="git diff" title="Copy value"><code class="value-text">git diff</code></button></td><td class="desc-text">See unstaged changes</td></tr>
+  <tr class="command-row" data-search="view recent commits git log --oneline -10"><td><div class="task-text">View recent commits</div></td><td><button class="value-block value-block--shell" data-copy="git log --oneline -10" title="Copy value"><code class="value-text">git log --oneline -10</code></button></td><td class="desc-text">Show last 10 commits</td></tr>
+  <tr class="command-row" data-search="fetch updates git fetch origin"><td><div class="task-text">Fetch updates</div></td><td><button class="value-block value-block--shell" data-copy="git fetch origin" title="Copy value"><code class="value-text">git fetch origin</code></button></td><td class="desc-text">Download latest changes from remote (doesn&#x27;t merge)</td></tr>
+  <tr class="command-row" data-search="pull latest git pull origin main"><td><div class="task-text">Pull latest</div></td><td><button class="value-block value-block--shell" data-copy="git pull origin main" title="Copy value"><code class="value-text">git pull origin main</code></button></td><td class="desc-text">Fetch and merge latest changes from main branch</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="quality"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Code Quality</span><span class="section-count">2</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="format all code find src apps -name &#x27;*.cpp&#x27; -o -name &#x27;*.h&#x27; | xargs clang-format -i"><td><div class="task-text">Format all code</div></td><td><button class="value-block value-block--shell" data-copy="find src apps -name &#x27;*.cpp&#x27; -o -name &#x27;*.h&#x27; | xargs clang-format -i" title="Copy value"><code class="value-text">find src apps -name '*.cpp' -o -name '*.h' | xargs clang-format -i</code></button></td><td class="desc-text">Auto-format all C++ source files</td></tr>
+  <tr class="command-row" data-search="check formatting find src apps -name &#x27;*.cpp&#x27; -o -name &#x27;*.h&#x27; | xargs clang-format --dry-run -werror"><td><div class="task-text">Check formatting</div></td><td><button class="value-block value-block--shell" data-copy="find src apps -name &#x27;*.cpp&#x27; -o -name &#x27;*.h&#x27; | xargs clang-format --dry-run -Werror" title="Copy value"><code class="value-text">find src apps -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run -Werror</code></button></td><td class="desc-text">Verify code formatting without modifying files</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="docs"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Documentation</span><span class="section-count">11</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="view sdk progress cat .claude/implementation_progress.md"><td><div class="task-text">View SDK progress</div></td><td><button class="value-block value-block--shell" data-copy="cat .claude/implementation_progress.md" title="Copy value"><code class="value-text">cat .claude/implementation_progress.md</code></button></td><td class="desc-text">View SDK implementation progress and ORP121 status</td></tr>
+  <tr class="command-row" data-search="view orp121 master plan cat &quot;docs/orp/orp121 audio backend refactoring master plan.md&quot;"><td><div class="task-text">View ORP121 master plan</div></td><td><button class="value-block value-block--shell" data-copy="cat &quot;docs/orp/ORP121 Audio Backend Refactoring Master Plan.md&quot;" title="Copy value"><code class="value-text">cat "docs/orp/ORP121 Audio Backend Refactoring Master Plan.md"</code></button></td><td class="desc-text">View audio backend refactoring master plan</td></tr>
+  <tr class="command-row" data-search="view gain staging docs cat docs/orp/gain_staging.md"><td><div class="task-text">View gain staging docs</div></td><td><button class="value-block value-block--shell" data-copy="cat docs/orp/GAIN_STAGING.md" title="Copy value"><code class="value-text">cat docs/orp/GAIN_STAGING.md</code></button></td><td class="desc-text">View gain staging model documentation</td></tr>
+  <tr class="command-row" data-search="view wireframes ls -la wireframes/v2026-05-18/"><td><div class="task-text">View wireframes</div></td><td><button class="value-block value-block--shell" data-copy="ls -la wireframes/v2026-05-18/" title="Copy value"><code class="value-text">ls -la wireframes/v2026-05-18/</code></button></td><td class="desc-text">List current architecture wireframe diagrams</td></tr>
+  <tr class="command-row" data-search="view orp index cat docs/orp/index.md"><td><div class="task-text">View ORP index</div></td><td><button class="value-block value-block--shell" data-copy="cat docs/orp/INDEX.md" title="Copy value"><code class="value-text">cat docs/orp/INDEX.md</code></button></td><td class="desc-text">View Orpheus SDK documentation index</td></tr>
+  <tr class="command-row" data-search="find occ docs ls -1 apps/clip-composer/docs/occ/*.md"><td><div class="task-text">Find OCC docs</div></td><td><button class="value-block value-block--shell" data-copy="ls -1 apps/clip-composer/docs/occ/*.md" title="Copy value"><code class="value-text">ls -1 apps/clip-composer/docs/occ/*.md</code></button></td><td class="desc-text">List all Clip Composer design documents</td></tr>
+  <tr class="command-row" data-search="view occ progress cat apps/clip-composer/.claude/implementation_progress.md"><td><div class="task-text">View OCC progress</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/.claude/implementation_progress.md" title="Copy value"><code class="value-text">cat apps/clip-composer/.claude/implementation_progress.md</code></button></td><td class="desc-text">View Clip Composer implementation progress</td></tr>
+  <tr class="command-row" data-search="view occ architecture cat apps/clip-composer/docs/occ/occ023*.md"><td><div class="task-text">View OCC architecture</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/docs/occ/OCC023*.md" title="Copy value"><code class="value-text">cat apps/clip-composer/docs/occ/OCC023*.md</code></button></td><td class="desc-text">View OCC Component Architecture document</td></tr>
+  <tr class="command-row" data-search="view occ api contracts cat apps/clip-composer/docs/occ/occ027*.md"><td><div class="task-text">View OCC API contracts</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/docs/occ/OCC027*.md" title="Copy value"><code class="value-text">cat apps/clip-composer/docs/occ/OCC027*.md</code></button></td><td class="desc-text">View OCC API Contracts and SDK integration</td></tr>
+  <tr class="command-row" data-search="list occ session reports ls -lt apps/clip-composer/docs/occ/occ*session*.md | head -5"><td><div class="task-text">List OCC session reports</div></td><td><button class="value-block value-block--shell" data-copy="ls -lt apps/clip-composer/docs/occ/OCC*Session*.md | head -5" title="Copy value"><code class="value-text">ls -lt apps/clip-composer/docs/occ/OCC*Session*.md | head -5</code></button></td><td class="desc-text">Show 5 most recent OCC session reports</td></tr>
+  <tr class="command-row" data-search="view occ readme cat apps/clip-composer/claude.md"><td><div class="task-text">View OCC README</div></td><td><button class="value-block value-block--shell" data-copy="cat apps/clip-composer/CLAUDE.md" title="Copy value"><code class="value-text">cat apps/clip-composer/CLAUDE.md</code></button></td><td class="desc-text">View Clip Composer development guide</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="shmui"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">shmui-juce (Audio Visualization)</span><span class="section-count">5</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="sync shmui-juce rsync -av --delete ~/dev/shmui/juce/source/ ~/dev/orpheus-sdk/packages/shmui-juce/"><td><div class="task-text">Sync shmui-juce</div></td><td><button class="value-block value-block--shell" data-copy="rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/" title="Copy value"><code class="value-text">rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/</code></button></td><td class="desc-text">Sync shmui-juce from upstream repo (~/dev/shmui)</td></tr>
+  <tr class="command-row" data-search="check shmui version grep -a 3 &quot;namespace version&quot; packages/shmui-juce/shmui.h"><td><div class="task-text">Check shmui version</div></td><td><button class="value-block value-block--shell" data-copy="grep -A 3 &quot;namespace Version&quot; packages/shmui-juce/ShmUI.h" title="Copy value"><code class="value-text">grep -A 3 "namespace Version" packages/shmui-juce/ShmUI.h</code></button></td><td class="desc-text">Show current shmui-juce version</td></tr>
+  <tr class="command-row" data-search="list shmui components ls -1 packages/shmui-juce/components/"><td><div class="task-text">List shmui components</div></td><td><button class="value-block value-block--shell" data-copy="ls -1 packages/shmui-juce/Components/" title="Copy value"><code class="value-text">ls -1 packages/shmui-juce/Components/</code></button></td><td class="desc-text">List available shmui visualization components</td></tr>
+  <tr class="command-row" data-search="list shmui controls ls -1 packages/shmui-juce/controls/"><td><div class="task-text">List shmui controls</div></td><td><button class="value-block value-block--shell" data-copy="ls -1 packages/shmui-juce/Controls/" title="Copy value"><code class="value-text">ls -1 packages/shmui-juce/Controls/</code></button></td><td class="desc-text">List available shmui button/control components</td></tr>
+  <tr class="command-row" data-search="view shmui main header cat packages/shmui-juce/shmui.h"><td><div class="task-text">View shmui main header</div></td><td><button class="value-block value-block--shell" data-copy="cat packages/shmui-juce/ShmUI.h" title="Copy value"><code class="value-text">cat packages/shmui-juce/ShmUI.h</code></button></td><td class="desc-text">View main shmui include header with all components</td></tr>
+  </tbody></table></div></section>
+
+  <section class="surface-card section-card" data-section="diagnostics"><button class="section-header collapsed" type="button" aria-expanded="false"><span class="section-arrow">&#x25BC;</span><span class="section-title">Diagnostics</span><span class="section-count">7</span></button><div class="section-body collapsed"><table class="command-table"><thead><tr><th>Task</th><th>Command / Snippet</th><th>Description</th></tr></thead><tbody>
+  <tr class="command-row" data-search="check cmake version cmake --version"><td><div class="task-text">Check CMake version</div></td><td><button class="value-block value-block--shell" data-copy="cmake --version" title="Copy value"><code class="value-text">cmake --version</code></button></td><td class="desc-text">Verify CMake installation</td></tr>
+  <tr class="command-row" data-search="check build tree tree build -l 3 -d"><td><div class="task-text">Check build tree</div></td><td><button class="value-block value-block--shell" data-copy="tree build -L 3 -d" title="Copy value"><code class="value-text">tree build -L 3 -d</code></button></td><td class="desc-text">View build directory structure</td></tr>
+  <tr class="command-row" data-search="list build targets cmake --build build --target help"><td><div class="task-text">List build targets</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build --target help" title="Copy value"><code class="value-text">cmake --build build --target help</code></button></td><td class="desc-text">Show all available build targets</td></tr>
+  <tr class="command-row" data-search="check occ build artifacts ls -lh build/apps/clip-composer/orpheus_clip_composer_app_artefacts/debug/"><td><div class="task-text">Check OCC build artifacts</div></td><td><button class="value-block value-block--shell" data-copy="ls -lh build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/" title="Copy value"><code class="value-text">ls -lh build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/</code></button></td><td class="desc-text">List OCC Debug build artifacts and app bundle</td></tr>
+  <tr class="command-row" data-search="verify occ app bundle file build/apps/clip-composer/orpheus_clip_composer_app_artefacts/debug/orpheusclipcomposer.app/contents/macos/orpheusclipcomposer"><td><div class="task-text">Verify OCC app bundle</div></td><td><button class="value-block value-block--shell" data-copy="file build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer" title="Copy value"><code class="value-text">file build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></button></td><td class="desc-text">Check OCC executable type and architecture</td></tr>
+  <tr class="command-row" data-search="check occ dependencies otool -l build/apps/clip-composer/orpheus_clip_composer_app_artefacts/debug/orpheusclipcomposer.app/contents/macos/orpheusclipcomposer"><td><div class="task-text">Check OCC dependencies</div></td><td><button class="value-block value-block--shell" data-copy="otool -L build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer" title="Copy value"><code class="value-text">otool -L build/apps/clip-composer/orpheus_clip_composer_app_artefacts/Debug/OrpheusClipComposer.app/Contents/MacOS/OrpheusClipComposer</code></button></td><td class="desc-text">List dynamic library dependencies for OCC (macOS)</td></tr>
+  <tr class="command-row" data-search="view occ build log cmake --build build --target orpheus_clip_composer_app 2&gt;&amp;1 | tee occ-build.log"><td><div class="task-text">View OCC build log</div></td><td><button class="value-block value-block--shell" data-copy="cmake --build build --target orpheus_clip_composer_app 2&gt;&amp;1 | tee occ-build.log" title="Copy value"><code class="value-text">cmake --build build --target orpheus_clip_composer_app 2&gt;&amp;1 | tee occ-build.log</code></button></td><td class="desc-text">Build OCC and save output to log file</td></tr>
+  </tbody></table></div></section>
+</main>
+
+<footer>
+  <div class="inner">
+    <span>orpheus-sdk v1.0.0-rc.1 | PREFIX: ORP | CMake + C++20 | 270+ tests | wireframes/v2026-05-18</span>
+    <span>orpheus-sdk_repo-commands.html</span>
+  </div>
+</footer>
+
+<script>
+/* dust.js — per-mote jittering dust grid (canvas-based)
+   Single grid of individually animated particles with unique sub-pixel trembling. */
+
+(function () {
+  'use strict';
+
+  var GRID = 36;
+  var DOT_R = 0.8;
+  var JITTER_AMP = 2.4;
+  var JITTER_SPEED = 0.0008;
+  var DRIFT_SPEED = 0.0003;
+  var FPS_CAP = 15;
+  var FRAME_MS = 1000 / FPS_CAP;
+
+  function parseRGBA(str) {
+    var m = str.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    if (!m) return [128, 128, 128, 0.3];
+    return [+m[1], +m[2], +m[3], m[4] !== undefined ? +m[4] : 1];
+  }
+
+  function readColor() {
+    return parseRGBA(getComputedStyle(document.documentElement).getPropertyValue('--dust-dot').trim());
+  }
+
+  function init() {
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;z-index:0;pointer-events:none;';
+    document.body.insertBefore(canvas, document.body.firstChild);
+    var ctx = canvas.getContext('2d');
+    var dpr = window.devicePixelRatio || 1;
+    var w, h, motes;
+
+    function buildMotes() {
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      motes = [];
+      for (var y = 0; y < h + GRID; y += GRID) {
+        for (var x = 0; x < w + GRID; x += GRID) {
+          motes.push({
+            bx: x, by: y,
+            px: (x * 7.3 + y * 13.7) % 6.2832,
+            py: (x * 11.1 + y * 5.9) % 6.2832
+          });
         }
+      }
+    }
 
-        function expandAll() {
-            sectionHeaders.forEach(h => {
-                h.classList.remove('collapsed');
-                document.querySelectorAll(`.section-row[data-section="${h.dataset.section}"]`)
-                    .forEach(row => row.classList.remove('hidden'));
-            });
+    buildMotes();
+
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(buildMotes, 200);
+    });
+
+    var rgba = readColor();
+    var observer = new MutationObserver(function () { rgba = readColor(); });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    var lastFrame = 0;
+    var t0 = performance.now();
+
+    function draw(now) {
+      requestAnimationFrame(draw);
+      if (now - lastFrame < FRAME_MS) return;
+      lastFrame = now;
+
+      var elapsed = now - t0;
+      var driftX = (elapsed * DRIFT_SPEED) % GRID;
+      var driftY = (elapsed * DRIFT_SPEED * 2) % GRID;
+
+      ctx.clearRect(0, 0, w, h);
+
+      for (var i = 0, n = motes.length; i < n; i++) {
+        var m = motes[i];
+        var jx = Math.sin(elapsed * JITTER_SPEED + m.px) * JITTER_AMP;
+        var jy = Math.cos(elapsed * JITTER_SPEED * 1.3 + m.py) * JITTER_AMP;
+        var x = m.bx + jx + driftX;
+        var y = m.by + jy + driftY;
+
+        x = ((x % w) + w) % w;
+        y = ((y % h) + h) % h;
+
+        var fade = 1.0 - (y / h) * 0.18;
+        ctx.fillStyle = 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] * fade).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(x, y, DOT_R, 0, 6.2832);
+        ctx.fill();
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+</script>
+<script>
+/* theme.js — theme constants, apply/get/set/cycle, persistence, cssVar() helper */
+
+var THEME_KEY = "commandsheets-theme";
+var PORTAL_KEY = "factory-portal-theme";
+var THEME_ORDER = ["light", "dark", "ember"];
+
+function getDefaultTheme() {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function getSavedTheme() {
+  var saved = localStorage.getItem(PORTAL_KEY);
+  if (THEME_ORDER.includes(saved)) return saved;
+  saved = localStorage.getItem(THEME_KEY);
+  return THEME_ORDER.includes(saved) ? saved : null;
+}
+
+function getCurrentTheme() {
+  var current = document.documentElement.getAttribute("data-theme");
+  return THEME_ORDER.includes(current) ? current : getDefaultTheme();
+}
+
+function applyTheme(theme, persist) {
+  if (persist === undefined) persist = true;
+  var nextTheme = THEME_ORDER.includes(theme) ? theme : getDefaultTheme();
+  document.documentElement.setAttribute("data-theme", nextTheme);
+  if (persist) {
+    localStorage.setItem(THEME_KEY, nextTheme);
+    localStorage.setItem(PORTAL_KEY, nextTheme);
+  }
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+(function initTheme() {
+  applyTheme(getSavedTheme() || getDefaultTheme(), false);
+})();
+
+/* Re-sync theme when restored from bfcache (back/forward nav) */
+window.addEventListener("pageshow", function(e) {
+  if (e.persisted) {
+    var fresh = getSavedTheme();
+    if (fresh) applyTheme(fresh, false);
+  }
+});
+
+</script>
+<script>
+/* commands.js — search/filtering, copy-to-clipboard, section toggle, export-to-markdown, keyboard wiring */
+
+var sectionHeaders = Array.from(document.querySelectorAll(".section-header"));
+var headerArray = Array.from(sectionHeaders);
+var currentHeaderIndex = -1;
+
+function getVisibleHeaders() {
+  return headerArray.filter(function(header) {
+    var card = header.closest(".section-card");
+    return !card || !card.classList.contains("is-hidden");
+  });
+}
+
+function setFocusedSectionCard(header) {
+  document.querySelectorAll(".section-card.is-focused").forEach(function(card) {
+    card.classList.remove("is-focused");
+  });
+  if (!header) return;
+  var card = header.closest(".section-card");
+  if (card) card.classList.add("is-focused");
+}
+
+function toggleSection(header, force) {
+  var body = header.nextElementSibling;
+  var shouldCollapse = force !== undefined ? force : !header.classList.contains("collapsed");
+  header.classList.toggle("collapsed", shouldCollapse);
+  body.classList.toggle("collapsed", shouldCollapse);
+  header.setAttribute("aria-expanded", String(!shouldCollapse));
+}
+
+function setAllSections(collapsed) {
+  headerArray.forEach(function(header) {
+    toggleSection(header, collapsed);
+  });
+}
+
+/* Default all sections to collapsed on load */
+setAllSections(true);
+
+function focusHeaderElement(header) {
+  if (!header) return;
+  currentHeaderIndex = headerArray.indexOf(header);
+  header.focus();
+  header.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function focusVisibleHeader(index) {
+  var visibleHeaders = getVisibleHeaders();
+  if (index >= 0 && index < visibleHeaders.length) {
+    focusHeaderElement(visibleHeaders[index]);
+  }
+}
+
+document.querySelectorAll(".value-block").forEach(function(el) {
+  el.addEventListener("click", async function() {
+    var text = el.dataset.copy || el.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      el.classList.add("copied");
+      setTimeout(function() { el.classList.remove("copied"); }, 420);
+    } catch (error) {
+      var area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      document.body.removeChild(area);
+      el.classList.add("copied");
+      setTimeout(function() { el.classList.remove("copied"); }, 420);
+    }
+  });
+});
+
+sectionHeaders.forEach(function(header, index) {
+  header.addEventListener("click", function() { toggleSection(header); });
+  header.addEventListener("keydown", function(event) {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      toggleSection(header);
+    }
+  });
+  header.addEventListener("focus", function() {
+    currentHeaderIndex = index;
+  });
+});
+
+document.addEventListener("focusin", function(event) {
+  var target = event.target;
+  var header = target instanceof Element ? target.closest(".section-header") : null;
+  setFocusedSectionCard(header);
+});
+
+var searchInput = document.getElementById("search");
+var countEl = document.getElementById("search-count");
+var clearBtn = document.getElementById("search-clear");
+
+function applySearch() {
+  if (!searchInput) return;
+  var q = searchInput.value.trim().toLowerCase();
+  var rows = Array.from(document.querySelectorAll(".command-row"));
+  var visible = 0;
+  rows.forEach(function(row) {
+    var match = !q || (row.dataset.search || "").includes(q);
+    row.classList.toggle("hidden", !match);
+    if (match) {
+      visible += 1;
+      if (q) {
+        var card = row.closest(".section-card");
+        var header = card ? card.querySelector(".section-header") : null;
+        if (header && header.classList.contains("collapsed")) {
+          toggleSection(header, false);
         }
+      }
+    }
+  });
 
-        function collapseAll() {
-            sectionHeaders.forEach(h => {
-                h.classList.add('collapsed');
-                document.querySelectorAll(`.section-row[data-section="${h.dataset.section}"]`)
-                    .forEach(row => row.classList.add('hidden'));
-            });
+  document.querySelectorAll(".section-card").forEach(function(card) {
+    var totalVisible = card.querySelectorAll(".command-row:not(.hidden)").length;
+    card.classList.toggle("is-hidden", q && totalVisible === 0);
+    var badge = card.querySelector(".section-count");
+    if (badge) {
+      var total = card.querySelectorAll(".command-row").length;
+      badge.textContent = q ? totalVisible + "/" + total : String(total);
+    }
+  });
+
+  countEl.textContent = q ? visible + " match" + (visible === 1 ? "" : "es") : "";
+  clearBtn.classList.toggle("visible", !!q);
+}
+
+if (searchInput) {
+  searchInput.addEventListener("input", applySearch);
+  clearBtn.addEventListener("click", function() {
+    searchInput.value = "";
+    applySearch();
+    searchInput.focus();
+  });
+}
+
+function exportToMarkdown() {
+  var btn = document.getElementById("export-btn");
+  var resetExportButton = function() {
+    if (!btn) return;
+    btn.textContent = btn.dataset.defaultLabel || "Export to Markdown";
+    btn.classList.remove("is-confirmed", "is-error");
+  };
+
+  var flashExportButton = function(label, stateClass) {
+    if (!btn) return;
+    btn.dataset.defaultLabel = btn.dataset.defaultLabel || btn.textContent;
+    btn.textContent = label;
+    btn.classList.remove("is-confirmed", "is-error");
+    void btn.offsetWidth;
+    btn.classList.add(stateClass);
+    if (btn._resetTimer) {
+      window.clearTimeout(btn._resetTimer);
+    }
+    btn._resetTimer = window.setTimeout(resetExportButton, 1200);
+  };
+
+  var copyMarkdown = async function(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (error) {
+      try {
+        var area = document.createElement("textarea");
+        area.value = value;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        document.body.removeChild(area);
+        return true;
+      } catch (fallbackError) {
+        return false;
+      }
+    }
+  };
+
+  var repoTitle = document.querySelector(".hero h1");
+  var titleText = repoTitle ? repoTitle.textContent.trim() : "Command Reference";
+
+  var sections = Array.from(document.querySelectorAll(".section-card"))
+    .filter(function(card) { return !card.classList.contains("is-hidden"); })
+    .map(function(card) {
+      var header = card.querySelector(".section-header");
+      if (header && header.classList.contains("collapsed")) {
+        return null;
+      }
+      var title = (card.querySelector(".section-title") || {}).textContent || "";
+      title = title.trim();
+      var rows = Array.from(card.querySelectorAll(".command-row"))
+        .filter(function(row) { return !row.classList.contains("hidden"); })
+        .map(function(row) {
+          var task = (row.querySelector(".task-text") || {}).textContent || "";
+          task = task.trim();
+          var valueBlock = row.querySelector(".value-block");
+          var command = valueBlock ? (valueBlock.dataset.copy || "").trim() : "";
+          var desc = (row.querySelector(".desc-text") || {}).textContent || "";
+          desc = desc.trim();
+          if (!(task || command || desc)) {
+            return null;
+          }
+          return {
+            task: task.replace(/\|/g, "\\|"),
+            command: command.replace(/\n/g, "<br>").replace(/\|/g, "\\|"),
+            desc: desc.replace(/\n/g, "<br>").replace(/\|/g, "\\|"),
+          };
+        })
+        .filter(Boolean);
+      if (!rows.length) {
+        return null;
+      }
+      return { title: title, rows: rows };
+    })
+    .filter(Boolean);
+
+  if (!sections.length) {
+    flashExportButton("No visible rows", "is-error");
+    return;
+  }
+
+  var md = "# " + titleText + " - Command Reference\n\n";
+  sections.forEach(function(card) {
+    md += "## " + card.title + "\n\n";
+    md += "| Task | Command / Snippet | Description |\n";
+    md += "| --- | --- | --- |\n";
+    card.rows.forEach(function(row) {
+      md += "| " + row.task + " | `" + row.command + "` | " + row.desc + " |\n";
+    });
+    md += "\n";
+  });
+  copyMarkdown(md).then(function(success) {
+    flashExportButton(success ? "\u2713 Copied Markdown" : "Copy failed", success ? "is-confirmed" : "is-error");
+  });
+}
+
+var exportBtn = document.getElementById("export-btn");
+if (exportBtn) {
+  exportBtn.addEventListener("click", exportToMarkdown);
+}
+
+document.addEventListener("keydown", function(event) {
+  var inSearch = searchInput && document.activeElement === searchInput;
+  var isExportShortcut =
+    (event.metaKey || event.ctrlKey) &&
+    event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === "e";
+
+  if (isExportShortcut) {
+    event.preventDefault();
+    exportToMarkdown();
+    return;
+  }
+
+  if (event.key === "\\") {
+    event.preventDefault();
+    var current = getCurrentTheme();
+    var next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
+    applyTheme(next);
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setAllSections(true);
+    if (inSearch) {
+      searchInput.value = "";
+      applySearch();
+      searchInput.blur();
+    }
+    return;
+  }
+
+  if (event.key === "Tab" && searchInput) {
+    event.preventDefault();
+    if (inSearch) {
+      searchInput.blur();
+    } else {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
+  if (inSearch) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusVisibleHeader(0);
+    }
+    return;
+  }
+
+  if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    setAllSections(false);
+    return;
+  }
+
+  var focused = document.activeElement;
+  if (focused && focused.classList.contains("section-header")) {
+    currentHeaderIndex = headerArray.indexOf(focused);
+  }
+  var visibleHeaders = getVisibleHeaders();
+  var visibleIndex = focused && focused.classList.contains("section-header")
+    ? visibleHeaders.indexOf(focused)
+    : -1;
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      if (visibleHeaders.length) {
+        focusHeaderElement(
+          visibleHeaders[
+            visibleIndex < 0 ? 0 : Math.min(visibleIndex + 1, visibleHeaders.length - 1)
+          ]
+        );
+      }
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      if (visibleIndex <= 0) {
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        } else if (visibleHeaders.length) {
+          focusHeaderElement(visibleHeaders[0]);
         }
+      } else {
+        focusHeaderElement(visibleHeaders[visibleIndex - 1]);
+      }
+      break;
+    case "ArrowRight":
+      if (focused && focused.classList.contains("section-header") && focused.classList.contains("collapsed")) {
+        event.preventDefault();
+        toggleSection(focused, false);
+      }
+      break;
+    case "ArrowLeft":
+      if (focused && focused.classList.contains("section-header") && !focused.classList.contains("collapsed")) {
+        event.preventDefault();
+        toggleSection(focused, true);
+      }
+      break;
+    case "Enter":
+    case " ":
+      if (focused && focused.classList.contains("section-header")) {
+        event.preventDefault();
+        toggleSection(focused);
+      }
+      break;
+  }
+});
 
-        // Click to toggle
-        sectionHeaders.forEach(header => {
-            header.addEventListener('click', (e) => {
-                toggleSection(header, e.metaKey || e.ctrlKey);
-            });
-        });
-
-        // Keyboard navigation
-        let currentHeaderIndex = -1;
-        const headerArray = Array.from(sectionHeaders);
-
-        function focusHeader(index) {
-            if (index >= 0 && index < headerArray.length) {
-                currentHeaderIndex = index;
-                headerArray[index].focus();
-                headerArray[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        }
-
-        document.addEventListener('keydown', (e) => {
-            // Only handle if we're not in an input field
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                return;
-            }
-
-            // Find currently focused header
-            const focusedHeader = document.activeElement;
-            if (focusedHeader && focusedHeader.classList.contains('section-header')) {
-                currentHeaderIndex = headerArray.indexOf(focusedHeader);
-            }
-
-            switch(e.key) {
-                case 'ArrowDown':
-                    e.preventDefault();
-                    if (currentHeaderIndex < headerArray.length - 1) {
-                        focusHeader(currentHeaderIndex + 1);
-                    } else if (currentHeaderIndex === -1 && headerArray.length > 0) {
-                        focusHeader(0);
-                    }
-                    break;
-
-                case 'ArrowUp':
-                    e.preventDefault();
-                    if (currentHeaderIndex > 0) {
-                        focusHeader(currentHeaderIndex - 1);
-                    } else if (currentHeaderIndex === -1 && headerArray.length > 0) {
-                        focusHeader(headerArray.length - 1);
-                    }
-                    break;
-
-                case 'ArrowRight':
-                    // Expand current section
-                    if (focusedHeader && focusedHeader.classList.contains('section-header')) {
-                        e.preventDefault();
-                        if (focusedHeader.classList.contains('collapsed')) {
-                            toggleSection(focusedHeader);
-                        }
-                    }
-                    break;
-
-                case 'ArrowLeft':
-                    // Collapse current section
-                    if (focusedHeader && focusedHeader.classList.contains('section-header')) {
-                        e.preventDefault();
-                        if (!focusedHeader.classList.contains('collapsed')) {
-                            toggleSection(focusedHeader);
-                        }
-                    }
-                    break;
-
-                case ' ':
-                case 'Enter':
-                    if (focusedHeader && focusedHeader.classList.contains('section-header')) {
-                        e.preventDefault();
-                        toggleSection(focusedHeader, e.metaKey || e.ctrlKey);
-                    }
-                    break;
-
-                case 'a':
-                    if (!e.ctrlKey && !e.metaKey) {
-                        e.preventDefault();
-                        expandAll();
-                    }
-                    break;
-
-                case 'Escape':
-                    e.preventDefault();
-                    collapseAll();
-                    break;
-            }
-        });
-
-        // Focus first section on page load for immediate keyboard nav
-        if (headerArray.length > 0) {
-            headerArray[0].focus();
-            currentHeaderIndex = 0;
-        }
-    </script>
+</script>
 </body>
 </html>

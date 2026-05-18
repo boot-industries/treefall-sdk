@@ -1,1170 +1,1449 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orpheus SDK - Architecture Gallery</title>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <style>
-        /* Input Sans */
-        @font-face {
-            font-family: 'InputSans-Regular';
-            src: url('../../shared-fonts/input/InputSans/InputSans/InputSans-Regular.ttf') format('truetype');
-            font-weight: 400;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Medium';
-            src: url('../../shared-fonts/input/InputSans/InputSans/InputSans-Medium.ttf') format('truetype');
-            font-weight: 500;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Bold';
-            src: url('../../shared-fonts/input/InputSans/InputSans/InputSans-Bold.ttf') format('truetype');
-            font-weight: 700;
-            font-display: swap;
-        }
-        @font-face {
-            font-family: 'InputSans-Light';
-            src: url('../../shared-fonts/input/InputSans/InputSans/InputSans-Light.ttf') format('truetype');
-            font-weight: 300;
-            font-display: swap;
-        }
-        /* Input Mono */
-        @font-face {
-            font-family: 'InputMono-Regular';
-            src: url('../../shared-fonts/input/InputMono/InputMono/InputMono-Regular.ttf') format('truetype');
-            font-weight: 400;
-            font-display: swap;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>orpheus-sdk</title>
+<style>
+/* base.css — shared reset, CSS variables (3 themes), layout, typography */
 
-        :root {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #242424;
-            --bg-card: #2a2a2a;
-            --accent: #FF9800;
-            --accent-secondary: #E65100;
-            --text-primary: #eaeaea;
-            --text-secondary: #a0a0a0;
-            --border: #333;
-            --success: #4ade80;
-            --warning: #fbbf24;
-        }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+:root {
+  --bg: #0f1720;
+  --bg-gradient-top: #0c141d;
+  --bg-gradient-bottom: #121c28;
+  --bg-deep: #0b1219;
+  --bg-panel: #16202e;
+  --bg-panel-strong: #1c2a3b;
+  --bg-panel-hover: #23314a;
+  --surface-strong: rgba(22, 32, 46, 0.95);
+  --text: #e5edf6;
+  --text-dim: #9bb0c8;
+  --text-muted: #677a92;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.10);
+  --accent-border: rgba(88, 166, 255, 0.36);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.13);
+  --mermaid-neutral-fill: #151d29;
+  --mermaid-neutral-border: #46556c;
+  --mermaid-neutral-text: #e5edf6;
+  --mermaid-blue-fill: #22364c;
+  --mermaid-blue-border: #67aefc;
+  --mermaid-blue-text: #edf6ff;
+  --mermaid-green-fill: #233d32;
+  --mermaid-green-border: #6dc08d;
+  --mermaid-green-text: #effdf4;
+  --mermaid-amber-fill: #493523;
+  --mermaid-amber-border: #ffbf63;
+  --mermaid-amber-text: #fff8eb;
+  --mermaid-red-fill: #4a2b31;
+  --mermaid-red-border: #f18f9e;
+  --mermaid-red-text: #fff1f4;
+  --mermaid-violet-fill: #393048;
+  --mermaid-violet-border: #bc9af6;
+  --mermaid-violet-text: #f7f1ff;
+  --mermaid-line: #7fc0ff;
+  --mermaid-line-muted: rgba(127, 192, 255, 0.42);
+  --mermaid-label-fill: #0f1721;
+  --mermaid-label-text: #eef5fd;
+  --grid-size-primary: 31px 31px;
+  --grid-size-secondary: 23px 23px;
+  --grid-mask-top: rgba(0, 0, 0, 1);
+  --grid-mask-bottom: rgba(0, 0, 0, 0.82);
+  --dust-dot: rgba(103,122,146,0.26);
+  --dust-accent-dot: rgba(88,166,255,0.18);
+  --search-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.14), 0 0 4px rgba(88, 166, 255, 0.1);
+  --callout-info-ring: inset 0 0 0 1px rgba(88, 166, 255, 0.12);
+  --section-card-focus-shadow: 0 0 0 1px rgba(88, 166, 255, 0.16), 0 0 24px rgba(88, 166, 255, 0.12);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(88, 166, 255, 0.14), rgba(88, 166, 255, 0.06));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(88, 166, 255, 0.08);
+  --section-title-focus-shadow: 0 0 12px rgba(88, 166, 255, 0.16);
+  --section-count-focus-bg: rgba(88, 166, 255, 0.08);
+  --row-divider: rgba(255,255,255,0.04);
+  --osc-text: #7dd3fc;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --shell-width: min(1400px, 92vw);
+  --radius: 14px;
+  --transition: 160ms cubic-bezier(0.2, 0.65, 0.2, 1);
+  --font-display: "Geist Pixel Square", ui-sans-serif, sans-serif;
+  --font-body: "Geist Mono UltraLight", ui-monospace, monospace;
+}
 
-        body {
-            font-family: 'InputSans-Regular', 'Input Sans', system-ui, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
+[data-theme="light"] {
+  --bg: #f4f7fb;
+  --bg-gradient-top: #eef3f8;
+  --bg-gradient-bottom: #fbfdff;
+  --bg-deep: #e9eef5;
+  --bg-panel: #ffffff;
+  --bg-panel-strong: #f6f9fd;
+  --bg-panel-hover: #eef4fb;
+  --surface-strong: rgba(248, 251, 255, 0.94);
+  --text: #122033;
+  --text-dim: #4c5f78;
+  --text-muted: #7d8da3;
+  --accent: #006adc;
+  --accent-soft: rgba(0, 106, 220, 0.08);
+  --accent-border: rgba(0, 106, 220, 0.24);
+  --border: rgba(10, 21, 39, 0.08);
+  --border-strong: rgba(10, 21, 39, 0.14);
+  --mermaid-neutral-fill: #ffffff;
+  --mermaid-neutral-border: #cbd6e3;
+  --mermaid-neutral-text: #122033;
+  --mermaid-blue-fill: #dcebff;
+  --mermaid-blue-border: #4f88d7;
+  --mermaid-blue-text: #16304f;
+  --mermaid-green-fill: #def4e7;
+  --mermaid-green-border: #59a173;
+  --mermaid-green-text: #183727;
+  --mermaid-amber-fill: #f8ead3;
+  --mermaid-amber-border: #d09a3b;
+  --mermaid-amber-text: #47311a;
+  --mermaid-red-fill: #f8dfe3;
+  --mermaid-red-border: #d27082;
+  --mermaid-red-text: #532330;
+  --mermaid-violet-fill: #ebe2fb;
+  --mermaid-violet-border: #8f74d1;
+  --mermaid-violet-text: #36234f;
+  --mermaid-line: #0057b8;
+  --mermaid-line-muted: rgba(0, 87, 184, 0.32);
+  --mermaid-label-fill: #ffffff;
+  --mermaid-label-text: #122033;
+  color-scheme: light;
+}
 
-        .container {
-            width: 100%;
-            padding: 1rem 2rem;
-        }
+[data-theme="ember"] {
+  --bg: #3e2e1e;
+  --bg-gradient-top: #3a2a1b;
+  --bg-gradient-bottom: #423222;
+  --bg-deep: rgba(56, 44, 32, 0.93);
+  --bg-panel: rgba(84, 64, 48, 0.95);
+  --bg-panel-strong: rgba(118, 92, 66, 0.95);
+  --bg-panel-hover: rgba(148, 118, 86, 0.95);
+  --surface-strong: rgba(84, 64, 48, 0.95);
+  --text: #FFFDF9;
+  --text-dim: #F8EDDE;
+  --text-muted: #E0CAAA;
+  --accent: #FFB800;
+  --accent-soft: rgba(255, 192, 32, 0.26);
+  --accent-border: rgba(224, 170, 80, 0.75);
+  --border: rgba(218, 168, 100, 0.46);
+  --border-strong: rgba(224, 170, 80, 0.75);
+  --mermaid-neutral-fill: #5a4433;
+  --mermaid-neutral-border: #d0a26c;
+  --mermaid-neutral-text: #fff8ef;
+  --mermaid-blue-fill: #3d5470;
+  --mermaid-blue-border: #91b8e5;
+  --mermaid-blue-text: #fffaf4;
+  --mermaid-green-fill: #465947;
+  --mermaid-green-border: #8fc59a;
+  --mermaid-green-text: #fffaf1;
+  --mermaid-amber-fill: #70543b;
+  --mermaid-amber-border: #f0bf6a;
+  --mermaid-amber-text: #fffaf3;
+  --mermaid-red-fill: #70464a;
+  --mermaid-red-border: #e8a4ab;
+  --mermaid-red-text: #fff7f3;
+  --mermaid-violet-fill: #5a4b68;
+  --mermaid-violet-border: #bea3dc;
+  --mermaid-violet-text: #fff9f7;
+  --mermaid-line: #ffd36b;
+  --mermaid-line-muted: rgba(255, 211, 107, 0.42);
+  --mermaid-label-fill: #594434;
+  --mermaid-label-text: #fffaf2;
+  --dust-dot: rgba(232, 206, 171, 0.24);
+  --dust-accent-dot: rgba(255, 184, 0, 0.22);
+  --search-focus-shadow: 0 0 12px rgba(255, 184, 0, 0.26), 0 0 4px rgba(255, 107, 53, 0.22);
+  --callout-info-ring: inset 0 0 0 1px rgba(224, 170, 80, 0.34);
+  --section-card-focus-shadow: 0 0 0 1px rgba(224, 170, 80, 0.42), 0 0 24px rgba(255, 107, 53, 0.18);
+  --section-header-focus-bg: linear-gradient(180deg, rgba(255, 184, 0, 0.20), rgba(255, 107, 53, 0.14));
+  --section-header-focus-shadow: inset 0 0 0 1px var(--accent-border), inset 0 0 18px rgba(255, 107, 53, 0.18);
+  --section-title-focus-shadow: 0 0 12px rgba(255, 107, 53, 0.24);
+  --section-count-focus-bg: rgba(255, 184, 0, 0.16);
+  --row-divider: rgba(210, 160, 105, 0.18);
+  --osc-text: #FF6B35;
+  color-scheme: dark;
+}
 
-        /* Header - Minimal single line */
-        header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            background: var(--bg-secondary);
-            border-radius: 6px;
-            border: 1px solid var(--border);
-        }
+html, body { min-height: 100%; }
 
-        header h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+body {
+  font-family: var(--font-body);
+  font-weight: 200;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--bg-gradient-top), var(--bg-gradient-bottom));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-        header .subtitle {
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-        }
+/* Dust grid is now canvas-based — see /shared/dust.js */
 
-        .version-badge {
-            background: var(--accent);
-            color: white;
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            margin-left: 1rem;
-        }
+body > * { position: relative; z-index: 1; }
 
-        /* Stats row */
-        .stats {
-            display: flex;
-            gap: 0.35rem;
-            margin: 0.75rem 0 0.5rem 0;
-            flex-wrap: wrap;
-        }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+}
 
-        .stat-card {
-            background: var(--bg-secondary);
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            border: 1px solid var(--border);
-        }
+.site-header__inner,
+main,
+footer .inner {
+  width: var(--shell-width);
+  margin: 0 auto;
+}
 
-        .stat-value {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: var(--accent);
-        }
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
 
-        .stat-label {
-            font-size: 0.6rem;
-            color: var(--text-secondary);
-        }
+.brand {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  text-decoration: none;
+}
 
-        /* Quick Nav + Legend Row */
-        .nav-legend-row {
-            display: flex;
-            gap: 0.35rem;
-            margin: 0.75rem 0 1rem 0;
-            flex-wrap: wrap;
-            align-items: center;
-        }
+.brand__title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text);
+  text-decoration: none;
+}
 
-        .quick-nav {
-            display: flex;
-            gap: 0.3rem;
-            padding: 0.25rem 0.5rem;
-            background: var(--bg-secondary);
-            border-radius: 4px;
-            border: 1px solid var(--border);
-            align-items: center;
-        }
+.header-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 1;
+}
 
-        .quick-nav .section-label {
-            color: var(--text-secondary);
-            font-size: 0.7rem;
-            padding: 0;
-            cursor: default;
-        }
+main {
+  padding: 22px 0 42px;
+  display: grid;
+  gap: 16px;
+  flex: 1 0 auto;
+  align-content: start;
+}
 
-        .quick-nav a {
-            color: var(--text-primary);
-            text-decoration: none;
-            padding: 0.2rem 0.5rem;
-            background: var(--bg-card);
-            border-radius: 3px;
-            font-size: 0.8rem;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-        }
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 
-        .quick-nav a:hover {
-            background: var(--accent);
-            border-color: var(--accent);
-        }
+.hero {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  max-width: 72ch;
+}
 
-        /* Color Legend - Compact inline */
-        .legend {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 0.3rem 0.5rem;
-        }
+.hero-eyebrow {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 
-        .legend h3 {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            white-space: nowrap;
-        }
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  margin-left: 4px;
+}
 
-        .legend-grid {
-            display: flex;
-            gap: 0.6rem;
-            flex-wrap: wrap;
-        }
+.hero p {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: 4px;
+}
 
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
+.hero-meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-content: start;
+  flex: 0 1 540px;
+  min-width: 0;
+}
 
-        .legend-color {
-            width: 9px;
-            height: 9px;
-            border-radius: 2px;
-            flex-shrink: 0;
-        }
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
 
-        /* Section headings */
-        h2.section-heading {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--accent);
-            margin: 1rem 0 0.5rem 0;
-            padding-bottom: 0.35rem;
-            border-bottom: 1px solid var(--border);
-        }
+.meta-chip__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
-        /* Diagram Cards */
-        .diagram-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            margin-bottom: 1.25rem;
-            overflow: hidden;
-            transition: border-color 0.2s;
-            scroll-margin-top: 1.5rem;
-            scroll-margin-bottom: 1.5rem;
-        }
+.meta-chip__value {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 
-        .diagram-card:hover {
-            border-color: var(--accent-secondary);
-        }
+.surface-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
 
-        .diagram-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.8rem 1.5rem;
-            background: var(--bg-card);
-            cursor: pointer;
-            user-select: none;
-        }
+.surface-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
 
-        .diagram-header h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            flex: 1;
-        }
+.callout-grid {
+  display: grid;
+  gap: 12px;
+}
 
-        .diagram-badge {
-            font-size: 0.9rem;
-            padding: 0.3rem 0.6rem;
-            background: var(--accent-secondary);
-            border-radius: 6px;
-            color: white;
-        }
+.callout {
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+}
 
-        .diagram-toggle {
-            width: 36px;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            transition: transform 0.3s;
-            font-size: 1.5rem;
-        }
+.callout h2 {
+  font-family: var(--font-display);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
 
-        .diagram-card.collapsed .diagram-toggle {
-            transform: rotate(-90deg);
-        }
+.callout p {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
 
-        .diagram-content {
-            padding: 1.5rem;
-            overflow-x: auto;
-            transition: max-height 0.3s ease, padding 0.3s ease;
-        }
+.callout--info {
+  box-shadow: var(--callout-info-ring);
+}
 
-        .diagram-card.collapsed .diagram-content {
-            max-height: 0;
-            padding-top: 0;
-            padding-bottom: 0;
-            overflow: hidden;
-        }
+.callout--warning {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+}
 
-        .diagram-description {
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.95rem;
-            font-family: 'InputSans-Light', 'Input Sans', system-ui, sans-serif;
-            font-weight: 300;
-        }
+.callout--success {
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.16);
+}
 
-        .mermaid {
-            background: var(--bg-primary);
-            border-radius: 12px;
-            padding: 1.5rem;
-            min-height: 200px;
-            overflow-x: auto;
-            overflow-y: visible;
-        }
+.empty-state {
+  padding: 22px 20px;
+  display: grid;
+  gap: 8px;
+}
 
-        .mermaid svg {
-            min-width: 900px;
-            display: block;
-            margin: 0 auto;
-        }
+.empty-state h2 {
+  font-family: var(--font-display);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
 
-        /* Mermaid edge label styling */
-        .mermaid .edgeLabel foreignObject {
-            overflow: visible;
-        }
-        .mermaid .edgeLabel div {
-            padding: 4px 10px;
-            background: #3a2a1a !important;
-            border-radius: 3px;
-        }
-        .mermaid .edgeLabel rect,
-        .mermaid .labelBkg {
-            fill: #3a2a1a !important;
-            rx: 3px;
-            ry: 3px;
-        }
+.empty-state p {
+  color: var(--text-dim);
+  max-width: 70ch;
+}
 
-        /* Mermaid line and border thickness */
-        .mermaid .flowchart-link,
-        .mermaid .edgePath path,
-        .mermaid .transition path {
-            stroke-width: 2px !important;
-        }
-        .mermaid .node rect,
-        .mermaid .node circle,
-        .mermaid .node polygon,
-        .mermaid .cluster rect,
-        .mermaid .statediagram-state rect {
-            stroke-width: 2px !important;
-        }
+footer {
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  padding: 12px 0 14px;
+}
 
-        /* Mermaid node text - prevent clipping */
-        .mermaid .cluster-label {
-            white-space: nowrap;
-            padding: 8px 12px;
-        }
-        .mermaid .cluster-label .nodeLabel {
-            white-space: nowrap;
-            padding: 4px 8px;
-        }
-        .mermaid .nodeLabel {
-            white-space: nowrap;
-        }
-        .mermaid .label foreignObject {
-            overflow: visible;
-        }
-        .mermaid .cluster rect {
-            rx: 8px;
-            ry: 8px;
-        }
-        .mermaid .cluster .label {
-            margin-bottom: 12px;
-        }
-        .mermaid .cluster foreignObject {
-            overflow: visible;
-        }
+footer .inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
 
-        /* Keyboard Hints */
-        .keyboard-hints {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            gap: 0.35rem;
-        }
+.footer-notes {
+  width: var(--shell-width);
+  margin: 10px auto 0;
+  display: grid;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
 
-        .keyboard-hints div {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
+.footer-notes a {
+  color: var(--accent);
+}
 
-        .keyboard-hints kbd {
-            background: var(--bg-primary);
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            border: 1px solid var(--border);
-            font-family: monospace;
-            font-size: 0.7rem;
-            min-width: 1.2rem;
-            text-align: center;
-        }
+.footer-notes code {
+  font-family: var(--font-body);
+}
 
-        /* Selected diagram card for keyboard nav */
-        .diagram-card.selected {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-        }
+@media (max-width: 900px) {
+  .hero-row {
+    flex-direction: column;
+  }
 
-        /* Footer */
-        footer {
-            text-align: center;
-            padding: 1.5rem;
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            border-top: 1px solid var(--border);
-            margin-top: 2rem;
-        }
+  .site-header__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
 
-        footer a {
-            color: var(--accent);
-            text-decoration: none;
-        }
+  .header-actions {
+    justify-content: flex-start;
+    align-items: flex-start;
+  }
 
-        footer code {
-            font-family: 'InputMono-Regular', 'SF Mono', 'Fira Code', monospace;
-            font-size: 0.75rem;
-        }
+  .hero-meta {
+    width: 100%;
+    justify-items: start;
+    display: none;
+  }
 
-        /* Responsive */
-        @media (max-width: 900px) {
-            .nav-legend-row {
-                flex-direction: column;
-                gap: 0.35rem;
-                align-items: flex-start;
-            }
-            .mermaid svg {
-                min-width: auto;
-            }
-        }
+  main,
+  .site-header__inner,
+  .footer-notes,
+  footer .inner {
+    width: 96vw;
+  }
 
-        @media (max-width: 600px) {
-            .container { padding: 0.5rem; }
-            header { padding: 0.4rem 0.6rem; }
-            header h1 { font-size: 1rem; }
-            .version-badge {
-                font-size: 0.6rem;
-                padding: 0.1rem 0.3rem;
-                margin-left: 0.5rem;
-            }
-            .quick-nav {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-            .quick-nav a {
-                font-size: 0.7rem;
-                padding: 0.15rem 0.4rem;
-            }
-            .legend {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-            .legend h3 { font-size: 0.65rem; }
-            .legend-item { font-size: 0.65rem; }
-            .diagram-header {
-                padding: 0.6rem 1rem;
-                gap: 0.5rem;
-            }
-            .diagram-header h3 { font-size: 1rem; }
-            .diagram-badge {
-                font-size: 0.7rem;
-                padding: 0.2rem 0.4rem;
-            }
-            .diagram-toggle {
-                width: 28px;
-                height: 28px;
-                font-size: 1.2rem;
-            }
-            .diagram-content { padding: 1rem; }
-            .diagram-description { font-size: 0.85rem; }
-            .mermaid {
-                padding: 1rem;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            .mermaid svg {
-                min-width: auto;
-                max-width: none;
-            }
-            .keyboard-hints { display: none; }
-            footer {
-                padding: 1rem;
-                font-size: 0.7rem;
-            }
-        }
-    </style>
+  footer .inner {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 20px;
+  }
+}
+
+</style>
+<style>
+/* gallery.css — gallery-only styles */
+
+.gallery-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nav-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.nav-group__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.nav-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+  transition: background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.nav-chip:hover,
+.nav-chip:focus-visible {
+  outline: none;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-border), 0 0 18px rgba(88, 166, 255, 0.12);
+}
+
+.section-block {
+  display: grid;
+  gap: 10px;
+}
+
+.section-heading {
+  padding: 0 4px;
+}
+
+.section-heading span {
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.diagram-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.diagram-card {
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.diagram-card.is-focused {
+  border-color: var(--accent-border);
+  box-shadow: var(--section-card-focus-shadow);
+}
+
+.diagram-header {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-strong);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  transition: background var(--transition), border-radius var(--transition), box-shadow var(--transition);
+}
+
+.diagram-header:hover {
+  background: var(--bg-panel-hover);
+}
+
+.diagram-header:focus,
+.diagram-header:focus-visible {
+  outline: none;
+  background: var(--section-header-focus-bg);
+}
+
+.diagram-header.collapsed {
+  border-radius: calc(var(--radius) - 1px);
+  border-bottom-color: transparent;
+}
+
+.diagram-arrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform var(--transition), color var(--transition);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.diagram-header.collapsed .diagram-arrow {
+  transform: rotate(-90deg);
+}
+
+.diagram-header__copy {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diagram-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.diagram-header:focus .diagram-title,
+.diagram-header:focus-visible .diagram-title {
+  text-shadow: var(--section-title-focus-shadow);
+}
+
+.diagram-description {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.diagram-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.diagram-content {
+  display: block;
+  padding: 0 0 16px;
+}
+
+.diagram-content.collapsed {
+  display: none;
+}
+
+.diagram-canvas {
+  margin: 14px 16px 16px;
+  padding: clamp(16px, 2vw, 22px);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.diagram-canvas svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.diagram-canvas svg text,
+.diagram-canvas svg tspan,
+.diagram-canvas .nodeLabel,
+.diagram-canvas .label {
+  font-family: "Geist Mono UltraLight", ui-monospace, monospace !important;
+  font-weight: 200 !important;
+}
+
+.diagram-loading,
+.diagram-error {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .gallery-nav {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .nav-group {
+    width: 100%;
+  }
+
+  .diagram-header {
+    padding: 12px 14px;
+  }
+
+  .diagram-canvas {
+    margin: 8px;
+    padding: 10px;
+    overflow-x: auto;
+  }
+
+  .diagram-canvas svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .nav-chip {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+}
+
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Orpheus SDK</h1>
-            <span class="subtitle">C++20 Core + Host Adapters + Clip Composer</span>
-            <span class="version-badge">ORP121 + shmui v2.0.0</span>
-        </header>
-
-        <div class="stats">
-            <div class="stat-card"><span class="stat-value">6</span><span class="stat-label">Diagrams</span></div>
-            <div class="stat-card"><span class="stat-value">27</span><span class="stat-label">Routing</span></div>
-            <div class="stat-card"><span class="stat-value">4x</span><span class="stat-label">TruePeak</span></div>
-            <div class="stat-card"><span class="stat-value">256</span><span class="stat-label">SPSC</span></div>
-            <div class="stat-card"><span class="stat-value">48k</span><span class="stat-label">Hz</span></div>
-            <div class="stat-card"><span class="stat-value">154</span><span class="stat-label">Tests</span></div>
-        </div>
-
-        <div class="nav-legend-row">
-            <nav class="quick-nav">
-                <span class="section-label">System:</span>
-                <a href="#architecture">Architecture</a>
-                <a href="#components">Components</a>
-                <a href="#dataflow">Data Flow</a>
-                <span class="section-label">Structure:</span>
-                <a href="#repo">Repository</a>
-                <a href="#entry">Entry Points</a>
-                <a href="#cicd">CI/CD</a>
-            </nav>
-            <div class="legend">
-                <h3>Legend:</h3>
-                <div class="legend-grid">
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #e3f2fd;"></div>
-                        <span>Applications</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #c8e6c9;"></div>
-                        <span>shmui-juce</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #fff8e1;"></div>
-                        <span>Core SDK</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #e8f5e9;"></div>
-                        <span>Drivers</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #fce4ec;"></div>
-                        <span>Platform</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #ffccbc;"></div>
-                        <span>ORP121 Routing</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background: #f3e5f5;"></div>
-                        <span>Adapters</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ================================================================== -->
-        <!-- SYSTEM OVERVIEW SECTION -->
-        <!-- ================================================================== -->
-
-        <h2 class="section-heading">System Overview</h2>
-
-        <!-- Architecture Overview -->
-        <div class="diagram-card" id="architecture">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>System Architecture</h3>
-                <span class="diagram-badge">Flowchart</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    Layered SDK with ORP121 routing enhancements
-                </p>
-                <div class="mermaid">
-graph TB
-    subgraph APPS["Application Layer"]
-        direction TB
-        CC["Clip Composer<br/>JUCE Desktop"]
-        WF["Wave Finder<br/>(Planned)"]
-        FX["FX Engine<br/>(Planned)"]
-        DEMO["Demo Host"]
-    end
-
-    subgraph SHMUI["shmui-juce (v2.0.0)"]
-        direction TB
-        ANALYZER["Audio/<br/>AudioAnalyzer<br/>(thread-safe)"]
-        COMPONENTS["Components/<br/>Waveform, Bar, Orb<br/>Matrix, LevelMeter"]
-        CONTROLS["Controls/<br/>Button hierarchy<br/>Transport, Clip"]
-    end
-
-    subgraph ADAPTERS["Adapter Layer"]
-        direction TB
-        MINHOST["Minhost CLI"]
-        REAPER["REAPER Ext<br/>(Quarantined)"]
-        CUSTOM["Custom Adapters"]
-    end
-
-    subgraph DRIVERS["TypeScript Drivers"]
-        direction TB
-        NATIVE["Native Driver<br/>@orpheus/engine-native"]
-        SERVICE["Service Driver<br/>@orpheus/engine-service"]
-        WASM["WASM Driver<br/>@orpheus/engine-wasm"]
-        BROKER["Client Broker<br/>@orpheus/client"]
-    end
-
-    subgraph CORE["Core SDK (C++20)"]
-        direction TB
-        SESSION["Session: Graph, JSON"]
-        TRANSPORT["Transport: Controller,<br/>ActiveClip, SPSC Queue"]
-        ROUTING["Routing (ORP121):<br/>Matrix, Gain, TruePeak,<br/>Headroom, Limiter"]
-        AUDIO["Audio I/O:<br/>FileReader, Drivers"]
-    end
-
-    subgraph PLATFORM["Platform Layer"]
-        direction TB
-        COREAUDIO["macOS CoreAudio"]
-        WASAPI["Windows WASAPI"]
-        ALSA["Linux ALSA"]
-        SNDFILE["libsndfile"]
-    end
-
-    CC --> SHMUI
-    CC --> CORE
-    WF -.-> CORE
-    FX -.-> CORE
-    DEMO --> CORE
-    DEMO -.-> SHMUI
-
-    SHMUI --> CORE
-
-    MINHOST --> CORE
-    REAPER -.-> CORE
-    CUSTOM -.-> CORE
-
-    NATIVE --> CORE
-    SERVICE --> CORE
-    WASM --> CORE
-    BROKER --> NATIVE
-    BROKER --> SERVICE
-    BROKER --> WASM
-
-    AUDIO --> COREAUDIO
-    AUDIO --> WASAPI
-    AUDIO --> ALSA
-    AUDIO --> SNDFILE
-                </div>
-            </div>
-        </div>
-
-        <!-- Component Map -->
-        <div class="diagram-card" id="components">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>Component Map</h3>
-                <span class="diagram-badge">Flowchart</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    ORP121 classes + shmui-juce v2.0.0 components
-                </p>
-                <div class="mermaid">
-graph TB
-    subgraph SESSION_CLASSES["Session Classes"]
-        direction TB
-        SG["SessionGraph<br/>tracks: Track[]<br/>tempo: TempoInfo"]
-        TRK["Track<br/>id, name<br/>clips: Clip[]"]
-        CLIP["Clip<br/>audioFilePath<br/>trimIn/Out, fades<br/>gainDb, loopEnabled"]
-    end
-
-    subgraph TRANSPORT_CLASSES["Transport Classes"]
-        direction TB
-        TC["TransportController<br/>activeClips: map<br/>+startClip()<br/>+stopClip()<br/>+processAudio()"]
-        AC["ActiveClip<br/>currentFrame: atomic<br/>gainLinear: atomic<br/>loopEnabled: atomic"]
-        SQ["SPSCCallbackQueue<br/>ring: function[256]<br/>writeIndex: atomic<br/>readIndex: atomic"]
-    end
-
-    subgraph ROUTING_CLASSES["Routing Classes (ORP121)"]
-        direction TB
-        RM["RoutingMatrix<br/>channels: ChannelState[]<br/>groups: GroupState[]<br/>+setRouting()<br/>+process()"]
-        RC["RoutingConfig<br/>numInputChannels<br/>numOutputChannels<br/>sampleRate, headroomMode"]
-        HM["HeadroomMode<br/>None / PerGroup /<br/>Global / Logarithmic"]
-        GS["GainSmoother<br/>currentGain, targetGain<br/>MAX_GAIN_DB: 12.0"]
-        TPM["TruePeakMeter<br/>history: float[12]<br/>OVERSAMPLE: 4<br/>TAPS_PER_PHASE: 12"]
-        SKL["SoftKneeLimiter<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3"]
-    end
-
-    subgraph SHMUI_CLASSES["shmui-juce v2.0.0"]
-        direction TB
-        SAA["AudioAnalyzer<br/>(thread-safe)<br/>FFT, RMS, bands"]
-        SWV["WaveformVisualizer<br/>WaveformEditor"]
-        SBV["BarVisualizer<br/>OrbVisualizer"]
-        SLM["LevelMeter<br/>MatrixDisplay"]
-        SBT["Button (base)<br/>TextButton, IconButton"]
-        STB["TransportButton<br/>MuteButton, ClipButton"]
-    end
-
-    SG --> TRK
-    TRK --> CLIP
-
-    TC --> AC
-    TC --> SQ
-
-    RM --> RC
-    RC --> HM
-    RM --> GS
-    RM --> TPM
-    RM --> SKL
-    TC --> RM
-
-    SWV --> SAA
-    SBV --> SAA
-    SLM --> SAA
-    SBT --> STB
-                </div>
-            </div>
-        </div>
-
-        <!-- Data Flow -->
-        <div class="diagram-card" id="dataflow">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>Data Flow</h3>
-                <span class="diagram-badge">Sequence</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    Lock-free callbacks, true-peak metering, shmui visualization
-                </p>
-                <div class="mermaid">
-sequenceDiagram
-    participant U as User
-    participant UI as UI Thread
-    participant Q as SPSC Queue
-    participant T as Transport
-    participant R as RoutingMatrix
-    participant M as TruePeakMeter
-    participant AA as shmui::AudioAnalyzer
-    participant V as shmui Visualizers
-    participant D as Audio Driver
-
-    Note over U,D: Initialization
-    U->>UI: Load Session
-    UI->>T: new TransportController
-    T->>R: new RoutingMatrix(config)
-    R->>M: Init per-channel meters
-
-    Note over U,D: Audio Processing (every 5ms)
-    D->>T: processAudio(buffer)
-    Note right of T: Read samples from clips
-    Note right of T: Apply fades per clip
-    T->>R: Add to input buffer
-    Note right of R: GainSmoother processing
-    R->>M: 4x oversample metering
-    Note right of R: Group mixing + headroom
-    Note right of R: Soft-knee limiter
-    R-->>T: Output buffer
-
-    alt Clip reached end
-        alt Loop enabled
-            T->>Q: postCallback(onLooped)
-        else No loop
-            T->>Q: postCallback(onFinished)
-        end
-    end
-
-    Note over U,D: UI Callback (10Hz)
-    UI->>Q: processCallbacks()
-    Q-->>UI: callback
-    UI->>U: Update UI state
-
-    Note over U,D: shmui Visualization (60 FPS)
-    D->>AA: pushSamples(buffer)
-    Note right of AA: Lock-free ring buffer
-    V->>AA: getFFTData() / getRMS()
-    AA-->>V: FFTData / BandLevels
-    V->>U: Paint visualizers
-                </div>
-            </div>
-        </div>
-
-        <!-- ================================================================== -->
-        <!-- STRUCTURE SECTION -->
-        <!-- ================================================================== -->
-
-        <h2 class="section-heading">Repository Structure</h2>
-
-        <!-- Repository Structure -->
-        <div class="diagram-card" id="repo">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>Repository Structure</h3>
-                <span class="diagram-badge">Flowchart</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    Monorepo: C++ core + TypeScript drivers + Applications
-                </p>
-                <div class="mermaid">
-graph TB
-    subgraph ROOT["orpheus-sdk/"]
-        direction TB
-        CONFIG["CLAUDE.md<br/>CMakeLists.txt<br/>package.json"]
-    end
-
-    subgraph CORE["Core C++ (src/, include/)"]
-        direction TB
-        SRC["src/<br/>core/session/<br/>core/transport/<br/>core/routing/<br/>core/audio_io/<br/>platform/"]
-        INCLUDE["include/orpheus/<br/>abi_version.h<br/>transport_controller.h<br/>routing_matrix.h<br/>audio_driver.h"]
-        ORP121["ORP121 Additions<br/>true_peak_meter.h<br/>gain_smoother.cpp<br/>GAIN_STAGING.md"]
-    end
-
-    subgraph TESTING["Testing (tests/)"]
-        direction TB
-        TESTS["routing_matrix_test (27)<br/>callback_queue_stress (6)<br/>transport_test"]
-    end
-
-    subgraph SHMUI_PKG["shmui-juce (v2.0.0)"]
-        direction TB
-        SHMUI_HDR["ShmUI.h (main include)<br/>CMakeLists.txt"]
-        SHMUI_AUD["Audio/<br/>AudioAnalyzer (thread-safe)"]
-        SHMUI_CMP["Components/<br/>Waveform, Bar, Orb, Matrix<br/>LevelMeter, TransportBar"]
-        SHMUI_CTL["Controls/<br/>Button, Text, Icon<br/>Transport, Mute, Clip"]
-    end
-
-    subgraph APPLICATIONS["Applications"]
-        direction TB
-        APPS["apps/clip-composer/<br/>apps/juce-demo-host/"]
-    end
-
-    subgraph DOCUMENTATION["Documentation"]
-        direction TB
-        DOCS["docs/orp/ (120+ docs)<br/>ARCHITECTURE.md<br/>ROADMAP.md"]
-        WIREFRAMES["wireframes/<br/>v2025-11-08/<br/>v2026-01-18/"]
-    end
-
-    ROOT --> CORE
-    ROOT --> TESTING
-    ROOT --> SHMUI_PKG
-    ROOT --> APPLICATIONS
-    ROOT --> DOCUMENTATION
-
-    SRC --> ORP121
-    SHMUI_HDR --> SHMUI_AUD
-    SHMUI_HDR --> SHMUI_CMP
-    SHMUI_HDR --> SHMUI_CTL
-    APPS --> SHMUI_PKG
-                </div>
-            </div>
-        </div>
-
-        <!-- Entry Points -->
-        <div class="diagram-card" id="entry">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>Entry Points</h3>
-                <span class="diagram-badge">Flowchart</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    All ways to interact with the SDK
-                </p>
-                <div class="mermaid">
-graph TB
-    subgraph USERS["User Personas"]
-        direction TB
-        END_USER["End User<br/>Broadcast/Theater"]
-        APP_DEV["App Developer<br/>TypeScript/JavaScript"]
-        PLUGIN_DEV["Plugin Developer<br/>C++/Native"]
-        DEVOPS["DevOps/QA<br/>CLI Tools"]
-    end
-
-    subgraph GUI["GUI Applications"]
-        direction TB
-        CC_APP["Clip Composer<br/>960 buttons, 8 tabs"]
-        DEMO_APP["Demo Host"]
-        CUSTOM_APP["Custom Apps"]
-    end
-
-    subgraph CLI["CLI Tools"]
-        direction TB
-        MINHOST_CLI["orpheus_minhost<br/>--session, --render"]
-        INSPECT_CLI["inspect_session<br/>--file, --validate"]
-    end
-
-    subgraph JS_API["JavaScript Drivers"]
-        direction TB
-        JS_NATIVE["@orpheus/engine-native"]
-        JS_SERVICE["@orpheus/engine-service"]
-        JS_WASM["@orpheus/engine-wasm"]
-        JS_CLIENT["@orpheus/client"]
-    end
-
-    subgraph CPP_API["Native C++ API"]
-        direction TB
-        CPP_HEADERS["Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h"]
-    end
-
-    subgraph SHMUI_API["shmui-juce (v2.0.0)"]
-        direction TB
-        SHMUI_INC["#include ShmUI.h<br/>Visualization + Controls"]
-        SHMUI_BTN["Button hierarchy<br/>Transport, Clip, Mute"]
-    end
-
-    subgraph CONFIG["Configuration"]
-        direction TB
-        SESSION_JSON["session.json"]
-        ENV_VARS["Environment Variables"]
-        ROUTING_CFG["RoutingConfig"]
-    end
-
-    END_USER --> CC_APP
-    APP_DEV --> JS_CLIENT
-    PLUGIN_DEV --> CPP_HEADERS
-    DEVOPS --> MINHOST_CLI
-
-    CC_APP --> CPP_HEADERS
-    CC_APP --> SHMUI_API
-    DEMO_APP --> CPP_HEADERS
-    CUSTOM_APP --> CPP_HEADERS
-    CUSTOM_APP -.-> JS_CLIENT
-
-    SHMUI_INC --> CPP_HEADERS
-
-    JS_CLIENT --> JS_NATIVE
-    JS_CLIENT --> JS_SERVICE
-    JS_CLIENT --> JS_WASM
-    JS_NATIVE --> CPP_HEADERS
-
-    MINHOST_CLI --> CPP_HEADERS
-    INSPECT_CLI --> CPP_HEADERS
-
-    CC_APP -.-> SESSION_JSON
-    CC_APP -.-> ROUTING_CFG
-                </div>
-            </div>
-        </div>
-
-        <!-- CI/CD Pipeline -->
-        <div class="diagram-card" id="cicd">
-            <div class="diagram-header" onclick="toggleDiagram(this)">
-                <div class="diagram-toggle">&#9660;</div>
-                <h3>CI/CD Pipeline</h3>
-                <span class="diagram-badge">Flowchart</span>
-            </div>
-            <div class="diagram-content">
-                <p class="diagram-description">
-                    Build, test, and deployment infrastructure
-                </p>
-                <div class="mermaid">
-graph TB
-    subgraph DEV["Development"]
-        direction TB
-        LOCAL["Developer Workstation<br/>C++20, CMake, Node.js"]
-        BUILD_LOCAL["cmake --build build"]
-        TEST_LOCAL["ctest + sanitizers"]
-    end
-
-    subgraph SHMUI_SYNC["shmui-juce Sync"]
-        direction TB
-        SHMUI_SRC["~/dev/shmui<br/>juce/Source/"]
-        SHMUI_RSYNC["rsync → packages/<br/>shmui-juce/"]
-        SHMUI_VER["Version: 2.0.0"]
-    end
-
-    subgraph GIT["Version Control"]
-        direction TB
-        REPO["Git Repository<br/>main, feature/*, claude/*"]
-        PR["Pull Request<br/>CI must pass"]
-        TAG["Release Tags<br/>v1.0.0-rc.1"]
-    end
-
-    subgraph CI["CI Pipeline"]
-        direction TB
-        MATRIX["Matrix Build<br/>Ubuntu, Windows, macOS"]
-        LINT["Lint: clang-format, eslint"]
-        NATIVE["Native Driver: N-API"]
-        TS_BUILD["TypeScript: pnpm build"]
-        INTEGRATION["Integration Tests"]
-        PERF["Performance Budgets"]
-    end
-
-    subgraph ORP121_TESTS["ORP121 Test Suite"]
-        direction TB
-        ROUTING_T["routing_matrix_test<br/>27 tests"]
-        CALLBACK_T["callback_queue_stress<br/>6 tests"]
-        PERF_T["Performance Tests"]
-    end
-
-    subgraph ARTIFACTS["Build Artifacts"]
-        direction TB
-        LIBS["C++ Libraries<br/>liborpheus_*.a"]
-        EXES["Executables<br/>orpheus_minhost<br/>ClipComposer.app"]
-        NPM["npm Packages<br/>@orpheus/*"]
-    end
-
-    subgraph DIST["Distribution"]
-        direction TB
-        GH_RELEASE["GitHub Releases"]
-        NPM_REG["npm Registry"]
-        GH_PAGES["GitHub Pages"]
-    end
-
-    LOCAL --> BUILD_LOCAL
-    BUILD_LOCAL --> TEST_LOCAL
-    TEST_LOCAL --> REPO
-
-    SHMUI_SRC --> SHMUI_RSYNC
-    SHMUI_RSYNC --> SHMUI_VER
-    SHMUI_RSYNC --> BUILD_LOCAL
-
-    REPO --> PR
-    PR --> CI
-
-    CI --> MATRIX
-    CI --> LINT
-    CI --> NATIVE
-    CI --> TS_BUILD
-    CI --> INTEGRATION
-    CI --> PERF
-
-    MATRIX --> ROUTING_T
-    MATRIX --> CALLBACK_T
-    MATRIX --> PERF_T
-
-    MATRIX --> LIBS
-    MATRIX --> EXES
-    TS_BUILD --> NPM
-
-    LIBS --> GH_RELEASE
-    EXES --> GH_RELEASE
-    NPM --> NPM_REG
-
-    PR --> TAG
-    TAG --> GH_RELEASE
-    TAG --> GH_PAGES
-                </div>
-            </div>
-        </div>
-
-        <footer>
-            <p><strong>Source:</strong> <code>wireframes/v2026-01-18/*.mermaid.md</code></p>
-            <p>Generated for: <strong>Orpheus SDK</strong> | Location: <code>~/dev/orpheus-sdk</code></p>
-            <p>Stack: C++20 (Core), TypeScript (Drivers), JUCE (Applications) | ITU-R BS.1770-4 (True-Peak)</p>
-            <p>Apps: <a href="https://github.com/chrislyons/orpheus-sdk">Clip Composer</a> | shmui-juce v2.0.0 (Audio Visualization + Controls)</p>
-            <p>Updated: 2026-01-25 | shmui sync: <code>rsync -av --delete ~/dev/shmui/juce/Source/ packages/shmui-juce/</code></p>
-        </footer>
+<header class="site-header">
+  <div class="site-header__inner">
+    <div class="brand">
+      <a class="brand__title" href="#">dreamfactory</a>
     </div>
+  </div>
+</header>
 
-    <div class="keyboard-hints">
-        <div><kbd>&uarr;</kbd><kbd>&darr;</kbd> Navigate</div>
-        <div><kbd>&larr;</kbd> Collapse</div>
-        <div><kbd>&rarr;</kbd> Expand</div>
-        <div><kbd>Esc</kbd> Collapse all</div>
-        <div><kbd>A</kbd> Expand all</div>
+<main>
+  <div class="hero-row">
+    <div class="hero">
+      <span class="hero-eyebrow">ARCHITECTURE GALLERY</span>
+      <h1>orpheus-sdk</h1>
+      <p>C++20 SDK · transport + routing + session + render · 270+ tests</p>
     </div>
+    <div class="hero-meta"><div class="meta-chip"><span class="meta-chip__label">UPDATED</span><span class="meta-chip__value">2026-05-18</span></div><div class="meta-chip"><span class="meta-chip__label">VERSION</span><span class="meta-chip__value">1.0.0-rc.1</span></div><div class="meta-chip"><span class="meta-chip__label">WIREFRAMES</span><span class="meta-chip__value">v2026-05-18</span></div></div>
+  </div>
+  <section class="gallery-nav"><div class="nav-group"><a class="nav-chip" href="#architecture" data-target="architecture">System Architecture</a><a class="nav-chip" href="#components" data-target="components">Component Map</a><a class="nav-chip" href="#dataflow" data-target="dataflow">Data Flow</a><a class="nav-chip" href="#repo" data-target="repo">Repository Structure</a><a class="nav-chip" href="#entry" data-target="entry">Entry Points</a><a class="nav-chip" href="#cicd" data-target="cicd">CI/CD Pipeline</a></div></section>
 
-    <script>
-        // Initialize Mermaid with dark theme
-        mermaid.initialize({
-            startOnLoad: true,
-            theme: 'dark',
-            themeVariables: {
-                fontFamily: '"InputMono-Regular", "SF Mono", "Fira Code", monospace',
-                primaryColor: '#2a2a2a',
-                primaryTextColor: '#eaeaea',
-                primaryBorderColor: '#333',
-                lineColor: '#FF9800',
-                secondaryColor: '#1a1a1a',
-                tertiaryColor: '#242424',
-                background: '#1a1a1a',
-                mainBkg: '#2a2a2a',
-                nodeBorder: '#333',
-                clusterBkg: '#242424',
-                clusterBorder: '#333',
-                titleColor: '#eaeaea',
-                edgeLabelBackground: '#3a2a1a',
-                lineWidth: 2
-            },
-            flowchart: {
-                useMaxWidth: true,
-                htmlLabels: true,
-                curve: 'monotoneY',
-                nodeSpacing: 80,
-                rankSpacing: 100,
-                padding: 30
-            },
-            sequence: {
-                mirrorActors: false,
-                useMaxWidth: true
-            }
-        });
+  <section class="section-block" data-section="gallery-diagrams"><div class="diagram-stack">
 
-        // Keyboard navigation state
-        let selectedIndex = -1;
-        const cards = document.querySelectorAll('.diagram-card');
+    <article class="surface-card diagram-card" id="architecture" data-diagram-id="architecture"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">System Architecture</span><p class="diagram-description">Layered SDK with ORP121 routing enhancements</p></span><span class="diagram-kind">FLOWCHART</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"graph TB\n    subgraph APPS[\"Application Layer\"]\n        direction TB\n        CC[\"Clip Composer<br/>JUCE Desktop\"]\n        WF[\"Wave Finder<br/>(Planned)\"]\n        FX[\"FX Engine<br/>(Planned)\"]\n        DEMO[\"Demo Host\"]\n    end\n\n    subgraph SHMUI[\"shmui-juce (v2.0.0)\"]\n        direction TB\n        ANALYZER[\"Audio/<br/>AudioAnalyzer<br/>(thread-safe)\"]\n        COMPONENTS[\"Components/<br/>Waveform, Bar, Orb<br/>Matrix, LevelMeter\"]\n        CONTROLS[\"Controls/<br/>Button hierarchy<br/>Transport, Clip\"]\n    end\n\n    subgraph ADAPTERS[\"Adapter Layer\"]\n        direction TB\n        MINHOST[\"Minhost CLI\"]\n        REAPER[\"REAPER Ext<br/>(Quarantined)\"]\n        CUSTOM[\"Custom Adapters\"]\n    end\n\n    subgraph DRIVERS[\"TypeScript Drivers\"]\n        direction TB\n        NATIVE[\"Native Driver<br/>@orpheus/engine-native\"]\n        SERVICE[\"Service Driver<br/>@orpheus/engine-service\"]\n        WASM[\"WASM Driver<br/>@orpheus/engine-wasm\"]\n        BROKER[\"Client Broker<br/>@orpheus/client\"]\n    end\n\n    subgraph CORE[\"Core SDK (C++20)\"]\n        direction TB\n        SESSION[\"Session: Graph, JSON\"]\n        TRANSPORT[\"Transport: Controller,<br/>ActiveClip, SPSC Queue\"]\n        ROUTING[\"Routing (ORP121):<br/>Matrix, Gain, TruePeak,<br/>Headroom, Limiter\"]\n        AUDIO[\"Audio I/O:<br/>FileReader, Drivers\"]\n    end\n\n    subgraph PLATFORM[\"Platform Layer\"]\n        direction TB\n        COREAUDIO[\"macOS CoreAudio\"]\n        WASAPI[\"Windows WASAPI\"]\n        ALSA[\"Linux ALSA\"]\n        SNDFILE[\"libsndfile\"]\n    end\n\n    CC --> SHMUI\n    CC --> CORE\n    WF -.-> CORE\n    FX -.-> CORE\n    DEMO --> CORE\n    DEMO -.-> SHMUI\n\n    SHMUI --> CORE\n\n    MINHOST --> CORE\n    REAPER -.-> CORE\n    CUSTOM -.-> CORE\n\n    NATIVE --> CORE\n    SERVICE --> CORE\n    WASM --> CORE\n    BROKER --> NATIVE\n    BROKER --> SERVICE\n    BROKER --> WASM\n\n    AUDIO --> COREAUDIO\n    AUDIO --> WASAPI\n    AUDIO --> ALSA\n    AUDIO --> SNDFILE"</script></div></article>
 
-        function selectCard(index) {
-            cards.forEach(c => c.classList.remove('selected'));
-            if (index >= 0 && index < cards.length) {
-                selectedIndex = index;
-                cards[index].classList.add('selected');
-                cards[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+    <article class="surface-card diagram-card" id="components" data-diagram-id="components"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Component Map</span><p class="diagram-description">ORP121 classes + shmui-juce v2.0.0 components</p></span><span class="diagram-kind">FLOWCHART</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"graph TB\n    subgraph SESSION_CLASSES[\"Session Classes\"]\n        direction TB\n        SG[\"SessionGraph<br/>tracks: Track[]<br/>tempo: TempoInfo\"]\n        TRK[\"Track<br/>id, name<br/>clips: Clip[]\"]\n        CLIP[\"Clip<br/>audioFilePath<br/>trimIn/Out, fades<br/>gainDb, loopEnabled\"]\n    end\n\n    subgraph TRANSPORT_CLASSES[\"Transport Classes\"]\n        direction TB\n        TC[\"TransportController<br/>activeClips: map<br/>+startClip()<br/>+stopClip()<br/>+processAudio()\"]\n        AC[\"ActiveClip<br/>currentFrame: atomic<br/>gainLinear: atomic<br/>loopEnabled: atomic\"]\n        SQ[\"SPSCCallbackQueue<br/>ring: function[256]<br/>writeIndex: atomic<br/>readIndex: atomic\"]\n    end\n\n    subgraph ROUTING_CLASSES[\"Routing Classes (ORP121)\"]\n        direction TB\n        RM[\"RoutingMatrix<br/>channels: ChannelState[]<br/>groups: GroupState[]<br/>+setRouting()<br/>+process()\"]\n        RC[\"RoutingConfig<br/>numInputChannels<br/>numOutputChannels<br/>sampleRate, headroomMode\"]\n        HM[\"HeadroomMode<br/>None / PerGroup /<br/>Global / Logarithmic\"]\n        GS[\"GainSmoother<br/>currentGain, targetGain<br/>MAX_GAIN_DB: 12.0\"]\n        TPM[\"TruePeakMeter<br/>history: float[12]<br/>OVERSAMPLE: 4<br/>TAPS_PER_PHASE: 12\"]\n        SKL[\"SoftKneeLimiter<br/>THRESHOLD: 0.794<br/>KNEE_WIDTH: 0.3\"]\n    end\n\n    subgraph SHMUI_CLASSES[\"shmui-juce v2.0.0\"]\n        direction TB\n        SAA[\"AudioAnalyzer<br/>(thread-safe)<br/>FFT, RMS, bands\"]\n        SWV[\"WaveformVisualizer<br/>WaveformEditor\"]\n        SBV[\"BarVisualizer<br/>OrbVisualizer\"]\n        SLM[\"LevelMeter<br/>MatrixDisplay\"]\n        SBT[\"Button (base)<br/>TextButton, IconButton\"]\n        STB[\"TransportButton<br/>MuteButton, ClipButton\"]\n    end\n\n    SG --> TRK\n    TRK --> CLIP\n\n    TC --> AC\n    TC --> SQ\n\n    RM --> RC\n    RC --> HM\n    RM --> GS\n    RM --> TPM\n    RM --> SKL\n    TC --> RM\n\n    SWV --> SAA\n    SBV --> SAA\n    SLM --> SAA\n    SBT --> STB"</script></div></article>
+
+    <article class="surface-card diagram-card" id="dataflow" data-diagram-id="dataflow"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Data Flow</span><p class="diagram-description">Lock-free callbacks, true-peak metering, shmui visualization</p></span><span class="diagram-kind">SEQUENCE</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"sequenceDiagram\n    participant U as User\n    participant UI as UI Thread\n    participant Q as SPSC Queue\n    participant T as Transport\n    participant R as RoutingMatrix\n    participant M as TruePeakMeter\n    participant AA as shmui::AudioAnalyzer\n    participant V as shmui Visualizers\n    participant D as Audio Driver\n\n    Note over U,D: Initialization\n    U->>UI: Load Session\n    UI->>T: new TransportController\n    T->>R: new RoutingMatrix(config)\n    R->>M: Init per-channel meters\n\n    Note over U,D: Audio Processing (every 5ms)\n    D->>T: processAudio(buffer)\n    Note right of T: Read samples from clips\n    Note right of T: Apply fades per clip\n    T->>R: Add to input buffer\n    Note right of R: GainSmoother processing\n    R->>M: 4x oversample metering\n    Note right of R: Group mixing + headroom\n    Note right of R: Soft-knee limiter\n    R-->>T: Output buffer\n\n    alt Clip reached end\n        alt Loop enabled\n            T->>Q: postCallback(onLooped)\n        else No loop\n            T->>Q: postCallback(onFinished)\n        end\n    end\n\n    Note over U,D: UI Callback (10Hz)\n    UI->>Q: processCallbacks()\n    Q-->>UI: callback\n    UI->>U: Update UI state\n\n    Note over U,D: shmui Visualization (60 FPS)\n    D->>AA: pushSamples(buffer)\n    Note right of AA: Lock-free ring buffer\n    V->>AA: getFFTData() / getRMS()\n    AA-->>V: FFTData / BandLevels\n    V->>U: Paint visualizers"</script></div></article>
+
+    <article class="surface-card diagram-card" id="repo" data-diagram-id="repo"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Repository Structure</span><p class="diagram-description">Monorepo: C++ core + TypeScript drivers + Applications</p></span><span class="diagram-kind">FLOWCHART</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"graph TB\n    subgraph ROOT[\"orpheus-sdk/\"]\n        direction TB\n        CONFIG[\"CLAUDE.md<br/>CMakeLists.txt<br/>package.json\"]\n    end\n\n    subgraph CORE[\"Core C++ (src/, include/)\"]\n        direction TB\n        SRC[\"src/<br/>core/session/<br/>core/transport/<br/>core/routing/<br/>core/audio_io/<br/>platform/\"]\n        INCLUDE[\"include/orpheus/<br/>abi_version.h<br/>transport_controller.h<br/>routing_matrix.h<br/>audio_driver.h\"]\n        ORP121[\"ORP121 Additions<br/>true_peak_meter.h<br/>gain_smoother.cpp<br/>GAIN_STAGING.md\"]\n    end\n\n    subgraph TESTING[\"Testing (tests/)\"]\n        direction TB\n        TESTS[\"routing_matrix_test (27)<br/>callback_queue_stress (6)<br/>transport_test\"]\n    end\n\n    subgraph SHMUI_PKG[\"shmui-juce (v2.0.0)\"]\n        direction TB\n        SHMUI_HDR[\"ShmUI.h (main include)<br/>CMakeLists.txt\"]\n        SHMUI_AUD[\"Audio/<br/>AudioAnalyzer (thread-safe)\"]\n        SHMUI_CMP[\"Components/<br/>Waveform, Bar, Orb, Matrix<br/>LevelMeter, TransportBar\"]\n        SHMUI_CTL[\"Controls/<br/>Button, Text, Icon<br/>Transport, Mute, Clip\"]\n    end\n\n    subgraph APPLICATIONS[\"Applications\"]\n        direction TB\n        APPS[\"apps/clip-composer/<br/>apps/juce-demo-host/\"]\n    end\n\n    subgraph DOCUMENTATION[\"Documentation\"]\n        direction TB\n        DOCS[\"docs/orp/ (120+ docs)<br/>ARCHITECTURE.md<br/>ROADMAP.md\"]\n        WIREFRAMES[\"wireframes/<br/>v2025-11-08/<br/>v2026-01-18/\"]\n    end\n\n    ROOT --> CORE\n    ROOT --> TESTING\n    ROOT --> SHMUI_PKG\n    ROOT --> APPLICATIONS\n    ROOT --> DOCUMENTATION\n\n    SRC --> ORP121\n    SHMUI_HDR --> SHMUI_AUD\n    SHMUI_HDR --> SHMUI_CMP\n    SHMUI_HDR --> SHMUI_CTL\n    APPS --> SHMUI_PKG"</script></div></article>
+
+    <article class="surface-card diagram-card" id="entry" data-diagram-id="entry"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">Entry Points</span><p class="diagram-description">All ways to interact with the SDK</p></span><span class="diagram-kind">FLOWCHART</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"graph TB\n    subgraph USERS[\"User Personas\"]\n        direction TB\n        END_USER[\"End User<br/>Broadcast/Theater\"]\n        APP_DEV[\"App Developer<br/>TypeScript/JavaScript\"]\n        PLUGIN_DEV[\"Plugin Developer<br/>C++/Native\"]\n        DEVOPS[\"DevOps/QA<br/>CLI Tools\"]\n    end\n\n    subgraph GUI[\"GUI Applications\"]\n        direction TB\n        CC_APP[\"Clip Composer<br/>960 buttons, 8 tabs\"]\n        DEMO_APP[\"Demo Host\"]\n        CUSTOM_APP[\"Custom Apps\"]\n    end\n\n    subgraph CLI[\"CLI Tools\"]\n        direction TB\n        MINHOST_CLI[\"orpheus_minhost<br/>--session, --render\"]\n        INSPECT_CLI[\"inspect_session<br/>--file, --validate\"]\n    end\n\n    subgraph JS_API[\"JavaScript Drivers\"]\n        direction TB\n        JS_NATIVE[\"@orpheus/engine-native\"]\n        JS_SERVICE[\"@orpheus/engine-service\"]\n        JS_WASM[\"@orpheus/engine-wasm\"]\n        JS_CLIENT[\"@orpheus/client\"]\n    end\n\n    subgraph CPP_API[\"Native C++ API\"]\n        direction TB\n        CPP_HEADERS[\"Direct C++ Linking<br/>routing_matrix.h<br/>transport_controller.h\"]\n    end\n\n    subgraph SHMUI_API[\"shmui-juce (v2.0.0)\"]\n        direction TB\n        SHMUI_INC[\"#include ShmUI.h<br/>Visualization + Controls\"]\n        SHMUI_BTN[\"Button hierarchy<br/>Transport, Clip, Mute\"]\n    end\n\n    subgraph CONFIG[\"Configuration\"]\n        direction TB\n        SESSION_JSON[\"session.json\"]\n        ENV_VARS[\"Environment Variables\"]\n        ROUTING_CFG[\"RoutingConfig\"]\n    end\n\n    END_USER --> CC_APP\n    APP_DEV --> JS_CLIENT\n    PLUGIN_DEV --> CPP_HEADERS\n    DEVOPS --> MINHOST_CLI\n\n    CC_APP --> CPP_HEADERS\n    CC_APP --> SHMUI_API\n    DEMO_APP --> CPP_HEADERS\n    CUSTOM_APP --> CPP_HEADERS\n    CUSTOM_APP -.-> JS_CLIENT\n\n    SHMUI_INC --> CPP_HEADERS\n\n    JS_CLIENT --> JS_NATIVE\n    JS_CLIENT --> JS_SERVICE\n    JS_CLIENT --> JS_WASM\n    JS_NATIVE --> CPP_HEADERS\n\n    MINHOST_CLI --> CPP_HEADERS\n    INSPECT_CLI --> CPP_HEADERS\n\n    CC_APP -.-> SESSION_JSON\n    CC_APP -.-> ROUTING_CFG"</script></div></article>
+
+    <article class="surface-card diagram-card" id="cicd" data-diagram-id="cicd"><button class="diagram-header" type="button" aria-expanded="true"><span class="diagram-arrow">▼</span><span class="diagram-header__copy"><span class="diagram-title">CI/CD Pipeline</span><p class="diagram-description">Build, test, and deployment infrastructure</p></span><span class="diagram-kind">FLOWCHART</span></button><div class="diagram-content"><div class="diagram-canvas"><div class="diagram-loading">Rendering diagram…</div></div><script type="application/json" class="mermaid-source">"graph TB\n    subgraph DEV[\"Development\"]\n        direction TB\n        LOCAL[\"Developer Workstation<br/>C++20, CMake, Node.js\"]\n        BUILD_LOCAL[\"cmake --build build\"]\n        TEST_LOCAL[\"ctest + sanitizers\"]\n    end\n\n    subgraph SHMUI_SYNC[\"shmui-juce Sync\"]\n        direction TB\n        SHMUI_SRC[\"~/dev/shmui<br/>juce/Source/\"]\n        SHMUI_RSYNC[\"rsync \u2192 packages/<br/>shmui-juce/\"]\n        SHMUI_VER[\"Version: 2.0.0\"]\n    end\n\n    subgraph GIT[\"Version Control\"]\n        direction TB\n        REPO[\"Git Repository<br/>main, feature/*, claude/*\"]\n        PR[\"Pull Request<br/>CI must pass\"]\n        TAG[\"Release Tags<br/>v1.0.0-rc.1\"]\n    end\n\n    subgraph CI[\"CI Pipeline\"]\n        direction TB\n        MATRIX[\"Matrix Build<br/>Ubuntu, Windows, macOS\"]\n        LINT[\"Lint: clang-format, eslint\"]\n        NATIVE[\"Native Driver: N-API\"]\n        TS_BUILD[\"TypeScript: pnpm build\"]\n        INTEGRATION[\"Integration Tests\"]\n        PERF[\"Performance Budgets\"]\n    end\n\n    subgraph ORP121_TESTS[\"ORP121 Test Suite\"]\n        direction TB\n        ROUTING_T[\"routing_matrix_test<br/>27 tests\"]\n        CALLBACK_T[\"callback_queue_stress<br/>6 tests\"]\n        PERF_T[\"Performance Tests\"]\n    end\n\n    subgraph ARTIFACTS[\"Build Artifacts\"]\n        direction TB\n        LIBS[\"C++ Libraries<br/>liborpheus_*.a\"]\n        EXES[\"Executables<br/>orpheus_minhost<br/>ClipComposer.app\"]\n        NPM[\"npm Packages<br/>@orpheus/*\"]\n    end\n\n    subgraph DIST[\"Distribution\"]\n        direction TB\n        GH_RELEASE[\"GitHub Releases\"]\n        NPM_REG[\"npm Registry\"]\n        GH_PAGES[\"GitHub Pages\"]\n    end\n\n    LOCAL --> BUILD_LOCAL\n    BUILD_LOCAL --> TEST_LOCAL\n    TEST_LOCAL --> REPO\n\n    SHMUI_SRC --> SHMUI_RSYNC\n    SHMUI_RSYNC --> SHMUI_VER\n    SHMUI_RSYNC --> BUILD_LOCAL\n\n    REPO --> PR\n    PR --> CI\n\n    CI --> MATRIX\n    CI --> LINT\n    CI --> NATIVE\n    CI --> TS_BUILD\n    CI --> INTEGRATION\n    CI --> PERF\n\n    MATRIX --> ROUTING_T\n    MATRIX --> CALLBACK_T\n    MATRIX --> PERF_T\n\n    MATRIX --> LIBS\n    MATRIX --> EXES\n    TS_BUILD --> NPM\n\n    LIBS --> GH_RELEASE\n    EXES --> GH_RELEASE\n    NPM --> NPM_REG\n\n    PR --> TAG\n    TAG --> GH_RELEASE\n    TAG --> GH_PAGES"</script></div></article>
+
+  </div></section>
+</main>
+
+<footer>
+  <div class="footer-notes"><p>Source: <code>wireframes/v2026-05-18/*.mermaid.md</code> | Generated for: <strong>Orpheus SDK</strong> | Location: <code>~/dev/orpheus-sdk</code> | shmui-juce v2.0.0 | <a href="./v2026-05-18/">View Wireframe Sources</a></p></div>
+</footer>
+
+<script>
+/* dust.js — per-mote jittering dust grid (canvas-based)
+   Single grid of individually animated particles with unique sub-pixel trembling. */
+
+(function () {
+  'use strict';
+
+  var GRID = 36;
+  var DOT_R = 0.8;
+  var JITTER_AMP = 2.4;
+  var JITTER_SPEED = 0.0008;
+  var DRIFT_SPEED = 0.0003;
+  var FPS_CAP = 15;
+  var FRAME_MS = 1000 / FPS_CAP;
+
+  function parseRGBA(str) {
+    var m = str.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    if (!m) return [128, 128, 128, 0.3];
+    return [+m[1], +m[2], +m[3], m[4] !== undefined ? +m[4] : 1];
+  }
+
+  function readColor() {
+    return parseRGBA(getComputedStyle(document.documentElement).getPropertyValue('--dust-dot').trim());
+  }
+
+  function init() {
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;z-index:0;pointer-events:none;';
+    document.body.insertBefore(canvas, document.body.firstChild);
+    var ctx = canvas.getContext('2d');
+    var dpr = window.devicePixelRatio || 1;
+    var w, h, motes;
+
+    function buildMotes() {
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      motes = [];
+      for (var y = 0; y < h + GRID; y += GRID) {
+        for (var x = 0; x < w + GRID; x += GRID) {
+          motes.push({
+            bx: x, by: y,
+            px: (x * 7.3 + y * 13.7) % 6.2832,
+            py: (x * 11.1 + y * 5.9) % 6.2832
+          });
         }
+      }
+    }
 
-        function toggleDiagram(header) {
-            const card = header.closest('.diagram-card');
-            card.classList.toggle('collapsed');
-            // Set as active for keyboard nav
-            const index = Array.from(cards).indexOf(card);
-            selectCard(index);
-        }
+    buildMotes();
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                cards.forEach(card => card.classList.add('collapsed'));
-                cards.forEach(c => c.classList.remove('selected'));
-                selectedIndex = -1;
-            } else if (e.key.toLowerCase() === 'a' && !e.ctrlKey && !e.metaKey) {
-                cards.forEach(card => card.classList.remove('collapsed'));
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                selectCard(selectedIndex < cards.length - 1 ? selectedIndex + 1 : 0);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                selectCard(selectedIndex > 0 ? selectedIndex - 1 : cards.length - 1);
-            } else if (e.key === 'ArrowRight' && selectedIndex >= 0) {
-                e.preventDefault();
-                cards[selectedIndex].classList.remove('collapsed');
-            } else if (e.key === 'ArrowLeft' && selectedIndex >= 0) {
-                e.preventDefault();
-                cards[selectedIndex].classList.add('collapsed');
-            }
-        });
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(buildMotes, 200);
+    });
 
-        // Smooth scroll for quick nav
-        document.querySelectorAll('.quick-nav a').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const target = document.querySelector(link.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    target.classList.remove('collapsed');
-                    // Set as active for keyboard nav
-                    const index = Array.from(cards).indexOf(target);
-                    selectCard(index);
-                }
-            });
-        });
-    </script>
+    var rgba = readColor();
+    var observer = new MutationObserver(function () { rgba = readColor(); });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    var lastFrame = 0;
+    var t0 = performance.now();
+
+    function draw(now) {
+      requestAnimationFrame(draw);
+      if (now - lastFrame < FRAME_MS) return;
+      lastFrame = now;
+
+      var elapsed = now - t0;
+      var driftX = (elapsed * DRIFT_SPEED) % GRID;
+      var driftY = (elapsed * DRIFT_SPEED * 2) % GRID;
+
+      ctx.clearRect(0, 0, w, h);
+
+      for (var i = 0, n = motes.length; i < n; i++) {
+        var m = motes[i];
+        var jx = Math.sin(elapsed * JITTER_SPEED + m.px) * JITTER_AMP;
+        var jy = Math.cos(elapsed * JITTER_SPEED * 1.3 + m.py) * JITTER_AMP;
+        var x = m.bx + jx + driftX;
+        var y = m.by + jy + driftY;
+
+        x = ((x % w) + w) % w;
+        y = ((y % h) + h) % h;
+
+        var fade = 1.0 - (y / h) * 0.18;
+        ctx.fillStyle = 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] * fade).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(x, y, DOT_R, 0, 6.2832);
+        ctx.fill();
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+</script>
+<script>
+/* theme.js — theme constants, apply/get/set/cycle, persistence, cssVar() helper */
+
+var THEME_KEY = "commandsheets-theme";
+var PORTAL_KEY = "factory-portal-theme";
+var THEME_ORDER = ["light", "dark", "ember"];
+
+function getDefaultTheme() {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function getSavedTheme() {
+  var saved = localStorage.getItem(PORTAL_KEY);
+  if (THEME_ORDER.includes(saved)) return saved;
+  saved = localStorage.getItem(THEME_KEY);
+  return THEME_ORDER.includes(saved) ? saved : null;
+}
+
+function getCurrentTheme() {
+  var current = document.documentElement.getAttribute("data-theme");
+  return THEME_ORDER.includes(current) ? current : getDefaultTheme();
+}
+
+function applyTheme(theme, persist) {
+  if (persist === undefined) persist = true;
+  var nextTheme = THEME_ORDER.includes(theme) ? theme : getDefaultTheme();
+  document.documentElement.setAttribute("data-theme", nextTheme);
+  if (persist) {
+    localStorage.setItem(THEME_KEY, nextTheme);
+    localStorage.setItem(PORTAL_KEY, nextTheme);
+  }
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+(function initTheme() {
+  applyTheme(getSavedTheme() || getDefaultTheme(), false);
+})();
+
+/* Re-sync theme when restored from bfcache (back/forward nav) */
+window.addEventListener("pageshow", function(e) {
+  if (e.persisted) {
+    var fresh = getSavedTheme();
+    if (fresh) applyTheme(fresh, false);
+  }
+});
+
+</script>
+<script type="module">
+/* gallery.js — Mermaid setup/rendering, color normalization, diagram interaction, keyboard wiring */
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+var diagramHeaders = Array.from(document.querySelectorAll(".diagram-header"));
+var currentHeaderIndex = -1;
+var renderRun = 0;
+
+function getMermaidTones() {
+  return {
+    neutral: {
+      fill: cssVar("--mermaid-neutral-fill"),
+      border: cssVar("--mermaid-neutral-border"),
+      text: cssVar("--mermaid-neutral-text"),
+    },
+    blue: {
+      fill: cssVar("--mermaid-blue-fill"),
+      border: cssVar("--mermaid-blue-border"),
+      text: cssVar("--mermaid-blue-text"),
+    },
+    green: {
+      fill: cssVar("--mermaid-green-fill"),
+      border: cssVar("--mermaid-green-border"),
+      text: cssVar("--mermaid-green-text"),
+    },
+    amber: {
+      fill: cssVar("--mermaid-amber-fill"),
+      border: cssVar("--mermaid-amber-border"),
+      text: cssVar("--mermaid-amber-text"),
+    },
+    red: {
+      fill: cssVar("--mermaid-red-fill"),
+      border: cssVar("--mermaid-red-border"),
+      text: cssVar("--mermaid-red-text"),
+    },
+    violet: {
+      fill: cssVar("--mermaid-violet-fill"),
+      border: cssVar("--mermaid-violet-border"),
+      text: cssVar("--mermaid-violet-text"),
+    },
+  };
+}
+
+function parseColorToken(token) {
+  var value = token.trim().toLowerCase();
+  if (!value) {
+    return null;
+  }
+  var match = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (match) {
+    var hex = match[1];
+    if (hex.length === 3) {
+      hex = hex.split("").map(function(part) { return part + part; }).join("");
+    }
+    if (hex.length === 8) {
+      hex = hex.slice(0, 6);
+    }
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+  match = value.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (match) {
+    return {
+      r: Number(match[1]),
+      g: Number(match[2]),
+      b: Number(match[3]),
+    };
+  }
+  return null;
+}
+
+function classifyColorToken(token) {
+  var parsed = parseColorToken(token);
+  if (!parsed) {
+    return "neutral";
+  }
+  var r = parsed.r, g = parsed.g, b = parsed.b;
+  var max = Math.max(r, g, b);
+  var min = Math.min(r, g, b);
+  var delta = max - min;
+  if (delta < 18) {
+    return "neutral";
+  }
+  var saturation = max === 0 ? 0 : delta / max;
+  if (saturation < 0.18) {
+    return "neutral";
+  }
+  var hue = 0;
+  if (delta !== 0) {
+    if (max === r) {
+      hue = ((g - b) / delta) % 6;
+    } else if (max === g) {
+      hue = (b - r) / delta + 2;
+    } else {
+      hue = (r - g) / delta + 4;
+    }
+    hue *= 60;
+    if (hue < 0) {
+      hue += 360;
+    }
+  }
+  if (hue < 18 || hue >= 338) {
+    return "red";
+  }
+  if (hue < 72) {
+    return "amber";
+  }
+  if (hue < 170) {
+    return "green";
+  }
+  if (hue < 255) {
+    return "blue";
+  }
+  return "violet";
+}
+
+function normalizeStyleProperties(propertyText) {
+  var tones = getMermaidTones();
+  var props = propertyText
+    .split(",")
+    .map(function(part) { return part.trim(); })
+    .filter(Boolean);
+  if (!props.length) {
+    return propertyText;
+  }
+  return props
+    .map(function(entry) {
+      var parts = entry.split(/:(.+)/);
+      if (parts.length < 3) {
+        return entry;
+      }
+      var key = parts[0].trim();
+      var value = parts[1].trim();
+      var tone = tones[classifyColorToken(value)] || tones.neutral;
+      if (/^fill$/i.test(key) || /bkg/i.test(key)) {
+        return key + ":" + tone.fill;
+      }
+      if (/^stroke$/i.test(key) || /border/i.test(key) || /line/i.test(key)) {
+        return key + ":" + tone.border;
+      }
+      if (/color/i.test(key) || /text/i.test(key)) {
+        return key + ":" + tone.text;
+      }
+      return entry;
+    })
+    .join(",");
+}
+
+function formatMermaidRectColor(token) {
+  var parsed = parseColorToken(token);
+  if (!parsed) {
+    return token;
+  }
+  return "rgb(" + Math.round(parsed.r) + ", " + Math.round(parsed.g) + ", " + Math.round(parsed.b) + ")";
+}
+
+function normalizeMermaidSource(raw) {
+  var tones = getMermaidTones();
+  var next = raw.replace(/%%\{init:[\s\S]*?%%\s*/g, "");
+  next = next.replace(/^(\s*rect\s+)(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))(.*)$/gm, function(_match, prefix, color, suffix) {
+    var tone = tones[classifyColorToken(color)] || tones.neutral;
+    return prefix + formatMermaidRectColor(tone.fill) + suffix;
+  });
+  next = next.replace(/^(\s*style\s+\S+\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  next = next.replace(/^(\s*classDef\s+[^\s]+\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  next = next.replace(/^(\s*linkStyle\s+.+?\s+)(.+)$/gm, function(_match, prefix, properties) {
+    return prefix + normalizeStyleProperties(properties);
+  });
+  return next;
+}
+
+function getMermaidThemeCss() {
+  var text = cssVar("--text");
+  var panel = cssVar("--bg-panel");
+  var border = cssVar("--border-strong");
+  var line = cssVar("--mermaid-line");
+  var lineMuted = cssVar("--mermaid-line-muted");
+  var labelFill = cssVar("--mermaid-label-fill");
+  var labelText = cssVar("--mermaid-label-text");
+  var accentSoft = cssVar("--accent-soft");
+  return "\n" +
+    "    svg {\n" +
+    "      color: " + text + " !important;\n" +
+    "    }\n" +
+    "    text,\n" +
+    "    tspan,\n" +
+    "    .nodeLabel,\n" +
+    "    .nodeLabel p,\n" +
+    "    .nodeLabel div,\n" +
+    "    .nodeLabel span,\n" +
+    "    .messageText,\n" +
+    "    .messageText tspan,\n" +
+    "    .loopText,\n" +
+    "    .loopText tspan,\n" +
+    "    .sectionTitle text,\n" +
+    "    .taskText,\n" +
+    "    .taskTextOutsideLeft,\n" +
+    "    .taskTextOutsideRight,\n" +
+    "    .actor text,\n" +
+    "    .actor tspan,\n" +
+    "    .classTitle,\n" +
+    "    .classTitle tspan,\n" +
+    "    .classText,\n" +
+    "    .entityLabel,\n" +
+    "    .cluster-label text {\n" +
+    "      fill: " + text + " !important;\n" +
+    "      color: " + text + " !important;\n" +
+    "      font-family: \"Geist Mono UltraLight\", ui-monospace, monospace !important;\n" +
+    "      font-weight: 200 !important;\n" +
+    "    }\n" +
+    "    .noteText,\n" +
+    "    .noteText tspan,\n" +
+    "    .label text,\n" +
+    "    .label foreignObject,\n" +
+    "    .label foreignObject div,\n" +
+    "    .label foreignObject span,\n" +
+    "    .edgeLabel text,\n" +
+    "    .edgeLabel foreignObject,\n" +
+    "    .edgeLabel span,\n" +
+    "    .edgeLabel p,\n" +
+    "    .labelText,\n" +
+    "    .boxText {\n" +
+    "      fill: " + labelText + " !important;\n" +
+    "      color: " + labelText + " !important;\n" +
+    "      font-family: \"Geist Mono UltraLight\", ui-monospace, monospace !important;\n" +
+    "      font-weight: 200 !important;\n" +
+    "    }\n" +
+    "    .node rect,\n" +
+    "    .node circle,\n" +
+    "    .node ellipse,\n" +
+    "    .node polygon,\n" +
+    "    .node path,\n" +
+    "    .classBox,\n" +
+    "    .entityBox {\n" +
+    "      stroke-width: 1.35px !important;\n" +
+    "    }\n" +
+    "    .cluster rect,\n" +
+    "    .cluster polygon,\n" +
+    "    .labelBox,\n" +
+    "    .note,\n" +
+    "    .actor rect,\n" +
+    "    .activation0,\n" +
+    "    .activation1,\n" +
+    "    .activation2,\n" +
+    "    .activation3,\n" +
+    "    .activation4 {\n" +
+    "      fill: " + panel + " !important;\n" +
+    "      stroke: " + border + " !important;\n" +
+    "    }\n" +
+    "    .edgeLabel rect,\n" +
+    "    .labelBkg,\n" +
+    "    .label-container rect {\n" +
+    "      fill: " + labelFill + " !important;\n" +
+    "      stroke: " + border + " !important;\n" +
+    "      opacity: 1 !important;\n" +
+    "    }\n" +
+    "    .messageLine0,\n" +
+    "    .messageLine1,\n" +
+    "    .relation,\n" +
+    "    .transition,\n" +
+    "    .flowchart-link,\n" +
+    "    .actor-line,\n" +
+    "    .loopLine,\n" +
+    "    .separator {\n" +
+    "      stroke: " + line + " !important;\n" +
+    "      stroke-width: 2px !important;\n" +
+    "    }\n" +
+    "    .messageLine0,\n" +
+    "    .messageLine1,\n" +
+    "    .relation,\n" +
+    "    .transition {\n" +
+    "      fill: none !important;\n" +
+    "    }\n" +
+    "    .marker,\n" +
+    "    .marker path,\n" +
+    "    .arrowheadPath,\n" +
+    "    .arrowMarkerPath {\n" +
+    "      fill: " + line + " !important;\n" +
+    "      stroke: " + line + " !important;\n" +
+    "    }\n" +
+    "    .actor-line,\n" +
+    "    .loopLine {\n" +
+    "      stroke: " + lineMuted + " !important;\n" +
+    "    }\n" +
+    "    .today {\n" +
+    "      fill: " + accentSoft + " !important;\n" +
+    "      stroke: " + line + " !important;\n" +
+    "    }\n" +
+    "  ";
+}
+
+function getMermaidConfig() {
+  var theme = getCurrentTheme();
+  return {
+    startOnLoad: false,
+    securityLevel: "loose",
+    theme: "base",
+    themeCSS: getMermaidThemeCss(),
+    themeVariables: {
+      darkMode: theme !== "light",
+      fontFamily: '"Geist Mono UltraLight", ui-monospace, monospace',
+      primaryColor: cssVar("--bg-panel"),
+      primaryTextColor: cssVar("--text"),
+      primaryBorderColor: cssVar("--border-strong"),
+      lineColor: cssVar("--mermaid-line"),
+      secondaryColor: cssVar("--bg-panel-strong"),
+      tertiaryColor: cssVar("--bg-panel-hover"),
+      background: cssVar("--bg-deep"),
+      mainBkg: cssVar("--bg-panel"),
+      secondBkg: cssVar("--bg-panel-strong"),
+      tertiaryBkg: cssVar("--bg-panel-hover"),
+      nodeBorder: cssVar("--border-strong"),
+      clusterBkg: cssVar("--bg-panel"),
+      clusterBorder: cssVar("--border-strong"),
+      titleColor: cssVar("--text"),
+      textColor: cssVar("--text"),
+      edgeLabelBackground: cssVar("--bg-deep"),
+      noteBkgColor: cssVar("--bg-panel"),
+      noteBorderColor: cssVar("--border-strong"),
+      actorBkg: cssVar("--bg-panel"),
+      actorBorder: cssVar("--border-strong"),
+      actorTextColor: cssVar("--text"),
+      actorLineColor: cssVar("--mermaid-line-muted"),
+      activationBkgColor: cssVar("--bg-panel-hover"),
+      activationBorderColor: cssVar("--border-strong"),
+      signalColor: cssVar("--mermaid-line"),
+      signalTextColor: cssVar("--mermaid-label-text"),
+      labelBoxBkgColor: cssVar("--mermaid-label-fill"),
+      labelBoxBorderColor: cssVar("--border-strong"),
+      labelTextColor: cssVar("--mermaid-label-text"),
+      loopTextColor: cssVar("--mermaid-label-text"),
+      noteTextColor: cssVar("--mermaid-label-text"),
+      sequenceNumberColor: cssVar("--mermaid-label-text"),
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: "basis",
+      nodeSpacing: 70,
+      rankSpacing: 90,
+      padding: 24,
+    },
+    sequence: {
+      useMaxWidth: true,
+      mirrorActors: false,
+      diagramMarginX: 40,
+      diagramMarginY: 20,
+      boxMargin: 10,
+      boxTextMargin: 8,
+      noteMargin: 10,
+      messageMargin: 35,
+    },
+    stateDiagram: { useMaxWidth: true },
+    classDiagram: { useMaxWidth: true },
+    er: { useMaxWidth: true },
+    gitGraph: { useMaxWidth: true },
+  };
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"]/g, function(char) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]; });
+}
+
+async function renderAllDiagrams() {
+  var cards = Array.from(document.querySelectorAll(".diagram-card[data-diagram-id]"));
+  if (!cards.length) {
+    return;
+  }
+  var runId = ++renderRun;
+  mermaid.initialize(getMermaidConfig());
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var sourceNode = card.querySelector(".mermaid-source");
+    var host = card.querySelector(".diagram-canvas");
+    var raw = "";
+    if (sourceNode) {
+      try {
+        raw = JSON.parse(sourceNode.textContent).trim();
+      } catch (_error) {
+        raw = sourceNode.textContent.trim();
+      }
+    }
+    if (!raw || !host) {
+      continue;
+    }
+    try {
+      var normalized = normalizeMermaidSource(raw);
+      var result = await mermaid.render("gallery-mermaid-" + runId + "-" + i, normalized);
+      if (runId !== renderRun) {
+        return;
+      }
+      host.innerHTML = result.svg;
+    } catch (error) {
+      host.innerHTML = '<pre class="diagram-error">' + escapeHtml(String(error)) + "</pre>";
+    }
+  }
+}
+
+function setFocusedCard(header) {
+  document.querySelectorAll(".diagram-card.is-focused").forEach(function(card) {
+    card.classList.remove("is-focused");
+  });
+  if (!header) {
+    return;
+  }
+  var card = header.closest(".diagram-card");
+  if (card) card.classList.add("is-focused");
+}
+
+function toggleDiagram(header, force) {
+  var card = header.closest(".diagram-card");
+  var content = card ? card.querySelector(".diagram-content") : null;
+  if (!card || !content) {
+    return;
+  }
+  var shouldCollapse = force !== undefined ? force : !card.classList.contains("collapsed");
+  card.classList.toggle("collapsed", shouldCollapse);
+  header.classList.toggle("collapsed", shouldCollapse);
+  content.classList.toggle("collapsed", shouldCollapse);
+  header.setAttribute("aria-expanded", String(!shouldCollapse));
+}
+
+function setAllDiagrams(collapsed) {
+  diagramHeaders.forEach(function(header) { toggleDiagram(header, collapsed); });
+}
+
+/* Default all diagrams to collapsed on load */
+setAllDiagrams(true);
+
+function focusHeader(index) {
+  if (!diagramHeaders.length) {
+    return;
+  }
+  currentHeaderIndex = Math.max(0, Math.min(index, diagramHeaders.length - 1));
+  var header = diagramHeaders[currentHeaderIndex];
+  header.focus();
+  header.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+diagramHeaders.forEach(function(header, index) {
+  header.addEventListener("click", function() {
+    toggleDiagram(header);
+    currentHeaderIndex = index;
+  });
+  header.addEventListener("focus", function() {
+    currentHeaderIndex = index;
+  });
+});
+
+document.addEventListener("focusin", function(event) {
+  var target = event.target;
+  var header = target instanceof Element ? target.closest(".diagram-header") : null;
+  setFocusedCard(header);
+});
+
+document.querySelectorAll(".nav-chip").forEach(function(link) {
+  link.addEventListener("click", function(event) {
+    event.preventDefault();
+    var targetId = link.getAttribute("data-target");
+    var card = targetId ? document.getElementById(targetId) : null;
+    var header = card ? card.querySelector(".diagram-header") : null;
+    if (!card || !header) {
+      return;
+    }
+    toggleDiagram(header, false);
+    header.scrollIntoView({ behavior: "smooth", block: "start" });
+    header.focus();
+  });
+});
+
+document.addEventListener("keydown", async function(event) {
+  var isTextField = event.target instanceof HTMLElement && (
+    event.target.tagName === "INPUT" ||
+    event.target.tagName === "TEXTAREA" ||
+    event.target.isContentEditable
+  );
+
+  if (!isTextField && !event.metaKey && !event.ctrlKey && !event.altKey && event.code === "Backslash") {
+    event.preventDefault();
+    var current = getCurrentTheme();
+    var next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
+    applyTheme(next);
+    await renderAllDiagrams();
+    return;
+  }
+
+  if (!isTextField && event.key === "Escape") {
+    event.preventDefault();
+    setAllDiagrams(true);
+    return;
+  }
+
+  if (!isTextField && !event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    setAllDiagrams(false);
+    return;
+  }
+
+  var focused = document.activeElement;
+  if (!(focused instanceof HTMLElement) || !focused.classList.contains("diagram-header")) {
+    if (event.key === "ArrowDown" && diagramHeaders.length) {
+      event.preventDefault();
+      focusHeader(0);
+    }
+    return;
+  }
+
+  var index = diagramHeaders.indexOf(focused);
+  if (index >= 0) {
+    currentHeaderIndex = index;
+  }
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      focusHeader(Math.min(currentHeaderIndex + 1, diagramHeaders.length - 1));
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      focusHeader(Math.max(currentHeaderIndex - 1, 0));
+      break;
+    case "ArrowRight":
+      event.preventDefault();
+      toggleDiagram(focused, false);
+      break;
+    case "ArrowLeft":
+      event.preventDefault();
+      toggleDiagram(focused, true);
+      break;
+    case "Enter":
+    case " ":
+      event.preventDefault();
+      toggleDiagram(focused);
+      break;
+    case "Home":
+      event.preventDefault();
+      focusHeader(0);
+      break;
+    case "End":
+      event.preventDefault();
+      focusHeader(diagramHeaders.length - 1);
+      break;
+  }
+});
+
+renderAllDiagrams();
+
+</script>
 </body>
 </html>
