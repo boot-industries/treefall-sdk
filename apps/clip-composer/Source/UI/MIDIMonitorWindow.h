@@ -6,12 +6,14 @@
     Author:  Orpheus Clip Composer
 
     Sprint 12: MIDI Monitor Window (OCC116)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #pragma once
 
+#include "ConsoleActionButton.h"
 #include "../Core/MIDIDeviceManager.h"
 #include <deque>
 #include <functional>
@@ -78,11 +80,11 @@ private:
   juce::Label m_statusLabel;
   juce::TextEditor m_logText;
 
-  juce::TextButton m_runButton;
-  juce::TextButton m_stopButton;
-  juce::TextButton m_clearButton;
-  juce::TextButton m_copyButton;
-  juce::TextButton m_exportButton;
+  std::unique_ptr<ConsoleActionButton> m_runButton;
+  std::unique_ptr<ConsoleActionButton> m_stopButton;
+  std::unique_ptr<ConsoleActionButton> m_clearButton;
+  std::unique_ptr<ConsoleActionButton> m_copyButton;
+  std::unique_ptr<ConsoleActionButton> m_exportButton;
 
   std::deque<LogEntry> m_logEntries;
   bool m_isRunning = true;

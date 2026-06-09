@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "AudioSettingsDialog.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
 
 #include <algorithm>
+
+using namespace OCC::Design;
 
 namespace {
 
@@ -21,49 +24,79 @@ const std::vector<uint32_t>& defaultBufferSizes() {
 
 //==============================================================================
 AudioSettingsDialog::AudioSettingsDialog(AudioEngine* engine) : m_audioEngine(engine) {
+  setSize(560, 380);
+
+  // Device row
   addAndMakeVisible(m_deviceLabel);
   m_deviceLabel.setText("Audio Device:", juce::dontSendNotification);
+  m_deviceLabel.setFont(OCC::Console::consoleFont(12.0f, juce::Font::bold));
+  m_deviceLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_deviceLabel.setJustificationType(juce::Justification::centredRight);
 
   addAndMakeVisible(m_deviceCombo);
+  m_deviceCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(kBgInset));
+  m_deviceCombo.setColour(juce::ComboBox::textColourId, juce::Colour(kTextPrimary));
+  m_deviceCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(kBorderDefault));
   populateDeviceList();
   m_deviceCombo.onChange = [this] { syncSupportedOptionsForDevice(); };
 
+  // Sample Rate row
   addAndMakeVisible(m_sampleRateLabel);
   m_sampleRateLabel.setText("Sample Rate:", juce::dontSendNotification);
+  m_sampleRateLabel.setFont(OCC::Console::consoleFont(12.0f, juce::Font::bold));
+  m_sampleRateLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_sampleRateLabel.setJustificationType(juce::Justification::centredRight);
 
   addAndMakeVisible(m_sampleRateCombo);
+  m_sampleRateCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(kBgInset));
+  m_sampleRateCombo.setColour(juce::ComboBox::textColourId, juce::Colour(kTextPrimary));
+  m_sampleRateCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(kBorderDefault));
   populateSampleRates();
   m_sampleRateCombo.onChange = [this] { refreshStatusLabels(); };
 
+  // Buffer Size row
   addAndMakeVisible(m_bufferSizeLabel);
   m_bufferSizeLabel.setText("Buffer Size:", juce::dontSendNotification);
+  m_bufferSizeLabel.setFont(OCC::Console::consoleFont(12.0f, juce::Font::bold));
+  m_bufferSizeLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
   m_bufferSizeLabel.setJustificationType(juce::Justification::centredRight);
 
   addAndMakeVisible(m_bufferSizeCombo);
+  m_bufferSizeCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(kBgInset));
+  m_bufferSizeCombo.setColour(juce::ComboBox::textColourId, juce::Colour(kTextPrimary));
+  m_bufferSizeCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(kBorderDefault));
   populateBufferSizes();
   m_bufferSizeCombo.onChange = [this] { refreshStatusLabels(); };
 
-  addAndMakeVisible(m_applyButton);
-  m_applyButton.setButtonText("Apply Settings");
-  m_applyButton.onClick = [this] { applySettings(); };
+  // Apply button - Primary
+  m_applyButton = std::make_unique<ConsoleActionButton>("apply-settings", ConsoleActionButton::Variant::Primary);
+  m_applyButton->setLabel("APPLY SETTINGS");
+  m_applyButton->onClick = [this] { applySettings(); };
+  addAndMakeVisible(m_applyButton.get());
 
-  addAndMakeVisible(m_closeButton);
-  m_closeButton.setButtonText("Close");
-  m_closeButton.onClick = [this] {
+  // Close button - Default
+  m_closeButton = std::make_unique<ConsoleActionButton>("close-settings", ConsoleActionButton::Variant::Default);
+  m_closeButton->setLabel("CLOSE");
+  m_closeButton->onClick = [this] {
     if (onCloseClicked) {
       onCloseClicked();
     }
   };
+  addAndMakeVisible(m_closeButton.get());
 
+  // Status label
   addAndMakeVisible(m_statusLabel);
+  m_statusLabel.setFont(OCC::Console::monoFont(11.0f));
   m_statusLabel.setJustificationType(juce::Justification::centredLeft);
+  m_statusLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
+  // Detail label
   addAndMakeVisible(m_detailLabel);
+  m_detailLabel.setFont(OCC::Console::monoFont(10.0f));
   m_detailLabel.setJustificationType(juce::Justification::topLeft);
-  m_detailLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextSecondary));
+  m_detailLabel.setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
 
+  // Initialize with current settings
   if (m_audioEngine) {
     const auto currentSampleRate = m_audioEngine->getSampleRate();
     const auto currentBufferSize = m_audioEngine->getBufferSize();
@@ -81,25 +114,39 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* engine) : m_audioEngine(en
   }
 
   refreshStatusLabels();
-  setSize(560, 360);
 }
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
+  // Console chassis background
+  g.fillAll(juce::Colour(kBgSurface));
 
-  g.setColour(juce::Colour(OCC::Design::kTextPrimary));
-  g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-  g.drawText("Audio I/O Settings", 0, 10, getWidth(), 30, juce::Justification::centred);
+  // Title bar - eyebrow + title
+  auto titleBar = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), 44.0f);
+  g.setColour(juce::Colour(kBgComponent));
+  g.fillRect(titleBar);
+  g.setColour(juce::Colour(kBorderDefault));
+  g.drawHorizontalLine(44, 0.0f, static_cast<float>(getWidth()));
+
+  // Eyebrow
+  g.setColour(juce::Colour(kTextSecondary));
+  g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+  g.drawText("AUDIO I/O SETTINGS", 20, 6, 200, 14, juce::Justification::centredLeft, false);
+
+  // Bold title
+  g.setColour(juce::Colour(kTextPrimary));
+  g.setFont(OCC::Console::consoleFont(18.0f, juce::Font::bold));
+  g.drawText("Audio I/O Settings", 20, 20, getWidth() - 40, 22, juce::Justification::centredLeft, false);
 }
 
 void AudioSettingsDialog::resized() {
   auto bounds = getLocalBounds().reduced(20);
-  bounds.removeFromTop(40);
+  bounds.removeFromTop(50); // Title bar area
 
   const int labelWidth = 120;
-  const int rowHeight = 35;
+  const int rowHeight = 36;
   const int spacing = 10;
 
+  // Device row
   auto deviceRow = bounds.removeFromTop(rowHeight);
   m_deviceLabel.setBounds(deviceRow.removeFromLeft(labelWidth));
   deviceRow.removeFromLeft(spacing);
@@ -107,6 +154,7 @@ void AudioSettingsDialog::resized() {
 
   bounds.removeFromTop(spacing);
 
+  // Sample Rate row
   auto sampleRateRow = bounds.removeFromTop(rowHeight);
   m_sampleRateLabel.setBounds(sampleRateRow.removeFromLeft(labelWidth));
   sampleRateRow.removeFromLeft(spacing);
@@ -114,6 +162,7 @@ void AudioSettingsDialog::resized() {
 
   bounds.removeFromTop(spacing);
 
+  // Buffer Size row
   auto bufferSizeRow = bounds.removeFromTop(rowHeight);
   m_bufferSizeLabel.setBounds(bufferSizeRow.removeFromLeft(labelWidth));
   bufferSizeRow.removeFromLeft(spacing);
@@ -121,13 +170,14 @@ void AudioSettingsDialog::resized() {
 
   bounds.removeFromTop(spacing * 2);
 
+  // Buttons row
   auto buttonRow = bounds.removeFromTop(rowHeight);
   const int totalButtonWidth = 150 + 10 + 100;
   const int leftMargin = (buttonRow.getWidth() - totalButtonWidth) / 2;
   buttonRow.removeFromLeft(leftMargin);
-  m_applyButton.setBounds(buttonRow.removeFromLeft(150).reduced(0, 2));
+  m_applyButton->setBounds(buttonRow.removeFromLeft(150).reduced(0, 2));
   buttonRow.removeFromLeft(10);
-  m_closeButton.setBounds(buttonRow.removeFromLeft(100).reduced(0, 2));
+  m_closeButton->setBounds(buttonRow.removeFromLeft(100).reduced(0, 2));
 
   bounds.removeFromTop(spacing);
   m_statusLabel.setBounds(bounds.removeFromTop(rowHeight));
@@ -237,9 +287,9 @@ void AudioSettingsDialog::saveSettings(const std::string& deviceName, uint32_t s
   settings.setValue("bufferSize", static_cast<int>(bufferSize));
   settings.saveIfNeeded();
 
-  DBG("AudioSettingsDialog: Saved settings - Device: "
-      << deviceName << ", SR: " << static_cast<int>(sampleRate)
-      << " Hz, Buffer: " << static_cast<int>(bufferSize));
+  DBG("AudioSettingsDialog: Saved settings - Device: " << deviceName
+                         << ", SR: " << static_cast<int>(sampleRate)
+                         << " Hz, Buffer: " << static_cast<int>(bufferSize));
 }
 
 void AudioSettingsDialog::loadSavedSettings() {

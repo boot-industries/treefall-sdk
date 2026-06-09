@@ -6,12 +6,14 @@
     Author:  Orpheus Clip Composer
 
     Sprint 10: HotKey Configuration Dialog (OCC116)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #pragma once
 
+#include "ConsoleActionButton.h"
 #include "../Core/HotKeyManager.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -57,8 +59,8 @@ private:
   juce::Label m_actionHintLabel;
 
   // Buttons
-  juce::TextButton m_okButton;
-  juce::TextButton m_cancelButton;
+  std::unique_ptr<ConsoleActionButton> m_okButton;
+  std::unique_ptr<ConsoleActionButton> m_cancelButton;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HotKeySetupDialog)
 };

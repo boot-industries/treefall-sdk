@@ -6,12 +6,14 @@
     Author:  Orpheus Clip Composer
 
     Sprint 17: Paste Special Dialog (OCC117)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #pragma once
 
+#include "ConsoleActionButton.h"
 #include "../Core/ClipCommands.h"
 #include "../Session/SessionManager.h"
 #include <functional>
@@ -88,9 +90,9 @@ private:
   juce::TextEditor m_rangeEndEditor;
 
   // Buttons
-  juce::TextButton m_clearAllButton;
-  juce::TextButton m_okButton;
-  juce::TextButton m_cancelButton;
+  std::unique_ptr<ConsoleActionButton> m_clearAllButton;
+  std::unique_ptr<ConsoleActionButton> m_okButton;
+  std::unique_ptr<ConsoleActionButton> m_cancelButton;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PasteSpecialDialog)
 };

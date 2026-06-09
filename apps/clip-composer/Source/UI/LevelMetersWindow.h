@@ -6,12 +6,14 @@
     Author:  Orpheus Clip Composer
 
     Sprint 19: Level Meters Window with Play History (OCC117)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #pragma once
 
+#include "ConsoleActionButton.h"
 #include "../Audio/AudioEngine.h"
 #include <array>
 #include <deque>
@@ -90,6 +92,7 @@ private:
 
   // UI components
   juce::Label m_titleLabel;
+  std::unique_ptr<ConsoleActionButton> m_clearButton;
   juce::TextEditor m_historyText;
 
   static constexpr size_t MAX_HISTORY_ENTRIES = 50;

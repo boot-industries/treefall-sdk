@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "ConsoleActionButton.h"
+#include "DesignTokens.h"
 #include "../Audio/AudioEngine.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 /// Audio I/O Settings Dialog
 /// Allows user to configure sample rate, buffer size, and audio device
+/// Updated with Console design language (OCC149)
 class AudioSettingsDialog : public juce::Component {
 public:
   AudioSettingsDialog(AudioEngine* engine);
@@ -22,10 +25,10 @@ private:
                            uint32_t preferredRate = 48000);
   void populateBufferSizes(const std::vector<uint32_t>& supportedBufferSizes = {},
                            uint32_t preferredBufferSize = 512);
-  void loadSavedSettings();
   void saveSettings(const std::string& deviceName, uint32_t sampleRate, uint32_t bufferSize);
   void syncSupportedOptionsForDevice();
   void refreshStatusLabels(const juce::String& transientStatus = {});
+  void loadSavedSettings();
   static int idForValue(uint32_t value, const std::vector<uint32_t>& values);
   static uint32_t selectedValueFor(const juce::ComboBox& comboBox, uint32_t fallback);
 
@@ -40,8 +43,9 @@ private:
   juce::Label m_bufferSizeLabel;
   juce::ComboBox m_bufferSizeCombo;
 
-  juce::TextButton m_applyButton;
-  juce::TextButton m_closeButton;
+  std::unique_ptr<ConsoleActionButton> m_applyButton;
+  std::unique_ptr<ConsoleActionButton> m_closeButton;
+
   juce::Label m_statusLabel;
   juce::Label m_detailLabel;
 
