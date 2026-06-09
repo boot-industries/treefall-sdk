@@ -173,11 +173,17 @@ void AudioSettingsDialog::resized() {
   // Buttons row
   auto buttonRow = bounds.removeFromTop(rowHeight);
   const int totalButtonWidth = 150 + 10 + 100;
-  const int leftMargin = (buttonRow.getWidth() - totalButtonWidth) / 2;
-  buttonRow.removeFromLeft(leftMargin);
-  m_applyButton->setBounds(buttonRow.removeFromLeft(150).reduced(0, 2));
+  const int availableWidth = buttonRow.getWidth();
+  const int leftMargin = availableWidth > totalButtonWidth
+      ? (availableWidth - totalButtonWidth) / 2
+      : 4; // Minimum margin if space is tight
+  if (leftMargin > 0)
+    buttonRow.removeFromLeft(leftMargin);
+  if (m_applyButton)
+    m_applyButton->setBounds(buttonRow.removeFromLeft(juce::jmin(150, buttonRow.getWidth())).reduced(0, 2));
   buttonRow.removeFromLeft(10);
-  m_closeButton->setBounds(buttonRow.removeFromLeft(100).reduced(0, 2));
+  if (m_closeButton)
+    m_closeButton->setBounds(buttonRow.removeFromLeft(juce::jmin(100, buttonRow.getWidth())).reduced(0, 2));
 
   bounds.removeFromTop(spacing);
   m_statusLabel.setBounds(bounds.removeFromTop(rowHeight));

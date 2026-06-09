@@ -111,6 +111,9 @@ private:
   float m_zoomFactor = 1.0f; // Current zoom factor
   float m_zoomCenter = 0.5f; // Center of zoom (normalized 0-1)
 
+  // Pagination cooldown to prevent excessive repaints during playback
+  juce::Time m_lastPaginationTime;
+
   // Interaction mode
   bool m_threeButtonMouseMode =
       false; // false = default trackpad mode, true = SpotOn three-button mode
