@@ -111,6 +111,33 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
           m_waveformOverview->setTrimSamples(
               m_metadata.trimInSamples, m_metadata.trimOutSamples > 0 ? m_metadata.trimOutSamples
                                                                       : m_metadata.durationSamples);
+
+          // Wire up minimap scrubbing callback
+          m_waveformOverview->onViewportScrubbed = [this](int64_t startSample, int64_t endSample) {
+            if (m_waveformDisplay) {
+              float startNorm = m_metadata.durationSamples > 0
+                  ? static_cast<float>(startSample) / m_metadata.durationSamples
+                  : 0.5f;
+              float endNorm = m_metadata.durationSamples > 0
+                  ? static_cast<float>(endSample) / m_metadata.durationSamples
+                  : 0.5f;
+              m_waveformDisplay->setZoomCenter((startNorm + endNorm) * 0.5f);
+              // Adjust zoom level based on viewport width fraction
+              float viewportWidthNorm = endNorm - startNorm;
+              if (viewportWidthNorm > 0.0f) {
+                // Find zoom level that roughly matches the viewport width
+                float targetZoom = 1.0f / viewportWidthNorm;
+                // Map to zoom levels: 1x, 2x, 4x, 8x, 16x
+                int targetLevel = 0;
+                if (targetZoom >= 8.0f) targetLevel = 4;
+                else if (targetZoom >= 4.0f) targetLevel = 3;
+                else if (targetZoom >= 2.0f) targetLevel = 2;
+                else if (targetZoom >= 1.0f) targetLevel = 1;
+                else targetLevel = 0;
+                m_waveformDisplay->setZoomLevel(targetLevel, (startNorm + endNorm) * 0.5f);
+              }
+            }
+          };
           delete reader;
         }
       }

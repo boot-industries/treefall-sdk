@@ -162,9 +162,21 @@ void WaveformDisplay::setZoomLevel(int level, float centerNormalized) {
   repaint();
 }
 
+void WaveformDisplay::setZoomCenter(float centerNormalized) {
+  using namespace OCC::Design::Waveform;
+
+  m_zoomCenter = std::clamp(centerNormalized, 0.0f, 1.0f);
+  float visibleWidth = 1.0f / m_zoomFactor;
+  float halfWidth = visibleWidth / 2.0f;
+  m_zoomCenter = std::clamp(m_zoomCenter, halfWidth, 1.0f - halfWidth);
+  DBG("WaveformDisplay: Zoom center set to " << m_zoomCenter);
+  repaint();
+}
+
 void WaveformDisplay::clear() {
   juce::ScopedLock lock(m_dataLock);
   m_waveformData = WaveformData();
+  m_cueMarkers.clear();
   m_trimInSamples = 0;
   m_trimOutSamples = 0;
   m_zoomLevel = 0;
@@ -172,6 +184,47 @@ void WaveformDisplay::clear() {
   m_zoomCenter = 0.5f;
   repaint();
 }
+
+//==============================================================================
+// Cue marker management
+void WaveformDisplay::addCueMarker(const CueMarker& marker) {
+  juce::ScopedLock lock(m_dataLock);
+  // Check if marker at this position already exists
+  auto it = std::find_if(m_cueMarkers.begin(), m_cueMarkers.end(),
+                         [marker](const CueMarker& m) { return m.positionSamples == marker.positionSamples; });
+  if (it != m_cueMarkers.end()) {
+    *it = marker; // Update existing
+  } else {
+    m_cueMarkers.push_back(marker);
+    // Sort by position
+    std::sort(m_cueMarkers.begin(), m_cueMarkers.end(),
+              [](const CueMarker& a, const CueMarker& b) { return a.positionSamples < b.positionSamples; });
+  }
+  repaint();
+
+  if (onCueMarkerAdded)
+    onCueMarkerAdded(marker);
+}
+
+void WaveformDisplay::removeCueMarker(int64_t positionSamples) {
+  juce::ScopedLock lock(m_dataLock);
+  auto it = std::find_if(m_cueMarkers.begin(), m_cueMarkers.end(),
+                         [positionSamples](const CueMarker& m) { return m.positionSamples == positionSamples; });
+  if (it != m_cueMarkers.end()) {
+    m_cueMarkers.erase(it);
+    repaint();
+
+    if (onCueMarkerRemoved)
+      onCueMarkerRemoved(positionSamples);
+  }
+}
+
+void WaveformDisplay::clearCueMarkers() {
+  juce::ScopedLock lock(m_dataLock);
+  m_cueMarkers.clear();
+  repaint();
+}
+
 
 //==============================================================================
 void WaveformDisplay::paint(juce::Graphics& g) {
@@ -206,6 +259,7 @@ void WaveformDisplay::paint(juce::Graphics& g) {
       drawWaveform(g, waveformArea);
       drawAuditionHighlight(g, waveformArea); // Draw audition highlight behind trim markers
       drawTrimMarkers(g, waveformArea);
+      drawCueMarkers(g, waveformArea); // Draw cue markers on top
       drawTimeScale(g, timeScaleArea);
     } else {
       g.setColour(juce::Colours::white.withAlpha(0.3f));
@@ -662,6 +716,62 @@ void WaveformDisplay::drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<f
       g.drawLine(playheadX, waveformBounds.getY(), playheadX, waveformBounds.getBottom(),
                  kPlayheadWidth);
     }
+  }
+}
+
+void WaveformDisplay::drawCueMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
+  using namespace OCC::Design::Waveform;
+
+  if (m_waveformData.totalSamples == 0 || m_cueMarkers.empty())
+    return;
+
+  // Account for dB scale offset
+  auto waveformBounds = bounds.withTrimmedLeft(kScaleWidth);
+  const float width = waveformBounds.getWidth();
+
+  // Calculate visible range based on zoom level (same as drawWaveform)
+  float visibleWidth = 1.0f / m_zoomFactor;
+  float startFraction = m_zoomCenter - (visibleWidth / 2.0f);
+  float endFraction = m_zoomCenter + (visibleWidth / 2.0f);
+  startFraction = std::clamp(startFraction, 0.0f, 1.0f);
+  endFraction = std::clamp(endFraction, 0.0f, 1.0f);
+
+  // Draw cue markers
+  for (const auto& cue : m_cueMarkers) {
+    float cueNormalized = cue.positionSamples / static_cast<float>(m_waveformData.totalSamples);
+
+    // Only draw if in visible range
+    if (cueNormalized < startFraction || cueNormalized > endFraction)
+      continue;
+
+    // Map to zoomed viewport coordinates
+    float cueX = waveformBounds.getX() +
+                 ((cueNormalized - startFraction) / (endFraction - startFraction)) * width;
+
+    const float markerWidth = 2.0f;
+    const float markerHeight = 16.0f;
+    const float labelHeight = 14.0f;
+
+    // Draw vertical line
+    g.setColour(cue.color.withAlpha(0.9f));
+    g.drawLine(cueX, waveformBounds.getY(), cueX, waveformBounds.getBottom(), markerWidth);
+
+    // Draw triangle marker at top
+    juce::Path triangle;
+    triangle.addTriangle(cueX, waveformBounds.getY() - 2.0f,
+                         cueX - 4.0f, waveformBounds.getY() - 10.0f,
+                         cueX + 4.0f, waveformBounds.getY() - 10.0f);
+    g.setColour(cue.color);
+    g.fillPath(triangle);
+
+    // Draw label
+    g.setColour(cue.color);
+    g.setFont(juce::FontOptions("HK Grotesk", 9.0f, juce::Font::bold));
+    g.drawText(cue.label,
+               juce::Rectangle<int>(static_cast<int>(cueX) - 20,
+                                    static_cast<int>(waveformBounds.getY() - 18),
+                                    40, 14),
+               juce::Justification::centredTop);
   }
 }
 

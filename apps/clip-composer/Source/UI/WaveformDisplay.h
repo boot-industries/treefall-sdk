@@ -7,6 +7,24 @@
 #include <map>
 #include <vector>
 
+// Cue marker types for DJ/broadcast cue points
+enum class CueType { Hook, Drop, Outro, Custom };
+
+struct CueMarker {
+  int64_t positionSamples = 0;
+  CueType type = CueType::Custom;
+  juce::String label;
+  juce::Colour color = juce::Colours::white;
+
+  static CueMarker hook(int64_t pos) { return {pos, CueType::Hook, "HOOK", juce::Colour(0xFFFF6B35)}; }     // Orange
+  static CueMarker drop(int64_t pos) { return {pos, CueType::Drop, "DROP", juce::Colour(0xFF4CAF50)}; }    // Green
+  static CueMarker outro(int64_t pos) { return {pos, CueType::Outro, "OUTRO", juce::Colour(0xFFE91E63)}; } // Pink
+  static CueMarker custom(int64_t pos, juce::String name, juce::Colour c = juce::Colours::white) {
+    return {pos, CueType::Custom, name, c};
+  }
+};
+
+
 //==============================================================================
 /**
  * WaveformDisplay - Component for rendering audio waveforms
@@ -45,6 +63,7 @@ public:
   // Zoom controls (5 levels: 1x, 2x, 4x, 8x, 16x)
   void setZoomLevel(int level,
                     float center = 0.5f); // 0=1x, 1=2x, 2=4x, 3=8x, 4=16x, center=0-1 normalized
+  void setZoomCenter(float centerNormalized); // 0-1 normalized, clamps to visible bounds
   int getZoomLevel() const {
     return m_zoomLevel;
   }
@@ -63,11 +82,20 @@ public:
   void mouseUp(const juce::MouseEvent& event) override;
 
   //==============================================================================
+  // Cue marker management
+  void addCueMarker(const CueMarker& marker);
+  void removeCueMarker(int64_t positionSamples);
+  void clearCueMarkers();
+  const std::vector<CueMarker>& getCueMarkers() const { return m_cueMarkers; }
+
+  //==============================================================================
   // Callbacks for interactive waveform editing
   std::function<void(int64_t samples)> onLeftClick;                               // Set IN point
   std::function<void(int64_t samples)> onRightClick;                              // Set OUT point
   std::function<void(int64_t samples)> onMiddleClick;                             // Jump transport
   std::function<void(int64_t inSamples, int64_t outSamples)> onTrimPointsChanged; // Drag update
+  std::function<void(const CueMarker&)> onCueMarkerAdded;
+  std::function<void(int64_t)> onCueMarkerRemoved;
 
 private:
   enum class DragHandle { None, TrimIn, TrimOut };
@@ -87,6 +115,7 @@ private:
   void generateWaveformData(const juce::File& audioFile);
   void drawWaveform(juce::Graphics& g, const juce::Rectangle<float>& bounds);
   void drawTrimMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+  void drawCueMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
   void drawAuditionHighlight(juce::Graphics& g, const juce::Rectangle<float>& bounds);
   void drawTimeScale(juce::Graphics& g, const juce::Rectangle<float>& bounds);
 
@@ -117,6 +146,9 @@ private:
   // Interaction mode
   bool m_threeButtonMouseMode =
       false; // false = default trackpad mode, true = SpotOn three-button mode
+
+  // Cue markers
+  std::vector<CueMarker> m_cueMarkers;
 
   juce::CriticalSection m_dataLock; // Protects waveform data during background generation
 
