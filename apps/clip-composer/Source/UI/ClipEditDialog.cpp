@@ -495,6 +495,36 @@ void ClipEditDialog::buildPhase1UI() {
       m_stopOthersButton->setToggleState(enabled, juce::sendNotification);
   };
   addAndMakeVisible(m_stopOthersChip.get());
+
+  // Action triad (AUDITION / REPLACE FILE / CLEAR) — design-kit spec
+  // These are ConsoleActionButton components with Ghost variant (no fill, text only)
+  // to match the mockup's unobtrusive action row.
+  m_auditionActionButton = std::make_unique<ConsoleActionButton>("auditionAction", ConsoleActionButton::Variant::Ghost);
+  m_auditionActionButton->setLabel("AUDITION");
+  m_auditionActionButton->onClick = [this]() {
+    if (onAuditionClicked)
+      onAuditionClicked();
+    // Also trigger playback via preview player for immediate audition
+    if (m_previewPlayer)
+      m_previewPlayer->play();
+  };
+  addAndMakeVisible(m_auditionActionButton.get());
+
+  m_replaceFileActionButton = std::make_unique<ConsoleActionButton>("replaceFileAction", ConsoleActionButton::Variant::Ghost);
+  m_replaceFileActionButton->setLabel("REPLACE FILE");
+  m_replaceFileActionButton->onClick = [this]() {
+    if (onReplaceFileClicked)
+      onReplaceFileClicked();
+  };
+  addAndMakeVisible(m_replaceFileActionButton.get());
+
+  m_clearActionButton = std::make_unique<ConsoleActionButton>("clearAction", ConsoleActionButton::Variant::Danger);
+  m_clearActionButton->setLabel("CLEAR");
+  m_clearActionButton->onClick = [this]() {
+    if (onClearClicked)
+      onClearClicked();
+  };
+  addAndMakeVisible(m_clearActionButton.get());
 }
 
 void ClipEditDialog::buildPhase2UI() {
@@ -1630,6 +1660,11 @@ void ClipEditDialog::paint(juce::Graphics& g) {
 
   // ADVANCED
   drawEyebrow("ADVANCED");
+  y += GRID * 3; // Advanced section height (gain, pitch, etc.)
+  y += kSectionGap;
+
+  // ACTIONS (for the action triad at bottom)
+  drawEyebrow("ACTIONS");
   (void)y;
 }
 
@@ -1915,9 +1950,22 @@ void ClipEditDialog::resized() {
   if (m_filePathEditor)
     m_filePathEditor->setVisible(false);
 
-  // ----- ACTION ROW: OK / Cancel pinned to the dialog bottom -----
+  // ----- ACTION ROW: Action triad (left) + OK / Cancel (right) pinned to dialog bottom -----
   auto footer = bounds.removeFromBottom(GRID * 5); // pulled from outer bounds, not contentArea
   footer.reduce(GRID * 2, GRID);
+
+  // Left side: Action triad (AUDITION / REPLACE FILE / CLEAR)
+  if (m_auditionActionButton && m_replaceFileActionButton && m_clearActionButton) {
+    const int actionBtnW = GRID * 9;
+    const int actionGap = GRID;
+    m_auditionActionButton->setBounds(footer.removeFromLeft(actionBtnW));
+    footer.removeFromLeft(actionGap);
+    m_replaceFileActionButton->setBounds(footer.removeFromLeft(actionBtnW));
+    footer.removeFromLeft(actionGap);
+    m_clearActionButton->setBounds(footer.removeFromLeft(actionBtnW));
+  }
+
+  // Right side: OK / Cancel
   if (m_okButton && m_cancelButton) {
     m_cancelButton->setBounds(footer.removeFromRight(GRID * 10));
     footer.removeFromRight(GRID);
