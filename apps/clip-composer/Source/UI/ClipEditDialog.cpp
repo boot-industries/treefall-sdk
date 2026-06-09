@@ -349,6 +349,34 @@ double ClipEditDialog::mapComboIdToFadeTime(int comboId) {
 }
 
 //==============================================================================
+void ClipEditDialog::updateAdvancedDisclosureIcon() {
+  if (!m_advancedDisclosureButton)
+    return;
+
+  juce::Path chevronPath;
+  if (m_advancedExpanded) {
+    // Up chevron (expanded): M7 14l5 -5 5 5
+    chevronPath.startNewSubPath(0.29f, 0.58f);
+    chevronPath.lineTo(0.5f, 0.21f);
+    chevronPath.lineTo(0.71f, 0.58f);
+  } else {
+    // Down chevron (collapsed): M7 10l5 5 5 -5
+    chevronPath.startNewSubPath(0.29f, 0.42f);
+    chevronPath.lineTo(0.5f, 0.79f);
+    chevronPath.lineTo(0.71f, 0.42f);
+  }
+
+  auto chevronIcon = std::make_unique<juce::DrawablePath>();
+  chevronIcon->setPath(chevronPath);
+  chevronIcon->setStrokeFill(juce::Colour(OCC::Design::kTextSecondary));
+  chevronIcon->setStrokeThickness(0.083f);
+  chevronIcon->setFill(juce::Colours::transparentBlack);
+  m_advancedDisclosureButton->setImages(chevronIcon.get());
+  chevronIcon.release();
+  m_advancedDisclosureButton->repaint();
+}
+
+//==============================================================================
 void ClipEditDialog::buildPhase1UI() {
   // Clip Name
   m_nameLabel = std::make_unique<juce::Label>("nameLabel", "Clip Name:");
@@ -525,6 +553,31 @@ void ClipEditDialog::buildPhase1UI() {
       onClearClicked();
   };
   addAndMakeVisible(m_clearActionButton.get());
+
+  // Advanced section disclosure button (chevron up/down next to ADVANCED eyebrow)
+  m_advancedDisclosureButton = std::make_unique<juce::DrawableButton>("advancedDisclosure", juce::DrawableButton::ImageFitted);
+  {
+    juce::Path chevronPath;
+    // Up chevron (expanded state): M7 14l5 -5 5 5
+    chevronPath.startNewSubPath(0.29f, 0.58f);
+    chevronPath.lineTo(0.5f, 0.21f);
+    chevronPath.lineTo(0.71f, 0.58f);
+    auto chevronIcon = std::make_unique<juce::DrawablePath>();
+    chevronIcon->setPath(chevronPath);
+    chevronIcon->setStrokeFill(juce::Colour(OCC::Design::kTextSecondary));
+    chevronIcon->setStrokeThickness(0.083f); // 2px in normalized coords
+    chevronIcon->setFill(juce::Colours::transparentBlack);
+    m_advancedDisclosureButton->setImages(chevronIcon.get());
+    chevronIcon.release();
+  }
+  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(OCC::Design::kBgComponent));
+  m_advancedDisclosureButton->onClick = [this]() {
+    m_advancedExpanded = !m_advancedExpanded;
+    updateAdvancedDisclosureIcon();
+    resized(); // Re-layout to show/hide advanced section
+  };
+  addAndMakeVisible(m_advancedDisclosureButton.get());
 }
 
 void ClipEditDialog::buildPhase2UI() {
@@ -1660,6 +1713,7 @@ void ClipEditDialog::paint(juce::Graphics& g) {
 
   // ADVANCED
   drawEyebrow("ADVANCED");
+  // Disclosure button space is reserved in resized()
   y += GRID * 3; // Advanced section height (gain, pitch, etc.)
   y += kSectionGap;
 

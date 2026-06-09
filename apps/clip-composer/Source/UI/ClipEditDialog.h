@@ -182,6 +182,9 @@ private:
   static int mapFadeTimeToComboId(double fadeSeconds);
   static double mapComboIdToFadeTime(int comboId);
 
+  // Advanced disclosure button
+  void updateAdvancedDisclosureIcon();
+
   //==============================================================================
   ClipMetadata m_metadata;
   AudioEngine* m_audioEngine = nullptr; // Non-owning reference
@@ -278,6 +281,10 @@ private:
   std::function<void()> onAuditionClicked;
   std::function<void()> onReplaceFileClicked;
   std::function<void()> onClearClicked;
+
+  // Advanced section disclosure state
+  bool m_advancedExpanded = true; // Default expanded
+  std::unique_ptr<juce::DrawableButton> m_advancedDisclosureButton;
 
   // Keyboard nudge acceleration timers (matches NudgeButton behavior for [ ] ; ' keys)
   class KeyboardNudgeTimer : public juce::Timer {
