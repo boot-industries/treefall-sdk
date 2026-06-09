@@ -112,14 +112,20 @@ void WaveformDisplay::setPlayheadPosition(int64_t samplePosition) {
 
     // Check if playhead escaped pagination zone
     if (playheadNormalized < leftEdge || playheadNormalized > rightEdge) {
-      // Playhead escaped - page viewport to position playhead at 10% from left
-      m_zoomCenter = playheadNormalized + (visibleWidth * kPaginationCenterOffset);
+      // Throttle pagination events to prevent excessive repaints during continuous playback
+      const int minIntervalMs = kPaginationMinIntervalMs;
+      if ((juce::Time::getCurrentTime() - m_lastPaginationTime).inMilliseconds() >= minIntervalMs) {
+        // Playhead escaped - page viewport to position playhead at 10% from left
+        m_zoomCenter = playheadNormalized + (visibleWidth * kPaginationCenterOffset);
 
-      // Clamp zoom center to keep viewport within boundaries
-      float halfWidth = visibleWidth / 2.0f;
-      m_zoomCenter = std::clamp(m_zoomCenter, halfWidth, 1.0f - halfWidth);
+        // Clamp zoom center to keep viewport within boundaries
+        float halfWidth = visibleWidth / 2.0f;
+        m_zoomCenter = std::clamp(m_zoomCenter, halfWidth, 1.0f - halfWidth);
 
-      DBG("WaveformDisplay: Playhead escaped pagination zone, paging to " << m_zoomCenter);
+        m_lastPaginationTime = juce::Time::getCurrentTime();
+
+        DBG("WaveformDisplay: Playhead escaped pagination zone, paging to " << m_zoomCenter);
+      }
     }
   }
 

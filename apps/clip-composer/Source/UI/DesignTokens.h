@@ -221,7 +221,11 @@ constexpr float kHandleHeight = 12.0f;    // Trim handle height
 // Pagination (auto-scroll during playback)
 constexpr float kPaginationLeftTrigger = 0.10f;  // 10% from left edge
 constexpr float kPaginationRightTrigger = 0.90f; // 90% from left edge
-constexpr float kPaginationCenterOffset = 0.40f; // Position playhead at 10% from left
+constexpr float kPaginationCenterOffset = 0.40f; // Position playhead at 10% from left after paging
+
+// Minimum time between pagination events to prevent excessive repaints during playback
+constexpr int kPaginationMinIntervalMs = 200;
+
 
 // Zoom levels (index → factor)
 constexpr float kZoomFactors[] = {1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
