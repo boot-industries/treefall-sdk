@@ -27,7 +27,9 @@
 
 class WaveformOverview : public juce::Component {
 public:
-  WaveformOverview() = default;
+  WaveformOverview() {
+    setInterceptsMouseClicks(false, false); // Passive minimap - don't intercept mouse events
+  }
 
   /** Set the audio file to render. WaveformOverview holds a downsampled
    *  copy of the file's peak data so paint() can run cheaply on the UI
