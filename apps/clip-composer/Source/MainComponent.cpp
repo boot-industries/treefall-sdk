@@ -1691,56 +1691,42 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
       }
     } else if (result == 8 && hasClip) {
       // Set Color - show ColorSwatchPicker popup
-      auto* colorGrid = new ColorSwatchGrid();
-
-      // Set current color if clip has one
       if (m_sessionManager->hasClip(buttonIndex)) {
         auto clipData = m_sessionManager->getClip(buttonIndex);
-        colorGrid->setSelectedColor(clipData.color);
-      }
 
-      // Color selection callback
-      colorGrid->onColorSelected = [this, buttonIndex](const juce::Colour& newColor) {
-        // Update button color
         auto button = m_clipGrid->getButton(buttonIndex);
         if (button) {
-          button->setClipColor(newColor);
+          // Center popup OVER the button (not below it)
+          auto buttonBounds = button->getScreenBounds();
+          int popupWidth = 12 * 28 + 11 * 6 + 16; // 12 cols, 2 rows, padding
+          int popupHeight = 2 * 28 + 6 + 16;
+          int popupX = buttonBounds.getCentreX() - (popupWidth / 2);
+          int popupY = buttonBounds.getCentreY() - (popupHeight / 2); // Hover over button
+          juce::Rectangle<int> popupBounds(popupX, popupY, popupWidth, popupHeight);
+
+          ColorSwatchPicker::showPopupAt(
+              popupBounds, clipData.color, [this, buttonIndex](const juce::Colour& newColor) {
+                // Update button color
+                auto button = m_clipGrid->getButton(buttonIndex);
+                if (button) {
+                  button->setClipColor(newColor);
+                }
+
+                // CRITICAL: Persist color to SessionManager (via UndoManager)
+                if (m_sessionManager->hasClip(buttonIndex)) {
+                  auto oldData = m_sessionManager->getClip(buttonIndex);
+                  auto newData = oldData;
+                  newData.color = newColor;
+                  auto cmd = std::make_unique<orpheus::EditClipCommand>(
+                      m_sessionManager.get(), m_sessionManager->getActiveTab(), buttonIndex,
+                      oldData, newData);
+                  m_undoManager->executeCommand(std::move(cmd));
+                }
+
+                DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
+              });
         }
-
-        // CRITICAL: Persist color to SessionManager (via UndoManager)
-        if (m_sessionManager->hasClip(buttonIndex)) {
-          auto oldData = m_sessionManager->getClip(buttonIndex);
-          auto newData = oldData;
-          newData.color = newColor;
-          auto cmd = std::make_unique<orpheus::EditClipCommand>(m_sessionManager.get(),
-                                                                m_sessionManager->getActiveTab(),
-                                                                buttonIndex, oldData, newData);
-          m_undoManager->executeCommand(std::move(cmd));
-        }
-
-        DBG("Button " << buttonIndex << ": Color changed to " << newColor.toString());
-      };
-
-      // Get button screen position to position popup hovering over it (centered)
-      auto button = m_clipGrid->getButton(buttonIndex);
-      juce::Rectangle<int> popupBounds;
-      if (button) {
-        auto buttonBounds = button->getScreenBounds();
-        int popupWidth = 284; // Tight fit for 4×12 grid
-        int popupHeight = 80; // 4 rows
-        // Center popup OVER the button (not below it)
-        int popupX = buttonBounds.getCentreX() - (popupWidth / 2);
-        int popupY = buttonBounds.getCentreY() - (popupHeight / 2); // Hover over button
-        popupBounds = juce::Rectangle<int>(popupX, popupY, popupWidth, popupHeight);
-      } else {
-        // Fallback: center on screen
-        popupBounds = juce::Rectangle<int>(getScreenX() + getWidth() / 2 - 142,
-                                           getScreenY() + getHeight() / 2 - 40, 284, 80);
       }
-
-      // Show popup (CallOutBox takes ownership and deletes grid when closed)
-      juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(colorGrid),
-                                             popupBounds, nullptr);
     }
   });
 }

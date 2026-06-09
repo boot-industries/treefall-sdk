@@ -8,51 +8,25 @@
 
 //==============================================================================
 /**
- * ColorSwatchGrid - The popup grid of color swatches (internal component)
+ * ColorSwatchPicker - Inline color chip row (Ableton-style / design-kit aligned)
  *
- * Displays a 5×14 grid of color swatches in a popup window.
- */
-class ColorSwatchGrid : public juce::Component {
-public:
-  ColorSwatchGrid();
-  ~ColorSwatchGrid() override = default;
-
-  void setSelectedColor(const juce::Colour& color);
-  juce::Colour getColorAtIndex(int index) const;
-
-  std::function<void(const juce::Colour&)> onColorSelected;
-
-  void paint(juce::Graphics& g) override;
-  void mouseDown(const juce::MouseEvent& event) override;
-
-private:
-  static constexpr int ROWS = 4;  // 48 swatches in 4 rows
-  static constexpr int COLS = 12; // 12 columns
-
-  std::vector<juce::Colour> m_colorPalette;
-  int m_selectedIndex = -1;
-
-  void initializeColorPalette();
-  int getSwatchIndexAt(int x, int y) const;
-
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColorSwatchGrid)
-};
-
-//==============================================================================
-/**
- * ColorSwatchPicker - Ableton-style expandable color selector
+ * Displays a horizontal row of color chips for quick color selection.
+ * Replaces the old popup-grid dropdown with an always-visible, scrollable row.
+ * Matches the Console design language: chips with inset style, amber-tinted
+ * when selected, blue focus halo.
  *
- * Displays current color as a button. Clicking opens a popup with full swatch grid.
- * Similar to Ableton Live's color picker UI pattern.
+ * Used in Clip Edit Dialog under COLOUR section (two-up with GROUP selector).
+ *
+ * Also provides a static method to create a compact popup for context menus.
  */
 class ColorSwatchPicker : public juce::Component {
 public:
   //==============================================================================
   ColorSwatchPicker();
-  ~ColorSwatchPicker() override;
+  ~ColorSwatchPicker() override = default;
 
   //==============================================================================
-  // Set currently selected color
+  // Set currently selected color (finds closest chip and highlights it)
   void setSelectedColor(const juce::Colour& color);
   juce::Colour getSelectedColor() const {
     return m_selectedColor;
@@ -65,15 +39,69 @@ public:
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
-  void mouseDown(const juce::MouseEvent& event) override;
+
+  //==============================================================================
+  // Create a compact color picker popup (for context menus)
+  // The popup uses CallOutBox and calls the callback on selection
+  static void showPopupAt(const juce::Rectangle<int>& screenBounds,
+                          const juce::Colour& currentColor,
+                          std::function<void(const juce::Colour&)> onSelect);
 
 private:
   //==============================================================================
-  void showColorPopup();
-  void hideColorPopup();
+  // Internal chip button for each color
+  class ColorChip : public juce::Button {
+  public:
+    ColorChip(const juce::Colour& color, int index)
+        : juce::Button("ColorChip" + juce::String(index)), m_color(color), m_chipIndex(index) {
+      setClickingTogglesState(true);
+      setWantsKeyboardFocus(true);
+    }
 
-  juce::Colour m_selectedColor;
-  bool m_isPopupVisible = false;
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool shouldDrawButtonAsDown) override;
+    void colourChanged() override;
+
+    juce::Colour m_color;
+    int m_chipIndex = -1;
+    bool m_isSelected = false;
+  };
+
+  // Compact popup component (used by showPopupAt)
+  class CompactPopup : public juce::Component {
+  public:
+    CompactPopup(const juce::Colour& currentColor,
+                 std::function<void(const juce::Colour&)> onSelect);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+  private:
+    void initializeColorPalette();
+    void createChips();
+    void updateChipSelection();
+    void selectColor(int index);
+
+    std::vector<juce::Colour> m_colorPalette;
+    juce::Colour m_selectedColor;
+    int m_selectedIndex = -1;
+    std::function<void(const juce::Colour&)> m_onSelect;
+    std::vector<std::unique_ptr<ColorChip>> m_chips;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompactPopup)
+  };
+
+  void initializeColorPalette();
+  void createChips();
+  void updateChipSelection();
+
+  // Color palette - 24 curated colors (2 rows of 12 for compact inline display)
+  std::vector<juce::Colour> m_colorPalette;
+  juce::Colour m_selectedColor = juce::Colours::red;
+  int m_selectedIndex = -1;
+
+  std::vector<std::unique_ptr<ColorChip>> m_chips;
+  juce::Viewport m_viewport;
+  std::unique_ptr<juce::Component> m_chipContainer;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColorSwatchPicker)
 };
