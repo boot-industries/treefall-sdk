@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ColorSwatchPicker.h"
+#include "ConsoleActionButton.h"
 #include "ConsoleChipButton.h"
 #include "GroupSelector.h"
 #include "PreviewPlayer.h"
@@ -267,6 +268,16 @@ private:
   // Dialog buttons
   std::unique_ptr<juce::TextButton> m_okButton;
   std::unique_ptr<juce::TextButton> m_cancelButton;
+
+  // Action triad (AUDITION / REPLACE FILE / CLEAR) - design-kit spec
+  std::unique_ptr<ConsoleActionButton> m_auditionActionButton;
+  std::unique_ptr<ConsoleActionButton> m_replaceFileActionButton;
+  std::unique_ptr<ConsoleActionButton> m_clearActionButton;
+
+  // Callbacks for action triad
+  std::function<void()> onAuditionClicked;
+  std::function<void()> onReplaceFileClicked;
+  std::function<void()> onClearClicked;
 
   // Keyboard nudge acceleration timers (matches NudgeButton behavior for [ ] ; ' keys)
   class KeyboardNudgeTimer : public juce::Timer {
