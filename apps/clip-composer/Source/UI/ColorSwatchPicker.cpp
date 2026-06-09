@@ -1,31 +1,75 @@
 // SPDX-License-Identifier: MIT
 
 #include "ColorSwatchPicker.h"
-#include <cmath>  // for std::abs
-#include <limits> // for std::numeric_limits
+#include "ConsoleTheme.h"
+#include "DesignTokens.h"
+
+using namespace OCC::Design;
 
 //==============================================================================
-// ColorSwatchGrid implementation (popup grid)
+// ColorChip implementation (shared by inline picker and compact popup)
 //==============================================================================
-ColorSwatchGrid::ColorSwatchGrid() {
-  initializeColorPalette();
-  m_selectedIndex = 0;
-  // 4:3 aspect swatches + 4px spacing, 4 rows × 12 columns = 48 swatches
-  // Calculate optimal dimensions for tight fit:
-  // Height = 80px, padding = 6px × 2 = 12px
-  // Available height = 80 - 12 = 68px
-  // Swatch height = (68 - (3 × 4spacing)) / 4 rows = (68 - 12) / 4 = 14px
-  // Swatch width = 14 × 4/3 = 18.67 ≈ 19px (rounded up)
-  // Total width = 12swatches × 19px + 11spacing × 4px + 12padding = 228 + 44 + 12 = 284px
-  setSize(284, 80); // Tight border for 4×12 grid
+void ColorSwatchPicker::ColorChip::paintButton(juce::Graphics& g,
+                                               bool shouldDrawButtonAsHighlighted,
+                                               bool shouldDrawButtonAsDown) {
+  auto bounds = getLocalBounds().toFloat();
+
+  // Base inset field style (Console matte well)
+  OCC::Console::drawInsetField(g, bounds);
+
+  // Fill with the chip's color
+  g.setColour(m_color);
+  g.fillRoundedRectangle(bounds.reduced(4.0f), 4.0f);
+
+  // Selection ring: amber-tinted when selected, subtle when not
+  if (m_isSelected) {
+    g.setColour(juce::Colour(OCC::Design::kAmber));
+    g.drawRoundedRectangle(bounds.reduced(4.0f), 4.0f, 2.5f);
+
+    // Inner highlight
+    g.setColour(juce::Colours::white.withAlpha(0.25f));
+    g.drawRoundedRectangle(bounds.reduced(6.0f), 4.0f, 1.0f);
+  } else {
+    // Subtle border for unselected chips
+    g.setColour(juce::Colours::white.withAlpha(0.08f));
+    g.drawRoundedRectangle(bounds.reduced(4.0f), 4.0f, 1.0f);
+  }
+
+  // Focus halo (blue) when keyboard-focused
+  if (hasKeyboardFocus(false)) {
+    g.setColour(juce::Colour(OCC::Design::kNeveBlue).withAlpha(0.6f));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), 5.0f, 2.0f);
+  }
+
+  // Down/pressed state
+  if (shouldDrawButtonAsDown) {
+    g.setColour(juce::Colours::black.withAlpha(0.2f));
+    g.fillRoundedRectangle(bounds.reduced(4.0f), 4.0f);
+  }
 }
 
-void ColorSwatchGrid::initializeColorPalette() {
-  // Professionally curated color palette (4 rows × 12 columns = 48 swatches)
-  // Evenly spaced through spectrum with optimal saturation/brightness for button visibility
-  // Designed for dark mode UI with excellent text contrast
+void ColorSwatchPicker::ColorChip::colourChanged() {
+  repaint();
+}
+
+//==============================================================================
+// ColorSwatchPicker (inline horizontal row) implementation
+//==============================================================================
+ColorSwatchPicker::ColorSwatchPicker() {
+  initializeColorPalette();
+  createChips();
+
+  // Viewport setup for horizontal scrolling
+  addAndMakeVisible(m_viewport);
+  m_viewport.setViewedComponent(m_chipContainer.get(), false);
+  m_viewport.setScrollBarsShown(false, false); // No visible scrollbars
+}
+
+void ColorSwatchPicker::initializeColorPalette() {
+  // 24 curated colors (2 rows of 12) for inline display
+  // Designed for dark mode UI with excellent text contrast on clip buttons
   m_colorPalette = {
-      // Row 1: Reds → Oranges → Yellows (warm spectrum)
+      // Row 1: Warm spectrum (reds -> oranges -> yellows)
       juce::Colour(0xffCC2936), // Deep red
       juce::Colour(0xffE63946), // Bright red
       juce::Colour(0xffF4442E), // Red-orange
@@ -39,51 +83,83 @@ void ColorSwatchGrid::initializeColorPalette() {
       juce::Colour(0xffFFF176), // Light yellow
       juce::Colour(0xffFFF9C4), // Pale yellow
 
-      // Row 2: Greens (lime → emerald → forest)
-      juce::Colour(0xffC3E991), // Pale lime
-      juce::Colour(0xffB8E986), // Light lime
-      juce::Colour(0xff9ACD32), // Yellow-green
-      juce::Colour(0xff7CB342), // Lime green
-      juce::Colour(0xff66BB6A), // Medium green
+      // Row 2: Cool spectrum (greens -> cyans -> blues -> purples -> magentas)
       juce::Colour(0xff4CAF50), // Green
-      juce::Colour(0xff43A047), // Forest green
-      juce::Colour(0xff388E3C), // Dark green
-      juce::Colour(0xff2E7D32), // Deep green
-      juce::Colour(0xff1B5E20), // Very dark green
-      juce::Colour(0xff00695C), // Teal green
-      juce::Colour(0xff004D40), // Dark teal
-
-      // Row 3: Cyans → Blues → Purples (cool spectrum)
       juce::Colour(0xff26C6DA), // Bright cyan
       juce::Colour(0xff00BCD4), // Cyan
-      juce::Colour(0xff0097A7), // Dark cyan
-      juce::Colour(0xff00ACC1), // Light blue
       juce::Colour(0xff039BE5), // Blue
       juce::Colour(0xff1976D2), // Strong blue
-      juce::Colour(0xff1565C0), // Deep blue
-      juce::Colour(0xff0D47A1), // Navy blue
-      juce::Colour(0xff5E35B1), // Deep purple
       juce::Colour(0xff7E57C2), // Medium purple
       juce::Colour(0xff9C27B0), // Purple
-      juce::Colour(0xffAB47BC), // Light purple
-
-      // Row 4: Magentas → Pinks → Browns → Neutrals
-      juce::Colour(0xffD81B60), // Magenta
       juce::Colour(0xffE91E63), // Pink
       juce::Colour(0xffF06292), // Light pink
-      juce::Colour(0xffEC407A), // Medium pink
-      juce::Colour(0xffF48FB1), // Pale pink
       juce::Colour(0xff8D6E63), // Brown
-      juce::Colour(0xffA1887F), // Light brown
-      juce::Colour(0xffBCAAA4), // Tan
       juce::Colour(0xffFFFFFF), // White
-      juce::Colour(0xffBDBDBD), // Light gray
-      juce::Colour(0xff616161), // Dark gray
-      juce::Colour(0xff212121), // Black
+      juce::Colour(0xff212121), // Black (dark neutral)
   };
 }
 
-void ColorSwatchGrid::setSelectedColor(const juce::Colour& color) {
+void ColorSwatchPicker::createChips() {
+  m_chipContainer = std::make_unique<juce::Component>();
+  m_chipContainer->setName("ColorChipContainer");
+
+  const int numColors = static_cast<int>(m_colorPalette.size());
+  const int chipWidth = 28;
+  const int chipHeight = 28;
+  const int spacing = 6;
+
+  for (int i = 0; i < numColors; ++i) {
+    auto chip = std::make_unique<ColorChip>(m_colorPalette[i], i);
+
+    chip->onClick = [this, i]() {
+      m_selectedIndex = i;
+      m_selectedColor = m_colorPalette[i];
+      updateChipSelection();
+
+      if (onColorSelected) {
+        onColorSelected(m_selectedColor);
+      }
+    };
+
+    m_chips.push_back(std::move(chip));
+    m_chipContainer->addAndMakeVisible(m_chips.back().get());
+  }
+
+  // Set container size to fit all chips horizontally
+  int totalWidth = numColors * chipWidth + (numColors - 1) * spacing;
+  m_chipContainer->setSize(totalWidth, chipHeight);
+}
+
+void ColorSwatchPicker::resized() {
+  // Viewport fills the entire component
+  m_viewport.setBounds(getLocalBounds());
+
+  // Position chip container at top-left of viewport
+  if (m_chipContainer) {
+    m_chipContainer->setTopLeftPosition(0, 0);
+
+    // Layout chips in a horizontal row
+    const int chipWidth = 28;
+    const int chipHeight = 28;
+    const int spacing = 6;
+
+    int x = 0;
+    for (auto& chip : m_chips) {
+      chip->setBounds(x, 0, chipWidth, chipHeight);
+      x += chipWidth + spacing;
+    }
+  }
+}
+
+void ColorSwatchPicker::paint(juce::Graphics& g) {
+  // Background matches Console inset field
+  auto bounds = getLocalBounds().toFloat();
+  OCC::Console::drawInsetField(g, bounds);
+}
+
+void ColorSwatchPicker::setSelectedColor(const juce::Colour& color) {
+  m_selectedColor = color;
+
   // Find closest matching color in palette
   m_selectedIndex = -1;
   float minDistance = std::numeric_limits<float>::max();
@@ -99,197 +175,147 @@ void ColorSwatchGrid::setSelectedColor(const juce::Colour& color) {
       m_selectedIndex = i;
     }
   }
+
+  updateChipSelection();
   repaint();
 }
 
-juce::Colour ColorSwatchGrid::getColorAtIndex(int index) const {
-  if (index >= 0 && index < static_cast<int>(m_colorPalette.size())) {
-    return m_colorPalette[index];
-  }
-  return juce::Colours::black;
-}
-
-void ColorSwatchGrid::paint(juce::Graphics& g) {
-  auto bounds = getLocalBounds();
-
-  // Draw background
-  g.setColour(juce::Colour(0xff2a2a2a));
-  g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
-
-  // Draw border
-  g.setColour(juce::Colour(0xff444444));
-  g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 4.0f, 1.0f);
-
-  // Calculate swatch dimensions (4:3 aspect ratio, increased spacing)
-  const int padding = 6;
-  const int swatchSpacing = 4; // Increased from 2px to 4px
-  int availableWidth = bounds.getWidth() - (padding * 2);
-  int availableHeight = bounds.getHeight() - (padding * 2);
-
-  // 4:3 aspect ratio swatches (width is 4/3 of height)
-  int swatchHeight = (availableHeight - (swatchSpacing * (ROWS - 1))) / ROWS;
-  int swatchWidth = (swatchHeight * 4) / 3; // 4:3 ratio
-
-  // Draw color swatches
-  for (int row = 0; row < ROWS; ++row) {
-    for (int col = 0; col < COLS; ++col) {
-      int index = row * COLS + col;
-      if (index < static_cast<int>(m_colorPalette.size())) {
-        int x = padding + col * (swatchWidth + swatchSpacing);
-        int y = padding + row * (swatchHeight + swatchSpacing);
-
-        // Draw swatch
-        g.setColour(m_colorPalette[index]);
-        g.fillRect(x, y, swatchWidth, swatchHeight);
-
-        // Draw selection border if this is the selected swatch
-        if (index == m_selectedIndex) {
-          g.setColour(juce::Colours::white);
-          g.drawRect(x - 1, y - 1, swatchWidth + 2, swatchHeight + 2, 2);
-        }
-      }
-    }
-  }
-}
-
-void ColorSwatchGrid::mouseDown(const juce::MouseEvent& event) {
-  int index = getSwatchIndexAt(event.x, event.y);
-
-  if (index >= 0 && index < static_cast<int>(m_colorPalette.size())) {
-    m_selectedIndex = index;
-
-    if (onColorSelected) {
-      onColorSelected(m_colorPalette[index]);
-    }
-
-    repaint();
-  }
-}
-
-int ColorSwatchGrid::getSwatchIndexAt(int x, int y) const {
-  auto bounds = getLocalBounds();
-
-  const int padding = 6;
-  const int swatchSpacing = 4; // Match paint() spacing
-  int availableWidth = bounds.getWidth() - (padding * 2);
-  int availableHeight = bounds.getHeight() - (padding * 2);
-
-  // 4:3 aspect ratio swatches (must match paint() logic)
-  int swatchHeight = (availableHeight - (swatchSpacing * (ROWS - 1))) / ROWS;
-  int swatchWidth = (swatchHeight * 4) / 3; // 4:3 ratio
-
-  // Check if click is within the swatch grid
-  int relX = x - padding;
-  int relY = y - padding;
-
-  if (relX < 0 || relY < 0)
-    return -1;
-
-  // Calculate which swatch was clicked
-  int col = relX / (swatchWidth + swatchSpacing);
-  int row = relY / (swatchHeight + swatchSpacing);
-
-  if (col >= COLS || row >= ROWS)
-    return -1;
-
-  // Verify click is within swatch bounds (not in spacing)
-  int swatchX = col * (swatchWidth + swatchSpacing);
-  int swatchY = row * (swatchHeight + swatchSpacing);
-
-  if (relX < swatchX || relX >= swatchX + swatchWidth || relY < swatchY ||
-      relY >= swatchY + swatchHeight) {
-    return -1;
+void ColorSwatchPicker::updateChipSelection() {
+  for (auto& chip : m_chips) {
+    chip->m_isSelected = (chip->m_chipIndex == m_selectedIndex);
+    chip->setToggleState(chip->m_isSelected, juce::dontSendNotification);
+    chip->repaint();
   }
 
-  return row * COLS + col;
+  // Scroll viewport to show selected chip
+  if (m_selectedIndex >= 0 && m_chipContainer &&
+      m_selectedIndex < static_cast<int>(m_chips.size())) {
+    const int chipWidth = 28;
+    const int spacing = 6;
+    int targetX = m_selectedIndex * (chipWidth + spacing);
+
+    // Center the selected chip in the viewport
+    int viewportWidth = m_viewport.getWidth();
+    int centerX = targetX - (viewportWidth / 2) + (chipWidth / 2);
+
+    m_viewport.setViewPosition(juce::jmax(0, centerX), 0);
+  }
 }
 
 //==============================================================================
-// ColorSwatchPicker implementation (compact button with popup)
+// CompactPopup implementation (for context menu popup)
 //==============================================================================
-ColorSwatchPicker::ColorSwatchPicker() {
-  m_selectedColor = juce::Colours::red; // Default color
+ColorSwatchPicker::CompactPopup::CompactPopup(const juce::Colour& currentColor,
+                                              std::function<void(const juce::Colour&)> onSelect)
+    : m_selectedColor(currentColor), m_onSelect(std::move(onSelect)) {
+  initializeColorPalette();
+  createChips();
+  updateChipSelection();
 }
 
-ColorSwatchPicker::~ColorSwatchPicker() {
-  hideColorPopup();
-}
-
-void ColorSwatchPicker::setSelectedColor(const juce::Colour& color) {
-  m_selectedColor = color;
-  repaint();
-}
-
-void ColorSwatchPicker::paint(juce::Graphics& g) {
-  auto bounds = getLocalBounds();
-
-  // Fill ENTIRE button background with clip's current color
-  g.setColour(m_selectedColor);
-  g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
-
-  // Draw border (darker for contrast)
-  g.setColour(juce::Colour(0xff222222));
-  g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 4.0f, 1.0f);
-
-  // Draw dropdown indicator (small triangle on right)
-  // Use contrasting color based on brightness
-  auto triangleArea = bounds.removeFromRight(20);
-  juce::Path triangle;
-  triangle.addTriangle(triangleArea.getCentreX() - 4.0f, triangleArea.getCentreY() - 2.0f,
-                       triangleArea.getCentreX() + 4.0f, triangleArea.getCentreY() - 2.0f,
-                       triangleArea.getCentreX(), triangleArea.getCentreY() + 3.0f);
-
-  // Use white or black triangle depending on background brightness
-  float brightness = m_selectedColor.getBrightness();
-  g.setColour(brightness > 0.5f ? juce::Colours::black.withAlpha(0.7f)
-                                : juce::Colours::white.withAlpha(0.7f));
-  g.fillPath(triangle);
-}
-
-void ColorSwatchPicker::resized() {
-  // Nothing needed here
-}
-
-void ColorSwatchPicker::mouseDown(const juce::MouseEvent& /*event*/) {
-  if (m_isPopupVisible) {
-    hideColorPopup();
-  } else {
-    showColorPopup();
-  }
-}
-
-void ColorSwatchPicker::showColorPopup() {
-  auto* grid = new ColorSwatchGrid();
-  grid->setSelectedColor(m_selectedColor);
-
-  // IMPORTANT: Don't capture 'grid' pointer - it will be owned and deleted by CallOutBox
-  // Only capture 'this' to update the parent picker's color
-  grid->onColorSelected = [this](const juce::Colour& color) {
-    m_selectedColor = color;
-    if (onColorSelected) {
-      onColorSelected(color);
-    }
-    repaint();
-    // Note: Don't call hideColorPopup() - CallOutBox manages its own lifetime
+void ColorSwatchPicker::CompactPopup::initializeColorPalette() {
+  // Same 24 curated colors as inline picker
+  m_colorPalette = {
+      juce::Colour(0xffCC2936), juce::Colour(0xffE63946), juce::Colour(0xffF4442E),
+      juce::Colour(0xffFF6B35), juce::Colour(0xffFF8C42), juce::Colour(0xffFFA500),
+      juce::Colour(0xffFFB627), juce::Colour(0xffFFC857), juce::Colour(0xffFFD93D),
+      juce::Colour(0xffFFE66D), juce::Colour(0xffFFF176), juce::Colour(0xffFFF9C4),
+      juce::Colour(0xff4CAF50), juce::Colour(0xff26C6DA), juce::Colour(0xff00BCD4),
+      juce::Colour(0xff039BE5), juce::Colour(0xff1976D2), juce::Colour(0xff7E57C2),
+      juce::Colour(0xff9C27B0), juce::Colour(0xffE91E63), juce::Colour(0xffF06292),
+      juce::Colour(0xff8D6E63), juce::Colour(0xffFFFFFF), juce::Colour(0xff212121),
   };
-
-  // Create popup hovering over the button (centered on parent)
-  auto bounds = getScreenBounds();
-  int popupWidth = 284;                                 // Tight fit for 4×12 grid
-  int popupHeight = 80;                                 // 4 rows
-  int popupX = bounds.getCentreX() - (popupWidth / 2);  // Center horizontally to parent
-  int popupY = bounds.getCentreY() - (popupHeight / 2); // Center vertically (hover over button)
-  juce::Rectangle<int> popupBounds(popupX, popupY, popupWidth, popupHeight);
-
-  m_isPopupVisible = true;
-
-  // CallOutBox takes ownership and will delete the grid when closed
-  // Don't store it in m_popupHolder - that would cause double-delete
-  juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(grid), popupBounds,
-                                         nullptr);
 }
 
-void ColorSwatchPicker::hideColorPopup() {
-  // CallOutBox manages its own lifetime, we just track visibility state
-  m_isPopupVisible = false;
+void ColorSwatchPicker::CompactPopup::createChips() {
+  const int numColors = static_cast<int>(m_colorPalette.size());
+  const int chipWidth = 28;
+  const int chipHeight = 28;
+  const int spacing = 6;
+  const int cols = 12;
+  const int rows = 2;
+
+  for (int i = 0; i < numColors; ++i) {
+    auto chip = std::make_unique<ColorChip>(m_colorPalette[i], i);
+
+    chip->onClick = [this, i]() { selectColor(i); };
+
+    m_chips.push_back(std::move(chip));
+    addAndMakeVisible(m_chips.back().get());
+  }
+
+  // Set component size for 2-row grid
+  int totalWidth = cols * chipWidth + (cols - 1) * spacing;
+  int totalHeight = rows * chipHeight + (rows - 1) * spacing;
+  setSize(totalWidth + 16, totalHeight + 16); // Add padding
+}
+
+void ColorSwatchPicker::CompactPopup::resized() {
+  const int chipWidth = 28;
+  const int chipHeight = 28;
+  const int spacing = 6;
+  const int cols = 12;
+  const int padding = 8;
+
+  int x = padding;
+  int y = padding;
+
+  for (int i = 0; i < static_cast<int>(m_chips.size()); ++i) {
+    int col = i % cols;
+    int row = i / cols;
+
+    x = padding + col * (chipWidth + spacing);
+    y = padding + row * (chipHeight + spacing);
+
+    m_chips[i]->setBounds(x, y, chipWidth, chipHeight);
+  }
+}
+
+void ColorSwatchPicker::CompactPopup::paint(juce::Graphics& g) {
+  auto bounds = getLocalBounds().toFloat();
+  // Console chassis background with rounded corners
+  g.setColour(juce::Colour(OCC::Design::kBgComponent));
+  g.fillRoundedRectangle(bounds.reduced(2.0f), 6.0f);
+  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.drawRoundedRectangle(bounds.reduced(2.0f), 6.0f, 1.5f);
+}
+
+void ColorSwatchPicker::CompactPopup::updateChipSelection() {
+  for (auto& chip : m_chips) {
+    chip->m_isSelected = (chip->m_chipIndex == m_selectedIndex);
+    chip->setToggleState(chip->m_isSelected, juce::dontSendNotification);
+    chip->repaint();
+  }
+}
+
+void ColorSwatchPicker::CompactPopup::selectColor(int index) {
+  if (index < 0 || index >= static_cast<int>(m_colorPalette.size()))
+    return;
+
+  m_selectedIndex = index;
+  m_selectedColor = m_colorPalette[index];
+  updateChipSelection();
+
+  if (m_onSelect) {
+    m_onSelect(m_selectedColor);
+  }
+
+  // Close the popup (CallOutBox will handle cleanup)
+  if (auto* parent = getParentComponent()) {
+    if (auto* callOutBox = dynamic_cast<juce::CallOutBox*>(parent)) {
+      callOutBox->dismiss();
+    }
+  }
+}
+
+//==============================================================================
+// Static method to show compact popup
+//==============================================================================
+void ColorSwatchPicker::showPopupAt(const juce::Rectangle<int>& screenBounds,
+                                    const juce::Colour& currentColor,
+                                    std::function<void(const juce::Colour&)> onSelect) {
+  auto* popup = new CompactPopup(currentColor, std::move(onSelect));
+
+  juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(popup), screenBounds,
+                                         nullptr);
 }
