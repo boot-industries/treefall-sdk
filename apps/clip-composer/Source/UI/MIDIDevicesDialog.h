@@ -6,12 +6,14 @@
     Author:  Orpheus Clip Composer
 
     Sprint 11: MIDI Device Configuration Dialog (OCC116)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #pragma once
 
+#include "ConsoleActionButton.h"
 #include "../Core/MIDIDeviceManager.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -82,10 +84,10 @@ private:
   juce::ToggleButton m_sendAllNotesOffCheckbox;
 
   // Buttons
-  juce::TextButton m_monitorButton;
-  juce::TextButton m_refreshButton;
-  juce::TextButton m_okButton;
-  juce::TextButton m_cancelButton;
+  std::unique_ptr<ConsoleActionButton> m_monitorButton;
+  std::unique_ptr<ConsoleActionButton> m_refreshButton;
+  std::unique_ptr<ConsoleActionButton> m_okButton;
+  std::unique_ptr<ConsoleActionButton> m_cancelButton;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MIDIDevicesDialog)
 };

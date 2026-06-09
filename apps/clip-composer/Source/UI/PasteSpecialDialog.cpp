@@ -6,34 +6,40 @@
     Author:  Orpheus Clip Composer
 
     Sprint 17: Paste Special Dialog (OCC117)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #include "PasteSpecialDialog.h"
 #include "../Core/GridConstants.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
+
+using namespace OCC::Design;
 
 PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
                                        const SessionManager::ClipData& sourceClip, int currentTab)
     : m_sessionManager(sessionManager), m_sourceClip(sourceClip), m_currentTab(currentTab) {
+  setSize(420, 540);
 
   // Title
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("Paste Special", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+  m_titleLabel.setFont(OCC::Console::consoleFont(18.0f, juce::Font::bold));
   m_titleLabel.setJustificationType(juce::Justification::centred);
+  m_titleLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_sourceLabel);
-  m_sourceLabel.setText("Source: " + juce::String(sourceClip.displayName),
-                        juce::dontSendNotification);
+  m_sourceLabel.setText("Source: " + juce::String(sourceClip.displayName), juce::dontSendNotification);
   m_sourceLabel.setJustificationType(juce::Justification::centred);
-  m_sourceLabel.setColour(juce::Label::textColourId, juce::Colour(OCC::Design::kTextMuted));
+  m_sourceLabel.setColour(juce::Label::textColourId, juce::Colour(kTextMuted));
 
   // Levels section
   addAndMakeVisible(m_levelsLabel);
   m_levelsLabel.setText("Levels", juce::dontSendNotification);
-  m_levelsLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+  m_levelsLabel.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+  m_levelsLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_gainAbsoluteCheckbox);
   m_gainAbsoluteCheckbox.setButtonText("Gain (Absolute)");
@@ -43,6 +49,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
     }
     updateControlStates();
   };
+  m_gainAbsoluteCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_gainRelativeCheckbox);
   m_gainRelativeCheckbox.setButtonText("Gain (Relative)");
@@ -52,6 +59,7 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
     }
     updateControlStates();
   };
+  m_gainRelativeCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_gainRelativeSlider);
   m_gainRelativeSlider.setRange(-30.0, 10.0, 0.1);
@@ -61,14 +69,19 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
     m_gainRelativeValueLabel.setText(juce::String(m_gainRelativeSlider.getValue(), 1) + " dB",
                                      juce::dontSendNotification);
   };
+  m_gainRelativeSlider.setColour(juce::Slider::trackColourId, juce::Colour(kNeveBlue));
+  m_gainRelativeSlider.setColour(juce::Slider::thumbColourId, juce::Colour(kNeveBlue));
 
   addAndMakeVisible(m_gainRelativeValueLabel);
   m_gainRelativeValueLabel.setText("0.0 dB", juce::dontSendNotification);
+  m_gainRelativeValueLabel.setFont(OCC::Console::monoFont(11.0f));
+  m_gainRelativeValueLabel.setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
 
   // Fades section
   addAndMakeVisible(m_fadesLabel);
   m_fadesLabel.setText("Fades", juce::dontSendNotification);
-  m_fadesLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+  m_fadesLabel.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+  m_fadesLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_fadeInCheckbox);
   m_fadeInCheckbox.setButtonText("Fade In Time");
@@ -77,9 +90,11 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
       m_fadeInCurveCheckbox.setToggleState(true, juce::dontSendNotification);
     }
   };
+  m_fadeInCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_fadeInCurveCheckbox);
   m_fadeInCurveCheckbox.setButtonText("Fade In Curve");
+  m_fadeInCurveCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_fadeOutCheckbox);
   m_fadeOutCheckbox.setButtonText("Fade Out Time");
@@ -88,96 +103,123 @@ PasteSpecialDialog::PasteSpecialDialog(SessionManager* sessionManager,
       m_fadeOutCurveCheckbox.setToggleState(true, juce::dontSendNotification);
     }
   };
+  m_fadeOutCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_fadeOutCurveCheckbox);
   m_fadeOutCurveCheckbox.setButtonText("Fade Out Curve");
+  m_fadeOutCurveCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   // Misc section
   addAndMakeVisible(m_miscLabel);
   m_miscLabel.setText("Misc", juce::dontSendNotification);
-  m_miscLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+  m_miscLabel.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+  m_miscLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_colorCheckbox);
   m_colorCheckbox.setButtonText("Color");
+  m_colorCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_clipGroupCheckbox);
   m_clipGroupCheckbox.setButtonText("Clip Group");
+  m_clipGroupCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_loopCheckbox);
   m_loopCheckbox.setButtonText("Loop");
+  m_loopCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_stopOthersCheckbox);
   m_stopOthersCheckbox.setButtonText("Stop Others");
+  m_stopOthersCheckbox.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   // Scope section
   addAndMakeVisible(m_scopeLabel);
   m_scopeLabel.setText("Paste To:", juce::dontSendNotification);
-  m_scopeLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+  m_scopeLabel.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+  m_scopeLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_scopeCurrentPageRadio);
   m_scopeCurrentPageRadio.setButtonText("Current Page");
   m_scopeCurrentPageRadio.setRadioGroupId(1);
   m_scopeCurrentPageRadio.setToggleState(true, juce::dontSendNotification);
   m_scopeCurrentPageRadio.onClick = [this]() { updateControlStates(); };
+  m_scopeCurrentPageRadio.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_scopeAllPagesRadio);
   m_scopeAllPagesRadio.setButtonText("All Pages");
   m_scopeAllPagesRadio.setRadioGroupId(1);
   m_scopeAllPagesRadio.onClick = [this]() { updateControlStates(); };
+  m_scopeAllPagesRadio.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_scopeRangeRadio);
   m_scopeRangeRadio.setButtonText("Range:");
   m_scopeRangeRadio.setRadioGroupId(1);
   m_scopeRangeRadio.onClick = [this]() { updateControlStates(); };
+  m_scopeRangeRadio.setColour(juce::ToggleButton::textColourId, juce::Colour(kTextPrimary));
 
   addAndMakeVisible(m_rangeStartEditor);
   m_rangeStartEditor.setText("1");
   m_rangeStartEditor.setInputRestrictions(3, "0123456789");
+  m_rangeStartEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(kBgInset));
+  m_rangeStartEditor.setColour(juce::TextEditor::textColourId, juce::Colour(kTextPrimary));
+  m_rangeStartEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(kBorderDefault));
 
   addAndMakeVisible(m_rangeDashLabel);
-  m_rangeDashLabel.setText("-", juce::dontSendNotification);
+  m_rangeDashLabel.setText("\u2013", juce::dontSendNotification); // en-dash
   m_rangeDashLabel.setJustificationType(juce::Justification::centred);
+  m_rangeDashLabel.setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
 
   addAndMakeVisible(m_rangeEndEditor);
   m_rangeEndEditor.setText(juce::String(occ::TOTAL_BUTTONS));
   m_rangeEndEditor.setInputRestrictions(3, "0123456789");
+  m_rangeEndEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(kBgInset));
+  m_rangeEndEditor.setColour(juce::TextEditor::textColourId, juce::Colour(kTextPrimary));
+  m_rangeEndEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(kBorderDefault));
 
-  // Buttons
-  addAndMakeVisible(m_clearAllButton);
-  m_clearAllButton.setButtonText("Clear All");
-  m_clearAllButton.onClick = [this]() { clearAllOptions(); };
+  // Buttons - ConsoleActionButton
+  m_clearAllButton = std::make_unique<ConsoleActionButton>("paste-clear", ConsoleActionButton::Variant::Ghost);
+  m_clearAllButton->setLabel("CLEAR ALL");
+  m_clearAllButton->onClick = [this]() { clearAllOptions(); };
+  addAndMakeVisible(m_clearAllButton.get());
 
-  addAndMakeVisible(m_okButton);
-  m_okButton.setButtonText("OK");
-  m_okButton.onClick = [this]() {
+  m_okButton = std::make_unique<ConsoleActionButton>("paste-ok", ConsoleActionButton::Variant::Primary);
+  m_okButton->setLabel("OK");
+  m_okButton->onClick = [this]() {
     if (onOkClicked)
       onOkClicked();
   };
+  addAndMakeVisible(m_okButton.get());
 
-  addAndMakeVisible(m_cancelButton);
-  m_cancelButton.setButtonText("Cancel");
-  m_cancelButton.onClick = [this]() {
+  m_cancelButton = std::make_unique<ConsoleActionButton>("paste-cancel", ConsoleActionButton::Variant::Default);
+  m_cancelButton->setLabel("CANCEL");
+  m_cancelButton->onClick = [this]() {
     if (onCancelClicked)
       onCancelClicked();
   };
+  addAndMakeVisible(m_cancelButton.get());
 
   updateControlStates();
-  setSize(400, 520);
 }
 
 void PasteSpecialDialog::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
+  // Console chassis background
+  g.fillAll(juce::Colour(kBgSurface));
 
-  // Draw border
-  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
-  g.drawRect(getLocalBounds(), 1);
+  // Title bar - eyebrow + title
+  auto titleBar = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), 44.0f);
+  g.setColour(juce::Colour(kBgComponent));
+  g.fillRect(titleBar);
+  g.setColour(juce::Colour(kBorderDefault));
+  g.drawHorizontalLine(44, 0.0f, static_cast<float>(getWidth()));
 
-  // Draw section separators
-  g.setColour(juce::Colour(OCC::Design::kBorderDefault).withAlpha(0.65f));
-  g.drawHorizontalLine(85, 10, getWidth() - 10);
-  g.drawHorizontalLine(175, 10, getWidth() - 10);
-  g.drawHorizontalLine(285, 10, getWidth() - 10);
-  g.drawHorizontalLine(385, 10, getWidth() - 10);
+  // Eyebrow
+  g.setColour(juce::Colour(kTextSecondary));
+  g.setFont(OCC::Console::monoFont(10.0f, juce::Font::bold));
+  g.drawText("EDIT", 20, 6, 200, 14, juce::Justification::centredLeft, false);
+
+  // Bold title
+  g.setColour(juce::Colour(kTextPrimary));
+  g.setFont(OCC::Console::consoleFont(18.0f, juce::Font::bold));
+  g.drawText("Paste Special", 20, 20, getWidth() - 40, 22, juce::Justification::centredLeft, false);
 }
 
 void PasteSpecialDialog::resized() {
@@ -234,11 +276,11 @@ void PasteSpecialDialog::resized() {
 
   // Buttons at bottom
   auto buttonArea = getLocalBounds().reduced(15).removeFromBottom(35);
-  m_cancelButton.setBounds(buttonArea.removeFromRight(80));
+  m_cancelButton->setBounds(buttonArea.removeFromRight(80));
   buttonArea.removeFromRight(10);
-  m_okButton.setBounds(buttonArea.removeFromRight(80));
+  m_okButton->setBounds(buttonArea.removeFromRight(80));
   buttonArea.removeFromRight(20);
-  m_clearAllButton.setBounds(buttonArea.removeFromLeft(80));
+  m_clearAllButton->setBounds(buttonArea.removeFromLeft(80));
 }
 
 orpheus::PasteSpecialOptions PasteSpecialDialog::getOptions() const {

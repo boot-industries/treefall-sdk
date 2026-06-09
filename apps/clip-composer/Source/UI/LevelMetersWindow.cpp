@@ -6,20 +6,23 @@
     Author:  Orpheus Clip Composer
 
     Sprint 19: Level Meters Window with Play History (OCC117)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #include "LevelMetersWindow.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
+
+using namespace OCC::Design;
 
 //==============================================================================
 // LevelMetersWindow
 
 LevelMetersWindow::LevelMetersWindow(AudioEngine* audioEngine)
-    : DocumentWindow("Level Meters", juce::Colour(OCC::Design::kBgSurface),
+    : DocumentWindow("Level Meters", juce::Colour(kBgSurface),
                      DocumentWindow::closeButton | DocumentWindow::minimiseButton) {
-
   m_content = std::make_unique<Content>(audioEngine);
   setContentOwned(m_content.release(), true);
 
@@ -52,12 +55,12 @@ void LevelMetersWindow::addPlayHistoryEntry(int clipIndex, const juce::String& c
 // Content
 
 LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(audioEngine) {
-
   // Title label
   addAndMakeVisible(m_titleLabel);
   m_titleLabel.setText("Level Meters", juce::dontSendNotification);
-  m_titleLabel.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
+  m_titleLabel.setFont(OCC::Console::consoleFont(16.0f, juce::Font::bold));
   m_titleLabel.setJustificationType(juce::Justification::centred);
+  m_titleLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   // History text area
   addAndMakeVisible(m_historyText);
@@ -65,11 +68,20 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
   m_historyText.setReadOnly(true);
   m_historyText.setScrollbarsShown(true);
   m_historyText.setCaretVisible(false);
-  m_historyText.setColour(juce::TextEditor::backgroundColourId,
-                          juce::Colour(OCC::Design::kBgPrimary));
-  m_historyText.setColour(juce::TextEditor::textColourId, juce::Colour(OCC::Design::kTextPrimary));
+  m_historyText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(kBgPrimary));
+  m_historyText.setColour(juce::TextEditor::textColourId, juce::Colour(kTextPrimary));
   m_historyText.setFont(juce::Font(
       juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
+
+  // Clear button
+  m_clearButton = std::make_unique<ConsoleActionButton>("meters-clear", ConsoleActionButton::Variant::Danger);
+  m_clearButton->setLabel("CLEAR HISTORY");
+  m_clearButton->onClick = [this]() {
+    juce::ScopedLock lock(m_historyLock);
+    m_playHistory.clear();
+    m_historyText.clear();
+  };
+  addAndMakeVisible(m_clearButton.get());
 
   // Initialize peak hold times
   auto now = juce::Time::getCurrentTime();
@@ -82,11 +94,12 @@ LevelMetersWindow::Content::Content(AudioEngine* audioEngine) : m_audioEngine(au
 }
 
 void LevelMetersWindow::Content::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
+  // Console chassis background
+  g.fillAll(juce::Colour(kBgSurface));
 
   // Draw meters
   auto area = getLocalBounds().reduced(10);
-  area.removeFromTop(30); // Title
+  area.removeFromTop(35); // Title
 
   // Meter section (top 200px)
   auto meterArea = area.removeFromTop(200);
@@ -118,11 +131,11 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
                                             float level, float peakLevel,
                                             const juce::String& label) {
   // Background
-  g.setColour(juce::Colour(OCC::Design::kBgPrimary));
+  g.setColour(juce::Colour(kBgPrimary));
   g.fillRect(bounds);
 
   // Border
-  g.setColour(juce::Colour(OCC::Design::kBorderDefault));
+  g.setColour(juce::Colour(kBorderDefault));
   g.drawRect(bounds, 1);
 
   // Meter fill
@@ -141,11 +154,11 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
     // Simple color based on level
     juce::Colour meterColor;
     if (fillRatio > 0.9f) {
-      meterColor = juce::Colours::red;
+      meterColor = juce::Colour(kMeterRed);
     } else if (fillRatio > 0.7f) {
-      meterColor = juce::Colours::yellow;
+      meterColor = juce::Colour(kMeterYellow);
     } else {
-      meterColor = juce::Colours::green;
+      meterColor = juce::Colour(kMeterGreen);
     }
     g.setColour(meterColor);
     g.fillRect(fillBounds);
@@ -162,12 +175,12 @@ void LevelMetersWindow::Content::paintMeter(juce::Graphics& g, juce::Rectangle<i
 
   // Label
   g.setColour(juce::Colours::white);
-  g.setFont(juce::Font(juce::FontOptions(11.0f)));
+  g.setFont(OCC::Console::consoleFont(11.0f));
   g.drawText(label, labelArea, juce::Justification::centred);
 
   auto valueArea = bounds.removeFromTop(16);
   g.setColour(juce::Colours::lightgrey);
-  g.setFont(juce::Font(juce::FontOptions(10.0f)));
+  g.setFont(OCC::Console::monoFont(10.0f));
   g.drawText(juce::String(level * 100.0f, 0) + "%", valueArea, juce::Justification::centredTop);
 }
 
@@ -182,10 +195,17 @@ void LevelMetersWindow::Content::resized() {
   area.removeFromTop(200);
   area.removeFromTop(10);
 
+  // Clear history button
+  m_clearButton->setBounds(area.removeFromTop(30).reduced(0, 2));
+  area.removeFromTop(10);
+
   // History label
   auto historyLabelArea = area.removeFromTop(20);
-  juce::Graphics g(juce::Image(juce::Image::RGB, 1, 1, false));
-  g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+  juce::Label tempLabel;
+  tempLabel.setFont(OCC::Console::consoleFont(12.0f, juce::Font::bold));
+  tempLabel.setColour(juce::Label::textColourId, juce::Colour(kTextSecondary));
+  tempLabel.setText("Play History:", juce::dontSendNotification);
+  tempLabel.setBounds(historyLabelArea);
 
   // History text takes remaining space
   m_historyText.setBounds(area);

@@ -6,20 +6,23 @@
     Author:  Orpheus Clip Composer
 
     Sprint 12: MIDI Monitor Window (OCC116)
+    OCC149: Updated with Console design language
 
   ==============================================================================
 */
 
 #include "MIDIMonitorWindow.h"
+#include "ConsoleTheme.h"
 #include "DesignTokens.h"
+
+using namespace OCC::Design;
 
 //==============================================================================
 // MIDIMonitorWindow
 
 MIDIMonitorWindow::MIDIMonitorWindow(orpheus::MIDIDeviceManager* midiManager)
-    : DocumentWindow("MIDI Monitor", juce::Colour(OCC::Design::kBgSurface),
+    : DocumentWindow("MIDI Monitor", juce::Colour(kBgSurface),
                      DocumentWindow::closeButton | DocumentWindow::minimiseButton) {
-
   m_content = std::make_unique<Content>(midiManager);
   setContentOwned(m_content.release(), true);
 
@@ -56,11 +59,11 @@ void MIDIMonitorWindow::addMessage(const juce::MidiMessage& message, const juce:
 
 MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
     : m_midiManager(midiManager) {
-
   // Status label
   addAndMakeVisible(m_statusLabel);
   m_statusLabel.setText("MIDI Monitor - Running", juce::dontSendNotification);
-  m_statusLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+  m_statusLabel.setFont(OCC::Console::consoleFont(14.0f, juce::Font::bold));
+  m_statusLabel.setColour(juce::Label::textColourId, juce::Colour(kTextPrimary));
 
   // Log text area
   addAndMakeVisible(m_logText);
@@ -68,49 +71,55 @@ MIDIMonitorWindow::Content::Content(orpheus::MIDIDeviceManager* midiManager)
   m_logText.setReadOnly(true);
   m_logText.setScrollbarsShown(true);
   m_logText.setCaretVisible(false);
-  m_logText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(OCC::Design::kBgPrimary));
-  m_logText.setColour(juce::TextEditor::textColourId, juce::Colour(OCC::Design::kTextPrimary));
+  m_logText.setColour(juce::TextEditor::backgroundColourId, juce::Colour(kBgPrimary));
+  m_logText.setColour(juce::TextEditor::textColourId, juce::Colour(kTextPrimary));
   m_logText.setFont(juce::Font(
       juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain)));
 
-  // Buttons
-  addAndMakeVisible(m_runButton);
-  m_runButton.setButtonText("Run");
-  m_runButton.setEnabled(false);
-  m_runButton.onClick = [this]() {
+  // Buttons - ConsoleActionButton
+  m_runButton = std::make_unique<ConsoleActionButton>("monitor-run", ConsoleActionButton::Variant::Ghost);
+  m_runButton->setLabel("RUN");
+  m_runButton->setEnabled(false);
+  m_runButton->onClick = [this]() {
     m_isRunning = true;
-    m_runButton.setEnabled(false);
-    m_stopButton.setEnabled(true);
+    m_runButton->setEnabled(false);
+    m_stopButton->setEnabled(true);
     m_statusLabel.setText("MIDI Monitor - Running", juce::dontSendNotification);
   };
+  addAndMakeVisible(m_runButton.get());
 
-  addAndMakeVisible(m_stopButton);
-  m_stopButton.setButtonText("Stop");
-  m_stopButton.onClick = [this]() {
+  m_stopButton = std::make_unique<ConsoleActionButton>("monitor-stop", ConsoleActionButton::Variant::Amber);
+  m_stopButton->setLabel("STOP");
+  m_stopButton->onClick = [this]() {
     m_isRunning = false;
-    m_runButton.setEnabled(true);
-    m_stopButton.setEnabled(false);
+    m_runButton->setEnabled(true);
+    m_stopButton->setEnabled(false);
     m_statusLabel.setText("MIDI Monitor - Stopped", juce::dontSendNotification);
   };
+  addAndMakeVisible(m_stopButton.get());
 
-  addAndMakeVisible(m_clearButton);
-  m_clearButton.setButtonText("Clear");
-  m_clearButton.onClick = [this]() { clearLog(); };
+  m_clearButton = std::make_unique<ConsoleActionButton>("monitor-clear", ConsoleActionButton::Variant::Danger);
+  m_clearButton->setLabel("CLEAR");
+  m_clearButton->onClick = [this]() { clearLog(); };
+  addAndMakeVisible(m_clearButton.get());
 
-  addAndMakeVisible(m_copyButton);
-  m_copyButton.setButtonText("Copy");
-  m_copyButton.onClick = [this]() { copyToClipboard(); };
+  m_copyButton = std::make_unique<ConsoleActionButton>("monitor-copy", ConsoleActionButton::Variant::Default);
+  m_copyButton->setLabel("COPY");
+  m_copyButton->onClick = [this]() { copyToClipboard(); };
+  addAndMakeVisible(m_copyButton.get());
 
-  addAndMakeVisible(m_exportButton);
-  m_exportButton.setButtonText("Export...");
-  m_exportButton.onClick = [this]() { exportToFile(); };
+  m_exportButton = std::make_unique<ConsoleActionButton>("monitor-export", ConsoleActionButton::Variant::Default);
+  m_exportButton->setLabel("EXPORT...");
+  m_exportButton->onClick = [this]() { exportToFile(); };
+  addAndMakeVisible(m_exportButton.get());
 
   // Start update timer
   startTimer(100); // 10 FPS
 }
 
 void MIDIMonitorWindow::Content::paint(juce::Graphics& g) {
-  g.fillAll(juce::Colour(OCC::Design::kBgSurface));
+  // Console chassis background
+  g.fillAll(juce::Colour(kBgSurface));
 }
 
 void MIDIMonitorWindow::Content::resized() {
@@ -120,15 +129,15 @@ void MIDIMonitorWindow::Content::resized() {
   auto topRow = area.removeFromTop(30);
   m_statusLabel.setBounds(topRow.removeFromLeft(200));
 
-  m_exportButton.setBounds(topRow.removeFromRight(70));
+  m_exportButton->setBounds(topRow.removeFromRight(70));
   topRow.removeFromRight(5);
-  m_copyButton.setBounds(topRow.removeFromRight(60));
+  m_copyButton->setBounds(topRow.removeFromRight(60));
   topRow.removeFromRight(5);
-  m_clearButton.setBounds(topRow.removeFromRight(60));
+  m_clearButton->setBounds(topRow.removeFromRight(60));
   topRow.removeFromRight(10);
-  m_stopButton.setBounds(topRow.removeFromRight(60));
+  m_stopButton->setBounds(topRow.removeFromRight(60));
   topRow.removeFromRight(5);
-  m_runButton.setBounds(topRow.removeFromRight(60));
+  m_runButton->setBounds(topRow.removeFromRight(60));
 
   area.removeFromTop(10);
 
