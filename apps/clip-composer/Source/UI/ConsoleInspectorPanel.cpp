@@ -25,9 +25,10 @@ ConsoleInspectorPanel::ConsoleInspectorPanel() {
   };
   addChildComponent(*m_playoutCueBussButton);
 
-  // Routing matrix mute/solo — one pair per group (A/B/C/D). Real buttons, no-op
-  // dispatch until the routing model exposes mute/solo state.
-  // TODO(occ149b-routing): wire onMutePressed / onSoloPressed to real routing model.
+  // Routing matrix mute/solo — one pair per group (A/B/C/D). Real buttons that
+  // dispatch through onMutePressed / onSoloPressed; MainComponent forwards the
+  // toggles to the SDK routing matrix. Engaged variant is set in setSnapshot()
+  // based on the committed mute/solo state read back from the snapshot.
   for (int i = 0; i < 4; ++i) {
     auto mute = std::make_unique<ConsoleActionButton>("routing-mute-" + juce::String(i),
                                                       ConsoleActionButton::Variant::Ghost);
@@ -66,6 +67,14 @@ void ConsoleInspectorPanel::setSnapshot(const occ::ui::ClipComposerUiSnapshot& s
     if (auto& solo = m_routingSoloButtons[i])
       solo->setVariant(routing.soloed ? ConsoleActionButton::Variant::Amber
                                       : ConsoleActionButton::Variant::Ghost);
+  }
+  // OCC149c: PFL gate. Cue Buss is an opt-in feature — disable + tooltip when
+  // the device/routing prerequisites aren't satisfied so the operator sees the
+  // honest reason instead of a button that silently does nothing.
+  if (m_playoutCueBussButton) {
+    const auto& pfl = m_snapshot.audio.pfl;
+    m_playoutCueBussButton->setEnabled(pfl.available);
+    m_playoutCueBussButton->setTooltip(pfl.available ? juce::String() : pfl.unavailableReason);
   }
   repaint();
 }
