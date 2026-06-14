@@ -1783,10 +1783,13 @@ void ClipEditDialog::resized() {
   //      anatomy but the operator still needs).
   //   8. Action row — OK (commit) and Cancel.
   //
-  // The mockup's AUDITION/REPLACE/CLEAR action triad is deferred: AUDITION
-  // overlaps with the transport play button (same behaviour); REPLACE FILE
-  // needs a file picker integration; CLEAR maps to "remove clip from grid"
-  // which already lives in the right-click menu. TODO(occ149c-actions).
+  // The mockup's AUDITION/REPLACE/CLEAR action triad is partially deferred:
+  //   - AUDITION overlaps with the transport play button (same behaviour).
+  //   - REPLACE FILE still needs a file picker integration —
+  //     TODO(occ149c-replace-file).
+  //   - CLEAR is wired to MainComponent::onClearClicked, which mirrors the
+  //     right-click "Remove Clip?" flow through UndoManager so undo history
+  //     stays coherent across entry points.
   //
   // Eyebrow labels are painted in paint(); the legacy juce::Label "Clip
   // Name:" / "Trim In:" etc. are hidden so they don't double up.

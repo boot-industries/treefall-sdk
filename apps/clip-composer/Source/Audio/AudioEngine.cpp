@@ -4,7 +4,7 @@
 #define private public
 #include "../../../src/core/transport/transport_controller.h" // Concrete class for extended API
 #undef private
-#include <algorithm>                                          // For std::find
+#include <algorithm> // For std::find
 #include <chrono>
 #include <cmath>
 #include <dlfcn.h>
@@ -88,8 +88,8 @@ AudioEngine::~AudioEngine() {
 bool AudioEngine::createConfiguredTransport(
     uint32_t sampleRate, std::unique_ptr<orpheus::TransportController>& transport,
     std::string& errorMessage) const {
-  transport = std::unique_ptr<orpheus::TransportController>(
-      static_cast<orpheus::TransportController*>(
+  transport =
+      std::unique_ptr<orpheus::TransportController>(static_cast<orpheus::TransportController*>(
           orpheus::createTransportController(nullptr, sampleRate).release()));
 
   if (!transport) {
@@ -102,10 +102,10 @@ bool AudioEngine::createConfiguredTransport(
 }
 
 bool AudioEngine::createConfiguredDriver(const std::string& deviceName, uint32_t sampleRate,
-                                        uint32_t bufferSize,
-                                        std::unique_ptr<orpheus::IAudioDriver>& driver,
-                                        std::string& errorMessage,
-                                        bool& usingFallbackDriver) const {
+                                         uint32_t bufferSize,
+                                         std::unique_ptr<orpheus::IAudioDriver>& driver,
+                                         std::string& errorMessage,
+                                         bool& usingFallbackDriver) const {
   usingFallbackDriver = false;
 
   driver = orpheus::createCoreAudioDriver();
@@ -204,7 +204,8 @@ bool AudioEngine::rehydrateTransportState(orpheus::TransportController& transpor
       continue;
     }
 
-    auto result = transport.registerClipAudio(handle, m_cueBussPool[cueSlot].filePath.toStdString());
+    auto result =
+        transport.registerClipAudio(handle, m_cueBussPool[cueSlot].filePath.toStdString());
     if (result != orpheus::SessionGraphError::OK) {
       errorMessage = "Failed to restore preview bus " + std::to_string(cueSlot) + ": " +
                      describeGraphError(result);
@@ -261,10 +262,9 @@ void AudioEngine::updateDeviceStatus(const std::string& requestedDeviceName,
   m_deviceStatus.running = isRunning();
   m_deviceStatus.requestedDeviceName =
       requestedDeviceName.empty() ? std::string(kDefaultDeviceName) : requestedDeviceName;
-  m_deviceStatus.requestedDefaultDevice =
-      m_deviceStatus.requestedDeviceName == kDefaultDeviceName;
-  m_deviceStatus.activeDeviceName = m_currentDeviceName.empty() ? std::string(kDefaultDeviceName)
-                                                                : m_currentDeviceName;
+  m_deviceStatus.requestedDefaultDevice = m_deviceStatus.requestedDeviceName == kDefaultDeviceName;
+  m_deviceStatus.activeDeviceName =
+      m_currentDeviceName.empty() ? std::string(kDefaultDeviceName) : m_currentDeviceName;
   m_deviceStatus.driverName = m_audioDriver ? m_audioDriver->getDriverName() : "Unavailable";
   m_deviceStatus.usingFallbackDriver = (m_deviceStatus.driverName == "Dummy");
   m_deviceStatus.sampleRate = m_sampleRate;
@@ -278,12 +278,11 @@ void AudioEngine::updateDeviceStatus(const std::string& requestedDeviceName,
     m_deviceStatus.summary = "Audio engine not initialized";
   } else {
     const double latencyMs =
-        (static_cast<double>(m_deviceStatus.latencySamples) / std::max(1u, m_sampleRate)) *
-        1000.0;
-    m_deviceStatus.summary =
-        m_deviceStatus.activeDeviceName + " via " + m_deviceStatus.driverName + " @ " +
-        std::to_string(m_sampleRate) + " Hz / " + std::to_string(m_bufferSize) + " samples (" +
-        juce::String(latencyMs, 2).toStdString() + " ms)";
+        (static_cast<double>(m_deviceStatus.latencySamples) / std::max(1u, m_sampleRate)) * 1000.0;
+    m_deviceStatus.summary = m_deviceStatus.activeDeviceName + " via " + m_deviceStatus.driverName +
+                             " @ " + std::to_string(m_sampleRate) + " Hz / " +
+                             std::to_string(m_bufferSize) + " samples (" +
+                             juce::String(latencyMs, 2).toStdString() + " ms)";
   }
 }
 
@@ -332,8 +331,8 @@ bool AudioEngine::start() {
   auto result = m_audioDriver->start(this);
   if (result != orpheus::SessionGraphError::OK) {
     DBG("AudioEngine: Failed to start audio driver");
-    updateDeviceStatus(m_currentDeviceName, "Failed to start audio driver: " +
-                                               describeGraphError(result));
+    updateDeviceStatus(m_currentDeviceName,
+                       "Failed to start audio driver: " + describeGraphError(result));
     return false;
   }
 
@@ -731,6 +730,72 @@ void AudioEngine::getGroupLevels(std::array<float, 4>& groupLevels) const {
     groupLevels[groupIndex] =
         juce::jlimit(0.0f, 1.5f, std::max(dbToLinear(meter.peak_db), dbToLinear(meter.rms_db)));
   }
+}
+
+//==============================================================================
+// OCC149c: Group routing control
+//
+// The SDK's IRoutingMatrix exposes setters for mute/solo/gain but only one
+// getter (isGroupMuted). We shadow solo and gain locally so the inspector
+// snapshot can render M·S pills and gain readouts without round-tripping
+// through saveSnapshot() each poll.
+
+bool AudioEngine::setGroupMute(uint8_t groupIndex, bool mute) {
+  if (groupIndex >= kGroupCount || !m_transportController ||
+      !m_transportController->m_routingMatrix)
+    return false;
+  return m_transportController->m_routingMatrix->setGroupMute(groupIndex, mute) ==
+         orpheus::SessionGraphError::OK;
+}
+
+bool AudioEngine::setGroupSolo(uint8_t groupIndex, bool solo) {
+  if (groupIndex >= kGroupCount || !m_transportController ||
+      !m_transportController->m_routingMatrix)
+    return false;
+  const bool ok = m_transportController->m_routingMatrix->setGroupSolo(groupIndex, solo) ==
+                  orpheus::SessionGraphError::OK;
+  if (ok)
+    m_groupSoloCache[groupIndex] = solo;
+  return ok;
+}
+
+bool AudioEngine::setGroupGain(uint8_t groupIndex, float gainDb) {
+  if (groupIndex >= kGroupCount || !m_transportController ||
+      !m_transportController->m_routingMatrix)
+    return false;
+  const bool ok = m_transportController->m_routingMatrix->setGroupGain(groupIndex, gainDb) ==
+                  orpheus::SessionGraphError::OK;
+  if (ok)
+    m_groupGainDbCache[groupIndex] = gainDb;
+  return ok;
+}
+
+bool AudioEngine::isGroupMuted(uint8_t groupIndex) const {
+  if (groupIndex >= kGroupCount || !m_transportController ||
+      !m_transportController->m_routingMatrix)
+    return false;
+  return m_transportController->m_routingMatrix->isGroupMuted(groupIndex);
+}
+
+bool AudioEngine::isGroupSoloed(uint8_t groupIndex) const {
+  if (groupIndex >= kGroupCount)
+    return false;
+  return m_groupSoloCache[groupIndex];
+}
+
+float AudioEngine::getGroupGainDb(uint8_t groupIndex) const {
+  if (groupIndex >= kGroupCount)
+    return 0.0f;
+  return m_groupGainDbCache[groupIndex];
+}
+
+juce::String AudioEngine::getGroupOutputLabel(uint8_t groupIndex) const {
+  // TODO(occ149c-routing-outputs): when per-group output bus assignment is
+  // exposed in the UI, swap this for the real bus label. Today
+  // transport_controller.cpp routes all four groups to the master bus, so the
+  // operator-true answer is "Main L/R" for every row.
+  juce::ignoreUnused(groupIndex);
+  return "Main L/R";
 }
 
 //==============================================================================

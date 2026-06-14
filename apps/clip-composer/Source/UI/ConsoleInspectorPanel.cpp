@@ -55,6 +55,18 @@ ConsoleInspectorPanel::ConsoleInspectorPanel() {
 
 void ConsoleInspectorPanel::setSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
   m_snapshot = snapshot;
+  // OCC149c: reflect each group's mute/solo state on its M·S buttons. Engaged
+  // mute reads as Danger (coral) to mirror Stop All; engaged solo reads as
+  // Amber, matching the broadcast convention. Inactive = Ghost.
+  for (int i = 0; i < 4; ++i) {
+    const auto& routing = m_snapshot.audio.groupRouting[static_cast<size_t>(i)];
+    if (auto& mute = m_routingMuteButtons[i])
+      mute->setVariant(routing.muted ? ConsoleActionButton::Variant::Danger
+                                     : ConsoleActionButton::Variant::Ghost);
+    if (auto& solo = m_routingSoloButtons[i])
+      solo->setVariant(routing.soloed ? ConsoleActionButton::Variant::Amber
+                                      : ConsoleActionButton::Variant::Ghost);
+  }
   repaint();
 }
 
@@ -297,12 +309,14 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
     bounds.removeFromTop(6);
   }
 
-  // No fake data. Output names and gain readouts show "—" until the routing model
-  // surfaces them through the snapshot. TODO(occ149b-routing): plumb real values.
+  // OCC149c: routing rows now read OUTPUT / GAIN / mute / solo from the audio
+  // engine via the UI snapshot — see ClipComposerUiSnapshot::AudioEngineUiSnapshot.
+  // The "—" placeholder only surfaces while the engine is still initializing.
   const juce::String kPlaceholder("—");
 
   for (int i = 0; i < 4; ++i) {
     auto row = bounds.removeFromTop(kRoutingRowHeight);
+    const auto& routing = m_snapshot.audio.groupRouting[static_cast<size_t>(i)];
 
     // GROUP column: 12x12 swatch + label.
     {
@@ -324,7 +338,9 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
       auto col = row.removeFromLeft(kRoutingOutputColWidth);
       g.setFont(OCC::Console::monoFont(11.0f));
       g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-      g.drawText(kPlaceholder, col, juce::Justification::centredLeft, false);
+      const juce::String label =
+          routing.outputLabel.isNotEmpty() ? routing.outputLabel : kPlaceholder;
+      g.drawText(label, col, juce::Justification::centredLeft, false);
     }
 
     // GAIN column.
@@ -332,7 +348,9 @@ void ConsoleInspectorPanel::drawRouting(juce::Graphics& g, juce::Rectangle<int> 
       auto col = row.removeFromLeft(kRoutingGainColWidth);
       g.setFont(OCC::Console::monoFont(11.0f));
       g.setColour(juce::Colour(OCC::Design::kTextSecondary));
-      g.drawText(kPlaceholder, col, juce::Justification::centredLeft, false);
+      const juce::String gainText =
+          routing.gainDb == 0.0f ? juce::String("0.0 dB") : juce::String(routing.gainDb, 1) + " dB";
+      g.drawText(gainText, col, juce::Justification::centredLeft, false);
     }
 
     // METER column: 90x10 bar with gradient fill clipped to live level.

@@ -252,16 +252,20 @@ MainComponent::MainComponent() {
     // TODO(occ149b-cue): dispatch to a real cue-buss handler once the engine exposes one.
     DBG("[OCC149b] Cue Buss requested from inspector");
   };
-  // Routing matrix mute/solo — real buttons, no-op until routing model exposes mute/solo.
-  m_inspectorPanel->onMutePressed = [](int group) {
-    juce::ignoreUnused(group);
-    // TODO(occ149b-routing): forward to routing model mute toggle.
-    DBG("[OCC149b] Routing mute pressed for group " << group);
+  // Routing matrix mute/solo — toggle through the SDK routing matrix. The
+  // inspector reads the committed state back from the snapshot the next poll,
+  // so a refresh is all we owe the UI here.
+  m_inspectorPanel->onMutePressed = [this](int group) {
+    if (!m_audioEngine || group < 0 || group >= 4)
+      return;
+    const auto g = static_cast<uint8_t>(group);
+    m_audioEngine->setGroupMute(g, !m_audioEngine->isGroupMuted(g));
   };
-  m_inspectorPanel->onSoloPressed = [](int group) {
-    juce::ignoreUnused(group);
-    // TODO(occ149b-routing): forward to routing model solo toggle.
-    DBG("[OCC149b] Routing solo pressed for group " << group);
+  m_inspectorPanel->onSoloPressed = [this](int group) {
+    if (!m_audioEngine || group < 0 || group >= 4)
+      return;
+    const auto g = static_cast<uint8_t>(group);
+    m_audioEngine->setGroupSolo(g, !m_audioEngine->isGroupSoloed(g));
   };
   addAndMakeVisible(m_inspectorPanel.get());
 
@@ -960,6 +964,14 @@ void MainComponent::refreshUiSnapshot() {
     const auto perfMetrics = m_audioEngine->getPerformanceMetrics();
     m_uiSnapshot.audio.masterRmsLevel = m_audioEngine->getMasterRmsLevel();
     m_audioEngine->getGroupLevels(m_uiSnapshot.audio.groupLevels);
+    // OCC149c: per-group routing row data drives the Inspector's Routing view.
+    for (uint8_t g = 0; g < 4; ++g) {
+      auto& row = m_uiSnapshot.audio.groupRouting[g];
+      row.outputLabel = m_audioEngine->getGroupOutputLabel(g);
+      row.gainDb = m_audioEngine->getGroupGainDb(g);
+      row.muted = m_audioEngine->isGroupMuted(g);
+      row.soloed = m_audioEngine->isGroupSoloed(g);
+    }
     m_uiSnapshot.audio.activeDeviceIdentifier = juce::String(deviceStatus.activeDeviceName);
     m_uiSnapshot.audio.device.initialized = deviceStatus.initialized;
     m_uiSnapshot.audio.device.running = deviceStatus.running;
@@ -2027,6 +2039,40 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     dialog->setVisible(false);
     delete dialog;
     m_currentEditDialog = nullptr; // Clear reference to allow new dialog
+  };
+
+  // OCC149c: Action Triad CLEAR — the Edit Dialog's destructive escape hatch.
+  // Mirrors the right-click "Remove Clip?" flow so undo history stays
+  // consistent regardless of how the operator initiated the clear. Confirmation
+  // is mandatory: this is the only Danger-variant action in the dialog and the
+  // operator may have just opened the dialog to make changes, not to nuke it.
+  dialog->onClearClicked = [this, buttonIndex, globalClipIndex, dialog]() {
+    if (!m_sessionManager->hasClip(buttonIndex))
+      return;
+    const auto clipData = m_sessionManager->getClip(buttonIndex);
+    const bool confirmed = juce::AlertWindow::showOkCancelBox(
+        juce::AlertWindow::WarningIcon, "Clear Clip?",
+        "Clear \"" + juce::String(clipData.displayName) + "\" from button " +
+            juce::String(buttonIndex + 1) + "? This can be undone.",
+        "Clear", "Cancel");
+    if (!confirmed)
+      return;
+
+    auto cmd = std::make_unique<orpheus::ClearClipCommand>(
+        m_sessionManager.get(), m_sessionManager->getActiveTab(), buttonIndex);
+    m_undoManager->executeCommand(std::move(cmd));
+    updateButtonFromClip(buttonIndex);
+
+    // Reset per-clip UI flags so the freshly empty slot doesn't carry the old
+    // clip's loop/stop-others state into the next file assignment.
+    m_loopEnabled[globalClipIndex] = false;
+    m_stopOthersOnPlay[globalClipIndex] = false;
+
+    refreshUiSnapshot();
+
+    dialog->setVisible(false);
+    delete dialog;
+    m_currentEditDialog = nullptr;
   };
 
   // Real-time color update: Repaint button immediately when color changes (75fps)
