@@ -227,6 +227,36 @@ public:
   void getGroupLevels(std::array<float, 4>& groupLevels) const;
 
   //==============================================================================
+  // OCC149c: Group routing control
+  //
+  // Routing inspector uses these to toggle group mute/solo and read back the
+  // committed state for the M·S indicator pills. Gain readout is cached locally
+  // because the SDK's IRoutingMatrix exposes a setter but no getter for it.
+
+  /// Toggle mute for a group bus. Returns true if the engine accepted it.
+  bool setGroupMute(uint8_t groupIndex, bool mute);
+
+  /// Toggle solo for a group bus. Returns true if the engine accepted it.
+  bool setGroupSolo(uint8_t groupIndex, bool solo);
+
+  /// Set group gain in dB. Returns true if the engine accepted it.
+  bool setGroupGain(uint8_t groupIndex, float gainDb);
+
+  /// Current mute state for a group. False if engine not initialized.
+  bool isGroupMuted(uint8_t groupIndex) const;
+
+  /// Current solo state for a group (UI-tracked; SDK lacks a public getter).
+  bool isGroupSoloed(uint8_t groupIndex) const;
+
+  /// Last committed gain for a group, in dB. 0.0 if engine not initialized.
+  float getGroupGainDb(uint8_t groupIndex) const;
+
+  /// Operator-facing label for the group's current output bus.
+  /// Placeholder until per-group output assignment is exposed (all four groups
+  /// currently route to the master bus).
+  juce::String getGroupOutputLabel(uint8_t groupIndex) const;
+
+  //==============================================================================
   // Audio Device Management (for Audio Settings Dialog)
 
   /// Get list of available audio device names
@@ -434,6 +464,14 @@ private:
   std::unique_ptr<shmui::AudioAnalyzer> m_audioAnalyzer;
   std::vector<float> m_rmsLevels;
   std::vector<float> m_peakLevels;
+
+  // OCC149c: Per-group routing state cache. The SDK's IRoutingMatrix exposes
+  // setters for mute/solo/gain but only one getter (isGroupMuted); we shadow
+  // the writes so the inspector snapshot can render mute/solo/gain without
+  // round-tripping through saveSnapshot().
+  static constexpr size_t kGroupCount = 4;
+  std::array<bool, kGroupCount> m_groupSoloCache{};
+  std::array<float, kGroupCount> m_groupGainDbCache{};
 
   /// Get current RMS levels for all channels
   const std::vector<float>& getRmsLevels() const;

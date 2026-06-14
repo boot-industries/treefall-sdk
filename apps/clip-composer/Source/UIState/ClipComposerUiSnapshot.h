@@ -77,8 +77,19 @@ struct AudioEngineUiSnapshot {
     juce::String statusText;
   };
 
+  // OCC149c: routing inspector row data. Per-group output label, gain readout,
+  // and M·S indicator state. Populated by MainComponent each poll from
+  // AudioEngine getters; consumed by ConsoleInspectorPanel::drawRouting().
+  struct GroupRoutingSnapshot {
+    juce::String outputLabel;
+    float gainDb = 0.0f;
+    bool muted = false;
+    bool soloed = false;
+  };
+
   float masterRmsLevel = 0.0f;
   std::array<float, 4> groupLevels{};
+  std::array<GroupRoutingSnapshot, 4> groupRouting{};
   bool routeAssignmentsAdjusted = false;
   juce::String activeDeviceIdentifier;
   DeviceRouteStatus device;
