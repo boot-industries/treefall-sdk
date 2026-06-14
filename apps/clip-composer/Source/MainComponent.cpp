@@ -249,8 +249,14 @@ MainComponent::MainComponent() {
   // dispatch into the shared transport handlers.
   m_inspectorPanel->onStopAll = [this]() { onStopAll(); };
   m_inspectorPanel->onCueBuss = [this]() {
-    // TODO(occ149b-cue): dispatch to a real cue-buss handler once the engine exposes one.
-    DBG("[OCC149b] Cue Buss requested from inspector");
+    // Cue Buss / PFL — feature-gated. Until pfl.available flips true (needs
+    // a multichannel device + configured cue routing) the click is a no-op;
+    // the button reflects that visually via setEnabled(false) so the operator
+    // sees why the affordance is dimmed before they try.
+    // TODO(occ149c-pfl-dispatch): once enabled, dispatch the currently-armed
+    // clip(s) onto the cue bus without affecting the main output.
+    if (!m_uiSnapshot.audio.pfl.available)
+      return;
   };
   // Routing matrix mute/solo — toggle through the SDK routing matrix. The
   // inspector reads the committed state back from the snapshot the next poll,
@@ -779,10 +785,11 @@ void MainComponent::wireUpTransportCallbacks() {
     m_transportControls->onStopAll = [this]() { onStopAll(); };
     m_transportControls->onPanic = [this]() { onPanic(); };
     m_transportControls->onCue = [this]() {
-      // TODO(occ149b-cue): dispatch to a real cue-buss handler once the engine
-      // exposes one. For now the click is acknowledged so the operator sees
-      // their press registered.
-      DBG("[OCC149b] Cue requested from transport strip");
+      // Cue / PFL — feature-gated, mirrors the inspector Cue Buss handler.
+      // TODO(occ149c-pfl-dispatch): once enabled, dispatch the armed clip(s)
+      // to the cue bus without affecting the main output.
+      if (!m_uiSnapshot.audio.pfl.available)
+        return;
     };
   }
 }
@@ -986,6 +993,18 @@ void MainComponent::refreshUiSnapshot() {
         "Audition: cue buss via " + juce::String(deviceStatus.activeDeviceName);
     m_uiSnapshot.audio.audition.validationMessage =
         deviceStatus.lastError.empty() ? juce::String() : juce::String(deviceStatus.lastError);
+
+    // OCC149c: PFL gate. The feature requires a multichannel interface AND
+    // operator-configured cue routing. Neither SDK surface exists yet, so the
+    // gate stays closed until both are wired:
+    //   TODO(occ149c-pfl-channels): AudioDeviceStatus needs an output-channel
+    //     count so we can detect ">2ch device" honestly.
+    //   TODO(occ149c-pfl-routing): Preferences → Audio needs a cue-bus
+    //     channel-selection field, persisted via DisplayPreferences.
+    m_uiSnapshot.audio.pfl.available = false;
+    m_uiSnapshot.audio.pfl.unavailableReason =
+        "Pre-fader-listen requires a multichannel audio interface and cue "
+        "routing configuration (Preferences → Audio).";
     m_uiSnapshot.audio.health.cpuPercent = perfMetrics.cpuUsagePercent;
     m_uiSnapshot.audio.health.memoryMB = getProcessMemoryMb();
     m_uiSnapshot.audio.health.bufferSize = static_cast<int>(deviceStatus.bufferSize);

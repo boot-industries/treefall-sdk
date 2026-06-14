@@ -7,8 +7,9 @@
 //   * Playout — read-at-a-glance summary of clips currently playing, plus Stop All /
 //     Cue Buss action buttons the operator can hit without leaving the inspector.
 //   * Edit — pointer to the Clip Edit modal dialog (full editor lives there).
-//   * Routing — 4-row matrix: GROUP / OUTPUT / GAIN / METER / mute-solo. Action
-//     buttons (M / S) clickable; routing model wiring is a TODO(occ149b-routing).
+//   * Routing — 4-row matrix: GROUP / OUTPUT / GAIN / METER / mute-solo. M / S
+//     buttons toggle the SDK routing matrix through MainComponent, and reflect
+//     the committed mute/solo state by swapping ConsoleActionButton variants.
 //   * Preferences — live device/IO/route summary pulled from the audio snapshot.
 
 #pragma once

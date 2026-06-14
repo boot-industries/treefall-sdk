@@ -293,6 +293,14 @@ void TransportControls::setLatencyInfo(double latencyMs, int bufferSize, int sam
 
 void TransportControls::setTransportSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
   m_snapshot = snapshot;
+  // OCC149c: PFL gate — Cue is an opt-in feature. Disable the transport-strip
+  // Cue button + show the reason as a tooltip when the device/routing
+  // prerequisites aren't met.
+  if (m_cueButton) {
+    const auto& pfl = m_snapshot.audio.pfl;
+    m_cueButton->setEnabled(pfl.available);
+    m_cueButton->setTooltip(pfl.available ? juce::String() : pfl.unavailableReason);
+  }
   repaint();
 }
 

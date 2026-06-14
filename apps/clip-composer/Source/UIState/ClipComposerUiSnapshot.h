@@ -58,6 +58,16 @@ struct AudioEngineUiSnapshot {
     juce::String validationMessage;
   };
 
+  // OCC149c: PFL (pre-fader-listen) availability gating for the Cue / Cue Buss
+  // operator buttons. PFL is a feature, not a default — it needs a >2ch
+  // interface AND explicit cue-bus routing in Preferences. When unavailable,
+  // the buttons render disabled with the reason text as a tooltip so the
+  // operator sees why the affordance is dimmed instead of guessing.
+  struct PflAvailability {
+    bool available = false;
+    juce::String unavailableReason;
+  };
+
   struct DeviceRouteStatus {
     bool initialized = false;
     bool running = false;
@@ -94,6 +104,7 @@ struct AudioEngineUiSnapshot {
   juce::String activeDeviceIdentifier;
   DeviceRouteStatus device;
   AuditionRouteConfig audition;
+  PflAvailability pfl;
   HealthStripSnapshot health;
 };
 
