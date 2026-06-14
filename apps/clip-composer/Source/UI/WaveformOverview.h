@@ -13,14 +13,14 @@
 //
 // Operator narrative: the sound designer needs to see "where am I in this
 // 4-minute file" at a glance, even when the main waveform is zoomed to a
-// 22-second window. The minimap is read-only here (no scrubbing — that
-// would couple it to the main waveform's zoom logic, deferred to a future
-// pass: TODO(occ149c-minimap-scrub)).
+// 22-second window. Supports interactive viewport scrubbing — click/drag on
+// minimap to jump main waveform viewport.
 
 #pragma once
 
 #include "DesignTokens.h"
 #include <atomic>
+#include <functional>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
@@ -28,7 +28,7 @@
 class WaveformOverview : public juce::Component {
 public:
   WaveformOverview() {
-    setInterceptsMouseClicks(false, false); // Passive minimap - don't intercept mouse events
+    setInterceptsMouseClicks(true, true); // Enable mouse interaction for scrubbing
   }
 
   /** Set the audio file to render. WaveformOverview holds a downsampled
@@ -127,6 +127,11 @@ public:
       repaint();
   }
 
+  /** Callback when viewport is scrubbed via minimap interaction.
+   *  Parameters: (startSample, endSample) in samples. */
+  std::function<void(int64_t, int64_t)> onViewportScrubbed;
+
+  //==============================================================================
   void paint(juce::Graphics& g) override {
     using namespace OCC::Design;
     auto bounds = getLocalBounds().toFloat();
@@ -208,6 +213,111 @@ public:
       g.setColour(juce::Colour(Waveform::kPlayheadYellow));
       g.drawLine(x, interior.getY(), x, interior.getBottom(), 1.0f);
     }
+
+    // Draw drag handle hint on viewport edges when hovering
+    if (m_isDraggingViewport) {
+      g.setColour(juce::Colour(OCC::Design::Waveform::kPlayheadYellow).withAlpha(0.8f));
+      g.fillRect(juce::Rectangle<float>(m_dragStartX - 2, interior.getY() - 2, 4, h + 4));
+    }
+  }
+
+  //==============================================================================
+  // Mouse interaction for viewport scrubbing
+  void mouseDown(const juce::MouseEvent& event) override {
+    if (m_durationSamples <= 0)
+      return;
+
+    auto bounds = getLocalBounds().toFloat();
+    auto interior = bounds.reduced(1.0f);
+    const float w = interior.getWidth();
+
+    // Check if click is within viewport window
+    if (m_viewportEndSamples > m_viewportStartSamples) {
+      const float vx0 =
+          interior.getX() + w * (static_cast<float>(m_viewportStartSamples) / m_durationSamples);
+      const float vx1 =
+          interior.getX() + w * (static_cast<float>(m_viewportEndSamples) / m_durationSamples);
+      auto window = juce::Rectangle<float>(vx0, interior.getY() - 1.0f, vx1 - vx0,
+                                           interior.getHeight() + 2.0f);
+
+      if (window.contains(event.getMouseDownPosition().toFloat())) {
+        m_isDraggingViewport = true;
+        m_dragStartX = event.getMouseDownX();
+        m_dragViewportStart = m_viewportStartSamples;
+        m_dragViewportEnd = m_viewportEndSamples;
+        m_dragWindowWidth = vx1 - vx0;
+        repaint();
+        return;
+      }
+    }
+
+    // Click outside viewport: jump viewport to clicked position (centered)
+    if (event.mods.isLeftButtonDown()) {
+      float normalizedX = (event.getMouseDownX() - interior.getX()) / w;
+      normalizedX = std::clamp(normalizedX, 0.0f, 1.0f);
+      int64_t clickedSample = static_cast<int64_t>(normalizedX * m_durationSamples);
+
+      // Keep current viewport width, center on clicked position
+      int64_t viewportWidth = m_viewportEndSamples - m_viewportStartSamples;
+      int64_t newStart = clickedSample - viewportWidth / 2;
+      int64_t newEnd = newStart + viewportWidth;
+
+      // Clamp to file bounds
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = viewportWidth;
+      } else if (newEnd > m_durationSamples) {
+        newEnd = m_durationSamples;
+        newStart = m_durationSamples - viewportWidth;
+      }
+
+      m_viewportStartSamples = newStart;
+      m_viewportEndSamples = newEnd;
+
+      if (onViewportScrubbed) {
+        onViewportScrubbed(m_viewportStartSamples, m_viewportEndSamples);
+      }
+      repaint();
+    }
+  }
+
+  void mouseDrag(const juce::MouseEvent& event) override {
+    if (!m_isDraggingViewport || m_durationSamples <= 0)
+      return;
+
+    auto bounds = getLocalBounds().toFloat();
+    auto interior = bounds.reduced(1.0f);
+    const float w = interior.getWidth();
+
+    // Calculate how far mouse has moved in samples
+    float dragDeltaX = event.getMouseDownX() - event.x;
+    float dragDeltaNormalized = dragDeltaX / w;
+    int64_t dragDeltaSamples = static_cast<int64_t>(dragDeltaNormalized * m_durationSamples);
+
+    int64_t newStart = m_dragViewportStart - dragDeltaSamples;
+    int64_t newEnd = m_dragViewportEnd - dragDeltaSamples;
+
+    // Clamp to file bounds
+    if (newStart < 0) {
+      newStart = 0;
+      newEnd = m_dragViewportEnd - m_dragViewportStart; // maintain width
+    } else if (newEnd > m_durationSamples) {
+      newEnd = m_durationSamples;
+      newStart = m_durationSamples - (m_dragViewportEnd - m_dragViewportStart);
+    }
+
+    m_viewportStartSamples = newStart;
+    m_viewportEndSamples = newEnd;
+
+    if (onViewportScrubbed) {
+      onViewportScrubbed(m_viewportStartSamples, m_viewportEndSamples);
+    }
+    repaint();
+  }
+
+  void mouseUp(const juce::MouseEvent& /*event*/) override {
+    m_isDraggingViewport = false;
+    repaint();
   }
 
 private:
@@ -219,6 +329,13 @@ private:
   int64_t m_trimOutSamples = 0;
   int64_t m_viewportStartSamples = 0;
   int64_t m_viewportEndSamples = 0;
+
+  // Drag state for viewport scrubbing
+  bool m_isDraggingViewport = false;
+  float m_dragStartX = 0;
+  int64_t m_dragViewportStart = 0;
+  int64_t m_dragViewportEnd = 0;
+  float m_dragWindowWidth = 0;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformOverview)
 };

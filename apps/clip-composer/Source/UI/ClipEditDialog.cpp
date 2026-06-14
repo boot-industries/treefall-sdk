@@ -40,7 +40,12 @@ ClipEditDialog::ClipEditDialog(AudioEngine* audioEngine, int buttonIndex)
 }
 
 ClipEditDialog::~ClipEditDialog() {
-  // Clear callbacks before PreviewPlayer is destroyed to avoid dangling UI calls.
+  // Clear callbacks before owned children are destroyed to avoid dangling UI calls.
+  // The overview minimap intercepts mouse events; clearing its scrub callback before
+  // teardown defends against a queued mouseDrag landing after destruction begins
+  // (see 5bdbb86a for the original ASan symptom).
+  if (m_waveformOverview)
+    m_waveformOverview->onViewportScrubbed = nullptr;
   if (m_previewPlayer) {
     m_previewPlayer->onPositionChanged = nullptr;
     m_previewPlayer->onPlaybackStopped = nullptr;
@@ -112,30 +117,36 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
               m_metadata.trimInSamples, m_metadata.trimOutSamples > 0 ? m_metadata.trimOutSamples
                                                                       : m_metadata.durationSamples);
 
-          // Wire up minimap scrubbing callback
-          m_waveformOverview->onViewportScrubbed = [this](int64_t startSample, int64_t endSample) {
-            if (m_waveformDisplay) {
-              float startNorm = m_metadata.durationSamples > 0
-                  ? static_cast<float>(startSample) / m_metadata.durationSamples
-                  : 0.5f;
-              float endNorm = m_metadata.durationSamples > 0
-                  ? static_cast<float>(endSample) / m_metadata.durationSamples
-                  : 0.5f;
-              m_waveformDisplay->setZoomCenter((startNorm + endNorm) * 0.5f);
-              // Adjust zoom level based on viewport width fraction
-              float viewportWidthNorm = endNorm - startNorm;
-              if (viewportWidthNorm > 0.0f) {
-                // Find zoom level that roughly matches the viewport width
-                float targetZoom = 1.0f / viewportWidthNorm;
-                // Map to zoom levels: 1x, 2x, 4x, 8x, 16x
-                int targetLevel = 0;
-                if (targetZoom >= 8.0f) targetLevel = 4;
-                else if (targetZoom >= 4.0f) targetLevel = 3;
-                else if (targetZoom >= 2.0f) targetLevel = 2;
-                else if (targetZoom >= 1.0f) targetLevel = 1;
-                else targetLevel = 0;
-                m_waveformDisplay->setZoomLevel(targetLevel, (startNorm + endNorm) * 0.5f);
-              }
+          // Wire up minimap scrubbing callback.
+          // SafePointer guards against the queued-mouse-event-after-destruction
+          // scenario that caused the ASan crash fixed in 5bdbb86a — if the dialog
+          // tears down while a drag is mid-flight, the lambda no-ops cleanly.
+          juce::Component::SafePointer<ClipEditDialog> safeSelf(this);
+          m_waveformOverview->onViewportScrubbed = [safeSelf](int64_t startSample,
+                                                              int64_t endSample) {
+            auto* self = safeSelf.getComponent();
+            if (self == nullptr || self->m_waveformDisplay == nullptr)
+              return;
+            const float duration = static_cast<float>(self->m_metadata.durationSamples);
+            if (duration <= 0.0f)
+              return;
+            const float startNorm = static_cast<float>(startSample) / duration;
+            const float endNorm = static_cast<float>(endSample) / duration;
+            const float center = (startNorm + endNorm) * 0.5f;
+            self->m_waveformDisplay->setZoomCenter(center);
+            const float viewportWidthNorm = endNorm - startNorm;
+            if (viewportWidthNorm > 0.0f) {
+              const float targetZoom = 1.0f / viewportWidthNorm;
+              int targetLevel = 0;
+              if (targetZoom >= 8.0f)
+                targetLevel = 4;
+              else if (targetZoom >= 4.0f)
+                targetLevel = 3;
+              else if (targetZoom >= 2.0f)
+                targetLevel = 2;
+              else if (targetZoom >= 1.0f)
+                targetLevel = 1;
+              self->m_waveformDisplay->setZoomLevel(targetLevel, center);
             }
           };
           delete reader;
@@ -554,7 +565,8 @@ void ClipEditDialog::buildPhase1UI() {
   // Action triad (AUDITION / REPLACE FILE / CLEAR) — design-kit spec
   // These are ConsoleActionButton components with Ghost variant (no fill, text only)
   // to match the mockup's unobtrusive action row.
-  m_auditionActionButton = std::make_unique<ConsoleActionButton>("auditionAction", ConsoleActionButton::Variant::Ghost);
+  m_auditionActionButton =
+      std::make_unique<ConsoleActionButton>("auditionAction", ConsoleActionButton::Variant::Ghost);
   m_auditionActionButton->setLabel("AUDITION");
   m_auditionActionButton->onClick = [this]() {
     if (onAuditionClicked)
@@ -565,7 +577,8 @@ void ClipEditDialog::buildPhase1UI() {
   };
   addAndMakeVisible(m_auditionActionButton.get());
 
-  m_replaceFileActionButton = std::make_unique<ConsoleActionButton>("replaceFileAction", ConsoleActionButton::Variant::Ghost);
+  m_replaceFileActionButton = std::make_unique<ConsoleActionButton>(
+      "replaceFileAction", ConsoleActionButton::Variant::Ghost);
   m_replaceFileActionButton->setLabel("REPLACE FILE");
   m_replaceFileActionButton->onClick = [this]() {
     if (onReplaceFileClicked)
@@ -573,7 +586,8 @@ void ClipEditDialog::buildPhase1UI() {
   };
   addAndMakeVisible(m_replaceFileActionButton.get());
 
-  m_clearActionButton = std::make_unique<ConsoleActionButton>("clearAction", ConsoleActionButton::Variant::Danger);
+  m_clearActionButton =
+      std::make_unique<ConsoleActionButton>("clearAction", ConsoleActionButton::Variant::Danger);
   m_clearActionButton->setLabel("CLEAR");
   m_clearActionButton->onClick = [this]() {
     if (onClearClicked)
@@ -582,7 +596,8 @@ void ClipEditDialog::buildPhase1UI() {
   addAndMakeVisible(m_clearActionButton.get());
 
   // Advanced section disclosure button (chevron up/down next to ADVANCED eyebrow)
-  m_advancedDisclosureButton = std::make_unique<juce::DrawableButton>("advancedDisclosure", juce::DrawableButton::ImageFitted);
+  m_advancedDisclosureButton = std::make_unique<juce::DrawableButton>(
+      "advancedDisclosure", juce::DrawableButton::ImageFitted);
   {
     juce::Path chevronPath;
     // Up chevron (expanded state): M7 14l5 -5 5 5
@@ -597,8 +612,10 @@ void ClipEditDialog::buildPhase1UI() {
     m_advancedDisclosureButton->setImages(chevronIcon.get());
     chevronIcon.release();
   }
-  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
-  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(OCC::Design::kBgComponent));
+  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundColourId,
+                                        juce::Colours::transparentBlack);
+  m_advancedDisclosureButton->setColour(juce::DrawableButton::backgroundOnColourId,
+                                        juce::Colour(OCC::Design::kBgComponent));
   m_advancedDisclosureButton->onClick = [this]() {
     m_advancedExpanded = !m_advancedExpanded;
     updateAdvancedDisclosureIcon();
