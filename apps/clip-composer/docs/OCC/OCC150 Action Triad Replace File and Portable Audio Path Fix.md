@@ -44,7 +44,18 @@ For linked imports, both paths are the original source. For copied imports, both
 - Copied imports use the copied project path for both `SessionManager` and `AudioEngine`.
 - Existing project media is not overwritten; duplicate names receive a unique suffix.
 
-### 4. Dialog implementation notes updated
+### 4. Replacement metadata preserves live operator intent
+
+`Source/Core/ClipReplacementPolicy.h` keeps file-specific metadata separate from operator-authored show intent. When replacing an existing clip:
+
+- Preserves custom display names, clip colour, routing group, gain, loop, and stop-others flags.
+- Keeps the replacement file stem when the previous name was only the old file stem.
+- Resets trim to the full replacement file so stale IN/OUT points cannot create illegal or silent regions.
+- Preserves fade curves and clamps fade durations to half of the replacement duration.
+
+`tests/test_clip_replacement_policy.cpp` covers those policies directly.
+
+### 5. Dialog implementation notes updated
 
 The Clip Edit dialog layout comment now reflects that `REPLACE FILE` delegates to MainComponent's file chooser + reload path rather than remaining an OCC149c deferral.
 
@@ -72,7 +83,7 @@ Results:
 
 - Debug app target built successfully: `orpheus_clip_composer_app`.
 - Test target built successfully: `clip_composer_tests`.
-- `54/54` Clip Composer tests passed after adding the three ClipLoadPlan regression tests.
+- `57/57` Clip Composer tests passed after adding ClipLoadPlan and ClipReplacementPolicy regression coverage.
 
 ---
 
@@ -80,4 +91,4 @@ Results:
 
 - Manual UI smoke test with a populated session: open Edit Dialog → Replace File → choose Copy to Project vs Link to Original → confirm playback uses the expected media.
 - Add a non-modal replacement status message so operators get clear confirmation without interrupting show flow.
-- Split `loadClipToButton()` further into a pure load service and UI prompt shell so Replace File can preserve selected metadata fields more selectively.
+- Split `loadClipToButton()` further into a pure load service and UI prompt shell so Replace File can expose clearer replacement-specific success/failure messaging.

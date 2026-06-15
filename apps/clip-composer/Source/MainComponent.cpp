@@ -5,6 +5,7 @@
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
 #include "Core/ClipLoadPlan.h"
+#include "Core/ClipReplacementPolicy.h"
 #include "UI/ConsoleTheme.h"
 #include "UI/DesignTokens.h"
 #include <algorithm>
@@ -2216,6 +2217,9 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   // Item 32: Audio asset copying - copy file to project folder
   juce::File sourceFile(filePath);
   auto loadPlan = occ::makeLinkedClipLoadPlan(sourceFile);
+  const bool replacingExistingClip = m_sessionManager->hasClip(buttonIndex);
+  const auto previousClipData =
+      replacingExistingClip ? m_sessionManager->getClip(buttonIndex) : SessionManager::ClipData{};
 
   // Check if we should copy the audio file to project folder
   // Only copy if source is outside our project audio folder
@@ -2258,6 +2262,14 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   if (success) {
     // Calculate global clip index for multi-tab isolation
     int globalClipIndex = getGlobalClipIndex(buttonIndex);
+    auto clipData = m_sessionManager->getClip(buttonIndex);
+
+    if (replacingExistingClip) {
+      clipData = occ::applyReplacementPolicy(previousClipData, clipData);
+      m_sessionManager->setClip(buttonIndex, clipData);
+      m_loopEnabled[globalClipIndex] = clipData.loopEnabled;
+      m_stopOthersOnPlay[globalClipIndex] = clipData.stopOthersEnabled;
+    }
 
     // Load audio file into AudioEngine for playback (use global index)
     if (m_audioEngine) {
@@ -2280,6 +2292,14 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
                   "• Audacity (File > Export > 48000 Hz)\n"
                   "• ffmpeg: ffmpeg -i input.wav -ar 48000 output.wav",
               "OK");
+        }
+
+        if (replacingExistingClip) {
+          m_audioEngine->updateClipMetadata(
+              globalClipIndex, clipData.trimInSamples, clipData.trimOutSamples,
+              clipData.fadeInSeconds, clipData.fadeOutSeconds, juce::String(clipData.fadeInCurve),
+              juce::String(clipData.fadeOutCurve));
+          m_audioEngine->setClipLoopMode(globalClipIndex, clipData.loopEnabled);
         }
       }
     }
