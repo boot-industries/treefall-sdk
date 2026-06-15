@@ -142,7 +142,6 @@ private:
   int m_dropoutCount = 0;
   juce::String m_deviceSummary = "Audio engine not initialized";
   juce::String m_playoutRouteLabel = "Playout: Group outputs";
-  int m_heartbeatPhase = 0; // For pulse animation (0-100)
 
   // OCC130 Sprint B.4: Tab renaming support
   std::unique_ptr<juce::TextEditor> m_renameEditor;
