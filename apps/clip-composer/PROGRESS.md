@@ -72,7 +72,9 @@ OCC150 Action Triad Replace File + Portable Path Fix:
 4. ✅ Copied-to-project audio now feeds `AudioEngine::loadClip()` using the persisted `finalPath`, keeping session portability and playback source aligned
 5. ✅ `ClipLoadPlan` extracts copied-vs-linked path decisions from UI/audio side effects
 6. ✅ Three regression tests cover linked paths, copied project paths, and duplicate-name protection
-7. ✅ Debug app target and `clip_composer_tests` build cleanly; 54/54 tests pass
+7. ✅ `ClipReplacementPolicy` preserves operator intent during file replacement (custom names, colour, group, gain, loop, stop-others) while resetting/clamping media-specific trim/fade data
+8. ✅ Three regression tests cover replacement metadata preservation, default name replacement, and fade clamping
+9. ✅ Debug app target and `clip_composer_tests` build cleanly; 57/57 tests pass
 
 ---
 
