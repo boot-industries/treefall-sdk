@@ -27,15 +27,24 @@ A second functional issue was found in the shared clip-load path: when an operat
 
 ### 2. Portable copied-audio path now reaches the audio engine
 
-`loadClipToButton()` now calls:
+`loadClipToButton()` now builds an `occ::ClipLoadPlan` and calls:
 
 ```cpp
-m_audioEngine->loadClip(globalClipIndex, finalPath);
+m_sessionManager->loadClip(buttonIndex, loadPlan.sessionPath);
+m_audioEngine->loadClip(globalClipIndex, loadPlan.audioEnginePath);
 ```
 
-instead of loading the originally selected `filePath`. This keeps the session JSON, the project audio copy, and the active playback buffer aligned.
+For linked imports, both paths are the original source. For copied imports, both paths are the unique project-audio destination. This keeps the session JSON, the project audio copy, and the active playback buffer aligned.
 
-### 3. Dialog implementation notes updated
+### 3. Path planning is now covered by focused tests
+
+`Source/Core/ClipLoadPlan.h` isolates the copied-vs-linked path decision from modal UI and audio-engine side effects. `tests/test_clip_load_plan.cpp` verifies:
+
+- Linked imports use the original path for both `SessionManager` and `AudioEngine`.
+- Copied imports use the copied project path for both `SessionManager` and `AudioEngine`.
+- Existing project media is not overwritten; duplicate names receive a unique suffix.
+
+### 4. Dialog implementation notes updated
 
 The Clip Edit dialog layout comment now reflects that `REPLACE FILE` delegates to MainComponent's file chooser + reload path rather than remaining an OCC149c deferral.
 
@@ -63,12 +72,12 @@ Results:
 
 - Debug app target built successfully: `orpheus_clip_composer_app`.
 - Test target built successfully: `clip_composer_tests`.
-- `51/51` Clip Composer tests passed.
+- `54/54` Clip Composer tests passed after adding the three ClipLoadPlan regression tests.
 
 ---
 
 ## Remaining follow-ups
 
 - Manual UI smoke test with a populated session: open Edit Dialog → Replace File → choose Copy to Project vs Link to Original → confirm playback uses the expected media.
-- Consider adding a non-modal status toast after replacement so operators get a clear confirmation without reopening the dialog.
-- Longer term: split `loadClipToButton()` into a pure load service and UI prompt shell so Replace File can preserve selected metadata fields more selectively.
+- Add a non-modal replacement status message so operators get clear confirmation without interrupting show flow.
+- Split `loadClipToButton()` further into a pure load service and UI prompt shell so Replace File can preserve selected metadata fields more selectively.

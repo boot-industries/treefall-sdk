@@ -70,7 +70,9 @@ OCC150 Action Triad Replace File + Portable Path Fix:
 2. ✅ Replacement reuses the existing `loadClipToButton()` path and closes stale dialog UI after the swap
 3. ✅ Async chooser callback uses `SafePointer<ClipEditDialog>` to avoid stale dialog dereferences
 4. ✅ Copied-to-project audio now feeds `AudioEngine::loadClip()` using the persisted `finalPath`, keeping session portability and playback source aligned
-5. ✅ Debug app target and `clip_composer_tests` build cleanly; 51/51 tests pass
+5. ✅ `ClipLoadPlan` extracts copied-vs-linked path decisions from UI/audio side effects
+6. ✅ Three regression tests cover linked paths, copied project paths, and duplicate-name protection
+7. ✅ Debug app target and `clip_composer_tests` build cleanly; 54/54 tests pass
 
 ---
 
