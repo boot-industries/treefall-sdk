@@ -10,6 +10,7 @@ add_executable(clip_composer_tests
   test_session_manager.cpp
   test_performance.cpp
   test_display_preferences.cpp
+  test_clip_load_plan.cpp
 )
 
 # C++20 required (matches main application)

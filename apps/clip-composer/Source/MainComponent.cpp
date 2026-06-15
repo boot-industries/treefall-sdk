@@ -4,6 +4,7 @@
 #include "AppShell/AppCommandIds.h"
 #include "BuildInfo.h"
 #include "Core/ClipCommands.h"
+#include "Core/ClipLoadPlan.h"
 #include "UI/ConsoleTheme.h"
 #include "UI/DesignTokens.h"
 #include <algorithm>
@@ -2214,7 +2215,7 @@ void MainComponent::loadMultipleFiles(const juce::Array<juce::File>& files, int 
 void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePath) {
   // Item 32: Audio asset copying - copy file to project folder
   juce::File sourceFile(filePath);
-  juce::String finalPath = filePath;
+  auto loadPlan = occ::makeLinkedClipLoadPlan(sourceFile);
 
   // Check if we should copy the audio file to project folder
   // Only copy if source is outside our project audio folder
@@ -2235,24 +2236,12 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
       // Cancel - don't load
       return;
     } else if (result == 1) {
-      // Copy to project folder
-      if (!projectAudioDir.exists()) {
-        projectAudioDir.createDirectory();
-      }
-
-      // Create unique filename if file already exists
-      juce::File destFile = projectAudioDir.getChildFile(sourceFile.getFileName());
-      int counter = 1;
-      while (destFile.exists()) {
-        juce::String nameWithoutExt = sourceFile.getFileNameWithoutExtension();
-        juce::String ext = sourceFile.getFileExtension();
-        destFile = projectAudioDir.getChildFile(nameWithoutExt + "_" + juce::String(counter) + ext);
-        counter++;
-      }
-
-      if (sourceFile.copyFileTo(destFile)) {
-        finalPath = destFile.getFullPathName();
-        DBG("MainComponent: Copied audio file to project folder: " << finalPath);
+      // Copy to project folder. The resulting plan deliberately feeds the same
+      // final path to SessionManager and AudioEngine so portable sessions cannot
+      // diverge from the actual playback buffer source.
+      if (auto copiedPlan = occ::copyClipIntoProjectAudioDirectory(sourceFile, projectAudioDir)) {
+        loadPlan = *copiedPlan;
+        DBG("MainComponent: Copied audio file to project folder: " << loadPlan.sessionPath);
       } else {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Copy Failed",
                                                "Failed to copy audio file to project folder.\n"
@@ -2264,7 +2253,7 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
   }
 
   // Use SessionManager to load the clip (with final path)
-  bool success = m_sessionManager->loadClip(buttonIndex, finalPath);
+  bool success = m_sessionManager->loadClip(buttonIndex, loadPlan.sessionPath);
 
   if (success) {
     // Calculate global clip index for multi-tab isolation
@@ -2272,7 +2261,7 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
 
     // Load audio file into AudioEngine for playback (use global index)
     if (m_audioEngine) {
-      bool audioLoaded = m_audioEngine->loadClip(globalClipIndex, finalPath);
+      bool audioLoaded = m_audioEngine->loadClip(globalClipIndex, loadPlan.audioEnginePath);
       if (!audioLoaded) {
         DBG("MainComponent: Failed to load audio into engine for button "
             << buttonIndex << " (global: " << globalClipIndex << ")");
