@@ -118,18 +118,27 @@ The four operator-mode surfaces (Playout / Edit / Routing / Preferences) are fun
 
 ---
 
-## Open follow-ups (filed as `TODO(occ149c-…)` source comments)
+## OCC149c completion status
 
-- **`occ149c-color-chips`** — `ColorSwatchPicker` reskin to inline chip row (currently popup-grid dropdown).
-- **`occ149c-chips`** — Chip-style paint refinement on `ConsoleChipButton` if needed after visual review.
-- **`occ149c-actions`** — Action triad (Audition / Replace File / Clear) at dialog bottom. Audition overlaps with transport play, Replace needs file-picker integration, Clear maps to right-click "Remove clip."
-- **`occ149c-advanced-collapse`** — Collapse the Advanced section behind a disclosure to reduce dialog density.
-- **`occ149c-minimap-scrub`** — Interactive viewport drag on the `WaveformOverview` minimap.
-- **`occ149c-waveform-overview`** — Cue markers (HOOK / DROP / OUTRO) and amplitude y-axis labels (+1.0 / +0.5 / 0 / -0.5 / -1.0) on the main waveform.
-- **`occ149c-routing`** — Real routing model wiring for the inspector's Routing matrix (Output names, Gain readouts, mute/solo).
-- **`occ149c-cue`** — Real cue-buss handler wired to the engine.
+The OCC149c visual-alignment follow-ups have been reconciled on `feat/occ-audio-utility-polish`:
 
-These do not block the OCC149 sprint close.
+- **Colour chips** — `ColorSwatchPicker` is an inline chip row in the Clip Edit dialog; the compact popup remains only for context-menu use.
+- **Chip buttons** — `ConsoleChipButton` is a real focusable `juce::Button` with amber active state and focus halo.
+- **Action triad** — `AUDITION`, `REPLACE FILE`, and `CLEAR` are real dialog buttons. Replace File delegates through MainComponent's file chooser/load path and preserves operator metadata intent.
+- **Advanced collapse** — the secondary Advanced section collapses behind the disclosure and sets parked controls non-visible so keyboard focus cannot land on hidden gain/trim/fade controls.
+- **Minimap scrub** — `WaveformOverview` supports click-to-jump and drag-to-scrub viewport interaction.
+- **Waveform overview utility** — cue-marker primitives (`HOOK`, `DROP`, `OUTRO`, custom) and the main waveform scale are present. Cue-marker persistence/editor UX is a future session-metadata feature, not an OCC149 design-alignment blocker.
+- **Routing** — inspector rows now read output labels, gain, mute, and solo from the audio-engine/UI snapshot. Current transport topology routes all four groups to `Main L/R`, which is the operator-true value until per-group bus assignment exists.
+- **Cue/PFL** — Cue controls are real but correctly feature-gated until the app has both multichannel-output detection and configured cue routing. This avoids shipping a fake PFL path on the main output.
+
+Verification for the completion pass:
+
+```bash
+cmake --build build --target orpheus_clip_composer_app clip_composer_tests -j$(sysctl -n hw.ncpu)
+ctest --test-dir build/apps/clip-composer/tests --output-on-failure
+```
+
+Result: `60/60` tests passed.
 
 ---
 
@@ -151,4 +160,4 @@ Significantly modified:
 
 ---
 
-**Status:** Complete, pending design review. Branch `codex/clip-composer-ui-refresh` pushed to origin.
+**Status:** Complete for OCC149/OCC149b/OCC149c visual-alignment scope. Branch `feat/occ-audio-utility-polish` pushed to origin.
