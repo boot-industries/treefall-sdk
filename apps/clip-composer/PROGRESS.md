@@ -57,10 +57,12 @@ OCC149 / OCC149b Design-System Alignment Sprint (v0.2.3-alpha, in progress):
 13. ✅ `ConsoleChipButton` — real focusable flag chips (amber-tinted when set)
 14. ✅ `GroupSelector` — A/B/C/D channel-strip selector with lit selected state + backlit unselected preview
 15. ✅ Title bar live-tracks name editor
+16. ✅ OCC149c Advanced disclosure collapse completed; hidden secondary controls are removed from visible/focusable UI while collapsed
+17. ✅ OCC149c follow-ups reconciled: inline colour chips, action triad, minimap scrubbing, waveform cue-marker primitives/scale, and real routing readouts are complete for the OCC149 visual-alignment scope
+18. ✅ Debug app target and `clip_composer_tests` build cleanly; 60/60 tests pass
 
 **Next Steps:**
 
-- Address remaining OCC149c follow-ups (see CHANGELOG / OCC149 sprint report): Advanced section collapse refinements, cue markers, deeper real routing model wiring
 - Manual smoke pass across operator modes with populated sessions and varied window widths
 - Secondary dialog audit (Audio Settings, About, Hotkey Setup, etc.) after the OCC149c follow-ups
 

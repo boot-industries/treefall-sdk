@@ -12,6 +12,7 @@ add_executable(clip_composer_tests
   test_display_preferences.cpp
   test_clip_load_plan.cpp
   test_clip_replacement_policy.cpp
+  test_clip_edit_dialog_layout_policy.cpp
 )
 
 # C++20 required (matches main application)
