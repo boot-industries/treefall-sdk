@@ -1,8 +1,8 @@
 # Orpheus Clip Composer - Implementation Progress
 
-**Last Updated:** 2026-05-15
-**Current Phase:** Clip Composer UI refresh
-**Application Status:** v0.2.2-alpha UI refresh branch
+**Last Updated:** 2026-06-14
+**Current Phase:** Clip Composer utility + broadcast workflow polish
+**Application Status:** v0.2.3-alpha UI refresh branch
 **Framework:** JUCE 8.0.4
 **SDK:** Orpheus SDK M2 (real-time infrastructure)
 
@@ -60,9 +60,17 @@ OCC149 / OCC149b Design-System Alignment Sprint (v0.2.3-alpha, in progress):
 
 **Next Steps:**
 
-- Address OCC149c follow-ups (see CHANGELOG / OCC149 sprint report): ColorSwatchPicker reskin, action triad wiring, Advanced section collapse, interactive minimap scrub, cue markers, real routing model wiring
+- Address remaining OCC149c follow-ups (see CHANGELOG / OCC149 sprint report): Advanced section collapse refinements, cue markers, deeper real routing model wiring
 - Manual smoke pass across operator modes with populated sessions and varied window widths
 - Secondary dialog audit (Audio Settings, About, Hotkey Setup, etc.) after the OCC149c follow-ups
+
+OCC150 Action Triad Replace File + Portable Path Fix:
+
+1. ✅ Edit Dialog `REPLACE FILE` action is wired to an async JUCE file chooser
+2. ✅ Replacement reuses the existing `loadClipToButton()` path and closes stale dialog UI after the swap
+3. ✅ Async chooser callback uses `SafePointer<ClipEditDialog>` to avoid stale dialog dereferences
+4. ✅ Copied-to-project audio now feeds `AudioEngine::loadClip()` using the persisted `finalPath`, keeping session portability and playback source aligned
+5. ✅ Debug app target and `clip_composer_tests` build cleanly; 51/51 tests pass
 
 ---
 

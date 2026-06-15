@@ -2,10 +2,13 @@
 
 Project documentation index for orpheus-sdk/apps/clip-composer.
 
-**Next Available Number:** OCC149
+**Next Available Number:** OCC151
 
 ## Recent Documents
 
+- [[docs/occ/OCC150 Action Triad Replace File and Portable Audio Path Fix]]
+- [[docs/occ/OCC149 Clip Composer Design-System Alignment Sprint]]
+- [[docs/occ/OCC149b Phase 5b Remediation Plan]]
 - [[OCC148 Clip Composer UI Refresh Corrective Pass]]
 - [[OCC147 Clip Composer UI Refresh Sprint Report]]
 - [[OCC141 ORP121 Phase 4 OCC Implementation Report]]
@@ -71,6 +74,9 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 - [[docs/occ/OCC141 ORP121 Phase 4 OCC Implementation Report]]
 - [[docs/occ/OCC147 Clip Composer UI Refresh Sprint Report]]
 - [[docs/occ/OCC148 Clip Composer UI Refresh Corrective Pass]]
+- [[docs/occ/OCC149 Clip Composer Design-System Alignment Sprint]]
+- [[docs/occ/OCC149b Phase 5b Remediation Plan]]
+- [[docs/occ/OCC150 Action Triad Replace File and Portable Audio Path Fix]]
 
 ## Archived Documents
 
