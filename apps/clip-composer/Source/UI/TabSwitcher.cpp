@@ -14,6 +14,10 @@ constexpr int kModeStripSpacing = 10;
 
 //==============================================================================
 TabSwitcher::TabSwitcher() {
+  // paint() always covers the bounds with fillVerticalGradient at line 177,
+  // so promise JUCE the strip is opaque. The heartbeat timer would otherwise
+  // force chassis recomposition behind the tab strip every frame.
+  setOpaque(true);
   // Initialize default tab labels
   const char* defaultLabels[NUM_TABS] = {"Tab 1", "Tab 2", "Tab 3", "Tab 4",
                                          "Tab 5", "Tab 6", "Tab 7", "Tab 8"};
@@ -63,9 +67,9 @@ TabSwitcher::TabSwitcher() {
   m_panicButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
   addAndMakeVisible(m_panicButton.get());
 
-  // OCC130 Sprint B: Start heartbeat animation timer (1Hz pulse)
-  // Timer fires every 10ms, phase increments 0-100 in 1 second (100 steps x 10ms = 1000ms)
-  startTimer(10); // 10ms intervals for smooth 1Hz pulse animation
+  // (OCC130's heartbeat phase counter was never read by paint() — the real
+  // animated heartbeat lives in HeartbeatIndicator, which MainComponent owns.
+  // We were burning a 100 Hz full-strip repaint for nothing. No timer here.)
 
   setSize(800, m_tabHeight);
   updateModeButtonStates();
@@ -164,9 +168,9 @@ void TabSwitcher::setPerformanceInfo(float cpuPercent, int memoryMB) {
 }
 
 void TabSwitcher::timerCallback() {
-  // OCC130 Sprint B: Heartbeat pulse animation (0-100 phase)
-  m_heartbeatPhase = (m_heartbeatPhase + 1) % 100;
-  repaint(); // Trigger repaint for heartbeat animation
+  // Intentionally empty. The heartbeat-phase counter that lived here was
+  // never read by paint(); the visible heartbeat is rendered by the
+  // standalone HeartbeatIndicator widget. Removed in OCC149c perf cleanup.
 }
 
 //==============================================================================

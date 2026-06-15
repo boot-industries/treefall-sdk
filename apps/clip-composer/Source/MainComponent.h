@@ -214,5 +214,14 @@ private:
   std::function<void(int)> m_appCommandHandler;
   occ::ui::ClipComposerUiSnapshot m_uiSnapshot;
 
+  // OCC149c perf: refreshUiSnapshot() inputs that change at < 1Hz are cached
+  // so the 30Hz refresh path doesn't allocate juce::Strings or hit syscalls
+  // every frame.
+  juce::String m_cachedDeviceNameForLabels; // re-derive playout/audition labels only on change
+  int m_cachedProcessMemoryMB = 0;          // populated at 1Hz inside the timer gate
+  // Pre-allocated buffer for BarVisualizer::setVolumeBands(const std::vector&)
+  // so the 30Hz feed doesn't heap-alloc a 4-float vector every frame.
+  std::vector<float> m_barVisualizerLevelsBuffer;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

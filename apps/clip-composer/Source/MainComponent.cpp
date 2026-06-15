@@ -6,6 +6,7 @@
 #include "Core/ClipCommands.h"
 #include "UI/ConsoleTheme.h"
 #include "UI/DesignTokens.h"
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <orpheus/app/ApplicationPaths.h>
@@ -169,6 +170,29 @@ const std::array<std::array<GridKeySpec, 10>, 10>& gridKeyMap() {
 
 //==============================================================================
 MainComponent::MainComponent() {
+  // paint() always fillAlls the bounds with kBgPrimary at line 397, so promise
+  // JUCE the chassis is opaque. Children that mark themselves opaque (inspector,
+  // transport, tab strip) then short-circuit cleanly without forcing the
+  // chassis to re-paint behind them.
+  setOpaque(true);
+
+  // Pre-size the bar visualizer feed buffer so refreshUiSnapshot can copy
+  // into it without realloc each frame.
+  m_barVisualizerLevelsBuffer.assign(4, 0.0f);
+
+  // PFL availability reason is a static literal until the SDK and Preferences
+  // expose channel-count and cue-routing respectively. Set it once here so
+  // refreshUiSnapshot() doesn't rebuild this ~120-char juce::String 30 times
+  // per second.
+  // TODO(occ149c-pfl-channels): AudioDeviceStatus needs an output-channel
+  //   count so we can detect ">2ch device" honestly.
+  // TODO(occ149c-pfl-routing): Preferences → Audio needs a cue-bus
+  //   channel-selection field, persisted via DisplayPreferences.
+  m_uiSnapshot.audio.pfl.available = false;
+  m_uiSnapshot.audio.pfl.unavailableReason =
+      "Pre-fader-listen requires a multichannel audio interface and cue "
+      "routing configuration (Preferences → Audio).";
+
   // Sprint 0: Ensure application directories exist
   orpheus::ApplicationPaths::ensureDirectoriesExist();
 
@@ -603,9 +627,12 @@ void MainComponent::timerCallback() {
   refreshUiSnapshot();
 
   if (m_barVisualizer) {
-    std::vector<float> levels(m_uiSnapshot.audio.groupLevels.begin(),
-                              m_uiSnapshot.audio.groupLevels.end());
-    m_barVisualizer->setVolumeBands(levels);
+    // OCC149c perf: reuse a member buffer instead of heap-allocating a
+    // 4-float vector every 33ms. setVolumeBands still takes const std::vector&
+    // (shmui surface), so we copy into the prepared buffer in place.
+    std::copy(m_uiSnapshot.audio.groupLevels.begin(), m_uiSnapshot.audio.groupLevels.end(),
+              m_barVisualizerLevelsBuffer.begin());
+    m_barVisualizer->setVolumeBands(m_barVisualizerLevelsBuffer);
   }
 
   if (m_levelMetersWindow && m_levelMetersWindow->isVisible()) {
@@ -627,6 +654,13 @@ void MainComponent::timerCallback() {
   // Only update performance display once per second (30 ticks at 30Hz)
   if (performanceUpdateCounter >= 30) {
     performanceUpdateCounter = 0;
+
+    // OCC149c perf: sample process memory at 1Hz, not 30Hz. The syscall
+    // (task_info on macOS) is not catastrophic but it's pointless overhead
+    // when the displayed number rounds to MB and the inspector only renders
+    // it at this same 1Hz cadence anyway. refreshUiSnapshot() reads this
+    // cached value into m_uiSnapshot.audio.health.memoryMB.
+    m_cachedProcessMemoryMB = getProcessMemoryMb();
 
     // Update window title (dirty flag, session name) at 1Hz
     updateWindowTitle();
@@ -947,8 +981,13 @@ void MainComponent::handleClipStateChanged(int buttonIndex, orpheus::PlaybackSta
 }
 
 void MainComponent::refreshUiSnapshot() {
-  m_uiSnapshot = {};
+  // OCC149c perf: do NOT reset the whole snapshot to `{}` — that destroys and
+  // reallocates a fistful of juce::Strings (routing labels, device labels,
+  // PFL reason text) every 33 ms. Instead, explicitly clear only the OR-true
+  // accumulator field and let the per-frame writes below overwrite scalars.
+  // Strings that change at < 1 Hz are gated on their inputs.
   m_uiSnapshot.activeViewMode = m_operatorViewMode;
+  m_uiSnapshot.session.hasActivePlayback = false;
 
   if (!m_sessionManager)
     return;
@@ -979,34 +1018,35 @@ void MainComponent::refreshUiSnapshot() {
       row.muted = m_audioEngine->isGroupMuted(g);
       row.soloed = m_audioEngine->isGroupSoloed(g);
     }
-    m_uiSnapshot.audio.activeDeviceIdentifier = juce::String(deviceStatus.activeDeviceName);
+    // Device identity + route labels rebuild only when the device name actually
+    // changes. Re-concatenating "Playout: Groups 1-4 via …" every 33 ms
+    // accomplishes nothing but heap churn when nothing has changed.
+    const juce::String deviceName = juce::String(deviceStatus.activeDeviceName);
+    if (deviceName != m_cachedDeviceNameForLabels) {
+      m_cachedDeviceNameForLabels = deviceName;
+      m_uiSnapshot.audio.activeDeviceIdentifier = deviceName;
+      m_uiSnapshot.audio.device.activeDeviceIdentifier = deviceName;
+      m_uiSnapshot.audio.device.playoutRouteLabel = "Playout: Groups 1-4 via " + deviceName;
+      m_uiSnapshot.audio.audition.routeLabel = "Audition: cue buss via " + deviceName;
+    }
     m_uiSnapshot.audio.device.initialized = deviceStatus.initialized;
     m_uiSnapshot.audio.device.running = deviceStatus.running;
     m_uiSnapshot.audio.device.usingFallbackDriver = deviceStatus.usingFallbackDriver;
     m_uiSnapshot.audio.device.routesAvailable = deviceStatus.initialized;
-    m_uiSnapshot.audio.device.activeDeviceIdentifier = juce::String(deviceStatus.activeDeviceName);
-    m_uiSnapshot.audio.device.playoutRouteLabel =
-        "Playout: Groups 1-4 via " + juce::String(deviceStatus.activeDeviceName);
     m_uiSnapshot.audio.device.deviceSummary = juce::String(deviceStatus.summary);
     m_uiSnapshot.audio.audition.usesDedicatedBus = true;
-    m_uiSnapshot.audio.audition.routeLabel =
-        "Audition: cue buss via " + juce::String(deviceStatus.activeDeviceName);
     m_uiSnapshot.audio.audition.validationMessage =
         deviceStatus.lastError.empty() ? juce::String() : juce::String(deviceStatus.lastError);
 
-    // OCC149c: PFL gate. The feature requires a multichannel interface AND
-    // operator-configured cue routing. Neither SDK surface exists yet, so the
-    // gate stays closed until both are wired:
-    //   TODO(occ149c-pfl-channels): AudioDeviceStatus needs an output-channel
-    //     count so we can detect ">2ch device" honestly.
-    //   TODO(occ149c-pfl-routing): Preferences → Audio needs a cue-bus
-    //     channel-selection field, persisted via DisplayPreferences.
-    m_uiSnapshot.audio.pfl.available = false;
-    m_uiSnapshot.audio.pfl.unavailableReason =
-        "Pre-fader-listen requires a multichannel audio interface and cue "
-        "routing configuration (Preferences → Audio).";
+    // PFL availability + reason are set once in the constructor — the feature
+    // is gated off until SDK + Preferences surface exists, so there's nothing
+    // to update here. See ctor for the TODOs.
+
     m_uiSnapshot.audio.health.cpuPercent = perfMetrics.cpuUsagePercent;
-    m_uiSnapshot.audio.health.memoryMB = getProcessMemoryMb();
+    // getProcessMemoryMb() syscall is gated to 1Hz inside timerCallback();
+    // reuse the last sampled value here so the inspector keeps reading a
+    // stable MB number across the intervening frames.
+    m_uiSnapshot.audio.health.memoryMB = m_cachedProcessMemoryMB;
     m_uiSnapshot.audio.health.bufferSize = static_cast<int>(deviceStatus.bufferSize);
     m_uiSnapshot.audio.health.sampleRate = static_cast<int>(deviceStatus.sampleRate);
     m_uiSnapshot.audio.health.dropoutCount = static_cast<int>(perfMetrics.bufferUnderrunCount);

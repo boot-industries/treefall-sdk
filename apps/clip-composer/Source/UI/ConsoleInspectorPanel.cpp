@@ -3,7 +3,76 @@
 #include "ConsoleInspectorPanel.h"
 #include "ConsoleTheme.h"
 
+namespace {
+
+// Quantize a meter level (0..~1.5) to an integer band so a continuously
+// drifting RMS value doesn't trip the snapshot-changed gate every frame.
+// ~1% precision matches what the meter bar can render at typical widths.
+int quantizeMeter(float level) {
+  return static_cast<int>(juce::jlimit(0.0f, 1.5f, level) * 100.0f);
+}
+
+// Quantize playback progress to the integer percent the inspector already
+// renders, so per-sample position drift doesn't trip the gate.
+int quantizeProgress(float progress) {
+  return static_cast<int>(progress * 100.0f);
+}
+
+// Compare the inspector-visible subset of two snapshots. Returns true when a
+// repaint is *not* needed. Fields the panel doesn't render (e.g. CPU%) are
+// ignored; continuous fields (meter levels, playback progress) are quantized
+// to render precision.
+bool inspectorSnapshotEqual(const occ::ui::ClipComposerUiSnapshot& a,
+                            const occ::ui::ClipComposerUiSnapshot& b) {
+  if (a.activeViewMode != b.activeViewMode)
+    return false;
+  // Playout view: session clips summary.
+  if (a.session.activeTab != b.session.activeTab)
+    return false;
+  for (size_t i = 0; i < a.session.clips.size(); ++i) {
+    const auto& ca = a.session.clips[i];
+    const auto& cb = b.session.clips[i];
+    if (ca.hasClip != cb.hasClip || ca.playbackState != cb.playbackState ||
+        ca.clipGroup != cb.clipGroup || ca.buttonIndex != cb.buttonIndex ||
+        quantizeProgress(ca.playbackProgress) != quantizeProgress(cb.playbackProgress) ||
+        ca.displayName != cb.displayName) {
+      return false;
+    }
+  }
+  // Routing view: per-group meters + labels + mute/solo.
+  for (size_t i = 0; i < a.audio.groupLevels.size(); ++i) {
+    if (quantizeMeter(a.audio.groupLevels[i]) != quantizeMeter(b.audio.groupLevels[i]))
+      return false;
+  }
+  for (size_t i = 0; i < a.audio.groupRouting.size(); ++i) {
+    const auto& ra = a.audio.groupRouting[i];
+    const auto& rb = b.audio.groupRouting[i];
+    if (ra.muted != rb.muted || ra.soloed != rb.soloed ||
+        static_cast<int>(ra.gainDb * 10.0f) != static_cast<int>(rb.gainDb * 10.0f) ||
+        ra.outputLabel != rb.outputLabel) {
+      return false;
+    }
+  }
+  // PFL availability — drives Cue Buss enabled state + tooltip.
+  if (a.audio.pfl.available != b.audio.pfl.available ||
+      a.audio.pfl.unavailableReason != b.audio.pfl.unavailableReason)
+    return false;
+  // Preferences view rows.
+  if (a.audio.device.deviceSummary != b.audio.device.deviceSummary ||
+      a.audio.audition.routeLabel != b.audio.audition.routeLabel ||
+      a.audio.health.statusText != b.audio.health.statusText)
+    return false;
+  return true;
+}
+
+} // namespace
+
 ConsoleInspectorPanel::ConsoleInspectorPanel() {
+  // paint() always fillAlls the bounds with kBgSurface, so promise JUCE the
+  // panel is opaque. Without this declaration JUCE conservatively re-paints
+  // MainComponent's chassis behind us on every repaint, which is the main
+  // source of the 149c-era chop.
+  setOpaque(true);
   // Playout footer — Stop All (danger coral) + Cue Buss (matte default). Real juce::Buttons
   // so the live operator can mash them with the mouse or the keyboard. Wired through
   // onStopAll / onCueBuss callbacks installed by MainComponent.
@@ -55,6 +124,11 @@ ConsoleInspectorPanel::ConsoleInspectorPanel() {
 }
 
 void ConsoleInspectorPanel::setSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
+  // Gate the panel repaint on whether anything inspector-visible actually
+  // changed. The owned ConsoleActionButtons handle their own invalidation
+  // when setVariant / setEnabled flip state, so we still apply those updates
+  // unconditionally — they're cheap and self-gating.
+  const bool needsRepaint = !inspectorSnapshotEqual(m_snapshot, snapshot);
   m_snapshot = snapshot;
   // OCC149c: reflect each group's mute/solo state on its M·S buttons. Engaged
   // mute reads as Danger (coral) to mirror Stop All; engaged solo reads as
@@ -76,7 +150,8 @@ void ConsoleInspectorPanel::setSnapshot(const occ::ui::ClipComposerUiSnapshot& s
     m_playoutCueBussButton->setEnabled(pfl.available);
     m_playoutCueBussButton->setTooltip(pfl.available ? juce::String() : pfl.unavailableReason);
   }
-  repaint();
+  if (needsRepaint)
+    repaint();
 }
 
 void ConsoleInspectorPanel::setOperatorViewMode(occ::ui::OperatorViewMode mode) {

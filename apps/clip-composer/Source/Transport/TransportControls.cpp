@@ -4,8 +4,53 @@
 #include "../UI/ConsoleTheme.h"
 #include "../UI/DesignTokens.h"
 
+namespace {
+
+// Compare the transport-strip-visible subset of two snapshots. Returns true
+// when nothing painted has changed and a repaint can be skipped. Continuous
+// fields are quantized to render precision (~1% / per-dB).
+bool transportSnapshotEqual(const occ::ui::ClipComposerUiSnapshot& a,
+                            const occ::ui::ClipComposerUiSnapshot& b) {
+  // Master meter — quantize to 1% so per-sample drift doesn't trip the gate.
+  if (static_cast<int>(a.audio.masterRmsLevel * 100.0f) !=
+      static_cast<int>(b.audio.masterRmsLevel * 100.0f))
+    return false;
+  // PFL availability — drives the Cue button enabled state + tooltip.
+  if (a.audio.pfl.available != b.audio.pfl.available ||
+      a.audio.pfl.unavailableReason != b.audio.pfl.unavailableReason)
+    return false;
+  // Playing count + first two display names — that's what the status zone shows.
+  int aPlaying = 0;
+  int bPlaying = 0;
+  juce::StringArray aNames;
+  juce::StringArray bNames;
+  for (const auto& clip : a.session.clips) {
+    if (clip.hasClip && clip.playbackState != orpheus::PlaybackState::Stopped) {
+      ++aPlaying;
+      if (aNames.size() < 2 && clip.displayName.isNotEmpty())
+        aNames.add(clip.displayName);
+    }
+  }
+  for (const auto& clip : b.session.clips) {
+    if (clip.hasClip && clip.playbackState != orpheus::PlaybackState::Stopped) {
+      ++bPlaying;
+      if (bNames.size() < 2 && clip.displayName.isNotEmpty())
+        bNames.add(clip.displayName);
+    }
+  }
+  if (aPlaying != bPlaying || aNames != bNames)
+    return false;
+  return true;
+}
+
+} // namespace
+
 //==============================================================================
 TransportControls::TransportControls() {
+  // paint() always covers the bounds with fillVerticalGradient, so promise
+  // JUCE the strip is opaque. Suppresses parent recomposition on every
+  // snapshot push from MainComponent.
+  setOpaque(true);
   // Create Stop All button
   m_stopAllButton = std::make_unique<juce::TextButton>("Stop All");
   m_stopAllButton->setButtonText("STOP ALL");
@@ -292,6 +337,10 @@ void TransportControls::setLatencyInfo(double latencyMs, int bufferSize, int sam
 }
 
 void TransportControls::setTransportSnapshot(const occ::ui::ClipComposerUiSnapshot& snapshot) {
+  // Gate the strip repaint on whether anything painted actually changed. The
+  // Cue button handles its own invalidation when setEnabled / setTooltip
+  // flip, so we still apply those updates unconditionally.
+  const bool needsRepaint = !transportSnapshotEqual(m_snapshot, snapshot);
   m_snapshot = snapshot;
   // OCC149c: PFL gate — Cue is an opt-in feature. Disable the transport-strip
   // Cue button + show the reason as a tooltip when the device/routing
@@ -301,7 +350,8 @@ void TransportControls::setTransportSnapshot(const occ::ui::ClipComposerUiSnapsh
     m_cueButton->setEnabled(pfl.available);
     m_cueButton->setTooltip(pfl.available ? juce::String() : pfl.unavailableReason);
   }
-  repaint();
+  if (needsRepaint)
+    repaint();
 }
 
 void TransportControls::setPerformanceInfo(float cpuPercent, int memoryMB) {
