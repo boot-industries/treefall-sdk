@@ -1783,10 +1783,10 @@ void ClipEditDialog::resized() {
   //      anatomy but the operator still needs).
   //   8. Action row — OK (commit) and Cancel.
   //
-  // The mockup's AUDITION/REPLACE/CLEAR action triad is partially deferred:
+  // The mockup's AUDITION/REPLACE/CLEAR action triad now maps to concrete
+  // operator workflows:
   //   - AUDITION overlaps with the transport play button (same behaviour).
-  //   - REPLACE FILE still needs a file picker integration —
-  //     TODO(occ149c-replace-file).
+  //   - REPLACE FILE delegates to MainComponent's file chooser + reload path.
   //   - CLEAR is wired to MainComponent::onClearClicked, which mirrors the
   //     right-click "Remove Clip?" flow through UndoManager so undo history
   //     stays coherent across entry points.

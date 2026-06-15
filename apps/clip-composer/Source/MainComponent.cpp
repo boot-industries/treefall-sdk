@@ -8,6 +8,7 @@
 #include "UI/DesignTokens.h"
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <optional>
 #include <orpheus/app/ApplicationPaths.h>
 
@@ -2100,6 +2101,36 @@ void MainComponent::onClipDoubleClicked(int buttonIndex) {
     m_currentEditDialog = nullptr; // Clear reference to allow new dialog
   };
 
+  // OCC149c: Action Triad REPLACE FILE — keep replacement on the message thread
+  // and close the dialog after a successful swap so the operator never edits a
+  // stale waveform/metadata view. AudioEngine loading still uses the same
+  // pre-buffered clip slot path as drag/drop, so the audio callback remains
+  // allocation-free.
+  dialog->onReplaceFileClicked = [this, buttonIndex, dialog]() {
+    auto safeDialog = juce::Component::SafePointer<ClipEditDialog>(dialog);
+    auto chooser = std::make_shared<juce::FileChooser>("Replace clip audio file", juce::File{},
+                                                       "*.wav;*.aiff;*.aif;*.flac;*.mp3");
+
+    chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                             juce::FileBrowserComponent::canSelectFiles,
+                         [this, buttonIndex, safeDialog, chooser](const juce::FileChooser& fc) {
+                           (void)chooser; // captured to keep the async chooser alive
+                           const auto file = fc.getResult();
+                           if (!file.existsAsFile())
+                             return;
+
+                           loadClipToButton(buttonIndex, file.getFullPathName());
+                           refreshUiSnapshot();
+
+                           if (auto* activeDialog = safeDialog.getComponent()) {
+                             activeDialog->setVisible(false);
+                             delete activeDialog;
+                             if (m_currentEditDialog == activeDialog)
+                               m_currentEditDialog = nullptr;
+                           }
+                         });
+  };
+
   // OCC149c: Action Triad CLEAR — the Edit Dialog's destructive escape hatch.
   // Mirrors the right-click "Remove Clip?" flow so undo history stays
   // consistent regardless of how the operator initiated the clear. Confirmation
@@ -2241,7 +2272,7 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
 
     // Load audio file into AudioEngine for playback (use global index)
     if (m_audioEngine) {
-      bool audioLoaded = m_audioEngine->loadClip(globalClipIndex, filePath);
+      bool audioLoaded = m_audioEngine->loadClip(globalClipIndex, finalPath);
       if (!audioLoaded) {
         DBG("MainComponent: Failed to load audio into engine for button "
             << buttonIndex << " (global: " << globalClipIndex << ")");
