@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ClipEditDialog.h"
+#include "ClipEditDialogLayoutPolicy.h"
 #include "ConsoleTheme.h"
 #include "DesignTokens.h"
 
@@ -1757,8 +1758,7 @@ void ClipEditDialog::paint(juce::Graphics& g) {
 
   // ADVANCED
   drawEyebrow("ADVANCED");
-  // Disclosure button space is reserved in resized()
-  y += GRID * 3; // Advanced section height (gain, pitch, etc.)
+  y += occ::clip_edit::advancedSectionContentHeight(m_advancedExpanded, GRID);
   y += kSectionGap;
 
   // ACTIONS (for the action triad at bottom)
@@ -1969,79 +1969,104 @@ void ClipEditDialog::resized() {
     m_stopOthersButton->setVisible(false);
   contentArea.removeFromTop(kSectionGap);
 
+  auto setAdvancedVisible = [this](bool shouldBeVisible) {
+    for (auto* component : {static_cast<juce::Component*>(m_gainSlider.get()),
+                            static_cast<juce::Component*>(m_gainValueLabel.get()),
+                            static_cast<juce::Component*>(m_placeholderDial.get()),
+                            static_cast<juce::Component*>(m_placeholderValueLabel.get()),
+                            static_cast<juce::Component*>(m_trimInfoLabel.get()),
+                            static_cast<juce::Component*>(m_trimInHoldButton.get()),
+                            static_cast<juce::Component*>(m_trimInDecButton.get()),
+                            static_cast<juce::Component*>(m_trimInIncButton.get()),
+                            static_cast<juce::Component*>(m_trimInClearButton.get()),
+                            static_cast<juce::Component*>(m_trimOutHoldButton.get()),
+                            static_cast<juce::Component*>(m_trimOutDecButton.get()),
+                            static_cast<juce::Component*>(m_trimOutIncButton.get()),
+                            static_cast<juce::Component*>(m_trimOutClearButton.get()),
+                            static_cast<juce::Component*>(m_fadeInCurveCombo.get()),
+                            static_cast<juce::Component*>(m_fadeOutCurveCombo.get())}) {
+      if (component)
+        component->setVisible(shouldBeVisible);
+    }
+  };
+
   // ----- ADVANCED -----
   // Transport buttons and zoom now live in the waveform toolbar above. The
   // Advanced section only carries the truly secondary controls: gain dial,
   // deferred pitch, SET/CLR/nudge for sample-accurate trim, fade-curve combos,
-  // and the trim duration readout.
+  // and the trim duration readout. Collapsing hides those real components (not
+  // just their layout space) so keyboard focus cannot land on parked controls.
   contentArea.removeFromTop(kEyebrowHeight);
   contentArea.removeFromTop(kEyebrowGap);
+  setAdvancedVisible(m_advancedExpanded);
 
-  // Sub-row: Gain · Pitch dials on the left, trim duration readout on the right.
-  const int dialSize = 56;
-  {
-    auto advRow = contentArea.removeFromTop(dialSize + GRID * 2);
-    const int knobBlockW = dialSize + GRID * 2;
+  if (m_advancedExpanded) {
+    // Sub-row: Gain · Pitch dials on the left, trim duration readout on the right.
+    const int dialSize = occ::clip_edit::kAdvancedDialSizePx;
+    {
+      auto advRow = contentArea.removeFromTop(dialSize + GRID * 2);
+      const int knobBlockW = dialSize + GRID * 2;
 
-    if (m_gainSlider && m_gainValueLabel) {
-      auto block = advRow.removeFromLeft(knobBlockW);
-      auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
-      m_gainSlider->setBounds(dial);
-      m_gainValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
+      if (m_gainSlider && m_gainValueLabel) {
+        auto block = advRow.removeFromLeft(knobBlockW);
+        auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
+        m_gainSlider->setBounds(dial);
+        m_gainValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
+      }
+      advRow.removeFromLeft(GRID);
+
+      if (m_placeholderDial && m_placeholderValueLabel) {
+        auto block = advRow.removeFromLeft(knobBlockW);
+        auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
+        m_placeholderDial->setBounds(dial);
+        m_placeholderValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
+      }
+
+      // Trim duration readout — pinned to the right side of this row.
+      if (m_trimInfoLabel) {
+        auto readout = advRow.removeFromRight(GRID * 24).withSizeKeepingCentre(GRID * 22, GRID * 3);
+        m_trimInfoLabel->setBounds(readout);
+      }
     }
-    advRow.removeFromLeft(GRID);
-
-    if (m_placeholderDial && m_placeholderValueLabel) {
-      auto block = advRow.removeFromLeft(knobBlockW);
-      auto dial = block.removeFromTop(dialSize).withSizeKeepingCentre(dialSize, dialSize);
-      m_placeholderDial->setBounds(dial);
-      m_placeholderValueLabel->setBounds(block.withSizeKeepingCentre(GRID * 6, GRID * 2));
-    }
-
-    // Trim duration readout — pinned to the right side of this row.
-    if (m_trimInfoLabel) {
-      auto readout = advRow.removeFromRight(GRID * 24).withSizeKeepingCentre(GRID * 22, GRID * 3);
-      m_trimInfoLabel->setBounds(readout);
-    }
-  }
-  contentArea.removeFromTop(GRID);
-
-  // Sub-row: SET · < · > · CLR for trim-in (left) and trim-out (right).
-  if (m_trimInHoldButton && m_trimInDecButton && m_trimInIncButton && m_trimInClearButton &&
-      m_trimOutHoldButton && m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
-    auto row = contentArea.removeFromTop(GRID * 3);
-    const int halfWidth = (row.getWidth() - kSectionGap) / 2;
-    auto leftHalf = row.removeFromLeft(halfWidth);
-    row.removeFromLeft(kSectionGap);
-    auto rightHalf = row;
-
-    const int btnW = (leftHalf.getWidth() - GRID * 3) / 4;
-    m_trimInHoldButton->setBounds(leftHalf.removeFromLeft(btnW));
-    leftHalf.removeFromLeft(GRID);
-    m_trimInDecButton->setBounds(leftHalf.removeFromLeft(btnW));
-    leftHalf.removeFromLeft(GRID);
-    m_trimInIncButton->setBounds(leftHalf.removeFromLeft(btnW));
-    leftHalf.removeFromLeft(GRID);
-    m_trimInClearButton->setBounds(leftHalf.removeFromLeft(btnW));
-
-    const int btnW2 = (rightHalf.getWidth() - GRID * 3) / 4;
-    m_trimOutHoldButton->setBounds(rightHalf.removeFromLeft(btnW2));
-    rightHalf.removeFromLeft(GRID);
-    m_trimOutDecButton->setBounds(rightHalf.removeFromLeft(btnW2));
-    rightHalf.removeFromLeft(GRID);
-    m_trimOutIncButton->setBounds(rightHalf.removeFromLeft(btnW2));
-    rightHalf.removeFromLeft(GRID);
-    m_trimOutClearButton->setBounds(rightHalf.removeFromLeft(btnW2));
-  }
-
-  // Sub-row: fade curve combos for FADE IN / FADE OUT.
-  if (m_fadeInCurveCombo && m_fadeOutCurveCombo) {
     contentArea.removeFromTop(GRID);
-    auto curveRow = contentArea.removeFromTop(GRID * 3);
-    const int halfWidth = (curveRow.getWidth() - kSectionGap) / 2;
-    m_fadeInCurveCombo->setBounds(curveRow.removeFromLeft(halfWidth));
-    curveRow.removeFromLeft(kSectionGap);
-    m_fadeOutCurveCombo->setBounds(curveRow);
+
+    // Sub-row: SET · < · > · CLR for trim-in (left) and trim-out (right).
+    if (m_trimInHoldButton && m_trimInDecButton && m_trimInIncButton && m_trimInClearButton &&
+        m_trimOutHoldButton && m_trimOutDecButton && m_trimOutIncButton && m_trimOutClearButton) {
+      auto row = contentArea.removeFromTop(GRID * 3);
+      const int halfWidth = (row.getWidth() - kSectionGap) / 2;
+      auto leftHalf = row.removeFromLeft(halfWidth);
+      row.removeFromLeft(kSectionGap);
+      auto rightHalf = row;
+
+      const int btnW = (leftHalf.getWidth() - GRID * 3) / 4;
+      m_trimInHoldButton->setBounds(leftHalf.removeFromLeft(btnW));
+      leftHalf.removeFromLeft(GRID);
+      m_trimInDecButton->setBounds(leftHalf.removeFromLeft(btnW));
+      leftHalf.removeFromLeft(GRID);
+      m_trimInIncButton->setBounds(leftHalf.removeFromLeft(btnW));
+      leftHalf.removeFromLeft(GRID);
+      m_trimInClearButton->setBounds(leftHalf.removeFromLeft(btnW));
+
+      const int btnW2 = (rightHalf.getWidth() - GRID * 3) / 4;
+      m_trimOutHoldButton->setBounds(rightHalf.removeFromLeft(btnW2));
+      rightHalf.removeFromLeft(GRID);
+      m_trimOutDecButton->setBounds(rightHalf.removeFromLeft(btnW2));
+      rightHalf.removeFromLeft(GRID);
+      m_trimOutIncButton->setBounds(rightHalf.removeFromLeft(btnW2));
+      rightHalf.removeFromLeft(GRID);
+      m_trimOutClearButton->setBounds(rightHalf.removeFromLeft(btnW2));
+    }
+
+    // Sub-row: fade curve combos for FADE IN / FADE OUT.
+    if (m_fadeInCurveCombo && m_fadeOutCurveCombo) {
+      contentArea.removeFromTop(GRID);
+      auto curveRow = contentArea.removeFromTop(GRID * 3);
+      const int halfWidth = (curveRow.getWidth() - kSectionGap) / 2;
+      m_fadeInCurveCombo->setBounds(curveRow.removeFromLeft(halfWidth));
+      curveRow.removeFromLeft(kSectionGap);
+      m_fadeOutCurveCombo->setBounds(curveRow);
+    }
   }
 
   // Hide the FileInfoPanel / FilePathEditor for the v0.2.3 anatomy — the

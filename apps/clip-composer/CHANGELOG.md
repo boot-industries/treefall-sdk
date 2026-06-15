@@ -39,13 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Clip Edit dialog title refresh path** — Title bar paints from `m_metadata.displayName` but the name editor's `onTextChange` didn't trigger a repaint, so the title stayed stale while typing. Now triggers `repaint()` on every keystroke.
 - **Fake routing data** — Stripped the `fakeGain[4] = {0, -3, -6, -9}` placeholder from the Routing inspector. Output and Gain columns show "—" until the routing model surfaces real values (`TODO(occ149b-routing)`).
 
-### Known follow-ups (`TODO(occ149c-…)`)
+### OCC149c completion
 
-- ColorSwatchPicker still uses the popup-grid dropdown rather than an inline chip row.
-- Action triad (Audition / Replace File / Clear) not yet wired.
-- Advanced section density — could collapse behind a disclosure.
-- Full-file overview minimap is read-only; interactive viewport scrubbing pending.
-- Cue markers (HOOK / DROP / OUTRO) and amplitude y-axis labels on the main waveform.
+- **Inline colour chips** — `ColorSwatchPicker` is now an always-visible chip row in the Clip Edit dialog, with the compact popup retained only for context-menu use.
+- **Action triad wired** — `AUDITION`, `REPLACE FILE`, and `CLEAR` are real dialog buttons; Replace File reuses the safe load path and preserves operator intent for clip metadata.
+- **Advanced disclosure completed** — the secondary Advanced controls now collapse behind the disclosure. Hidden controls are set non-visible, not merely skipped in layout, so keyboard focus cannot land on parked gain/trim/fade controls.
+- **Interactive minimap completed** — `WaveformOverview` supports click-to-jump and drag-to-scrub viewport interaction.
+- **Waveform utility completed for OCC149 scope** — main waveform exposes cue-marker primitives (`HOOK` / `DROP` / `OUTRO` / custom) and a left-side scale; persistence/editor UX for cue-marker authoring remains a future session-metadata feature rather than an OCC149 visual-alignment blocker.
 
 ### Documentation
 
@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OCC148** — Corrective Pass Report (pre-existing).
 - **OCC149** — Design-System Alignment Sprint (this release).
 - **OCC149b** — Phase 5b Remediation Plan (this release).
+- **OCC149c** — Completion pass for action triad, minimap interaction, routing readouts, and Advanced disclosure.
 
 ---
 
