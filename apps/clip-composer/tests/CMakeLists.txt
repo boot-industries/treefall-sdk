@@ -16,6 +16,7 @@ add_executable(clip_composer_tests
   test_transport_sync.cpp
   test_device_swap.cpp
   test_sample_rate.cpp
+  test_choke_policy.cpp
 )
 
 # C++20 required (matches main application)
