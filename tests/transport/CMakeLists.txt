@@ -387,4 +387,38 @@ if(TARGET orpheus_audio_io)
         NAME callback_queue_stress_test
         COMMAND callback_queue_stress_test
     )
+
+    # ORP127 T2: ThreadSanitizer stress harness for per-voice state.
+    # Builds/runs under normal Debug too (liveness check); TSan is the verdict.
+    add_executable(voice_state_tsan_test
+        voice_state_tsan_test.cpp
+    )
+
+    target_link_libraries(voice_state_tsan_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    # Link libsndfile if found (needed because orpheus_audio_io is static)
+    if(SNDFILE_FOUND)
+        target_link_libraries(voice_state_tsan_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(voice_state_tsan_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(voice_state_tsan_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME voice_state_tsan_test
+        COMMAND voice_state_tsan_test
+    )
 endif()
