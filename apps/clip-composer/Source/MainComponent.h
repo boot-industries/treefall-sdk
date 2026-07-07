@@ -128,6 +128,12 @@ private:
   void onClipRightClicked(int buttonIndex);
   void onClipTriggered(int buttonIndex);     // Trigger clip (keyboard or mouse)
   void onClipDoubleClicked(int buttonIndex); // Edit clip metadata
+
+  /// OCC151 T8 / G6: "Stop Others On Play" choke, scoped to the firing clip's
+  /// playgroup (its clipGroup 0-3), NOT global and NOT the visible tab. Walks all
+  /// clips and stops those in the same group that are currently playing. The SDK
+  /// owns no playgroup concept, so scoping lives here.
+  void stopOthersInPlaygroup(int firingGlobalIndex);
   void loadClipToButton(int buttonIndex, const juce::String& filePath);
   void loadMultipleFiles(const juce::Array<juce::File>& files, int startButtonIndex);
   void updateButtonFromClip(int buttonIndex);

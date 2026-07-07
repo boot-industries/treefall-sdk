@@ -3,6 +3,7 @@
 #include "MainComponent.h"
 #include "AppShell/AppCommandIds.h"
 #include "BuildInfo.h"
+#include "Core/ChokePolicy.h"
 #include "Core/ClipCommands.h"
 #include "Core/ClipLoadPlan.h"
 #include "Core/ClipReplacementPolicy.h"
@@ -1814,6 +1815,46 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   });
 }
 
+void MainComponent::stopOthersInPlaygroup(int firingGlobalIndex) {
+  if (!m_audioEngine || !m_sessionManager)
+    return;
+
+  // The firing clip's playgroup (clipGroup 0-3) defines the choke scope. The
+  // membership decision itself lives in the pure occ::shouldChokeStop policy so
+  // it is unit-testable without the UI.
+  const auto firing = m_sessionManager->getClipByGlobalIndex(firingGlobalIndex);
+  const int activeTab = m_sessionManager->getActiveTab();
+
+  for (int otherGlobalIndex = 0; otherGlobalIndex < occ::TOTAL_BUTTONS; ++otherGlobalIndex) {
+    if (!m_sessionManager->hasClipByGlobalIndex(otherGlobalIndex))
+      continue;
+
+    const auto other = m_sessionManager->getClipByGlobalIndex(otherGlobalIndex);
+    const auto state = m_audioEngine->getClipState(otherGlobalIndex);
+    const bool otherIsActive =
+        state == orpheus::PlaybackState::Playing || state == orpheus::PlaybackState::Stopping;
+
+    if (!occ::shouldChokeStop(firing, firingGlobalIndex, other, otherGlobalIndex, otherIsActive))
+      continue;
+
+    m_audioEngine->stopClip(otherGlobalIndex);
+
+    // Instant visual feedback for clips on the currently visible tab. Off-tab
+    // clips have no live button; their state reconciles on the next snapshot
+    // poll (drainTransportCallbacks -> onClipStateChanged).
+    if (otherGlobalIndex / occ::BUTTONS_PER_TAB == activeTab) {
+      const int localButton = otherGlobalIndex % occ::BUTTONS_PER_TAB;
+      if (auto otherButton = m_clipGrid->getButton(localButton)) {
+        if (otherButton->getState() == ClipButton::State::Playing)
+          otherButton->setState(ClipButton::State::Loaded);
+      }
+    }
+
+    DBG("Stop-others (group " << firing.clipGroup << "): stopped global " << otherGlobalIndex
+                              << " fired by global " << firingGlobalIndex);
+  }
+}
+
 void MainComponent::onClipTriggered(int buttonIndex) {
   auto button = m_clipGrid->getButton(buttonIndex);
   if (!button)
@@ -1865,22 +1906,7 @@ void MainComponent::onClipTriggered(int buttonIndex) {
 
     // Check if "stop others on play" mode is enabled for this button (use global index)
     if (m_stopOthersOnPlay[globalClipIndex]) {
-      // Stop all other playing clips ON THIS TAB
-      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-        if (i != buttonIndex) {
-          auto otherButton = m_clipGrid->getButton(i);
-          if (otherButton && otherButton->getState() == ClipButton::State::Playing) {
-            int otherGlobalIndex = getGlobalClipIndex(i);
-            if (m_audioEngine) {
-              m_audioEngine->stopClip(otherGlobalIndex);
-            }
-            otherButton->setState(ClipButton::State::Loaded);
-            DBG("Button " + juce::String(i) + " (global: " + juce::String(otherGlobalIndex) +
-                "): Stopped by 'stop others' from button " + juce::String(buttonIndex) +
-                " (global: " + juce::String(globalClipIndex) + ")");
-          }
-        }
-      }
+      stopOthersInPlaygroup(globalClipIndex);
     }
 
     // Start the clip
