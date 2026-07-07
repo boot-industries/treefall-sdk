@@ -120,6 +120,21 @@ add_test(NAME cmake_find_package
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 
+# ORP127 T10: submodule (add_subdirectory) external-consumer smoke test. Covers
+# the co-development consumption path (FourTrack's choice) whose failure mode
+# differs from find_package — missing add_subdirectory target/alias visibility
+# rather than missing install()/export rules.
+set(ADD_SUBDIR_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/add_subdirectory)
+set(ADD_SUBDIR_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/add_subdirectory_build)
+
+add_test(NAME cmake_add_subdirectory
+  COMMAND ${CMAKE_COMMAND}
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${ADD_SUBDIR_SOURCE_DIR}
+    -Dbinary_dir=${ADD_SUBDIR_BINARY_DIR}
+    -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_add_subdirectory.cmake)
+
 add_executable(orpheus_abi_link
   abi_link/main.cpp
 )

@@ -23,6 +23,13 @@ target_link_libraries(orpheus_transport
 
 set_target_properties(orpheus_transport PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ORP127 T10: namespaced aliases so add_subdirectory (submodule) consumers can
+# link Orpheus::transport, matching the names the install/export path exposes to
+# find_package consumers. Without these, FourTrack's submodule build could not
+# reference the transport target.
+add_library(Orpheus::transport ALIAS orpheus_transport)
+add_library(Orpheus::orpheus_transport ALIAS orpheus_transport)
+
 # Apply compiler warnings
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_transport)

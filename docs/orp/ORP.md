@@ -4,6 +4,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP124 Architecture Cross-Reference Matrix]]
@@ -83,6 +84,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP124 Architecture Cross-Reference Matrix]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
+- [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 
 ## Navigation
 

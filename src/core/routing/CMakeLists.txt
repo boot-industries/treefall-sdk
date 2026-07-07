@@ -23,6 +23,10 @@ target_link_libraries(orpheus_routing
 
 set_target_properties(orpheus_routing PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ORP127 T10: namespaced aliases for add_subdirectory (submodule) consumers.
+add_library(Orpheus::routing ALIAS orpheus_routing)
+add_library(Orpheus::orpheus_routing ALIAS orpheus_routing)
+
 # Apply compiler warnings
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_routing)

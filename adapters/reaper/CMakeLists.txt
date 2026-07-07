@@ -16,12 +16,12 @@ target_compile_definitions(reaper_orpheus
 
 target_include_directories(reaper_orpheus
   PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src/core/session
+    ${ORPHEUS_ROOT_SOURCE_DIR}/include
+    ${ORPHEUS_ROOT_SOURCE_DIR}/src/core/session
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
+include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(reaper_orpheus)
