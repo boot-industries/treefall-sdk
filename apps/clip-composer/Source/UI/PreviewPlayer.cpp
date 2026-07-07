@@ -69,40 +69,18 @@ void PreviewPlayer::releaseAuditionBuss() {
 }
 
 void PreviewPlayer::setAuditionSource(const juce::String& sourceFilePath) {
-  if (sourceFilePath == m_sourceFilePath && (sourceFilePath.isEmpty() || m_auditionHandle != 0)) {
-    return;
-  }
-
-  releaseAuditionBuss();
-  m_sourceFilePath = sourceFilePath;
-
-  if (!m_audioEngine || m_sourceFilePath.isEmpty()) {
-    DBG("PreviewPlayer: Audition source cleared - using main grid clip fallback");
-    return;
-  }
-
-  juce::File sourceFile(m_sourceFilePath);
-  if (!sourceFile.existsAsFile()) {
-    DBG("PreviewPlayer: WARNING - Audition source file missing: " << m_sourceFilePath);
-    return;
-  }
-
-  m_auditionHandle = m_audioEngine->allocateCueBuss(m_sourceFilePath);
-  if (m_auditionHandle == 0) {
-    DBG("PreviewPlayer: WARNING - Failed to allocate cue buss for audition source: "
-        << m_sourceFilePath);
-    return;
-  }
-
-  const auto trimOut = m_trimOutSamples.load() > 0 ? m_trimOutSamples.load() : m_totalSamples;
-  if (trimOut > 0) {
-    m_audioEngine->updateCueBussMetadata(m_auditionHandle, m_trimInSamples.load(), trimOut,
-                                         m_fadeInSeconds, m_fadeOutSeconds, m_fadeInCurve,
-                                         m_fadeOutCurve);
-  }
-  m_audioEngine->setCueBussLoop(m_auditionHandle, m_loopEnabled);
-
-  DBG("PreviewPlayer: Dedicated audition cue buss allocated for " << m_sourceFilePath);
+  // OCC151 G1 (transport unification): the Edit dialog is a "zoomed in" view of
+  // the grid clip's transport, NOT a separate player. We no longer allocate a
+  // dedicated audition cue buss for the same file — doing so created a parallel
+  // ClipHandle that desynced grid/dialog play-state and summed to 2x amplitude
+  // at the master when both fired. All play/stop/seek/position now flow through
+  // the grid ClipHandle (m_buttonIndex).
+  //
+  // This method is retained as a no-op so existing callers stay valid; the
+  // cue-buss pool itself is preserved for genuinely-different auxiliary sources
+  // (e.g. the future PFL / Cue Buss dispatch, occ149c-pfl-dispatch).
+  juce::ignoreUnused(sourceFilePath);
+  jassert(m_auditionHandle == 0); // No path should allocate a same-clip buss anymore.
 }
 
 bool PreviewPlayer::isUsingDedicatedAuditionBuss() const {

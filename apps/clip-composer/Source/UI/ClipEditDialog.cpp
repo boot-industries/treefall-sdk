@@ -165,9 +165,12 @@ void ClipEditDialog::setClipMetadata(const ClipMetadata& metadata) {
     }
   }
 
-  if (m_previewPlayer) {
-    m_previewPlayer->setAuditionSource(m_metadata.filePath);
-  }
+  // OCC151 G1: the dialog is a "zoomed in" view of the grid clip's transport,
+  // not a separate player. We deliberately do NOT allocate a dedicated audition
+  // cue buss for the loaded file — PreviewPlayer drives the grid ClipHandle
+  // directly so play/stop/position stay single-sourced with the grid button.
+  // (The old setAuditionSource() call created a parallel handle that both
+  //  desynced grid/dialog state and summed to 2x amplitude at the master.)
 
   // Sync loop button to metadata
   if (m_loopButton) {
