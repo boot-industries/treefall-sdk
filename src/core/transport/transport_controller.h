@@ -27,6 +27,7 @@ struct ClipPlaybackContext {
   // Metadata snapshot at start time
   int64_t trimInSamples;
   int64_t trimOutSamples;
+  int64_t fileLengthSamples; // ORP127 G3: true file length, bounds OUT-tail reads
   double fadeInSeconds;
   double fadeOutSeconds;
   FadeCurve fadeInCurve;
@@ -114,6 +115,11 @@ struct ActiveClip {
   // Trim points (atomic for thread safety)
   std::atomic<int64_t> trimInSamples{0};  // Trim IN point (from metadata)
   std::atomic<int64_t> trimOutSamples{0}; // Trim OUT point (from metadata)
+
+  // ORP127 G3: true file length in samples. Non-atomic (set once at start,
+  // audio-thread-read only). Bounds how far past trimOut the OUT-boundary stop
+  // fade may keep reading so the fade renders real audio instead of a hard cut.
+  int64_t fileLengthSamples{0};
 
   // Fade settings (atomic for thread safety)
   std::atomic<double> fadeInSeconds{0.0};

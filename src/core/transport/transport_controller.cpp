@@ -117,6 +117,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->reader = entry.reader;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
+      context->fileLengthSamples = entry.metadata.duration_samples; // ORP127 G3
 
       // If trim OUT is not set (0), use file duration
       context->trimOutSamples =
@@ -135,7 +136,8 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->reader = nullptr;
       context->numChannels = 2;
       context->trimInSamples = 0;
-      context->trimOutSamples = 48000 * 60; // Default 60s
+      context->trimOutSamples = 48000 * 60;    // Default 60s
+      context->fileLengthSamples = 48000 * 60; // ORP127 G3: match default OUT
       context->fadeInSeconds = 0.0;
       context->fadeOutSeconds = 0.0;
       context->fadeInCurve = FadeCurve::Linear;
@@ -361,26 +363,59 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // ORP097 Bug 7 Fix: Mark that clip has looped
         clip.hasLoopedOnce = true;
       } else {
-        // Non-loop mode: trigger stop fade-out when reaching OUT point
-        // This ensures graceful fade when loop is disabled mid-playback
+        // Non-loop mode: trigger stop fade-out when reaching OUT point.
+        // ORP127 G3: Keep the reader alive and let the per-sample stop fade
+        // (T4) render REAL audio through the fade tail, instead of nulling the
+        // reader and fading silence — which produced a click at OUT. Reading
+        // continues past trimOut only for the fade duration, bounded by the
+        // true file length (below), so libsndfile never wraps past EOF.
         if (!clip.isStopping) {
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
-
-          // ORP092 Fix: Clear reader to prevent libsndfile auto-wrap to 0
-          // We are at OUT point, so we should stop reading immediately.
-          // Fade-out will render silence, which is broadcast-safe.
-          clip.reader = nullptr;
         }
-        // Continue rendering with fade-out (don't skip rendering)
       }
+    } else if (!clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping &&
+               (clip.currentSample + static_cast<int64_t>(numFrames)) > trimOut) {
+      // ORP127 G3: This buffer will CROSS trimOut mid-way. Start the stop fade
+      // now, anchored exactly at trimOut, so the fade renders continuously from
+      // the OUT sample within this same buffer — previously the read was capped
+      // at trimOut and the rest of the buffer rendered as (cleared) silence,
+      // producing a hard cut. The reader stays alive; the read horizon below is
+      // extended to cover the fade tail.
+      clip.isStopping = true;
+      clip.fadeOutGain = 1.0f;
+      clip.fadeOutStartPos = trimOut;
     }
 
-    // Calculate how many frames to read (respecting trim OUT point)
-    int64_t framesUntilEnd = trimOut - clip.currentSample;
+    // ORP127 G3: When stopping (e.g. after OUT), extend the read horizon past
+    // trimOut for the remaining fade tail so the fade applies to real audio.
+    // Otherwise the read is bounded by trimOut as before. Everything is clamped
+    // to the true file length so we never read past EOF.
+    int64_t readHorizon = trimOut;
+    if (clip.isStopping) {
+      int64_t stopFadeSamples = fadeOutSampleCount;
+      if (stopFadeSamples == 0) {
+        stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
+      }
+      int64_t fadeEnd = clip.fadeOutStartPos + stopFadeSamples;
+      readHorizon = std::max(readHorizon, fadeEnd);
+    }
+    if (clip.fileLengthSamples > 0) {
+      readHorizon = std::min(readHorizon, clip.fileLengthSamples);
+    }
+
+    // Calculate how many frames to read (respecting the read horizon)
+    int64_t framesUntilEnd = readHorizon - clip.currentSample;
     if (framesUntilEnd <= 0) {
-      continue; // Already past end
+      // ORP127 G3: Past the read horizon (e.g. OUT tail reached EOF) but the
+      // reader is still held. Advance position by the buffer so the stop fade
+      // can still complete — the reader-less advance loop below only handles
+      // clips whose reader is already null.
+      if (clip.isStopping) {
+        clip.currentSample += static_cast<int64_t>(numFrames);
+      }
+      continue;
     }
 
     size_t framesToRead =
@@ -480,6 +515,10 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
           int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
           float fadeOutPos =
               static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
+          // ORP127 G3: clamp to [0,1]. With the OUT-tail read horizon, relativePos
+          // can exceed trimmedDuration; without clamping calculateFadeGain(>1)
+          // would drive the multiplier negative (phase flip).
+          fadeOutPos = std::clamp(fadeOutPos, 0.0f, 1.0f);
           gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
         }
       }
@@ -589,17 +628,16 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // Continue playback (don't remove clip, don't increment i)
         ++i;
       } else {
-        // Non-loop mode: Clip reached OUT point
-        // Trigger stop fade-out if not already stopping
+        // Non-loop mode: Clip reached OUT point.
+        // ORP127 G3: Trigger the stop fade but KEEP the reader so the in-render
+        // OUT-tail path (bounded by file length) can render real audio through
+        // the fade — no hard cut, no click. The reader is released naturally
+        // when the fade completes (removeActiveClip) or when the read horizon
+        // reaches EOF (the reader-less advance loop then finishes the fade).
         if (!clip.isStopping) {
           clip.isStopping = true;
           clip.fadeOutGain = 1.0f;
           clip.fadeOutStartPos = clip.currentSample;
-
-          // ORP097 Fix: Clear reader to prevent rendering past OUT point
-          // This ensures position advances via "clips without readers" loop (line 484)
-          // allowing fade-out to complete properly
-          clip.reader = nullptr;
         }
         // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
         ++i;
@@ -955,6 +993,7 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 
   clip.reader = context->reader; // Store shared_ptr (maintains reference count)
   clip.numChannels = context->numChannels;
+  clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
   clip.fadeOutStartPos = 0; // Will be set when stopClip() is called
@@ -1012,6 +1051,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.hasLoopedOnce = src.hasLoopedOnce;
         dest.reader = src.reader;
         dest.numChannels = src.numChannels;
+        dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
       }
       --m_activeClipCount;
       return;
