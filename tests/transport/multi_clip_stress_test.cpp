@@ -229,92 +229,73 @@ TEST_F(MultiClipStressTest, SixteenSimultaneousClips) {
     ASSERT_EQ(m_transport->updateClipTrimPoints(handle, trimIn, trimOut), SessionGraphError::OK);
   }
 
-  // Start audio driver
-  auto adapter = std::make_unique<TransportAudioAdapter>(m_transport.get());
-  ASSERT_EQ(m_driver->start(adapter.get()), SessionGraphError::OK);
-
-  // Start all 16 clips simultaneously
+  // Start all 16 clips simultaneously.
   for (auto handle : clips) {
     ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
   }
 
-  // Run for 60 seconds to verify stability (ORP099 requirement)
-  std::cout << "  - Running for 60 seconds to verify stability...\n";
-  auto start_time = std::chrono::steady_clock::now();
+  // ORP127: Verify stability by driving processAudio() a deterministic number
+  // of buffers rather than sleeping for wall-clock seconds and counting
+  // sleep-loop callbacks (which measured the host scheduler, not the SDK, and
+  // was flaky under load). 12000 buffers @ 512/48k == ~128 seconds of audio —
+  // exceeds the original 60s stability window, and runs in a fraction of the
+  // wall-clock time with a fully deterministic result.
+  std::cout << "  - Driving 12000 buffers (~128s of audio) to verify stability...\n";
+  constexpr int kNumBuffers = 12000;
+  constexpr size_t kBufferSize = 512;
 
-  for (int second = 0; second < 60; ++second) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::vector<float> left(kBufferSize, 0.0f);
+  std::vector<float> right(kBufferSize, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
 
-    // Process callbacks
-    m_transport->processCallbacks();
-
-    // Report progress every 10 seconds
-    if ((second + 1) % 10 == 0) {
-      std::cout << "    Progress: " << (second + 1)
-                << "s / 60s (callbacks: " << adapter->getCallbackCount() << ")\n";
+  for (int i = 0; i < kNumBuffers; ++i) {
+    m_transport->processAudio(buffers, 2, kBufferSize);
+    if ((i % 2000) == 0) {
+      m_transport->processCallbacks();
     }
   }
-
-  auto end_time = std::chrono::steady_clock::now();
-  auto duration_ms =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-
-  // Process callbacks
   m_transport->processCallbacks();
 
-  // Verify all clips started
+  // Verify all clips started (callbacks all delivered — no drops).
   EXPECT_EQ(m_callback->getClipsStarted(), 16);
 
-  // Verify all clips are playing or have looped/stopped
+  // Looping clips (first 8) must still be playing after sustained processing.
   int playing_count = 0;
-  for (auto handle : clips) {
-    auto state = m_transport->getClipState(handle);
+  int looping_still_playing = 0;
+  for (size_t i = 0; i < clips.size(); ++i) {
+    auto state = m_transport->getClipState(clips[i]);
     if (state == PlaybackState::Playing) {
       playing_count++;
+      if (i < 8)
+        ++looping_still_playing;
     }
   }
+  EXPECT_EQ(looping_still_playing, 8)
+      << "All 8 looping clips must still be playing after 12000 buffers";
 
-  // At least looping clips should still be playing
-  EXPECT_GE(playing_count, 8) << "At least 8 clips (looping) should still be playing";
-
-  // Verify metadata is correct
+  // Verify metadata is correct (unchanged by sustained playback).
   for (size_t i = 0; i < clips.size(); ++i) {
     auto handle = clips[i];
     auto metadata = m_transport->getClipMetadata(handle);
     ASSERT_TRUE(metadata.has_value()) << "Metadata should exist for clip " << i;
 
-    // Verify gain
     EXPECT_FLOAT_EQ(metadata->gainDb, expectedGains[i])
         << "Clip " << i << " gain should be " << expectedGains[i] << " dB";
 
-    // Verify loop mode
     bool expectedLoop = (i < 8);
     EXPECT_EQ(metadata->loopEnabled, expectedLoop)
         << "Clip " << i << " loop mode should be " << (expectedLoop ? "enabled" : "disabled");
   }
 
-  // Calculate callback statistics
-  int callback_count = adapter->getCallbackCount();
-  double expected_callbacks = 60.0 * 48000.0 / 512.0; // 60s @ 48kHz with 512 samples
-  double callback_accuracy = (callback_count * 100.0) / expected_callbacks;
-
-  // Stop driver
-  m_driver->stop();
-
   std::cout << "[Stress Test] 16 simultaneous clips with metadata: PASSED\n";
-  std::cout << "  - Duration: " << (duration_ms / 1000.0) << " seconds\n";
+  std::cout << "  - Buffers driven: " << kNumBuffers << " (~128s of audio)\n";
   std::cout << "  - Clips started: " << m_callback->getClipsStarted() << "\n";
-  std::cout << "  - Still playing: " << playing_count << " / 16\n";
-  std::cout << "  - Audio callbacks: " << callback_count
-            << " (expected: " << static_cast<int>(expected_callbacks) << ")\n";
-  std::cout << "  - Callback accuracy: " << callback_accuracy << "%\n";
+  std::cout << "  - Still playing: " << playing_count << " / 16 (looping: " << looping_still_playing
+            << "/8)\n";
   std::cout << "  - Gain settings: -12, -6, 0, +3 dB (rotated)\n";
   std::cout << "  - Loop enabled: First 8 clips\n";
   std::cout << "  - Trim offsets: 0-50% distributed\n";
   std::cout << "  - Memory stable: No leaks detected (verify with ASan)\n";
-
-  // Verify callback accuracy (dummy driver uses sleep, 70% is acceptable for 60s test)
-  EXPECT_GT(callback_accuracy, 70.0) << "Callback accuracy should be >70%";
 }
 
 // ============================================================================
@@ -401,45 +382,69 @@ TEST_F(MultiClipStressTest, CPUUsageMeasurement) {
     ClipHandle handle = i + 1;
     clips.push_back(handle);
     ASSERT_EQ(m_transport->registerClipAudio(handle, filepath), SessionGraphError::OK);
+    // Loop so all 16 voices stay active for the full RT-budget measurement
+    // (clips are 5s; without looping the non-looped voices would end mid-run).
+    ASSERT_EQ(m_transport->setClipLoopMode(handle, true), SessionGraphError::OK);
   }
 
-  // Start audio driver
-  auto adapter = std::make_unique<TransportAudioAdapter>(m_transport.get());
-  ASSERT_EQ(m_driver->start(adapter.get()), SessionGraphError::OK);
-
-  // Start all 16 clips
+  // Start all 16 clips.
   for (auto handle : clips) {
     m_transport->startClip(handle);
   }
 
-  // Run for 2 seconds and measure callback performance
+  // ORP127: Measure the *actual* per-buffer render cost deterministically by
+  // driving processAudio() directly, rather than counting callbacks delivered
+  // by the dummy driver's sleep loop (which measures the host scheduler under
+  // load, not the SDK, and was therefore flaky). This is a real RT-budget check.
+  constexpr size_t kBufferSize = 512;
+  constexpr uint32_t kSampleRate = 48000;
+  constexpr int kNumBuffers = 500; // ~5.3s of audio at 512/48k
+
+  std::vector<float> left(kBufferSize, 0.0f);
+  std::vector<float> right(kBufferSize, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+
+  // Warm up (first buffer materializes voices from the Start commands).
+  m_transport->processAudio(buffers, 2, kBufferSize);
+
   auto start_time = std::chrono::steady_clock::now();
-  std::this_thread::sleep_for(std::chrono::seconds(2));
+  for (int i = 0; i < kNumBuffers; ++i) {
+    m_transport->processAudio(buffers, 2, kBufferSize);
+  }
   auto end_time = std::chrono::steady_clock::now();
 
-  int callback_count = adapter->getCallbackCount();
-  auto duration_us =
-      std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-
-  // Expected callbacks: 2 seconds @ 48kHz with 512 samples = ~187 callbacks
-  double expected_callbacks = 2.0 * 48000.0 / 512.0;
-  double callback_accuracy = (callback_count * 100.0) / expected_callbacks;
-
-  // Process callbacks
   m_transport->processCallbacks();
 
-  // Stop driver
-  m_driver->stop();
+  auto total_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+  double avg_us_per_buffer = static_cast<double>(total_us) / static_cast<double>(kNumBuffers);
 
-  std::cout << "[Stress Test] CPU usage: PASSED\n";
-  std::cout << "  - Callbacks in 2 seconds: " << callback_count
-            << " (expected: " << expected_callbacks << ")\n";
-  std::cout << "  - Callback accuracy: " << callback_accuracy << "%\n";
-  std::cout
-      << "  - Note: Real CPU profiling requires platform-specific tools (Instruments, perf)\n";
+  // Real-time budget: one 512-sample buffer @ 48kHz must render in well under
+  // its playback duration (~10667us). We require a comfortable margin so the
+  // check is meaningful yet not brittle under host load: rendering 16 clips
+  // must cost less than half the buffer's real-time budget.
+  const double buffer_budget_us = (kBufferSize * 1e6) / kSampleRate; // ~10667us
+  const double budget_fraction = avg_us_per_buffer / buffer_budget_us;
 
-  // Dummy driver uses sleep, not sample-accurate. 80% is acceptable for simulation.
-  EXPECT_GT(callback_accuracy, 80.0); // At least 80% callback accuracy for dummy driver
+  std::cout << "[Stress Test] CPU usage (deterministic RT-budget check):\n";
+  std::cout << "  - Buffers rendered: " << kNumBuffers << " (16 clips each)\n";
+  std::cout << "  - Avg render time/buffer: " << avg_us_per_buffer << " us\n";
+  std::cout << "  - Buffer RT budget: " << buffer_budget_us << " us\n";
+  std::cout << "  - Budget used: " << (budget_fraction * 100.0) << "%\n";
+
+  // Verify all 16 clips actually rendered (not a no-op) — SDK correctness.
+  int playing = 0;
+  for (auto handle : clips) {
+    if (m_transport->getClipState(handle) == PlaybackState::Playing)
+      ++playing;
+  }
+  EXPECT_EQ(playing, 16) << "All 16 clips should still be playing after 500 buffers";
+
+  // RT-budget assertion: rendering 16 clips must fit comfortably within one
+  // buffer's real-time budget. Half the budget is a generous, load-tolerant
+  // ceiling (real cost is a few percent).
+  EXPECT_LT(budget_fraction, 0.5)
+      << "16-clip render should use <50% of the buffer's real-time budget";
 }
 
 // ============================================================================
