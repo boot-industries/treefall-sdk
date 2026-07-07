@@ -77,6 +77,7 @@ struct ClipMetadata {
   bool loopEnabled = false;                   ///< true = loop indefinitely
   bool stopOthersOnPlay = false;              ///< true = stop other clips on play
   float gainDb = 0.0f;                        ///< Gain in decibels (0 = unity)
+  VoiceMode voiceMode = VoiceMode::Polyphonic; ///< Voice allocation policy (ORP127 G5)
 };
 
 /// Session-level default metadata for new clips.
@@ -426,6 +427,42 @@ public:
   ///
   /// Use case: UI can query this to show loop indicator icon on clip buttons
   virtual bool isClipLooping(ClipHandle handle) const = 0;
+
+  /// Set the voice allocation policy for a clip (ORP127 G5)
+  ///
+  /// Governs what happens when the clip is fired while one or more of its
+  /// voices are already active. See VoiceMode for the three policies.
+  ///
+  /// @param handle Clip handle (must be registered via registerClipAudio)
+  /// @param mode Voice policy (MonoWithFadeOverlap, Polyphonic, MonoStrict)
+  /// @return SessionGraphError::OK on success, error code on failure
+  ///
+  /// Thread-safe: Can be called from the UI thread.
+  /// Takes effect: on the next fire (startClip) for this clip. Any voices
+  /// already playing keep the policy they were started under.
+  ///
+  /// Host-neutral: OCC selects MonoWithFadeOverlap universally; FourTrack uses
+  /// MonoStrict. The SDK default is Polyphonic for backward compatibility.
+  virtual SessionGraphError setClipVoiceMode(ClipHandle handle, VoiceMode mode) = 0;
+
+  /// Query the voice allocation policy for a clip (ORP127 G5)
+  ///
+  /// @param handle Clip handle
+  /// @return The clip's VoiceMode, or VoiceMode::Polyphonic if not registered
+  ///
+  /// Thread-safe: Can be called from any thread.
+  virtual VoiceMode getClipVoiceMode(ClipHandle handle) const = 0;
+
+  /// Count the currently active voices for a clip (ORP127 G5)
+  ///
+  /// Includes voices that are still fading out. Useful for UI voice-count
+  /// indicators and for hosts implementing their own voice policies.
+  ///
+  /// @param handle Clip handle
+  /// @return Number of active voice instances (0 if none)
+  ///
+  /// Thread-safe: Can be called from any thread (reads a published snapshot).
+  virtual size_t getActiveVoiceCount(ClipHandle handle) const = 0;
 
   /// Restart clip playback from current IN point (seamless, no gap)
   ///

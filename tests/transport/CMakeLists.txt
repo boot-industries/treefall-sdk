@@ -485,4 +485,36 @@ if(TARGET orpheus_audio_io)
         NAME clip_gain_smoothing_test
         COMMAND clip_gain_smoothing_test
     )
+
+    # ORP127 T7: voice mode API (G5)
+    add_executable(voice_mode_test
+        voice_mode_test.cpp
+    )
+
+    target_link_libraries(voice_mode_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(voice_mode_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(voice_mode_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(voice_mode_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME voice_mode_test
+        COMMAND voice_mode_test
+    )
 endif()

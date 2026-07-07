@@ -36,6 +36,7 @@ struct ClipPlaybackContext {
   float gainLinear;
   bool loopEnabled;
   uint16_t numChannels;
+  VoiceMode voiceMode; // ORP127 G5: voice policy captured at fire time
 };
 
 /// Command for audio thread (lock-free queue)
@@ -218,6 +219,9 @@ public:
   void setSessionDefaults(const SessionDefaults& defaults) override;
   SessionDefaults getSessionDefaults() const override;
   bool isClipLooping(ClipHandle handle) const override;
+  SessionGraphError setClipVoiceMode(ClipHandle handle, VoiceMode mode) override;
+  VoiceMode getClipVoiceMode(ClipHandle handle) const override;
+  size_t getActiveVoiceCount(ClipHandle handle) const override;
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
@@ -268,6 +272,19 @@ private:
   /// Add a clip to active list (audio thread only)
   /// @param context Playback context with immutable state
   void addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
+
+  /// ORP127 G5: Fire a voice honoring the context's VoiceMode (audio thread).
+  /// - Polyphonic: always allocate a new voice (historical behavior).
+  /// - MonoWithFadeOverlap: restart a live (non-stopping) voice in place; if
+  ///   only fading tails exist, add a fresh voice alongside them.
+  /// - MonoStrict: restart in place with no fade tail; if a voice is fading,
+  ///   cut it and start fresh (single voice, sample-accurate replace).
+  void startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
+
+  /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
+  /// restart (used by the mono voice modes). Applies the broadcast-safe restart
+  /// crossfade so the reset does not click. Audio thread only.
+  void restartVoiceInPlace(ActiveClip& clip);
 
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove
@@ -373,6 +390,10 @@ private:
     float gainDb = 0.0f;           // Gain in decibels (0.0 = unity)
     bool loopEnabled = false;      // true = loop indefinitely
     bool stopOthersOnPlay = false; // true = stop all other clips when this one starts
+
+    // ORP127 G5: voice allocation policy for this clip (default preserves the
+    // SDK's historical polyphonic behavior).
+    VoiceMode voiceMode = VoiceMode::Polyphonic;
 
     // Cue points (stored sorted by position)
     std::vector<CuePoint> cuePoints;
