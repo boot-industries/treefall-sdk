@@ -13,6 +13,7 @@ add_executable(clip_composer_tests
   test_clip_load_plan.cpp
   test_clip_replacement_policy.cpp
   test_clip_edit_dialog_layout_policy.cpp
+  test_transport_sync.cpp
 )
 
 # C++20 required (matches main application)
@@ -75,6 +76,7 @@ target_sources(clip_composer_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Audio/AudioEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Session/SessionManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Source/UI/PreviewPlayer.cpp  # OCC151 T3: grid/dialog sync
 )
 
 # Register tests with CTest
