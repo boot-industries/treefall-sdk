@@ -517,4 +517,36 @@ if(TARGET orpheus_audio_io)
         NAME voice_mode_test
         COMMAND voice_mode_test
     )
+
+    # ORP127 T9: choke primitive + configurable voice caps (G7)
+    add_executable(choke_and_voice_cap_test
+        choke_and_voice_cap_test.cpp
+    )
+
+    target_link_libraries(choke_and_voice_cap_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(choke_and_voice_cap_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(choke_and_voice_cap_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(choke_and_voice_cap_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME choke_and_voice_cap_test
+        COMMAND choke_and_voice_cap_test
+    )
 endif()

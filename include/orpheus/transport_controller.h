@@ -203,6 +203,38 @@ public:
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError stopAllInGroup(uint8_t groupIndex) = 0;
 
+  /// Stop every playing clip EXCEPT the given one (ORP127 G7 choke primitive)
+  ///
+  /// Host-neutral choke: fades out all voices whose handle differs from
+  /// exceptHandle, leaving the exempt clip untouched. Hosts implement scoped
+  /// choke (e.g. Clip Composer playgroups, "stop others on play") by calling
+  /// this with the firing clip's handle — the SDK has no notion of playgroups.
+  ///
+  /// @param exceptHandle The clip whose voices are spared (0 = stop all)
+  /// @return SessionGraphError::OK on success, or error code on failure
+  ///
+  /// Thread-safe: Can be called from the UI thread.
+  virtual SessionGraphError stopOtherClips(ClipHandle exceptHandle) = 0;
+
+  /// Set the maximum simultaneous voices per clip (ORP127 G7 resource cap)
+  ///
+  /// Bounds how many voices a single clip may layer in Polyphonic mode (and the
+  /// fade-overlap headroom in the mono modes). A resource-protection guard so a
+  /// runaway re-fire cannot exhaust the voice pool.
+  ///
+  /// @param maxVoices Desired cap. Clamped to [1, 32]. Typical host values:
+  ///        2 / 4 / 8 / 16. A cap of 2 is effectively "stop-all-on-play" (one
+  ///        primary + at most one fade-overlap tail). SDK default is 8.
+  /// @return SessionGraphError::OK (always succeeds after clamping)
+  ///
+  /// Thread-safe: Can be called from the UI thread. Takes effect on the next
+  /// fire; voices already playing are unaffected.
+  virtual SessionGraphError setMaxVoicesPerClip(uint32_t maxVoices) = 0;
+
+  /// Query the current maximum voices per clip (ORP127 G7)
+  /// @return The active per-clip voice cap.
+  virtual uint32_t getMaxVoicesPerClip() const = 0;
+
   /// Query the playback state of a specific clip
   ///
   /// This function is thread-safe and can be called from any thread.

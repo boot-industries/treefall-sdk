@@ -56,7 +56,8 @@ struct TransportCommand {
     Restart,        // Restart all voices for a handle from trim IN (with fade-in)
     Seek,           // Seek all voices for a handle to an absolute position
     UpdateMetadata, // Apply a full metadata batch to active voices
-    SetVoiceMode    // ORP127 G5: change a clip's voice policy (audio-thread state)
+    SetVoiceMode,   // ORP127 G5: change a clip's voice policy (audio-thread state)
+    StopOthers      // ORP127 G7: stop every voice except cmd.handle (choke primitive)
   };
 
   Type type;
@@ -197,6 +198,9 @@ public:
   SessionGraphError stopClip(ClipHandle handle) override;
   SessionGraphError stopAllClips() override;
   SessionGraphError stopAllInGroup(uint8_t groupIndex) override;
+  SessionGraphError stopOtherClips(ClipHandle exceptHandle) override;
+  SessionGraphError setMaxVoicesPerClip(uint32_t maxVoices) override;
+  uint32_t getMaxVoicesPerClip() const override;
   PlaybackState getClipState(ClipHandle handle) const override;
   bool isClipPlaying(ClipHandle handle) const override;
   TransportPosition getCurrentPosition() const override;
@@ -344,9 +348,12 @@ private:
   std::array<VoiceSnapshotBuffer, 2> m_snapshotBuffers;
   std::atomic<size_t> m_snapshotIndex{0}; // Index of the front (published) buffer
 
-  // Multi-voice management
-  static constexpr size_t MAX_VOICES_PER_CLIP = 4; // Provision for 4 voices (OCC uses 2)
-  uint32_t m_nextVoiceId{1};                       // Incrementing voice ID counter (0 = invalid)
+  // Multi-voice management (ORP127 G7: configurable voice cap for resource
+  // protection). Default 8, hard ceiling 32; hosts typically set 2/4/8/16.
+  static constexpr uint32_t VOICE_CAP_HARD_MAX = 32;
+  static constexpr uint32_t DEFAULT_MAX_VOICES_PER_CLIP = 8;
+  std::atomic<uint32_t> m_maxVoicesPerClip{DEFAULT_MAX_VOICES_PER_CLIP};
+  uint32_t m_nextVoiceId{1}; // Incrementing voice ID counter (0 = invalid)
 
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};
