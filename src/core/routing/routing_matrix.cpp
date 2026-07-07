@@ -715,8 +715,8 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   // ========================================================================
   // Step 6: Apply clipping protection (soft limiter + hard clip)
   // ========================================================================
-  // OCC109 v0.2.2: Fix "Stop All" distortion when 32 clips fade out simultaneously
-  // Soft limiter prevents audible distortion when summed gains exceed 0dBFS
+  // Prevents distortion when many voices fade out simultaneously: the soft
+  // limiter tames summed gains that exceed 0 dBFS without audible artifacts.
   //
   // ORP121 C-02: Fixed discontinuity in soft-knee limiter
   // Previous implementation had discontinuity at 0.9 threshold causing audible clicks

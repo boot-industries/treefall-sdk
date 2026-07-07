@@ -109,7 +109,8 @@ struct RoutingConfig {
   /// ORP121 Q-05: Automatic headroom management
   HeadroomMode headroom_mode; ///< Gain compensation mode (default: None)
 
-  /// Default constructor (sensible defaults for OCC)
+  /// Default constructor (typical broadcast/soundboard defaults; hosts should
+  /// configure num_channels/num_groups/etc. as needed on init)
   RoutingConfig()
       : num_channels(16), num_groups(4), num_outputs(2), solo_mode(SoloMode::SIP),
         metering_mode(MeteringMode::Peak), gain_smoothing_ms(10.0f), dim_amount_db(-12.0f),

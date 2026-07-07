@@ -15,12 +15,12 @@ class SessionGraph;
 /// Clip-to-group routing matrix for multi-group mixing
 ///
 /// This is a simplified routing API designed for clip-based workflows
-/// (e.g., Orpheus Clip Composer). Unlike the full RoutingMatrix API
+/// (e.g. soundboard / trigger-grid hosts). Unlike the full RoutingMatrix API
 /// which uses generic channel indices, this API works with ClipHandles
 /// from the transport system.
 ///
 /// Architecture:
-///   Clips (via ClipHandle) → 4 Clip Groups → Master Bus
+///   Clips (via ClipHandle) → group buses → Master Bus
 ///
 /// Key Features:
 /// - 4 Clip Groups (0-3) with independent gain/mute/solo controls
