@@ -139,6 +139,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       // Precompute linear gain
       context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
+      context->voiceMode = entry.voiceMode; // ORP127 G5
     } else {
       // Clip not registered - use defaults for testing
       context->reader = nullptr;
@@ -153,6 +154,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->gainDb = 0.0f;
       context->gainLinear = 1.0f;
       context->loopEnabled = false;
+      context->voiceMode = VoiceMode::Polyphonic; // ORP127 G5: default
     }
   }
 
@@ -683,10 +685,9 @@ void TransportController::processCommands() {
 
     switch (cmd.type) {
     case TransportCommand::Type::Start: {
-      // Multi-voice: Always add new voice instance (removes oldest if at max capacity)
-      // This allows rapid re-fire to layer same clip over itself (up to MAX_VOICES_PER_CLIP)
+      // ORP127 G5: honor the clip's voice policy when firing.
       if (cmd.startContext) {
-        addActiveClip(cmd.startContext);
+        startVoiceWithMode(cmd.startContext);
         postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
           if (m_callback) {
             m_callback->onClipStarted(handle, pos);
@@ -946,6 +947,116 @@ ActiveClip* TransportController::findOldestVoice(ClipHandle handle) {
   return oldest;
 }
 
+void TransportController::restartVoiceInPlace(ActiveClip& clip) {
+  // ORP127 G5: reset a live voice to its trim IN for an in-place restart.
+  int64_t trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
+  clip.currentSample = trimIn;
+  if (clip.reader) {
+    clip.reader->seek(trimIn);
+  }
+  clip.isStopping = false;
+  clip.fadeOutGain = 1.0f;
+  clip.hasLoopedOnce = false;
+  // Broadcast-safe restart crossfade to avoid a click at the reset point.
+  clip.isRestarting = true;
+  clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
+}
+
+void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
+  if (!context)
+    return;
+
+  const ClipHandle handle = context->handle;
+  const VoiceMode mode = context->voiceMode;
+
+  switch (mode) {
+  case VoiceMode::Polyphonic:
+    // Historical behavior: always allocate a new voice (addActiveClip evicts
+    // the oldest voice for this handle if already at MAX_VOICES_PER_CLIP).
+    addActiveClip(context);
+    return;
+
+  case VoiceMode::MonoStrict: {
+    // Strict single voice: fire-while-anything replaces it from zero with no
+    // fade tail. Cut every existing voice for this handle (including fading
+    // tails) and restart the first in place; if none exist, add fresh.
+    ActiveClip* primary = nullptr;
+    for (size_t i = 0; i < m_activeClipCount; ++i) {
+      if (m_activeClips[i].handle == handle) {
+        if (!primary) {
+          primary = &m_activeClips[i];
+        }
+      }
+    }
+    if (!primary) {
+      addActiveClip(context);
+      return;
+    }
+    // Remove any *other* voices for this handle (no fade — strict cut). Iterate
+    // from the end so removeActiveVoice's slot compaction is safe.
+    for (size_t i = m_activeClipCount; i-- > 0;) {
+      if (m_activeClips[i].handle == handle && &m_activeClips[i] != primary) {
+        removeActiveVoice(m_activeClips[i].voiceId);
+        // primary pointer may have moved if the last slot was compacted into
+        // its position; re-find it.
+        primary = nullptr;
+        for (size_t j = 0; j < m_activeClipCount; ++j) {
+          if (m_activeClips[j].handle == handle) {
+            primary = &m_activeClips[j];
+            break;
+          }
+        }
+        if (!primary)
+          break;
+      }
+    }
+    if (primary) {
+      // MonoStrict restarts from zero with NO crossfade tail (hard, sample-
+      // accurate replace) — just reset position; the clip fade-in (if any)
+      // still applies via hasLoopedOnce=false.
+      int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
+      primary->currentSample = trimIn;
+      if (primary->reader) {
+        primary->reader->seek(trimIn);
+      }
+      primary->isStopping = false;
+      primary->fadeOutGain = 1.0f;
+      primary->hasLoopedOnce = false;
+      primary->isRestarting = false;
+      primary->restartFadeFramesRemaining = 0;
+      primary->voiceMode = mode;
+    } else {
+      addActiveClip(context);
+    }
+    return;
+  }
+
+  case VoiceMode::MonoWithFadeOverlap: {
+    // One primary voice. If a live (non-stopping) voice exists, restart it in
+    // place (with a short crossfade). If only fading tails exist, add a fresh
+    // voice alongside them so the tail completes naturally (voices == 2 during
+    // the overlap window).
+    ActiveClip* live = nullptr;
+    for (size_t i = 0; i < m_activeClipCount; ++i) {
+      if (m_activeClips[i].handle == handle && !m_activeClips[i].isStopping) {
+        live = &m_activeClips[i];
+        break;
+      }
+    }
+    if (live) {
+      restartVoiceInPlace(*live);
+      live->voiceMode = mode;
+    } else {
+      addActiveClip(context);
+    }
+    return;
+  }
+  }
+
+  // Defensive default (unknown enum) — behave polyphonically.
+  addActiveClip(context);
+}
+
 void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return;
@@ -1015,6 +1126,7 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.reader = context->reader; // Store shared_ptr (maintains reference count)
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
+  clip.voiceMode = context->voiceMode;                 // ORP127 G5
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
   clip.fadeOutStartPos = 0; // Will be set when stopClip() is called
@@ -1079,6 +1191,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.reader = src.reader;
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
+        dest.voiceMode = src.voiceMode;                 // ORP127 G5
       }
       --m_activeClipCount;
       return;
@@ -1660,6 +1773,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       it->second.fadeOutCurve = metadata.fadeOutCurve;
       it->second.loopEnabled = metadata.loopEnabled;
       it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
+      it->second.voiceMode = metadata.voiceMode; // ORP127 G5
       it->second.gainDb = metadata.gainDb;
     }
   }
@@ -1711,6 +1825,7 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   metadata.fadeOutCurve = it->second.fadeOutCurve;
   metadata.loopEnabled = it->second.loopEnabled;
   metadata.stopOthersOnPlay = it->second.stopOthersOnPlay;
+  metadata.voiceMode = it->second.voiceMode; // ORP127 G5
   metadata.gainDb = it->second.gainDb;
 
   // If trim OUT is not set (0), use file duration
@@ -1757,6 +1872,38 @@ bool TransportController::isClipLooping(ClipHandle handle) const {
     }
   }
   return false; // Clip not playing
+}
+
+SessionGraphError TransportController::setClipVoiceMode(ClipHandle handle, VoiceMode mode) {
+  // ORP127 G5: Store the policy persistently. It is read into the playback
+  // context at fire time (startClip), so it takes effect on the next fire —
+  // voices already playing keep the policy they were started under. This keeps
+  // the operation host-neutral and lock-free on the audio thread.
+  if (handle == 0) {
+    return SessionGraphError::InvalidHandle;
+  }
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+  it->second.voiceMode = mode;
+  return SessionGraphError::OK;
+}
+
+VoiceMode TransportController::getClipVoiceMode(ClipHandle handle) const {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return VoiceMode::Polyphonic;
+  }
+  return it->second.voiceMode;
+}
+
+size_t TransportController::getActiveVoiceCount(ClipHandle handle) const {
+  // ORP127 G5: UI-safe voice count via the published snapshot (includes tails).
+  return countActiveVoicesSnapshot(handle);
 }
 
 SessionGraphError TransportController::restartClip(ClipHandle handle) {
