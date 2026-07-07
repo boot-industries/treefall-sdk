@@ -120,34 +120,68 @@ Tasks are ordered by dependency. Commit after each task with the format `type(oc
 - [ ] Stress test: rapid device switches while multiple clips are playing.
 - [ ] Commit: `fix(occ): make audio device swap crash-safe`.
 
-### T7 — Sample-rate mismatch handling (G5, contingent)
-- [ ] If ORP127 has landed SDK-side SRC: wire the SDK resampler into the reader path. Verify pitch is correct.
-- [ ] If SDK SRC has not landed: surface a modal/toast on load with clear text ("This file is 44.1 kHz but the engine runs at 48 kHz. Playback will be incorrect. Convert the file or change engine sample rate.").
-- [ ] Commit: `feat(occ): handle sample-rate mismatch explicitly`.
+### T7 — Wire SDK resampler into reader path (G5 via ORP127 G6)
+- [ ] Wrap the `IAudioFileReader` returned by `create_audio_file_reader_libsndfile` in `ResamplingAudioFileReader` when the file's native rate differs from the engine rate.
+- [ ] Remove the silent DBG warning at `AudioEngine.cpp:388-394`; log a single info-level line noting the decorator is active.
+- [ ] Verify: a 44.1 kHz file plays at correct pitch in a 48 kHz engine, trim points and fade durations remain sample-accurate.
+- [ ] Commit: `feat(occ): resample mismatched-rate files via SDK decorator`.
 
-### T8 — Playgroup choke scoping (G6)
-- [ ] Locate the "Stop all on play" evaluation site.
-- [ ] Confirm it filters by the firing clip's assigned playgroup(s). If it is global, fix to be playgroup-scoped.
-- [ ] Add test covering: firing a clip in group A does not stop a clip in group B.
+### T8 — Playgroup-scoped choke via SDK primitive (G6)
+- [ ] Locate OCC's "Stop all on play" evaluation site.
+- [ ] Implement playgroup scoping in OCC (SDK owns no playgroup concept). Two implementation options — pick one:
+  - **A:** Walk playgroup members and call `stopClip(handle)` for each. Simple, correct, may be O(n) on the UI thread.
+  - **B:** Call `stopOtherClips(firingHandle)` and instead filter the *choke* application at fire-time (only invoke it if the firing clip has the flag).
+- [ ] Add test: firing a clip in group A does not stop a clip in group B.
 - [ ] Commit: `fix(occ): scope choke to firing clip playgroups`.
 
 ### T9 — Documentation and closure
-- [ ] Update `apps/clip-composer/CLAUDE.md` with the transport unification invariant.
+- [ ] Update `apps/clip-composer/CLAUDE.md` with the transport unification invariant and the new SDK dependency version.
 - [ ] Append completion note to this doc with test results and any deferred items.
 - [ ] Update `apps/clip-composer/docs/occ/OCC.md` index if it exists.
 - [ ] Commit: `docs(occ): record transport unification sprint completion`.
+
+### T10 — Adopt `VoiceMode::MonoWithFadeOverlap` (ORP127 consumption)
+- [ ] After `registerClipAudio` for each clip, call `transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap)`.
+- [ ] Remove or reduce the local dedup wrapper in `AudioEngine::startClip` (`Source/Audio/AudioEngine.cpp:497-538`) — the SDK now enforces the model.
+- [ ] Verify: fire-during-fade produces the target behavior (fresh voice alongside fading tail); fire-while-playing restarts in place.
+- [ ] Commit: `feat(occ): adopt MonoWithFadeOverlap voice mode`.
+
+### T11 — Set `MaxVoicesPerClip` to 2 (ORP127 consumption)
+- [ ] At `AudioEngine` construction, call `transport->setMaxVoicesPerClip(2)`. Rationale: one primary + one fade-tail is all OCC's model needs.
+- [ ] Verify: rapid re-fire under stress does not exceed 2 active voices per clip (`getActiveVoiceCount(handle)` check in a test).
+- [ ] Commit: `feat(occ): cap voices per clip to 2`.
+
+### T12 — Pin to ORP127 SDK release tag
+- [ ] Once the SDK agent tags the ORP127 release, pin OCC's SDK reference to it.
+- [ ] Confirm full OCC build + tests against the tagged SDK.
+- [ ] Commit: `chore(occ): pin SDK to <tag>`.
 
 ---
 
 ## Coordination With ORP127
 
-App-side work in this sprint is designed to be **independent of** the SDK sprint — G1-G4 are pure OCC changes and do not require SDK API changes. G5 (SR mismatch) becomes cleaner if the SDK adds a resampler but has an interim fallback. G6 depends only on OCC internals.
+**ORP127 landed 2026-07-08 on branch `feat/orp127-transport-voice-integrity` (11 commits, SDK version 0.2.0 → 0.3.0, 178/178 tests green, TSan clean).** App-side work in this sprint remains largely independent, but several tasks are now simpler and one is superseded:
 
-However, the app-side work does **not fully solve** the user's reported symptoms on its own. The bitcrush artifacts specifically require SDK-side atomicity and per-sample fade fixes (see ORP127 G1, G2). Both sprints must land for the user to hear the full improvement. Sequence recommendation:
+- **G1 (grid/dialog unification)** — unchanged. Pure OCC refactor.
+- **G2 (device-change bypass)** — unchanged, but the call site now goes through the ORP127 `MonoWithFadeOverlap` semantics on re-fire, so the visible behavior will be correct once we set the voice mode.
+- **G3 (callback drain)** — unchanged. Still an OCC bug regardless of SDK atomicity.
+- **G4 (device swap safety)** — unchanged.
+- **G5 (SR mismatch)** — **superseded by ORP127 G6.** `ResamplingAudioFileReader` is a drop-in decorator over `IAudioFileReader` that reports metadata in the target rate. OCC151 T7 becomes: wire the decorator into the reader path and remove the interim refuse-to-load fallback if any exists.
+- **G6 (choke scoping)** — the SDK now provides `stopOtherClips(exceptHandle)` as a host-neutral primitive. OCC keeps ownership of playgroup semantics; T8 becomes: implement OCC's "stop others in this clip's playgroup(s)" by walking the playgroup members and calling `stopClip` on each (or by adding a wrapper that filters, then calls the SDK primitive). The SDK correctly does NOT know about playgroups.
 
-1. **This sprint T1-T3 first** — kills the grid/dialog desync and the same-file 2× stacking immediately. Big audible win with low risk.
-2. **ORP127 in parallel** — atomicity, per-sample fades, voice policy.
-3. **This sprint T4-T8 after ORP127 lands** — the callback thread and device-change fixes are cleaner once the SDK has proper voice semantics.
+**New consumption tasks (add to ledger):**
+
+- **T10 — Adopt `VoiceMode::MonoWithFadeOverlap`.** After registering each clip, call `setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap)`. This is the user's canonical model and eliminates OCC's need for the local dedup wrapper at `AudioEngine::startClip` (`Source/Audio/AudioEngine.cpp:497-538`). Wrapper can be removed or reduced to a thin passthrough.
+- **T11 — Set `MaxVoicesPerClip` for OCC.** Default SDK cap is 8, max 32. For OCC's model, 2 is sufficient (one primary + one fade-tail). Call `setMaxVoicesPerClip(2)` on the transport at boot.
+- **T12 — Pin OCC's SDK dependency to the ORP127 tag** (once tagged). Verify build against the new API.
+
+Sequence:
+
+1. **T1-T3 first** — grid/dialog unification and sync tests. Big audible win.
+2. **T10-T12** — adopt the ORP127 API. Small changes, high value.
+3. **T4-T6** — callback drain, device-change bypass, device swap safety.
+4. **T7-T8** — SR handling via decorator; playgroup choke via SDK primitive.
+5. **T9** — docs and closure.
 
 ---
 
@@ -160,3 +194,4 @@ A new sibling app (`~/dev/fourtrack`, Apple-only, SwiftUI + C++ core) will consu
 ## Change Log
 
 - **2026-07-07:** Sprint opened, audit findings recorded, task ledger drafted.
+- **2026-07-08:** ORP127 landed (SDK 0.3.0). Ledger updated: G5 superseded by SDK resampler, G6 uses new `stopOtherClips` primitive, three new tasks (T10-T12) added for ORP127 API adoption. Sequence adjusted so ORP127 adoption (T10-T12) lands right after grid/dialog unification (T1-T3).
