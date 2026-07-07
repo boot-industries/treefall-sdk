@@ -226,10 +226,9 @@ public:
     auto now = std::chrono::system_clock::now();
     scene.timestamp = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(now));
 
-    // TODO: Capture clip assignments from SessionGraph
-    // For now, we store empty vectors (OCC integration will populate this)
-    // In a full implementation, this would iterate over registered clips
-    // and store their handles in order
+    // TODO: Capture clip assignments from SessionGraph.
+    // For now these vectors are empty; once wired to the session graph this
+    // would iterate over registered clips and store their handles in order.
 
     // Capture routing state (if routing matrix is available)
     if (routingMatrix_) {

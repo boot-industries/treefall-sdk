@@ -42,17 +42,20 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
   static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
 
   RoutingConfig routingConfig;
-  routingConfig.num_channels = MAX_ROUTING_CHANNELS; // 2 channels per clip (stereo support)
-  routingConfig.num_groups = 4;                      // 4 Clip Groups (as per ORP070)
-  routingConfig.num_outputs = 2;                     // Stereo output
+  // num_channels is structural: 2 routing channels per active clip (L/R), so it
+  // scales with MAX_ACTIVE_CLIPS. num_groups is a typical soundboard default;
+  // hosts that need a different grouping topology can reconfigure the matrix.
+  routingConfig.num_channels = MAX_ROUTING_CHANNELS; // 2 channels per clip (stereo)
+  routingConfig.num_groups = 4;                      // typical soundboard default
+  routingConfig.num_outputs = 2;                     // stereo output
   routingConfig.solo_mode = SoloMode::SIP;
   routingConfig.metering_mode = MeteringMode::Peak;
   routingConfig.gain_smoothing_ms =
       0.0f; // DISABLED: Fades handled at clip level, smoothing causes zigzag artifacts
   routingConfig.enable_metering = true;
   routingConfig.enable_clipping_protection =
-      true; // OCC109 v0.2.2: ENABLED to fix "Stop All" distortion with 32 simultaneous fade-outs
-            // Soft-knee tanh limiter prevents audible clipping without quality loss
+      true; // Enabled by default: prevents distortion when many voices fade out
+            // simultaneously (soft-knee tanh limiter, no audible quality loss).
 
   m_routingMatrix->initialize(routingConfig);
 

@@ -36,14 +36,15 @@ enum class PlaybackState : uint8_t {
 /// Voice allocation policy for a clip (ORP127 G5).
 ///
 /// Governs what happens when a clip is fired while one or more of its voices
-/// are already active. Host-neutral: OCC selects MonoWithFadeOverlap
-/// universally; FourTrack uses MonoStrict (one voice per track, no fade tail);
-/// polyphonic layering hosts use Polyphonic.
+/// are already active. Host-neutral: broadcast/soundboard hosts typically
+/// select MonoWithFadeOverlap; per-track multitrack hosts typically use
+/// MonoStrict; layering hosts use Polyphonic.
 enum class VoiceMode : uint8_t {
   /// One primary voice per clip identity. Firing while a voice is *playing*
   /// restarts it in place. Firing while a voice is *fading out* leaves that
   /// tail to complete naturally and starts a fresh voice alongside it
-  /// (voices == 2 only during the fade-overlap window). This is OCC's model.
+  /// (voices == 2 only during the fade-overlap window). Typical for
+  /// broadcast/soundboard hosts.
   MonoWithFadeOverlap = 0,
 
   /// Full polyphony: every fire allocates a new voice, up to
@@ -52,8 +53,8 @@ enum class VoiceMode : uint8_t {
   Polyphonic = 1,
 
   /// Strict single voice. Firing while playing restarts from zero with no fade
-  /// tail — the previous voice is cut and replaced sample-accurately. This is
-  /// FourTrack's per-track model and suits OCC stingers / hard cues.
+  /// tail — the previous voice is cut and replaced sample-accurately. Typical
+  /// for per-track multitrack hosts, and for stingers / hard cues.
   MonoStrict = 2
 };
 
@@ -91,7 +92,8 @@ struct SessionDefaults {
   bool stopOthersOnPlay = false;              ///< Default "stop others" mode
   float gainDb = 0.0f;                        ///< Default gain in dB (0.0 = unity)
 
-  // Note: Default color is OCC-specific and stored in SessionManager
+  // Note: Color is not part of SDK metadata; hosts store presentation state
+  // (color, labels, etc.) separately.
 };
 
 /// Cue point marker within a clip
@@ -194,12 +196,12 @@ public:
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError stopAllClips() = 0;
 
-  /// Stop all clips in a specific Clip Group
+  /// Stop all clips in a specific routing group
   ///
   /// This is useful for "FIFO choke" behavior where only one clip
   /// in a group can play at a time.
   ///
-  /// @param groupIndex Clip Group index (0-3)
+  /// @param groupIndex Routing group index (0-3)
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError stopAllInGroup(uint8_t groupIndex) = 0;
 
@@ -207,8 +209,9 @@ public:
   ///
   /// Host-neutral choke: fades out all voices whose handle differs from
   /// exceptHandle, leaving the exempt clip untouched. Hosts implement scoped
-  /// choke (e.g. Clip Composer playgroups, "stop others on play") by calling
-  /// this with the firing clip's handle — the SDK has no notion of playgroups.
+  /// choke (e.g. host-defined exclusive groupings, "stop others on play") by
+  /// calling this with the firing clip's handle — the SDK has no notion of any
+  /// host-side grouping.
   ///
   /// @param exceptHandle The clip whose voices are spared (0 = stop all)
   /// @return SessionGraphError::OK on success, or error code on failure
@@ -473,8 +476,9 @@ public:
   /// Takes effect: on the next fire (startClip) for this clip. Any voices
   /// already playing keep the policy they were started under.
   ///
-  /// Host-neutral: OCC selects MonoWithFadeOverlap universally; FourTrack uses
-  /// MonoStrict. The SDK default is Polyphonic for backward compatibility.
+  /// Host-neutral: broadcast/soundboard hosts typically select
+  /// MonoWithFadeOverlap; per-track multitrack hosts typically use MonoStrict.
+  /// The SDK default is Polyphonic for backward compatibility.
   virtual SessionGraphError setClipVoiceMode(ClipHandle handle, VoiceMode mode) = 0;
 
   /// Query the voice allocation policy for a clip (ORP127 G5)
@@ -510,7 +514,7 @@ public:
   /// @note Fade-in: Applies fade-in from clip metadata (if configured)
   ///
   /// @code
-  /// // OCC Edit Dialog < > trim button handler:
+  /// // Example: a trim-IN nudge control in a clip editor.
   /// void onTrimInNudge() {
   ///   // Update trim IN point
   ///   transport->updateClipTrimPoints(handle, newTrimIn, trimOut);
