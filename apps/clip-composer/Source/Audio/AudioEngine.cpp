@@ -579,6 +579,18 @@ void AudioEngine::panicStop() {
   DBG("AudioEngine: PANIC STOP");
 }
 
+void AudioEngine::drainTransportCallbacks() {
+  // OCC151 T5 / F-APP-3: message-thread-only consumer of the SPSC callback ring.
+  // Assert (Debug) that we are NOT on the audio thread. m_audioThreadId is stamped
+  // by processAudio(); if it is unset (audio never ran) the guard is a no-op.
+  const auto audioThreadId = m_audioThreadId.load(std::memory_order_relaxed);
+  jassert(audioThreadId == std::thread::id{} || std::this_thread::get_id() != audioThreadId);
+
+  if (m_transportController) {
+    m_transportController->processCallbacks();
+  }
+}
+
 //==============================================================================
 bool AudioEngine::isClipPlaying(int buttonIndex) const {
   if (buttonIndex < 0 || buttonIndex >= AudioEngine::MAX_CLIP_BUTTONS || !m_transportController)
@@ -1251,6 +1263,10 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
   // BROADCAST-SAFE: No allocations, no locks, no I/O in audio thread
   auto callbackStart = std::chrono::high_resolution_clock::now();
 
+  // OCC151 T5 / F-APP-3: record the audio-thread id so drainTransportCallbacks()
+  // can assert it never runs here. relaxed is fine — this is a Debug-only guard.
+  m_audioThreadId.store(std::this_thread::get_id(), std::memory_order_relaxed);
+
   if (!m_transportController) {
     // No transport - output silence
     for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -1281,8 +1297,11 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
     }
   }
 
-  // Process any pending callbacks (posts to UI thread)
-  m_transportController->processCallbacks();
+  // OCC151 T5 / F-APP-3: DO NOT drain transport callbacks here. The SDK callback
+  // ring is SPSC and the message thread is the sole consumer. Draining on the
+  // audio thread destroyed std::function objects (and their captured
+  // shared_ptrs) on the RT thread. The drain now happens on the message thread
+  // via drainTransportCallbacks(), called from MainComponent's UI timer.
 
   // Record performance metrics (atomic, no allocations)
   if (m_performanceMonitor) {
