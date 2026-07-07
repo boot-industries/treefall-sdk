@@ -48,7 +48,13 @@ struct TransportCommand {
     UpdateFade,
     UpdateGain,
     UpdateLoop,
-    UpdateStopOthers
+    UpdateStopOthers,
+    // ORP127 G1: UI-thread voice mutations routed onto the audio thread so no
+    // ActiveClip field is written from two threads.
+    Restart,        // Restart all voices for a handle from trim IN (with fade-in)
+    Seek,           // Seek all voices for a handle to an absolute position
+    UpdateMetadata, // Apply a full metadata batch to active voices
+    SetVoiceMode    // ORP127 G5: change a clip's voice policy (audio-thread state)
   };
 
   Type type;
@@ -75,6 +81,26 @@ struct TransportCommand {
 
     float gainDb;      // For UpdateGain
     bool booleanValue; // For UpdateLoop / UpdateStopOthers
+
+    int64_t seekPosition; // For Seek (absolute sample position, pre-clamped)
+
+    uint8_t voiceMode; // For SetVoiceMode (VoiceMode enum value)
+
+    // For UpdateMetadata: full metadata batch (fade sample counts precomputed
+    // on the UI thread so no pow()/float-math surprises on the audio thread).
+    struct {
+      int64_t trimIn;
+      int64_t trimOut;
+      int64_t fadeInSamples;
+      int64_t fadeOutSamples;
+      double fadeInSeconds;
+      double fadeOutSeconds;
+      FadeCurve fadeInCurve;
+      FadeCurve fadeOutCurve;
+      bool loopEnabled;
+      float gainDb;
+      float gainLinear;
+    } metadata;
   } data;
 };
 
@@ -127,6 +153,24 @@ struct ActiveClip {
   // - Reader can't be destroyed while audio thread is still using it
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
   std::shared_ptr<IAudioFileReader> reader;
+
+  // ORP127 G5: per-voice policy (copied from the clip's configured VoiceMode at
+  // Start). Governs how a fresh fire interacts with this voice.
+  VoiceMode voiceMode{VoiceMode::Polyphonic};
+};
+
+/// ORP127 G1: Immutable per-voice snapshot published by the audio thread for
+/// lock-free UI-thread queries. Plain-old-data so it can be copied wholesale
+/// without touching the live (audio-thread-owned) ActiveClip array.
+struct VoiceSnapshot {
+  ClipHandle handle;
+  uint32_t voiceId;
+  int64_t startSample;
+  int64_t currentSample;
+  int64_t trimInSamples;
+  int64_t trimOutSamples;
+  bool isStopping;
+  bool loopEnabled;
 };
 
 /// Transport controller implementation
@@ -201,6 +245,10 @@ private:
   /// @return Number of instances currently playing (0-MAX_VOICES_PER_CLIP)
   size_t countActiveVoices(ClipHandle handle) const;
 
+  /// ORP127 G1: Count active voices for a handle from the published snapshot.
+  /// Safe to call from the UI thread (does not touch the live voice array).
+  size_t countActiveVoicesSnapshot(ClipHandle handle) const;
+
   /// Find oldest active voice for a given clip handle
   /// @return Pointer to oldest voice, or nullptr if none found
   ActiveClip* findOldestVoice(ClipHandle handle);
@@ -226,6 +274,17 @@ private:
   /// @return Gain value (0.0 to 1.0)
   float calculateFadeGain(float normalizedPosition, FadeCurve curve) const;
 
+  /// ORP127 G1: Publish a snapshot of all active voices for UI-thread queries.
+  /// Called from the audio thread at the end of processAudio(). Writes into the
+  /// back buffer, then flips m_snapshotIndex with release ordering so UI readers
+  /// (acquire) always see a fully-consistent set of voices — never a torn view.
+  void publishVoiceSnapshot();
+
+  /// ORP127 G1: Post a command to the audio thread. Returns OK, or InternalError
+  /// if the SPSC command queue is full. Centralizes the write-index/full-check
+  /// dance that every UI-thread mutation entry point previously duplicated.
+  SessionGraphError postCommand(const TransportCommand& command);
+
   // Configuration
   core::SessionGraph* m_sessionGraph;
   uint32_t m_sampleRate;
@@ -244,6 +303,17 @@ private:
   static constexpr size_t MAX_ACTIVE_CLIPS = 32;
   std::array<ActiveClip, MAX_ACTIVE_CLIPS> m_activeClips;
   size_t m_activeClipCount{0};
+
+  // ORP127 G1: Double-buffered voice snapshot for lock-free UI-thread queries.
+  // Audio thread writes the back buffer in publishVoiceSnapshot() and flips
+  // m_snapshotIndex (release); UI-thread queries read the front buffer via
+  // m_snapshotIndex (acquire). No UI thread ever touches m_activeClips.
+  struct VoiceSnapshotBuffer {
+    std::array<VoiceSnapshot, MAX_ACTIVE_CLIPS> voices;
+    size_t count{0};
+  };
+  std::array<VoiceSnapshotBuffer, 2> m_snapshotBuffers;
+  std::atomic<size_t> m_snapshotIndex{0}; // Index of the front (published) buffer
 
   // Multi-voice management
   static constexpr size_t MAX_VOICES_PER_CLIP = 4; // Provision for 4 voices (OCC uses 2)

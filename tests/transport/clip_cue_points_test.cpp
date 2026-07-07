@@ -167,6 +167,10 @@ TEST_F(ClipCuePointsTest, SeekToCuePoint) {
   auto result = m_transport->seekToCuePoint(m_clipHandle, 1);
   EXPECT_EQ(result, SessionGraphError::OK);
 
+  // ORP127 G1: seek is applied on the audio thread — pump one render so the
+  // Seek command takes effect before we read the position.
+  m_transport->processAudio(buffers, 2, 512);
+
   // Verify position is at cue point (allow small buffer processing delay)
   int64_t position = m_transport->getClipPosition(m_clipHandle);
   EXPECT_NEAR(position, 5 * m_sampleRate, 2048); // Within one buffer size
@@ -327,6 +331,9 @@ TEST_F(ClipCuePointsTest, SeekToMultipleCuePoints) {
   for (uint32_t i = 0; i < 4; ++i) {
     auto result = m_transport->seekToCuePoint(m_clipHandle, i);
     EXPECT_EQ(result, SessionGraphError::OK);
+
+    // ORP127 G1: pump one render so each Seek command applies before we query.
+    m_transport->processAudio(buffers, 2, 512);
 
     // Verify position (allow buffer processing tolerance)
     int64_t expectedPos = (2 + i * 2) * m_sampleRate;

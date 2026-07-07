@@ -259,8 +259,11 @@ TEST_F(ClipRestartCallbackTest, RestartCallbackFired) {
 
   EXPECT_EQ(m_callback->startedHandle, handle);
 
-  // Restart clip
+  // Restart clip. ORP127 G1: restart is applied on the audio thread and the
+  // onClipRestarted callback is posted from there, so pump one render before
+  // draining callbacks.
   m_transport->restartClip(handle);
+  m_transport->processAudio(buffers, 2, 512);
   m_transport->processCallbacks(); // Process restart callback
 
   EXPECT_EQ(m_callback->restartedHandle, handle);
