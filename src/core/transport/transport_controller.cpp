@@ -169,12 +169,11 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   if (stopOthers) {
-    // This is a separate command, processed before start
-    // We can call stopAllClips() directly here? No, that pushes a command.
-    // We should push StopAll first.
-    // Or we can add a flag to Start command?
-    // Let's push a StopAll command first if queue has space.
-    stopAllClips();
+    // ORP127 G7: choke OTHER clips (not this one) before the Start command that
+    // follows in queue order. Using stopOtherClips(handle) instead of the old
+    // global stopAllClips() means existing voices of THIS clip are preserved and
+    // the choke is correctly scoped to everything else.
+    stopOtherClips(handle);
   }
 
   // Post Start command to audio thread
@@ -264,6 +263,27 @@ SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
   m_commandWriteIndex.store(nextIndex, std::memory_order_release);
 
   return SessionGraphError::OK;
+}
+
+SessionGraphError TransportController::stopOtherClips(ClipHandle exceptHandle) {
+  // ORP127 G7: host-neutral choke primitive. Stops every voice except those of
+  // exceptHandle (pass 0 to stop everything). Routed through the command queue.
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::StopOthers;
+  cmd.handle = exceptHandle;
+  return postCommand(cmd);
+}
+
+SessionGraphError TransportController::setMaxVoicesPerClip(uint32_t maxVoices) {
+  // ORP127 G7: clamp to [1, hard max]. Atomic so the audio thread reads a
+  // consistent value in addActiveClip.
+  uint32_t clamped = std::clamp(maxVoices, 1u, VOICE_CAP_HARD_MAX);
+  m_maxVoicesPerClip.store(clamped, std::memory_order_relaxed);
+  return SessionGraphError::OK;
+}
+
+uint32_t TransportController::getMaxVoicesPerClip() const {
+  return m_maxVoicesPerClip.load(std::memory_order_relaxed);
 }
 
 PlaybackState TransportController::getClipState(ClipHandle handle) const {
@@ -717,6 +737,17 @@ void TransportController::processCommands() {
       }
       break;
 
+    case TransportCommand::Type::StopOthers:
+      // ORP127 G7: choke primitive — stop every voice except cmd.handle.
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        if (m_activeClips[i].handle != cmd.handle && !m_activeClips[i].isStopping) {
+          m_activeClips[i].isStopping = true;
+          m_activeClips[i].fadeOutGain = 1.0f;
+          m_activeClips[i].fadeOutStartPos = m_activeClips[i].currentSample;
+        }
+      }
+      break;
+
     case TransportCommand::Type::StopGroup:
       // TODO: Get clip group assignments from SessionGraph
       // For now, this is a no-op
@@ -1063,9 +1094,11 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 
   ClipHandle handle = context->handle;
 
-  // Multi-voice: Check if we need to remove oldest voice to make room
+  // Multi-voice: Check if we need to remove oldest voice to make room.
+  // ORP127 G7: the cap is now host-configurable (default 8, hard max 32).
   size_t currentVoiceCount = countActiveVoices(handle);
-  if (currentVoiceCount >= MAX_VOICES_PER_CLIP) {
+  size_t maxVoices = m_maxVoicesPerClip.load(std::memory_order_relaxed);
+  if (currentVoiceCount >= maxVoices) {
     // At max capacity - remove oldest voice instance for this clip
     ActiveClip* oldest = findOldestVoice(handle);
     if (oldest) {
