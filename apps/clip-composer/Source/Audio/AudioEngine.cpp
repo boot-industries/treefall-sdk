@@ -942,8 +942,18 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
     }
   }
 
+  // OCC151 T4 / F-APP-2 (G2): route device-change restarts through the OCC
+  // wrappers, not the raw SDK startClip. This keeps every re-fire on the single
+  // dedup path (MonoWithFadeOverlap-aware startClip for grid clips, range-checked
+  // startCueBuss for cue busses) so a voice already fading out during the reinit
+  // cannot become a stacked voice.
   for (const auto handle : handlesToRestart) {
-    m_transportController->startClip(handle);
+    const int buttonIndex = getButtonIndexFromHandle(handle);
+    if (buttonIndex >= 0) {
+      startClip(buttonIndex);
+    } else {
+      startCueBuss(handle);
+    }
   }
 
   DBG("AudioEngine: Successfully changed audio settings");
