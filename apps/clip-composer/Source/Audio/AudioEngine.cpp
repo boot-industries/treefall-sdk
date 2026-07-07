@@ -186,6 +186,11 @@ bool AudioEngine::rehydrateTransportState(orpheus::TransportController& transpor
       return false;
     }
 
+    // OCC151 T10: preserve the MonoWithFadeOverlap policy across device swaps —
+    // the new transport starts fresh, so the grid clip's voice mode must be
+    // re-applied after re-registration (matches loadClip()).
+    transport.setClipVoiceMode(handle, orpheus::VoiceMode::MonoWithFadeOverlap);
+
     result = transport.updateClipMetadata(handle, registration.metadata);
     if (result != orpheus::SessionGraphError::OK) {
       errorMessage = "Failed to restore clip metadata for slot " + std::to_string(buttonIndex) +
@@ -369,6 +374,14 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
     return false;
   }
 
+  // OCC151 T10: adopt the ORP127 MonoWithFadeOverlap voice policy — OCC's
+  // canonical model. One primary voice per clip identity: firing while playing
+  // restarts in place; firing while a voice is fading out leaves that tail to
+  // complete and starts a fresh voice alongside it (voices == 2 only during the
+  // fade-overlap window). The SDK now enforces this, superseding the local
+  // restart-if-playing dedup wrapper in startClip().
+  m_transportController->setClipVoiceMode(handle, orpheus::VoiceMode::MonoWithFadeOverlap);
+
   // Store handle and metadata
   m_clipHandles[buttonIndex] = handle;
   m_clipRegistrations[buttonIndex] = ClipRegistrationState{filePath, {}};
@@ -507,33 +520,21 @@ bool AudioEngine::startClip(int buttonIndex) {
   if (!m_transportController)
     return false;
 
-  // CRITICAL: Check if already playing - if so, RESTART from IN point (not resume)
-  // This ensures rapid clip button clicks always restart from the beginning
-  // Reference: Commit 693293f1 (perfect button behavior, no zigzag distortion)
-  // See: apps/clip-composer/docs/occ/OCC129 for complete technical explanation
-  bool isAlreadyPlaying = m_transportController->isClipPlaying(handle);
-
-  orpheus::SessionGraphError result;
-  if (isAlreadyPlaying) {
-    // Already playing - use restartClip() to force restart from IN point
-    // This restarts ALL voices with a 5ms broadcast-safe crossfade
-    // Eliminates zigzag distortion by preventing overlapping voices with independent fades
-    result = m_transportController->restartClip(handle);
-    if (result != orpheus::SessionGraphError::OK) {
-      DBG("AudioEngine: Failed to restart clip " << handle);
-      return false;
-    }
-    DBG("AudioEngine: Restarted clip on button " << buttonIndex << " (was already playing)");
-  } else {
-    // Not playing - use startClip() as normal
-    result = m_transportController->startClip(handle);
-    if (result != orpheus::SessionGraphError::OK) {
-      DBG("AudioEngine: Failed to start clip " << handle);
-      return false;
-    }
-    DBG("AudioEngine: Started clip on button " << buttonIndex);
+  // OCC151 T10: thin passthrough to the SDK. The local "restart if already
+  // playing" dedup wrapper is retired — clips are registered with
+  // VoiceMode::MonoWithFadeOverlap (see loadClip), so the SDK's startClip now
+  // enforces the one-voice-per-clip model itself: firing a live voice restarts
+  // it in place (short crossfade), and firing while only a fade-out tail exists
+  // starts a fresh voice alongside the tail (voices == 2 only during the fade
+  // overlap). This keeps a single source of truth in the SDK and eliminates the
+  // OCC-side isClipPlaying()/restartClip() branch that duplicated it.
+  auto result = m_transportController->startClip(handle);
+  if (result != orpheus::SessionGraphError::OK) {
+    DBG("AudioEngine: Failed to start clip " << handle);
+    return false;
   }
 
+  DBG("AudioEngine: Started clip on button " << buttonIndex);
   return true;
 }
 
