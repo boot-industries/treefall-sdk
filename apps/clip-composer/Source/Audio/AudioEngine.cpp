@@ -97,6 +97,12 @@ bool AudioEngine::createConfiguredTransport(
     return false;
   }
 
+  // OCC151 T11: cap voices per clip to 2 for OCC's model — one primary voice
+  // plus, at most, one fading-out tail during a fade-overlap. The SDK default is
+  // 8; OCC never needs polyphonic layering. Applied here so the cap holds for
+  // both the initial transport and any transport rebuilt on a device change.
+  transport->setMaxVoicesPerClip(2);
+
   transport->setCallback(const_cast<AudioEngine*>(this));
   return true;
 }
