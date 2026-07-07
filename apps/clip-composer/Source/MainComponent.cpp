@@ -627,6 +627,15 @@ void MainComponent::createNewSession() {
 
 //==============================================================================
 void MainComponent::timerCallback() {
+  // OCC151 T5 / F-APP-3: drain the transport's SPSC callback ring on the message
+  // thread (this timer runs on the message thread). This replaces the old
+  // audio-thread drain in AudioEngine::processAudio, restoring the SPSC contract
+  // and keeping std::function/shared_ptr teardown off the RT thread. Drained
+  // before refreshUiSnapshot() so clip started/stopped state lands this frame.
+  if (m_audioEngine) {
+    m_audioEngine->drainTransportCallbacks();
+  }
+
   refreshUiSnapshot();
 
   if (m_barVisualizer) {
