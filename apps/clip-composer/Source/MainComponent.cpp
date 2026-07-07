@@ -2287,22 +2287,11 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
         DBG("MainComponent: Failed to load audio into engine for button "
             << buttonIndex << " (global: " << globalClipIndex << ")");
       } else {
-        // Check for sample rate mismatch and warn user
-        auto metadata = m_audioEngine->getClipMetadata(globalClipIndex);
-        if (metadata.has_value() && metadata->sample_rate != 48000) {
-          juce::AlertWindow::showMessageBoxAsync(
-              juce::AlertWindow::WarningIcon, "Sample Rate Mismatch",
-              "Warning: This audio file is " +
-                  juce::String(static_cast<int>(metadata->sample_rate)) +
-                  " Hz,\n"
-                  "but the engine is running at 48000 Hz.\n\n"
-                  "Audio will sound distorted or at the wrong speed.\n\n"
-                  "Workaround: Convert your audio files to 48 kHz using:\n"
-                  "• Audacity (File > Export > 48000 Hz)\n"
-                  "• ffmpeg: ffmpeg -i input.wav -ar 48000 output.wav",
-              "OK");
-        }
-
+        // OCC151 T7 / G5: no more "sample rate mismatch" refuse-to-load modal.
+        // The SDK now resamples mismatched-rate files through a deterministic
+        // polyphase converter (ORP127 G6), so they play at correct pitch. The
+        // engine presents this clip's metadata in the engine-rate timeline, so
+        // trims/fades remain sample-accurate. Nothing to warn the operator about.
         if (replacingExistingClip) {
           m_audioEngine->updateClipMetadata(
               globalClipIndex, clipData.trimInSamples, clipData.trimOutSamples,

@@ -396,21 +396,39 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
   auto reader = orpheus::createAudioFileReader();
   auto metadataResult = reader->open(filePath.toStdString());
   if (metadataResult.isOk()) {
-    m_clipMetadata[buttonIndex] = metadataResult.value;
-    DBG("AudioEngine: Clip " << buttonIndex
-                             << " metadata: " << static_cast<int>(metadataResult.value.sample_rate)
-                             << " Hz, " << static_cast<int>(metadataResult.value.num_channels)
-                             << " ch, " << static_cast<int>(metadataResult.value.duration_samples)
-                             << " samples");
+    auto uiMetadata = metadataResult.value;
 
-    // Warn about sample rate mismatch
-    if (metadataResult.value.sample_rate != m_sampleRate) {
-      DBG("AudioEngine: WARNING - Sample rate mismatch! File is "
-          << static_cast<int>(metadataResult.value.sample_rate) << " Hz, engine is running at "
-          << static_cast<int>(m_sampleRate)
-          << " Hz. Audio will sound distorted. Please convert file to "
-          << static_cast<int>(m_sampleRate) << " Hz.");
+    // OCC151 T7 / G5: mismatched-rate files are no longer a silent hazard. The
+    // SDK's registerClipAudio wraps the reader in a deterministic polyphase
+    // ResamplingAudioFileReader (ORP127 G6), so playback is at correct pitch and
+    // the transport reports positions in the ENGINE-rate timeline.
+    //
+    // The transport therefore runs this clip in engine-rate frames. Present the
+    // UI metadata in the SAME timeline so the Edit dialog's duration, trim
+    // points, and fade lengths stay sample-accurate against playback. We convert
+    // arithmetically (the SDK uses the same ratio internally) because the SDK
+    // does not yet expose the decorator's engine-rate AudioFileMetadata.
+    // TODO(orp-sdk): add TransportController::getClipAudioMetadata(handle) so
+    // hosts can read the engine-rate metadata directly instead of recomputing.
+    if (uiMetadata.sample_rate != 0 && uiMetadata.sample_rate != m_sampleRate) {
+      const double ratio =
+          static_cast<double>(m_sampleRate) / static_cast<double>(uiMetadata.sample_rate);
+      uiMetadata.duration_samples =
+          static_cast<int64_t>(static_cast<double>(uiMetadata.duration_samples) * ratio);
+      const uint32_t nativeRate = uiMetadata.sample_rate;
+      uiMetadata.sample_rate = m_sampleRate;
+      DBG("AudioEngine: Clip " << buttonIndex << " is " << static_cast<int>(nativeRate)
+                               << " Hz; SDK resampler active -> presenting metadata at engine rate "
+                               << static_cast<int>(m_sampleRate) << " Hz ("
+                               << static_cast<int>(uiMetadata.duration_samples)
+                               << " engine frames)");
     }
+
+    m_clipMetadata[buttonIndex] = uiMetadata;
+    DBG("AudioEngine: Clip " << buttonIndex
+                             << " metadata: " << static_cast<int>(uiMetadata.sample_rate) << " Hz, "
+                             << static_cast<int>(uiMetadata.num_channels) << " ch, "
+                             << static_cast<int>(uiMetadata.duration_samples) << " samples");
 
     // Pre-seek to start of file (warm up OS page cache, reduce first-play latency)
     reader->seek(0);
