@@ -932,4 +932,89 @@ int64_t AudioEngine::getClipPosition(int buttonIndex) const {
 
 ---
 
+## ORP127 Update: Voice Model & Gain Integrity (2026-07-07)
+
+The ORP127 sprint fixed a set of transport correctness defects and added new
+host-facing API. This section documents the behavior and API OCC should adopt.
+
+### Thread-safety (G1) — behavioral change
+
+All per-voice mutations now run on the **audio thread** via the command queue.
+`restartClip()`, `seekClip()`, `seekToCuePoint()`, and the active-clip half of
+`updateClipMetadata()` are **asynchronous**: they take effect on the next audio
+buffer, not synchronously. UI-thread queries (`getClipState`, `isClipPlaying`,
+`getClipPosition`, `isClipLooping`, `getClipTrimPoints`, `getActiveVoiceCount`)
+read from an atomically-published snapshot — no locks, no data races.
+
+**OCC action:** do not read a position/state immediately after `seekClip()` /
+`restartClip()` and expect it to reflect the new value in the same UI tick; it
+updates within one audio callback. This is verified race-free under
+ThreadSanitizer (`voice_state_tsan_test`).
+
+### Fades (G2, G3) — automatic, no API change
+
+- Stop fade-out is now **per-sample** (was a per-buffer staircase → bitcrush on
+  "Stop All"). No code change needed in OCC.
+- Non-looped clips no longer **hard-cut at OUT** — the fade renders real audio
+  through the boundary. No code change needed.
+
+### Clip gain smoothing (G4) — automatic
+
+`updateClipGain()` changes now ramp over ~5 ms per voice (no zipper on fader
+drags). Fully automatic; OCC keeps calling `updateClipGain()` as before.
+
+### Voice modes (G5) — new API
+
+```cpp
+enum class VoiceMode : uint8_t {
+  MonoWithFadeOverlap = 0, // OCC default: one voice; re-fire restarts in place;
+                           //   re-fire during a fade tail adds a fresh voice.
+  Polyphonic          = 1, // SDK default: layer voices up to the cap.
+  MonoStrict          = 2, // FourTrack / OCC stingers: single voice, restart
+                           //   from zero, no fade tail.
+};
+
+transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap);
+VoiceMode mode  = transport->getClipVoiceMode(handle);
+size_t    count = transport->getActiveVoiceCount(handle); // for UI voice badges
+```
+
+**OCC action:** select `MonoWithFadeOverlap` universally; use `MonoStrict` for
+stingers / hard cues that must not overlap. `voiceMode` also round-trips through
+`ClipMetadata`.
+
+### Choke + voice caps (G7) — new API, host-neutral
+
+```cpp
+// Choke: stop everything except the exempt clip. OCC scopes its playgroup choke
+// by passing the firing clip's handle (the SDK has no notion of playgroups).
+transport->stopOtherClips(exceptHandle);   // 0 == stop all
+
+// Resource cap: bound simultaneous voices per clip. Default 8, hard max 32,
+// host-settable to 2/4/8/16. A cap of 2 behaves like "stop-all-on-play".
+transport->setMaxVoicesPerClip(4);
+uint32_t cap = transport->getMaxVoicesPerClip();
+```
+
+"Stop others on play" now uses `stopOtherClips(handle)` internally, so the
+firing clip's own voices survive the choke.
+
+### Sample-rate conversion (G6) — automatic
+
+Files whose sample rate differs from the engine rate are auto-wrapped in a
+deterministic polyphase resampler at `registerClipAudio()` — they play at
+correct pitch. Reported duration and all positions are in **engine-rate**
+frames, so trims/fades/cues stay sample-accurate. Matched-rate files are
+untouched. OCC's interim refuse-to-load fallback (OCC151 G5) can be removed.
+
+### Consuming the SDK (T10)
+
+`Orpheus::transport`, `Orpheus::routing`, `Orpheus::audio_io`,
+`Orpheus::audio_utils`, and `Orpheus::diagnostics` are consumable both via
+`find_package(OrpheusSDK)` (installed targets) **and** via `add_subdirectory`
+(submodule / co-development). Both paths are covered by smoke tests
+(`cmake_find_package`, `cmake_add_subdirectory`).
+
+---
+
 **End of OCC110 Integration Guide**

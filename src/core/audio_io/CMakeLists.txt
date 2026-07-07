@@ -88,6 +88,10 @@ target_link_libraries(orpheus_audio_io
 
 set_target_properties(orpheus_audio_io PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ORP127 T10: namespaced aliases for add_subdirectory (submodule) consumers.
+add_library(Orpheus::audio_io ALIAS orpheus_audio_io)
+add_library(Orpheus::orpheus_audio_io ALIAS orpheus_audio_io)
+
 # Apply compiler warnings
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_audio_utils)

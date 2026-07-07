@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.22)
 
-project(orpheus VERSION 0.2.0 LANGUAGES CXX)
+project(orpheus VERSION 0.3.0 LANGUAGES CXX)
 
 set(ORPHEUS_ROOT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
