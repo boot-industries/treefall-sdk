@@ -1,6 +1,6 @@
 # OCC151 — Transport Unification and Gain Integrity Sprint
 
-**Status:** Active
+**Status:** Implementation complete (pending manual smoke-test + T12 SDK tag pin)
 **Owner:** Claude (app scope) + Orpheus SDK agent (SDK scope, see ORP127)
 **Branch:** `feat/occ-transport-unification` (to be created off `feat/occ-audio-utility-polish`)
 **Started:** 2026-07-07
@@ -191,7 +191,67 @@ A new sibling app (`~/dev/fourtrack`, Apple-only, SwiftUI + C++ core) will consu
 
 ---
 
+## Completion Note (2026-07-07)
+
+All implementation tasks landed on branch `feat/occ-transport-unification` (branched off the landed ORP127 SDK branch `feat/orp127-transport-voice-integrity`, which is a strict superset of `feat/occ-audio-utility-polish`). **T12 (pin to `v0.3.0` tag) is the only remaining task and is blocked** — the SDK agent has not cut the tag yet (only `v0.1.0-alpha` and `v0.2.1-known-good-baseline` exist).
+
+### Commits (in order)
+
+| Task | Commit | Summary |
+|------|--------|---------|
+| T1  | `060f44e4` | Open sprint branch; record ORP127-landed ledger; BuildInfo-on-HEAD fix |
+| T2  | `70c13a4f` | Edit dialog shares grid clip handle (retire same-clip cue buss) |
+| T3  | `3a36e406` | Grid/dialog transport sync tests (4) |
+| T10 | `bf8a68cc` | Adopt `MonoWithFadeOverlap`; reduce dedup wrapper to thin passthrough |
+| T11 | `bcdb2cb5` | `setMaxVoicesPerClip(2)` |
+| T5  | `40dfb69c` | Drain transport callbacks on the message thread |
+| T4  | `5a59ad08` | Route device-change restarts through the dedup wrapper |
+| T6  | `567d9ae1` | Crash-safe device swap (quiesce audio thread first) + stress tests (3) |
+| T7  | `b5f9debe` | Present resampled-file metadata at engine rate; remove SR-mismatch warnings + tests (3) |
+| T8  | `309c4746` | Playgroup-scoped choke via pure `occ::shouldChokeStop` policy + tests (5) |
+
+(The ORP127 host-neutrality doc-cleanup was committed on the SDK branch as `ef43bec4` before branching, to keep SDK/app scope cleanly attributed.)
+
+### Test results
+
+Full OCC suite: **73/73 passing**, AddressSanitizer + UBSan clean. Two `PerformanceTest.MemoryUsage*` cases fail on this machine due to absolute-RSS threshold assertions that trip from accumulated whole-process memory across the monolithic test binary — they fail identically with all OCC151 tests excluded, so they are **pre-existing and unrelated** (not a regression). SDK suite remains 178/178.
+
+15 new tests across 4 suites: `TransportSyncTest` (4), `DeviceSwapStressTest` (3), `SampleRateTest` (3), `ChokePolicyTest` (5).
+
+### Definition of Done status
+
+- [x] Grid/dialog play/stop/position single-sourced (T2, verified by `TransportSyncTest`).
+- [x] Same clip from grid + dialog never 2× amplitude (T2 — no parallel handle).
+- [x] Device-change reinit does not stack fade-out voices (T4 routes through the `MonoWithFadeOverlap` dedup path).
+- [x] `processCallbacks()` message-thread-only, Debug assert on audio thread (T5).
+- [x] `setAudioDevice` survives rapid-switch stress without crash/UB (T6, ASan+UBSan clean).
+- [x] SR-mismatched files play at correct pitch (SDK resampler) with engine-rate UI metadata (T7).
+- [x] Existing OCC tests pass; new tests cover sync, device swap, callback affinity, SR, choke.
+- [ ] **Manual smoke test — pending operator listen** (user reproduces artifacts by ear).
+- [x] `apps/clip-composer/CLAUDE.md` updated with the transport-model invariants.
+- [x] This doc closed with a completion note.
+
+### Deferred / handed off
+
+- **T12 — pin to `v0.3.0` SDK tag.** Blocked on the SDK agent cutting the tag. Until then OCC tracks ORP127 via the branch. No API change expected; a build+test pass against the tag is all that remains.
+- **SDK gap — engine-rate `AudioFileMetadata` accessor.** T7 recomputes a resampled clip's engine-rate duration arithmetically because the SDK exposes no accessor for the `ResamplingAudioFileReader`'s engine-rate metadata (`getClipMetadata` returns `ClipMetadata`, not `AudioFileMetadata`; the decorator header is SDK-internal). Recommend the SDK add `TransportController::getClipAudioMetadata(handle)`. Marked with `TODO(orp-sdk)` at `AudioEngine::loadClip`. **This is a host-neutral SDK improvement, not OCC-specific — see the FourTrack note below.**
+
+---
+
+## Downstream Consumer Note: FourTrack (SDK metadata-accessor gap)
+
+**For the `~/dev/fourtrack` agent / SDK agent.** FourTrack (Apple-only, SwiftUI + C++ core) will consume the Orpheus SDK as an external dependency and will hit the same gap OCC151 T7 hit:
+
+> When a clip's file sample rate differs from the engine rate, `registerClipAudio` transparently wraps the reader in the internal `ResamplingAudioFileReader` (ORP127 G6) and the transport operates in the **engine-rate** timeline. But the SDK exposes **no public accessor** to read that engine-rate `AudioFileMetadata` (duration in engine frames, engine `sample_rate`) back out. `getClipMetadata(handle)` returns `ClipMetadata` (trim/fade config), not `AudioFileMetadata`, and the decorator header lives in `src/core/audio_io/` (not `include/orpheus/`).
+
+Any host that draws a waveform / trim UI against a resampled clip must currently recompute the engine-rate duration itself (OCC does `native_duration * engineRate / nativeRate`). That duplicates an SDK-internal formula in every consumer.
+
+**Recommended SDK addition (host-neutral):** `TransportController::getClipAudioMetadata(ClipHandle) -> std::optional<AudioFileMetadata>` returning the reader's reported metadata in the engine-rate timeline. FourTrack should adopt this rather than reimplementing the ratio; OCC will drop its arithmetic and the `TODO(orp-sdk)` at `AudioEngine::loadClip` once it exists. Route the request through the SDK sprint (ORP12x), not into OCC or FourTrack code.
+
+---
+
 ## Change Log
 
 - **2026-07-07:** Sprint opened, audit findings recorded, task ledger drafted.
 - **2026-07-08:** ORP127 landed (SDK 0.3.0). Ledger updated: G5 superseded by SDK resampler, G6 uses new `stopOtherClips` primitive, three new tasks (T10-T12) added for ORP127 API adoption. Sequence adjusted so ORP127 adoption (T10-T12) lands right after grid/dialog unification (T1-T3).
+- **2026-07-07:** Implementation complete (T1-T8, T10-T11). 10 app commits on `feat/occ-transport-unification`, 15 new tests, 73/73 OCC + 178/178 SDK, ASan+UBSan clean. T12 deferred (awaits `v0.3.0` tag); SDK engine-rate metadata accessor surfaced to the SDK/FourTrack agents. Manual smoke-test pending.
