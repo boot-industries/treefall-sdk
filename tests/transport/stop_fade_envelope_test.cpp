@@ -199,3 +199,59 @@ TEST_F(StopFadeEnvelopeTest, FiftyMillisecondStopFadeTracksLinearRamp) {
         << "Envelope at " << (frac * 100) << "% deviates from the linear ramp";
   }
 }
+
+// ORP127 T5 (G3): a non-looped clip with NO configured fade-out that reaches its
+// OUT point must NOT hard-cut. Before this fix, the reader was nulled at OUT and
+// the trailing OUT-buffer samples rendered at full gain, producing a click. Now
+// the default stop fade renders real audio through the boundary. We measure the
+// largest sample-to-sample DROP across the OUT transition and require it to be
+// small (a hard cut would drop from full-scale to ~0 in a single sample).
+TEST_F(StopFadeEnvelopeTest, NonLoopedOutBoundaryHasNoHardCut) {
+  ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+
+  // Trim OUT well inside the file so there is real audio to read past OUT for
+  // the fade tail. No fade configured — this is the bare hard-cut scenario.
+  const int64_t trimOut = 20000;
+  ASSERT_EQ(m_transport->updateClipTrimPoints(handle, 0, trimOut), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipLoopMode(handle, false), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->updateClipFades(handle, 0.0, 0.0, FadeCurve::Linear, FadeCurve::Linear),
+            SessionGraphError::OK);
+
+  std::vector<float> left(kBuffer, 0.0f);
+  std::vector<float> right(kBuffer, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+
+  m_transport->startClip(handle);
+
+  // Render across OUT (20000 samples ~= 40 buffers) plus the fade tail.
+  std::vector<float> envelope;
+  for (int b = 0; b < 45; ++b) {
+    m_transport->processAudio(buffers, 2, kBuffer);
+    for (size_t i = 0; i < kBuffer; ++i) {
+      envelope.push_back(std::fabs(left[i]));
+    }
+  }
+
+  float steady = 0.0f;
+  for (size_t i = 0; i < 200 && i < envelope.size(); ++i) {
+    steady = std::max(steady, envelope[i]);
+  }
+  ASSERT_GT(steady, 0.01f) << "Expected a non-silent steady state before OUT";
+
+  // Largest single-sample downward step anywhere in the signal.
+  float maxDrop = 0.0f;
+  for (size_t i = 1; i < envelope.size(); ++i) {
+    float drop = envelope[i - 1] - envelope[i];
+    maxDrop = std::max(maxDrop, drop);
+  }
+
+  // A hard cut drops by ~steady in one sample. The default 10ms fade (480
+  // samples) drops by ~steady/480 per sample. Require the worst step to be a
+  // small fraction of full scale — comfortably rules out a cliff.
+  EXPECT_LT(maxDrop, steady * 0.1f) << "Largest single-sample drop (" << maxDrop
+                                    << ") near OUT indicates a hard cut; steady = " << steady;
+
+  // And the clip must reach silence (fade actually completed).
+  EXPECT_LT(envelope.back(), steady * 0.02f) << "Clip did not fade to silence after OUT";
+}
