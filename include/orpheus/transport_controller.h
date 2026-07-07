@@ -33,6 +33,30 @@ enum class PlaybackState : uint8_t {
   Stopping = 3 ///< Clip is fading out before stop
 };
 
+/// Voice allocation policy for a clip (ORP127 G5).
+///
+/// Governs what happens when a clip is fired while one or more of its voices
+/// are already active. Host-neutral: OCC selects MonoWithFadeOverlap
+/// universally; FourTrack uses MonoStrict (one voice per track, no fade tail);
+/// polyphonic layering hosts use Polyphonic.
+enum class VoiceMode : uint8_t {
+  /// One primary voice per clip identity. Firing while a voice is *playing*
+  /// restarts it in place. Firing while a voice is *fading out* leaves that
+  /// tail to complete naturally and starts a fresh voice alongside it
+  /// (voices == 2 only during the fade-overlap window). This is OCC's model.
+  MonoWithFadeOverlap = 0,
+
+  /// Full polyphony: every fire allocates a new voice, up to
+  /// MAX_VOICES_PER_CLIP, with oldest-voice eviction on overflow. This is the
+  /// SDK's historical behavior and the default for backward compatibility.
+  Polyphonic = 1,
+
+  /// Strict single voice. Firing while playing restarts from zero with no fade
+  /// tail — the previous voice is cut and replaced sample-accurately. This is
+  /// FourTrack's per-track model and suits OCC stingers / hard cues.
+  MonoStrict = 2
+};
+
 /// Sample-accurate transport position
 /// Sample counts are authoritative; seconds and beats are derived
 struct TransportPosition {

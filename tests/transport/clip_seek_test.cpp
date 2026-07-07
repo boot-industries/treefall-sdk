@@ -92,7 +92,11 @@ TEST_F(ClipSeekTest, SeekToMiddleOfClip) {
   auto result = m_transport->seekClip(handle, 24000);
   EXPECT_EQ(result, SessionGraphError::OK);
 
-  // Position should be updated (might not be exact due to audio thread timing)
+  // ORP127 G1: seek is now processed on the audio thread. Pump one render so
+  // the Seek command applies and the published snapshot reflects it.
+  m_transport->processAudio(buffers, 2, 512);
+
+  // Position should be updated (advances by the buffer we just rendered)
   int64_t position = m_transport->getClipPosition(handle);
   EXPECT_GE(position, 23000); // Should be close to 24000
   EXPECT_LE(position, 25000);
@@ -124,7 +128,10 @@ TEST_F(ClipSeekTest, SeekToBeginning) {
   auto result = m_transport->seekClip(handle, 0);
   EXPECT_EQ(result, SessionGraphError::OK);
 
-  // Position should be back at start
+  // ORP127 G1: pump one render so the Seek command applies before we query.
+  m_transport->processAudio(buffers, 2, 512);
+
+  // Position should be back near start (advances by the buffer we rendered)
   int64_t position = m_transport->getClipPosition(handle);
   EXPECT_LE(position, 1000); // Should be near 0
 }
@@ -150,6 +157,9 @@ TEST_F(ClipSeekTest, SeekBeyondFileLength) {
   // Seek beyond file length (should clamp to file duration)
   auto result = m_transport->seekClip(handle, 100000); // Beyond 48000 samples
   EXPECT_EQ(result, SessionGraphError::OK);
+
+  // ORP127 G1: pump one render so the clamped Seek command applies.
+  m_transport->processAudio(buffers, 2, 512);
 
   // Position should be clamped to file length (48000 samples)
   int64_t position = m_transport->getClipPosition(handle);
@@ -178,7 +188,10 @@ TEST_F(ClipSeekTest, SeekNegativePosition) {
   auto result = m_transport->seekClip(handle, -1000);
   EXPECT_EQ(result, SessionGraphError::OK);
 
-  // Position should be clamped to 0
+  // ORP127 G1: pump one render so the clamped Seek command applies.
+  m_transport->processAudio(buffers, 2, 512);
+
+  // Position should be clamped to 0 (advances by the buffer we rendered)
   int64_t position = m_transport->getClipPosition(handle);
   EXPECT_GE(position, 0);
   EXPECT_LE(position, 1000);
@@ -325,8 +338,11 @@ TEST_F(ClipSeekCallbackTest, SeekCallbackFired) {
 
   EXPECT_EQ(m_callback->startedHandle, handle);
 
-  // Seek clip
+  // Seek clip. ORP127 G1: the Seek command is applied on the audio thread and
+  // the onClipSeeked callback is posted from there, so pump one render before
+  // draining callbacks.
   m_transport->seekClip(handle, 24000);
+  m_transport->processAudio(buffers, 2, 512);
   m_transport->processCallbacks();
 
   // Callback should have been fired
