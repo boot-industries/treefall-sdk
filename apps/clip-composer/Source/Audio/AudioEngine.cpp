@@ -879,6 +879,21 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
       << requestedDeviceName << ", Sample Rate: " << static_cast<int>(sampleRate)
       << " Hz, Buffer Size: " << static_cast<int>(bufferSize));
 
+  // OCC151 T6 / F-APP-4 (G4): quiesce the audio thread BEFORE touching the
+  // engine's transport/driver members. setAudioDevice runs on the UI thread; the
+  // old driver's audio thread reads m_transportController every callback. Moving
+  // those unique_ptrs out from under a live callback is a data race (a torn read
+  // of a non-atomic pointer is UB). Stopping the running driver first is the
+  // synchronization point: IAudioDriver::stop() halts the callback and, on
+  // CoreAudio, clears its callback pointer and drains any in-flight invocation
+  // before returning, so no audio thread observes the swaps that follow.
+  const bool wasRunning = m_audioDriver && m_audioDriver->isRunning();
+  if (wasRunning) {
+    m_audioDriver->stop();
+  }
+
+  // Audio thread is now quiesced — the member swaps below are UI-thread-exclusive
+  // (UI queries also run on the message thread, so they cannot race this).
   auto oldTransport = std::move(m_transportController);
   auto oldDriver = std::move(m_audioDriver);
   const auto* previousTransport = oldTransport.get();
@@ -887,20 +902,30 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
   const auto oldDeviceName = m_currentDeviceName;
   const auto oldDeviceStatus = m_deviceStatus;
 
+  // Rollback helper: restore and (if it was running) restart the previous driver.
+  auto rollback = [&](const std::string& reason) {
+    m_transportController = std::move(oldTransport);
+    m_audioDriver = std::move(oldDriver);
+    m_sampleRate = oldSampleRate;
+    m_bufferSize = oldBufferSize;
+    m_currentDeviceName = oldDeviceName;
+    m_deviceStatus = oldDeviceStatus;
+    if (wasRunning && m_audioDriver) {
+      m_audioDriver->start(this);
+    }
+    updateDeviceStatus(requestedDeviceName, reason);
+  };
+
   std::string errorMessage;
   std::unique_ptr<orpheus::TransportController> newTransport;
   if (!createConfiguredTransport(sampleRate, newTransport, errorMessage)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
   std::vector<orpheus::ClipHandle> handlesToRestart;
   if (!rehydrateTransportState(*newTransport, previousTransport, handlesToRestart, errorMessage)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
@@ -908,17 +933,13 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
   bool usingFallbackDriver = false;
   if (!createConfiguredDriver(requestedDeviceName, sampleRate, bufferSize, newDriver, errorMessage,
                               usingFallbackDriver)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
-  const bool wasRunning = oldDriver && oldDriver->isRunning();
-  if (wasRunning) {
-    oldDriver->stop();
-  }
-
+  // Publish the new pair atomically w.r.t. the audio thread: the new driver is
+  // not started until after both members point at the new objects, so the first
+  // callback the new driver ever issues already sees a consistent transport.
   m_transportController = std::move(newTransport);
   m_audioDriver = std::move(newDriver);
   m_sampleRate = sampleRate;
@@ -928,16 +949,7 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
 
   if (wasRunning) {
     if (!start()) {
-      m_transportController = std::move(oldTransport);
-      m_audioDriver = std::move(oldDriver);
-      m_sampleRate = oldSampleRate;
-      m_bufferSize = oldBufferSize;
-      m_currentDeviceName = oldDeviceName;
-      m_deviceStatus = oldDeviceStatus;
-      if (m_audioDriver) {
-        m_audioDriver->start(this);
-      }
-      updateDeviceStatus(requestedDeviceName, "Failed to restart audio after changing device");
+      rollback("Failed to restart audio after changing device");
       return false;
     }
   }
