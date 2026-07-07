@@ -421,4 +421,36 @@ if(TARGET orpheus_audio_io)
         NAME voice_state_tsan_test
         COMMAND voice_state_tsan_test
     )
+
+    # ORP127 T4: per-sample stop fade envelope measurement (G2)
+    add_executable(stop_fade_envelope_test
+        stop_fade_envelope_test.cpp
+    )
+
+    target_link_libraries(stop_fade_envelope_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(stop_fade_envelope_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(stop_fade_envelope_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(stop_fade_envelope_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME stop_fade_envelope_test
+        COMMAND stop_fade_envelope_test
+    )
 endif()
