@@ -14,9 +14,13 @@ class AudioEngine;
 /**
  * PreviewPlayer - audition controller for Edit Dialog
  *
- * ARCHITECTURE (v0.2.1):
- * - Edit Dialog uses a dedicated cue-buss audition path when a source file is available
- * - Falls back to the main grid clip only if audition routing cannot be created
+ * ARCHITECTURE (OCC151 — transport unification):
+ * - The Edit Dialog is a "zoomed in" VIEW of the grid clip's transport, not a
+ *   separate player. PreviewPlayer drives the grid ClipHandle directly (via
+ *   buttonIndex), so play/stop/position stay single-sourced with the grid button.
+ * - No dedicated cue-buss handle is allocated for the same clip. The prior
+ *   cue-buss path caused grid/dialog desync and 2x amplitude summing at the
+ *   master when the same file fired on two handles concurrently (F-APP-1).
  * - Preserves live trim/fade metadata updates so the edit surface stays coherent
  *
  * INTEGRATION WITH SDK:
