@@ -8,8 +8,18 @@ namespace orpheus {
 
 GainSmoother::GainSmoother(uint32_t sample_rate, float smoothing_time_ms)
     : m_current(1.0f), m_target(1.0f), m_pending_target(1.0f), m_has_pending(false) {
-  // Clamp smoothing time to reasonable range
-  smoothing_time_ms = std::clamp(smoothing_time_ms, 1.0f, 100.0f);
+  // ORP127 G4 (F-SDK-5): smoothing_time_ms == 0 means NO smoothing — apply
+  // target changes immediately. Previously this was silently clamped to a 1ms
+  // minimum, so callers requesting 0 got ~1ms of unexpected ramp (e.g. pan
+  // smoothers audibly ramping from their 0.707 init on the first sample). We
+  // now honor 0 explicitly; any positive value is still clamped to <=100ms.
+  if (smoothing_time_ms <= 0.0f) {
+    m_smoothing_disabled = true;
+    m_increment = 1.0f; // unused when disabled, but keep it well-defined
+    return;
+  }
+
+  smoothing_time_ms = std::clamp(smoothing_time_ms, 0.0f, 100.0f);
 
   // Calculate increment per sample for full gain change (0.0 → 1.0)
   // Example: 48kHz, 10ms → 480 samples → increment = 1.0 / 480 ≈ 0.00208
@@ -41,6 +51,12 @@ float GainSmoother::process() {
   if (m_has_pending.load(std::memory_order_acquire)) {
     m_target = m_pending_target.load(std::memory_order_acquire);
     m_has_pending.store(false, std::memory_order_release);
+  }
+
+  // ORP127 G4 (F-SDK-5): with smoothing disabled, snap to target immediately.
+  if (m_smoothing_disabled) {
+    m_current = m_target;
+    return m_current;
   }
 
   // Save current value to return (before ramping)

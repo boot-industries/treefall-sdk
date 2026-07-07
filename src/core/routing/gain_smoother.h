@@ -38,7 +38,10 @@ class GainSmoother {
 public:
   /// Construct gain smoother
   /// @param sample_rate Sample rate in Hz
-  /// @param smoothing_time_ms Smoothing time in milliseconds [1.0, 100.0]
+  /// @param smoothing_time_ms Smoothing time in milliseconds. 0 disables
+  ///        smoothing entirely (target changes apply immediately); positive
+  ///        values are clamped to (0, 100.0]. (ORP127 G4: 0 is now honored
+  ///        rather than silently clamped to a 1ms minimum.)
   GainSmoother(uint32_t sample_rate, float smoothing_time_ms);
 
   /// Set target gain (thread-safe, lock-free)
@@ -76,12 +79,21 @@ public:
   /// Check if currently ramping
   /// @return True if gain is changing toward target
   bool isRamping() const {
+    if (m_smoothing_disabled) {
+      return false; // snaps to target every process(); never "ramping"
+    }
     return m_current != m_target || m_has_pending.load(std::memory_order_acquire);
+  }
+
+  /// @return True if smoothing is disabled (constructed with 0ms)
+  bool isSmoothingDisabled() const {
+    return m_smoothing_disabled;
   }
 
 private:
   // Configuration (set once in constructor)
-  float m_increment; ///< Gain change per sample
+  float m_increment;                ///< Gain change per sample
+  bool m_smoothing_disabled{false}; ///< ORP127 G4: true when constructed with 0ms
 
   // State (audio thread only)
   float m_current; ///< Current gain value
