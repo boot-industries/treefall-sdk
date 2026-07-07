@@ -318,29 +318,9 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     std::memset(m_clipChannelBuffers[i].data(), 0, numFrames * sizeof(float));
   }
 
-  // PRE-RENDER: Calculate fade-out gains for all stopping clips BEFORE rendering
-  // CRITICAL FIX: Must calculate BEFORE clip.currentSample advances to prevent timing offset
-  // This eliminates "zigzag" distortion when multiple clips stop simultaneously
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    ActiveClip& clip = m_activeClips[i];
-
-    if (clip.isStopping) {
-      int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
-
-      // If no fade-out configured, use default 10ms fade
-      if (fadeOutSampleCount == 0) {
-        fadeOutSampleCount = static_cast<int64_t>(m_fadeOutSamples);
-      }
-
-      // Calculate fade progress using CURRENT position (before advancing)
-      int64_t fadeProgress = clip.currentSample - clip.fadeOutStartPos;
-
-      // Calculate fade gain for this buffer
-      float fadePos = static_cast<float>(fadeProgress) / static_cast<float>(fadeOutSampleCount);
-      FadeCurve fadeOutCurve = clip.fadeOutCurve.load(std::memory_order_acquire);
-      clip.fadeOutGain = 1.0f - calculateFadeGain(fadePos, fadeOutCurve);
-    }
-  }
+  // ORP127 G2: The stop fade-out is now computed per sample inside the render
+  // loop (see below), so no per-buffer fadeOutGain pre-pass is needed. This
+  // both removes the F-SDK-2 staircase and drops a redundant loop.
 
   // Render each active clip to its own channel buffer
   for (size_t i = 0; i < m_activeClipCount; ++i) {
@@ -462,11 +442,24 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         }
       }
 
-      // Apply stop fade-out if stopping
-      // NOTE: fadeOutGain is pre-computed in post-render loop (lines 361-386)
-      // based on total fade progress, NOT per-frame index
+      // ORP127 G2: Apply the stop fade-out PER SAMPLE. Previously a single
+      // fadeOutGain scalar was computed once per buffer (F-SDK-2), which turned
+      // short fades (e.g. 10ms @ 512-sample buffers) into a 1-2 step staircase —
+      // audible as bitcrush when many clips stop at once. Now each sample's fade
+      // position is computed from its own offset into the fade, matching the
+      // per-sample fade-in / clip-fade-out envelopes below.
       if (clip.isStopping) {
-        gain *= std::max(0.0f, clip.fadeOutGain); // Use pre-computed fade gain
+        int64_t stopFadeSamples = fadeOutSampleCount;
+        if (stopFadeSamples == 0) {
+          stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples); // default 10ms
+        }
+        int64_t stopFadeProgress =
+            (clip.currentSample + static_cast<int64_t>(frame)) - clip.fadeOutStartPos;
+        float stopFadePos =
+            static_cast<float>(stopFadeProgress) / static_cast<float>(stopFadeSamples);
+        stopFadePos = std::clamp(stopFadePos, 0.0f, 1.0f);
+        float stopFadeGain = 1.0f - calculateFadeGain(stopFadePos, fadeOutCurveType);
+        gain *= std::max(0.0f, stopFadeGain);
       }
 
       // ORP097 Fix: Only apply clip fade-in/out for NON-LOOPED clips
