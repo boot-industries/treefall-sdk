@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "transport_controller.h"
 
-#include "session/session_graph.h" // For SessionGraph
+#include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
+#include "session/session_graph.h"                 // For SessionGraph
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -1404,10 +1405,27 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
     return result.error;
   }
 
-  // Store reader and metadata for this clip
+  // Store reader and metadata for this clip.
   AudioFileEntry entry;
-  entry.reader = std::shared_ptr<IAudioFileReader>(std::move(uniqueReader));
-  entry.metadata = result.value;
+
+  // ORP127 G6: if the file's sample rate differs from the engine rate, wrap the
+  // reader in a deterministic polyphase resampler so it plays at correct pitch.
+  // The decorator presents metadata/positions in the ENGINE-rate timeline, so
+  // trims/fades/cues stay sample-accurate against the transport.
+  if (result.value.sample_rate != m_sampleRate) {
+    auto inner = std::shared_ptr<IAudioFileReader>(std::move(uniqueReader));
+    auto resampling = std::make_shared<ResamplingAudioFileReader>(inner, m_sampleRate);
+    // Re-open through the decorator to capture engine-rate metadata.
+    auto rres = resampling->open(file_path);
+    if (!rres.isOk()) {
+      return rres.error;
+    }
+    entry.reader = resampling;
+    entry.metadata = rres.value; // sample_rate == m_sampleRate, duration in engine frames
+  } else {
+    entry.reader = std::shared_ptr<IAudioFileReader>(std::move(uniqueReader));
+    entry.metadata = result.value;
+  }
 
   // Apply session defaults to new clip
   entry.fadeInSeconds = m_sessionDefaults.fadeInSeconds;
@@ -1418,9 +1436,10 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   entry.stopOthersOnPlay = m_sessionDefaults.stopOthersOnPlay;
   entry.gainDb = m_sessionDefaults.gainDb;
 
-  // Trim points default to full file duration
+  // Trim points default to full file duration. Use entry.metadata (engine-rate
+  // for resampled files) so trims are in the same timeline as the transport.
   entry.trimInSamples = 0;
-  entry.trimOutSamples = result.value.duration_samples;
+  entry.trimOutSamples = entry.metadata.duration_samples;
 
   m_audioFiles[handle] = std::move(entry);
 

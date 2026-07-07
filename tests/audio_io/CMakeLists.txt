@@ -1,5 +1,25 @@
 # SPDX-License-Identifier: MIT
 
+# ORP127 T8 (G6): polyphase resampler unit test. Standalone — links only
+# orpheus_audio_utils (no libsndfile, no JUCE, host-neutral).
+add_executable(polyphase_resampler_test
+    polyphase_resampler_test.cpp
+)
+
+target_link_libraries(polyphase_resampler_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(polyphase_resampler_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
+
 # Find libsndfile (needed because orpheus_audio_io is static)
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)

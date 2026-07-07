@@ -23,8 +23,12 @@ endif()
 # Build audio utilities with available components
 set(ORPHEUS_AUDIO_UTILS_SOURCES)
 
+# ORP127 G6: host-neutral, dependency-free sample-rate conversion. Always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES polyphase_resampler.cpp)
+
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES resampling_audio_file_reader.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES waveform_processor.cpp)
     message(STATUS "✓ libsndfile FOUND - audio file reading enabled (with waveform processing)")
 else()

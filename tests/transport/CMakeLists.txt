@@ -549,4 +549,36 @@ if(TARGET orpheus_audio_io)
         NAME choke_and_voice_cap_test
         COMMAND choke_and_voice_cap_test
     )
+
+    # ORP127 T8: end-to-end sample-rate conversion in the transport (G6)
+    add_executable(sample_rate_conversion_test
+        sample_rate_conversion_test.cpp
+    )
+
+    target_link_libraries(sample_rate_conversion_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(sample_rate_conversion_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(sample_rate_conversion_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(sample_rate_conversion_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME sample_rate_conversion_test
+        COMMAND sample_rate_conversion_test
+    )
 endif()
