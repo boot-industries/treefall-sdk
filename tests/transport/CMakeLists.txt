@@ -453,4 +453,36 @@ if(TARGET orpheus_audio_io)
         NAME stop_fade_envelope_test
         COMMAND stop_fade_envelope_test
     )
+
+    # ORP127 T6: clip gain smoothing (anti-zipper) measurement (G4)
+    add_executable(clip_gain_smoothing_test
+        clip_gain_smoothing_test.cpp
+    )
+
+    target_link_libraries(clip_gain_smoothing_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_gain_smoothing_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_gain_smoothing_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_gain_smoothing_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_gain_smoothing_test
+        COMMAND clip_gain_smoothing_test
+    )
 endif()

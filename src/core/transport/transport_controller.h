@@ -133,7 +133,13 @@ struct ActiveClip {
 
   // Gain control (atomic for thread safety)
   std::atomic<float> gainDb{0.0f};     // Gain in decibels (0.0 = unity)
-  std::atomic<float> gainLinear{1.0f}; // Cached linear gain (precomputed from gainDb)
+  std::atomic<float> gainLinear{1.0f}; // Cached linear gain target (precomputed from gainDb)
+
+  // ORP127 G4: per-voice gain smoothing state (audio-thread only). gainCurrent
+  // ramps toward gainLinear by gainRampIncrement per sample so Set-Gain changes
+  // (fader drags) apply as a short ramp instead of a step — no zipper noise.
+  float gainCurrent{1.0f};       // Current smoothed linear gain
+  float gainRampIncrement{0.0f}; // Linear gain change per sample (0 = snap)
 
   // Loop mode (atomic for thread safety)
   std::atomic<bool> loopEnabled{false}; // true = loop indefinitely
@@ -338,6 +344,12 @@ private:
 
   // Diagnostic counter for dropped callbacks (queue overflow)
   std::atomic<uint32_t> m_droppedCallbackCount{0};
+
+  // ORP127 G4: default clip-gain smoothing time. 5ms is a broadcast-console
+  // norm (Yamaha CL/QL fader smoothing sits ~10ms); short enough to feel
+  // immediate, long enough to kill zipper noise on drags.
+  static constexpr float CLIP_GAIN_SMOOTHING_MS = 5.0f;
+  float m_clipGainRampIncrement{0.0f}; // Per-sample linear ramp step (from the above)
 
   // Fade parameters
   static constexpr float FADE_OUT_DURATION_MS = 10.0f;

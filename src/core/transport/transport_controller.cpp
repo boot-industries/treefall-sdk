@@ -23,6 +23,14 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
   m_restartCrossfadeSamples = static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
                                                   static_cast<float>(sampleRate));
 
+  // ORP127 G4: per-sample clip-gain ramp increment for the default smoothing
+  // time. A full 0→1 change takes CLIP_GAIN_SMOOTHING_MS; each sample moves by
+  // 1 / (ms/1000 * sampleRate).
+  {
+    float smoothingSamples = (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(sampleRate);
+    m_clipGainRampIncrement = (smoothingSamples > 0.0f) ? (1.0f / smoothingSamples) : 1.0f;
+  }
+
   // Create and initialize routing matrix
   m_routingMatrix = createRoutingMatrix();
 
@@ -451,15 +459,25 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     // ORP121 A-01: Stereo output to L/R channel buffers (indices i*2 and i*2+1)
     // No mono sum - preserves source channel separation per ST2110-30
 
-    // Load precomputed linear gain (atomic read, no pow() call in audio thread!)
-    float clipGainLinear = clip.gainLinear.load(std::memory_order_acquire);
+    // Load the clip gain TARGET (atomic read, no pow() in the audio thread).
+    // ORP127 G4: gainCurrent ramps toward this target per sample below.
+    float clipGainTarget = clip.gainLinear.load(std::memory_order_acquire);
 
     for (size_t frame = 0; frame < framesRead; ++frame) {
       // Calculate base gain (starts at 1.0)
       float gain = 1.0f;
 
-      // Apply clip gain (from gainDb setting)
-      gain *= clipGainLinear;
+      // ORP127 G4: ramp the smoothed clip gain toward the target by at most
+      // gainRampIncrement per sample, so fader drags apply as a short ramp
+      // instead of a per-buffer step (no zipper noise).
+      if (clip.gainCurrent < clipGainTarget) {
+        clip.gainCurrent = std::min(clipGainTarget, clip.gainCurrent + clip.gainRampIncrement);
+      } else if (clip.gainCurrent > clipGainTarget) {
+        clip.gainCurrent = std::max(clipGainTarget, clip.gainCurrent - clip.gainRampIncrement);
+      }
+
+      // Apply the smoothed clip gain (from gainDb setting)
+      gain *= clip.gainCurrent;
 
       // Apply broadcast-safe restart crossfade (5ms linear fade-in)
       if (clip.isRestarting && clip.restartFadeFramesRemaining > 0) {
@@ -984,9 +1002,12 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.fadeInSamples.store(fadeInSampleCount, std::memory_order_release);
   clip.fadeOutSamples.store(fadeOutSampleCount, std::memory_order_release);
 
-  // Initialize gain
+  // Initialize gain (start the smoother AT the target so the clip opens at its
+  // configured gain with no initial ramp — ORP127 G4).
   clip.gainDb.store(context->gainDb, std::memory_order_release);
   clip.gainLinear.store(context->gainLinear, std::memory_order_release);
+  clip.gainCurrent = context->gainLinear;
+  clip.gainRampIncrement = m_clipGainRampIncrement;
 
   // Initialize loop mode
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
@@ -1041,6 +1062,12 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
                                   std::memory_order_relaxed);
         dest.gainDb.store(src.gainDb.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        // ORP127 G4: carry the linear gain target + smoothing ramp state across
+        // the slot move (gainLinear was previously not copied here).
+        dest.gainLinear.store(src.gainLinear.load(std::memory_order_relaxed),
+                              std::memory_order_relaxed);
+        dest.gainCurrent = src.gainCurrent;
+        dest.gainRampIncrement = src.gainRampIncrement;
         dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
                                std::memory_order_relaxed);
         dest.fadeOutGain = src.fadeOutGain;
@@ -1090,6 +1117,12 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
                                   std::memory_order_relaxed);
         dest.gainDb.store(src.gainDb.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        // ORP127 G4: carry the linear gain target + smoothing ramp state across
+        // the slot move (gainLinear was previously not copied here).
+        dest.gainLinear.store(src.gainLinear.load(std::memory_order_relaxed),
+                              std::memory_order_relaxed);
+        dest.gainCurrent = src.gainCurrent;
+        dest.gainRampIncrement = src.gainRampIncrement;
         dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
                                std::memory_order_relaxed);
         dest.fadeOutGain = src.fadeOutGain;
