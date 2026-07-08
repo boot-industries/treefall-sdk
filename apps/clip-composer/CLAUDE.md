@@ -158,8 +158,10 @@ do not reintroduce a parallel handle for a clip.
   stops group B.
 
 **SDK dependency:** ORP127 (SDK 0.3.0 — voice API, choke primitive, SR
-conversion). Currently tracked on branch `feat/orp127-transport-voice-integrity`;
-pin to the `v0.3.0` tag once the SDK agent cuts it (OCC151 T12).
+conversion). Pinned to SDK tag `v0.3.0` (OCC151 T12 done). This is a single-repo
+build — OCC consumes the SDK in-tree via `add_subdirectory`, so the pin is the
+`v0.3.0` tag on `main` (commit `ef43bec4`, `project(orpheus VERSION 0.3.0)`), not
+an external fetch. To bump the SDK, move the tag and update this line.
 
 ---
 
