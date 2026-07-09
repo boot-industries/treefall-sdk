@@ -174,6 +174,27 @@ if(NOT ORP_BUILD_SHARED_CORE)
   set_tests_properties(abi_link PROPERTIES DISABLED ON)
 endif()
 
+# On Linux with GCC + ASan, dlopen-ing sanitized shared libraries from the
+# (unsanitized) abi_link host aborts with "ASan runtime does not come first in
+# initial library list" unless the runtime is preloaded. Mirror of the macOS
+# DYLD_INSERT_LIBRARIES block below.
+if(UNIX
+   AND NOT APPLE
+   AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_BUILD_TYPE MATCHES "Debug"
+   AND ORP_ENABLE_ASAN)
+  execute_process(
+    COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
+    OUTPUT_VARIABLE ASAN_SO_PATH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(EXISTS "${ASAN_SO_PATH}")
+    set_tests_properties(abi_link PROPERTIES
+      ENVIRONMENT "LD_PRELOAD=${ASAN_SO_PATH}"
+    )
+  endif()
+endif()
+
 # On macOS with ASan + dlopen, interceptors fail unless the ASan dylib is
 # preloaded via DYLD_INSERT_LIBRARIES. Detect the runtime path from the
 # compiler and set it for the abi_link test (which uses dlopen internally).
