@@ -157,11 +157,25 @@ Version compatibility helpers:
 
 **File:** `include/orpheus/abi_version.h`
 
+#### 7. ORP134 Platform Primitives (2026-07-09)
+
+Additive public surfaces from the hardening program (details: `docs/orp/ORP137`):
+
+- **Clip sources** (`src/core/transport/clip_source.h`, internal) – prepared/
+  streaming PCM views; the audio thread no longer reads files (ORP134 G1)
+- **Identity & time** (`identity.h`, `time_domain.h`, `media_model.h`) –
+  stable IDs, sample-canonical time, media/launcher aggregates (G2)
+- **Graph seam** (`audio_graph.h`) – neutral routing vocabulary + soundboard
+  facade over the existing matrix (G3)
+- **File writer** (`audio_file_writer.h`) – WAV/AIFF/FLAC encoding (G5, FTR007)
+- **Analysis facade** (`audio_analysis.h`) – FFT/STFT + LUFS/waveform wrappers (G6)
+- **Capture plumbing** (`audio_input.h`) – lock-free input ring + stream contract (G7)
+
 ### Build Artifacts
 
 - **`orpheus_core`** – Static library with session/transport primitives
 - **`orpheus_transport`** – Real-time transport controller module
-- **`orpheus_audio_io`** – Audio file reader and platform drivers
+- **`orpheus_audio_io`** – Audio file reader/writer, capture ring, platform drivers
 
 ---
 

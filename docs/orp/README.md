@@ -11,7 +11,7 @@ This directory contains authoritative implementation plans for the Orpheus SDK e
 
 ---
 
-## SDK Hardening & Platform Roadmap (ORP132–ORP136) — Proposed
+## SDK Hardening & Platform Roadmap (ORP132–ORP137) — ORP133/ORP134/ORP136 EXECUTED (2026-07-09)
 
 A five-document program (2026-07-09) turning the strategic architecture review into
 executable, verified sprints. **Start with ORP132.** All work is confirmed local to
@@ -26,6 +26,10 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   `IAudioFileWriter` (FTR007), analysis & recorder primitives.
 - **ORP135** — LATER: speculative 2026+ bets (automation, spatial, plugin API, MIDI/OSC,
   ABI facades, migration tooling). Directional.
+- **ORP137** — Completion record: what landed, the on-record reconciliation of
+  the cross-repo audit gate, downstream follow-up sprints (FourTrack /
+  Clip Composer / FreqFinder), and ORP135 bet-dependency status. Next free
+  doc number: ORP138.
 - **ORP136** — Verification & CI framework spanning all sprints (realtime gates,
   determinism hashes, TSAN, fuzzing, benchmark budgets, downstream conformance).
 
