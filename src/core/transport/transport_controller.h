@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "clip_source.h" // ORP134 G1: prepared/streaming realtime sources
+
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
@@ -24,7 +26,9 @@ class SessionGraph;
 /// Contains all immutable state required to start a clip
 struct ClipPlaybackContext {
   ClipHandle handle;
-  std::shared_ptr<IAudioFileReader> reader;
+  // ORP134 G1: the audio thread reads decoded PCM through an IClipSource
+  // (prepared memory or streaming pages) — never through an IAudioFileReader.
+  std::shared_ptr<IClipSource> source;
 
   // Metadata snapshot at start time
   int64_t trimInSamples;
@@ -162,12 +166,14 @@ struct ActiveClip {
 
   uint16_t numChannels; // Number of channels in audio file
 
-  // Thread-safe reader reference (captured from AudioFileEntry when clip starts)
-  // Using shared_ptr provides reference-counted lifetime management:
-  // - Audio thread holds reference until clip stops
-  // - Reader can't be destroyed while audio thread is still using it
+  // ORP134 G1: thread-safe clip-source reference (captured from AudioFileEntry
+  // when the clip starts). shared_ptr gives reference-counted lifetime:
+  // - Audio thread holds a reference until the voice is removed
+  // - The source can't be destroyed while the audio thread still reads it
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
-  std::shared_ptr<IAudioFileReader> reader;
+  // Reads are position-explicit (source->read(currentSample, ...)), so
+  // multiple voices of one clip no longer contend over a shared file cursor.
+  std::shared_ptr<IClipSource> source;
 
   // ORP127 G5: per-voice policy (copied from the clip's configured VoiceMode at
   // Start). Governs how a fresh fire interacts with this voice.
@@ -284,8 +290,19 @@ public:
   /// @return Error code
   SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) override;
 
-  /// Prewarm clip reader outside the audio callback.
+  /// ORP134 G1: Build the clip's realtime playback source outside the audio
+  /// callback — whole-file PCM in memory for short clips, a worker-fed page
+  /// ring for long ones. Hosts should call this after registration/metadata
+  /// changes and before latency-critical playback; startClip() prepares
+  /// lazily (on the control thread) when it wasn't called.
   SessionGraphError prepareClipAudio(ClipHandle handle) override;
+
+  /// ORP134 G1 test hook: clips whose engine-rate length exceeds this many
+  /// frames stream from a page ring instead of being fully decoded to memory.
+  /// Control thread only; affects sources prepared after the call.
+  void setPreparedSourceMaxFrames(int64_t maxFrames) {
+    m_preparedSourceMaxFrames = maxFrames;
+  }
 
 private:
   /// Process pending commands from UI thread
@@ -448,14 +465,32 @@ private:
     // SDK's historical polyphonic behavior).
     VoiceMode voiceMode = VoiceMode::Polyphonic;
 
+    // ORP134 G1: the realtime playback source built by prepareClipAudio()
+    // (or lazily by startClip). The reader above remains the background
+    // decode/metadata handle; the audio thread only ever touches `source`.
+    std::shared_ptr<IClipSource> source;
+
     // Cue points (stored sorted by position)
     std::vector<CuePoint> cuePoints;
   };
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
 
+  /// ORP134 G1: Ensure entry.source exists (decode-to-memory or streaming
+  /// ring). Control thread only; caller holds m_audioFilesMutex.
+  SessionGraphError ensurePreparedSourceLocked(AudioFileEntry& entry);
+
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
+
+  // ORP134 G1: streaming-source machinery. The worker thread is created
+  // lazily when the first streaming source is prepared (short-clip-only hosts
+  // never spawn it). DEFAULT_PREPARED_SOURCE_MAX_FRAMES ≈ 30s @ 48k: below
+  // it, clips decode fully to memory (soundboard case, ~11.5 MB stereo max);
+  // above it, they stream through a fixed page ring (long beds, songs).
+  static constexpr int64_t DEFAULT_PREPARED_SOURCE_MAX_FRAMES = 48000ll * 30;
+  int64_t m_preparedSourceMaxFrames{DEFAULT_PREPARED_SOURCE_MAX_FRAMES};
+  std::unique_ptr<MediaStreamWorker> m_streamWorker; // guarded by m_audioFilesMutex
 
   // Per-clip buffers (audio thread only, pre-allocated)
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
