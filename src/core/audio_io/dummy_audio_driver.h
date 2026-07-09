@@ -25,6 +25,7 @@ public:
   const AudioDriverConfig& getConfig() const override;
   std::string getDriverName() const override;
   uint32_t getLatencySamples() const override;
+  AudioDriverCapabilities getCapabilities() const override;
 
 private:
   void audioThreadMain();

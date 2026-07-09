@@ -58,6 +58,33 @@ enum class HeadroomMode : uint8_t {
   Logarithmic = 3 ///< -3 dB per doubling of channels (1/sqrt(n))
 };
 
+/// How the routing graph treats source channels before they enter buses.
+enum class SourceChannelPolicy : uint8_t {
+  /// Each source channel is represented as an independent routing channel.
+  /// This is the target policy for multichannel/broadcast workflows.
+  Discrete = 0,
+
+  /// Preserve stereo pairs, duplicating mono to L/R and downmixing wider
+  /// sources according to downmix_policy. This matches the current transport
+  /// controller behavior for clip playback.
+  StereoPairs = 1,
+
+  /// Collapse source channels to mono before routing.
+  MonoFoldDown = 2
+};
+
+/// Downmix policy for sources wider than the configured output topology.
+enum class DownmixPolicy : uint8_t {
+  /// Do not downmix automatically. Missing routing must be configured by host.
+  None = 0,
+
+  /// ITU-R BS.775-style surround-to-stereo coefficients.
+  ITU_BS775_3 = 1,
+
+  /// Equal-power fold-down across source channels.
+  EqualPower = 2
+};
+
 /// Channel strip configuration (like a console channel)
 struct ChannelConfig {
   std::string name;    ///< Channel name (e.g., "Kick", "Snare", "Music Bed 1")
@@ -109,13 +136,18 @@ struct RoutingConfig {
   /// ORP121 Q-05: Automatic headroom management
   HeadroomMode headroom_mode; ///< Gain compensation mode (default: None)
 
+  /// Multichannel source/channel contract.
+  SourceChannelPolicy source_channel_policy; ///< How source channels enter routing
+  DownmixPolicy downmix_policy;              ///< Wider-source downmix strategy
+
   /// Default constructor (typical broadcast/soundboard defaults; hosts should
   /// configure num_channels/num_groups/etc. as needed on init)
   RoutingConfig()
       : num_channels(16), num_groups(4), num_outputs(2), solo_mode(SoloMode::SIP),
         metering_mode(MeteringMode::Peak), gain_smoothing_ms(10.0f), dim_amount_db(-12.0f),
         enable_metering(true), enable_clipping_protection(true), sample_rate(48000),
-        headroom_mode(HeadroomMode::None) {}
+        headroom_mode(HeadroomMode::None), source_channel_policy(SourceChannelPolicy::StereoPairs),
+        downmix_policy(DownmixPolicy::ITU_BS775_3) {}
 };
 
 /// Audio level meters (per-channel or per-group)

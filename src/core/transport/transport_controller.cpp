@@ -1449,6 +1449,49 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   return SessionGraphError::OK;
 }
 
+SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
+  if (handle == 0) {
+    return SessionGraphError::InvalidHandle;
+  }
+
+  // Do not seek/read a shared reader while an active voice may be using it on
+  // the audio thread. Future streaming readers should remove this limitation.
+  if (isClipPlaying(handle)) {
+    return SessionGraphError::NotReady;
+  }
+
+  std::shared_ptr<IAudioFileReader> reader;
+  uint16_t numChannels = 0;
+  int64_t trimIn = 0;
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it == m_audioFiles.end()) {
+      return SessionGraphError::ClipNotRegistered;
+    }
+    reader = it->second.reader;
+    numChannels = it->second.metadata.num_channels;
+    trimIn = it->second.trimInSamples;
+  }
+
+  if (!reader || !reader->isOpen() || numChannels == 0 || numChannels > MAX_FILE_CHANNELS) {
+    return SessionGraphError::NotReady;
+  }
+
+  SessionGraphError seekResult = reader->seek(trimIn);
+  if (seekResult != SessionGraphError::OK) {
+    return seekResult;
+  }
+
+  float scratch[MAX_FILE_CHANNELS] = {};
+  auto readResult = reader->readSamples(scratch, 1);
+  if (!readResult.isOk()) {
+    return readResult.error;
+  }
+
+  return reader->seek(trimIn);
+}
+
 SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
                                                             int64_t trimInSamples,
                                                             int64_t trimOutSamples) {
