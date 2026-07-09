@@ -21,6 +21,7 @@ public:
   // IAudioFileReader interface
   Result<AudioFileMetadata> open(const std::string& file_path) override;
   Result<size_t> readSamples(float* buffer, size_t num_samples) override;
+  Result<size_t> readSamplesEndingAt(int64_t end_sample, float* buffer, size_t num_frames) override;
   SessionGraphError seek(int64_t sample_position) override;
   void close() override;
   int64_t getCurrentPosition() const override;
