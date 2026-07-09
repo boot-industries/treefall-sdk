@@ -106,6 +106,14 @@ if(ORPHEUS_ENABLE_REALTIME)
   endif()
 endif()
 
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME realtime_static_audit
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/realtime_audit.py
+      --root ${CMAKE_SOURCE_DIR})
+endif()
+
 # Session tests (including Scene Manager)
 add_subdirectory(session)
 

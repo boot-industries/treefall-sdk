@@ -114,6 +114,25 @@ uint32_t DummyAudioDriver::getLatencySamples() const {
   return m_config.buffer_size;
 }
 
+AudioDriverCapabilities DummyAudioDriver::getCapabilities() const {
+  AudioDriverCapabilities caps;
+  caps.backend = AudioBackend::Dummy;
+  caps.platform = AudioPlatform::Unknown;
+  caps.min_output_channels = m_config.num_outputs == 0 ? 0 : 1;
+  caps.max_output_channels = m_config.num_outputs;
+  caps.min_input_channels = 0;
+  caps.max_input_channels = m_config.num_inputs;
+  caps.native_sample_rates.push_back(m_config.sample_rate);
+  caps.native_buffer_sizes.push_back(m_config.buffer_size);
+  caps.supports_exclusive_mode = false;
+  caps.supports_shared_mode = true;
+  caps.supports_device_hot_swap = false;
+  caps.supports_input = m_config.num_inputs > 0;
+  caps.supports_multichannel_output = m_config.num_outputs > 2;
+  caps.reports_hardware_latency = false;
+  return caps;
+}
+
 void DummyAudioDriver::audioThreadMain() {
   // Calculate sleep time to simulate real-time audio processing
   // Sleep for slightly less than buffer duration to avoid drift
