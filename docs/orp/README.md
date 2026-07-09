@@ -11,6 +11,26 @@ This directory contains authoritative implementation plans for the Orpheus SDK e
 
 ---
 
+## SDK Hardening & Platform Roadmap (ORP132–ORP136) — Proposed
+
+A five-document program (2026-07-09) turning the strategic architecture review into
+executable, verified sprints. **Start with ORP132.** All work is confirmed local to
+`orpheus-sdk/`; downstream app changes are flagged as separate sprints.
+
+- **ORP132** — Master Sprint Index (scope, boundaries, sequencing, fold-in of existing
+  `REALTIME_AUDIT.md` / `APP_REALTIME_DEBT_REMEDIATION.md`). Read first.
+- **ORP133** — NOW: realtime callback safety (POD event ring) & contract truth
+  (StopGroup, command-producer contract, version/doc drift). Low risk, immediate.
+- **ORP134** — NEXT: streaming reader off the audio thread (make
+  `realtime_audit.py --fail-known-debt` pass) + identity/time, graph seam, render-hash,
+  `IAudioFileWriter` (FTR007), analysis & recorder primitives.
+- **ORP135** — LATER: speculative 2026+ bets (automation, spatial, plugin API, MIDI/OSC,
+  ABI facades, migration tooling). Directional.
+- **ORP136** — Verification & CI framework spanning all sprints (realtime gates,
+  determinism hashes, TSAN, fuzzing, benchmark budgets, downstream conformance).
+
+---
+
 ## Current Implementation Plans
 
 ### ORP070 - Orpheus Clip Composer MVP Sprint (Active Sprint)
