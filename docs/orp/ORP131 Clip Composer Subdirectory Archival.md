@@ -94,21 +94,34 @@ Pre-archival SDK state: `main` at `b7d9ccdd`, 311 git-tracked files under
 
 ## Deferred / follow-up
 
-Several OCC-specific `.claude/` tooling artifacts in the SDK are now **orphaned**
-(they reference the removed app) but were left in place to keep this change
-scoped to the archival:
+**✅ Done (2026-07-09):** The orphaned OCC-specific `.claude/` tooling has been
+cleaned up. Each artifact was evaluated for whether the app still needs it, then
+either **migrated** (path-adapted) to the Clip Composer repo or **deleted** from
+the SDK:
 
-- `.claude/skills/occ/` (`build-utils.sh`, `validate.sh`, `README.md`)
-- `.claude/skills/project/occ-quick-rebuild/`
-- `.claude/agents/occ/` (`build-and-test.md`, `release-builder.md`,
-  `session-validator.md`, `waveform-optimization.md`, + `backups/`)
-- `scripts/relaunch-occ.sh`
-- Navigational references in `.claude/README.md`,
-  `.claude/implementation_progress.md`, `.claude/skills.json`,
-  `.codex/AGENTS.md`
+- **Migrated** to `~/dev/clip-composer/.claude/`, with all hardcoded build paths
+  rewritten for the standalone layout (`build/orpheus_clip_composer_app_artefacts/DEBUG/`,
+  SDK now a submodule at `third_party/orpheus-sdk`, launch via
+  `build-launch.sh`/`clean-relaunch.sh`):
+  - `.claude/skills/occ/` — `build-utils.sh`, `validate.sh`, `README.md`
+  - `.claude/agents/occ/` — `build-and-test.md`, `release-builder.md`,
+    `session-validator.md`, `waveform-optimization.md`, `README.md`
+    (the `backups/pre-frontmatter/` cruft was **not** carried over)
+- **Deleted** from the SDK (superseded by the app repo's own launch scripts;
+  hardcoded the old subdir paths):
+  - `.claude/skills/project/occ-quick-rebuild/`
+  - `scripts/relaunch-occ.sh`
+  - (plus the migrated `.claude/skills/occ/` and `.claude/agents/occ/` originals)
+- **Stale navigational references** redirected to the standalone repo in
+  `.claude/README.md`, `.claude/skills.json`, `.codex/AGENTS.md`, and
+  `.claude/skills/project/shmui/shmui.md`. `.claude/implementation_progress.md`
+  (a historical work-log) got a redirect banner rather than rewriting its
+  historical `apps/clip-composer/...` path entries.
 
-These should be cleaned up or migrated to the Clip Composer repo in a dedicated
-follow-up session.
+**Verification:** the SDK still configures and compiles cleanly
+(`cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug` + `orpheus_transport` build,
+both exit 0), and `.claude/skills.json` remains valid JSON. Nothing in the app
+repo was overwritten — it had no prior `.claude/` directory.
 
 ## Preservation guarantee
 

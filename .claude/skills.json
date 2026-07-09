@@ -30,7 +30,7 @@
     "doc-standards": {
       "source": "~/dev/.claude/skill-templates/doc-standards",
       "enabled": true,
-      "filePatterns": ["docs/orp/**/*.md", "apps/clip-composer/docs/occ/**/*.md"],
+      "filePatterns": ["docs/orp/**/*.md"],
       "lazyLoad": true
     }
   },

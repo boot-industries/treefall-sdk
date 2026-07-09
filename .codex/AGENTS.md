@@ -62,9 +62,7 @@ ctest --test-dir build --output-on-failure
 orpheus-sdk/
 ├── src/, include/       # Core SDK (C++20)
 ├── adapters/            # Host integrations
-├── apps/                # Applications
-│   └── clip-composer/   # Desktop app (JUCE 8.0.4)
-│       └── .codex/AGENTS.md  # Clip Composer-specific config
+├── apps/                # SDK-hosted applications (Clip Composer extracted — see below)
 ├── packages/
 │   └── shmui-juce/      # UX package - JUCE audio visualization components
 ├── tests/               # GoogleTest suite
@@ -199,9 +197,9 @@ codex exec "Review PR #123 for:
 - `docs/orp/ORP068 Implementation Plan (v2.0).md` - Master plan
 - `docs/ARCHITECTURE.md` - System design
 
-**Clip Composer:** v0.2.0 Sprint Complete ✅
+**Clip Composer:** extracted to its own repo (2026-07-09)
 
-- See `apps/clip-composer/.codex/AGENTS.md` for app-specific guidance
+- Now at `~/dev/clip-composer` (GitHub `chrislyons/clip-composer`), consuming this SDK as a submodule. App-specific Codex/Claude guidance lives there. See `docs/orp/ORP131`.
 
 ---
 

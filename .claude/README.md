@@ -14,7 +14,7 @@ This directory contains development notes and session reports for AI-assisted de
 
 - **[../CLAUDE.md](../CLAUDE.md)** - Claude Code development guide (for AI assistants)
 - **[../docs/ORP/](../docs/ORP/)** - Orpheus Reference Plans (ORP) index
-- **[../apps/clip-composer/docs/OCC/](../apps/clip-composer/docs/OCC/)** - Orpheus Clip Composer design docs
+- **Orpheus Clip Composer** - extracted to its own repo (`~/dev/clip-composer`, GitHub `chrislyons/clip-composer`); OCC design docs live there under `docs/occ/`. See `docs/orp/ORP131`.
 - **[../docs/repo-commands.html](../docs/repo-commands.html)** - Command reference (build, test, git)
 
 ---
@@ -37,16 +37,10 @@ The project now uses **sprint-level ORP documents** for focused feature work, ra
 
 ### OCC (Clip Composer) Development
 
-**Latest Release:** v0.2.0-alpha (October 28, 2025)
-
-**Recent Work:**
-
-- Clip Edit Dialog improvements
-- Button UI enhancements
-- Documentation consolidation
-- Removal of deprecated shmui package
-
-**OCC Docs:** `apps/clip-composer/docs/OCC/` (12 documents)
+**Extracted to its own repo (2026-07-09):** the Clip Composer app now lives at
+`~/dev/clip-composer` (GitHub `chrislyons/clip-composer`) and consumes this SDK as a
+git submodule. OCC docs, build, CI, and `.claude/` tooling live in that repo. See
+`docs/orp/ORP131` for the archival record.
 
 ### Repository Cleanup
 
@@ -77,9 +71,11 @@ The project now uses **sprint-level ORP documents** for focused feature work, ra
 
 ### For OCC (Clip Composer) Work
 
-1. **[../apps/clip-composer/docs/OCC/](../apps/clip-composer/docs/OCC/)** - Application documentation
-2. **[../apps/clip-composer/CLAUDE.md](../apps/clip-composer/CLAUDE.md)** - App-specific conventions (if exists)
-3. Use separate Claude instance from `apps/clip-composer/` directory for context isolation
+Clip Composer is now a **standalone repo** at `~/dev/clip-composer` (GitHub
+`chrislyons/clip-composer`) that consumes this SDK as a submodule. Do OCC work from
+that repo — its `docs/occ/`, `CLAUDE.md`, and `.claude/` tooling live there. SDK work
+that OCC depends on (transport, routing, audio_io, ABI) stays here; bump the submodule
+pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 
 ---
 
@@ -105,11 +101,11 @@ The project now uses **sprint-level ORP documents** for focused feature work, ra
 **Contents:** Sprint-level design documents (ORP093+)
 **Index:** See `docs/ORP/INDEX.md`
 
-### apps/clip-composer/docs/OCC/
+### OCC docs (moved to the Clip Composer repo)
 
 **Purpose:** Clip Composer application documentation
+**Location:** `~/dev/clip-composer/docs/occ/` (standalone repo, not this SDK)
 **Contents:** UI design, architecture, API contracts
-**Count:** 12 active documents
 
 ---
 
@@ -545,7 +541,7 @@ gh pr view --web
 ### OCC Documents (Clip Composer Design Docs)
 
 **Purpose:** Application-specific documentation
-**Location:** `apps/clip-composer/docs/OCC/`
+**Location:** `~/dev/clip-composer/docs/occ/` (standalone repo; extracted from this SDK — see `docs/orp/ORP131`)
 **Naming:** `OCC[number] [optional-title].md`
 **Style:** UI/UX specs, implementation notes, user workflows
 
