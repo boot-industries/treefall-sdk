@@ -39,7 +39,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unlabeled references to the extracted `apps/clip-composer` subdirectory, and
   references to CMake options that no longer exist.
 
-### Deprecated - ORP133
+### Added - ORP136 Verification Bootstrap (2026-07-09)
+
+- **Runtime realtime-safety harness** (`tests/transport/realtime_harness_test.cpp`
+  + `tests/support/rt_guard.hpp`, ORP136 §2.2). Global allocation hooks count
+  any C++ alloc/dealloc performed while the calling thread is inside a marked
+  audio-callback section, and Linux `/proc/self/io` sampling observes file I/O
+  at the syscall level. Proven red/green: the pure (reader-less) 16-clip render
+  path performs ZERO allocations across 500 callbacks, while the file-backed
+  path is pinned as KNOWN DEBT (~2,400 read syscalls observed on the audio
+  thread) with an explicit flip-point marker for the ORP134 streaming reader.
+  This is the runtime gate ORP134 G1 is blocked on.
+- **Golden render-hash determinism gate**
+  (`tests/transport/transport_render_hash_test.cpp`, ORP136 §2.3). The
+  transport render path (trims, Linear/EqualPower fades, gain, OUT-point stop
+  fades, mono→stereo, routing + limiter) is proven **bit-identical across
+  block sizes 256/512/1024/2048** and across repeated runs (FNV-1a 64 over
+  raw sample bytes). Serves as the parity oracle for the ORP134 G1
+  streaming-reader migration. Cross-platform golden constants are deferred
+  until the fade math is pinned (ORP134 G4); drift is a bug to file, not mask.
 
 - **`ITransportController::stopAllInGroup()` (ORP133 G2).** This method was a
   silent no-op in every release (the transport has no clip→group mapping;
