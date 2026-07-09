@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <map>
 #include <mutex>

@@ -25,6 +25,30 @@ add_test(
     COMMAND transport_controller_test
 )
 
+# ORP133 G3: debug-build single-producer contract assertion (death test)
+add_executable(command_producer_assert_test
+    command_producer_assert_test.cpp
+)
+
+target_link_libraries(command_producer_assert_test
+    PRIVATE
+        orpheus_transport
+        orpheus_audio_io
+        orpheus_session
+        GTest::gtest
+)
+
+target_include_directories(command_producer_assert_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+add_test(
+    NAME command_producer_assert_test
+    COMMAND command_producer_assert_test
+)
+
 # Fade processing tests
 add_executable(fade_processing_test
     fade_processing_test.cpp

@@ -520,13 +520,24 @@ Orpheus follows a strict two-thread model for real-time safety.
 
 **UI → Audio Thread:**
 
-- Atomic writes to clip state (`std::atomic<float> gainLinear`)
-- Lock-free command queue (future enhancement)
+- Lock-free SPSC command queue (`TransportCommand` ring): every control
+  mutation (start/stop/update trim/fade/gain/loop/metadata/restart/seek) is
+  posted through a single `postCommand()` choke point and applied by the audio
+  thread in `processCommands()`.
+- **Single-producer contract (ORP133 G3):** exactly one control thread may
+  post commands. Hosts with multiple control sources (UI + MIDI + OSC) must
+  funnel them through one dispatcher. Debug builds assert on violation.
 
 **Audio → UI Thread:**
 
-- Lock-free callback queue (`onClipFinished`, `onClipLooped`)
-- Callbacks invoked from UI thread timer
+- Lock-free SPSC event queue carrying POD `TransportEvent`s (ORP133 G1) — no
+  `std::function` on the audio thread. `processCallbacks()` translates events
+  into `ITransportCallback` virtuals (`onClipStarted`, `onClipStopped`,
+  `onClipLooped`, `onClipRestarted`, `onClipSeeked`, `onBufferUnderrun`) on
+  the host's UI thread (typically from a UI timer).
+- Queries (`getClipState`, `getClipPosition`, voice counts) read a
+  double-buffered voice snapshot published by the audio thread (ORP127 G1) —
+  safe from any thread.
 
 ### Verification
 
