@@ -198,4 +198,4 @@ This skill activates for:
 
 - Package source: `packages/shmui-juce/`
 - Main header: `packages/shmui-juce/ShmUI.h`
-- Design tokens: `apps/clip-composer/Source/UI/DesignTokens.h`
+- Design tokens (consumer example): `Source/UI/DesignTokens.h` in the Clip Composer repo (`~/dev/clip-composer`)

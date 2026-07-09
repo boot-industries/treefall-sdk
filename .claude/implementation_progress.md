@@ -1,5 +1,11 @@
 # ORP068 Implementation Progress
 
+> **Note (2026-07-09):** This is a historical work-log. The Clip Composer app was
+> extracted to its own repo (`~/dev/clip-composer`, GitHub `chrislyons/clip-composer`)
+> on 2026-07-09 and consumes this SDK as a submodule — see `docs/orp/ORP131`. Any
+> `apps/clip-composer/...` paths below reflect the SDK-subdir layout at the time the
+> entry was written; the current sources live in the standalone repo under `Source/`.
+
 ## Current State (2026-04-04)
 
 - **C++ SDK:** v1.0.0-rc.1 — all ORP068 phases complete, 270+ tests passing, sanitizer-clean
