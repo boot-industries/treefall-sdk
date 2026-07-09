@@ -4,6 +4,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP130 CoreAudio Input Capture]]
 - [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
@@ -88,6 +89,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 - [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
+- [[ORP130 CoreAudio Input Capture]]
 
 ## Navigation
 
