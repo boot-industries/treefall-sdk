@@ -15,7 +15,6 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
         "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
       }
@@ -29,36 +28,6 @@
         "CMAKE_BUILD_TYPE": "Release",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
-        "ENABLE_LTO": "ON",
-        "ORP_ENABLE_ASAN": "OFF",
-        "ORP_ENABLE_UBSAN": "OFF"
-      }
-    },
-    {
-      "name": "occ-debug",
-      "displayName": "Clip Composer Debug",
-      "description": "SDK + Clip Composer, debug build",
-      "binaryDir": "${sourceDir}/build",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "ORP_WITH_TESTS": "ON",
-        "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
-        "ORP_ENABLE_ASAN": "ON",
-        "ORP_ENABLE_UBSAN": "ON"
-      }
-    },
-    {
-      "name": "occ-release",
-      "displayName": "Clip Composer Release",
-      "description": "SDK + Clip Composer, optimized release build",
-      "binaryDir": "${sourceDir}/build-occ-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "ORP_WITH_TESTS": "ON",
-        "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
         "ENABLE_LTO": "ON",
         "ORP_ENABLE_ASAN": "OFF",
         "ORP_ENABLE_UBSAN": "OFF"
@@ -73,7 +42,6 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
         "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
@@ -82,13 +50,12 @@
     {
       "name": "all-apps-debug",
       "displayName": "All Apps Debug",
-      "description": "SDK + all applications, debug build",
+      "description": "SDK + all in-tree applications, debug build",
       "binaryDir": "${sourceDir}/build-all-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
         "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
@@ -103,7 +70,6 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "OFF",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "OFF",
         "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
@@ -118,7 +84,6 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ORP_WITH_TESTS": "ON",
         "ORPHEUS_ENABLE_ADAPTERS": "ON",
-        "ORPHEUS_ENABLE_APP_CLIP_COMPOSER": "ON",
         "ORPHEUS_ENABLE_APP_WAVE_FINDER": "ON",
         "ORP_ENABLE_ASAN": "ON",
         "ORP_ENABLE_UBSAN": "ON"
@@ -133,14 +98,6 @@
     {
       "name": "sdk-release",
       "configurePreset": "sdk-release"
-    },
-    {
-      "name": "occ-debug",
-      "configurePreset": "occ-debug"
-    },
-    {
-      "name": "occ-release",
-      "configurePreset": "occ-release"
     },
     {
       "name": "wave-finder-debug",
@@ -163,13 +120,6 @@
     {
       "name": "sdk-debug",
       "configurePreset": "sdk-debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "occ-debug",
-      "configurePreset": "occ-debug",
       "output": {
         "outputOnFailure": true
       }
