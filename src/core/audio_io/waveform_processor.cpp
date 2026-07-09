@@ -229,7 +229,7 @@ private:
         result.maxPeaks[pixelIndex] = std::max(result.maxPeaks[pixelIndex], sample);
       }
 
-      samplesProcessed += framesRead;
+      samplesProcessed += static_cast<int64_t>(framesRead);
     }
 
     // Handle pixels that had no samples (edge case)
@@ -278,7 +278,7 @@ private:
         peak = std::max(peak, std::abs(sample));
       }
 
-      totalSamplesProcessed += framesRead;
+      totalSamplesProcessed += static_cast<int64_t>(framesRead);
     }
 
     // Restore original position
