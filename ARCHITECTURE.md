@@ -15,9 +15,8 @@ Orpheus is a professional audio SDK built around a deterministic, host-neutral C
 - [Design Principles](#design-principles)
 - [System Architecture](#system-architecture)
 - [Core Library](#core-library-src--include)
-- [Driver Architecture](#driver-architecture-packages)
+- [Shared App Packages](#shared-app-packages-packages)
 - [Transport Controller](#transport-controller)
-- [Contract System](#contract-system)
 - [Applications](#applications-apps)
 - [Adapters](#adapters-adapters)
 - [Testing](#testing-tests--tools)
@@ -50,8 +49,8 @@ Orpheus is organized into distinct layers, each with clear responsibilities:
 
 ```mermaid
 graph TD
-    A[Applications: OCC, Wave Finder, FX Engine] --> B[Adapters: REAPER, minhost]
-    A --> C[Driver Layer: Service/Native/WASM]
+    A[External apps: Clip Composer, FourTrack, FreqFinder] --> B[Adapters: REAPER, minhost]
+    A --> C[Shared app packages: occ-app-platform, shmui-juce]
     B --> D[Core SDK: Transport, Session, Audio I/O]
     C --> D
     D --> E[Platform: CoreAudio, WASAPI, ALSA, libsndfile]
@@ -67,9 +66,15 @@ graph TD
 
 - **Core SDK** (`src/`, `include/`) – Minimal, deterministic primitives. No UI, no network, no host assumptions.
 - **Adapters** (`adapters/`) – Optional, platform-specific integrations. Thin wrappers around core SDK.
-- **Driver Layer** (`packages/`) – TypeScript/JavaScript bindings for web and Node.js environments.
-- **Applications** (`apps/`) – Complete solutions that compose adapters and drivers (OCC, Wave Finder, etc.).
-- **UI Prototypes** (`packages/shmui/`) – Demos only, not production. Local-mocked, no SaaS dependencies.
+- **Shared app packages** (`packages/`) – Active C++/JUCE building blocks for
+  downstream applications: `occ-app-platform` (session recovery, preferences,
+  health telemetry) and `shmui-juce` (JUCE UI components). Not part of the
+  core SDK libraries. (The former TypeScript driver layer is archived — see
+  `docs/orp/_process/archive/DECISION_PACKAGES.md`.)
+- **In-tree apps** (`apps/`) – `wave-finder` (app-platform smoke-test shell)
+  and `juce-demo-host` (JUCE demo host). Production applications — Clip
+  Composer, FourTrack, FreqFinder — live in their own repositories and consume
+  the SDK as a git submodule.
 
 ---
 
@@ -137,7 +142,7 @@ Platform-agnostic audio I/O abstraction:
 Session serialization utilities:
 
 - **Load/Save** – Human-readable JSON format for version control
-- **Validation** – Schema-based validation (see Contract System)
+- **Validation** – Structural validation on load
 - **Filesystem Helpers** – Path resolution, filename generation
 
 **File:** `include/orpheus/session_json.h`, `src/core/session/session_json.cpp`
@@ -152,132 +157,54 @@ Version compatibility helpers:
 
 **File:** `include/orpheus/abi_version.h`
 
+#### 7. ORP134 Platform Primitives (2026-07-09)
+
+Additive public surfaces from the hardening program (details: `docs/orp/ORP137`):
+
+- **Clip sources** (`src/core/transport/clip_source.h`, internal) – prepared/
+  streaming PCM views; the audio thread no longer reads files (ORP134 G1)
+- **Identity & time** (`identity.h`, `time_domain.h`, `media_model.h`) –
+  stable IDs, sample-canonical time, media/launcher aggregates (G2)
+- **Graph seam** (`audio_graph.h`) – neutral routing vocabulary + soundboard
+  facade over the existing matrix (G3)
+- **File writer** (`audio_file_writer.h`) – WAV/AIFF/FLAC encoding (G5, FTR007)
+- **Analysis facade** (`audio_analysis.h`) – FFT/STFT + LUFS/waveform wrappers (G6)
+- **Capture plumbing** (`audio_input.h`) – lock-free input ring + stream contract (G7)
+
 ### Build Artifacts
 
 - **`orpheus_core`** – Static library with session/transport primitives
 - **`orpheus_transport`** – Real-time transport controller module
-- **`orpheus_audio_io`** – Audio file reader and platform drivers
+- **`orpheus_audio_io`** – Audio file reader/writer, capture ring, platform drivers
 
 ---
 
-## Driver Architecture (`packages/`)
+## Shared App Packages (`packages/`)
 
-The driver layer provides JavaScript/TypeScript bindings for web and Node.js environments. Implemented in ORP068 Phases 1-2.
+The `packages/` directory contains **active C++/JUCE building blocks** shared
+by downstream applications (they are consumed through each app repo's SDK
+submodule):
 
-### Driver Types
+### `occ-app-platform`
 
-#### 1. Service Driver (`@orpheus/engine-service`)
+Application-platform helpers extracted from Clip Composer for reuse: session
+recovery/autosave scaffolding, preferences persistence, and realtime health
+telemetry surfaces. Exercised in-tree by the `apps/wave-finder` smoke shell.
 
-**Architecture:** Node.js HTTP server + WebSocket event streaming
+### `shmui-juce`
 
-- **Process Model** – Spawns `orpheus_minhost` as child process
-- **Communication** – HTTP POST for commands, WebSocket for events
-- **Security** – Bearer token authentication, 127.0.0.1 bind
-- **Use Cases** – Web apps, Electron apps, remote control scenarios
+JUCE UI component library (waveform displays, meters, transport widgets,
+audio/UI thread-safe communication helpers) for application-level UI. NOT part
+of the core SDK libraries — the core stays UI-free.
 
-**Endpoints:**
+### Archived TypeScript driver layer
 
-- `GET /health` – Health check (public)
-- `GET /version` – SDK version info (public)
-- `GET /contract` – Available commands/events (authenticated)
-- `POST /command` – Execute SDK command (authenticated)
-- `WS /ws` – WebSocket event stream (authenticated)
-
-**File:** `packages/engine-service/src/server.ts`
-
-#### 2. Native Driver (`@orpheus/engine-native`)
-
-**Architecture:** N-API native addon with direct C++ SDK integration
-
-- **Process Model** – In-process, no IPC overhead
-- **Communication** – Direct function calls via N-API bindings
-- **Performance** – Lowest latency, highest throughput
-- **Use Cases** – Desktop apps (Electron), server-side rendering
-
-**Bindings:**
-
-- `loadSession()` – Load session from JSON file
-- `renderClick()` – Render click track to WAV
-- `getTempo()`, `setTempo()` – Session tempo access
-- `getSessionInfo()` – Query session metadata
-- `subscribe()` – Event callback registration
-
-**File:** `packages/engine-native/src/bindings/session_wrapper.cpp`
-
-#### 3. WASM Driver (`@orthpeus/engine-wasm`)
-
-**Architecture:** Emscripten-compiled WASM module in Web Worker
-
-- **Process Model** – Main thread client + worker thread engine
-- **Communication** – Structured cloning via `postMessage()`
-- **Security** – Subresource Integrity (SRI) verification
-- **Use Cases** – Browser-based DAWs, offline-capable web apps
-
-**Status:** Infrastructure complete (ORP068 Phase 2), requires Emscripten SDK for compilation.
-
-**File:** `packages/engine-wasm/src/worker.ts`, `packages/engine-wasm/src/wasm_bindings.cpp`
-
-### Client Broker (`@orpheus/client`)
-
-Unified interface across all driver types:
-
-- **Driver Selection** – Automatic priority-based selection (Native → WASM → Service)
-- **Handshake Protocol** – Capability verification, version negotiation
-- **Health Monitoring** – Automatic reconnection, heartbeat checks
-- **Event Forwarding** – Unified event interface across drivers
-
-**File:** `packages/client/src/client.ts`
-
----
-
-## Contract System
-
-The **Orpheus Contract** defines the JSON schema for all commands and events between drivers and the SDK.
-
-### Version History
-
-- **v0.1.0-alpha** – Initial minimal contract (LoadSession, RenderClick)
-- **v1.0.0-beta** – Expanded contract with real-time features (SaveSession, TriggerClipGridScene, SetTransport, TransportTick, RenderProgress)
-
-### Command Schema Example
-
-```json
-{
-  "command": "LoadSession",
-  "params": {
-    "sessionPath": "/path/to/session.json"
-  }
-}
-```
-
-### Event Schema Example
-
-```json
-{
-  "event": "SessionChanged",
-  "data": {
-    "trackCount": 4,
-    "clipCount": 12,
-    "tempo": 120.0
-  }
-}
-```
-
-### Event Frequency Validation
-
-To prevent client overload, the contract enforces maximum event frequencies:
-
-- **TransportTick** – ≤30 Hz (real-time transport position)
-- **RenderProgress** – ≤10 Hz (offline render progress)
-- **Heartbeat** – 1 Hz (liveness check)
-
-**File:** `packages/contract/src/frequency-validator.ts`
-
-### Documentation
-
-- **Contract Development Guide** – `docs/CONTRACT_DEVELOPMENT.md`
-- **Migration Guide** – `packages/contract/MIGRATION.md`
-- **Schemas** – `packages/contract/schemas/v1.0.0-beta/`
+The former JavaScript/TypeScript driver packages (`@orpheus/engine-service`,
+`@orpheus/engine-native`, `@orpheus/engine-wasm`, `@orpheus/client`) and the
+JSON contract system built for them (ORP068 Phases 1-2) were **archived** when
+the project refocused on the C++ SDK. They are not in the tree. See
+[`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
+for the rationale and `docs/orp/` history (ORP068) for the original design.
 
 ---
 
@@ -311,7 +238,7 @@ struct ActiveClip {
     std::atomic<uint64_t> currentFrame;
     std::atomic<float> gainLinear;
     std::atomic<bool> loopEnabled;
-    std::shared_ptr<IAudioFileReader> reader; // Immutable after creation
+    std::shared_ptr<IClipSource> source; // Prepared/streamed PCM view (ORP134 G1)
     // ... fade state, trim points
 };
 ```
@@ -340,11 +267,26 @@ See [Threading Model](#threading-model) section below for full details.
 
 ## Applications (`apps/`)
 
-The `apps/` directory contains complete applications built on the Orpheus SDK.
+The `apps/` directory contains **in-tree development apps only**:
 
-### Orpheus Clip Composer (OCC)
+- **`apps/wave-finder/`** – app-platform smoke-test shell exercising
+  `packages/occ-app-platform`. (This is NOT the real FreqFinder analyzer,
+  which lives in its own external repository.)
+- **`apps/juce-demo-host/`** – JUCE demo host for SDK integration
+  experiments (`ORPHEUS_ENABLE_APP_JUCE_HOST=ON`).
 
-**Status:** ✅ v0.2.0-alpha (Sprint 1-2 Complete)
+**Production applications are external consumers** that vendor this SDK as a
+git submodule and bump the pin to pick up SDK changes:
+
+- **Clip Composer** ([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer))
+- **FourTrack** (`chrislyons/fourtrack`)
+- **FreqFinder** (`~/dev/freqfinder`)
+
+### Orpheus Clip Composer (OCC) — external repo
+
+**Status:** extracted from this repo's former `apps/clip-composer/`
+subdirectory on 2026-07-09 (archival report: `docs/orp/ORP131`). Its build,
+CI, and OCC documentation live in the Clip Composer repository.
 
 Professional soundboard application for broadcast, theater, and live performance.
 
@@ -366,19 +308,13 @@ Professional soundboard application for broadcast, theater, and live performance
 
 **Performance:** <15% CPU with 8 clips, ~100MB memory, 10.7ms latency
 
-**Documentation:** `apps/clip-composer/docs/OCC/`, `apps/clip-composer/CHANGELOG.md`
-
-### Orpheus Wave Finder (Planned)
-
-Harmonic calculator and frequency scope for audio analysis.
-
-**Status:** Planned for v1.0 (Months 7-12)
+**Documentation:** `docs/occ/` in the Clip Composer repo (not here)
 
 ### Orpheus FX Engine (Planned)
 
 LLM-powered effects processing and creative workflows.
 
-**Status:** Planned for v1.0 (Months 10-12)
+**Status:** Planned — not yet started
 
 ---
 
@@ -520,13 +456,24 @@ Orpheus follows a strict two-thread model for real-time safety.
 
 **UI → Audio Thread:**
 
-- Atomic writes to clip state (`std::atomic<float> gainLinear`)
-- Lock-free command queue (future enhancement)
+- Lock-free SPSC command queue (`TransportCommand` ring): every control
+  mutation (start/stop/update trim/fade/gain/loop/metadata/restart/seek) is
+  posted through a single `postCommand()` choke point and applied by the audio
+  thread in `processCommands()`.
+- **Single-producer contract (ORP133 G3):** exactly one control thread may
+  post commands. Hosts with multiple control sources (UI + MIDI + OSC) must
+  funnel them through one dispatcher. Debug builds assert on violation.
 
 **Audio → UI Thread:**
 
-- Lock-free callback queue (`onClipFinished`, `onClipLooped`)
-- Callbacks invoked from UI thread timer
+- Lock-free SPSC event queue carrying POD `TransportEvent`s (ORP133 G1) — no
+  `std::function` on the audio thread. `processCallbacks()` translates events
+  into `ITransportCallback` virtuals (`onClipStarted`, `onClipStopped`,
+  `onClipLooped`, `onClipRestarted`, `onClipSeeked`, `onBufferUnderrun`) on
+  the host's UI thread (typically from a UI timer).
+- Queries (`getClipState`, `getClipPosition`, voice counts) read a
+  double-buffered voice snapshot published by the audio thread (ORP127 G1) —
+  safe from any thread.
 
 ### Verification
 
@@ -546,12 +493,17 @@ Orpheus follows a strict two-thread model for real-time safety.
 # Minimal build (core + minhost)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-# With OCC application
-cmake -S . -B build -DORPHEUS_ENABLE_APP_CLIP_COMPOSER=ON
+# With the in-tree Wave Finder smoke-test shell
+cmake -S . -B build -DORPHEUS_ENABLE_APP_WAVE_FINDER=ON
+
+# With the JUCE demo host
+cmake -S . -B build -DORPHEUS_ENABLE_APP_JUCE_HOST=ON
 
 # Disable real-time audio (offline rendering only)
 cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
 ```
+
+(Clip Composer is built from its own repository, not via an SDK CMake option.)
 
 **Build Types:**
 
@@ -570,8 +522,10 @@ cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
 **Unified Pipeline** (`.github/workflows/ci-pipeline.yml`):
 
 - Matrix builds: 3 OS × 2 build types (ubuntu/windows/macos, Debug/Release)
-- 7 parallel jobs: C++ build/test, lint, native driver, TypeScript, integration, dependency check, performance
-- Target duration: <25 minutes
+- Sanitizers (ASan/UBSan) on Debug for ubuntu/macos
+- C++ lint job: clang-format, Windows-include hygiene, binary-artifact
+  rejection, docs-path validation
+- Supply chain: `dep-audit.yml` (SHA-pinned Actions, npm/PyPI checks)
 
 **Specialized Workflows:**
 
@@ -588,7 +542,7 @@ cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
 
 ---
 
-## ORP109 SDK Enhancements (v1.0.0-rc.2)
+## ORP109 SDK Enhancements
 
 **Added:** 2025-11-11
 **Status:** Complete, production-ready
@@ -798,24 +752,21 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 ### Getting Started
 
 - [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
-- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) – Basic integration guide
-- [docs/DRIVER_INTEGRATION_GUIDE.md](docs/DRIVER_INTEGRATION_GUIDE.md) – Platform driver integration
+- [docs/INDEX.md](docs/INDEX.md) – Documentation index (live + historical)
 
 ### Implementation Plans
 
-- [ORP068 - SDK Integration Plan v2.0](<docs/ORP/ORP068%20Implementation%20Plan%20(v2.0).md>) – Driver architecture (Phases 0-4)
-- [ORP077 - SDK Core Quality Sprint](docs/ORP/ORP077.md) – Unit tests, API docs, determinism validation
+- [ORP132 – Master Sprint Index](docs/orp/ORP132%20SDK%20Hardening%20and%20Platform%20Roadmap%20-%20Master%20Sprint%20Index.md) – Current hardening program (ORP133–ORP136)
+- [ORP068 - SDK Integration Plan v2.0](<docs/orp/ORP068%20Implementation%20Plan%20(v2.0).md>) – Historical driver architecture (Phases 0-4)
 
 ### Application Documentation
 
-- [OCC Product Vision](apps/clip-composer/docs/OCC/OCC021%20Orpheus%20Clip%20Composer%20-%20Product%20Vision.md) – Market positioning
-- [OCC CHANGELOG](apps/clip-composer/CHANGELOG.md) – Full release history
+- [Clip Composer repo](https://github.com/chrislyons/clip-composer) – application source, OCC docs, and release history (external)
 
 ### Developer Tools
 
-- [AGENTS.md](AGENTS.md) – Coding assistant guidelines
+- [AGENTS.md](docs/archive/AGENTS.md) – Coding assistant guidelines (archived)
 - [CLAUDE.md](CLAUDE.md) – Claude Code development guide
-- [CONTRIBUTING.md](docs/CONTRIBUTING.md) – Contribution guidelines
 
 ---
 

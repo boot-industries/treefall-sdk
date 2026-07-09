@@ -447,3 +447,49 @@ TEST(RenderTracksBasic, Float32PreservesSubLsbContent) {
   EXPECT_NEAR(mean, expected, tolerance);
   EXPECT_NEAR(max_abs, expected, tolerance);
 }
+
+// ORP134 G4 / ORP136 §2.3: dithered offline renders must be seed-deterministic.
+// RenderSpec is the render-job descriptor (sample rate, bit depth, channel
+// layout, dither + seed, output target); this test proves that the SAME job
+// descriptor reproduces byte-identical output — including the dither noise —
+// and that the dither seed is honored (a different seed changes the bytes).
+// Together with the undithered golden hashes above and the transport-side
+// block-size-invariance gate (transport_render_hash_test), this closes the
+// "same input -> same output, always" loop for the offline path.
+TEST(RenderTracksBasic, DitheredRenderIsSeedDeterministic) {
+  const auto* test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+
+  auto renderHash = [&](const std::string& runName, std::uint64_t seed) {
+    ScratchDir scratch(std::string(test_info->name()) + "_" + runName);
+    auto ctx = MakeBaseContext(test_info->name(), 48000, 16, 1);
+    ctx.spec.output_directory = scratch.path();
+    ctx.spec.dither = true;
+    ctx.spec.dither_seed = seed;
+
+    orpheus::core::render::Clip clip;
+    clip.start_beats = 0.0;
+    clip.samples.push_back(
+        support::GenerateSine(ctx.spec.sample_rate_hz, ctx.spec.sample_rate_hz, 330u, 0.25f));
+
+    orpheus::core::render::Track track;
+    track.name = "dither_tone";
+    track.clips.push_back(std::move(clip));
+    ctx.tracks.push_back(std::move(track));
+
+    const auto outputs = orpheus::core::render::render_tracks(ctx.session, ctx.tracks, ctx.spec);
+    EXPECT_EQ(outputs.size(), 1u);
+    const support::ParsedWav wav = support::ReadWav(outputs.front());
+    return support::Fnv1a64(wav.data);
+  };
+
+  constexpr std::uint64_t kSeedA = 0x9e3779b97f4a7c15ull;
+  constexpr std::uint64_t kSeedB = 0x0123456789abcdefull;
+
+  const std::uint64_t first = renderHash("run1", kSeedA);
+  const std::uint64_t second = renderHash("run2", kSeedA);
+  const std::uint64_t reseeded = renderHash("run3", kSeedB);
+
+  EXPECT_EQ(first, second) << "same render job (incl. dither seed) must reproduce identical bytes";
+  EXPECT_NE(first, reseeded) << "a different dither seed must change the dither noise "
+                                "(otherwise the seed in the job descriptor is dead)";
+}

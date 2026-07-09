@@ -636,8 +636,8 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     // output_bus 1 = channels 2-3 (stereo pair 2)
     // etc.
     uint8_t output_bus = group.config.output_bus;
-    uint8_t out_L = output_bus * 2;
-    uint8_t out_R = output_bus * 2 + 1;
+    uint8_t out_L = static_cast<uint8_t>(output_bus * 2);
+    uint8_t out_R = static_cast<uint8_t>(output_bus * 2 + 1);
 
     // Validate output channels exist
     if (out_R >= config.num_outputs) {

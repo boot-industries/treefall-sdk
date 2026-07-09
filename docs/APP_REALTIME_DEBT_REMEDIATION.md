@@ -5,6 +5,12 @@ realtime-audit hardening branch lands. It does not require SDK code changes in
 those repos beyond consuming the public preparation/capability contracts added
 here.
 
+**Status update (2026-07-09, ORP134 G1):** the SDK-side prerequisite has
+LANDED — the transport now renders from prepared/streaming clip sources and
+`tools/realtime_audit.py --fail-known-debt` passes in-repo. The app patches
+below are now unblocked; FourTrack should adopt the SDK's prepared/streaming
+sources (and `IAudioFileWriter`, ORP134 G5) on its next submodule bump.
+
 Run from `~/dev/orpheus-sdk`:
 
 ```sh

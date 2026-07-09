@@ -9,6 +9,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - ORP133 Realtime Callback Safety & Contract Truth (2026-07-09)
+
+- **Audio→UI event ring is now POD (ORP133 G1).** The transport's internal
+  callback ring no longer stores `std::function<void()>` payloads; the audio
+  thread enqueues trivially-copyable `TransportEvent`s and
+  `processCallbacks()` translates them into the unchanged public
+  `ITransportCallback` virtuals on the UI thread. Emission points, ordering,
+  and timing are 1:1 with the previous behavior. No public API change.
+- **Command-queue threading contract documented and enforced (ORP133 G3).**
+  Control-mutating transport methods are single-producer: exactly one control
+  thread may call them (funnel UI/MIDI/OSC through one dispatcher). Queries
+  remain lock-free and callable from any thread. Debug builds now assert if
+  commands are posted from more than one thread. All control entry points
+  funnel through a single `postCommand()` choke point.
+- **Version realigned to the build's truth (ORP133 G4).** The SDK version is
+  **0.3.0**, sourced from `project(orpheus VERSION 0.3.0)` in
+  `CMakeLists.txt`; README and docs now reference CMake as the single source
+  of truth. The October 2025 "v1.0.0-rc.1"/"v1.0.0-rc.2" README/docs banners
+  predated the 0.x renumbering (downstream apps pin `v0.3.0`); those labels
+  remain in this changelog as historical release names only.
+- **Documentation truth pass + CI gate (ORP133 G5/G6).** README,
+  ARCHITECTURE.md, ROADMAP.md, docs/INDEX.md, and docs/API_SURFACE_INDEX.md no
+  longer describe the extracted `apps/clip-composer` subdirectory, the removed
+  `ORPHEUS_ENABLE_APP_CLIP_COMPOSER` option, or the archived TypeScript driver
+  layer as live; `packages/occ-app-platform` and `packages/shmui-juce` are
+  documented as active C++ packages. A new `tools/docs_path_audit.py` gate
+  (ctest `docs_path_audit` + CI lint step) fails on broken internal doc links,
+  unlabeled references to the extracted `apps/clip-composer` subdirectory, and
+  references to CMake options that no longer exist.
+
+### Added - ORP134 Platform Primitives (2026-07-09)
+
+- **`IAudioFileWriter` (ORP134 G5 — FourTrack's FTR007 request).** New public
+  interface `include/orpheus/audio_file_writer.h` mirroring
+  `IAudioFileReader`'s shape and error model: `open(path, config)` /
+  `writeSamples(interleaved float32)` / `close()`, background-thread contract
+  (never the audio thread — capture feeds a ring buffer that a writer thread
+  drains). Libsndfile-backed implementation supports WAV/AIFF in
+  Int16/Int24/Float32 and FLAC in Int16/Int24 (Float32 is rejected — FLAC is
+  integer-only); out-of-range floats saturate rather than wrap
+  (`SFC_SET_CLIPPING`). `createAudioFileWriter()` returns nullptr when built
+  without libsndfile (stub, same pattern as the reader). Round-trip tests
+  prove bit-exact float32 WAV and ≤1 LSB integer encodings via the SDK's own
+  reader. FourTrack can drop its local `WavWriter` on the next submodule bump.
+
+- **The audio thread no longer reads files (ORP134 G1 — the program's
+  defining migration).** `processAudio()` used to call
+  `IAudioFileReader::readSamples()`/`seek()` per clip — blocking libsndfile
+  decode on the audio callback (tracked debt since ORP121). The transport now
+  renders from immutable, position-explicit `IClipSource` views built off the
+  audio thread: whole-file PCM decoded in `prepareClipAudio()`/`startClip()`
+  (control thread) for short clips, and a background-worker-fed fixed page
+  ring for long files (> ~30 s; internal threshold). A streaming cache miss
+  NEVER blocks: the clip renders silence for that buffer and the transport
+  emits the (previously never-fired) `onBufferUnderrun` callback while the
+  worker refills. Seeks became prefetch hints — there is no file cursor
+  anywhere near the callback — which also makes multi-voice playback of one
+  clip correct by construction (voices no longer fight over a shared reader
+  position). The public transport API is unchanged.
+  **Verified:** golden render-hash parity is bit-exact against the old
+  reading path (same hash, all block sizes); the runtime harness measures the
+  file-backed callback at ~0 read syscalls (was ~2,400 / ~4.9 MB per 300
+  buffers) with zero allocations; streaming prefill plays gap-free and
+  seek-past-window underruns recover; `tools/realtime_audit.py
+  --fail-known-debt` now PASSES in-repo and runs as the strict CI gate
+  (`realtime_static_audit`). Remaining `--include-adjacent` findings are
+  app-repo debt for the downstream sprints (REALTIME_AUDIT.md).
+- **Stable identity & time-domain primitives (ORP134 G2 — additive).** New
+  public headers `identity.h` (opaque `SessionId`/`TrackId`/`ClipId`/
+  `MediaId`/`AutomationLaneId` strong types over `uint64_t`, plus a
+  deterministic monotonic `IdAllocator` with a serializable watermark),
+  `time_domain.h` (`TimePoint`/`TimeRange` with the 64-bit sample count as
+  the canonical value and seconds/beats/timecode as derived views), and
+  `media_model.h` (`MediaRegion`, `Take`, `ClipSlot`, `LauncherScene` thin
+  aggregates). The pointer-based `SessionGraph` is untouched (ORP134 §7);
+  these types are the vocabulary new code and serialization should prefer.
+  IDs serialize as decimal strings (the SDK JSON number type is a double —
+  53-bit mantissa); tests round-trip IDs > 2^53 through the SDK JSON parser
+  and the installed-header compile gate covers the new headers.
+- **Recorder plumbing (ORP134 G7).** New `audio_input.h`: `AudioInputRing`
+  (lock-free SPSC ring of interleaved frames — audio-thread producer never
+  blocks, drops whole buffers on overflow and counts them) and
+  `IAudioInputStream` (the capture contract hosts consume instead of hooking
+  the raw driver callback; `createAudioInputStream()` returns the ring-backed
+  implementation). Paired with `IAudioFileWriter` this makes "capture → disk"
+  an SDK-supported path (integration test drives audio-thread capture through
+  a background writer to a WAV and verifies the samples). Take/punch/latency
+  policy stays host-side by design.
+- **Analysis facade (ORP134 G6).** New `audio_analysis.h`
+  (`orpheus::analysis`): radix-2 FFT/STFT (new), RMS/peak, integrated LUFS
+  (WRAPS the existing `LoudnessMeter` — parity asserted by test, not
+  re-implemented), spectral centroid/rolloff, spectral-flux onset detection,
+  and an in-memory min/max waveform proxy (file-backed proxies remain
+  `IAudioFileReaderExtended`'s job). Offline/background utilities only.
+- **Graph-neutral routing seam (ORP134 G3).** New `audio_graph.h`:
+  sources/processors/buses/sinks/sends/taps/channel-layout vocabulary as a
+  validated `GraphDescription`, plus the soundboard facade
+  (`makeSoundboardGraph`) and `toRoutingConfig()` mapping onto the EXISTING
+  routing matrix (not replaced — ORP134 §7). Tests prove the facade's
+  translation equals the transport's hard-wired topology (64 ch / 4 groups /
+  stereo out) and that the vocabulary expresses FourTrack's bus shapes and
+  FreqFinder's analysis taps. The executing graph engine remains an ORP135
+  candidate.
+- **Scene manager wired + tested at launcher scale (ORP134 G8).**
+  `ISceneManager::setRoutingMatrix()` is now on the public interface (it
+  previously existed only on the hidden concrete class, making routing
+  capture/recall unreachable through `createSceneManager()`). New
+  `scene_routing_test` drives capture/recall of group assignments and gains
+  end-to-end, including an 8-tab page-switching round-trip. Gap documented
+  by design: `SceneSnapshot::assignedClips` is host presentation state the
+  SDK cannot derive — hosts persist grids with `media_model.h`'s
+  `ClipSlot`/`LauncherScene` shapes.
+- **Offline render determinism gate completed (ORP134 G4).** `RenderSpec` is
+  the offline render-job descriptor (sample rate, bit depth, channel layout,
+  dither + seed, output target). New `DitheredRenderIsSeedDeterministic` test
+  proves the same job descriptor reproduces byte-identical output including
+  the dither noise, and that changing the seed changes the bytes. Combined
+  with the pre-existing undithered golden hashes (`render_tracks_basic`) and
+  the transport-side block-size-invariance gate (ORP136 bootstrap), the
+  "same input → same output, always" loop is closed for both render paths.
+
+### Added - ORP136 Verification Bootstrap (2026-07-09)
+
+- **Runtime realtime-safety harness** (`tests/transport/realtime_harness_test.cpp`
+  + `tests/support/rt_guard.hpp`, ORP136 §2.2). Global allocation hooks count
+  any C++ alloc/dealloc performed while the calling thread is inside a marked
+  audio-callback section, and Linux `/proc/self/io` sampling observes file I/O
+  at the syscall level. Proven red/green: the pure (reader-less) 16-clip render
+  path performs ZERO allocations across 500 callbacks, while the file-backed
+  path is pinned as KNOWN DEBT (~2,400 read syscalls observed on the audio
+  thread) with an explicit flip-point marker for the ORP134 streaming reader.
+  This is the runtime gate ORP134 G1 is blocked on.
+- **Golden render-hash determinism gate**
+  (`tests/transport/transport_render_hash_test.cpp`, ORP136 §2.3). The
+  transport render path (trims, Linear/EqualPower fades, gain, OUT-point stop
+  fades, mono→stereo, routing + limiter) is proven **bit-identical across
+  block sizes 256/512/1024/2048** and across repeated runs (FNV-1a 64 over
+  raw sample bytes). Serves as the parity oracle for the ORP134 G1
+  streaming-reader migration. Cross-platform golden constants are deferred
+  until the fade math is pinned (ORP134 G4); drift is a bug to file, not mask.
+
+### Deprecated - ORP133
+
+- **`ITransportController::stopAllInGroup()` (ORP133 G2).** This method was a
+  silent no-op in every release (the transport has no clip→group mapping;
+  grouping is a host concern). It now returns
+  `SessionGraphError::NotSupported` and is documented as deprecated. Hosts
+  implement scoped group-stop with their own group model on top of
+  `stopOtherClips()` (ORP127 G7 choke primitive). The method is retained for
+  source compatibility and may be removed in a future major version.
+
 ### Added - ORP109 Professional Features (2025-11-11)
 
 #### Feature 1: Routing Matrix API (ORP109, ORP110)

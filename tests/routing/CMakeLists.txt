@@ -109,3 +109,27 @@ if(TARGET Orpheus::diagnostics)
         COMMAND loudness_meter_test
     )
 endif()
+
+
+# ORP134 G3: graph-neutral routing seam + soundboard facade
+add_executable(audio_graph_test
+    audio_graph_test.cpp
+)
+
+target_link_libraries(audio_graph_test
+    PRIVATE
+        orpheus_routing
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(audio_graph_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(
+    NAME audio_graph_test
+    COMMAND audio_graph_test
+)

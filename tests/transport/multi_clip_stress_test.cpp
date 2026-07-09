@@ -442,9 +442,29 @@ TEST_F(MultiClipStressTest, CPUUsageMeasurement) {
 
   // RT-budget assertion: rendering 16 clips must fit comfortably within one
   // buffer's real-time budget. Half the budget is a generous, load-tolerant
-  // ceiling (real cost is a few percent).
-  EXPECT_LT(budget_fraction, 0.5)
-      << "16-clip render should use <50% of the buffer's real-time budget";
+  // ceiling (real cost is a few percent). Sanitizer builds (ASan/TSan/UBSan)
+  // inflate render timings unpredictably, so — matching the waveform perf
+  // bound — the wall-clock assertion is skipped there; the 16-clips-playing
+  // correctness check above still runs.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  constexpr bool kUnderSanitizer = true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
+    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+  constexpr bool kUnderSanitizer = true;
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+
+  if (!kUnderSanitizer) {
+    EXPECT_LT(budget_fraction, 0.5)
+        << "16-clip render should use <50% of the buffer's real-time budget";
+  } else {
+    std::cout << "  - RT-budget bound skipped under sanitizer\n";
+  }
 }
 
 // ============================================================================

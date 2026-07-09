@@ -43,9 +43,9 @@ ORPHEUS_API void orpheus_set_telemetry_callback(orpheus_telemetry_callback callb
 #endif
 
 #ifdef __cplusplus
-#include <string_view>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace orpheus {
 

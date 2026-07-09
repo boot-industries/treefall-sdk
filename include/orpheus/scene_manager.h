@@ -33,7 +33,12 @@ struct SceneSnapshot {
   std::string name;    ///< User-friendly name (e.g., "Act 1", "Intro Music")
   uint64_t timestamp;  ///< Creation time (Unix epoch in seconds)
 
-  // Clip assignments (which clips loaded on which buttons)
+  // Clip assignments (which clips loaded on which buttons).
+  // ORP134 G8 design note: captureScene() does NOT populate this — button/
+  // grid layout is host presentation state the SDK cannot derive (the
+  // transport's ClipHandles carry no grid geometry). Hosts persist their grid
+  // with the document-model shapes in <orpheus/media_model.h> (ClipSlot /
+  // LauncherScene) or fill this vector themselves before exportScene().
   std::vector<ClipHandle> assignedClips; ///< Clip handles per button/position
 
   // Routing configuration (from Feature 1: Routing Matrix)
@@ -84,6 +89,26 @@ struct SceneSnapshot {
 class ISceneManager {
 public:
   virtual ~ISceneManager() = default;
+
+  // ========================================================================
+  // Wiring (UI Thread)
+  // ========================================================================
+
+  /// Attach the routing matrix whose state captureScene()/recallScene()
+  /// snapshot and restore (ORP134 G8).
+  ///
+  /// Without this call scenes still capture/restore names and metadata, but
+  /// clip-group assignments and group gains are skipped — the routing state
+  /// was previously impossible to wire through the public interface at all.
+  ///
+  /// @param routingMatrix Matrix to snapshot/restore (nullptr to detach).
+  ///        Not owned; must outlive the scene manager or be detached first.
+  ///
+  /// @note Default implementation is a no-op so existing ISceneManager
+  ///       implementations keep compiling (additive, ORP134).
+  virtual void setRoutingMatrix(IRoutingMatrix* routingMatrix) {
+    (void)routingMatrix;
+  }
 
   // ========================================================================
   // Scene Capture & Recall (UI Thread)

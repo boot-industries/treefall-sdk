@@ -108,9 +108,20 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  # ORP134 G1: the streaming-reader migration landed, so the audit runs as the
+  # STRICT gate (ORP136 §2.1 / §4 "fail closed on realtime"): a reintroduced
+  # audio-thread read is a hard failure, not a tracked-debt report.
   add_test(NAME realtime_static_audit
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/realtime_audit.py
+      --root ${CMAKE_SOURCE_DIR}
+      --fail-known-debt)
+
+  # ORP133 G6: docs-path validation (broken internal links, references to the
+  # extracted apps/clip-composer subdir, removed CMake options).
+  add_test(NAME docs_path_audit
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/docs_path_audit.py
       --root ${CMAKE_SOURCE_DIR})
 endif()
 
@@ -172,6 +183,27 @@ add_test(NAME abi_link COMMAND orpheus_abi_link)
 
 if(NOT ORP_BUILD_SHARED_CORE)
   set_tests_properties(abi_link PROPERTIES DISABLED ON)
+endif()
+
+# On Linux with GCC + ASan, dlopen-ing sanitized shared libraries from the
+# (unsanitized) abi_link host aborts with "ASan runtime does not come first in
+# initial library list" unless the runtime is preloaded. Mirror of the macOS
+# DYLD_INSERT_LIBRARIES block below.
+if(UNIX
+   AND NOT APPLE
+   AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_BUILD_TYPE MATCHES "Debug"
+   AND ORP_ENABLE_ASAN)
+  execute_process(
+    COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so
+    OUTPUT_VARIABLE ASAN_SO_PATH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(EXISTS "${ASAN_SO_PATH}")
+    set_tests_properties(abi_link PROPERTIES
+      ENVIRONMENT "LD_PRELOAD=${ASAN_SO_PATH}"
+    )
+  endif()
 endif()
 
 # On macOS with ASan + dlopen, interceptors fail unless the ASan dylib is
