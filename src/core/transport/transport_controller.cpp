@@ -4,6 +4,7 @@
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
 #include "session/session_graph.h"                 // For SessionGraph
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 
@@ -181,22 +182,11 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   // Post Start command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Start;
   cmd.handle = handle;
-  cmd.startContext = context; // Move shared_ptr into command
-
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  cmd.startContext = context;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopClip(ClipHandle handle) {
@@ -205,68 +195,31 @@ SessionGraphError TransportController::stopClip(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Stop;
   cmd.handle = handle;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = 0;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopAllClips() {
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::StopAll;
   cmd.handle = 0;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = 0;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
-  // Validate group index (0-3 for 4 Clip Groups)
-  if (groupIndex >= 4) {
-    return SessionGraphError::InvalidParameter;
-  }
-
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
-  cmd.type = TransportCommand::Type::StopGroup;
-  cmd.handle = 0;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = groupIndex;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  // ORP133 G2: Deprecated — group-stop is a host concern, not a transport one.
+  //
+  // The transport has never had a clip→group mapping (the former StopGroup
+  // command arm was a silent no-op blocked on "get clip group assignments from
+  // SessionGraph"). Grouping lives with the host: Clip Composer models its own
+  // playgroups and scopes chokes with stopOtherClips() (the ORP127 G7
+  // host-neutral primitive), and the routing matrix's channel groups are a
+  // mixing topology, not a playback-control one. Rather than keep a public
+  // method that silently does nothing, this now reports the truth.
+  (void)groupIndex;
+  return SessionGraphError::NotSupported;
 }
 
 SessionGraphError TransportController::stopOtherClips(ClipHandle exceptHandle) {
@@ -634,11 +587,12 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
       if (fadeProgress >= fadeOutSampleCount) {
         // Fade-out complete, remove clip
-        postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipStopped(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStopped;
+        event.handle = clip.handle;
+        event.voiceId = clip.voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
 
         removeActiveClip(clip.handle);
         continue; // Don't increment i, we just removed this clip
@@ -662,12 +616,13 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         // ORP097 Bug 7 Fix: Mark that clip has looped (prevents fade-in/out on subsequent loops)
         clip.hasLoopedOnce = true;
 
-        // Post loop callback
-        postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipLooped(handle, pos);
-          }
-        });
+        // Post loop event
+        TransportEvent event{};
+        event.type = TransportEventType::ClipLooped;
+        event.handle = clip.handle;
+        event.voiceId = clip.voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
 
         // Continue playback (don't remove clip, don't increment i)
         ++i;
@@ -712,11 +667,11 @@ void TransportController::processCommands() {
       // ORP127 G5: honor the clip's voice policy when firing.
       if (cmd.startContext) {
         startVoiceWithMode(cmd.startContext);
-        postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipStarted(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStarted;
+        event.handle = cmd.handle;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
       }
     } break;
 
@@ -750,11 +705,6 @@ void TransportController::processCommands() {
           m_activeClips[i].fadeOutStartPos = m_activeClips[i].currentSample;
         }
       }
-      break;
-
-    case TransportCommand::Type::StopGroup:
-      // TODO: Get clip group assignments from SessionGraph
-      // For now, this is a no-op
       break;
 
     case TransportCommand::Type::UpdateTrim:
@@ -861,15 +811,13 @@ void TransportController::processCommands() {
       }
 
       if (foundAnyVoice) {
-        postCallback([this, handle = cmd.handle, trimIn]() {
-          if (m_callback) {
-            TransportPosition pos;
-            pos.samples = trimIn;
-            pos.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
-            pos.beats = 0.0;
-            m_callback->onClipRestarted(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipRestarted;
+        event.handle = cmd.handle;
+        event.position.samples = trimIn;
+        event.position.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
+        event.position.beats = 0.0;
+        postTransportEvent(event);
       }
     } break;
 
@@ -890,15 +838,13 @@ void TransportController::processCommands() {
       }
 
       if (foundAnyVoice) {
-        postCallback([this, handle = cmd.handle, position]() {
-          if (m_callback) {
-            TransportPosition pos;
-            pos.samples = position;
-            pos.seconds = static_cast<double>(position) / static_cast<double>(m_sampleRate);
-            pos.beats = 0.0;
-            m_callback->onClipSeeked(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipSeeked;
+        event.handle = cmd.handle;
+        event.position.samples = position;
+        event.position.seconds = static_cast<double>(position) / static_cast<double>(m_sampleRate);
+        event.position.beats = 0.0;
+        postTransportEvent(event);
       }
     } break;
 
@@ -1108,13 +1054,14 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     if (oldest) {
       uint32_t oldestVoiceId = oldest->voiceId;
 
-      // Post callback that voice was stopped (for UI tracking)
+      // Post event that voice was stopped (for UI tracking)
       // Note: Callback reports handle, not specific voiceId (UI tracks per-handle, not per-voice)
-      postCallback([this, handle, pos = getCurrentPosition()]() {
-        if (m_callback) {
-          m_callback->onClipStopped(handle, pos);
-        }
-      });
+      TransportEvent event{};
+      event.type = TransportEventType::ClipStopped;
+      event.handle = handle;
+      event.voiceId = oldestVoiceId;
+      event.position = getCurrentPosition();
+      postTransportEvent(event);
 
       removeActiveVoice(oldestVoiceId);
     }
@@ -1292,7 +1239,27 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 
 SessionGraphError TransportController::postCommand(const TransportCommand& command) {
   // ORP127 G1: Single choke point for UI → audio-thread commands. SPSC ring;
-  // UI thread is the sole producer, audio thread the sole consumer.
+  // ONE control thread is the sole producer, the audio thread the sole
+  // consumer. Every control-mutating entry point funnels through here (ORP133
+  // G3), so the debug producer check below covers the whole mutation surface.
+#ifndef NDEBUG
+  {
+    // ORP133 G3: enforce the single-producer contract in debug builds. The
+    // first producer thread claims the queue; any later post from a different
+    // thread is a contract violation (hosts with multiple control sources must
+    // funnel through a single dispatcher — see ITransportController docs).
+    std::thread::id expected{};
+    const std::thread::id self = std::this_thread::get_id();
+    if (!m_commandProducerThread.compare_exchange_strong(expected, self,
+                                                         std::memory_order_relaxed) &&
+        expected != self) {
+      assert(false &&
+             "TransportController: control-mutating methods must be called from a single "
+             "control thread (SPSC command queue). Funnel UI/MIDI/OSC through one dispatcher.");
+    }
+  }
+#endif
+
   size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
   size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
 
@@ -1331,47 +1298,68 @@ void TransportController::publishVoiceSnapshot() {
   m_snapshotIndex.store(back, std::memory_order_release);
 }
 
-void TransportController::postCallback(std::function<void()> callback) {
-  // ORP121 C-03: Lock-free SPSC callback queue
-  // Audio thread writes to ring buffer (no mutex, no blocking)
+void TransportController::postTransportEvent(const TransportEvent& event) {
+  // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
+  // Audio thread writes POD events to the ring buffer (no mutex, no blocking,
+  // no std::function construction/destruction on the audio thread)
   //
   // Memory ordering rationale:
-  // - relaxed for same-thread reads (writeIdx in postCallback)
+  // - relaxed for same-thread reads (writeIdx in postTransportEvent)
   // - acquire for cross-thread reads (readIdx check for full detection)
-  // - release for writes (ensures callback data visible before index update)
+  // - release for writes (ensures event data visible before index update)
 
   size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
   size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1); // Mask for wrap (power of 2)
 
   // Check if queue full (read index caught up)
   if (nextIdx == m_callbackReadIndex.load(std::memory_order_acquire)) {
-    // Queue full - drop callback (better than blocking audio thread)
+    // Queue full - drop event (better than blocking audio thread)
     // Increment dropped callback counter for diagnostics
     m_droppedCallbackCount.fetch_add(1, std::memory_order_relaxed);
     return;
   }
 
-  m_callbackRing[writeIdx] = std::move(callback);
+  m_eventRing[writeIdx] = event;
   m_callbackWriteIndex.store(nextIdx, std::memory_order_release);
 }
 
 void TransportController::processCallbacks() {
-  // ORP121 C-03: Lock-free SPSC callback queue
-  // UI thread reads from ring buffer (no mutex, no blocking)
+  // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
+  // UI thread reads POD events from the ring buffer (no mutex, no blocking)
+  // and translates them into the host's ITransportCallback virtuals. Events
+  // are dispatched strictly in ring (emission) order.
   //
   // Memory ordering rationale:
   // - relaxed for same-thread reads (readIdx in processCallbacks)
-  // - acquire for cross-thread reads (writeIdx to see all pending callbacks)
-  // - release for writes (ensures slot cleared before index update)
+  // - acquire for cross-thread reads (writeIdx to see all pending events)
+  // - release for the read-index update (frees the slots for the producer)
 
   size_t readIdx = m_callbackReadIndex.load(std::memory_order_relaxed);
   size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_acquire);
 
   while (readIdx != writeIdx) {
-    auto& callback = m_callbackRing[readIdx];
-    if (callback) {
-      callback();
-      callback = nullptr; // Clear slot to release captured resources
+    const TransportEvent& event = m_eventRing[readIdx];
+    if (m_callback) {
+      switch (event.type) {
+      case TransportEventType::ClipStarted:
+        m_callback->onClipStarted(event.handle, event.position);
+        break;
+      case TransportEventType::ClipStopped:
+        m_callback->onClipStopped(event.handle, event.position);
+        break;
+      case TransportEventType::ClipLooped:
+        m_callback->onClipLooped(event.handle, event.position);
+        break;
+      case TransportEventType::ClipRestarted:
+        m_callback->onClipRestarted(event.handle, event.position);
+        break;
+      case TransportEventType::ClipSeeked:
+        m_callback->onClipSeeked(event.handle, event.position);
+        break;
+      case TransportEventType::BufferUnderrun:
+        m_callback->onBufferUnderrun(event.position);
+        break;
+      }
     }
     readIdx = (readIdx + 1) & (CALLBACK_QUEUE_SIZE - 1);
   }
@@ -1530,21 +1518,12 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateTrim;
-    cmd.handle = handle;
-    cmd.data.trim.in = trimInSamples;
-    cmd.data.trim.out = trimOutSamples;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateTrim;
+  cmd.handle = handle;
+  cmd.data.trim.in = trimInSamples;
+  cmd.data.trim.out = trimOutSamples;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::updateClipFades(ClipHandle handle, double fadeInSeconds,
@@ -1614,23 +1593,14 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateFade;
-    cmd.handle = handle;
-    cmd.data.fade.inSeconds = fadeInSeconds;
-    cmd.data.fade.outSeconds = fadeOutSeconds;
-    cmd.data.fade.inCurve = fadeInCurve;
-    cmd.data.fade.outCurve = fadeOutCurve;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateFade;
+  cmd.handle = handle;
+  cmd.data.fade.inSeconds = fadeInSeconds;
+  cmd.data.fade.outSeconds = fadeOutSeconds;
+  cmd.data.fade.inCurve = fadeInCurve;
+  cmd.data.fade.outCurve = fadeOutCurve;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::getClipTrimPoints(ClipHandle handle, int64_t& trimInSamples,
@@ -1696,20 +1666,11 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateGain;
-    cmd.handle = handle;
-    cmd.data.gainDb = gainDb;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateGain;
+  cmd.handle = handle;
+  cmd.data.gainDb = gainDb;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool shouldLoop) {
@@ -1728,20 +1689,11 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateLoop;
-    cmd.handle = handle;
-    cmd.data.booleanValue = shouldLoop;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateLoop;
+  cmd.handle = handle;
+  cmd.data.booleanValue = shouldLoop;
+  return postCommand(cmd);
 }
 
 int64_t TransportController::getClipPosition(ClipHandle handle) const {

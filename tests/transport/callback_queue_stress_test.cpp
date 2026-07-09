@@ -362,9 +362,117 @@ TEST_F(CallbackQueueStressTest, CallbackLatency) {
             << "  Average: " << avg_lat << " µs\n"
             << "  Maximum: " << max_lat << " µs\n";
 
-  // Callbacks should complete within reasonable time (< 10ms)
-  EXPECT_LT(avg_lat, 10000.0);
+  // Callbacks should complete within reasonable time (< 10ms). Sanitizer
+  // builds (notably TSan, ~19ms observed) inflate the wall clock, so — as with
+  // the waveform and multi-clip perf bounds — the assertion is skipped there.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  constexpr bool kUnderSanitizer = true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
+    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+  constexpr bool kUnderSanitizer = true;
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+
+  if (!kUnderSanitizer) {
+    EXPECT_LT(avg_lat, 10000.0);
+  } else {
+    std::cout << "  - Latency bound skipped under sanitizer\n";
+  }
 }
+
+// ============================================================================
+// Event Ordering Tests (ORP133 G1)
+// ============================================================================
+
+namespace {
+
+// Records the exact dispatch sequence so FIFO ordering through the POD event
+// ring can be asserted (not just counts).
+class RecordingCallback : public ITransportCallback {
+public:
+  enum class Kind : uint8_t { Started, Stopped, Looped, Restarted, Seeked, Underrun };
+
+  struct Entry {
+    Kind kind;
+    ClipHandle handle;
+  };
+
+  std::vector<Entry> entries;
+
+  void onClipStarted(ClipHandle handle, TransportPosition /*position*/) override {
+    entries.push_back({Kind::Started, handle});
+  }
+  void onClipStopped(ClipHandle handle, TransportPosition /*position*/) override {
+    entries.push_back({Kind::Stopped, handle});
+  }
+  void onClipLooped(ClipHandle handle, TransportPosition /*position*/) override {
+    entries.push_back({Kind::Looped, handle});
+  }
+  void onClipRestarted(ClipHandle handle, TransportPosition /*position*/) override {
+    entries.push_back({Kind::Restarted, handle});
+  }
+  void onClipSeeked(ClipHandle handle, TransportPosition /*position*/) override {
+    entries.push_back({Kind::Seeked, handle});
+  }
+  void onBufferUnderrun(TransportPosition /*position*/) override {
+    entries.push_back({Kind::Underrun, 0});
+  }
+};
+
+} // namespace
+
+TEST_F(CallbackQueueStressTest, EventOrderingPreserved) {
+  // ORP133 G1: the audio→UI ring switched from std::function payloads to POD
+  // TransportEvents. Emission points map 1:1 to the old postCallback sites, so
+  // dispatch order must be exactly emission (FIFO) order. Drive a
+  // deterministic sequence and assert the exact dispatch sequence.
+  auto recorder = std::make_unique<RecordingCallback>();
+  m_transport->setCallback(recorder.get());
+
+  using Kind = RecordingCallback::Kind;
+
+  // Buffer 1: start clip 1 → Started(1)
+  m_transport->startClip(1);
+  simulateAudioCallback();
+
+  // Buffer 2: start clip 2 → Started(2)
+  m_transport->startClip(2);
+  simulateAudioCallback();
+
+  // Buffer 3+: stop clip 1. The default 10ms stop fade (480 samples @ 48kHz)
+  // completes within one 512-frame buffer for reader-less clips → Stopped(1).
+  m_transport->stopClip(1);
+  simulateAudioCallback(2);
+
+  // Next buffer: start clip 3 → Started(3)
+  m_transport->startClip(3);
+  simulateAudioCallback();
+
+  // Drain everything in ONE pass so ordering inside the ring is what's tested.
+  m_transport->processCallbacks();
+
+  ASSERT_EQ(recorder->entries.size(), 4u);
+  EXPECT_EQ(recorder->entries[0].kind, Kind::Started);
+  EXPECT_EQ(recorder->entries[0].handle, 1u);
+  EXPECT_EQ(recorder->entries[1].kind, Kind::Started);
+  EXPECT_EQ(recorder->entries[1].handle, 2u);
+  EXPECT_EQ(recorder->entries[2].kind, Kind::Stopped);
+  EXPECT_EQ(recorder->entries[2].handle, 1u);
+  EXPECT_EQ(recorder->entries[3].kind, Kind::Started);
+  EXPECT_EQ(recorder->entries[3].handle, 3u);
+
+  // Restore the fixture's counting callback before TearDown.
+  m_transport->setCallback(m_callback.get());
+}
+
+// NOTE: Restarted/Seeked event translation (payload + delivery) is covered by
+// clip_restart_test.cpp and clip_seek_test.cpp against registered audio files;
+// this suite focuses on ring mechanics with reader-less clips.
 
 // ============================================================================
 // Main Entry Point

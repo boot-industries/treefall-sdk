@@ -9,6 +9,8 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <type_traits>
 #include <unordered_map>
 
 namespace orpheus {
@@ -45,7 +47,8 @@ struct TransportCommand {
     Start,
     Stop,
     StopAll,
-    StopGroup,
+    // ORP133 G2: StopGroup removed — the transport has no clip→group mapping;
+    // hosts implement scoped group-stop with stopOtherClips() + host grouping.
     UpdateTrim,
     UpdateFade,
     UpdateGain,
@@ -68,8 +71,6 @@ struct TransportCommand {
   std::shared_ptr<ClipPlaybackContext> startContext;
 
   union {
-    uint8_t groupIndex; // For StopGroup command
-
     struct {
       int64_t in;
       int64_t out;
@@ -172,6 +173,37 @@ struct ActiveClip {
   // Start). Governs how a fresh fire interacts with this voice.
   VoiceMode voiceMode{VoiceMode::Polyphonic};
 };
+
+/// ORP133 G1: Transport event kinds posted from the audio thread.
+///
+/// The audio→UI callback ring used to carry std::function<void()> payloads,
+/// which violates the callback rule in docs/REALTIME_AUDIT.md ("no
+/// std::function ownership changes on realtime callbacks") — small-object
+/// optimization may hide the allocation today, but it is not a portable
+/// guarantee. The ring now carries these fixed POD events; processCallbacks()
+/// translates them into the host's ITransportCallback virtuals on the UI
+/// thread. Event emission points map 1:1 to the old postCallback sites, so
+/// callback ordering and timing are unchanged.
+enum class TransportEventType : uint8_t {
+  ClipStarted = 0,
+  ClipStopped,
+  ClipLooped,
+  ClipRestarted,
+  ClipSeeked,
+  BufferUnderrun
+};
+
+/// ORP133 G1: Trivially-copyable event payload for the audio→UI SPSC ring.
+struct TransportEvent {
+  TransportEventType type;
+  ClipHandle handle;          ///< Subject clip (0 for transport-wide events)
+  uint32_t voiceId;           ///< Voice instance when known, 0 otherwise (diagnostic)
+  TransportPosition position; ///< Position payload delivered to the callback
+};
+
+static_assert(std::is_trivially_copyable_v<TransportEvent>,
+              "TransportEvent must stay POD: it is copied through the audio->UI ring "
+              "with no construction/destruction on the audio thread");
 
 /// ORP127 G1: Immutable per-voice snapshot published by the audio thread for
 /// lock-free UI-thread queries. Plain-old-data so it can be copied wholesale
@@ -301,8 +333,10 @@ private:
   /// @note Deprecated: Use removeActiveVoice() for multi-voice
   void removeActiveClip(ClipHandle handle);
 
-  /// Post callback to UI thread
-  void postCallback(std::function<void()> callback);
+  /// ORP133 G1: Post a POD transport event to the UI thread (audio thread only).
+  /// Drops the event (and bumps m_droppedCallbackCount) if the ring is full —
+  /// never blocks the audio thread.
+  void postTransportEvent(const TransportEvent& event);
 
   /// Calculate fade gain based on curve type
   /// @param normalizedPosition Position in fade (0.0 to 1.0)
@@ -361,16 +395,25 @@ private:
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};
 
-  // ORP121 C-03: Lock-free callback queue (Audio → UI thread)
+  // ORP121 C-03 / ORP133 G1: Lock-free event queue (Audio → UI thread)
   // SPSC ring buffer: Audio thread writes, UI thread reads - no contention
-  // Power of 2 size for efficient modulo via bitwise AND
+  // Power of 2 size for efficient modulo via bitwise AND. Payload is the POD
+  // TransportEvent (no std::function on the audio thread).
   static constexpr size_t CALLBACK_QUEUE_SIZE = 256;
-  std::array<std::function<void()>, CALLBACK_QUEUE_SIZE> m_callbackRing;
+  std::array<TransportEvent, CALLBACK_QUEUE_SIZE> m_eventRing{};
   std::atomic<size_t> m_callbackWriteIndex{0};
   std::atomic<size_t> m_callbackReadIndex{0};
 
   // Diagnostic counter for dropped callbacks (queue overflow)
   std::atomic<uint32_t> m_droppedCallbackCount{0};
+
+#ifndef NDEBUG
+  // ORP133 G3: Debug-only enforcement of the command queue's single-producer
+  // contract. The first thread to post a command is captured; any command
+  // posted from a different thread afterwards trips an assert. Compiled out in
+  // release builds (zero cost on the fast path).
+  mutable std::atomic<std::thread::id> m_commandProducerThread{};
+#endif
 
   // ORP127 G4: default clip-gain smoothing time. 5ms is a broadcast-console
   // norm (Yamaha CL/QL fader smoothing sits ~10ms); short enough to feel

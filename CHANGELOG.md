@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - ORP133 Realtime Callback Safety & Contract Truth (2026-07-09)
+
+- **Audio→UI event ring is now POD (ORP133 G1).** The transport's internal
+  callback ring no longer stores `std::function<void()>` payloads; the audio
+  thread enqueues trivially-copyable `TransportEvent`s and
+  `processCallbacks()` translates them into the unchanged public
+  `ITransportCallback` virtuals on the UI thread. Emission points, ordering,
+  and timing are 1:1 with the previous behavior. No public API change.
+- **Command-queue threading contract documented and enforced (ORP133 G3).**
+  Control-mutating transport methods are single-producer: exactly one control
+  thread may call them (funnel UI/MIDI/OSC through one dispatcher). Queries
+  remain lock-free and callable from any thread. Debug builds now assert if
+  commands are posted from more than one thread. All control entry points
+  funnel through a single `postCommand()` choke point.
+
+### Deprecated - ORP133
+
+- **`ITransportController::stopAllInGroup()` (ORP133 G2).** This method was a
+  silent no-op in every release (the transport has no clip→group mapping;
+  grouping is a host concern). It now returns
+  `SessionGraphError::NotSupported` and is documented as deprecated. Hosts
+  implement scoped group-stop with their own group model on top of
+  `stopOtherClips()` (ORP127 G7 choke primitive). The method is retained for
+  source compatibility and may be removed in a future major version.
+
 ### Added - ORP109 Professional Features (2025-11-11)
 
 #### Feature 1: Routing Matrix API (ORP109, ORP110)
