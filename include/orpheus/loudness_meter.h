@@ -26,7 +26,8 @@ public:
 
   void setSampleRate(double sample_rate) {
     sampleRate_ = std::max(8000.0, sample_rate);
-    segmentTargetSamples_ = std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(sampleRate_ * 0.1)));
+    segmentTargetSamples_ =
+        std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(sampleRate_ * 0.1)));
     for (auto& filter : filters_) {
       filter.configure(sampleRate_);
     }
@@ -63,8 +64,8 @@ public:
       const float weightedLeft = filters_[0].process(leftSample);
       const float weightedRight = filters_[1].process(rightSample);
 
-      segmentEnergy_ += static_cast<double>(weightedLeft) * static_cast<double>(weightedLeft)
-                      + static_cast<double>(weightedRight) * static_cast<double>(weightedRight);
+      segmentEnergy_ += static_cast<double>(weightedLeft) * static_cast<double>(weightedLeft) +
+                        static_cast<double>(weightedRight) * static_cast<double>(weightedRight);
       ++segmentSamples_;
 
       if (segmentSamples_ >= segmentTargetSamples_) {
@@ -73,8 +74,12 @@ public:
     }
   }
 
-  [[nodiscard]] float shortTermLufs() const { return shortTermLufs_; }
-  [[nodiscard]] float integratedLufs() const { return integratedLufs_; }
+  [[nodiscard]] float shortTermLufs() const {
+    return shortTermLufs_;
+  }
+  [[nodiscard]] float integratedLufs() const {
+    return integratedLufs_;
+  }
 
 private:
   struct Biquad {
@@ -96,8 +101,8 @@ private:
       return static_cast<float>(output);
     }
 
-    std::array<double, 3> b { 1.0, 0.0, 0.0 };
-    std::array<double, 3> a { 1.0, 0.0, 0.0 };
+    std::array<double, 3> b{1.0, 0.0, 0.0};
+    std::array<double, 3> a{1.0, 0.0, 0.0};
     double z1 = 0.0;
     double z2 = 0.0;
   };
@@ -121,22 +126,16 @@ private:
       return highPass.process(highShelf.process(sample));
     }
 
-    static void normalize(std::array<double, 3>& b,
-                          std::array<double, 3>& a,
-                          double a0,
-                          double a1,
+    static void normalize(std::array<double, 3>& b, std::array<double, 3>& a, double a0, double a1,
                           double a2) {
       b[0] /= a0;
       b[1] /= a0;
       b[2] /= a0;
-      a = { 1.0, a1 / a0, a2 / a0 };
+      a = {1.0, a1 / a0, a2 / a0};
     }
 
-    static void configureShelfCoefficients(std::array<double, 3>& b,
-                                           std::array<double, 3>& a,
-                                           double sample_rate,
-                                           double frequency_hz,
-                                           double gain_db,
+    static void configureShelfCoefficients(std::array<double, 3>& b, std::array<double, 3>& a,
+                                           double sample_rate, double frequency_hz, double gain_db,
                                            double slope) {
       constexpr double pi = 3.14159265358979323846;
 
@@ -144,28 +143,21 @@ private:
       const double omega = 2.0 * pi * frequency_hz / sample_rate;
       const double sine = std::sin(omega);
       const double cosine = std::cos(omega);
-      const double alpha = sine / 2.0
-          * std::sqrt((A + 1.0 / A) * (1.0 / slope - 1.0) + 2.0);
+      const double alpha = sine / 2.0 * std::sqrt((A + 1.0 / A) * (1.0 / slope - 1.0) + 2.0);
       const double beta = 2.0 * std::sqrt(A) * alpha;
 
       b = {
-        A * ((A + 1.0) + (A - 1.0) * cosine + beta),
-        -2.0 * A * ((A - 1.0) + (A + 1.0) * cosine),
-        A * ((A + 1.0) + (A - 1.0) * cosine - beta),
+          A * ((A + 1.0) + (A - 1.0) * cosine + beta),
+          -2.0 * A * ((A - 1.0) + (A + 1.0) * cosine),
+          A * ((A + 1.0) + (A - 1.0) * cosine - beta),
       };
 
-      normalize(b,
-                a,
-                (A + 1.0) - (A - 1.0) * cosine + beta,
-                2.0 * ((A - 1.0) - (A + 1.0) * cosine),
+      normalize(b, a, (A + 1.0) - (A - 1.0) * cosine + beta, 2.0 * ((A - 1.0) - (A + 1.0) * cosine),
                 (A + 1.0) - (A - 1.0) * cosine - beta);
     }
 
-    static void configureHighPassCoefficients(std::array<double, 3>& b,
-                                              std::array<double, 3>& a,
-                                              double sample_rate,
-                                              double frequency_hz,
-                                              double q) {
+    static void configureHighPassCoefficients(std::array<double, 3>& b, std::array<double, 3>& a,
+                                              double sample_rate, double frequency_hz, double q) {
       constexpr double pi = 3.14159265358979323846;
 
       const double omega = 2.0 * pi * frequency_hz / sample_rate;
@@ -174,31 +166,28 @@ private:
       const double alpha = sine / (2.0 * q);
 
       b = {
-        (1.0 + cosine) / 2.0,
-        -(1.0 + cosine),
-        (1.0 + cosine) / 2.0,
+          (1.0 + cosine) / 2.0,
+          -(1.0 + cosine),
+          (1.0 + cosine) / 2.0,
       };
 
       normalize(b, a, 1.0 + alpha, -2.0 * cosine, 1.0 - alpha);
     }
 
-    static std::array<std::array<double, 3>, 2> designHighShelf(double sample_rate,
-                                                                 double frequency_hz,
-                                                                 double gain_db,
-                                                                 double slope) {
-      std::array<double, 3> b {};
-      std::array<double, 3> a {};
+    static std::array<std::array<double, 3>, 2>
+    designHighShelf(double sample_rate, double frequency_hz, double gain_db, double slope) {
+      std::array<double, 3> b{};
+      std::array<double, 3> a{};
       configureShelfCoefficients(b, a, sample_rate, frequency_hz, gain_db, slope);
-      return { b, a };
+      return {b, a};
     }
 
     static std::array<std::array<double, 3>, 2> designHighPass(double sample_rate,
-                                                                double frequency_hz,
-                                                                double q) {
-      std::array<double, 3> b {};
-      std::array<double, 3> a {};
+                                                               double frequency_hz, double q) {
+      std::array<double, 3> b{};
+      std::array<double, 3> a{};
       configureHighPassCoefficients(b, a, sample_rate, frequency_hz, q);
-      return { b, a };
+      return {b, a};
     }
 
     static constexpr double kHighShelfFrequencyHz = 1681.974450955533;
@@ -244,7 +233,8 @@ private:
       energy += value;
     }
 
-    shortTermLufs_ = lufsFromMeanSquare(energy / static_cast<double>(recentShortTermSegments_.size()));
+    shortTermLufs_ =
+        lufsFromMeanSquare(energy / static_cast<double>(recentShortTermSegments_.size()));
   }
 
   void updateIntegrated() {
@@ -292,9 +282,10 @@ private:
       }
     }
 
-    integratedLufs_ = integratedCount > 0
-        ? lufsFromMeanSquare(integratedEnergy / static_cast<double>(integratedCount))
-        : kSilenceLufs;
+    integratedLufs_ =
+        integratedCount > 0
+            ? lufsFromMeanSquare(integratedEnergy / static_cast<double>(integratedCount))
+            : kSilenceLufs;
   }
 
   [[nodiscard]] static float lufsFromMeanSquare(double mean_square) {
@@ -311,7 +302,7 @@ private:
 
   double sampleRate_ = 48000.0;
   std::size_t segmentTargetSamples_ = 4800;
-  std::array<ChannelFilter, 2> filters_ {};
+  std::array<ChannelFilter, 2> filters_{};
   double segmentEnergy_ = 0.0;
   std::size_t segmentSamples_ = 0;
   std::deque<double> recentSegments_;
