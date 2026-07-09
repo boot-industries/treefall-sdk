@@ -3,8 +3,12 @@
 """Static realtime-safety audit for Orpheus callback paths.
 
 The audit is intentionally conservative. It fails on forbidden patterns in
-hardware-driver callbacks and reports known transport/app debt separately so CI
-can guard new driver regressions while the streaming architecture is developed.
+hardware-driver callbacks and scans the transport render path for file-reader
+patterns. Since the ORP134 G1 streaming migration the in-repo scan runs with
+--fail-known-debt in CI (strict gate): the render path must stay free of
+readSamples/seek/decoder calls. Adjacent-repo app debt is still reported (and
+fails under --fail-known-debt --include-adjacent) until the app-side sprints
+land in those repos.
 """
 
 from __future__ import annotations
@@ -132,12 +136,14 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             r"void\s+TransportController::processAudio\s*\(",
             False,
         ),
-        ScanTarget(
-            "libsndfile reader",
-            root / "src/core/audio_io/audio_file_reader_libsndfile.cpp",
-            r"Result<size_t>\s+AudioFileReaderLibsndfile::readSamples\s*\(",
-            False,
-        ),
+        # ORP134 G1 note: the former "libsndfile reader" target is retired.
+        # AudioFileReaderLibsndfile::readSamples of course contains readSamples/
+        # sf_readf_float — that is its job. It was tracked as debt only because
+        # the transport render path used to CALL it from the audio callback;
+        # since the prepared/streaming clip-source migration, readers are
+        # background-only decode APIs (prepareClipAudio / MediaStreamWorker)
+        # and the render-path target above is the strict gate that keeps them
+        # off the callback.
     ]
 
     if include_adjacent:

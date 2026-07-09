@@ -108,10 +108,14 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  # ORP134 G1: the streaming-reader migration landed, so the audit runs as the
+  # STRICT gate (ORP136 §2.1 / §4 "fail closed on realtime"): a reintroduced
+  # audio-thread read is a hard failure, not a tracked-debt report.
   add_test(NAME realtime_static_audit
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/realtime_audit.py
-      --root ${CMAKE_SOURCE_DIR})
+      --root ${CMAKE_SOURCE_DIR}
+      --fail-known-debt)
 
   # ORP133 G6: docs-path validation (broken internal links, references to the
   # extracted apps/clip-composer subdir, removed CMake options).

@@ -54,6 +54,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prove bit-exact float32 WAV and ≤1 LSB integer encodings via the SDK's own
   reader. FourTrack can drop its local `WavWriter` on the next submodule bump.
 
+- **The audio thread no longer reads files (ORP134 G1 — the program's
+  defining migration).** `processAudio()` used to call
+  `IAudioFileReader::readSamples()`/`seek()` per clip — blocking libsndfile
+  decode on the audio callback (tracked debt since ORP121). The transport now
+  renders from immutable, position-explicit `IClipSource` views built off the
+  audio thread: whole-file PCM decoded in `prepareClipAudio()`/`startClip()`
+  (control thread) for short clips, and a background-worker-fed fixed page
+  ring for long files (> ~30 s; internal threshold). A streaming cache miss
+  NEVER blocks: the clip renders silence for that buffer and the transport
+  emits the (previously never-fired) `onBufferUnderrun` callback while the
+  worker refills. Seeks became prefetch hints — there is no file cursor
+  anywhere near the callback — which also makes multi-voice playback of one
+  clip correct by construction (voices no longer fight over a shared reader
+  position). The public transport API is unchanged.
+  **Verified:** golden render-hash parity is bit-exact against the old
+  reading path (same hash, all block sizes); the runtime harness measures the
+  file-backed callback at ~0 read syscalls (was ~2,400 / ~4.9 MB per 300
+  buffers) with zero allocations; streaming prefill plays gap-free and
+  seek-past-window underruns recover; `tools/realtime_audit.py
+  --fail-known-debt` now PASSES in-repo and runs as the strict CI gate
+  (`realtime_static_audit`). Remaining `--include-adjacent` findings are
+  app-repo debt for the downstream sprints (REALTIME_AUDIT.md).
 - **Stable identity & time-domain primitives (ORP134 G2 — additive).** New
   public headers `identity.h` (opaque `SessionId`/`TrackId`/`ClipId`/
   `MediaId`/`AutomationLaneId` strong types over `uint64_t`, plus a

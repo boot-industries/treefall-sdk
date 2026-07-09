@@ -11,11 +11,11 @@
 //  * ReaderlessMultiClipRenderIsAllocationFree proves the pure render path
 //    (voices, fades, gain smoothing, routing, snapshot publish, event ring)
 //    performs ZERO C++ allocations/deallocations on the callback thread.
-//  * FileBackedRenderStillDoesFileIO_KnownDebt pins the KNOWN architecture
-//    debt (docs/REALTIME_AUDIT.md, KNOWN_DEBT_PATTERNS): file-backed clips
-//    still read from disk inside processAudio(). It asserts the I/O is
-//    OBSERVED — when the ORP134 G1 streaming reader lands, this test will
-//    fail, and must be flipped to assert ZERO I/O (the strict gate).
+//  * FileBackedRenderDoesNoFileIO is the STRICT gate (flipped when the
+//    ORP134 G1 prepared/streaming sources landed): file-backed clips render
+//    from memory-resident PCM; the audio thread performs no file I/O at all.
+//    Before G1 this test asserted the opposite (the KNOWN_DEBT era observed
+//    ~2,400 read syscalls / ~4.9 MB per 300 buffers).
 //
 // Lock/race coverage is deliberately delegated to the ThreadSanitizer suite
 // (voice_state_tsan_test + this file built under -fsanitize=thread); a
@@ -26,6 +26,7 @@
 
 #include "../../src/core/transport/transport_controller.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -34,6 +35,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace orpheus;
@@ -196,17 +198,17 @@ TEST_F(RealtimeHarnessTest, ReaderlessMultiClipRenderIsAllocationFree) {
 }
 
 // ============================================================================
-// KNOWN DEBT pin: file-backed clips still do file I/O inside the callback.
+// STRICT gate (ORP134 G1 flip point reached): file-backed clips perform NO
+// file I/O inside the callback. Decode happens in prepareClipAudio()/
+// startClip() on the control thread (prepared memory) or on the stream
+// worker (page ring); the audio thread memcpy-reads published PCM only.
 //
-// >>> ORP134 G1 FLIP POINT <<<
-// When the streaming reader lands and decode moves off the audio thread,
-// this test WILL FAIL (the I/O delta drops to ~0). That failure is the
-// signal to flip the assertions below to EXPECT_EQ(0, ...) — turning this
-// harness into the strict runtime gate that ORP134's acceptance requires —
-// and to flip tools/realtime_audit.py --fail-known-debt on in CI.
+// The /proc/self/io sampling itself costs a couple of tiny reads (observed
+// 2 syscalls / 112 bytes), so the bound is "far below one page", not zero.
+// The pre-G1 debt measured ~2,400 syscalls / ~4.9 MB in the same window.
 // ============================================================================
 
-TEST_F(RealtimeHarnessTest, FileBackedRenderStillDoesFileIO_KnownDebt) {
+TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
   auto before = readProcIoCounters();
   if (!before.has_value()) {
     GTEST_SKIP() << "/proc/self/io not available on this platform";
@@ -243,13 +245,159 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderStillDoesFileIO_KnownDebt) {
             << " bytes read, alloc violations = " << RtGuardState::allocViolations()
             << " (bytes = " << RtGuardState::allocViolationBytes() << ")\n";
 
-  // The debt is real and observable: libsndfile decodes on the audio thread
-  // (transport_controller.cpp render loop -> readSamples -> sf_readf_float).
-  EXPECT_GT(readCalls, 0u)
-      << "No file I/O observed on the audio thread. If the ORP134 streaming reader has "
-         "landed, FLIP this test: assert readCalls == 0 / readBytes == 0 and enable "
-         "realtime_audit.py --fail-known-debt in CI. Do not leave this inverted.";
-  EXPECT_GT(readBytes, 0u);
+  // Strict gate: no media I/O on the audio thread. Any regression that
+  // reintroduces callback-time decoding blows straight through this bound
+  // (the debt era measured ~4.9 MB here).
+  EXPECT_LT(readCalls, 8u) << "file I/O observed inside the audio callback";
+  EXPECT_LT(readBytes, 4096u) << "file I/O observed inside the audio callback";
+
+  // And the file-backed render path must stay allocation-free too.
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+}
+
+// ============================================================================
+// Streaming sources (ORP134 G1): long files play from a worker-fed page ring.
+// ============================================================================
+
+namespace {
+
+// Counts underrun events and remembers whether any samples were audible.
+class UnderrunCountingCallback : public ITransportCallback {
+public:
+  std::atomic<int> underruns{0};
+  void onClipStarted(ClipHandle, TransportPosition) override {}
+  void onClipStopped(ClipHandle, TransportPosition) override {}
+  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onBufferUnderrun(TransportPosition) override {
+    underruns.fetch_add(1, std::memory_order_relaxed);
+  }
+};
+
+bool bufferHasSignal(const std::vector<float>& left) {
+  for (float sample : left) {
+    if (sample != 0.0f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+TEST_F(RealtimeHarnessTest, StreamingSourcePlaysPrefilledWindowWithoutUnderrun) {
+  // Force the streaming path: anything longer than 1s streams.
+  m_transport->setPreparedSourceMaxFrames(48000);
+
+  UnderrunCountingCallback callback;
+  m_transport->setCallback(&callback);
+
+  // 10s file >> the 4-page resident window (~5.46s @ 48k).
+  std::string path = writeSineWav(m_tempDir, "stream_long.wav", 220.0f, 10.0f);
+  ASSERT_EQ(m_transport->registerClipAudio(1, path), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(1), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(1), SessionGraphError::OK);
+
+  // Render 4s of audio — fully inside the synchronously prefilled window, so
+  // playback must be gap-free even without giving the worker any wall time.
+  constexpr int kBuffers = (4 * 48000) / static_cast<int>(kBufferFrames);
+  RtGuardState::reset();
+  int buffersWithSignal = 0;
+  for (int i = 0; i < kBuffers; ++i) {
+    guardedCallback();
+    if (bufferHasSignal(m_left)) {
+      ++buffersWithSignal;
+    }
+  }
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(callback.underruns.load(), 0) << "prefilled window underran";
+  EXPECT_EQ(buffersWithSignal, kBuffers) << "silent buffers inside the prefilled window";
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u) << "streaming read path allocated";
+
+  m_transport->setCallback(nullptr);
+}
+
+TEST_F(RealtimeHarnessTest, StreamingSeekBeyondWindowUnderrunsSilentlyThenRecovers) {
+  m_transport->setPreparedSourceMaxFrames(48000);
+
+  UnderrunCountingCallback callback;
+  m_transport->setCallback(&callback);
+
+  std::string path = writeSineWav(m_tempDir, "stream_seek.wav", 220.0f, 10.0f);
+  ASSERT_EQ(m_transport->registerClipAudio(1, path), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(1), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(1), SessionGraphError::OK);
+  guardedCallback(); // materialize the voice
+
+  // Jump far beyond the resident window: the ring holds ~[0, 5.46s); seek 8s.
+  ASSERT_EQ(m_transport->seekClip(1, 8 * 48000), SessionGraphError::OK);
+
+  // The seek lands at the next callback; the target page is normally not
+  // resident yet, so the clip renders SILENCE + reports BufferUnderrun — and
+  // never blocks. Under heavy instrumentation (TSan) the 10ms worker poll can
+  // win the race and refill before this buffer renders; both outcomes honor
+  // the contract, so the strict miss assertions apply only when the miss
+  // actually happened. (The miss path itself is covered deterministically by
+  // StreamingClipSourceMissIsNonBlockingAndRecovers below.)
+  guardedCallback();
+  const bool firstPostSeekSilent = !bufferHasSignal(m_left);
+  m_transport->processCallbacks();
+  if (firstPostSeekSilent) {
+    EXPECT_GT(callback.underruns.load(), 0)
+        << "silent post-seek buffer must report a BufferUnderrun";
+  } else {
+    std::cout << "  - worker refilled before the first post-seek buffer "
+                 "(instrumentation slowdown); miss path covered by the unit test\n";
+  }
+
+  // Give the stream worker wall time to refill at the new position, then
+  // playback must recover with real audio.
+  bool recovered = false;
+  for (int attempt = 0; attempt < 200 && !recovered; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    guardedCallback();
+    recovered = bufferHasSignal(m_left);
+  }
+  m_transport->processCallbacks();
+  EXPECT_TRUE(recovered) << "stream worker never refilled after the seek";
+
+  m_transport->setCallback(nullptr);
+}
+
+TEST_F(RealtimeHarnessTest, StreamingClipSourceMissIsNonBlockingAndRecovers) {
+  // Deterministic miss coverage: drive a StreamingClipSource directly with no
+  // worker thread, so nothing can refill behind the test's back.
+  std::string path = writeSineWav(m_tempDir, "stream_unit.wav", 220.0f, 10.0f);
+  auto reader = createAudioFileReader();
+  ASSERT_NE(reader, nullptr);
+  auto opened = reader->open(path);
+  ASSERT_TRUE(opened.isOk());
+
+  auto source = std::make_shared<StreamingClipSource>(
+      std::shared_ptr<IAudioFileReader>(std::move(reader)), opened.value.num_channels,
+      opened.value.duration_samples);
+  source->prefill(0);
+
+  std::vector<float> buffer(kBufferFrames * opened.value.num_channels, 0.0f);
+  size_t framesRead = 0;
+
+  // Resident read at the prefilled head succeeds with real audio.
+  ASSERT_TRUE(source->read(0, buffer.data(), kBufferFrames, framesRead));
+  EXPECT_EQ(framesRead, kBufferFrames);
+
+  // 8s is far outside the prefilled window: a guaranteed miss. read() must
+  // return false immediately (framesRead 0, dest untouched) — never block.
+  const int64_t farPos = 8 * 48000;
+  framesRead = 123;
+  EXPECT_FALSE(source->read(farPos, buffer.data(), kBufferFrames, framesRead));
+  EXPECT_EQ(framesRead, 0u);
+
+  // One worker pass (called synchronously here) refills at the demand the
+  // missed read published; the same read then succeeds.
+  source->service();
+  ASSERT_TRUE(source->read(farPos, buffer.data(), kBufferFrames, framesRead));
+  EXPECT_EQ(framesRead, kBufferFrames);
 }
 
 // ============================================================================

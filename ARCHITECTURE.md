@@ -70,7 +70,7 @@ graph TD
   downstream applications: `occ-app-platform` (session recovery, preferences,
   health telemetry) and `shmui-juce` (JUCE UI components). Not part of the
   core SDK libraries. (The former TypeScript driver layer is archived — see
-  `docs/DECISION_PACKAGES.md`.)
+  `docs/orp/_process/archive/DECISION_PACKAGES.md`.)
 - **In-tree apps** (`apps/`) – `wave-finder` (app-platform smoke-test shell)
   and `juce-demo-host` (JUCE demo host). Production applications — Clip
   Composer, FourTrack, FreqFinder — live in their own repositories and consume
@@ -224,7 +224,7 @@ struct ActiveClip {
     std::atomic<uint64_t> currentFrame;
     std::atomic<float> gainLinear;
     std::atomic<bool> loopEnabled;
-    std::shared_ptr<IAudioFileReader> reader; // Immutable after creation
+    std::shared_ptr<IClipSource> source; // Prepared/streamed PCM view (ORP134 G1)
     // ... fade state, trim points
 };
 ```

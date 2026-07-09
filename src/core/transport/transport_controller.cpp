@@ -126,8 +126,12 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
-      const auto& entry = it->second;
-      context->reader = entry.reader;
+      auto& entry = it->second;
+      // ORP134 G1: lazy preparation for hosts that never call
+      // prepareClipAudio() — decode/stream setup happens HERE on the control
+      // thread, never on the audio thread.
+      ensurePreparedSourceLocked(entry);
+      context->source = entry.source;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
       context->fileLengthSamples = entry.metadata.duration_samples; // ORP127 G3
@@ -147,7 +151,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->voiceMode = entry.voiceMode; // ORP127 G5
     } else {
       // Clip not registered - use defaults for testing
-      context->reader = nullptr;
+      context->source = nullptr;
       context->numChannels = 2;
       context->trimInSamples = 0;
       context->trimOutSamples = 48000 * 60;    // Default 60s
@@ -315,8 +319,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
 
-    // Skip if no audio file registered
-    if (!clip.reader || !clip.reader->isOpen()) {
+    // Skip if no audio source prepared (unregistered/test clips)
+    if (!clip.source) {
       continue;
     }
 
@@ -332,20 +336,18 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     // CRITICAL: Clamp position to [trimIn, trimOut) range to maintain edit laws
     // This ensures getClipPosition() never returns values outside user-defined boundaries
     if (clip.currentSample < trimIn) {
-      // Position below IN point - clamp to IN (enforce Edit Law #1)
+      // Position below IN point - clamp to IN (enforce Edit Law #1).
+      // ORP134 G1: sources are position-explicit — no reader seek; just hint
+      // the streaming prefetcher.
       clip.currentSample = trimIn;
-      if (clip.reader) {
-        clip.reader->seek(trimIn);
-      }
+      clip.source->setDemand(trimIn);
     } else if (clip.currentSample >= trimOut) {
       // Position at or past OUT point - handle loop or stop
       bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
       if (shouldLoop) {
         // Loop mode: restart from IN point
         clip.currentSample = trimIn;
-        if (clip.reader) {
-          clip.reader->seek(trimIn);
-        }
+        clip.source->setDemand(trimIn);
 
         // ORP097 Bug 7 Fix: Mark that clip has looped
         clip.hasLoopedOnce = true;
@@ -408,10 +410,10 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     size_t framesToRead =
         static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
 
-    // Note: We don't seek on every callback - the reader maintains its position
-    // The initial seek to trimInSamples happens in addActiveClip()
-
-    // Read audio from file
+    // ORP134 G1: reads are position-explicit against the prepared/streamed
+    // source — the audio thread never touches a file reader or a shared
+    // cursor. (This also makes multi-voice playback of one clip correct:
+    // every voice reads at its own currentSample.)
     size_t numFileChannels = clip.numChannels;
 
     // Use this clip's dedicated read buffer (no shared buffer conflicts!)
@@ -425,15 +427,32 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       continue;
     }
 
-    // Read samples from audio file into THIS clip's buffer
-    // Use captured shared_ptr reader (thread-safe, no map lookup needed)
-    auto readResult = clip.reader->readSamples(clipReadBuffer, framesToRead);
+    // Copy decoded PCM from this clip's source into THIS clip's buffer.
+    // A streaming cache miss NEVER blocks: the clip renders silence for this
+    // buffer, the transport reports a BufferUnderrun, and the position still
+    // advances so the timeline keeps moving while the worker catches up.
+    size_t framesRead = 0;
+    if (!clip.source->read(clip.currentSample, clipReadBuffer, framesToRead, framesRead)) {
+      TransportEvent event{};
+      event.type = TransportEventType::BufferUnderrun;
+      event.handle = clip.handle;
+      event.voiceId = clip.voiceId;
+      event.position = getCurrentPosition();
+      postTransportEvent(event);
 
-    if (!readResult.isOk()) {
+      clip.source->setDemand(clip.currentSample);
+      clip.currentSample += static_cast<int64_t>(framesToRead);
       continue;
     }
 
-    size_t framesRead = readResult.value;
+    if (framesRead == 0) {
+      // Past EOF (e.g. OUT-tail horizon beyond the file). Advance so stop
+      // fades can complete, mirroring the source-less advance path.
+      if (clip.isStopping) {
+        clip.currentSample += static_cast<int64_t>(numFrames);
+      }
+      continue;
+    }
 
     // ORP121 A-01: Stereo output to L/R channel buffers (indices i*2 and i*2+1)
     // No mono sum - preserves source channel separation per ST2110-30
@@ -555,12 +574,12 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     clip.currentSample += static_cast<int64_t>(framesRead);
   }
 
-  // Multi-voice fix: Advance position for clips WITHOUT readers (test clips, stopped clips)
+  // Multi-voice fix: Advance position for clips WITHOUT sources (test clips)
   // This ensures fade-outs complete properly even when no audio is being rendered
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
-    if (!clip.reader || !clip.reader->isOpen()) {
-      // Clip has no reader - advance position by buffer size so fades can complete
+    if (!clip.source) {
+      // Clip has no source - advance position by buffer size so fades can complete
       clip.currentSample += static_cast<int64_t>(numFrames);
     }
   }
@@ -606,10 +625,10 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
 
       if (shouldLoop) {
-        // Loop: seek back to trim IN point (works even without reader)
+        // Loop: jump back to trim IN point (works even without a source)
         int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-        if (clip.reader) {
-          clip.reader->seek(trimIn);
+        if (clip.source) {
+          clip.source->setDemand(trimIn);
         }
         clip.currentSample = trimIn;
 
@@ -721,16 +740,12 @@ void TransportController::processCommands() {
           // This prevents fade calculation overflow in processAudio()
           if (m_activeClips[i].currentSample < trimIn) {
             m_activeClips[i].currentSample = trimIn;
-            if (m_activeClips[i].reader) {
-              m_activeClips[i].reader->seek(trimIn);
+            if (m_activeClips[i].source) {
+              m_activeClips[i].source->setDemand(trimIn);
             }
           } else if (m_activeClips[i].currentSample >= trimOut) {
             m_activeClips[i].currentSample = trimOut;
-            // Don't seek to trimOut (EOF), just let it stop naturally in processAudio logic
-            // But ensure reader is consistent if we needed to read
-            if (m_activeClips[i].reader) {
-              m_activeClips[i].reader->seek(trimOut);
-            }
+            // Position clamps to OUT; playback stops naturally in processAudio.
           }
         }
       }
@@ -792,8 +807,8 @@ void TransportController::processCommands() {
 
           trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
           clip.currentSample = trimIn;
-          if (clip.reader) {
-            clip.reader->seek(trimIn);
+          if (clip.source) {
+            clip.source->setDemand(trimIn);
           }
 
           // Cancel any fade-out in progress.
@@ -831,8 +846,8 @@ void TransportController::processCommands() {
           foundAnyVoice = true;
           ActiveClip& clip = m_activeClips[i];
           clip.currentSample = position;
-          if (clip.reader) {
-            clip.reader->seek(position);
+          if (clip.source) {
+            clip.source->setDemand(position);
           }
         }
       }
@@ -932,8 +947,8 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   // ORP127 G5: reset a live voice to its trim IN for an in-place restart.
   int64_t trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
   clip.currentSample = trimIn;
-  if (clip.reader) {
-    clip.reader->seek(trimIn);
+  if (clip.source) {
+    clip.source->setDemand(trimIn);
   }
   clip.isStopping = false;
   clip.fadeOutGain = 1.0f;
@@ -997,8 +1012,8 @@ void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
       // still applies via hasLoopedOnce=false.
       int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
       primary->currentSample = trimIn;
-      if (primary->reader) {
-        primary->reader->seek(trimIn);
+      if (primary->source) {
+        primary->source->setDemand(trimIn);
       }
       primary->isStopping = false;
       primary->fadeOutGain = 1.0f;
@@ -1107,7 +1122,7 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize loop mode
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
-  clip.reader = context->reader; // Store shared_ptr (maintains reference count)
+  clip.source = context->source; // Store shared_ptr (maintains reference count)
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
@@ -1122,9 +1137,10 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // ORP097 Bug 7 Fix: Initialize loop state
   clip.hasLoopedOnce = false;
 
-  // Seek to trim IN point once when starting
-  if (clip.reader) {
-    clip.reader->seek(context->trimInSamples);
+  // Prime the streaming prefetcher at the trim IN point (no-op for prepared
+  // sources; sources are position-explicit so there is nothing to seek).
+  if (clip.source) {
+    clip.source->setDemand(context->trimInSamples);
   }
 }
 
@@ -1172,7 +1188,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce;
-        dest.reader = src.reader;
+        dest.source = src.source;
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
         dest.voiceMode = src.voiceMode;                 // ORP127 G5
@@ -1228,7 +1244,7 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce; // ORP097 Bug 7 Fix
-        dest.reader = src.reader;               // Copy shared_ptr (atomic refcount increment)
+        dest.source = src.source;               // Copy shared_ptr (atomic refcount increment)
         dest.numChannels = src.numChannels;
       }
       --m_activeClipCount;
@@ -1442,42 +1458,59 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Do not seek/read a shared reader while an active voice may be using it on
-  // the audio thread. Future streaming readers should remove this limitation.
+  // Preserved contract: preparation is a pre-playback operation. (With
+  // ORP134 G1 sources a re-preparation while playing would actually be safe -
+  // active voices hold their own reference - but the historical NotReady
+  // keeps host behavior unchanged.)
   if (isClipPlaying(handle)) {
     return SessionGraphError::NotReady;
   }
 
-  std::shared_ptr<IAudioFileReader> reader;
-  uint16_t numChannels = 0;
-  int64_t trimIn = 0;
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    reader = it->second.reader;
-    numChannels = it->second.metadata.num_channels;
-    trimIn = it->second.trimInSamples;
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+  return ensurePreparedSourceLocked(it->second);
+}
+
+SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry& entry) {
+  // ORP134 G1: build the realtime playback source on the CONTROL thread. All
+  // decode/resample/file I/O happens here (or on the stream worker) - the
+  // audio thread only ever memcpy-reads the published source.
+  if (entry.source) {
+    return SessionGraphError::OK;
   }
 
-  if (!reader || !reader->isOpen() || numChannels == 0 || numChannels > MAX_FILE_CHANNELS) {
+  const uint16_t numChannels = entry.metadata.num_channels;
+  if (!entry.reader || !entry.reader->isOpen() || numChannels == 0 ||
+      numChannels > MAX_FILE_CHANNELS) {
     return SessionGraphError::NotReady;
   }
 
-  SessionGraphError seekResult = reader->seek(trimIn);
-  if (seekResult != SessionGraphError::OK) {
-    return seekResult;
+  const int64_t lengthFrames = entry.metadata.duration_samples;
+  if (lengthFrames <= m_preparedSourceMaxFrames) {
+    // Short clip: decode the whole file (engine-rate; entry.reader is already
+    // wrapped in the ORP127 G6 resampler when rates differ).
+    auto prepared = PreparedClipSource::decode(*entry.reader, numChannels, lengthFrames);
+    if (!prepared) {
+      return SessionGraphError::InternalError;
+    }
+    entry.source = prepared;
+    return SessionGraphError::OK;
   }
 
-  float scratch[MAX_FILE_CHANNELS] = {};
-  auto readResult = reader->readSamples(scratch, 1);
-  if (!readResult.isOk()) {
-    return readResult.error;
+  // Long file: stream through a fixed page ring. Prefill the window at the
+  // trim IN synchronously so playback starts without an initial underrun,
+  // then hand the source to the background worker for steady-state refills.
+  auto streaming = std::make_shared<StreamingClipSource>(entry.reader, numChannels, lengthFrames);
+  streaming->prefill(entry.trimInSamples);
+  if (!m_streamWorker) {
+    m_streamWorker = std::make_unique<MediaStreamWorker>();
   }
-
-  return reader->seek(trimIn);
+  m_streamWorker->attach(streaming);
+  entry.source = streaming;
+  return SessionGraphError::OK;
 }
 
 SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
