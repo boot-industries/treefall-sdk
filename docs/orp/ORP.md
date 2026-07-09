@@ -4,13 +4,13 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP124 Architecture Cross-Reference Matrix]]
 - [[ORP123 Wireframes and Documentation Update]]
-- [[ORP118 Multi-Voice Architecture and Audio Summing Topology]]
 
 ## All Documents
 
@@ -87,6 +87,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
+- [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 
 ## Navigation
 
