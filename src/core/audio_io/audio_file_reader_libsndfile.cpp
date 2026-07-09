@@ -112,6 +112,64 @@ Result<size_t> AudioFileReaderLibsndfile::readSamples(float* buffer, size_t num_
   return result;
 }
 
+Result<size_t> AudioFileReaderLibsndfile::readSamplesEndingAt(int64_t end_sample, float* buffer,
+                                                              size_t num_frames) {
+  // Backward/windowed read (ORP128, FTR018). Reads the frame window
+  // [end_sample - num_frames + 1, end_sample] in forward order and restores the
+  // prior read position. Locked like seek()/open()/close() — this is a
+  // background/streaming primitive, not an audio-callback path.
+  Result<size_t> result;
+  result.value = 0;
+
+  if (buffer == nullptr) {
+    result.error = SessionGraphError::InvalidParameter;
+    result.errorMessage = "readSamplesEndingAt: null buffer";
+    return result;
+  }
+
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (!m_file) {
+    result.error = SessionGraphError::NotReady;
+    result.errorMessage = "readSamplesEndingAt: file not open";
+    return result;
+  }
+  if (num_frames == 0 || end_sample < 0) {
+    return result; // nothing to read; value == 0, OK
+  }
+
+  // Window start, clamped so we never request negative indices. The in-range
+  // span shrinks by however much the window underflows below 0.
+  const int64_t requested_start = end_sample - static_cast<int64_t>(num_frames) + 1;
+  const int64_t start = requested_start < 0 ? 0 : requested_start;
+  const sf_count_t in_range = static_cast<sf_count_t>(end_sample - start + 1);
+
+  const int64_t prior_position = m_current_position.load(std::memory_order_relaxed);
+
+  if (sf_seek(m_file, start, SEEK_SET) < 0) {
+    sf_seek(m_file, prior_position, SEEK_SET); // best-effort restore
+    result.error = SessionGraphError::InternalError;
+    result.errorMessage = "readSamplesEndingAt: seek failed";
+    return result;
+  }
+
+  const sf_count_t read = sf_readf_float(m_file, buffer, in_range);
+
+  // Restore the read cursor regardless of the read outcome.
+  sf_seek(m_file, prior_position, SEEK_SET);
+  m_current_position.store(prior_position, std::memory_order_release);
+
+  if (read < 0) {
+    result.error = SessionGraphError::InternalError;
+    result.errorMessage =
+        "readSamplesEndingAt: failed to read samples: " + std::string(sf_strerror(m_file));
+    return result;
+  }
+
+  result.value = static_cast<size_t>(read);
+  return result;
+}
+
 SessionGraphError AudioFileReaderLibsndfile::seek(int64_t sample_position) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
