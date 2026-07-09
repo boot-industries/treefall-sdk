@@ -20,6 +20,26 @@ target_include_directories(polyphase_resampler_test
 
 add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
 
+# ORP128/FTR018 §2: scrub resampler unit test. Standalone — links only
+# orpheus_audio_utils (no libsndfile, no JUCE, host-neutral).
+add_executable(scrub_resampler_test
+    scrub_resampler_test.cpp
+)
+
+target_link_libraries(scrub_resampler_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(scrub_resampler_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(NAME scrub_resampler_test COMMAND scrub_resampler_test)
+
 # Find libsndfile (needed because orpheus_audio_io is static)
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)
@@ -33,6 +53,37 @@ if(NOT SNDFILE_FOUND)
         set(SNDFILE_FOUND TRUE)
     endif()
 endif()
+
+# ORP128/FTR018 §1: backward/windowed read (readSamplesEndingAt). The base-default
+# half (in-memory fake reader) is host-neutral; the libsndfile-override half is
+# compiled in only when sndfile is present (guarded by ORPHEUS_HAVE_SNDFILE).
+add_executable(reverse_read_test
+    reverse_read_test.cpp
+)
+
+target_link_libraries(reverse_read_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(reverse_read_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/core
+)
+
+if(SNDFILE_FOUND)
+    target_compile_definitions(reverse_read_test PRIVATE ORPHEUS_HAVE_SNDFILE)
+    target_include_directories(reverse_read_test PRIVATE ${SNDFILE_INCLUDE_DIRS})
+    target_link_libraries(reverse_read_test PRIVATE ${SNDFILE_LIBRARIES})
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(reverse_read_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+    endif()
+endif()
+
+add_test(NAME reverse_read_test COMMAND reverse_read_test)
 
 # Audio file reader tests (requires libsndfile)
 if(SNDFILE_FOUND)
