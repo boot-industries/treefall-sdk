@@ -3,8 +3,11 @@
 This index catalogs public entry points exposed by the Orpheus SDK workspace. Update this document whenever new packages or
 notable APIs are added.
 
-**Last Updated:** 2025-11-11 (ORP109 features)
-**SDK Version:** v1.0.0-rc.2 (unreleased)
+**Last Updated:** 2026-07-09 (ORP133 truth pass)
+**SDK Version:** 0.3.0 — the authoritative version is `project(orpheus VERSION ...)`
+in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
+release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
+labels.)
 
 ---
 
@@ -104,36 +107,39 @@ notable APIs are added.
 
 ## JavaScript Packages (Archived)
 
-**Note:** TypeScript packages previously in `packages/` have been archived. See [DECISION_PACKAGES.md](DECISION_PACKAGES.md) for rationale (C++ SDK focus).
+**Note:** The former TypeScript packages have been **archived and removed from
+the tree** — nothing under `packages/` is JavaScript today. See
+[DECISION_PACKAGES.md](orp/_process/archive/DECISION_PACKAGES.md) for rationale (C++ SDK focus).
 
-| Package                  | Entry Point                   | Notes                                          | Status   |
-| ------------------------ | ----------------------------- | ---------------------------------------------- | -------- |
-| `@orpheus/shmui`         | `packages/shmui/src/index.js` | React components and UI helpers                | Archived |
-| `@orpheus/engine-native` | `packages/engine-native/`     | Node/Electron bindings wrapping the C++ engine | Archived |
-| `@orpheus/engine-wasm`   | _Planned_                     | WebAssembly bundle                             | Archived |
-| `@orpheus/client`        | _Planned_                     | Contract negotiation and command helpers       | Archived |
+| Package (archived)       | Former Role                                    | Status   |
+| ------------------------ | ---------------------------------------------- | -------- |
+| `@orpheus/shmui`         | React components and UI helpers                | Archived |
+| `@orpheus/engine-native` | Node/Electron bindings wrapping the C++ engine | Archived |
+| `@orpheus/engine-wasm`   | WebAssembly bundle (never shipped)             | Archived |
+| `@orpheus/client`        | Contract negotiation and command helpers       | Archived |
 
 ---
 
 ## C++ Components
 
-| Component   | Location    | Description                                                        |
-| ----------- | ----------- | ------------------------------------------------------------------ |
-| Core Engine | `src/`      | Primary C++ source compiled into static libraries.                 |
-| Adapters    | `adapters/` | Integration points for external hosts (minhost, REAPER).           |
-| Tests       | `tests/`    | GoogleTest-driven validation (270+ unit tests).                    |
-| Apps        | `apps/`     | Applications built on SDK (Clip Composer, Wave Finder, FX Engine). |
+| Component   | Location    | Description                                                                  |
+| ----------- | ----------- | ---------------------------------------------------------------------------- |
+| Core Engine | `src/`      | Primary C++ source compiled into static libraries.                            |
+| Adapters    | `adapters/` | Integration points for external hosts (minhost, REAPER).                      |
+| Packages    | `packages/` | Active C++/JUCE app packages (`occ-app-platform`, `shmui-juce`).               |
+| Tests       | `tests/`    | GoogleTest-driven validation (270+ unit tests).                                |
+| Apps        | `apps/`     | In-tree dev apps (wave-finder smoke shell, juce-demo-host). Production apps (Clip Composer, FourTrack, FreqFinder) are external repos. |
 
 ---
 
 ## Documentation Cross-Reference
 
 - [Architecture Overview](../ARCHITECTURE.md) – System design and threading model
-- [Migration Guide](MIGRATION_v0_to_v1.md) – v0.x → v1.0 upgrade guide (includes ORP109 features)
-- [Driver Architecture](DRIVER_ARCHITECTURE.md) – Runtime-specific integration notes
-- [Contract Guide](CONTRACT_DEVELOPMENT.md) – Command/event schemas shared across drivers
-- [ORP109 Roadmap](../docs/ORP/ORP109%20SDK%20Feature%20Roadmap%20for%20Clip%20Composer%20Integration.md) – Feature specifications
-- [ORP110 Implementation Report](../docs/ORP/ORP110%20ORP109%20Implementation%20Report.md) – Complete feature documentation
+- [Migration Guide](MIGRATION_v0_to_v1.md) – v0.x → v1.0 upgrade guide (historical; includes ORP109 features)
+- [Driver Architecture](orp/_process/archive/DRIVER_ARCHITECTURE.md) – Runtime-specific integration notes (archived)
+- [Contract Guide](orp/_process/archive/CONTRACT_DEVELOPMENT.md) – Command/event schemas shared across drivers (archived)
+- [ORP109 Roadmap](orp/ORP109%20SDK%20Feature%20Roadmap%20for%20Clip%20Composer%20Integration.md) – Feature specifications
+- [ORP110 Implementation Reports](orp/ORP110A%20App-Level%20Integration%20Report.md) – Complete feature documentation (see also ORP110B)
 
 ---
 

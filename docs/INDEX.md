@@ -4,68 +4,57 @@
 
 ## 🚀 Start Here
 
-**New to Orpheus SDK?** Begin with these guides:
+**New to Orpheus SDK?** Begin with these:
 
-1. **[Getting Started](orp/_process/GETTING_STARTED.md)** – Install, build, and run your first session
-2. **[Driver Architecture](orp/_process/DRIVER_ARCHITECTURE.md)** – Understand Service, WASM, and Native drivers
-3. **[Driver Integration Guide](orp/_process/DRIVER_INTEGRATION_GUIDE.md)** – Step-by-step integration with code examples
-4. **[Contract Guide](orp/_process/CONTRACT_DEVELOPMENT.md)** – Learn the command/event schema system
+1. **[Repository README](../README.md)** – Build the SDK and run the tests in minutes
+2. **[Architecture Overview](../ARCHITECTURE.md)** – Layers, transport, threading model
+3. **[Roadmap](../ROADMAP.md)** – Milestones and the ORP132 hardening program
+4. **[API Surface Index](API_SURFACE_INDEX.md)** – Catalog of public C++ headers
 
 **For specific tasks:**
 
-- Integrating drivers → [Driver Integration Guide](orp/_process/DRIVER_INTEGRATION_GUIDE.md)
-- Adding features → [Contributor Guide](orp/_process/CONTRIBUTING.md)
-- Migrating projects → [Migration Guide](MIGRATION_v0_to_v1.md)
-- API reference → [API Surface Index](API_SURFACE_INDEX.md)
-- SDK team handoff → [SDK Team Handoff](SDK_TEAM_HANDOFF.md) | [Sprint Summary](SDK_SPRINT_SUMMARY.md)
+- Realtime safety rules → [Realtime Audio Audit](REALTIME_AUDIT.md)
+- Position-tracking semantics (settled, ORP089) → [SDK Position Tracking](SDK_POSITION_TRACKING.md)
+- App-side realtime debt guidance → [App Realtime Debt Remediation](APP_REALTIME_DEBT_REMEDIATION.md)
+- Migrating old integrations → [Migration Guide](MIGRATION_v0_to_v1.md) (historical)
 
 ---
 
 ## ORP Implementation Plans & Technical Library
 
-**📘 Current Active Plans (2025):**
+**📘 Current active program (2026): SDK Hardening & Platform Roadmap**
 
-| Document                                                        | Status                        | Focus                                                         | Timeline            |
-| --------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------- | ------------------- |
-| **[ORP068 – SDK Integration Plan v2.0](ORP/ORP068.md)**         | 🟢 Active (Phase 1 Complete)  | Driver architecture, contracts, client integration            | Months 1-6          |
-| **[ORP069 – OCC-Aligned SDK Enhancements v1.0](ORP/ORP069.md)** | 🟢 Active (Planning Complete) | Platform audio drivers, routing, performance monitoring       | Months 1-6          |
-| **[ORP074 – Clip Metadata Management Sprint](ORP/ORP074.md)**   | 🟡 Ready for Implementation   | TransportController trim/fade API, audio callback integration | Week 7-8 (2.5 days) |
+| Document | Role |
+| -------- | ---- |
+| **[ORP132 – Master Sprint Index](orp/ORP132%20SDK%20Hardening%20and%20Platform%20Roadmap%20-%20Master%20Sprint%20Index.md)** | Read first: scope, sequencing, boundaries |
+| **[ORP133 – NOW Sprint](orp/ORP133%20NOW%20Sprint%20-%20Realtime%20Callback%20and%20Contract%20Truth.md)** | Realtime callback safety & contract truth |
+| **[ORP134 – NEXT Sprint](orp/ORP134%20NEXT%20Sprint%20-%20Streaming%20Reader%20and%20Platform%20Primitives.md)** | Streaming reader & platform primitives |
+| **[ORP135 – LATER Sprint](orp/ORP135%20LATER%20Sprint%20-%20Platform%20Leadership%20Bets.md)** | Speculative 2026+ platform bets |
+| **[ORP136 – Verification & CI](orp/ORP136%20Verification%20and%20CI%20Framework.md)** | Cross-cutting verification framework |
 
-**📂 [ORP Directory Index](ORP/README.md)** – Quick reference guide to all implementation plans
+**📂 [ORP Directory Index](orp/README.md)** – Guide to all implementation plans
+(ORP001–ORP136), including the completed ORP125/126/127 transport sprints and the
+historical Shmui/TypeScript-era plans (ORP060–ORP068).
 
-**Historical Context:**
+---
 
-| Document                                             | Focus                                                                                                    | Key Cross-References                                                                                                                                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [ORP061 – Migration Plan](ORP/ORP061.md)             | Phase-driven roadmap for merging Shmui UI into the Orpheus SDK monorepo.                                 | Establishes Phase 0 baseline that is elaborated in ORP062 (contracts) and optimized in ORP063.                                                               |
-| [ORP062 – Technical Addendum](ORP/ORP062.md)         | Normative contract, driver, and validation rules for the engine boundary.                                | Extends ORP061 Phase 0/1 requirements; informs latency and frequency limits codified in budgets.json (see orp/_process/PERFORMANCE.md) and references ORP066 refinements. |
-| [ORP063 – Technical Optimization](ORP/ORP063.md)     | Operational alignment between migration strategy and contract architecture.                              | Builds on ORP061 sequencing; cites ORP062 schemas and feeds Phase 0 CI expectations referenced in ORP066/ORP068.                                             |
-| [ORP066 – Implementation Refinements](ORP/ORP066.md) | Corrective refinements and guardrails for ORP065 execution, covering CI, packaging, and risk mitigation. | References ORP061/ORP063 for migration context; drives package naming rules summarized in orp/_process/PACKAGE_NAMING.md.                                                 |
+## Historical Records
 
-### Additional Supporting References
+These documents describe the repository as it was; paths and features they
+mention may no longer exist in the tree:
 
-- [ORP065 – Shmui Integration Plan](ORP/ORP065.md) – Historical baseline referenced by ORP066.
-- [ORP067 – Task Numbering Appendix](ORP/ORP067.md) – Crosswalk between ORP task identifiers and repo workstreams.
-- [ORP-CDX-013 – CI Revalidation](ORP-CDX-013-ci-revalidation.md) – Companion guidance for validating CI coverage post-migration.
+- [SDK Team Handoff](SDK_TEAM_HANDOFF.md) | [Sprint Summary](SDK_SPRINT_SUMMARY.md) – ORP074 trim/fade metadata sprint records
+- [Upgrading to 1.0](UPGRADING_TO_1.0.md) – TypeScript-driver-era upgrade guide
+- [Migration v0 → v1](MIGRATION_v0_to_v1.md) – v1.0.0-rc.1-era migration guide
+- [`orp/_process/archive/`](orp/_process/archive/) – archived process docs
+  (GETTING_STARTED, DRIVER_ARCHITECTURE, CONTRACT_DEVELOPMENT, DECISION_PACKAGES, ADAPTERS, …)
+- [`archive/`](archive/) – archived marketing/spec material and AGENTS.md
 
-## Migration Phase ↔ Technical Specification Map
-
-| Migration Phase                        | Core Objectives                                                            | Authoritative Specs                                                      |
-| -------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Phase 0 – Preparatory Repository Setup | Establish monorepo structure, parallel CI, package namespace baselines.    | ORP061 §Phase 0, ORP062 §§1–3, ORP063 §II, ORP066 §II (package hygiene). |
-| Phase 1 – Tooling Normalization        | Wire Orpheus engine bindings into Shmui workflows, unify tooling.          | ORP061 §Phase 1, ORP062 §§4–5, ORP063 §III, ORP068 §II.                  |
-| Phase 2 – Feature Integration          | Deliver UI experiences powered by Orpheus engine capabilities.             | ORP061 §Phase 2, ORP063 §IV, ORP068 §III.                                |
-| Phase 3+ – Expansion & Governance      | Stabilize releases, enforce performance budgets, broaden platform support. | ORP068 §§IV–V, ORP063 §V, orp/_process/PERFORMANCE.md (budgets.json).                 |
+**Clip Composer (OCC) documentation** lives in the external
+[`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
+repository (`docs/occ/`) — extracted 2026-07-09, see
+[ORP131](orp/ORP131%20Clip%20Composer%20Subdirectory%20Archival.md).
 
 ## Navigation
 
 - ▲ [Back to Repository Overview](../README.md)
-- 📦 [Package Naming](orp/_process/PACKAGE_NAMING.md)
-- 📈 [Performance Budgets](orp/_process/PERFORMANCE.md)
-- 🧪 [CI Validation Checklist](ORP-CDX-013-ci-revalidation.md)
-
-### Branch Protection (Manual Verification)
-
-- Ensure **main** has required status checks: `build-cpp`, `build-ui`, `lint-cpp`.
-- Require ≥1 reviewer, disallow force-push, enforce linear history.
-- Record audit date in `orp/_process/GOVERNANCE.md`.
