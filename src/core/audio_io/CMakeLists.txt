@@ -36,14 +36,16 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES scrub_resampler.cpp)
 
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_writer_libsndfile.cpp) # ORP134 G5 / FTR007
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES resampling_audio_file_reader.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES waveform_processor.cpp)
-    message(STATUS "✓ libsndfile FOUND - audio file reading enabled (with waveform processing)")
+    message(STATUS "✓ libsndfile FOUND - audio file reading/writing enabled (with waveform processing)")
 else()
-    # Provide stub implementation when libsndfile is not available
-    # This ensures createAudioFileReader() symbol exists for linking
+    # Provide stub implementations when libsndfile is not available
+    # This ensures the factory symbols exist for linking
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES create_audio_file_reader_stub.cpp)
-    message(STATUS "✗ libsndfile NOT FOUND - using stub implementation (audio file reading disabled)")
+    list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES create_audio_file_writer_stub.cpp)
+    message(STATUS "✗ libsndfile NOT FOUND - using stub implementation (audio file I/O disabled)")
 endif()
 
 add_library(orpheus_audio_utils STATIC

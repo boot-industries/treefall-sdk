@@ -22,6 +22,7 @@ labels.)
 | `include/orpheus/session_graph.h`              | `SessionGraph`             | In-memory session representation (tracks, clips, tempo) | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader.h`          | `IAudioFileReader`         | Audio file decoding (WAV/AIFF/FLAC via libsndfile)      | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader_extended.h` | `IAudioFileReaderExtended` | Waveform pre-processing for UI rendering                | ORP109 (unreleased) |
+| `include/orpheus/audio_file_writer.h`          | `IAudioFileWriter`         | Audio file encoding (WAV/AIFF/FLAC via libsndfile)      | ORP134 G5 (FTR007)  |
 
 ### Routing & Mixing (ORP109)
 
