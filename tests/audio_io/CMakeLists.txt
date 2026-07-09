@@ -40,6 +40,47 @@ target_include_directories(scrub_resampler_test
 
 add_test(NAME scrub_resampler_test COMMAND scrub_resampler_test)
 
+# ORP134 G7: lock-free input ring + capture-stream contract. Links audio_io
+# so the capture->disk pairing test can use the reader/writer when available.
+add_executable(audio_input_test
+    audio_input_test.cpp
+)
+
+target_link_libraries(audio_input_test
+    PRIVATE
+        orpheus_audio_io
+        orpheus_session
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(audio_input_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(NAME audio_input_test COMMAND audio_input_test)
+
+# ORP134 G6: analysis facade (standalone; links audio_utils only)
+add_executable(audio_analysis_test
+    audio_analysis_test.cpp
+)
+
+target_link_libraries(audio_analysis_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(audio_analysis_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+add_test(NAME audio_analysis_test COMMAND audio_analysis_test)
+
 # Find libsndfile (needed because orpheus_audio_io is static)
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)

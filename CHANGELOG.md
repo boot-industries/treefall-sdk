@@ -88,6 +88,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IDs serialize as decimal strings (the SDK JSON number type is a double —
   53-bit mantissa); tests round-trip IDs > 2^53 through the SDK JSON parser
   and the installed-header compile gate covers the new headers.
+- **Recorder plumbing (ORP134 G7).** New `audio_input.h`: `AudioInputRing`
+  (lock-free SPSC ring of interleaved frames — audio-thread producer never
+  blocks, drops whole buffers on overflow and counts them) and
+  `IAudioInputStream` (the capture contract hosts consume instead of hooking
+  the raw driver callback; `createAudioInputStream()` returns the ring-backed
+  implementation). Paired with `IAudioFileWriter` this makes "capture → disk"
+  an SDK-supported path (integration test drives audio-thread capture through
+  a background writer to a WAV and verifies the samples). Take/punch/latency
+  policy stays host-side by design.
+- **Analysis facade (ORP134 G6).** New `audio_analysis.h`
+  (`orpheus::analysis`): radix-2 FFT/STFT (new), RMS/peak, integrated LUFS
+  (WRAPS the existing `LoudnessMeter` — parity asserted by test, not
+  re-implemented), spectral centroid/rolloff, spectral-flux onset detection,
+  and an in-memory min/max waveform proxy (file-backed proxies remain
+  `IAudioFileReaderExtended`'s job). Offline/background utilities only.
+- **Graph-neutral routing seam (ORP134 G3).** New `audio_graph.h`:
+  sources/processors/buses/sinks/sends/taps/channel-layout vocabulary as a
+  validated `GraphDescription`, plus the soundboard facade
+  (`makeSoundboardGraph`) and `toRoutingConfig()` mapping onto the EXISTING
+  routing matrix (not replaced — ORP134 §7). Tests prove the facade's
+  translation equals the transport's hard-wired topology (64 ch / 4 groups /
+  stereo out) and that the vocabulary expresses FourTrack's bus shapes and
+  FreqFinder's analysis taps. The executing graph engine remains an ORP135
+  candidate.
+- **Scene manager wired + tested at launcher scale (ORP134 G8).**
+  `ISceneManager::setRoutingMatrix()` is now on the public interface (it
+  previously existed only on the hidden concrete class, making routing
+  capture/recall unreachable through `createSceneManager()`). New
+  `scene_routing_test` drives capture/recall of group assignments and gains
+  end-to-end, including an 8-tab page-switching round-trip. Gap documented
+  by design: `SceneSnapshot::assignedClips` is host presentation state the
+  SDK cannot derive — hosts persist grids with `media_model.h`'s
+  `ClipSlot`/`LauncherScene` shapes.
 - **Offline render determinism gate completed (ORP134 G4).** `RenderSpec` is
   the offline render-job descriptor (sample rate, bit depth, channel layout,
   dither + seed, output target). New `DitheredRenderIsSeedDeterministic` test

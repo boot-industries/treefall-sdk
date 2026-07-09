@@ -206,8 +206,10 @@ public:
 
   ~SceneManager() override = default;
 
-  // Set routing matrix (optional, used for capturing/restoring routing state)
-  void setRoutingMatrix(IRoutingMatrix* routingMatrix) {
+  // ORP134 G8: now part of ISceneManager — previously this existed only on
+  // the hidden concrete class, so no consumer could ever wire routing
+  // capture/recall through the public factory.
+  void setRoutingMatrix(IRoutingMatrix* routingMatrix) override {
     std::lock_guard<std::mutex> lock(mutex_);
     routingMatrix_ = routingMatrix;
   }

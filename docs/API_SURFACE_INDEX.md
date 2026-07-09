@@ -26,6 +26,9 @@ labels.)
 | `include/orpheus/identity.h`                   | `StrongId`, `IdAllocator`  | Stable session/track/clip/media/lane identifiers        | ORP134 G2           |
 | `include/orpheus/time_domain.h`                | `TimePoint`, `TimeRange`   | Sample-canonical time with seconds/beats/timecode views | ORP134 G2           |
 | `include/orpheus/media_model.h`                | `MediaRegion`, `Take`      | Media/region vocabulary + launcher aggregates           | ORP134 G2           |
+| `include/orpheus/audio_input.h`                | `IAudioInputStream`        | Lock-free capture ring + input-stream contract          | ORP134 G7           |
+| `include/orpheus/audio_analysis.h`             | `orpheus::analysis`        | FFT/STFT, LUFS/RMS/peak, spectral features, onsets      | ORP134 G6           |
+| `include/orpheus/audio_graph.h`                | `GraphDescription`         | Graph-neutral routing vocabulary + soundboard facade    | ORP134 G3           |
 
 ### Routing & Mixing (ORP109)
 
