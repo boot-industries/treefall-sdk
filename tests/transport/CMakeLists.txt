@@ -574,6 +574,73 @@ if(TARGET orpheus_audio_io)
         COMMAND choke_and_voice_cap_test
     )
 
+    # ORP136 §2.2: runtime realtime-safety harness (alloc hooks + /proc/self/io).
+    # Gates ORP134 G1: proves at runtime whether the audio thread allocates or
+    # performs file I/O — not just that forbidden tokens are absent statically.
+    add_executable(realtime_harness_test
+        realtime_harness_test.cpp
+    )
+
+    target_link_libraries(realtime_harness_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(realtime_harness_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(realtime_harness_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(realtime_harness_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    add_test(
+        NAME realtime_harness_test
+        COMMAND realtime_harness_test
+    )
+
+    # ORP136 §2.3: golden render-hash determinism gate (block-size invariance
+    # + run-to-run reproducibility). Parity oracle for the ORP134 G1 migration.
+    add_executable(transport_render_hash_test
+        transport_render_hash_test.cpp
+    )
+
+    target_link_libraries(transport_render_hash_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(transport_render_hash_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(transport_render_hash_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(transport_render_hash_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    add_test(
+        NAME transport_render_hash_test
+        COMMAND transport_render_hash_test
+    )
+
     # ORP127 T8: end-to-end sample-rate conversion in the transport (G6)
     add_executable(sample_rate_conversion_test
         sample_rate_conversion_test.cpp
