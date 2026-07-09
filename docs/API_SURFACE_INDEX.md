@@ -23,6 +23,9 @@ labels.)
 | `include/orpheus/audio_file_reader.h`          | `IAudioFileReader`         | Audio file decoding (WAV/AIFF/FLAC via libsndfile)      | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader_extended.h` | `IAudioFileReaderExtended` | Waveform pre-processing for UI rendering                | ORP109 (unreleased) |
 | `include/orpheus/audio_file_writer.h`          | `IAudioFileWriter`         | Audio file encoding (WAV/AIFF/FLAC via libsndfile)      | ORP134 G5 (FTR007)  |
+| `include/orpheus/identity.h`                   | `StrongId`, `IdAllocator`  | Stable session/track/clip/media/lane identifiers        | ORP134 G2           |
+| `include/orpheus/time_domain.h`                | `TimePoint`, `TimeRange`   | Sample-canonical time with seconds/beats/timecode views | ORP134 G2           |
+| `include/orpheus/media_model.h`                | `MediaRegion`, `Take`      | Media/region vocabulary + launcher aggregates           | ORP134 G2           |
 
 ### Routing & Mixing (ORP109)
 

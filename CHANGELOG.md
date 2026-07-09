@@ -54,6 +54,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prove bit-exact float32 WAV and ≤1 LSB integer encodings via the SDK's own
   reader. FourTrack can drop its local `WavWriter` on the next submodule bump.
 
+- **Stable identity & time-domain primitives (ORP134 G2 — additive).** New
+  public headers `identity.h` (opaque `SessionId`/`TrackId`/`ClipId`/
+  `MediaId`/`AutomationLaneId` strong types over `uint64_t`, plus a
+  deterministic monotonic `IdAllocator` with a serializable watermark),
+  `time_domain.h` (`TimePoint`/`TimeRange` with the 64-bit sample count as
+  the canonical value and seconds/beats/timecode as derived views), and
+  `media_model.h` (`MediaRegion`, `Take`, `ClipSlot`, `LauncherScene` thin
+  aggregates). The pointer-based `SessionGraph` is untouched (ORP134 §7);
+  these types are the vocabulary new code and serialization should prefer.
+  IDs serialize as decimal strings (the SDK JSON number type is a double —
+  53-bit mantissa); tests round-trip IDs > 2^53 through the SDK JSON parser
+  and the installed-header compile gate covers the new headers.
 - **Offline render determinism gate completed (ORP134 G4).** `RenderSpec` is
   the offline render-job descriptor (sample rate, bit depth, channel layout,
   dither + seed, output target). New `DitheredRenderIsSeedDeterministic` test
