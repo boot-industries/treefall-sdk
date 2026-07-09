@@ -1,4 +1,4 @@
-# ORP129 CoreAudio Input Capture
+# ORP130 CoreAudio Input Capture
 
 **Status:** Complete — landed on `feat/orp-coreaudio-input`
 **Author:** FTR023 SDK handoff, 2026-07-09
@@ -94,6 +94,6 @@ regression test's energy branch is environment-gated.
 ## Relationship to FTR020
 
 FTR020 asks the SDK to route the CoreAudio driver to a *chosen non-default*
-device (device-UID field + enumeration). ORP129 is upstream of that: without
+device (device-UID field + enumeration). ORP130 is upstream of that: without
 input capture, no device — default or chosen — records. FTR020 device routing
 remains a separate, additive follow-up that layers on top of this fix.
