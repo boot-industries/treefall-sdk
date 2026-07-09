@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 add_library(orpheus_routing STATIC
+    audio_graph.cpp # ORP134 G3: graph-neutral routing seam
     routing_matrix.cpp
     gain_smoother.cpp
     clip_routing.cpp

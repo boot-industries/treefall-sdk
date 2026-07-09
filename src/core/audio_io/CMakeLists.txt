@@ -34,6 +34,14 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader.cpp)
 # dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES scrub_resampler.cpp)
 
+# ORP134 G7: lock-free input ring + capture-stream contract. Host-neutral,
+# dependency-free — always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_input.cpp)
+
+# ORP134 G6: offline analysis facade (FFT/STFT + wrappers over LoudnessMeter
+# and buffer statistics). Host-neutral, dependency-free — always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_analysis.cpp)
+
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_writer_libsndfile.cpp) # ORP134 G5 / FTR007
