@@ -3,8 +3,9 @@
 # Roadmap
 
 The Orpheus roadmap captures the near-term milestones for evolving the SDK and
-its adapters. Updated October 2025 to include real-time infrastructure for
-Orpheus Clip Composer and future applications.
+its adapters. Updated 2026-07-09: M4/M6 items are now sequenced by the ORP132
+hardening program (`docs/orp/ORP132`–`ORP136`), and Clip Composer references
+point to its external repository (extracted 2026-07-09, see `docs/orp/ORP131`).
 
 ## Milestone M1 – Foundations (COMPLETE)
 
@@ -87,12 +88,9 @@ future applications requiring sample-accurate, low-latency performance.
 
 **References:**
 
-- See `docs/ORP/ORP068.md` for integration infrastructure
-- See `docs/ORP/ORP069.md` for OCC-aligned enhancements
-- See `docs/ORP/ORP070.md` for OCC MVP sprint plan (routing matrix, real audio)
-- See `apps/clip-composer/docs/OCC/OCC029.md` for detailed specifications
-- See `apps/clip-composer/docs/OCC/OCC027.md` for interface definitions
-- See `apps/clip-composer/docs/OCC/OCC030.md` for current implementation status
+- See `docs/orp/` for the ORP068/ORP069/ORP070 integration and enhancement plans
+- OCC specifications (OCC027/OCC029/OCC030) live in the external Clip Composer
+  repo (`chrislyons/clip-composer`, `docs/occ/`)
 
 ## Milestone M3 – Feature Expansion
 
@@ -101,35 +99,32 @@ future applications requiring sample-accurate, low-latency performance.
 - Add audio rendering scenarios to the minhost (streamed audio, bus routing).
 - Introduce integration tests that exercise host ↔ adapter handshakes.
 
-## Milestone M4 – Recording & DSP (Planned: Q1-Q2 2026)
+## Milestone M4 – Recording, Writer & Analysis Primitives
 
-**Purpose:** Support advanced features for Orpheus Clip Composer v1.0 and enable
-creative workflows for FX Engine.
+**Now owned by the ORP132 hardening program.** The recording/writer/analysis
+items below are scoped and sequenced in
+`docs/orp/ORP134 NEXT Sprint - Streaming Reader and Platform Primitives.md`:
 
-**Core Modules:**
+- **`IAudioFileWriter`** (WAV/AIFF/FLAC disk writer, FTR007) → ORP134 G5
+- **Input capture / recorder plumbing** (lock-free input ring,
+  `IAudioInputStream` contract; CoreAudio input capture landed as ORP130) →
+  ORP134 G7
+- **Analysis primitives** (FFT/STFT facade over the existing
+  LoudnessMeter/waveform/true-peak code) → ORP134 G6
 
-- ⏳ **Input Audio Graphs** - Planned
-  - Capture input from audio drivers (recording)
-  - Buffer management for real-time recording
-  - Disk streaming (WAV/AIFF file writer)
+Remaining M4 items not yet scheduled:
 
-- ⏳ **DSP Processing** - Planned
-  - Pluggable DSP processor interface
-  - Rubber Band integration (time-stretch, pitch-shift)
-  - Real-time parameter updates
-  - Quality vs performance profiles
-
-- ⏳ **Remote Control Protocols** - Planned
-  - WebSocket server (iOS companion app)
-  - OSC integration (Open Sound Control)
-  - MIDI control mapping
-  - Command registration API
+- ⏳ **DSP Processing** — pluggable processor interface, Rubber Band
+  integration (time-stretch/pitch-shift) → prerequisite work is the ORP134 G3
+  graph seam; processor nodes are ORP135 B4
+- ⏳ **Remote Control Protocols** — WebSocket/OSC/MIDI mapping → ORP135 B5
+  (requires the ORP133 G3 single-producer contract + an MPSC dispatcher)
 
 **Applications Enabled:**
 
-- OCC v1.0: Recording directly into buttons, DSP processing
-- FX Engine: LLM-powered effects, real-time parameter automation
-- Wave Finder: Real-time frequency analysis
+- Clip Composer: recording directly into buttons, DSP processing
+- FourTrack: SDK-backed capture → disk path (drops its local WavWriter)
+- FreqFinder: shared analysis primitives
 
 ## Milestone M5 – Production Readiness
 
@@ -138,32 +133,21 @@ creative workflows for FX Engine.
 - Expand CI with packaging, code coverage, and static analysis gates.
 - Document extension points and authoring guides for partner teams.
 
-## Milestone M6 – Advanced Features (Planned: Q3-Q4 2026)
+## Milestone M6 – Advanced Features (Speculative 2026+)
 
-**Purpose:** Enterprise capabilities and advanced workflows for Orpheus Clip
-Composer v2.0 and professional installations.
+**Re-expressed as ORP135 platform bets.** Each item below is a *candidate*
+tracked in `docs/orp/ORP135 LATER Sprint - Platform Leadership Bets.md`; a bet
+starts only when its ORP133/ORP134 dependency is stable and a concrete
+downstream consumer is asking:
 
-**Core Modules:**
-
-- ⏳ **Advanced Transport** - Planned
-  - Master/slave clip linking
-  - AutoPlay/jukebox mode with crossfades
-  - Rehearsal mode (silent playback with visual feedback)
-
-- ⏳ **Spatial Audio** (Basic VBAP) - Planned
-  - 3D positioning for clips
-  - Multi-channel speaker configurations
-  - Distance-based attenuation
-
-- ⏳ **Interaction Rules Engine** - Planned
-  - Conditional triggering (Ovation-inspired)
-  - State machines for show control
-  - External hardware integration (GPI)
-
-- ⏳ **VST3 Plugin Hosting** - Planned
-  - Plugin scanning and loading
-  - Parameter automation
-  - MIDI routing to plugins
+- **Sample-accurate automation** → ORP135 B1 (needs ORP134 identity/time)
+- **Spatial / multichannel graph readiness** (VBAP, speaker maps, ADM
+  alignment) → ORP135 B3 (needs ORP134 G3 graph seam)
+- **Plugin processor API, then optional hosting** (VST3/AU/LV2 hosting stays
+  an adapter concern, never core) → ORP135 B4 (needs B1 + graph seam)
+- **MIDI/OSC/control-surface mapping + MPSC control dispatcher** → ORP135 B5
+- **Interaction rules / show-control state machines** → app-side until the
+  automation and identity primitives exist (then reassess as an ORP135 bet)
 
 ---
 
@@ -185,8 +169,8 @@ Composer v2.0 and professional installations.
 
 **Related Documentation:**
 
-- `apps/clip-composer/docs/OCC/` - Orpheus Clip Composer design documentation
-- `apps/clip-composer/docs/OCC/OCC021` - Product vision (authoritative)
-- `apps/clip-composer/docs/OCC/OCC026` - MVP milestone definition
-- `apps/clip-composer/docs/OCC/OCC029` - SDK enhancement recommendations
-- `apps/clip-composer/docs/OCC/PROGRESS.md` - Design phase progress report
+- `docs/orp/ORP132` – SDK Hardening & Platform Roadmap master index
+  (ORP133 NOW / ORP134 NEXT / ORP135 LATER / ORP136 verification)
+- Clip Composer design documentation (OCC021/OCC026/OCC029, progress reports)
+  lives in the external Clip Composer repo (`chrislyons/clip-composer`,
+  `docs/occ/`)

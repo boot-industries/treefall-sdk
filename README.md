@@ -6,7 +6,10 @@
 
 Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
 
-**Current Release:** v1.0.0-rc.1 (2025-10-31)
+**Current version:** 0.3.0 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
+version is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt) —
+docs reference it rather than restating it. (The 2025-10-31 "v1.0.0-rc.1"
+banner predated the 0.x renumbering; see `CHANGELOG.md` for history.)
 
 ## ⚡ Quick Start
 
@@ -57,7 +60,7 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 
 ## Table of Contents
 
-- [What's New in v1.0](#whats-new-in-v10)
+- [Feature Highlights](#feature-highlights)
 - [Core Capabilities](#core-capabilities)
 - [Repository Layout](#repository-layout)
 - [Supported Platforms](#supported-platforms)
@@ -74,9 +77,9 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 - [Contributing](#contributing)
 - [License](#license)
 
-## What's New in v1.0
+## Feature Highlights
 
-Orpheus SDK v1.0 introduces comprehensive clip playback control, metadata persistence, and professional workflow features:
+The SDK provides comprehensive clip playback control, metadata persistence, and professional workflow features:
 
 ### 🎚️ Gain Control API
 
@@ -113,7 +116,7 @@ transport->restartClip(handle);
 transport->seekClip(handle, position);
 ```
 
-### 🎛️ ORP109 Professional Features (v1.0.0-rc.2)
+### 🎛️ ORP109 Professional Features
 
 **Added 2025-11-11:** Seven major features for professional workflows:
 
@@ -218,10 +221,11 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 
 ```
 ├── adapters/           # Host integrations (minhost CLI, REAPER extension)
-├── apps/               # Applications (Clip Composer, demo host)
+├── apps/               # In-tree apps (wave-finder smoke shell, juce-demo-host)
 ├── cmake/              # CMake helper modules and compiler policies
 ├── docs/               # Architecture, roadmaps, API reference, ORP documents
 ├── include/            # Public C++ headers (install these with your app)
+├── packages/           # Shared C++/JUCE app packages (occ-app-platform, shmui-juce)
 ├── src/                # Core library implementation (C++20)
 │   ├── core/           # Transport, routing, audio I/O, session
 │   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
@@ -229,7 +233,18 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 └── CHANGELOG.md        # Release notes and version history
 ```
 
-**Note:** TypeScript packages previously in `packages/` have been archived. See [`docs/DECISION_PACKAGES.md`](docs/DECISION_PACKAGES.md) for rationale (C++ SDK focus).
+**Package status (one authoritative sentence each):**
+
+- `packages/occ-app-platform` — **active** C++ application-platform helpers
+  (session recovery, preferences, health telemetry) consumed by the external
+  Clip Composer repo through its SDK submodule.
+- `packages/shmui-juce` — **active** JUCE UI component library (waveform,
+  meters, transport widgets) consumed by downstream JUCE apps; not part of the
+  core SDK libraries.
+- The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
+  `@orpheus/shmui`) are **archived** — see
+  [`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
+  for the rationale (C++ SDK focus).
 
 ## Supported Platforms
 
@@ -286,8 +301,8 @@ configuration:
   ```
 
 - **Host integrations** – toggle adapters via CMake cache entries. See
-  [`docs/ADAPTERS.md`](docs/ADAPTERS.md) for the full list of flags and host
-  requirements.
+  [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md)
+  for the full list of flags and host requirements.
 
 ### Running Tests
 
@@ -342,30 +357,25 @@ claude-code
 
 #### Clip Composer Instance (Application Development)
 
-**Working Directory:** `~/dev/orpheus-sdk/apps/clip-composer`
+**Clip Composer is an external downstream repository** —
+[`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
+(local checkout: `~/dev/clip-composer`). It consumes this SDK as a git
+submodule at `third_party/orpheus-sdk`. The former in-tree
+`apps/clip-composer/` subdirectory was archived on 2026-07-09 (see
+`docs/orp/ORP131`).
 
-**Focus:** Tauri desktop application, JUCE UI components, end-user features
+**Use the Clip Composer repo for:**
 
-**Start Instance:**
+- Application-specific features, UI components, and workflows
+- OCC documentation (`docs/occ/` in that repo)
+- App builds and CI (both live there, not here)
 
-```bash
-cd ~/dev/orpheus-sdk/apps/clip-composer
-claude-code
+**Use this SDK repo for:** the transport, routing, audio_io, and ABI work
+Clip Composer depends on — then bump the submodule pin in the app repo.
 
-# Or use the shortcut script:
-~/dev/orpheus-sdk/scripts/start-clip-composer-instance.sh
-```
+#### When to Use Which Repo
 
-**Use For:**
-
-- Application-specific features
-- UI components and workflows
-- OCC-specific functionality
-- Documentation in `apps/clip-composer/docs/occ/`
-
-#### When to Use Which Instance
-
-| Task                         | Instance      | Reason                    |
+| Task                         | Repo          | Reason                    |
 | ---------------------------- | ------------- | ------------------------- |
 | Fix transport controller bug | SDK           | Core library modification |
 | Add new clip button feature  | Clip Composer | Application UI change     |
@@ -373,13 +383,6 @@ claude-code
 | Implement session dialog     | Clip Composer | Application-specific UI   |
 | Add routing matrix test      | SDK           | Core library testing      |
 | Fix waveform display         | Clip Composer | Application UI component  |
-
-#### Instance Isolation Benefits
-
-- **No config collision** – Separate `.claude/` directories
-- **Context-appropriate skills** – Different tool sets per instance
-- **Clear documentation boundaries** – ORP vs OCC prefixes
-- **Independent progress tracking** – Separate implementation logs
 
 **See also:** `CLAUDE.md` Multi-Instance Usage section for complete documentation
 
@@ -431,26 +434,36 @@ LLVM `run-clang-tidy.py` helper) on the files you want to inspect.
 
 The Orpheus SDK provides the foundation for a family of professional audio applications:
 
-### Orpheus Clip Composer (OCC)
+### Orpheus Clip Composer (OCC) — external repo
 
 **Professional soundboard for broadcast, theater, and live performance**
 
-- **Status:** v0.2.1 — active development. Operator modes (Playout/Edit/Routing/Preferences), audition paths, session recovery, real-time health strip all in place.
+- **Repo:** [`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
+  — a standalone downstream repository that consumes this SDK as a git
+  submodule (`third_party/orpheus-sdk`). Extracted from this repo's former
+  `apps/clip-composer/` subdirectory on 2026-07-09 (archival report:
+  `docs/orp/ORP131`).
 - **Features:** Clip triggering (384 buttons, 960-slot capacity), waveform editing, multi-channel routing, operator modes, cue-bus audition
 - **Market:** Broadcast playout, theater sound design, live performance
-- **Documentation:** [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – 146+ docs; archive at `docs/occ/archive/`
-  - [`OCC021 Product Vision`](apps/clip-composer/docs/occ/archive/OCC021%20Orpheus%20Clip%20Composer%20-%20Product%20Vision.md) – Market positioning, competitive analysis
-  - [`OCC026 MVP Definition`](apps/clip-composer/docs/occ/archive/OCC026%20Milestone%201%20-%20MVP%20Definition%20v1.0.md) – MVP plan with deliverables
-  - [`OCC146 Post-Codex Sprint Guide`](apps/clip-composer/docs/occ/OCC146%20Post-Codex%20Integration%20Sprint%20Guide.md) – Current sprint status
+- **Documentation:** `docs/occ/` in the Clip Composer repo (not here)
 
 **SDK Requirements:** Real-time transport, audio drivers (CoreAudio/ASIO/WASAPI), routing matrix, performance monitor
 
-### Orpheus Wave Finder
+### Orpheus FourTrack — external repo
 
-**Harmonic calculator and frequency scope for audio analysis**
+**Portastudio-style multitrack recorder for macOS/iOS**
 
-- **Status:** In development (`apps/wave-finder/`)
-- **Features:** FFT analysis, harmonic detection, frequency visualization
+- **Repo:** `chrislyons/fourtrack` (local: `~/dev/fourtrack`) — consumes this
+  SDK as a git submodule; exercises the SDK's host-neutrality (routing matrix,
+  readers, CoreAudio input capture).
+
+### Orpheus Wave Finder (in-tree)
+
+**App-platform smoke-test shell** (`apps/wave-finder/`)
+
+- **Status:** In-tree development shell exercising `packages/occ-app-platform`.
+  Note: this is NOT the real FreqFinder analyzer, which lives in its own
+  external repo (`~/dev/freqfinder`).
 
 ### Orpheus FX Engine
 
@@ -467,27 +480,20 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 
 **ORP Docs (SDK):**
 **PREFIX:** ORP
-**Next Doc:** ORP126.md
+**Next Doc:** ORP137
 **Location:** `docs/orp/`
 
 **Discovery command:**
 
 ```bash
-ls -1 docs/orp/ | grep -E "^ORP[0-9]{3,4}\.(md|mdx)$" | sort
+ls -1 docs/orp/ | sort
 ```
 
-**OCC Docs (Clip Composer):**
-**PREFIX:** OCC
-**Next Doc:** OCC147.md
-**Location:** `apps/clip-composer/docs/occ/`
+**OCC Docs (Clip Composer):** live in the external Clip Composer repo
+([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer),
+`docs/occ/`) — not in this repository.
 
-**Discovery command:**
-
-```bash
-ls -1 apps/clip-composer/docs/occ/ | grep -E "^OCC[0-9]{3,4}\.(md|mdx)$" | sort
-```
-
-Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see `~/chrislyons/dev/CLAUDE.md` for full conventions.
+Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see the workspace `CLAUDE.md` for full conventions.
 
 ### Reference Documentation
 
@@ -496,7 +502,7 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
-- [`apps/clip-composer/docs/occ/`](apps/clip-composer/docs/occ/) – Orpheus Clip Composer documentation (active)
+- [Clip Composer repo](https://github.com/chrislyons/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
 - [`docs/archive/AGENTS.md`](docs/archive/AGENTS.md) – coding assistant guidelines for AI tools
 - [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 

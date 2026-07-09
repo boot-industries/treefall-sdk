@@ -112,6 +112,13 @@ if(Python3_Interpreter_FOUND)
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/realtime_audit.py
       --root ${CMAKE_SOURCE_DIR})
+
+  # ORP133 G6: docs-path validation (broken internal links, references to the
+  # extracted apps/clip-composer subdir, removed CMake options).
+  add_test(NAME docs_path_audit
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/docs_path_audit.py
+      --root ${CMAKE_SOURCE_DIR})
 endif()
 
 # Session tests (including Scene Manager)

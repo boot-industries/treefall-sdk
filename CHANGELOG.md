@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remain lock-free and callable from any thread. Debug builds now assert if
   commands are posted from more than one thread. All control entry points
   funnel through a single `postCommand()` choke point.
+- **Version realigned to the build's truth (ORP133 G4).** The SDK version is
+  **0.3.0**, sourced from `project(orpheus VERSION 0.3.0)` in
+  `CMakeLists.txt`; README and docs now reference CMake as the single source
+  of truth. The October 2025 "v1.0.0-rc.1"/"v1.0.0-rc.2" README/docs banners
+  predated the 0.x renumbering (downstream apps pin `v0.3.0`); those labels
+  remain in this changelog as historical release names only.
+- **Documentation truth pass + CI gate (ORP133 G5/G6).** README,
+  ARCHITECTURE.md, ROADMAP.md, docs/INDEX.md, and docs/API_SURFACE_INDEX.md no
+  longer describe the extracted `apps/clip-composer` subdirectory, the removed
+  `ORPHEUS_ENABLE_APP_CLIP_COMPOSER` option, or the archived TypeScript driver
+  layer as live; `packages/occ-app-platform` and `packages/shmui-juce` are
+  documented as active C++ packages. A new `tools/docs_path_audit.py` gate
+  (ctest `docs_path_audit` + CI lint step) fails on broken internal doc links,
+  unlabeled references to the extracted `apps/clip-composer` subdirectory, and
+  references to CMake options that no longer exist.
 
 ### Deprecated - ORP133
 
