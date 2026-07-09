@@ -79,6 +79,41 @@ public:
   /// @note Buffer format: [L0, R0, L1, R1, ...] for stereo
   virtual Result<size_t> readSamples(float* buffer, size_t num_samples) = 0;
 
+  /// Read a window of frames ending at (and including) `end_sample`, for
+  /// reverse / backward playback (ORP128, FTR018).
+  ///
+  /// Fills `buffer` with up to `num_frames` interleaved frames whose absolute
+  /// frame indices are `[end_sample - num_frames + 1, end_sample]`, written in
+  /// FORWARD (ascending-index) order — the caller walks them out in reverse.
+  /// Frame indices below 0 are clamped away (the corresponding leading slots of
+  /// `buffer` are left as written by the reader; the returned count reflects only
+  /// the frames actually read, always the trailing/most-recent frames of the
+  /// window). This is the minimal primitive that lets a host stream backward
+  /// without buffering forward history itself, lifting the reverse-depth bound of
+  /// a fixed local ring.
+  ///
+  /// The base implementation is a portable seek + read that restores the prior
+  /// read position, so every reader supports reverse out of the box; concrete
+  /// readers may override with a more efficient path. This is a DEFAULTED virtual
+  /// (not pure) precisely so existing readers and consumers keep compiling.
+  ///
+  /// @param end_sample Absolute frame index of the last (highest-index) frame to
+  ///        read. If `end_sample < 0`, nothing is read (returns 0).
+  /// @param buffer Output buffer (must hold at least `num_frames * num_channels`
+  ///        floats). Frames are written contiguously starting at buffer[0]; when
+  ///        the window is clamped at the file start, fewer than `num_frames` are
+  ///        written (the caller sees the count in the Result).
+  /// @param num_frames Window length in frames.
+  /// @return Result containing the number of frames actually read (<= num_frames),
+  ///         or an error.
+  ///
+  /// @note Real-time-safe on readers that pre-reserve scratch; the base
+  ///       implementation performs I/O and is intended for background/streaming
+  ///       use unless the concrete reader documents otherwise.
+  /// @note Restores the read position (`getCurrentPosition()`) it observed on
+  ///       entry, so it composes with ordinary forward `readSamples()` streaming.
+  virtual Result<size_t> readSamplesEndingAt(int64_t end_sample, float* buffer, size_t num_frames);
+
   /// Seek to a specific sample position
   ///
   /// Sets the read position for subsequent readSamples() calls.

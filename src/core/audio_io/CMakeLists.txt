@@ -26,6 +26,10 @@ set(ORPHEUS_AUDIO_UTILS_SOURCES)
 # ORP127 G6: host-neutral, dependency-free sample-rate conversion. Always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES polyphase_resampler.cpp)
 
+# ORP128/FTR018 §1: base-interface default (readSamplesEndingAt). Host-neutral,
+# dependency-free — always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader.cpp)
+
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES resampling_audio_file_reader.cpp)
