@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prove bit-exact float32 WAV and ≤1 LSB integer encodings via the SDK's own
   reader. FourTrack can drop its local `WavWriter` on the next submodule bump.
 
+- **Offline render determinism gate completed (ORP134 G4).** `RenderSpec` is
+  the offline render-job descriptor (sample rate, bit depth, channel layout,
+  dither + seed, output target). New `DitheredRenderIsSeedDeterministic` test
+  proves the same job descriptor reproduces byte-identical output including
+  the dither noise, and that changing the seed changes the bytes. Combined
+  with the pre-existing undithered golden hashes (`render_tracks_basic`) and
+  the transport-side block-size-invariance gate (ORP136 bootstrap), the
+  "same input → same output, always" loop is closed for both render paths.
+
 ### Added - ORP136 Verification Bootstrap (2026-07-09)
 
 - **Runtime realtime-safety harness** (`tests/transport/realtime_harness_test.cpp`
@@ -73,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raw sample bytes). Serves as the parity oracle for the ORP134 G1
   streaming-reader migration. Cross-platform golden constants are deferred
   until the fade math is pinned (ORP134 G4); drift is a bug to file, not mask.
+
+### Deprecated - ORP133
 
 - **`ITransportController::stopAllInGroup()` (ORP133 G2).** This method was a
   silent no-op in every release (the transport has no clip→group mapping;
