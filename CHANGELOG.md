@@ -39,6 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unlabeled references to the extracted `apps/clip-composer` subdirectory, and
   references to CMake options that no longer exist.
 
+### Added - ORP134 Platform Primitives (2026-07-09)
+
+- **`IAudioFileWriter` (ORP134 G5 — FourTrack's FTR007 request).** New public
+  interface `include/orpheus/audio_file_writer.h` mirroring
+  `IAudioFileReader`'s shape and error model: `open(path, config)` /
+  `writeSamples(interleaved float32)` / `close()`, background-thread contract
+  (never the audio thread — capture feeds a ring buffer that a writer thread
+  drains). Libsndfile-backed implementation supports WAV/AIFF in
+  Int16/Int24/Float32 and FLAC in Int16/Int24 (Float32 is rejected — FLAC is
+  integer-only); out-of-range floats saturate rather than wrap
+  (`SFC_SET_CLIPPING`). `createAudioFileWriter()` returns nullptr when built
+  without libsndfile (stub, same pattern as the reader). Round-trip tests
+  prove bit-exact float32 WAV and ≤1 LSB integer encodings via the SDK's own
+  reader. FourTrack can drop its local `WavWriter` on the next submodule bump.
+
 ### Added - ORP136 Verification Bootstrap (2026-07-09)
 
 - **Runtime realtime-safety harness** (`tests/transport/realtime_harness_test.cpp`

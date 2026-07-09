@@ -112,6 +112,33 @@ if(SNDFILE_FOUND)
 
     add_test(NAME audio_file_reader_test COMMAND audio_file_reader_test)
 
+    # ORP134 G5 / FTR007: IAudioFileWriter round-trip tests (requires libsndfile)
+    add_executable(audio_file_writer_test
+        audio_file_writer_test.cpp
+    )
+
+    target_link_libraries(audio_file_writer_test
+        PRIVATE
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+            ${SNDFILE_LIBRARIES}
+    )
+
+    if(SNDFILE_LIBRARY_DIRS)
+        target_link_directories(audio_file_writer_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+    endif()
+
+    target_include_directories(audio_file_writer_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    add_test(NAME audio_file_writer_test COMMAND audio_file_writer_test)
+
     # Waveform processor tests (requires libsndfile)
     add_executable(waveform_processor_test
         waveform_processor_test.cpp
