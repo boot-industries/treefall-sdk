@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace orpheus {
 
@@ -18,6 +19,44 @@ struct AudioDriverConfig {
   uint16_t num_inputs = 2;      ///< Number of input channels
   uint16_t num_outputs = 2;     ///< Number of output channels
   std::string device_name;      ///< Device name (empty = default device)
+};
+
+/// Audio backend family.
+enum class AudioBackend : uint8_t {
+  Unknown,
+  Dummy,
+  CoreAudio,
+  WASAPI,
+  ASIO,
+  ALSA,
+  JACK,
+  PipeWire,
+  RemoteIO
+};
+
+/// Platform family for an audio backend.
+enum class AudioPlatform : uint8_t { Unknown, macOS, Windows, Linux, iOS };
+
+/// Runtime capabilities for an audio driver/backend.
+///
+/// Hosts should prefer this over backend-name string parsing when deciding
+/// whether low-latency, multichannel, exclusive/shared, or hot-swap workflows
+/// are available on the active platform.
+struct AudioDriverCapabilities {
+  AudioBackend backend = AudioBackend::Unknown;
+  AudioPlatform platform = AudioPlatform::Unknown;
+  uint32_t min_output_channels = 0;
+  uint32_t max_output_channels = 0;
+  uint32_t min_input_channels = 0;
+  uint32_t max_input_channels = 0;
+  std::vector<uint32_t> native_sample_rates;
+  std::vector<uint32_t> native_buffer_sizes;
+  bool supports_exclusive_mode = false;
+  bool supports_shared_mode = true;
+  bool supports_device_hot_swap = false;
+  bool supports_input = false;
+  bool supports_multichannel_output = false;
+  bool reports_hardware_latency = false;
 };
 
 /// Audio driver callback interface
@@ -67,6 +106,25 @@ public:
   /// Get current device latency in samples
   /// @return Total round-trip latency (input + output)
   virtual uint32_t getLatencySamples() const = 0;
+
+  /// Get runtime backend/device capabilities.
+  ///
+  /// Default implementation is intentionally conservative so older/custom
+  /// driver implementations remain source-compatible until they can report
+  /// richer platform details.
+  virtual AudioDriverCapabilities getCapabilities() const {
+    AudioDriverCapabilities caps;
+    caps.min_output_channels = getConfig().num_outputs;
+    caps.max_output_channels = getConfig().num_outputs;
+    caps.min_input_channels = getConfig().num_inputs;
+    caps.max_input_channels = getConfig().num_inputs;
+    caps.native_sample_rates.push_back(getConfig().sample_rate);
+    caps.native_buffer_sizes.push_back(getConfig().buffer_size);
+    caps.supports_input = getConfig().num_inputs > 0;
+    caps.supports_multichannel_output = getConfig().num_outputs > 2;
+    caps.reports_hardware_latency = getLatencySamples() > 0;
+    return caps;
+  }
 };
 
 /// Factory function for dummy audio driver (for testing)

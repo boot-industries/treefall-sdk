@@ -123,6 +123,12 @@ TEST_F(TransportControllerTest, InvalidHandle) {
   // Handle 0 is invalid
   EXPECT_EQ(m_transport->startClip(0), SessionGraphError::InvalidHandle);
   EXPECT_EQ(m_transport->stopClip(0), SessionGraphError::InvalidHandle);
+  EXPECT_EQ(m_transport->registerClipAudio(0, "missing.wav"), SessionGraphError::InvalidHandle);
+  EXPECT_EQ(m_transport->prepareClipAudio(0), SessionGraphError::InvalidHandle);
+}
+
+TEST_F(TransportControllerTest, PrepareUnregisteredClipFails) {
+  EXPECT_EQ(m_transport->prepareClipAudio(123), SessionGraphError::ClipNotRegistered);
 }
 
 TEST_F(TransportControllerTest, StartClipTwice) {

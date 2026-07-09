@@ -227,6 +227,50 @@ void AudioEngine::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
 
 ---
 
+### Issue: "Bitcrusher" / Aliased Distortion on Every Clip
+
+**Problem:** Every clip — even a single clip fired in isolation — plays with
+constant crushed/aliased "bitcrusher" or "Moog crusher" distortion. Often it was
+clean at launch and degraded partway through the session.
+
+**Cause (most common):** the OS output device's nominal sample rate no longer
+matches the engine's rate. Clip Composer's engine renders at its configured rate
+(default 48000 Hz); if the macOS output device is switched to another rate (e.g.
+44100 Hz) **while OCC is running** — by a background app, a hot-plugged interface,
+or a virtual device (BlackHole, Avid) grabbing the default — the audio stream is
+clocked out at the wrong rate and aliases on every sample.
+
+**Fix (immediate):**
+
+1. Open **Audio MIDI Setup**, select the output device you're monitoring on, and
+   set its **Format** back to the engine rate (48000 Hz), **or**
+2. In OCC's **Audio Settings**, set the Sample Rate to match the device's current
+   rate. Either way, matching the two clears the distortion instantly.
+
+**Diagnosis:**
+
+```bash
+# What the app opened at:
+grep -E "Initialized successfully|Sample Rate" /tmp/occ_output.log | head
+# What the hardware default output is actually running at:
+system_profiler SPAudioDataType | awk '
+  /^        [A-Za-z]/ {n=$0} /Default Output Device: Yes/ {o=1}
+  /Current SampleRate:/ {if(o){print n" rate="$3; o=0}}'
+# CoreAudio init-time rate check (one-shot, does NOT catch mid-session changes):
+cat /tmp/coreaudio_init.log
+```
+
+If the two rates differ, this is the cause. **Note:** it is *not* a transport /
+voice / choke bug and *not* an OCC151 regression.
+
+**Underlying gap:** the SDK CoreAudio driver forces the device rate only once at
+setup and does not listen for later nominal-rate changes, so it degrades silently
+instead of self-healing. Tracked for a driver-layer fix in **ORP128** (CoreAudio
+Device Sample-Rate Change Resilience). Until then, keep the OS output device at
+the session's engine rate.
+
+---
+
 ### Issue: High CPU Usage
 
 **Problem:** CPU usage >50% with only 8 clips playing

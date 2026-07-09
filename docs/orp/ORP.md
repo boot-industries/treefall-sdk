@@ -4,6 +4,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
@@ -85,6 +86,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP127 Transport Voice Model and Gain Integrity Sprint]]
+- [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 
 ## Navigation
 
@@ -98,4 +100,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-05-01
+**Last Generated:** 2026-07-07

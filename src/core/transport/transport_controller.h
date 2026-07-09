@@ -250,7 +250,10 @@ public:
   /// @param handle Clip handle
   /// @param file_path Path to audio file
   /// @return Error code
-  SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path);
+  SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) override;
+
+  /// Prewarm clip reader outside the audio callback.
+  SessionGraphError prepareClipAudio(ClipHandle handle) override;
 
 private:
   /// Process pending commands from UI thread

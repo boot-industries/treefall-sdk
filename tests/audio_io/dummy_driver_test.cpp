@@ -85,6 +85,25 @@ TEST_F(DummyDriverTest, InitializeWithValidConfig) {
   EXPECT_EQ(m_driver->getConfig().num_outputs, 2u);
 }
 
+TEST_F(DummyDriverTest, ReportsCapabilities) {
+  AudioDriverConfig config;
+  config.sample_rate = 96000;
+  config.buffer_size = 128;
+  config.num_inputs = 1;
+  config.num_outputs = 8;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+
+  const auto caps = m_driver->getCapabilities();
+  EXPECT_EQ(caps.backend, AudioBackend::Dummy);
+  EXPECT_EQ(caps.native_sample_rates.size(), 1u);
+  EXPECT_EQ(caps.native_sample_rates.front(), 96000u);
+  EXPECT_EQ(caps.native_buffer_sizes.front(), 128u);
+  EXPECT_TRUE(caps.supports_input);
+  EXPECT_TRUE(caps.supports_multichannel_output);
+  EXPECT_FALSE(caps.reports_hardware_latency);
+}
+
 TEST_F(DummyDriverTest, InitializeRejectsInvalidConfig) {
   AudioDriverConfig config;
   config.sample_rate = 0; // Invalid

@@ -38,6 +38,7 @@ public:
   const AudioDriverConfig& getConfig() const override;
   std::string getDriverName() const override;
   uint32_t getLatencySamples() const override;
+  AudioDriverCapabilities getCapabilities() const override;
 
   /// Set performance monitor for audio metrics tracking
   /// @param monitor Performance monitor instance (can be nullptr to disable)
@@ -89,8 +90,9 @@ private:
   // Callback
   IAudioCallback* callback_{nullptr};
 
-  // Performance monitoring (optional)
-  IPerformanceMonitor* performance_monitor_{nullptr};
+  // Performance monitoring (optional, only read by diagnostics callback builds)
+  std::atomic<IPerformanceMonitor*> performance_monitor_{nullptr};
+  std::atomic<uint32_t> callbacks_in_flight_{0};
 
   // Audio thread buffers (allocated once in initialize)
   std::vector<float*> input_buffers_;

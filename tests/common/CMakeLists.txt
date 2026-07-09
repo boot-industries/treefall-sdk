@@ -46,3 +46,24 @@ add_test(
     NAME performance_integration_test
     COMMAND performance_integration_test
 )
+
+add_executable(realtime_diagnostics_test
+    realtime_diagnostics_test.cpp
+)
+
+target_link_libraries(realtime_diagnostics_test
+    PRIVATE
+        Orpheus::diagnostics
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(realtime_diagnostics_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(
+    NAME realtime_diagnostics_test
+    COMMAND realtime_diagnostics_test
+)

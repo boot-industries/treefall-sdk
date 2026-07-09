@@ -4,6 +4,7 @@
 
 #include <ShmUI.h> // Include ShmUI for AudioAnalyzer
 #include <array>
+#include <atomic>
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_events/juce_events.h>
@@ -15,6 +16,7 @@
 #include <orpheus/performance_monitor.h>
 #include <orpheus/transport_controller.h>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -147,6 +149,16 @@ public:
 
   /// PANIC - immediate mute (no fade-out)
   void panicStop();
+
+  /// Drain the transport's pending UI callbacks (clip started/stopped/looped).
+  ///
+  /// OCC151 T5 / F-APP-3: this MUST be called from the message thread only. The
+  /// SDK's callback ring is SPSC — the audio thread is the sole producer and the
+  /// message thread must be the sole consumer. Previously this was drained from
+  /// processAudio() on the audio thread, which destroyed std::function objects
+  /// (and their captured shared_ptrs) on the RT thread and broke the SPSC
+  /// contract. Call this from a message-thread timer (see MainComponent).
+  void drainTransportCallbacks();
 
   //==============================================================================
   // State Queries (Any Thread)
@@ -425,6 +437,12 @@ private:
   // Note: Using concrete class for extended API (registerClipAudio, processAudio, etc.)
   std::unique_ptr<orpheus::TransportController> m_transportController;
   std::unique_ptr<orpheus::IAudioDriver> m_audioDriver;
+
+  // OCC151 T5 / F-APP-3: thread-affinity guard for the SPSC callback ring.
+  // processAudio() stamps the audio-thread id here on first entry so
+  // drainTransportCallbacks() can assert (Debug only) that it is NOT running on
+  // the audio thread — the message thread must be the sole callback consumer.
+  std::atomic<std::thread::id> m_audioThreadId{};
 
   // Clip handle mapping (buttonIndex -> ClipHandle)
   // UI uses 8 tabs x 100 logical slots; audio pre-allocation keeps 960 slots

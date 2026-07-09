@@ -22,13 +22,6 @@ CoreAudioDriver::~CoreAudioDriver() {
 }
 
 SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
-  FILE* f = fopen("/tmp/coreaudio_init.log", "a");
-  if (f) {
-    fprintf(f, "CoreAudio: initialize() called, sample_rate=%u\n", config.sample_rate);
-    fflush(f);
-    fclose(f);
-  }
-
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (is_running_.load(std::memory_order_acquire)) {
@@ -118,20 +111,20 @@ SessionGraphError CoreAudioDriver::stop() {
     return SessionGraphError::OK; // Already stopped
   }
 
+  is_running_.store(false, std::memory_order_release);
+
   if (audio_unit_) {
-    // Stop AudioUnit (this is asynchronous - may still call callback briefly)
+    // AudioOutputUnitStop() is not documented as a synchronous render-callback
+    // drain. Track callbacks we can observe and wait only until they exit.
     AudioOutputUnitStop(audio_unit_);
 
-    // CRITICAL: AudioOutputUnitStop() does NOT block until audio thread exits!
-    // The render callback can still be invoked for a brief period after this returns.
-    // We must ensure the audio thread has fully exited before destroying resources.
-    //
-    // Solution: Sleep briefly to allow any in-flight callbacks to complete.
-    // This is a conservative approach - Apple doesn't provide a synchronous stop API.
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+    while (callbacks_in_flight_.load(std::memory_order_acquire) != 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::yield();
+    }
   }
 
-  is_running_.store(false, std::memory_order_release);
   callback_ = nullptr;
 
   return SessionGraphError::OK;
@@ -153,9 +146,27 @@ uint32_t CoreAudioDriver::getLatencySamples() const {
   return latency_samples_.load(std::memory_order_acquire);
 }
 
+AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
+  AudioDriverCapabilities caps;
+  caps.backend = AudioBackend::CoreAudio;
+  caps.platform = AudioPlatform::macOS;
+  caps.min_output_channels = config_.num_outputs == 0 ? 0 : 1;
+  caps.max_output_channels = config_.num_outputs;
+  caps.min_input_channels = 0;
+  caps.max_input_channels = config_.num_inputs;
+  caps.native_sample_rates.push_back(config_.sample_rate);
+  caps.native_buffer_sizes.push_back(config_.buffer_size);
+  caps.supports_exclusive_mode = false;
+  caps.supports_shared_mode = true;
+  caps.supports_device_hot_swap = true;
+  caps.supports_input = config_.num_inputs > 0;
+  caps.supports_multichannel_output = config_.num_outputs > 2;
+  caps.reports_hardware_latency = getLatencySamples() > 0;
+  return caps;
+}
+
 void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  performance_monitor_ = monitor;
+  performance_monitor_.store(monitor, std::memory_order_release);
 }
 
 // Static audio callback
@@ -169,13 +180,19 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   auto* driver = static_cast<CoreAudioDriver*>(inRefCon);
   assert(driver != nullptr);
 
+  struct CallbackScope {
+    explicit CallbackScope(CoreAudioDriver& d) : driver(d) {
+      driver.callbacks_in_flight_.fetch_add(1, std::memory_order_acq_rel);
+    }
+    ~CallbackScope() {
+      driver.callbacks_in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+    }
+    CoreAudioDriver& driver;
+  } callback_scope(*driver);
+
   // Zero output buffers first
   for (UInt32 i = 0; i < ioData->mNumberBuffers; ++i) {
     std::memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
-  }
-
-  if (!driver->callback_) {
-    return noErr; // No callback set, output silence
   }
 
   // Clamp frames to our allocated buffer size
@@ -194,32 +211,38 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     return noErr; // Driver is stopping, output silence
   }
 
-  // Invoke user callback (lock-free) - measure timing for performance monitoring
+  IAudioCallback* callback = driver->callback_;
+  if (!callback) {
+    return noErr; // No callback set, output silence
+  }
+
+  // Invoke user callback (lock-free). Timing is opt-in for diagnostics builds;
+  // production callbacks should not pay for hot-path instrumentation.
   const float** input_ptrs = driver->input_buffers_.empty()
                                  ? nullptr
                                  : const_cast<const float**>(driver->input_buffers_.data());
   float** output_ptrs = driver->output_buffers_.data();
 
-  // Measure audio callback execution time
-  auto callback_start = std::chrono::high_resolution_clock::now();
-  driver->callback_->processAudio(input_ptrs, output_ptrs, num_channels, frames_to_process);
-  auto callback_end = std::chrono::high_resolution_clock::now();
+#if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
+  const UInt64 callback_start = AudioGetCurrentHostTime();
+#endif
+  callback->processAudio(input_ptrs, output_ptrs, num_channels, frames_to_process);
+#if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
+  const UInt64 callback_end = AudioGetCurrentHostTime();
 
-  // Report performance metrics if monitor is available
-  if (driver->performance_monitor_) {
-    auto duration_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(callback_end - callback_start);
-    uint64_t callback_duration_us = static_cast<uint64_t>(duration_us.count());
+  if (auto* monitor = driver->performance_monitor_.load(std::memory_order_acquire)) {
+    const UInt64 duration_ns = AudioConvertHostTimeToNanos(callback_end - callback_start);
+    uint64_t callback_duration_us = static_cast<uint64_t>(duration_ns / 1000u);
     uint64_t buffer_duration_us =
-        (static_cast<uint64_t>(frames_to_process) * 1'000'000) / driver->config_.sample_rate;
+        (static_cast<uint64_t>(frames_to_process) * 1'000'000ull) / driver->config_.sample_rate;
 
     // TODO: Get active clip count from transport controller (for now, use 0)
     uint32_t active_clips = 0;
 
-    driver->performance_monitor_->recordAudioCallback(callback_duration_us, buffer_duration_us,
-                                                      active_clips, driver->config_.sample_rate,
-                                                      frames_to_process);
+    monitor->recordAudioCallback(callback_duration_us, buffer_duration_us, active_clips,
+                                 driver->config_.sample_rate, frames_to_process);
   }
+#endif
 
   // Copy planar output buffers to CoreAudio non-interleaved buffers
   for (uint32_t ch = 0; ch < num_channels && ch < ioData->mNumberBuffers; ++ch) {
