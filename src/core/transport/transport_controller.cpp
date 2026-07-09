@@ -4,6 +4,7 @@
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
 #include "session/session_graph.h"                 // For SessionGraph
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 
@@ -125,8 +126,12 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
-      const auto& entry = it->second;
-      context->reader = entry.reader;
+      auto& entry = it->second;
+      // ORP134 G1: lazy preparation for hosts that never call
+      // prepareClipAudio() — decode/stream setup happens HERE on the control
+      // thread, never on the audio thread.
+      ensurePreparedSourceLocked(entry);
+      context->source = entry.source;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
       context->fileLengthSamples = entry.metadata.duration_samples; // ORP127 G3
@@ -146,7 +151,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->voiceMode = entry.voiceMode; // ORP127 G5
     } else {
       // Clip not registered - use defaults for testing
-      context->reader = nullptr;
+      context->source = nullptr;
       context->numChannels = 2;
       context->trimInSamples = 0;
       context->trimOutSamples = 48000 * 60;    // Default 60s
@@ -181,22 +186,11 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   // Post Start command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Start;
   cmd.handle = handle;
-  cmd.startContext = context; // Move shared_ptr into command
-
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  cmd.startContext = context;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopClip(ClipHandle handle) {
@@ -205,68 +199,31 @@ SessionGraphError TransportController::stopClip(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Stop;
   cmd.handle = handle;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = 0;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopAllClips() {
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
+  TransportCommand cmd{};
   cmd.type = TransportCommand::Type::StopAll;
   cmd.handle = 0;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = 0;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
-  // Validate group index (0-3 for 4 Clip Groups)
-  if (groupIndex >= 4) {
-    return SessionGraphError::InvalidParameter;
-  }
-
-  // Post command to audio thread
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  // Check if queue is full
-  if (nextIndex == m_commandReadIndex.load(std::memory_order_acquire)) {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  TransportCommand& cmd = m_commands[writeIndex];
-  cmd.type = TransportCommand::Type::StopGroup;
-  cmd.handle = 0;
-  cmd.startContext = nullptr;
-  cmd.data.groupIndex = groupIndex;
-  m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-
-  return SessionGraphError::OK;
+  // ORP133 G2: Deprecated — group-stop is a host concern, not a transport one.
+  //
+  // The transport has never had a clip→group mapping (the former StopGroup
+  // command arm was a silent no-op blocked on "get clip group assignments from
+  // SessionGraph"). Grouping lives with the host: Clip Composer models its own
+  // playgroups and scopes chokes with stopOtherClips() (the ORP127 G7
+  // host-neutral primitive), and the routing matrix's channel groups are a
+  // mixing topology, not a playback-control one. Rather than keep a public
+  // method that silently does nothing, this now reports the truth.
+  (void)groupIndex;
+  return SessionGraphError::NotSupported;
 }
 
 SessionGraphError TransportController::stopOtherClips(ClipHandle exceptHandle) {
@@ -362,8 +319,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
 
-    // Skip if no audio file registered
-    if (!clip.reader || !clip.reader->isOpen()) {
+    // Skip if no audio source prepared (unregistered/test clips)
+    if (!clip.source) {
       continue;
     }
 
@@ -379,20 +336,18 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     // CRITICAL: Clamp position to [trimIn, trimOut) range to maintain edit laws
     // This ensures getClipPosition() never returns values outside user-defined boundaries
     if (clip.currentSample < trimIn) {
-      // Position below IN point - clamp to IN (enforce Edit Law #1)
+      // Position below IN point - clamp to IN (enforce Edit Law #1).
+      // ORP134 G1: sources are position-explicit — no reader seek; just hint
+      // the streaming prefetcher.
       clip.currentSample = trimIn;
-      if (clip.reader) {
-        clip.reader->seek(trimIn);
-      }
+      clip.source->setDemand(trimIn);
     } else if (clip.currentSample >= trimOut) {
       // Position at or past OUT point - handle loop or stop
       bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
       if (shouldLoop) {
         // Loop mode: restart from IN point
         clip.currentSample = trimIn;
-        if (clip.reader) {
-          clip.reader->seek(trimIn);
-        }
+        clip.source->setDemand(trimIn);
 
         // ORP097 Bug 7 Fix: Mark that clip has looped
         clip.hasLoopedOnce = true;
@@ -455,10 +410,10 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     size_t framesToRead =
         static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
 
-    // Note: We don't seek on every callback - the reader maintains its position
-    // The initial seek to trimInSamples happens in addActiveClip()
-
-    // Read audio from file
+    // ORP134 G1: reads are position-explicit against the prepared/streamed
+    // source — the audio thread never touches a file reader or a shared
+    // cursor. (This also makes multi-voice playback of one clip correct:
+    // every voice reads at its own currentSample.)
     size_t numFileChannels = clip.numChannels;
 
     // Use this clip's dedicated read buffer (no shared buffer conflicts!)
@@ -472,15 +427,32 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       continue;
     }
 
-    // Read samples from audio file into THIS clip's buffer
-    // Use captured shared_ptr reader (thread-safe, no map lookup needed)
-    auto readResult = clip.reader->readSamples(clipReadBuffer, framesToRead);
+    // Copy decoded PCM from this clip's source into THIS clip's buffer.
+    // A streaming cache miss NEVER blocks: the clip renders silence for this
+    // buffer, the transport reports a BufferUnderrun, and the position still
+    // advances so the timeline keeps moving while the worker catches up.
+    size_t framesRead = 0;
+    if (!clip.source->read(clip.currentSample, clipReadBuffer, framesToRead, framesRead)) {
+      TransportEvent event{};
+      event.type = TransportEventType::BufferUnderrun;
+      event.handle = clip.handle;
+      event.voiceId = clip.voiceId;
+      event.position = getCurrentPosition();
+      postTransportEvent(event);
 
-    if (!readResult.isOk()) {
+      clip.source->setDemand(clip.currentSample);
+      clip.currentSample += static_cast<int64_t>(framesToRead);
       continue;
     }
 
-    size_t framesRead = readResult.value;
+    if (framesRead == 0) {
+      // Past EOF (e.g. OUT-tail horizon beyond the file). Advance so stop
+      // fades can complete, mirroring the source-less advance path.
+      if (clip.isStopping) {
+        clip.currentSample += static_cast<int64_t>(numFrames);
+      }
+      continue;
+    }
 
     // ORP121 A-01: Stereo output to L/R channel buffers (indices i*2 and i*2+1)
     // No mono sum - preserves source channel separation per ST2110-30
@@ -602,12 +574,12 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     clip.currentSample += static_cast<int64_t>(framesRead);
   }
 
-  // Multi-voice fix: Advance position for clips WITHOUT readers (test clips, stopped clips)
+  // Multi-voice fix: Advance position for clips WITHOUT sources (test clips)
   // This ensures fade-outs complete properly even when no audio is being rendered
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     ActiveClip& clip = m_activeClips[i];
-    if (!clip.reader || !clip.reader->isOpen()) {
-      // Clip has no reader - advance position by buffer size so fades can complete
+    if (!clip.source) {
+      // Clip has no source - advance position by buffer size so fades can complete
       clip.currentSample += static_cast<int64_t>(numFrames);
     }
   }
@@ -634,11 +606,12 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
       if (fadeProgress >= fadeOutSampleCount) {
         // Fade-out complete, remove clip
-        postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipStopped(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStopped;
+        event.handle = clip.handle;
+        event.voiceId = clip.voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
 
         removeActiveClip(clip.handle);
         continue; // Don't increment i, we just removed this clip
@@ -652,22 +625,23 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
 
       if (shouldLoop) {
-        // Loop: seek back to trim IN point (works even without reader)
+        // Loop: jump back to trim IN point (works even without a source)
         int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-        if (clip.reader) {
-          clip.reader->seek(trimIn);
+        if (clip.source) {
+          clip.source->setDemand(trimIn);
         }
         clip.currentSample = trimIn;
 
         // ORP097 Bug 7 Fix: Mark that clip has looped (prevents fade-in/out on subsequent loops)
         clip.hasLoopedOnce = true;
 
-        // Post loop callback
-        postCallback([this, handle = clip.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipLooped(handle, pos);
-          }
-        });
+        // Post loop event
+        TransportEvent event{};
+        event.type = TransportEventType::ClipLooped;
+        event.handle = clip.handle;
+        event.voiceId = clip.voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
 
         // Continue playback (don't remove clip, don't increment i)
         ++i;
@@ -712,11 +686,11 @@ void TransportController::processCommands() {
       // ORP127 G5: honor the clip's voice policy when firing.
       if (cmd.startContext) {
         startVoiceWithMode(cmd.startContext);
-        postCallback([this, handle = cmd.handle, pos = getCurrentPosition()]() {
-          if (m_callback) {
-            m_callback->onClipStarted(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStarted;
+        event.handle = cmd.handle;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
       }
     } break;
 
@@ -752,11 +726,6 @@ void TransportController::processCommands() {
       }
       break;
 
-    case TransportCommand::Type::StopGroup:
-      // TODO: Get clip group assignments from SessionGraph
-      // For now, this is a no-op
-      break;
-
     case TransportCommand::Type::UpdateTrim:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
@@ -771,16 +740,12 @@ void TransportController::processCommands() {
           // This prevents fade calculation overflow in processAudio()
           if (m_activeClips[i].currentSample < trimIn) {
             m_activeClips[i].currentSample = trimIn;
-            if (m_activeClips[i].reader) {
-              m_activeClips[i].reader->seek(trimIn);
+            if (m_activeClips[i].source) {
+              m_activeClips[i].source->setDemand(trimIn);
             }
           } else if (m_activeClips[i].currentSample >= trimOut) {
             m_activeClips[i].currentSample = trimOut;
-            // Don't seek to trimOut (EOF), just let it stop naturally in processAudio logic
-            // But ensure reader is consistent if we needed to read
-            if (m_activeClips[i].reader) {
-              m_activeClips[i].reader->seek(trimOut);
-            }
+            // Position clamps to OUT; playback stops naturally in processAudio.
           }
         }
       }
@@ -842,8 +807,8 @@ void TransportController::processCommands() {
 
           trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
           clip.currentSample = trimIn;
-          if (clip.reader) {
-            clip.reader->seek(trimIn);
+          if (clip.source) {
+            clip.source->setDemand(trimIn);
           }
 
           // Cancel any fade-out in progress.
@@ -861,15 +826,13 @@ void TransportController::processCommands() {
       }
 
       if (foundAnyVoice) {
-        postCallback([this, handle = cmd.handle, trimIn]() {
-          if (m_callback) {
-            TransportPosition pos;
-            pos.samples = trimIn;
-            pos.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
-            pos.beats = 0.0;
-            m_callback->onClipRestarted(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipRestarted;
+        event.handle = cmd.handle;
+        event.position.samples = trimIn;
+        event.position.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
+        event.position.beats = 0.0;
+        postTransportEvent(event);
       }
     } break;
 
@@ -883,22 +846,20 @@ void TransportController::processCommands() {
           foundAnyVoice = true;
           ActiveClip& clip = m_activeClips[i];
           clip.currentSample = position;
-          if (clip.reader) {
-            clip.reader->seek(position);
+          if (clip.source) {
+            clip.source->setDemand(position);
           }
         }
       }
 
       if (foundAnyVoice) {
-        postCallback([this, handle = cmd.handle, position]() {
-          if (m_callback) {
-            TransportPosition pos;
-            pos.samples = position;
-            pos.seconds = static_cast<double>(position) / static_cast<double>(m_sampleRate);
-            pos.beats = 0.0;
-            m_callback->onClipSeeked(handle, pos);
-          }
-        });
+        TransportEvent event{};
+        event.type = TransportEventType::ClipSeeked;
+        event.handle = cmd.handle;
+        event.position.samples = position;
+        event.position.seconds = static_cast<double>(position) / static_cast<double>(m_sampleRate);
+        event.position.beats = 0.0;
+        postTransportEvent(event);
       }
     } break;
 
@@ -986,8 +947,8 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   // ORP127 G5: reset a live voice to its trim IN for an in-place restart.
   int64_t trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
   clip.currentSample = trimIn;
-  if (clip.reader) {
-    clip.reader->seek(trimIn);
+  if (clip.source) {
+    clip.source->setDemand(trimIn);
   }
   clip.isStopping = false;
   clip.fadeOutGain = 1.0f;
@@ -1051,8 +1012,8 @@ void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
       // still applies via hasLoopedOnce=false.
       int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
       primary->currentSample = trimIn;
-      if (primary->reader) {
-        primary->reader->seek(trimIn);
+      if (primary->source) {
+        primary->source->setDemand(trimIn);
       }
       primary->isStopping = false;
       primary->fadeOutGain = 1.0f;
@@ -1108,13 +1069,14 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     if (oldest) {
       uint32_t oldestVoiceId = oldest->voiceId;
 
-      // Post callback that voice was stopped (for UI tracking)
+      // Post event that voice was stopped (for UI tracking)
       // Note: Callback reports handle, not specific voiceId (UI tracks per-handle, not per-voice)
-      postCallback([this, handle, pos = getCurrentPosition()]() {
-        if (m_callback) {
-          m_callback->onClipStopped(handle, pos);
-        }
-      });
+      TransportEvent event{};
+      event.type = TransportEventType::ClipStopped;
+      event.handle = handle;
+      event.voiceId = oldestVoiceId;
+      event.position = getCurrentPosition();
+      postTransportEvent(event);
 
       removeActiveVoice(oldestVoiceId);
     }
@@ -1160,7 +1122,7 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize loop mode
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
-  clip.reader = context->reader; // Store shared_ptr (maintains reference count)
+  clip.source = context->source; // Store shared_ptr (maintains reference count)
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
@@ -1175,9 +1137,10 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // ORP097 Bug 7 Fix: Initialize loop state
   clip.hasLoopedOnce = false;
 
-  // Seek to trim IN point once when starting
-  if (clip.reader) {
-    clip.reader->seek(context->trimInSamples);
+  // Prime the streaming prefetcher at the trim IN point (no-op for prepared
+  // sources; sources are position-explicit so there is nothing to seek).
+  if (clip.source) {
+    clip.source->setDemand(context->trimInSamples);
   }
 }
 
@@ -1225,7 +1188,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce;
-        dest.reader = src.reader;
+        dest.source = src.source;
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
         dest.voiceMode = src.voiceMode;                 // ORP127 G5
@@ -1281,7 +1244,7 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce; // ORP097 Bug 7 Fix
-        dest.reader = src.reader;               // Copy shared_ptr (atomic refcount increment)
+        dest.source = src.source;               // Copy shared_ptr (atomic refcount increment)
         dest.numChannels = src.numChannels;
       }
       --m_activeClipCount;
@@ -1292,7 +1255,27 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 
 SessionGraphError TransportController::postCommand(const TransportCommand& command) {
   // ORP127 G1: Single choke point for UI → audio-thread commands. SPSC ring;
-  // UI thread is the sole producer, audio thread the sole consumer.
+  // ONE control thread is the sole producer, the audio thread the sole
+  // consumer. Every control-mutating entry point funnels through here (ORP133
+  // G3), so the debug producer check below covers the whole mutation surface.
+#ifndef NDEBUG
+  {
+    // ORP133 G3: enforce the single-producer contract in debug builds. The
+    // first producer thread claims the queue; any later post from a different
+    // thread is a contract violation (hosts with multiple control sources must
+    // funnel through a single dispatcher — see ITransportController docs).
+    std::thread::id expected{};
+    const std::thread::id self = std::this_thread::get_id();
+    if (!m_commandProducerThread.compare_exchange_strong(expected, self,
+                                                         std::memory_order_relaxed) &&
+        expected != self) {
+      assert(false &&
+             "TransportController: control-mutating methods must be called from a single "
+             "control thread (SPSC command queue). Funnel UI/MIDI/OSC through one dispatcher.");
+    }
+  }
+#endif
+
   size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
   size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
 
@@ -1331,47 +1314,68 @@ void TransportController::publishVoiceSnapshot() {
   m_snapshotIndex.store(back, std::memory_order_release);
 }
 
-void TransportController::postCallback(std::function<void()> callback) {
-  // ORP121 C-03: Lock-free SPSC callback queue
-  // Audio thread writes to ring buffer (no mutex, no blocking)
+void TransportController::postTransportEvent(const TransportEvent& event) {
+  // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
+  // Audio thread writes POD events to the ring buffer (no mutex, no blocking,
+  // no std::function construction/destruction on the audio thread)
   //
   // Memory ordering rationale:
-  // - relaxed for same-thread reads (writeIdx in postCallback)
+  // - relaxed for same-thread reads (writeIdx in postTransportEvent)
   // - acquire for cross-thread reads (readIdx check for full detection)
-  // - release for writes (ensures callback data visible before index update)
+  // - release for writes (ensures event data visible before index update)
 
   size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
   size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1); // Mask for wrap (power of 2)
 
   // Check if queue full (read index caught up)
   if (nextIdx == m_callbackReadIndex.load(std::memory_order_acquire)) {
-    // Queue full - drop callback (better than blocking audio thread)
+    // Queue full - drop event (better than blocking audio thread)
     // Increment dropped callback counter for diagnostics
     m_droppedCallbackCount.fetch_add(1, std::memory_order_relaxed);
     return;
   }
 
-  m_callbackRing[writeIdx] = std::move(callback);
+  m_eventRing[writeIdx] = event;
   m_callbackWriteIndex.store(nextIdx, std::memory_order_release);
 }
 
 void TransportController::processCallbacks() {
-  // ORP121 C-03: Lock-free SPSC callback queue
-  // UI thread reads from ring buffer (no mutex, no blocking)
+  // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
+  // UI thread reads POD events from the ring buffer (no mutex, no blocking)
+  // and translates them into the host's ITransportCallback virtuals. Events
+  // are dispatched strictly in ring (emission) order.
   //
   // Memory ordering rationale:
   // - relaxed for same-thread reads (readIdx in processCallbacks)
-  // - acquire for cross-thread reads (writeIdx to see all pending callbacks)
-  // - release for writes (ensures slot cleared before index update)
+  // - acquire for cross-thread reads (writeIdx to see all pending events)
+  // - release for the read-index update (frees the slots for the producer)
 
   size_t readIdx = m_callbackReadIndex.load(std::memory_order_relaxed);
   size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_acquire);
 
   while (readIdx != writeIdx) {
-    auto& callback = m_callbackRing[readIdx];
-    if (callback) {
-      callback();
-      callback = nullptr; // Clear slot to release captured resources
+    const TransportEvent& event = m_eventRing[readIdx];
+    if (m_callback) {
+      switch (event.type) {
+      case TransportEventType::ClipStarted:
+        m_callback->onClipStarted(event.handle, event.position);
+        break;
+      case TransportEventType::ClipStopped:
+        m_callback->onClipStopped(event.handle, event.position);
+        break;
+      case TransportEventType::ClipLooped:
+        m_callback->onClipLooped(event.handle, event.position);
+        break;
+      case TransportEventType::ClipRestarted:
+        m_callback->onClipRestarted(event.handle, event.position);
+        break;
+      case TransportEventType::ClipSeeked:
+        m_callback->onClipSeeked(event.handle, event.position);
+        break;
+      case TransportEventType::BufferUnderrun:
+        m_callback->onBufferUnderrun(event.position);
+        break;
+      }
     }
     readIdx = (readIdx + 1) & (CALLBACK_QUEUE_SIZE - 1);
   }
@@ -1454,42 +1458,59 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Do not seek/read a shared reader while an active voice may be using it on
-  // the audio thread. Future streaming readers should remove this limitation.
+  // Preserved contract: preparation is a pre-playback operation. (With
+  // ORP134 G1 sources a re-preparation while playing would actually be safe -
+  // active voices hold their own reference - but the historical NotReady
+  // keeps host behavior unchanged.)
   if (isClipPlaying(handle)) {
     return SessionGraphError::NotReady;
   }
 
-  std::shared_ptr<IAudioFileReader> reader;
-  uint16_t numChannels = 0;
-  int64_t trimIn = 0;
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    reader = it->second.reader;
-    numChannels = it->second.metadata.num_channels;
-    trimIn = it->second.trimInSamples;
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+  return ensurePreparedSourceLocked(it->second);
+}
+
+SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry& entry) {
+  // ORP134 G1: build the realtime playback source on the CONTROL thread. All
+  // decode/resample/file I/O happens here (or on the stream worker) - the
+  // audio thread only ever memcpy-reads the published source.
+  if (entry.source) {
+    return SessionGraphError::OK;
   }
 
-  if (!reader || !reader->isOpen() || numChannels == 0 || numChannels > MAX_FILE_CHANNELS) {
+  const uint16_t numChannels = entry.metadata.num_channels;
+  if (!entry.reader || !entry.reader->isOpen() || numChannels == 0 ||
+      numChannels > MAX_FILE_CHANNELS) {
     return SessionGraphError::NotReady;
   }
 
-  SessionGraphError seekResult = reader->seek(trimIn);
-  if (seekResult != SessionGraphError::OK) {
-    return seekResult;
+  const int64_t lengthFrames = entry.metadata.duration_samples;
+  if (lengthFrames <= m_preparedSourceMaxFrames) {
+    // Short clip: decode the whole file (engine-rate; entry.reader is already
+    // wrapped in the ORP127 G6 resampler when rates differ).
+    auto prepared = PreparedClipSource::decode(*entry.reader, numChannels, lengthFrames);
+    if (!prepared) {
+      return SessionGraphError::InternalError;
+    }
+    entry.source = prepared;
+    return SessionGraphError::OK;
   }
 
-  float scratch[MAX_FILE_CHANNELS] = {};
-  auto readResult = reader->readSamples(scratch, 1);
-  if (!readResult.isOk()) {
-    return readResult.error;
+  // Long file: stream through a fixed page ring. Prefill the window at the
+  // trim IN synchronously so playback starts without an initial underrun,
+  // then hand the source to the background worker for steady-state refills.
+  auto streaming = std::make_shared<StreamingClipSource>(entry.reader, numChannels, lengthFrames);
+  streaming->prefill(entry.trimInSamples);
+  if (!m_streamWorker) {
+    m_streamWorker = std::make_unique<MediaStreamWorker>();
   }
-
-  return reader->seek(trimIn);
+  m_streamWorker->attach(streaming);
+  entry.source = streaming;
+  return SessionGraphError::OK;
 }
 
 SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
@@ -1530,21 +1551,12 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateTrim;
-    cmd.handle = handle;
-    cmd.data.trim.in = trimInSamples;
-    cmd.data.trim.out = trimOutSamples;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateTrim;
+  cmd.handle = handle;
+  cmd.data.trim.in = trimInSamples;
+  cmd.data.trim.out = trimOutSamples;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::updateClipFades(ClipHandle handle, double fadeInSeconds,
@@ -1614,23 +1626,14 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateFade;
-    cmd.handle = handle;
-    cmd.data.fade.inSeconds = fadeInSeconds;
-    cmd.data.fade.outSeconds = fadeOutSeconds;
-    cmd.data.fade.inCurve = fadeInCurve;
-    cmd.data.fade.outCurve = fadeOutCurve;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateFade;
+  cmd.handle = handle;
+  cmd.data.fade.inSeconds = fadeInSeconds;
+  cmd.data.fade.outSeconds = fadeOutSeconds;
+  cmd.data.fade.inCurve = fadeInCurve;
+  cmd.data.fade.outCurve = fadeOutCurve;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::getClipTrimPoints(ClipHandle handle, int64_t& trimInSamples,
@@ -1696,20 +1699,11 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateGain;
-    cmd.handle = handle;
-    cmd.data.gainDb = gainDb;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateGain;
+  cmd.handle = handle;
+  cmd.data.gainDb = gainDb;
+  return postCommand(cmd);
 }
 
 SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool shouldLoop) {
@@ -1728,20 +1722,11 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
-  size_t writeIndex = m_commandWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIndex = (writeIndex + 1) % MAX_COMMANDS;
-
-  if (nextIndex != m_commandReadIndex.load(std::memory_order_acquire)) {
-    TransportCommand& cmd = m_commands[writeIndex];
-    cmd.type = TransportCommand::Type::UpdateLoop;
-    cmd.handle = handle;
-    cmd.data.booleanValue = shouldLoop;
-    m_commandWriteIndex.store(nextIndex, std::memory_order_release);
-  } else {
-    return SessionGraphError::InternalError; // Queue full
-  }
-
-  return SessionGraphError::OK;
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::UpdateLoop;
+  cmd.handle = handle;
+  cmd.data.booleanValue = shouldLoop;
+  return postCommand(cmd);
 }
 
 int64_t TransportController::getClipPosition(ClipHandle handle) const {

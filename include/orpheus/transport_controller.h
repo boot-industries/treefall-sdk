@@ -4,10 +4,10 @@
 #include <orpheus/errors.h>
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace orpheus {
 
@@ -151,15 +151,32 @@ public:
 /// This interface provides real-time control over clip playback with
 /// sample-accurate timing and thread-safe operation.
 ///
-/// Thread Safety:
-/// - startClip(), stopClip(), stopAllClips(), stopAllInGroup(): Thread-safe, callable from UI
-/// thread
-/// - getClipState(), isClipPlaying(), getCurrentPosition(): Thread-safe, callable from any thread
-/// - setCallback(): UI thread only
+/// Threading contract (ORP133 G3 — this is the real, enforced contract):
+///
+/// - **Control-mutating methods are single-producer.** startClip(), stopClip(),
+///   stopAllClips(), stopOtherClips(), restartClip(), seekClip(), and every
+///   updateClip*/setClip* method post commands onto a lock-free
+///   single-producer/single-consumer (SPSC) queue drained by the audio thread.
+///   Exactly ONE control thread may call them — typically the host's UI/message
+///   thread. They are NOT safe to call concurrently from multiple threads: the
+///   SPSC producer side is unsynchronized by design. Hosts with multiple
+///   control sources (UI + MIDI + OSC + network remote) must funnel them
+///   through a single dispatcher thread before they reach this interface.
+///   (A first-class SDK multi-producer dispatcher is future work — ORP135.)
+///   Debug builds assert if commands are posted from more than one thread.
+/// - **Queries are lock-free readers of a published snapshot.** getClipState(),
+///   isClipPlaying(), getCurrentPosition(), getClipPosition(),
+///   getActiveVoiceCount(), isClipLooping(), and the getClip* metadata queries
+///   are safe from any thread, including concurrently with the control thread.
+/// - **setCallback(): control thread only**, and not concurrently with
+///   callback dispatch. Callbacks are invoked on the host's UI thread (from
+///   processCallbacks()), never the audio thread.
 ///
 /// Audio Thread Guarantees:
 /// - No allocations in audio callback
 /// - Lock-free command processing
+/// - POD event queue for audio→UI notifications (no std::function on the
+///   audio thread — ORP133 G1)
 /// - Sample-accurate timing (±1 sample tolerance)
 class ITransportController {
 public:
@@ -198,11 +215,17 @@ public:
 
   /// Stop all clips in a specific routing group
   ///
-  /// This is useful for "FIFO choke" behavior where only one clip
-  /// in a group can play at a time.
+  /// @deprecated ORP133 G2: NOT SUPPORTED — always returns
+  /// SessionGraphError::NotSupported. This method was a silent no-op in every
+  /// SDK release (the transport has no clip→group mapping; grouping is a host
+  /// concern), and it now reports that truthfully instead. Hosts that need
+  /// scoped group-stop should implement it with their own group model on top
+  /// of stopOtherClips() (host-neutral choke, ORP127 G7) and/or stopClip().
+  /// The method is retained only for source compatibility and may be removed
+  /// in a future major version.
   ///
-  /// @param groupIndex Routing group index (0-3)
-  /// @return SessionGraphError::OK on success, or error code on failure
+  /// @param groupIndex Ignored
+  /// @return SessionGraphError::NotSupported, always
   virtual SessionGraphError stopAllInGroup(uint8_t groupIndex) = 0;
 
   /// Stop every playing clip EXCEPT the given one (ORP127 G7 choke primitive)

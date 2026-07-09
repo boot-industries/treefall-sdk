@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "clip_source.h" // ORP134 G1: prepared/streaming realtime sources
+
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
@@ -9,6 +11,8 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <type_traits>
 #include <unordered_map>
 
 namespace orpheus {
@@ -22,7 +26,9 @@ class SessionGraph;
 /// Contains all immutable state required to start a clip
 struct ClipPlaybackContext {
   ClipHandle handle;
-  std::shared_ptr<IAudioFileReader> reader;
+  // ORP134 G1: the audio thread reads decoded PCM through an IClipSource
+  // (prepared memory or streaming pages) — never through an IAudioFileReader.
+  std::shared_ptr<IClipSource> source;
 
   // Metadata snapshot at start time
   int64_t trimInSamples;
@@ -45,7 +51,8 @@ struct TransportCommand {
     Start,
     Stop,
     StopAll,
-    StopGroup,
+    // ORP133 G2: StopGroup removed — the transport has no clip→group mapping;
+    // hosts implement scoped group-stop with stopOtherClips() + host grouping.
     UpdateTrim,
     UpdateFade,
     UpdateGain,
@@ -68,8 +75,6 @@ struct TransportCommand {
   std::shared_ptr<ClipPlaybackContext> startContext;
 
   union {
-    uint8_t groupIndex; // For StopGroup command
-
     struct {
       int64_t in;
       int64_t out;
@@ -161,17 +166,50 @@ struct ActiveClip {
 
   uint16_t numChannels; // Number of channels in audio file
 
-  // Thread-safe reader reference (captured from AudioFileEntry when clip starts)
-  // Using shared_ptr provides reference-counted lifetime management:
-  // - Audio thread holds reference until clip stops
-  // - Reader can't be destroyed while audio thread is still using it
+  // ORP134 G1: thread-safe clip-source reference (captured from AudioFileEntry
+  // when the clip starts). shared_ptr gives reference-counted lifetime:
+  // - Audio thread holds a reference until the voice is removed
+  // - The source can't be destroyed while the audio thread still reads it
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
-  std::shared_ptr<IAudioFileReader> reader;
+  // Reads are position-explicit (source->read(currentSample, ...)), so
+  // multiple voices of one clip no longer contend over a shared file cursor.
+  std::shared_ptr<IClipSource> source;
 
   // ORP127 G5: per-voice policy (copied from the clip's configured VoiceMode at
   // Start). Governs how a fresh fire interacts with this voice.
   VoiceMode voiceMode{VoiceMode::Polyphonic};
 };
+
+/// ORP133 G1: Transport event kinds posted from the audio thread.
+///
+/// The audio→UI callback ring used to carry std::function<void()> payloads,
+/// which violates the callback rule in docs/REALTIME_AUDIT.md ("no
+/// std::function ownership changes on realtime callbacks") — small-object
+/// optimization may hide the allocation today, but it is not a portable
+/// guarantee. The ring now carries these fixed POD events; processCallbacks()
+/// translates them into the host's ITransportCallback virtuals on the UI
+/// thread. Event emission points map 1:1 to the old postCallback sites, so
+/// callback ordering and timing are unchanged.
+enum class TransportEventType : uint8_t {
+  ClipStarted = 0,
+  ClipStopped,
+  ClipLooped,
+  ClipRestarted,
+  ClipSeeked,
+  BufferUnderrun
+};
+
+/// ORP133 G1: Trivially-copyable event payload for the audio→UI SPSC ring.
+struct TransportEvent {
+  TransportEventType type;
+  ClipHandle handle;          ///< Subject clip (0 for transport-wide events)
+  uint32_t voiceId;           ///< Voice instance when known, 0 otherwise (diagnostic)
+  TransportPosition position; ///< Position payload delivered to the callback
+};
+
+static_assert(std::is_trivially_copyable_v<TransportEvent>,
+              "TransportEvent must stay POD: it is copied through the audio->UI ring "
+              "with no construction/destruction on the audio thread");
 
 /// ORP127 G1: Immutable per-voice snapshot published by the audio thread for
 /// lock-free UI-thread queries. Plain-old-data so it can be copied wholesale
@@ -252,8 +290,19 @@ public:
   /// @return Error code
   SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) override;
 
-  /// Prewarm clip reader outside the audio callback.
+  /// ORP134 G1: Build the clip's realtime playback source outside the audio
+  /// callback — whole-file PCM in memory for short clips, a worker-fed page
+  /// ring for long ones. Hosts should call this after registration/metadata
+  /// changes and before latency-critical playback; startClip() prepares
+  /// lazily (on the control thread) when it wasn't called.
   SessionGraphError prepareClipAudio(ClipHandle handle) override;
+
+  /// ORP134 G1 test hook: clips whose engine-rate length exceeds this many
+  /// frames stream from a page ring instead of being fully decoded to memory.
+  /// Control thread only; affects sources prepared after the call.
+  void setPreparedSourceMaxFrames(int64_t maxFrames) {
+    m_preparedSourceMaxFrames = maxFrames;
+  }
 
 private:
   /// Process pending commands from UI thread
@@ -301,8 +350,10 @@ private:
   /// @note Deprecated: Use removeActiveVoice() for multi-voice
   void removeActiveClip(ClipHandle handle);
 
-  /// Post callback to UI thread
-  void postCallback(std::function<void()> callback);
+  /// ORP133 G1: Post a POD transport event to the UI thread (audio thread only).
+  /// Drops the event (and bumps m_droppedCallbackCount) if the ring is full —
+  /// never blocks the audio thread.
+  void postTransportEvent(const TransportEvent& event);
 
   /// Calculate fade gain based on curve type
   /// @param normalizedPosition Position in fade (0.0 to 1.0)
@@ -361,16 +412,25 @@ private:
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};
 
-  // ORP121 C-03: Lock-free callback queue (Audio → UI thread)
+  // ORP121 C-03 / ORP133 G1: Lock-free event queue (Audio → UI thread)
   // SPSC ring buffer: Audio thread writes, UI thread reads - no contention
-  // Power of 2 size for efficient modulo via bitwise AND
+  // Power of 2 size for efficient modulo via bitwise AND. Payload is the POD
+  // TransportEvent (no std::function on the audio thread).
   static constexpr size_t CALLBACK_QUEUE_SIZE = 256;
-  std::array<std::function<void()>, CALLBACK_QUEUE_SIZE> m_callbackRing;
+  std::array<TransportEvent, CALLBACK_QUEUE_SIZE> m_eventRing{};
   std::atomic<size_t> m_callbackWriteIndex{0};
   std::atomic<size_t> m_callbackReadIndex{0};
 
   // Diagnostic counter for dropped callbacks (queue overflow)
   std::atomic<uint32_t> m_droppedCallbackCount{0};
+
+#ifndef NDEBUG
+  // ORP133 G3: Debug-only enforcement of the command queue's single-producer
+  // contract. The first thread to post a command is captured; any command
+  // posted from a different thread afterwards trips an assert. Compiled out in
+  // release builds (zero cost on the fast path).
+  mutable std::atomic<std::thread::id> m_commandProducerThread{};
+#endif
 
   // ORP127 G4: default clip-gain smoothing time. 5ms is a broadcast-console
   // norm (Yamaha CL/QL fader smoothing sits ~10ms); short enough to feel
@@ -405,14 +465,32 @@ private:
     // SDK's historical polyphonic behavior).
     VoiceMode voiceMode = VoiceMode::Polyphonic;
 
+    // ORP134 G1: the realtime playback source built by prepareClipAudio()
+    // (or lazily by startClip). The reader above remains the background
+    // decode/metadata handle; the audio thread only ever touches `source`.
+    std::shared_ptr<IClipSource> source;
+
     // Cue points (stored sorted by position)
     std::vector<CuePoint> cuePoints;
   };
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
 
+  /// ORP134 G1: Ensure entry.source exists (decode-to-memory or streaming
+  /// ring). Control thread only; caller holds m_audioFilesMutex.
+  SessionGraphError ensurePreparedSourceLocked(AudioFileEntry& entry);
+
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
+
+  // ORP134 G1: streaming-source machinery. The worker thread is created
+  // lazily when the first streaming source is prepared (short-clip-only hosts
+  // never spawn it). DEFAULT_PREPARED_SOURCE_MAX_FRAMES ≈ 30s @ 48k: below
+  // it, clips decode fully to memory (soundboard case, ~11.5 MB stereo max);
+  // above it, they stream through a fixed page ring (long beds, songs).
+  static constexpr int64_t DEFAULT_PREPARED_SOURCE_MAX_FRAMES = 48000ll * 30;
+  int64_t m_preparedSourceMaxFrames{DEFAULT_PREPARED_SOURCE_MAX_FRAMES};
+  std::unique_ptr<MediaStreamWorker> m_streamWorker; // guarded by m_audioFilesMutex
 
   // Per-clip buffers (audio thread only, pre-allocated)
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;

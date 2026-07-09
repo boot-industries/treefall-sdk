@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 add_library(orpheus_transport STATIC
+    clip_source.cpp # ORP134 G1: prepared/streaming realtime clip sources
     transport_controller.cpp
 )
 

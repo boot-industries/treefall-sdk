@@ -94,12 +94,15 @@ TEST_F(TransportControllerTest, StopAllClips) {
   EXPECT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
 }
 
-TEST_F(TransportControllerTest, StopAllInGroup) {
-  // Stop all clips in group 0
-  EXPECT_EQ(m_transport->stopAllInGroup(0), SessionGraphError::OK);
-
-  // Invalid group index should fail
-  EXPECT_EQ(m_transport->stopAllInGroup(4), SessionGraphError::InvalidParameter);
+TEST_F(TransportControllerTest, StopAllInGroupReportsNotSupported) {
+  // ORP133 G2: stopAllInGroup was a silent no-op in every release (the
+  // transport has no clip→group mapping — grouping is a host concern). It now
+  // reports that truthfully: NotSupported for every group index, never a
+  // silent no-op. Hosts scope group-stops with stopOtherClips() + their own
+  // group model.
+  EXPECT_EQ(m_transport->stopAllInGroup(0), SessionGraphError::NotSupported);
+  EXPECT_EQ(m_transport->stopAllInGroup(3), SessionGraphError::NotSupported);
+  EXPECT_EQ(m_transport->stopAllInGroup(4), SessionGraphError::NotSupported);
 }
 
 TEST_F(TransportControllerTest, GetCurrentPosition) {

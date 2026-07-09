@@ -199,6 +199,9 @@ jobs:
           find src include -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
           xargs clang-format-14 --dry-run --Werror
 
+      - name: Validate docs paths (ORP133 G6)
+        run: python3 tools/docs_path_audit.py --root .
+
       - name: Lint Windows includes
         run: |
           python3 - <<'PY'

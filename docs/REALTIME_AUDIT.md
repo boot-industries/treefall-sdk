@@ -16,23 +16,39 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
 
 ## Current Gates
 
-- `ctest -R realtime_static_audit` scans driver callbacks for hard failures.
-- `tools/realtime_audit.py --include-adjacent` also reports tracked debt in
-  `~/dev/clip-composer`, `~/dev/fourtrack`, and `~/dev/freqfinder` when those
-  repos are present beside the SDK.
-- `tools/realtime_audit.py --fail-known-debt --include-adjacent` is the future
-  strict gate after the streaming-reader and app telemetry migrations land.
+- `ctest -R realtime_static_audit` runs `tools/realtime_audit.py
+  --fail-known-debt` — the STRICT in-repo gate. Since the ORP134 G1
+  streaming-reader migration, the transport render path performs no file
+  reads/seeks, so any reintroduced audio-thread read is a hard CI failure.
+- The runtime side is enforced by `realtime_harness_test` (ORP136 §2.2):
+  allocation hooks + `/proc/self/io` sampling prove zero allocations and zero
+  media I/O across multi-clip `processAudio()` stress runs, and that streaming
+  cache misses emit silence + `BufferUnderrun` instead of blocking.
+- `tools/realtime_audit.py --fail-known-debt --include-adjacent` is the
+  cross-repo strict gate. It still reports the ADJACENT-repo debt below and
+  will pass once the app-side sprints land in those repos.
+
+## Resolved Architecture Debt
+
+- **The transport render path no longer calls file readers (ORP134 G1).**
+  `prepareClipAudio()`/`startClip()` build an immutable realtime source on the
+  control thread — whole-file PCM for short clips, a worker-fed page ring for
+  long files — and `processAudio()` memcpy-reads it position-explicitly. Seek
+  became a prefetch hint (no `sf_seek` anywhere near the callback); a
+  streaming cache miss renders silence and reports `BufferUnderrun`, never
+  blocking. Parity with the old reading path is proven bit-exact by the
+  golden render-hash gate.
 
 ## Known Architecture Debt
 
-- The transport render path still calls file readers directly. `prepareClipAudio`
-  gives hosts an explicit prewarm point, but the target architecture is a
-  non-realtime streamer feeding realtime-owned clip buffers.
 - The routing matrix now carries explicit `SourceChannelPolicy` and
   `DownmixPolicy`, but transport clip rendering still uses stereo pair buffers.
 - Clip Composer still performs app-level analyzer work in its audio callback in
   the adjacent repo. The SDK-side target is decimated telemetry copied out of
-  callback buffers and consumed by UI/message-thread code.
+  callback buffers and consumed by UI/message-thread code. **→ OCC sprint.**
+- FourTrack's engine still calls `readSamples` in its own callback in the
+  adjacent repo; it should adopt the SDK's prepared/streaming sources.
+  **→ FourTrack sprint.**
 - See `docs/APP_REALTIME_DEBT_REMEDIATION.md` for Clip Composer and FourTrack
   patch guidance.
 
