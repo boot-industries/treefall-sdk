@@ -72,6 +72,14 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     for (uint32_t ch = 0; ch < config_.num_inputs; ++ch) {
       input_buffers_[ch] = &input_storage_[ch * buffer_size];
     }
+
+    // Pre-allocate the AudioBufferList used to pull captured input in the
+    // render callback. One AudioBuffer per input channel (planar), so its
+    // trailing flexible array holds num_inputs entries. Allocated here, never
+    // on the audio thread.
+    const size_t abl_bytes =
+        sizeof(AudioBufferList) + (config_.num_inputs - 1) * sizeof(AudioBuffer);
+    input_abl_storage_.assign(abl_bytes, 0);
   }
 
   return SessionGraphError::OK;
@@ -173,8 +181,6 @@ void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
 OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                          const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                          UInt32 inNumberFrames, AudioBufferList* ioData) {
-  (void)ioActionFlags;
-  (void)inTimeStamp;
   (void)inBusNumber;
 
   auto* driver = static_cast<CoreAudioDriver*>(inRefCon);
@@ -205,6 +211,13 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     std::memset(driver->output_buffers_[ch], 0, frames_to_process * sizeof(float));
   }
 
+  // Zero our input buffers before capture so a failed/absent AudioUnitRender
+  // hands the host silence rather than stale samples.
+  const uint32_t num_input_channels = driver->config_.num_inputs;
+  for (uint32_t ch = 0; ch < num_input_channels; ++ch) {
+    std::memset(driver->input_buffers_[ch], 0, frames_to_process * sizeof(float));
+  }
+
   // CRITICAL: Check if we're still running before invoking callback
   // This prevents use-after-free if callback is invoked during/after stop()
   if (!driver->is_running_.load(std::memory_order_acquire)) {
@@ -214,6 +227,26 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   IAudioCallback* callback = driver->callback_;
   if (!callback) {
     return noErr; // No callback set, output silence
+  }
+
+  // Pull captured input (bus 1) into our planar input_buffers_ before invoking
+  // the host callback. A HAL output render callback fires for the *output* bus
+  // and must explicitly render the input bus; captured samples never arrive in
+  // ioData. RT-safe: the AudioBufferList and its backing storage are
+  // pre-allocated in initialize(); no allocation, lock, or I/O on this path.
+  if (num_input_channels > 0 && !driver->input_abl_storage_.empty()) {
+    auto* inputABL = reinterpret_cast<AudioBufferList*>(driver->input_abl_storage_.data());
+    inputABL->mNumberBuffers = num_input_channels;
+    for (uint32_t ch = 0; ch < num_input_channels; ++ch) {
+      inputABL->mBuffers[ch].mNumberChannels = 1; // planar: one channel per buffer
+      inputABL->mBuffers[ch].mDataByteSize = frames_to_process * sizeof(float);
+      inputABL->mBuffers[ch].mData = driver->input_buffers_[ch];
+    }
+
+    // inputBus = 1. On failure the pre-zeroed buffers stand in as silence, so
+    // we never propagate a hard error up the audio graph for a transient miss.
+    AudioUnitRender(driver->audio_unit_, ioActionFlags, inTimeStamp, /*inputBus=*/1,
+                    frames_to_process, inputABL);
   }
 
   // Invoke user callback (lock-free). Timing is opt-in for diagnostics builds;
@@ -384,8 +417,11 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
     return SessionGraphError::InternalError;
   }
 
-  // Disable input (output only for now)
-  UInt32 enableIO = 0;
+  // Enable input IO (bus 1) only when the host asked for capture. Pure-playback
+  // hosts (num_inputs == 0) keep the historical output-only behavior. Bus 1 is
+  // the AudioUnit's input element; kAudioUnitSubType_HALOutput supports both
+  // capture (bus 1) and playback (bus 0) on a single unit.
+  UInt32 enableIO = config_.num_inputs > 0 ? 1 : 0;
   status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
                                 kAudioUnitScope_Input, 1, &enableIO, sizeof(enableIO));
 
@@ -445,6 +481,23 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
 
   if (status != noErr) {
     return SessionGraphError::InternalError;
+  }
+
+  // Set the input stream format when capture is enabled. This is the format the
+  // AudioUnit delivers to our AudioUnitRender pull on bus 1, so it goes on
+  // kAudioUnitScope_Output, element 1 (the output side of the input element).
+  // Mirror the output ASBD (planar float32) but with the input channel count so
+  // AudioUnitRender fills our planar input_buffers_ directly, no deinterleave.
+  if (config_.num_inputs > 0) {
+    AudioStreamBasicDescription inputFormat = streamFormat;
+    inputFormat.mChannelsPerFrame = config_.num_inputs;
+
+    status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output, 1, &inputFormat, sizeof(inputFormat));
+
+    if (status != noErr) {
+      return SessionGraphError::InternalError;
+    }
   }
 
   // Set buffer size (if supported)

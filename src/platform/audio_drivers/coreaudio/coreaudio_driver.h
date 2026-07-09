@@ -100,6 +100,13 @@ private:
   std::vector<float> input_storage_;  // Backing storage for input buffers
   std::vector<float> output_storage_; // Backing storage for output buffers
 
+  // Pre-allocated AudioBufferList used to pull captured input in the render
+  // callback via AudioUnitRender (bus 1). Sized in initialize() when
+  // num_inputs > 0 so the audio thread never allocates. Backed by raw bytes
+  // because AudioBufferList has a trailing flexible array of mNumberBuffers
+  // AudioBuffer entries; its mData pointers alias input_storage_ (planar).
+  std::vector<uint8_t> input_abl_storage_;
+
   // Thread safety
   mutable std::mutex mutex_;
 };
