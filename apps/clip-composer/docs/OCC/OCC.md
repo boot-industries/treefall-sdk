@@ -2,10 +2,12 @@
 
 Project documentation index for orpheus-sdk/apps/clip-composer.
 
-**Next Available Number:** OCC151
+**Next Available Number:** OCC153
 
 ## Recent Documents
 
+- [[OCC152 Transport Unification Smoke-Test Guide]]
+- [[OCC151 Transport Unification and Gain Integrity Sprint]]
 - [[OCC150 Action Triad Replace File and Portable Audio Path Fix]]
 - [[OCC149b Phase 5b Remediation Plan]]
 - [[OCC149 Clip Composer Design-System Alignment Sprint]]
@@ -84,6 +86,8 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 - [[OCC149 Clip Composer Design-System Alignment Sprint]]
 - [[OCC149b Phase 5b Remediation Plan]]
 - [[OCC150 Action Triad Replace File and Portable Audio Path Fix]]
+- [[OCC151 Transport Unification and Gain Integrity Sprint]]
+- [[OCC152 Transport Unification Smoke-Test Guide]]
 
 ## Archived Documents
 
@@ -138,4 +142,4 @@ Project documentation index for orpheus-sdk/apps/clip-composer.
 
 ---
 
-**Last Generated:** 2026-06-14
+**Last Generated:** 2026-07-07

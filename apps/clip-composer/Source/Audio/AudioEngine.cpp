@@ -97,6 +97,12 @@ bool AudioEngine::createConfiguredTransport(
     return false;
   }
 
+  // OCC151 T11: cap voices per clip to 2 for OCC's model — one primary voice
+  // plus, at most, one fading-out tail during a fade-overlap. The SDK default is
+  // 8; OCC never needs polyphonic layering. Applied here so the cap holds for
+  // both the initial transport and any transport rebuilt on a device change.
+  transport->setMaxVoicesPerClip(2);
+
   transport->setCallback(const_cast<AudioEngine*>(this));
   return true;
 }
@@ -185,6 +191,11 @@ bool AudioEngine::rehydrateTransportState(orpheus::TransportController& transpor
                      describeGraphError(result);
       return false;
     }
+
+    // OCC151 T10: preserve the MonoWithFadeOverlap policy across device swaps —
+    // the new transport starts fresh, so the grid clip's voice mode must be
+    // re-applied after re-registration (matches loadClip()).
+    transport.setClipVoiceMode(handle, orpheus::VoiceMode::MonoWithFadeOverlap);
 
     result = transport.updateClipMetadata(handle, registration.metadata);
     if (result != orpheus::SessionGraphError::OK) {
@@ -369,6 +380,14 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
     return false;
   }
 
+  // OCC151 T10: adopt the ORP127 MonoWithFadeOverlap voice policy — OCC's
+  // canonical model. One primary voice per clip identity: firing while playing
+  // restarts in place; firing while a voice is fading out leaves that tail to
+  // complete and starts a fresh voice alongside it (voices == 2 only during the
+  // fade-overlap window). The SDK now enforces this, superseding the local
+  // restart-if-playing dedup wrapper in startClip().
+  m_transportController->setClipVoiceMode(handle, orpheus::VoiceMode::MonoWithFadeOverlap);
+
   // Store handle and metadata
   m_clipHandles[buttonIndex] = handle;
   m_clipRegistrations[buttonIndex] = ClipRegistrationState{filePath, {}};
@@ -377,21 +396,39 @@ bool AudioEngine::loadClip(int buttonIndex, const juce::String& filePath) {
   auto reader = orpheus::createAudioFileReader();
   auto metadataResult = reader->open(filePath.toStdString());
   if (metadataResult.isOk()) {
-    m_clipMetadata[buttonIndex] = metadataResult.value;
-    DBG("AudioEngine: Clip " << buttonIndex
-                             << " metadata: " << static_cast<int>(metadataResult.value.sample_rate)
-                             << " Hz, " << static_cast<int>(metadataResult.value.num_channels)
-                             << " ch, " << static_cast<int>(metadataResult.value.duration_samples)
-                             << " samples");
+    auto uiMetadata = metadataResult.value;
 
-    // Warn about sample rate mismatch
-    if (metadataResult.value.sample_rate != m_sampleRate) {
-      DBG("AudioEngine: WARNING - Sample rate mismatch! File is "
-          << static_cast<int>(metadataResult.value.sample_rate) << " Hz, engine is running at "
-          << static_cast<int>(m_sampleRate)
-          << " Hz. Audio will sound distorted. Please convert file to "
-          << static_cast<int>(m_sampleRate) << " Hz.");
+    // OCC151 T7 / G5: mismatched-rate files are no longer a silent hazard. The
+    // SDK's registerClipAudio wraps the reader in a deterministic polyphase
+    // ResamplingAudioFileReader (ORP127 G6), so playback is at correct pitch and
+    // the transport reports positions in the ENGINE-rate timeline.
+    //
+    // The transport therefore runs this clip in engine-rate frames. Present the
+    // UI metadata in the SAME timeline so the Edit dialog's duration, trim
+    // points, and fade lengths stay sample-accurate against playback. We convert
+    // arithmetically (the SDK uses the same ratio internally) because the SDK
+    // does not yet expose the decorator's engine-rate AudioFileMetadata.
+    // TODO(orp-sdk): add TransportController::getClipAudioMetadata(handle) so
+    // hosts can read the engine-rate metadata directly instead of recomputing.
+    if (uiMetadata.sample_rate != 0 && uiMetadata.sample_rate != m_sampleRate) {
+      const double ratio =
+          static_cast<double>(m_sampleRate) / static_cast<double>(uiMetadata.sample_rate);
+      uiMetadata.duration_samples =
+          static_cast<int64_t>(static_cast<double>(uiMetadata.duration_samples) * ratio);
+      const uint32_t nativeRate = uiMetadata.sample_rate;
+      uiMetadata.sample_rate = m_sampleRate;
+      DBG("AudioEngine: Clip " << buttonIndex << " is " << static_cast<int>(nativeRate)
+                               << " Hz; SDK resampler active -> presenting metadata at engine rate "
+                               << static_cast<int>(m_sampleRate) << " Hz ("
+                               << static_cast<int>(uiMetadata.duration_samples)
+                               << " engine frames)");
     }
+
+    m_clipMetadata[buttonIndex] = uiMetadata;
+    DBG("AudioEngine: Clip " << buttonIndex
+                             << " metadata: " << static_cast<int>(uiMetadata.sample_rate) << " Hz, "
+                             << static_cast<int>(uiMetadata.num_channels) << " ch, "
+                             << static_cast<int>(uiMetadata.duration_samples) << " samples");
 
     // Pre-seek to start of file (warm up OS page cache, reduce first-play latency)
     reader->seek(0);
@@ -507,33 +544,21 @@ bool AudioEngine::startClip(int buttonIndex) {
   if (!m_transportController)
     return false;
 
-  // CRITICAL: Check if already playing - if so, RESTART from IN point (not resume)
-  // This ensures rapid clip button clicks always restart from the beginning
-  // Reference: Commit 693293f1 (perfect button behavior, no zigzag distortion)
-  // See: apps/clip-composer/docs/occ/OCC129 for complete technical explanation
-  bool isAlreadyPlaying = m_transportController->isClipPlaying(handle);
-
-  orpheus::SessionGraphError result;
-  if (isAlreadyPlaying) {
-    // Already playing - use restartClip() to force restart from IN point
-    // This restarts ALL voices with a 5ms broadcast-safe crossfade
-    // Eliminates zigzag distortion by preventing overlapping voices with independent fades
-    result = m_transportController->restartClip(handle);
-    if (result != orpheus::SessionGraphError::OK) {
-      DBG("AudioEngine: Failed to restart clip " << handle);
-      return false;
-    }
-    DBG("AudioEngine: Restarted clip on button " << buttonIndex << " (was already playing)");
-  } else {
-    // Not playing - use startClip() as normal
-    result = m_transportController->startClip(handle);
-    if (result != orpheus::SessionGraphError::OK) {
-      DBG("AudioEngine: Failed to start clip " << handle);
-      return false;
-    }
-    DBG("AudioEngine: Started clip on button " << buttonIndex);
+  // OCC151 T10: thin passthrough to the SDK. The local "restart if already
+  // playing" dedup wrapper is retired — clips are registered with
+  // VoiceMode::MonoWithFadeOverlap (see loadClip), so the SDK's startClip now
+  // enforces the one-voice-per-clip model itself: firing a live voice restarts
+  // it in place (short crossfade), and firing while only a fade-out tail exists
+  // starts a fresh voice alongside the tail (voices == 2 only during the fade
+  // overlap). This keeps a single source of truth in the SDK and eliminates the
+  // OCC-side isClipPlaying()/restartClip() branch that duplicated it.
+  auto result = m_transportController->startClip(handle);
+  if (result != orpheus::SessionGraphError::OK) {
+    DBG("AudioEngine: Failed to start clip " << handle);
+    return false;
   }
 
+  DBG("AudioEngine: Started clip on button " << buttonIndex);
   return true;
 }
 
@@ -570,6 +595,18 @@ void AudioEngine::panicStop() {
   // TODO: Implement immediate mute (no fade-out)
   stopAllClips();
   DBG("AudioEngine: PANIC STOP");
+}
+
+void AudioEngine::drainTransportCallbacks() {
+  // OCC151 T5 / F-APP-3: message-thread-only consumer of the SPSC callback ring.
+  // Assert (Debug) that we are NOT on the audio thread. m_audioThreadId is stamped
+  // by processAudio(); if it is unset (audio never ran) the guard is a no-op.
+  const auto audioThreadId = m_audioThreadId.load(std::memory_order_relaxed);
+  jassert(audioThreadId == std::thread::id{} || std::this_thread::get_id() != audioThreadId);
+
+  if (m_transportController) {
+    m_transportController->processCallbacks();
+  }
 }
 
 //==============================================================================
@@ -860,6 +897,21 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
       << requestedDeviceName << ", Sample Rate: " << static_cast<int>(sampleRate)
       << " Hz, Buffer Size: " << static_cast<int>(bufferSize));
 
+  // OCC151 T6 / F-APP-4 (G4): quiesce the audio thread BEFORE touching the
+  // engine's transport/driver members. setAudioDevice runs on the UI thread; the
+  // old driver's audio thread reads m_transportController every callback. Moving
+  // those unique_ptrs out from under a live callback is a data race (a torn read
+  // of a non-atomic pointer is UB). Stopping the running driver first is the
+  // synchronization point: IAudioDriver::stop() halts the callback and, on
+  // CoreAudio, clears its callback pointer and drains any in-flight invocation
+  // before returning, so no audio thread observes the swaps that follow.
+  const bool wasRunning = m_audioDriver && m_audioDriver->isRunning();
+  if (wasRunning) {
+    m_audioDriver->stop();
+  }
+
+  // Audio thread is now quiesced — the member swaps below are UI-thread-exclusive
+  // (UI queries also run on the message thread, so they cannot race this).
   auto oldTransport = std::move(m_transportController);
   auto oldDriver = std::move(m_audioDriver);
   const auto* previousTransport = oldTransport.get();
@@ -868,20 +920,30 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
   const auto oldDeviceName = m_currentDeviceName;
   const auto oldDeviceStatus = m_deviceStatus;
 
+  // Rollback helper: restore and (if it was running) restart the previous driver.
+  auto rollback = [&](const std::string& reason) {
+    m_transportController = std::move(oldTransport);
+    m_audioDriver = std::move(oldDriver);
+    m_sampleRate = oldSampleRate;
+    m_bufferSize = oldBufferSize;
+    m_currentDeviceName = oldDeviceName;
+    m_deviceStatus = oldDeviceStatus;
+    if (wasRunning && m_audioDriver) {
+      m_audioDriver->start(this);
+    }
+    updateDeviceStatus(requestedDeviceName, reason);
+  };
+
   std::string errorMessage;
   std::unique_ptr<orpheus::TransportController> newTransport;
   if (!createConfiguredTransport(sampleRate, newTransport, errorMessage)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
   std::vector<orpheus::ClipHandle> handlesToRestart;
   if (!rehydrateTransportState(*newTransport, previousTransport, handlesToRestart, errorMessage)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
@@ -889,17 +951,13 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
   bool usingFallbackDriver = false;
   if (!createConfiguredDriver(requestedDeviceName, sampleRate, bufferSize, newDriver, errorMessage,
                               usingFallbackDriver)) {
-    m_transportController = std::move(oldTransport);
-    m_audioDriver = std::move(oldDriver);
-    updateDeviceStatus(requestedDeviceName, errorMessage);
+    rollback(errorMessage);
     return false;
   }
 
-  const bool wasRunning = oldDriver && oldDriver->isRunning();
-  if (wasRunning) {
-    oldDriver->stop();
-  }
-
+  // Publish the new pair atomically w.r.t. the audio thread: the new driver is
+  // not started until after both members point at the new objects, so the first
+  // callback the new driver ever issues already sees a consistent transport.
   m_transportController = std::move(newTransport);
   m_audioDriver = std::move(newDriver);
   m_sampleRate = sampleRate;
@@ -909,22 +967,23 @@ bool AudioEngine::setAudioDevice(const std::string& deviceName, uint32_t sampleR
 
   if (wasRunning) {
     if (!start()) {
-      m_transportController = std::move(oldTransport);
-      m_audioDriver = std::move(oldDriver);
-      m_sampleRate = oldSampleRate;
-      m_bufferSize = oldBufferSize;
-      m_currentDeviceName = oldDeviceName;
-      m_deviceStatus = oldDeviceStatus;
-      if (m_audioDriver) {
-        m_audioDriver->start(this);
-      }
-      updateDeviceStatus(requestedDeviceName, "Failed to restart audio after changing device");
+      rollback("Failed to restart audio after changing device");
       return false;
     }
   }
 
+  // OCC151 T4 / F-APP-2 (G2): route device-change restarts through the OCC
+  // wrappers, not the raw SDK startClip. This keeps every re-fire on the single
+  // dedup path (MonoWithFadeOverlap-aware startClip for grid clips, range-checked
+  // startCueBuss for cue busses) so a voice already fading out during the reinit
+  // cannot become a stacked voice.
   for (const auto handle : handlesToRestart) {
-    m_transportController->startClip(handle);
+    const int buttonIndex = getButtonIndexFromHandle(handle);
+    if (buttonIndex >= 0) {
+      startClip(buttonIndex);
+    } else {
+      startCueBuss(handle);
+    }
   }
 
   DBG("AudioEngine: Successfully changed audio settings");
@@ -1244,6 +1303,10 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
   // BROADCAST-SAFE: No allocations, no locks, no I/O in audio thread
   auto callbackStart = std::chrono::high_resolution_clock::now();
 
+  // OCC151 T5 / F-APP-3: record the audio-thread id so drainTransportCallbacks()
+  // can assert it never runs here. relaxed is fine — this is a Debug-only guard.
+  m_audioThreadId.store(std::this_thread::get_id(), std::memory_order_relaxed);
+
   if (!m_transportController) {
     // No transport - output silence
     for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -1274,8 +1337,11 @@ void AudioEngine::processAudio(const float** input_buffers, float** output_buffe
     }
   }
 
-  // Process any pending callbacks (posts to UI thread)
-  m_transportController->processCallbacks();
+  // OCC151 T5 / F-APP-3: DO NOT drain transport callbacks here. The SDK callback
+  // ring is SPSC and the message thread is the sole consumer. Draining on the
+  // audio thread destroyed std::function objects (and their captured
+  // shared_ptrs) on the RT thread. The drain now happens on the message thread
+  // via drainTransportCallbacks(), called from MainComponent's UI timer.
 
   // Record performance metrics (atomic, no allocations)
   if (m_performanceMonitor) {

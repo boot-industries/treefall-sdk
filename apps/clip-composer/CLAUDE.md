@@ -118,6 +118,53 @@ Clip Composer follows a **5-layer architecture** (see `docs/occ/OCC023` for full
 
 ---
 
+## Transport Model (CRITICAL — OCC151)
+
+**One clip identity = one voice.** The Edit dialog is a "zoomed in" *view* of the
+grid clip's transport, not a separate player. These invariants are load-bearing;
+do not reintroduce a parallel handle for a clip.
+
+- **One transport per clip; the dialog shares the grid handle.** `PreviewPlayer`
+  drives the grid `ClipHandle` (via `buttonIndex`) directly. It never allocates a
+  dedicated cue-buss handle for the same file. Play/stop/position are
+  single-sourced, so grid and dialog can never desync and the same file never
+  sums to 2× at the master. (The cue-buss pool is retained only for a future,
+  genuinely-different auxiliary source — PFL / Cue Buss dispatch.)
+- **Voice policy is `MonoWithFadeOverlap`, cap 2.** Every grid clip is registered
+  with `setClipVoiceMode(handle, MonoWithFadeOverlap)` and the transport runs
+  `setMaxVoicesPerClip(2)`. Firing a live voice restarts it in place; firing
+  while only a fade-out tail exists starts a fresh voice alongside the tail
+  (voices == 2 only during the fade-overlap window). The SDK enforces this;
+  `AudioEngine::startClip` is a thin passthrough — do not re-add an OCC-side
+  restart-if-playing dedup branch.
+- **Every re-fire goes through the OCC wrapper.** Never call the raw SDK
+  `startClip` directly (e.g. from the device-change restart loop) — route through
+  `AudioEngine::startClip` / `startCueBuss` so the voice model is honored
+  universally.
+- **Transport callbacks drain on the message thread only.** The SDK callback
+  ring is SPSC; the audio thread is the sole producer. `processAudio` must NOT
+  call `processCallbacks()`. `AudioEngine::drainTransportCallbacks()` is called
+  from `MainComponent`'s UI timer and asserts (Debug) it is off the audio thread.
+- **Device swaps quiesce the audio thread first.** `setAudioDevice` stops the
+  running driver (which drains in-flight callbacks) *before* moving the
+  transport/driver pointers, then publishes the new pair before starting it.
+- **Mismatched-rate files are resampled by the SDK.** `registerClipAudio` wraps
+  the reader in the SDK's polyphase `ResamplingAudioFileReader`. OCC presents the
+  UI metadata in the engine-rate timeline so trims/fades stay sample-accurate. No
+  "sample rate mismatch" warnings — files play at correct pitch.
+- **"Stop Others" choke is playgroup-scoped.** Scoped to the firing clip's
+  `clipGroup` (0-3), not global and not the visible tab. Decision lives in the
+  pure `occ::shouldChokeStop` policy (`Source/Core/ChokePolicy.h`). Group A never
+  stops group B.
+
+**SDK dependency:** ORP127 (SDK 0.3.0 — voice API, choke primitive, SR
+conversion). Pinned to SDK tag `v0.3.0` (OCC151 T12 done). This is a single-repo
+build — OCC consumes the SDK in-tree via `add_subdirectory`, so the pin is the
+`v0.3.0` tag on `main` (commit `ef43bec4`, `project(orpheus VERSION 0.3.0)`), not
+an external fetch. To bump the SDK, move the tag and update this line.
+
+---
+
 ## Threading Model (CRITICAL)
 
 Clip Composer uses **3 threads** to maintain real-time performance:
@@ -567,10 +614,11 @@ Reference OCC documentation:
 
 ---
 
-**Last Updated:** 2025-10-30
-**Status:** v0.2.0 Sprint Complete (OCC093)
+**Last Updated:** 2026-07-07 (OCC151 — Transport Unification & Gain Integrity)
+**Status:** v0.2.1 active; OCC151 transport unification landed on `feat/occ-transport-unification`
 **Release:** v0.1.0-alpha (October 22, 2025)
-**Next Milestone:** v0.2.0 release (pending final QA)
+**Next Milestone:** pin SDK to `v0.3.0` tag (OCC151 T12), then merge to main
+**SDK:** ORP127 / SDK 0.3.0 (voice API, choke primitive, SR conversion)
 
 - Use @"docs/occ/OCC110 SDK Integration Guide - Transport State and Loop Features.md" as a reference document for Clip Composer's Orpheus SDK integrations.
 - Use ./scripts/relaunch-occ.sh to relaunch Clip Composer.

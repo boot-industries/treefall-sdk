@@ -3,6 +3,7 @@
 #include "MainComponent.h"
 #include "AppShell/AppCommandIds.h"
 #include "BuildInfo.h"
+#include "Core/ChokePolicy.h"
 #include "Core/ClipCommands.h"
 #include "Core/ClipLoadPlan.h"
 #include "Core/ClipReplacementPolicy.h"
@@ -627,6 +628,15 @@ void MainComponent::createNewSession() {
 
 //==============================================================================
 void MainComponent::timerCallback() {
+  // OCC151 T5 / F-APP-3: drain the transport's SPSC callback ring on the message
+  // thread (this timer runs on the message thread). This replaces the old
+  // audio-thread drain in AudioEngine::processAudio, restoring the SPSC contract
+  // and keeping std::function/shared_ptr teardown off the RT thread. Drained
+  // before refreshUiSnapshot() so clip started/stopped state lands this frame.
+  if (m_audioEngine) {
+    m_audioEngine->drainTransportCallbacks();
+  }
+
   refreshUiSnapshot();
 
   if (m_barVisualizer) {
@@ -1805,6 +1815,46 @@ void MainComponent::onClipRightClicked(int buttonIndex) {
   });
 }
 
+void MainComponent::stopOthersInPlaygroup(int firingGlobalIndex) {
+  if (!m_audioEngine || !m_sessionManager)
+    return;
+
+  // The firing clip's playgroup (clipGroup 0-3) defines the choke scope. The
+  // membership decision itself lives in the pure occ::shouldChokeStop policy so
+  // it is unit-testable without the UI.
+  const auto firing = m_sessionManager->getClipByGlobalIndex(firingGlobalIndex);
+  const int activeTab = m_sessionManager->getActiveTab();
+
+  for (int otherGlobalIndex = 0; otherGlobalIndex < occ::TOTAL_BUTTONS; ++otherGlobalIndex) {
+    if (!m_sessionManager->hasClipByGlobalIndex(otherGlobalIndex))
+      continue;
+
+    const auto other = m_sessionManager->getClipByGlobalIndex(otherGlobalIndex);
+    const auto state = m_audioEngine->getClipState(otherGlobalIndex);
+    const bool otherIsActive =
+        state == orpheus::PlaybackState::Playing || state == orpheus::PlaybackState::Stopping;
+
+    if (!occ::shouldChokeStop(firing, firingGlobalIndex, other, otherGlobalIndex, otherIsActive))
+      continue;
+
+    m_audioEngine->stopClip(otherGlobalIndex);
+
+    // Instant visual feedback for clips on the currently visible tab. Off-tab
+    // clips have no live button; their state reconciles on the next snapshot
+    // poll (drainTransportCallbacks -> onClipStateChanged).
+    if (otherGlobalIndex / occ::BUTTONS_PER_TAB == activeTab) {
+      const int localButton = otherGlobalIndex % occ::BUTTONS_PER_TAB;
+      if (auto otherButton = m_clipGrid->getButton(localButton)) {
+        if (otherButton->getState() == ClipButton::State::Playing)
+          otherButton->setState(ClipButton::State::Loaded);
+      }
+    }
+
+    DBG("Stop-others (group " << firing.clipGroup << "): stopped global " << otherGlobalIndex
+                              << " fired by global " << firingGlobalIndex);
+  }
+}
+
 void MainComponent::onClipTriggered(int buttonIndex) {
   auto button = m_clipGrid->getButton(buttonIndex);
   if (!button)
@@ -1856,22 +1906,7 @@ void MainComponent::onClipTriggered(int buttonIndex) {
 
     // Check if "stop others on play" mode is enabled for this button (use global index)
     if (m_stopOthersOnPlay[globalClipIndex]) {
-      // Stop all other playing clips ON THIS TAB
-      for (int i = 0; i < m_clipGrid->getButtonCount(); ++i) {
-        if (i != buttonIndex) {
-          auto otherButton = m_clipGrid->getButton(i);
-          if (otherButton && otherButton->getState() == ClipButton::State::Playing) {
-            int otherGlobalIndex = getGlobalClipIndex(i);
-            if (m_audioEngine) {
-              m_audioEngine->stopClip(otherGlobalIndex);
-            }
-            otherButton->setState(ClipButton::State::Loaded);
-            DBG("Button " + juce::String(i) + " (global: " + juce::String(otherGlobalIndex) +
-                "): Stopped by 'stop others' from button " + juce::String(buttonIndex) +
-                " (global: " + juce::String(globalClipIndex) + ")");
-          }
-        }
-      }
+      stopOthersInPlaygroup(globalClipIndex);
     }
 
     // Start the clip
@@ -2278,22 +2313,11 @@ void MainComponent::loadClipToButton(int buttonIndex, const juce::String& filePa
         DBG("MainComponent: Failed to load audio into engine for button "
             << buttonIndex << " (global: " << globalClipIndex << ")");
       } else {
-        // Check for sample rate mismatch and warn user
-        auto metadata = m_audioEngine->getClipMetadata(globalClipIndex);
-        if (metadata.has_value() && metadata->sample_rate != 48000) {
-          juce::AlertWindow::showMessageBoxAsync(
-              juce::AlertWindow::WarningIcon, "Sample Rate Mismatch",
-              "Warning: This audio file is " +
-                  juce::String(static_cast<int>(metadata->sample_rate)) +
-                  " Hz,\n"
-                  "but the engine is running at 48000 Hz.\n\n"
-                  "Audio will sound distorted or at the wrong speed.\n\n"
-                  "Workaround: Convert your audio files to 48 kHz using:\n"
-                  "• Audacity (File > Export > 48000 Hz)\n"
-                  "• ffmpeg: ffmpeg -i input.wav -ar 48000 output.wav",
-              "OK");
-        }
-
+        // OCC151 T7 / G5: no more "sample rate mismatch" refuse-to-load modal.
+        // The SDK now resamples mismatched-rate files through a deterministic
+        // polyphase converter (ORP127 G6), so they play at correct pitch. The
+        // engine presents this clip's metadata in the engine-rate timeline, so
+        // trims/fades remain sample-accurate. Nothing to warn the operator about.
         if (replacingExistingClip) {
           m_audioEngine->updateClipMetadata(
               globalClipIndex, clipData.trimInSamples, clipData.trimOutSamples,

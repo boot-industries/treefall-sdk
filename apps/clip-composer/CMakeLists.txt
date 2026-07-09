@@ -123,6 +123,16 @@ endif()
 
 
 set(OCC_GIT_WORKTREE "${SDK_ROOT}")
+
+# Re-run CMake configure (and therefore regenerate BuildInfo.h) whenever HEAD
+# moves or the index changes. Without these the title-bar hash will lag behind
+# real HEAD until the user manually re-configures, which is misleading when
+# verifying which build is running.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${OCC_GIT_WORKTREE}/.git/HEAD"
+  "${OCC_GIT_WORKTREE}/.git/index"
+)
+
 execute_process(
   COMMAND git rev-parse --short HEAD
   WORKING_DIRECTORY "${OCC_GIT_WORKTREE}"

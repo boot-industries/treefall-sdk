@@ -274,6 +274,27 @@ public:
   /// @note Callbacks are invoked on the UI thread, not the audio thread
   virtual void setCallback(ITransportCallback* callback) = 0;
 
+  /// Register an audio file for a clip handle.
+  ///
+  /// Opens the file, reads metadata, applies session defaults, and stores the
+  /// reader for future playback. This is a non-realtime preparation call and
+  /// must not be invoked from the audio callback.
+  ///
+  /// @param handle Clip handle
+  /// @param file_path Path to an audio file
+  /// @return SessionGraphError::OK on success, or error code on failure
+  virtual SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) = 0;
+
+  /// Prewarm a registered clip reader outside the audio callback.
+  ///
+  /// Seeks the clip's reader to its trim-in point and performs a minimal read,
+  /// then restores the trim-in position. Hosts should call this after
+  /// registration/metadata changes and before latency-critical playback.
+  ///
+  /// @param handle Clip handle registered via registerClipAudio()
+  /// @return SessionGraphError::OK on success, NotReady if the clip is active
+  virtual SessionGraphError prepareClipAudio(ClipHandle handle) = 0;
+
   /// Update trim points for a registered clip
   ///
   /// @param handle Clip handle (must be registered via registerClipAudio)
