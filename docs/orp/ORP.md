@@ -4,6 +4,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
 - [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
@@ -90,6 +91,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP128 CoreAudio Device Sample-Rate Change Resilience]]
 - [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 - [[ORP130 CoreAudio Input Capture]]
+- [[ORP131 Clip Composer Subdirectory Archival]]
 
 ## Navigation
 

@@ -21,8 +21,10 @@ Professional audio SDK with host-neutral C++20 core for deterministic session, t
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug   # Build
 cmake --build build                              # Compile
 ctest --test-dir build --output-on-failure       # Test
-./scripts/relaunch-occ.sh                        # Run Clip Composer
 ```
+
+> **Clip Composer moved:** the OCC app is now its own repo at `~/dev/clip-composer`
+> (consumes this SDK as a submodule). Build/run it from there.
 
 **Full command list:** `docs/repo-commands.html`
 
@@ -81,12 +83,17 @@ Matrix builds (ubuntu/windows/macos x Debug/Release). Sanitizers on Debug. Suppl
 
 ---
 
-## OCC — Clip Composer
+## OCC — Clip Composer (extracted to its own repo)
 
-**Status:** v0.2.1 active (OCC146) — operator modes, audition paths, session recovery in place.
-**Docs:** `apps/clip-composer/docs/occ/` (active) | `apps/clip-composer/docs/occ/archive/` (historical)
+**As of 2026-07-09 the Clip Composer application lives in a standalone repository:**
+`~/dev/clip-composer` (GitHub: `chrislyons/clip-composer`). It consumes this SDK as a
+git submodule at `third_party/orpheus-sdk`. The former `apps/clip-composer/`
+subdirectory has been **archived** to `~/archived-repos/clip-composer-sdk-subdir/`
+(see `docs/orp/ORP131`).
 
-Key docs: OCC021 (product vision), OCC026 (6-month MVP plan), OCC027 (API contracts), OCC146 (post-Codex sprint guide).
+- **OCC docs, build, and CI now live in the Clip Composer repo** — not here.
+- SDK work that OCC depends on (transport, routing, audio_io, ABI) stays in this repo;
+  bump the submodule pin in the OCC repo to pick up SDK changes.
 
 ---
 
@@ -95,7 +102,7 @@ Key docs: OCC021 (product vision), OCC026 (6-month MVP plan), OCC027 (API contra
 | Instance | Working Dir | Focus |
 |----------|-------------|-------|
 | SDK | `~/dev/orpheus-sdk` | C++ core, adapters, transport/routing |
-| Clip Composer | `~/dev/orpheus-sdk/apps/clip-composer` | Tauri app, JUCE UI, OCC features |
+| Clip Composer | `~/dev/clip-composer` | Standalone JUCE app, OCC features (SDK as submodule) |
 
 Separate `.claude/` directories prevent config collision.
 

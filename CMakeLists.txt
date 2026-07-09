@@ -10,7 +10,6 @@ option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
 option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
 option(ORPHEUS_ENABLE_APP_JUCE_HOST "Build the Orpheus JUCE demo host" OFF)
-option(ORPHEUS_ENABLE_APP_CLIP_COMPOSER "Build Orpheus Clip Composer application" OFF)
 option(ORPHEUS_ENABLE_APP_WAVE_FINDER "Build Orpheus Wave Finder application" OFF)
 option(ORPHEUS_BUILD_EXAMPLES "Build Orpheus SDK example applications" OFF)
 option(ENABLE_LTO "Enable interprocedural optimization" OFF)
@@ -105,10 +104,6 @@ endif()
 
 if(ORPHEUS_ENABLE_APP_JUCE_HOST)
   add_subdirectory(apps/juce-demo-host)
-endif()
-
-if(ORPHEUS_ENABLE_APP_CLIP_COMPOSER)
-  add_subdirectory(apps/clip-composer)
 endif()
 
 if(ORPHEUS_ENABLE_APP_WAVE_FINDER)
