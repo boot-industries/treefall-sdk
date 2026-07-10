@@ -22,6 +22,20 @@ class IRoutingCallback;
 /// Special value indicating channel is not assigned to any group
 constexpr uint8_t UNASSIGNED_GROUP = 255;
 
+/// FTR028: Internal processing-slice size (frames) used by processRouting().
+///
+/// The routing matrix pre-allocates its scratch buffers to this size and
+/// processes audio in slices no larger than this on the real-time path (no
+/// audio-thread allocation, ever). processRouting() accepts an arbitrary
+/// num_frames and chunks internally over slices of this size, so hosts do NOT
+/// need to cap their block size against it.
+///
+/// It is exposed so real-time hosts that want each processRouting() call to
+/// map to exactly one internal slice (e.g. to align with their audio device
+/// buffer size) can size their render blocks against it. Offline hosts
+/// (bounce/export) may pass blocks of any size and let chunking handle it.
+constexpr uint32_t kRoutingSliceFrames = 2048;
+
 // ============================================================================
 // Routing Configuration Types
 // ============================================================================
@@ -403,13 +417,29 @@ public:
   ///
   /// @param channel_inputs Input buffers [num_channels][num_frames] (planar float32)
   /// @param master_output Output buffer [num_outputs][num_frames] (planar float32)
-  /// @param num_frames Number of frames to process
+  /// @param num_frames Number of frames to process (any size; see @note below)
   /// @return Error code (unlikely to fail in audio thread)
   ///
   /// @note Zero allocations, lock-free, real-time safe
   /// @note Input buffers can be nullptr for channels with no audio
+  /// @note FTR028: num_frames may be arbitrarily large. Internally the matrix
+  ///       processes the buffer in slices of at most kRoutingSliceFrames
+  ///       (== maxBlockFrames()); this chunking is allocation-free and
+  ///       lock-free, so large offline blocks (bounce/export) "just work"
+  ///       without the host needing to cap its render block size. Metering
+  ///       reflects the final slice of the call.
   virtual SessionGraphError processRouting(const float* const* channel_inputs,
                                            float** master_output, uint32_t num_frames) = 0;
+
+  /// FTR028: Largest number of frames processed in a single internal slice.
+  ///
+  /// processRouting() accepts any num_frames and chunks internally, so hosts
+  /// are NOT required to respect this limit. It is exposed so real-time hosts
+  /// that want a 1:1 mapping between a processRouting() call and one internal
+  /// slice can size their render loops against it.
+  ///
+  /// @return Slice size in frames (kRoutingSliceFrames)
+  virtual uint32_t maxBlockFrames() const = 0;
 };
 
 // ============================================================================
