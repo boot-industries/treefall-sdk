@@ -95,7 +95,8 @@ void WaveformEditor::setPlayheadPosition(int64_t samplePosition) {
     m_playheadPosition = clamped;
     if (m_followMode != FollowMode::Off)
       followPlayhead(); // may adjust scroll (throttled) and repaint
-    repaint();
+    // Coalesce rapid playhead-advance repaints (G9).
+    m_playheadRepaint.requestRepaint();
   }
 }
 
