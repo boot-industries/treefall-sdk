@@ -51,6 +51,8 @@ struct TransportCommand {
     Start,
     Stop,
     StopAll,
+    Panic, // OCC155 Ask #5: hard-cut all voices, no fade
+
     // ORP133 G2: StopGroup removed — the transport has no clip→group mapping;
     // hosts implement scoped group-stop with stopOtherClips() + host grouping.
     UpdateTrim,
@@ -235,6 +237,7 @@ public:
   SessionGraphError startClip(ClipHandle handle) override;
   SessionGraphError stopClip(ClipHandle handle) override;
   SessionGraphError stopAllClips() override;
+  SessionGraphError panic() override; // OCC155 Ask #5: hard-cut, no fade
   SessionGraphError stopAllInGroup(uint8_t groupIndex) override;
   SessionGraphError stopOtherClips(ClipHandle exceptHandle) override;
   SessionGraphError setMaxVoicesPerClip(uint32_t maxVoices) override;
@@ -296,6 +299,16 @@ public:
   /// changes and before latency-critical playback; startClip() prepares
   /// lazily (on the control thread) when it wasn't called.
   SessionGraphError prepareClipAudio(ClipHandle handle) override;
+
+  /// OCC155 Ask #4: release a registered clip's reader + prepared source.
+  /// No-op (returns NotReady) while any voice for the handle is still active.
+  SessionGraphError unregisterClipAudio(ClipHandle handle) override;
+
+  /// OCC155 Ask #3: expose the transport's routing matrix through the public API
+  /// so hosts no longer reach into this header with `#define private public`.
+  IRoutingMatrix* getRoutingMatrix() const override {
+    return m_routingMatrix.get();
+  }
 
   /// ORP134 G1 test hook: clips whose engine-rate length exceeds this many
   /// frames stream from a page ring instead of being fully decoded to memory.
