@@ -68,6 +68,7 @@ add_library(orpheus_shmui_juce STATIC
   ${SHMUI_SRC}/Components/AudioPlayerControls.cpp
   ${SHMUI_SRC}/Components/ScrubBar.cpp
   ${SHMUI_SRC}/Components/TransportBar.cpp
+  ${SHMUI_SRC}/Components/TransportContainer.cpp
 
   # Utilities
   ${SHMUI_SRC}/Utils/ShmuiTheme.cpp

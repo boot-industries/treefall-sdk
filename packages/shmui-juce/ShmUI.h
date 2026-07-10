@@ -92,6 +92,7 @@
 #include "Components/OrbVisualizer.h"
 #include "Components/ScrubBar.h"
 #include "Components/TransportBar.h"
+#include "Components/TransportContainer.h"
 #include "Components/WaveformEditor.h"
 #include "Components/WaveformVisualizer.h"
 
@@ -100,6 +101,7 @@
 #include "Utils/AgentState.h"
 #include "Utils/ColorUtils.h"
 #include "Utils/Interpolation.h"
+#include "Utils/RepaintThrottle.h"
 
 namespace shmui {
 
@@ -108,9 +110,9 @@ namespace shmui {
  */
 namespace Version {
 constexpr int major = 2;
-constexpr int minor = 2;
+constexpr int minor = 3;
 constexpr int patch = 0;
-constexpr const char* string = "2.2.0";
+constexpr const char* string = "2.3.0";
 } // namespace Version
 
 } // namespace shmui
