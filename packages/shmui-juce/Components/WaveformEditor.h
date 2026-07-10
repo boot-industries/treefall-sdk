@@ -22,6 +22,7 @@
 #pragma once
 
 #include "../Utils/ColorUtils.h"
+#include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include <JuceHeader.h>
 #include <map>
@@ -32,27 +33,30 @@ namespace shmui {
 //==============================================================================
 /**
  * @brief Style configuration for WaveformEditor.
+ *
+ * Defaults derive from the Orpheus --wave-* token contract (see DesignTokens.h).
+ * Every field remains overridable via setStyle() for per-instance theming.
  */
 struct WaveformEditorStyle {
-  // Waveform colors
-  juce::Colour waveformColor = juce::Colour(0xFF3B82F6);     // Blue
-  juce::Colour waveformFillColor = juce::Colour(0x403B82F6); // Transparent blue
-  juce::Colour backgroundColor = juce::Colour(0xFF1A1A1A);   // Dark grey
+  // Waveform colors (--wave-line / --wave-bg)
+  juce::Colour waveformColor = tokens::wave::line();
+  juce::Colour waveformFillColor = tokens::wave::line().withAlpha(0.25f);
+  juce::Colour backgroundColor = tokens::wave::bg();
 
-  // Playhead
-  juce::Colour playheadColor = juce::Colours::white;
+  // Playhead (--wave-playhead)
+  juce::Colour playheadColor = tokens::wave::playhead();
   float playheadWidth = 2.0f;
 
-  // Trim markers
-  juce::Colour trimHandleColor = juce::Colour(0xFFF59E0B); // Amber
-  juce::Colour trimRegionColor = juce::Colour(0x20F59E0B); // Transparent amber
+  // Trim markers (--wave-trim-in for the handle; matched region tint)
+  juce::Colour trimHandleColor = tokens::wave::trimIn();
+  juce::Colour trimRegionColor = tokens::wave::trimIn().withAlpha(0.12f);
   float trimHandleWidth = 8.0f;
 
-  // Fade curves
-  juce::Colour fadeColor = juce::Colour(0x8022C55E); // Transparent green
+  // Fade curves (accent-tinted; app can override)
+  juce::Colour fadeColor = tokens::meter::green().withAlpha(0.5f);
 
   // Selection
-  juce::Colour selectionColor = juce::Colour(0x403B82F6); // Transparent blue
+  juce::Colour selectionColor = tokens::wave::line().withAlpha(0.25f);
 
   // Grid/time scale
   juce::Colour gridColor = juce::Colour(0x30FFFFFF);
