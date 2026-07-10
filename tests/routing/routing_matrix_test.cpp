@@ -594,23 +594,27 @@ TEST_F(RoutingMatrixTest, ProcessWithoutInitializeFails) {
   EXPECT_EQ(result, SessionGraphError::NotInitialized);
 }
 
-TEST_F(RoutingMatrixTest, ProcessWithOversizedBufferFails) {
-  matrix->initialize(config);
+TEST_F(RoutingMatrixTest, ProcessWithOversizedBufferSucceeds) {
+  // FTR028: a block larger than the internal slice (MAX_BUFFER_SIZE = 2048) is
+  // no longer rejected — processRouting() chunks it internally and processes
+  // the whole block. (Previously this returned InvalidParameter and produced
+  // no output, which silently summed FourTrack bounces to silence.)
+  matrix->initialize(config); // 4 channels per SetUp()
 
-  // Create oversized buffer (> MAX_BUFFER_SIZE = 2048)
-  auto inputs = createTestInputs(1, 4096);
+  // Inputs must match config.num_channels (4) to be dereferenced safely.
+  auto inputs = createTestInputs(4, 4096);
   auto input_ptrs = toPointerArray(inputs);
 
   std::vector<std::vector<float>> outputs(2);
   for (auto& out : outputs) {
-    out.resize(4096);
+    out.resize(4096, 0.0f);
   }
   auto output_ptrs = toPointerArray(outputs);
 
-  // Process should fail
+  // Process should succeed for the oversized block.
   auto result = matrix->processRouting(input_ptrs.data(), output_ptrs.data(), 4096);
 
-  EXPECT_EQ(result, SessionGraphError::InvalidParameter);
+  EXPECT_EQ(result, SessionGraphError::OK);
 }
 
 // ============================================================================
@@ -800,6 +804,135 @@ TEST_F(RoutingMatrixTest, HeadroomModeLogarithmicAttenuates) {
   float expected_none = 4.0f * (0.707107f * 0.5f);
   float expected_log = expected_none * (1.0f / std::sqrt(4.0f));
   EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_log, 0.1f);
+}
+
+// ============================================================================
+// FTR028: Block-size ceiling / internal chunking
+// ============================================================================
+//
+// Regression coverage for FTR028: processRouting() must accept blocks larger
+// than the internal slice size (kRoutingSliceFrames == 2048) by chunking
+// internally, rather than silently rejecting them and producing no output.
+// A large offline bounce/export block must pass signal through at the correct
+// gain across the ENTIRE block, including past the 2048-frame boundary.
+
+// Helper: single-channel, single-group config with a DC (constant) input so
+// the expected output is exactly predictable (no smoothing transient: gain and
+// pan default to unity/center and never change, so the smoothers sit still).
+namespace {
+constexpr float kConstantPowerCenter = 0.707f; // pan law at center (-3 dB)
+
+void configureSingleChannelDC(IRoutingMatrix& matrix, RoutingConfig& config) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.enable_metering = false;
+  config.enable_clipping_protection = false; // keep math linear for assertions
+  ASSERT_EQ(matrix.initialize(config), SessionGraphError::OK);
+}
+} // namespace
+
+TEST_F(RoutingMatrixTest, ExposesMaxBlockFramesContract) {
+  matrix->initialize(config);
+  // FTR028: the internal slice granularity is exposed publicly and matches the
+  // documented constant.
+  EXPECT_EQ(matrix->maxBlockFrames(), kRoutingSliceFrames);
+  EXPECT_EQ(kRoutingSliceFrames, 2048u);
+}
+
+TEST_F(RoutingMatrixTest, ProcessRoutingBoundaryBlockPassesSignal) {
+  // Exactly the slice boundary (2048) must still work and pass signal.
+  configureSingleChannelDC(*matrix, config);
+
+  const uint32_t frames = kRoutingSliceFrames; // 2048
+  const float amplitude = 0.5f;
+
+  std::vector<float> input(frames, amplitude);
+  const float* input_ptrs[1] = {input.data()};
+
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(frames, -999.0f));
+  auto output_ptrs = toPointerArray(outputs);
+
+  auto result = matrix->processRouting(input_ptrs, output_ptrs.data(), frames);
+  ASSERT_EQ(result, SessionGraphError::OK);
+
+  // DC input through unity gain + constant-power center pan.
+  const float expected = amplitude * kConstantPowerCenter; // ~0.3535
+  EXPECT_NEAR(outputs[0][frames - 1], expected, 0.01f);
+  EXPECT_NEAR(outputs[1][frames - 1], expected, 0.01f);
+}
+
+TEST_F(RoutingMatrixTest, ProcessRoutingLargeBlockChunksAndPassesSignal) {
+  // FTR028 core: a 4096-frame block (2x the internal slice) must NOT be
+  // rejected and must pass signal across the WHOLE block, including samples
+  // past the 2048 boundary that the old ceiling would have dropped.
+  configureSingleChannelDC(*matrix, config);
+
+  const uint32_t frames = 4096; // 2 * kRoutingSliceFrames
+  const float amplitude = 0.5f;
+
+  std::vector<float> input(frames, amplitude);
+  const float* input_ptrs[1] = {input.data()};
+
+  // Pre-fill outputs with a sentinel so untouched samples are detectable.
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(frames, -999.0f));
+  auto output_ptrs = toPointerArray(outputs);
+
+  auto result = matrix->processRouting(input_ptrs, output_ptrs.data(), frames);
+  ASSERT_EQ(result, SessionGraphError::OK);
+
+  const float expected = amplitude * kConstantPowerCenter; // ~0.3535
+
+  // Assert CONTENT at exact sample positions across the entire block:
+  // first sample, just before the boundary, exactly at the boundary (first
+  // sample of the second slice), and the last sample.
+  for (uint32_t pos : {0u, 2047u, 2048u, frames - 1}) {
+    EXPECT_NEAR(outputs[0][pos], expected, 0.01f) << "left @ frame " << pos;
+    EXPECT_NEAR(outputs[1][pos], expected, 0.01f) << "right @ frame " << pos;
+  }
+
+  // No sentinel survived anywhere: every sample was written (no silent tail).
+  for (uint32_t i = 0; i < frames; ++i) {
+    ASSERT_GT(outputs[0][i], expected - 0.05f) << "left silent/untouched @ " << i;
+    ASSERT_GT(outputs[1][i], expected - 0.05f) << "right silent/untouched @ " << i;
+  }
+}
+
+TEST_F(RoutingMatrixTest, ProcessRoutingLargeBlockMatchesChunkedEquivalent) {
+  // The chunked large-block path must produce identical output to feeding the
+  // same signal as consecutive 2048-frame calls — proving chunking is a pure
+  // decomposition, not an approximation. Uses a fresh matrix per path.
+  const uint32_t total = 5000; // deliberately not a multiple of 2048
+  const float amplitude = 0.4f;
+  std::vector<float> input(total, amplitude);
+
+  // Path A: single large call.
+  auto matrixA = createRoutingMatrix();
+  RoutingConfig cfgA = config;
+  configureSingleChannelDC(*matrixA, cfgA);
+  const float* inA[1] = {input.data()};
+  std::vector<std::vector<float>> outA(2, std::vector<float>(total, 0.0f));
+  std::vector<float*> outAptr = {outA[0].data(), outA[1].data()};
+  ASSERT_EQ(matrixA->processRouting(inA, outAptr.data(), total), SessionGraphError::OK);
+
+  // Path B: consecutive slices of <= 2048.
+  auto matrixB = createRoutingMatrix();
+  RoutingConfig cfgB = config;
+  configureSingleChannelDC(*matrixB, cfgB);
+  std::vector<std::vector<float>> outB(2, std::vector<float>(total, 0.0f));
+  uint32_t off = 0;
+  while (off < total) {
+    uint32_t slice = std::min<uint32_t>(total - off, kRoutingSliceFrames);
+    const float* inB[1] = {input.data() + off};
+    float* outBptr[2] = {outB[0].data() + off, outB[1].data() + off};
+    ASSERT_EQ(matrixB->processRouting(inB, outBptr, slice), SessionGraphError::OK);
+    off += slice;
+  }
+
+  for (uint32_t i = 0; i < total; ++i) {
+    EXPECT_NEAR(outA[0][i], outB[0][i], 1e-6f) << "left mismatch @ " << i;
+    EXPECT_NEAR(outA[1][i], outB[1][i], 1e-6f) << "right mismatch @ " << i;
+  }
 }
 
 // ============================================================================
