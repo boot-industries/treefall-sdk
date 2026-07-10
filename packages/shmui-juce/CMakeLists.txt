@@ -103,6 +103,11 @@ if(SHMUI_JUCE_ENABLE_OPENGL)
     orpheus_shmui_juce
     juce::juce_opengl
   )
+  # PUBLIC so this target's own sources AND consumers that link it compile the
+  # OpenGL OrbVisualizer include in <ShmUI.h> and the juce_opengl include in the
+  # JuceHeader shim. GL-free consumers never see the define, so they don't pull
+  # juce_opengl.
+  target_compile_definitions(orpheus_shmui_juce_gl PUBLIC SHMUI_JUCE_ENABLE_OPENGL=1)
   target_compile_features(orpheus_shmui_juce_gl PUBLIC cxx_std_20)
 
   if(NOT TARGET Orpheus::shmui_juce_gl)
