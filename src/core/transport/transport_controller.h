@@ -412,6 +412,14 @@ private:
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};
 
+  // FTR027 §1: session tempo cache. SessionGraph::tempo() is a plain double
+  // mutated on the control thread, but getCurrentPosition() derives beats on
+  // the audio thread (event position stamps) and on arbitrary query threads —
+  // so the live value is published through this atomic instead of read from
+  // the graph directly. Seeded in the constructor, refreshed on every
+  // processCallbacks() pump (control thread).
+  std::atomic<double> m_tempoBpm{120.0};
+
   // ORP121 C-03 / ORP133 G1: Lock-free event queue (Audio → UI thread)
   // SPSC ring buffer: Audio thread writes, UI thread reads - no contention
   // Power of 2 size for efficient modulo via bitwise AND. Payload is the POD
