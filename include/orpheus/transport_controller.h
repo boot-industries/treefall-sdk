@@ -16,6 +16,8 @@ namespace core {
 class SessionGraph;
 } // namespace core
 
+class IRoutingMatrix; // OCC155 Ask #3: public routing-matrix accessor
+
 using ClipHandle = uint64_t;
 
 /// Fade curve types for clip fades
@@ -213,6 +215,21 @@ public:
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError stopAllClips() = 0;
 
+  /// Immediately silence all playback — hard cut, no fade (OCC155 Ask #5).
+  ///
+  /// Unlike stopAllClips(), which applies each voice's configured fade-out
+  /// envelope, panic() drops every active voice at once and zeroes output on the
+  /// next audio block. Intended for emergency "immediate mute" controls
+  /// (feedback loop, wrong clip on air) where a fade tail — potentially seconds
+  /// long — is unacceptable and the operator expects instant silence.
+  ///
+  /// @return SessionGraphError::OK on success, or error code on failure
+  ///
+  /// Thread-safe: callable from the control thread (posts onto the SPSC command
+  /// queue like the other stop methods). RT-safe on the audio side: no
+  /// allocations, no blocking — voices are evicted in place.
+  virtual SessionGraphError panic() = 0;
+
   /// Stop all clips in a specific routing group
   ///
   /// @deprecated ORP133 G2: NOT SUPPORTED — always returns
@@ -291,6 +308,21 @@ public:
   /// @return Current transport position (samples, seconds, beats)
   virtual TransportPosition getCurrentPosition() const = 0;
 
+  /// Access the session's routing matrix (group gains/mutes/solos/meters).
+  ///
+  /// The transport owns an IRoutingMatrix that mixes active clip voices into
+  /// output groups. Hosts that expose group faders/meters (e.g. per-playgroup
+  /// level UI) reach the matrix through this accessor rather than reimplementing
+  /// grouping. The returned pointer is owned by the transport and stays valid
+  /// for the controller's lifetime; do not delete it.
+  ///
+  /// @return The routing matrix, or nullptr if none is configured.
+  ///
+  /// Thread-safety: the pointer itself is stable; IRoutingMatrix defines its own
+  /// per-method threading contract (UI-thread config, any-thread lock-free
+  /// reads). See routing_matrix.h.
+  virtual IRoutingMatrix* getRoutingMatrix() const = 0;
+
   /// Register a callback for transport events
   ///
   /// Only one callback can be registered at a time. Calling this function
@@ -322,6 +354,26 @@ public:
   /// @param handle Clip handle registered via registerClipAudio()
   /// @return SessionGraphError::OK on success, NotReady if the clip is active
   virtual SessionGraphError prepareClipAudio(ClipHandle handle) = 0;
+
+  /// Release a clip previously registered via registerClipAudio() (OCC155 Ask #4).
+  ///
+  /// The inverse of registerClipAudio(): drops the reader and prepared/streaming
+  /// source held for the handle, freeing that memory. Over a long broadcast day
+  /// (many clear/reload cycles) this prevents unbounded reader retention.
+  ///
+  /// Active-voice contract: the caller MUST stop the clip first (stopClip() then
+  /// let its fade complete, or panic()). If any voice for the handle is still
+  /// active, this is a no-op and returns SessionGraphError::NotReady — the
+  /// registry entry is left intact so an in-flight voice never loses the source
+  /// it is reading. Calling on an unregistered handle is a no-op that returns
+  /// SessionGraphError::OK (idempotent release).
+  ///
+  /// This is a non-realtime call and must not be invoked from the audio callback.
+  ///
+  /// @param handle Clip handle to release
+  /// @return SessionGraphError::OK on success (or unregistered handle),
+  ///         InvalidHandle if handle == 0, NotReady if voices are still active
+  virtual SessionGraphError unregisterClipAudio(ClipHandle handle) = 0;
 
   /// Update trim points for a registered clip
   ///

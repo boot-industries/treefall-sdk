@@ -216,6 +216,17 @@ SessionGraphError TransportController::stopAllClips() {
   return postCommand(cmd);
 }
 
+SessionGraphError TransportController::panic() {
+  // OCC155 Ask #5: immediate hard-cut. Unlike StopAll (which starts a fade-out
+  // on every voice), Panic evicts all voices on the audio thread with no fade,
+  // so output goes silent on the next block. Routed through the SPSC command
+  // queue so it stays single-producer and RT-safe like the other stops.
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::Panic;
+  cmd.handle = 0;
+  return postCommand(cmd);
+}
+
 SessionGraphError TransportController::stopAllInGroup(uint8_t groupIndex) {
   // ORP133 G2: Deprecated — group-stop is a host concern, not a transport one.
   //
@@ -720,6 +731,25 @@ void TransportController::processCommands() {
         m_activeClips[i].fadeOutStartPos =
             m_activeClips[i].currentSample; // Record position when fade-out started
       }
+      break;
+
+    case TransportCommand::Type::Panic:
+      // OCC155 Ask #5: hard-cut. Drop every voice with no fade so output is
+      // silent on this block. Post ClipStopped for each so the host's UI state
+      // (playing indicators) clears exactly as it would on a natural stop.
+      // Releasing each voice's source shared_ptr here is the same refcount
+      // decrement that removeActiveVoice() already does on the audio thread —
+      // no new RT hazard. Iterate before zeroing the count.
+      for (size_t i = 0; i < m_activeClipCount; ++i) {
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStopped;
+        event.handle = m_activeClips[i].handle;
+        event.voiceId = m_activeClips[i].voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
+        m_activeClips[i].source.reset(); // release source reference (refcount--)
+      }
+      m_activeClipCount = 0;
       break;
 
     case TransportCommand::Type::StopOthers:
@@ -1487,6 +1517,29 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::ClipNotRegistered;
   }
   return ensurePreparedSourceLocked(it->second);
+}
+
+SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
+  // OCC155 Ask #4: inverse of registerClipAudio(). Non-realtime control-thread
+  // call. Frees the reader + prepared/streaming source held for the handle.
+  if (handle == 0) {
+    return SessionGraphError::InvalidHandle;
+  }
+
+  // Refuse while voices are live: an active voice holds its own shared_ptr to
+  // the source, so erasing the registry entry would not free it immediately and
+  // — more importantly — the host may then re-register the same handle and race
+  // its still-playing tail. Require the caller to stop/panic first. Reads the
+  // published snapshot (safe from the control thread; no audio-array access).
+  if (isClipPlaying(handle)) {
+    return SessionGraphError::NotReady;
+  }
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  // Idempotent: releasing an unregistered handle is a no-op success so hosts can
+  // call it unconditionally on slot teardown.
+  m_audioFiles.erase(handle);
+  return SessionGraphError::OK;
 }
 
 SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry& entry) {
