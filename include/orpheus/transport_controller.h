@@ -63,7 +63,7 @@ enum class VoiceMode : uint8_t {
 struct TransportPosition {
   int64_t samples; ///< Absolute position in samples (authoritative)
   double seconds;  ///< Derived: samples / sample_rate
-  double beats;    ///< Derived: seconds * tempo / 60.0
+  double beats;    ///< Derived: seconds * session tempo (SessionGraph::tempo) / 60.0
 };
 
 /// Clip metadata for batch updates
@@ -282,6 +282,11 @@ public:
   ///
   /// This function is thread-safe and can be called from any thread.
   /// Position is sample-accurate (±1 sample tolerance).
+  ///
+  /// Beats are derived from the session tempo (SessionGraph::tempo). The
+  /// tempo is sampled at construction and republished on each
+  /// processCallbacks() pump, so a set_tempo() change is reflected in beats
+  /// after the next pump (FTR027 §1).
   ///
   /// @return Current transport position (samples, seconds, beats)
   virtual TransportPosition getCurrentPosition() const = 0;
