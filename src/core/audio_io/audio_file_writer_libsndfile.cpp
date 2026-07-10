@@ -98,6 +98,13 @@ SessionGraphError AudioFileWriterLibsndfile::open(const std::string& file_path,
   // letting them wrap (libsndfile default float->int conversion can wrap).
   sf_command(m_file, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
+  // libsndfile adds a PEAK chunk to float WAV/AIFF by default, and that chunk
+  // embeds a wall-clock timestamp — the same input would produce different
+  // bytes on every run, violating the SDK's bit-identical determinism
+  // guarantee (and FourTrack's byte-identical export gate, FTR025). Peak
+  // metadata is a nicety, determinism is a contract: disable it.
+  sf_command(m_file, SFC_SET_ADD_PEAK_CHUNK, nullptr, SF_FALSE);
+
   m_file_path = file_path;
   m_frames_written.store(0, std::memory_order_release);
 
