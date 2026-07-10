@@ -49,7 +49,9 @@
     - Use juce::MessageManager::callAsync for cross-thread updates
 
     Sync to Orpheus SDK:
-    rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/
+    scripts/sync-juce.sh   (mirrors juce/Source/ → packages/shmui-juce/,
+                            formats to the SDK clang-format, regenerates the
+                            package CMakeLists; --check verifies no drift)
 
   ==============================================================================
 */
