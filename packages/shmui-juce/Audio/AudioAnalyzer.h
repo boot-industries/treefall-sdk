@@ -252,9 +252,14 @@ private:
   // Thread synchronization
   mutable juce::SpinLock dataLock;
 
-  // Pre-allocated buffer for mono mixdown (avoids allocation on audio thread)
-  // Buffer is pre-sized in constructor to kMaxBufferSize
-  std::vector<float> monoMixBuffer{kMaxBufferSize, 0.0f};
+  // Pre-allocated buffer for mono mixdown (avoids allocation on audio thread).
+  // Buffer is pre-sized to kMaxBufferSize. NOTE: parentheses, not braces — the
+  // brace form {kMaxBufferSize, 0.0f} selects the initializer_list ctor and
+  // builds a TWO-element vector [8192.0, 0.0], so processBlock's mixdown then
+  // writes up to kMaxBufferSize floats past a 2-float allocation (audio-thread
+  // heap-buffer-overflow, caught by ASan). The size ctor gives kMaxBufferSize
+  // zero-initialized floats as intended.
+  std::vector<float> monoMixBuffer = std::vector<float>(kMaxBufferSize, 0.0f);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioAnalyzer)
 };

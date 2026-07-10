@@ -89,7 +89,13 @@
 #include "Components/LevelMeter.h"
 #include "Components/MatrixDisplay.h"
 #include "Components/MeterGroup.h"
+// OrbVisualizer is the only OpenGL component (orpheus_shmui_juce_gl). Pulling it
+// into the umbrella unconditionally forces every consumer of <ShmUI.h> to link
+// juce_opengl even when GL is disabled (SHMUI_JUCE_ENABLE_OPENGL=OFF). Guard it
+// so GL-free consumers (Clip Composer, FreqFinder) don't need the module.
+#if defined(SHMUI_JUCE_ENABLE_OPENGL) && SHMUI_JUCE_ENABLE_OPENGL
 #include "Components/OrbVisualizer.h"
+#endif
 #include "Components/ScrubBar.h"
 #include "Components/TransportBar.h"
 #include "Components/TransportContainer.h"
