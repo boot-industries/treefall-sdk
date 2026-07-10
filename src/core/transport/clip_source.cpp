@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "clip_source.h"
+#include <orpheus/clip_source.h>
 
 #include <algorithm>
 #include <chrono>
@@ -96,14 +96,16 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
   size_t toCopy = static_cast<size_t>(std::min<int64_t>(static_cast<int64_t>(frames), available));
 
   // Publish the demand position and retire every READY page outside the
-  // demand window [alignDown(pos), +kNumPages pages). Retirement here — on
-  // the audio thread, the pages' owner — is what hands FREE pages back to the
-  // worker after seeks/loops; without it the ring would pin stale pages
-  // forever. (Release store; the worker acquires before writing.)
+  // demand window — one page BEHIND the demand page (reverse/scrub runway,
+  // FTR025 T3b) through two pages ahead. Retirement here — on the audio
+  // thread, the pages' owner — is what hands FREE pages back to the worker
+  // after seeks/loops; without it the ring would pin stale pages forever.
+  // (Release store; the worker acquires before writing.) The window must
+  // match what prefill()/service() fill, or the two sides would thrash.
   m_demand.store(pos, std::memory_order_relaxed);
-  const int64_t windowBase = alignDown(pos);
+  const int64_t windowBase = alignDown(pos) - static_cast<int64_t>(kPageFrames);
   const int64_t windowEnd =
-      windowBase + static_cast<int64_t>(kNumPages) * static_cast<int64_t>(kPageFrames);
+      alignDown(pos) + static_cast<int64_t>(kNumPages - 1) * static_cast<int64_t>(kPageFrames);
   for (auto& page : m_pages) {
     const int64_t start = page.start.load(std::memory_order_acquire);
     if (start >= 0 && (start < windowBase || start >= windowEnd)) {
@@ -169,12 +171,25 @@ bool StreamingClipSource::fillPage(int64_t alignedStart) {
   return true;
 }
 
-void StreamingClipSource::prefill(int64_t pos) {
+void StreamingClipSource::prefill(int64_t pos, size_t max_pages) {
   const int64_t base = alignDown(std::max<int64_t>(0, pos));
-  for (size_t i = 0; i < kNumPages; ++i) {
-    const int64_t start = base + static_cast<int64_t>(i) * static_cast<int64_t>(kPageFrames);
-    if (start >= m_lengthFrames) {
-      break;
+
+  // Fill order: the audible (demand) page first, then the forward pages, then
+  // the behind page — so a max_pages-capped prime always makes the position
+  // under the cursor playable, and reverse runway comes after lookahead. The
+  // candidate set matches the retirement window in read() exactly.
+  int64_t wanted[kNumPages];
+  size_t num_wanted = 0;
+  for (size_t i = 0; i + 1 < kNumPages; ++i) {
+    wanted[num_wanted++] = base + static_cast<int64_t>(i) * static_cast<int64_t>(kPageFrames);
+  }
+  wanted[num_wanted++] = base - static_cast<int64_t>(kPageFrames);
+
+  size_t filled = 0;
+  for (size_t i = 0; i < num_wanted && filled < max_pages; ++i) {
+    const int64_t start = wanted[i];
+    if (start < 0 || start >= m_lengthFrames) {
+      continue;
     }
     bool resident = false;
     for (auto& page : m_pages) {
@@ -183,8 +198,8 @@ void StreamingClipSource::prefill(int64_t pos) {
         break;
       }
     }
-    if (!resident) {
-      fillPage(start);
+    if (!resident && fillPage(start)) {
+      ++filled;
     }
   }
 }
