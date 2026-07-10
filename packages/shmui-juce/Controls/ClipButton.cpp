@@ -180,6 +180,32 @@ void ClipButton::setIsPlaybox(bool isPlaybox) {
 }
 
 //==============================================================================
+void ClipButton::setShowNumberWhenLoaded(bool shouldShow) {
+  if (m_showNumberWhenLoaded != shouldShow) {
+    m_showNumberWhenLoaded = shouldShow;
+    repaint();
+  }
+}
+
+void ClipButton::setNumberSlot(BadgeSlot slot) {
+  if (m_numberSlot != slot) {
+    m_numberSlot = slot;
+    if (m_showNumberWhenLoaded)
+      repaint();
+  }
+}
+
+juce::String ClipButton::getDisplayNumber() const {
+  if (displayNumberProvider)
+    return displayNumberProvider(m_buttonIndex);
+  return juce::String(m_buttonIndex + 1);
+}
+
+void ClipButton::refreshDisplayNumber() {
+  repaint();
+}
+
+//==============================================================================
 void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
                               juce::Colour foregroundColor) {
   juce::ignoreUnused(foregroundColor);
@@ -234,15 +260,22 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
     // Draw registered status indicators (loop/fade + any app badges)
     drawStatusIcons(g, bounds);
 
+    // Optional persistent clip number for loaded/playing/stopping pads
+    if (m_showNumberWhenLoaded)
+      drawNumberLabel(g, bounds);
+
     // Draw progress indicator when playing
     if (m_clipState == State::Playing) {
       drawProgressIndicator(g, bounds);
     }
   } else {
-    // Draw button number for empty state
-    g.setColour(juce::Colours::grey.withAlpha(0.3f));
-    g.setFont(juce::Font(10.0f));
-    g.drawText(juce::String(m_buttonIndex + 1), bounds, juce::Justification::centred, false);
+    // Draw display number for empty state (host provider, else index + 1)
+    const auto number = getDisplayNumber();
+    if (number.isNotEmpty()) {
+      g.setColour(juce::Colours::grey.withAlpha(0.3f));
+      g.setFont(juce::Font(10.0f));
+      g.drawText(number, bounds, juce::Justification::centred, false);
+    }
   }
 }
 
@@ -339,6 +372,48 @@ void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bound
     auto iconBounds = juce::Rectangle<float>(x, y, ICON_SIZE, ICON_SIZE);
     Icons::drawIcon(g, ind.icon, iconBounds, ind.color);
   }
+}
+
+void ClipButton::drawNumberLabel(juce::Graphics& g, juce::Rectangle<float> bounds) {
+  const auto number = getDisplayNumber();
+  if (number.isEmpty())
+    return;
+
+  // Small persistent number tucked into a corner, clear of the centred clip name.
+  constexpr float kLabelW = 18.0f;
+  constexpr float kLabelH = 12.0f;
+  auto inner = bounds.reduced(PADDING);
+
+  float x = inner.getX();
+  float y = inner.getY();
+  juce::Justification just = juce::Justification::topLeft;
+
+  switch (m_numberSlot) {
+  case BadgeSlot::TopLeft:
+    x = inner.getX();
+    y = inner.getY();
+    just = juce::Justification::topLeft;
+    break;
+  case BadgeSlot::TopRight:
+    x = inner.getRight() - kLabelW;
+    y = inner.getY();
+    just = juce::Justification::topRight;
+    break;
+  case BadgeSlot::BottomLeft:
+    x = inner.getX();
+    y = inner.getBottom() - kLabelH;
+    just = juce::Justification::bottomLeft;
+    break;
+  case BadgeSlot::BottomRight:
+    x = inner.getRight() - kLabelW;
+    y = inner.getBottom() - kLabelH;
+    just = juce::Justification::bottomRight;
+    break;
+  }
+
+  g.setColour(juce::Colours::white.withAlpha(0.55f));
+  g.setFont(juce::Font(9.0f, juce::Font::bold));
+  g.drawText(number, juce::Rectangle<float>(x, y, kLabelW, kLabelH), just, false);
 }
 
 void ClipButton::drawProgressIndicator(juce::Graphics& g, juce::Rectangle<float> bounds) {
