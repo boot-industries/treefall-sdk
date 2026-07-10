@@ -64,6 +64,7 @@ add_library(orpheus_shmui_juce STATIC
   ${SHMUI_SRC}/Components/WaveformVisualizer.cpp
   ${SHMUI_SRC}/Components/WaveformEditor.cpp
   ${SHMUI_SRC}/Components/LevelMeter.cpp
+  ${SHMUI_SRC}/Components/MeterGroup.cpp
   ${SHMUI_SRC}/Components/AudioPlayerControls.cpp
   ${SHMUI_SRC}/Components/ScrubBar.cpp
   ${SHMUI_SRC}/Components/TransportBar.cpp

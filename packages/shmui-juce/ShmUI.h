@@ -88,6 +88,7 @@
 #include "Components/BarVisualizer.h"
 #include "Components/LevelMeter.h"
 #include "Components/MatrixDisplay.h"
+#include "Components/MeterGroup.h"
 #include "Components/OrbVisualizer.h"
 #include "Components/ScrubBar.h"
 #include "Components/TransportBar.h"
