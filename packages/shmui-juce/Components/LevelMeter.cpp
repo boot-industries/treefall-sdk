@@ -141,6 +141,57 @@ bool LevelMeter::hasClipped(int channel) const {
 }
 
 //==============================================================================
+void LevelMeter::enableHistory(int capacity) {
+  capacity = juce::jmax(1, capacity);
+  m_history.assign(static_cast<size_t>(capacity), LevelEvent{});
+  m_historyHead = 0;
+  m_historyCount = 0;
+}
+
+void LevelMeter::disableHistory() {
+  m_history.clear();
+  m_history.shrink_to_fit();
+  m_historyHead = 0;
+  m_historyCount = 0;
+}
+
+int LevelMeter::getHistorySize() const {
+  return m_historyCount;
+}
+
+LevelEvent LevelMeter::getHistoryEntry(int indexFromNewest) const {
+  if (indexFromNewest < 0 || indexFromNewest >= m_historyCount)
+    return LevelEvent{};
+  // Newest is at (head - 1); walk backwards.
+  const int cap = static_cast<int>(m_history.size());
+  const int idx = ((m_historyHead - 1 - indexFromNewest) % cap + cap) % cap;
+  return m_history[static_cast<size_t>(idx)];
+}
+
+void LevelMeter::clearHistory() {
+  m_historyHead = 0;
+  m_historyCount = 0;
+}
+
+void LevelMeter::recordEvent(int channel, float peakDb) {
+  LevelEvent ev;
+  ev.timestampMs = juce::Time::currentTimeMillis();
+  ev.channel = channel;
+  ev.peakDb = peakDb;
+  ev.tag = m_eventTag;
+
+  if (!m_history.empty()) {
+    m_history[static_cast<size_t>(m_historyHead)] = ev;
+    m_historyHead = (m_historyHead + 1) % static_cast<int>(m_history.size());
+    if (m_historyCount < static_cast<int>(m_history.size()))
+      ++m_historyCount;
+  }
+
+  if (onLevelEvent)
+    onLevelEvent(ev);
+}
+
+//==============================================================================
 void LevelMeter::paint(juce::Graphics& g) {
   auto bounds = getLocalBounds().toFloat();
 
@@ -248,6 +299,8 @@ void LevelMeter::updateMeter() {
       m_clipped[ch] = true;
       if (onClip)
         onClip(ch);
+      // Log a level event (history ring + onLevelEvent) at the clip peak.
+      recordEvent(ch, normalizedToDB(inputNorm));
     }
   }
 }
