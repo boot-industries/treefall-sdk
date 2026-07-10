@@ -24,8 +24,31 @@
 #include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include "Button.h"
+#include <vector>
 
 namespace shmui {
+
+//==============================================================================
+/**
+ * @brief Corner / edge slot a clip indicator badge is drawn in.
+ */
+enum class BadgeSlot { TopLeft, TopRight, BottomLeft, BottomRight };
+
+//==============================================================================
+/**
+ * @brief A registered status indicator ("badge") on a ClipButton.
+ *
+ * Downstream apps register their own named indicators (icon + colour + slot)
+ * without forking ClipButton — e.g. Clip Composer's choke, lock, FX, and trim
+ * flags on top of the built-in loop / fade-in / fade-out.
+ */
+struct ClipIndicator {
+  juce::String name;                         ///< Unique key (e.g. "choke")
+  IconType icon = IconType::Info;            ///< Glyph from the shmui icon set
+  juce::Colour color = juce::Colours::white; ///< Tint
+  BadgeSlot slot = BadgeSlot::TopRight;      ///< Where it draws
+  bool visible = false;                      ///< Current visibility
+};
 
 //==============================================================================
 /**
@@ -118,26 +141,60 @@ public:
   /// @}
 
   //==============================================================================
-  /// @name Status Flags
+  /// @name Status Flags (built-in convenience over the badge registry)
   /// @{
 
   /** Set loop indicator visibility. */
   void setLoopEnabled(bool enabled);
   bool isLoopEnabled() const {
-    return m_loopEnabled;
+    return isIndicatorVisible("loop");
   }
 
   /** Set fade-in indicator visibility. */
   void setFadeInEnabled(bool enabled);
   bool isFadeInEnabled() const {
-    return m_fadeInEnabled;
+    return isIndicatorVisible("fadeIn");
   }
 
   /** Set fade-out indicator visibility. */
   void setFadeOutEnabled(bool enabled);
   bool isFadeOutEnabled() const {
-    return m_fadeOutEnabled;
+    return isIndicatorVisible("fadeOut");
   }
+
+  /// @}
+
+  //==============================================================================
+  /// @name Indicator / badge registry (extensible status flags)
+  /// @{
+
+  /**
+   * @brief Register or replace a named indicator (icon + colour + slot).
+   *
+   * If an indicator with the same name exists it is updated in place
+   * (preserving draw order). Downstream apps use this to add their own flags
+   * (choke, lock, FX, trim, …) without subclassing.
+   */
+  void setIndicator(const ClipIndicator& indicator);
+
+  /** Convenience: register/update an indicator from its parts. */
+  void setIndicator(const juce::String& name, IconType icon, juce::Colour color,
+                    BadgeSlot slot = BadgeSlot::TopRight, bool visible = true);
+
+  /** Toggle an existing indicator's visibility (no-op if not registered). */
+  void setIndicatorVisible(const juce::String& name, bool visible);
+
+  /** @return true if the named indicator exists and is visible. */
+  bool isIndicatorVisible(const juce::String& name) const;
+
+  /** @return true if the named indicator is registered (visible or not). */
+  bool hasIndicator(const juce::String& name) const;
+
+  /** Remove a named indicator entirely. */
+  void removeIndicator(const juce::String& name);
+
+  /** Remove all indicators (including the built-in loop/fade badges). */
+  void clearIndicators();
 
   /// @}
 
@@ -197,10 +254,12 @@ private:
   // Playback state
   float m_playbackProgress = 0.0f;
 
-  // Status flags
-  bool m_loopEnabled = false;
-  bool m_fadeInEnabled = false;
-  bool m_fadeOutEnabled = false;
+  // Status indicators (built-in loop/fadeIn/fadeOut are pre-registered in the
+  // ctor; downstream apps append their own via setIndicator()).
+  std::vector<ClipIndicator> m_indicators;
+  ClipIndicator* findIndicator(const juce::String& name);
+  const ClipIndicator* findIndicator(const juce::String& name) const;
+
   bool m_isPlaybox = false;
 
   // Animation
