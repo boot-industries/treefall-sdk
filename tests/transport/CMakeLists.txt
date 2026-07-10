@@ -574,6 +574,39 @@ if(TARGET orpheus_audio_io)
         COMMAND choke_and_voice_cap_test
     )
 
+    # OCC155: SDK API requests — getRoutingMatrix / panic / unregisterClipAudio,
+    # plus the fade-overlap re-fire independent-cursor regression (Ask #2).
+    add_executable(occ155_api_test
+        occ155_api_test.cpp
+    )
+
+    target_link_libraries(occ155_api_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(occ155_api_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(occ155_api_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(occ155_api_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME occ155_api_test
+        COMMAND occ155_api_test
+    )
+
     # ORP136 §2.2: runtime realtime-safety harness (alloc hooks + /proc/self/io).
     # Gates ORP134 G1: proves at runtime whether the audio thread allocates or
     # performs file I/O — not just that forbidden tokens are absent statically.
