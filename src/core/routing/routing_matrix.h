@@ -147,8 +147,16 @@ public:
   // Audio processing
   SessionGraphError processRouting(const float* const* channel_inputs, float** master_output,
                                    uint32_t num_frames) override;
+  uint32_t maxBlockFrames() const override;
 
 private:
+  // FTR028: Process a single slice of at most MAX_BUFFER_SIZE frames. The
+  // public processRouting() loops over this for arbitrarily large blocks;
+  // this stays allocation-free and lock-free (operates on pre-allocated
+  // scratch), so large offline blocks incur no audio-thread allocation.
+  SessionGraphError processRoutingBlock(const float* const* channel_inputs, float** master_output,
+                                        uint32_t num_frames);
+
   // Internal helpers
   void initializeChannels();
   void initializeGroups();
@@ -197,7 +205,10 @@ private:
   std::vector<StereoGroupBuffer> m_group_buffers; // [num_groups] stereo L/R pairs
   std::vector<float> m_temp_buffer;               // Temp buffer for processing
 
-  static constexpr size_t MAX_BUFFER_SIZE = 2048;
+  // FTR028: Internal slice size. Kept in lock-step with the public
+  // orpheus::kRoutingSliceFrames contract so hosts and the implementation
+  // agree on the chunking granularity.
+  static constexpr size_t MAX_BUFFER_SIZE = kRoutingSliceFrames;
   static constexpr uint8_t UNASSIGNED_GROUP = 255;
 };
 
