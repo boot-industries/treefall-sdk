@@ -11,12 +11,15 @@
 #include "../support/fnv1a64.hpp"
 #include "../support/synth.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace orpheus;
@@ -221,6 +224,47 @@ TEST_F(AudioFileWriterTest, WriteBeforeOpenReturnsNotReady) {
   auto result = m_writer->writeSamples(dummy, 1);
   EXPECT_EQ(result.error, SessionGraphError::NotReady);
   EXPECT_EQ(m_writer->getFramesWritten(), 0);
+}
+
+TEST_F(AudioFileWriterTest, RepeatedWritesAreByteIdentical) {
+  // Determinism is a contract: the same samples must produce the same file
+  // bytes on every run. libsndfile's default PEAK chunk for float files embeds
+  // a wall-clock timestamp, which broke this — the writer disables it.
+  auto readBytes = [](const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+
+  const struct {
+    AudioFileFormat format;
+    AudioSampleFormat sample_format;
+    const char* ext;
+  } cases[] = {
+      {AudioFileFormat::WAV, AudioSampleFormat::Float32, "wav"},
+      {AudioFileFormat::AIFF, AudioSampleFormat::Float32, "aiff"},
+      {AudioFileFormat::FLAC, AudioSampleFormat::Int24, "flac"},
+  };
+  for (const auto& c : cases) {
+    AudioFileWriterConfig config;
+    config.format = c.format;
+    config.sample_format = c.sample_format;
+
+    std::filesystem::path paths[2];
+    for (int run = 0; run < 2; ++run) {
+      paths[run] = m_tempDir / ("det_" + std::to_string(run) + "." + c.ext);
+      ASSERT_EQ(m_writer->open(paths[run].string(), config), SessionGraphError::OK);
+      auto result = m_writer->writeSamples(m_signal.data(), kFrames);
+      ASSERT_TRUE(result.isOk());
+      ASSERT_EQ(m_writer->close(), SessionGraphError::OK);
+      // A wall-clock-stamped chunk only differs across seconds; make sure the
+      // two runs cannot land in the same second and mask the regression.
+      if (run == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+      }
+    }
+    EXPECT_EQ(readBytes(paths[0]), readBytes(paths[1]))
+        << "." << c.ext << " output must be byte-identical across runs";
+  }
 }
 
 TEST_F(AudioFileWriterTest, MonoAndHighRateConfigs) {
