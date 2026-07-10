@@ -3,6 +3,12 @@
 #include <gtest/gtest.h>
 #include <orpheus/transport_controller.h>
 
+// FTR027 §1: concrete controller access for processAudio()/processCallbacks()
+#include "transport/transport_controller.h"
+
+#include <memory>
+#include <vector>
+
 using namespace orpheus;
 
 // Mock session graph for testing
@@ -111,6 +117,57 @@ TEST_F(TransportControllerTest, GetCurrentPosition) {
   // Initially at sample 0
   EXPECT_EQ(pos.samples, 0);
   EXPECT_DOUBLE_EQ(pos.seconds, 0.0);
+}
+
+namespace {
+
+// Advance the transport by exactly one second of silence (no active clips —
+// the timeline still moves).
+void advanceOneSecond(TransportController& transport, uint32_t sampleRate) {
+  constexpr size_t kBlock = 480;
+  std::vector<float> left(kBlock, 0.0f);
+  std::vector<float> right(kBlock, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+  for (uint32_t rendered = 0; rendered < sampleRate; rendered += kBlock) {
+    transport.processAudio(buffers, 2, kBlock);
+  }
+}
+
+} // namespace
+
+// FTR027 §1: TransportPosition::beats derives from the session graph's real
+// tempo, not a hardcoded 120 BPM.
+TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
+  m_sessionGraph->set_tempo(90.0);
+  auto transport = std::make_unique<TransportController>(m_sessionGraph.get(), 48000);
+
+  advanceOneSecond(*transport, 48000);
+
+  TransportPosition pos = transport->getCurrentPosition();
+  EXPECT_EQ(pos.samples, 48000);
+  EXPECT_DOUBLE_EQ(pos.seconds, 1.0);
+  // 90 BPM = 1.5 beats per second. The old hardcoded tempo would report 2.0.
+  EXPECT_DOUBLE_EQ(pos.beats, 1.5);
+}
+
+// FTR027 §1: a set_tempo() change after construction reaches beats on the
+// next processCallbacks() pump.
+TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
+  auto transport = std::make_unique<TransportController>(m_sessionGraph.get(), 48000);
+
+  advanceOneSecond(*transport, 48000);
+
+  // Session default is 120 BPM = 2 beats per second.
+  EXPECT_DOUBLE_EQ(transport->getCurrentPosition().beats, 2.0);
+
+  m_sessionGraph->set_tempo(150.0);
+
+  // Not yet published: beats still reflect the previously cached tempo.
+  EXPECT_DOUBLE_EQ(transport->getCurrentPosition().beats, 2.0);
+
+  transport->processCallbacks(); // control-thread pump republishes the tempo
+
+  EXPECT_DOUBLE_EQ(transport->getCurrentPosition().beats, 2.5);
 }
 
 TEST_F(TransportControllerTest, Callback) {
