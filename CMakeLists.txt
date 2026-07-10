@@ -212,9 +212,13 @@ install(TARGETS orpheus_diagnostics
 install(TARGETS orpheus_sanitizers
   EXPORT OrpheusSDKTargets)
 
-# Export shmui-juce when it was built (option + JUCE present). The optional
-# OpenGL sub-target is exported too when SHMUI_JUCE_ENABLE_OPENGL was set.
-if(TARGET orpheus_shmui_juce)
+# Export shmui-juce ONLY when the SDK itself was asked to build it for
+# distribution (ORPHEUS_ENABLE_SHMUI_JUCE). A consumer app that merely adds the
+# package as a subdirectory (wave-finder, Clip Composer) creates the target too,
+# but must NOT trigger an install/export here — its JUCE modules come from a
+# per-app FetchContent and are not in OrpheusSDKTargets, which would make the
+# export fail. In that mode the app links orpheus_shmui_juce directly.
+if(ORPHEUS_ENABLE_SHMUI_JUCE AND TARGET orpheus_shmui_juce)
   install(TARGETS orpheus_shmui_juce
     EXPORT OrpheusSDKTargets
     ARCHIVE DESTINATION lib
