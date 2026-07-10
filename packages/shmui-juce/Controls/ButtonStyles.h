@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 
 namespace shmui {
@@ -197,21 +198,21 @@ inline ButtonColors getButtonColorsLight(ButtonStyle style) {
     break;
 
   case ButtonStyle::Destructive:
-    colors.background = juce::Colour(0xFFDC2626);
-    colors.backgroundHover = juce::Colour(0xFFEF4444);
-    colors.backgroundPressed = juce::Colour(0xFFB91C1C);
+    colors.background = tokens::lab::danger(); // --lab-danger
+    colors.backgroundHover = tokens::lab::danger().brighter(0.15f);
+    colors.backgroundPressed = tokens::lab::danger().darker(0.20f);
     colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFFFF9999);
+    colors.foregroundDisabled = tokens::lab::danger().withAlpha(0.5f);
     colors.border = juce::Colours::transparentBlack;
     colors.borderHover = juce::Colours::transparentBlack;
     break;
 
   case ButtonStyle::Success:
-    colors.background = juce::Colour(0xFF16A34A);
-    colors.backgroundHover = juce::Colour(0xFF22C55E);
-    colors.backgroundPressed = juce::Colour(0xFF15803D);
+    colors.background = tokens::meter::green(); // --meter-green
+    colors.backgroundHover = tokens::meter::green().brighter(0.15f);
+    colors.backgroundPressed = tokens::meter::green().darker(0.20f);
     colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFF99FF99);
+    colors.foregroundDisabled = tokens::meter::green().withAlpha(0.5f);
     colors.border = juce::Colours::transparentBlack;
     colors.borderHover = juce::Colours::transparentBlack;
     break;
@@ -268,21 +269,21 @@ inline ButtonColors getButtonColorsDark(ButtonStyle style) {
     break;
 
   case ButtonStyle::Destructive:
-    colors.background = juce::Colour(0xFFDC2626);
-    colors.backgroundHover = juce::Colour(0xFFEF4444);
-    colors.backgroundPressed = juce::Colour(0xFFB91C1C);
+    colors.background = tokens::lab::danger(); // --lab-danger
+    colors.backgroundHover = tokens::lab::danger().brighter(0.15f);
+    colors.backgroundPressed = tokens::lab::danger().darker(0.20f);
     colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFFFF9999);
+    colors.foregroundDisabled = tokens::lab::danger().withAlpha(0.5f);
     colors.border = juce::Colours::transparentBlack;
     colors.borderHover = juce::Colours::transparentBlack;
     break;
 
   case ButtonStyle::Success:
-    colors.background = juce::Colour(0xFF16A34A);
-    colors.backgroundHover = juce::Colour(0xFF22C55E);
-    colors.backgroundPressed = juce::Colour(0xFF15803D);
+    colors.background = tokens::meter::green(); // --meter-green
+    colors.backgroundHover = tokens::meter::green().brighter(0.15f);
+    colors.backgroundPressed = tokens::meter::green().darker(0.20f);
     colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFF99FF99);
+    colors.foregroundDisabled = tokens::meter::green().withAlpha(0.5f);
     colors.border = juce::Colours::transparentBlack;
     colors.borderHover = juce::Colours::transparentBlack;
     break;

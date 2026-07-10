@@ -10,12 +10,22 @@
 */
 
 #include "ClipButton.h"
+#include <algorithm>
 
 namespace shmui {
 
 //==============================================================================
 ClipButton::ClipButton(int buttonIndex) : m_buttonIndex(buttonIndex) {
   setStyle(ButtonStyle::Ghost);
+
+  // Pre-register the built-in indicators (hidden until toggled). Downstream
+  // apps append their own (choke, lock, FX, trim, …) via setIndicator().
+  m_indicators.push_back(
+      {"loop", IconType::Loop, juce::Colours::white.withAlpha(0.6f), BadgeSlot::TopRight, false});
+  m_indicators.push_back({"fadeIn", IconType::VolumeLow, juce::Colours::white.withAlpha(0.6f),
+                          BadgeSlot::TopRight, false});
+  m_indicators.push_back({"fadeOut", IconType::VolumeMute, juce::Colours::white.withAlpha(0.6f),
+                          BadgeSlot::TopRight, false});
 
   // Override click handlers
   onClick = [this] { handleClipClick(); };
@@ -68,13 +78,13 @@ void ClipButton::setKeyboardShortcut(const juce::String& shortcut) {
 
 void ClipButton::clearClip() {
   m_clipName = "";
-  m_clipColor = juce::Colour(0xFF3F3F3F);
+  m_clipColor = tokens::clip::empty(); // --clip-empty (unlit well)
   m_durationSeconds = 0.0;
   m_keyboardShortcut = "";
   m_playbackProgress = 0.0f;
-  m_loopEnabled = false;
-  m_fadeInEnabled = false;
-  m_fadeOutEnabled = false;
+  // Hide every indicator (built-in + app-registered) without unregistering.
+  for (auto& ind : m_indicators)
+    ind.visible = false;
   m_clipState = State::Empty;
   repaint();
 }
@@ -89,22 +99,75 @@ void ClipButton::setPlaybackProgress(float progress) {
 }
 
 void ClipButton::setLoopEnabled(bool enabled) {
-  if (m_loopEnabled != enabled) {
-    m_loopEnabled = enabled;
-    repaint();
-  }
+  setIndicatorVisible("loop", enabled);
 }
 
 void ClipButton::setFadeInEnabled(bool enabled) {
-  if (m_fadeInEnabled != enabled) {
-    m_fadeInEnabled = enabled;
-    repaint();
-  }
+  setIndicatorVisible("fadeIn", enabled);
 }
 
 void ClipButton::setFadeOutEnabled(bool enabled) {
-  if (m_fadeOutEnabled != enabled) {
-    m_fadeOutEnabled = enabled;
+  setIndicatorVisible("fadeOut", enabled);
+}
+
+//==============================================================================
+ClipIndicator* ClipButton::findIndicator(const juce::String& name) {
+  for (auto& ind : m_indicators)
+    if (ind.name == name)
+      return &ind;
+  return nullptr;
+}
+
+const ClipIndicator* ClipButton::findIndicator(const juce::String& name) const {
+  for (const auto& ind : m_indicators)
+    if (ind.name == name)
+      return &ind;
+  return nullptr;
+}
+
+void ClipButton::setIndicator(const ClipIndicator& indicator) {
+  if (auto* existing = findIndicator(indicator.name))
+    *existing = indicator; // update in place, preserving draw order
+  else
+    m_indicators.push_back(indicator);
+  repaint();
+}
+
+void ClipButton::setIndicator(const juce::String& name, IconType icon, juce::Colour color,
+                              BadgeSlot slot, bool visible) {
+  setIndicator({name, icon, color, slot, visible});
+}
+
+void ClipButton::setIndicatorVisible(const juce::String& name, bool visible) {
+  if (auto* ind = findIndicator(name)) {
+    if (ind->visible != visible) {
+      ind->visible = visible;
+      repaint();
+    }
+  }
+}
+
+bool ClipButton::isIndicatorVisible(const juce::String& name) const {
+  const auto* ind = findIndicator(name);
+  return ind != nullptr && ind->visible;
+}
+
+bool ClipButton::hasIndicator(const juce::String& name) const {
+  return findIndicator(name) != nullptr;
+}
+
+void ClipButton::removeIndicator(const juce::String& name) {
+  const auto before = m_indicators.size();
+  m_indicators.erase(std::remove_if(m_indicators.begin(), m_indicators.end(),
+                                    [&](const ClipIndicator& ind) { return ind.name == name; }),
+                     m_indicators.end());
+  if (m_indicators.size() != before)
+    repaint();
+}
+
+void ClipButton::clearIndicators() {
+  if (!m_indicators.empty()) {
+    m_indicators.clear();
     repaint();
   }
 }
@@ -159,7 +222,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
     // Draw clip name
     if (m_clipName.isNotEmpty()) {
       g.setColour(juce::Colours::white);
-      g.setFont(juce::Font(juce::FontOptions(11.0f)));
+      g.setFont(juce::Font(11.0f));
 
       auto textBounds = bounds.reduced(PADDING);
       g.drawText(m_clipName, textBounds, juce::Justification::centred, true);
@@ -168,7 +231,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
     // Draw HUD (shortcut, duration)
     drawClipHUD(g, bounds);
 
-    // Draw status icons (loop, fade in/out)
+    // Draw registered status indicators (loop/fade + any app badges)
     drawStatusIcons(g, bounds);
 
     // Draw progress indicator when playing
@@ -178,7 +241,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
   } else {
     // Draw button number for empty state
     g.setColour(juce::Colours::grey.withAlpha(0.3f));
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.setFont(juce::Font(10.0f));
     g.drawText(juce::String(m_buttonIndex + 1), bounds, juce::Justification::centred, false);
   }
 }
@@ -220,7 +283,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // Keyboard shortcut (top-left)
   if (m_keyboardShortcut.isNotEmpty()) {
     g.setColour(juce::Colours::white.withAlpha(0.6f));
-    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+    g.setFont(juce::Font(9.0f, juce::Font::bold));
     g.drawText(m_keyboardShortcut, hudBounds.removeFromTop(12.0f), juce::Justification::topLeft,
                false);
   }
@@ -228,25 +291,54 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // Duration (bottom-right)
   if (m_durationSeconds > 0.0) {
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::Font(juce::FontOptions(8.0f)));
+    g.setFont(juce::Font(8.0f));
     g.drawText(formatDuration(m_durationSeconds), bounds.reduced(PADDING),
                juce::Justification::bottomRight, false);
   }
 }
 
 void ClipButton::drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bounds) {
-  float iconX = bounds.getRight() - PADDING - ICON_SIZE;
-  float iconY = bounds.getY() + PADDING;
+  // Per-slot layout cursors. Icons stack horizontally, growing inward from the
+  // slot corner: top slots grow downward-from-top, bottom slots upward-from-bottom.
+  const float top = bounds.getY() + PADDING;
+  const float bottom = bounds.getBottom() - PADDING - ICON_SIZE;
+  float leftTop = bounds.getX() + PADDING;
+  float rightTop = bounds.getRight() - PADDING - ICON_SIZE;
+  float leftBottom = bounds.getX() + PADDING;
+  float rightBottom = bounds.getRight() - PADDING - ICON_SIZE;
+  const float step = ICON_SIZE + 2.0f;
 
-  g.setColour(juce::Colours::white.withAlpha(0.6f));
+  for (const auto& ind : m_indicators) {
+    if (!ind.visible)
+      continue;
 
-  if (m_loopEnabled) {
-    auto iconBounds = juce::Rectangle<float>(iconX, iconY, ICON_SIZE, ICON_SIZE);
-    Icons::drawIcon(g, IconType::Loop, iconBounds, juce::Colours::white.withAlpha(0.6f));
-    iconX -= ICON_SIZE + 2;
+    float x = 0.0f, y = 0.0f;
+    switch (ind.slot) {
+    case BadgeSlot::TopLeft:
+      x = leftTop;
+      y = top;
+      leftTop += step;
+      break;
+    case BadgeSlot::TopRight:
+      x = rightTop;
+      y = top;
+      rightTop -= step;
+      break;
+    case BadgeSlot::BottomLeft:
+      x = leftBottom;
+      y = bottom;
+      leftBottom += step;
+      break;
+    case BadgeSlot::BottomRight:
+      x = rightBottom;
+      y = bottom;
+      rightBottom -= step;
+      break;
+    }
+
+    auto iconBounds = juce::Rectangle<float>(x, y, ICON_SIZE, ICON_SIZE);
+    Icons::drawIcon(g, ind.icon, iconBounds, ind.color);
   }
-
-  // Future: Add fade in/out indicators
 }
 
 void ClipButton::drawProgressIndicator(juce::Graphics& g, juce::Rectangle<float> bounds) {

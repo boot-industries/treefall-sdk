@@ -22,7 +22,9 @@
 #pragma once
 
 #include "../Utils/ColorUtils.h"
+#include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
+#include "../Utils/RepaintThrottle.h"
 #include <JuceHeader.h>
 #include <map>
 #include <vector>
@@ -32,33 +34,73 @@ namespace shmui {
 //==============================================================================
 /**
  * @brief Style configuration for WaveformEditor.
+ *
+ * Defaults derive from the Orpheus --wave-* token contract (see DesignTokens.h).
+ * Every field remains overridable via setStyle() for per-instance theming.
  */
 struct WaveformEditorStyle {
-  // Waveform colors
-  juce::Colour waveformColor = juce::Colour(0xFF3B82F6);     // Blue
-  juce::Colour waveformFillColor = juce::Colour(0x403B82F6); // Transparent blue
-  juce::Colour backgroundColor = juce::Colour(0xFF1A1A1A);   // Dark grey
+  // Waveform colors (--wave-line / --wave-bg)
+  juce::Colour waveformColor = tokens::wave::line();
+  juce::Colour waveformFillColor = tokens::wave::line().withAlpha(0.25f);
+  juce::Colour backgroundColor = tokens::wave::bg();
 
-  // Playhead
-  juce::Colour playheadColor = juce::Colours::white;
+  // Playhead (--wave-playhead)
+  juce::Colour playheadColor = tokens::wave::playhead();
   float playheadWidth = 2.0f;
 
-  // Trim markers
-  juce::Colour trimHandleColor = juce::Colour(0xFFF59E0B); // Amber
-  juce::Colour trimRegionColor = juce::Colour(0x20F59E0B); // Transparent amber
+  // Trim markers (--wave-trim-in for the handle; matched region tint)
+  juce::Colour trimHandleColor = tokens::wave::trimIn();
+  juce::Colour trimRegionColor = tokens::wave::trimIn().withAlpha(0.12f);
   float trimHandleWidth = 8.0f;
 
-  // Fade curves
-  juce::Colour fadeColor = juce::Colour(0x8022C55E); // Transparent green
+  // Fade curves (accent-tinted; app can override)
+  juce::Colour fadeColor = tokens::meter::green().withAlpha(0.5f);
 
   // Selection
-  juce::Colour selectionColor = juce::Colour(0x403B82F6); // Transparent blue
+  juce::Colour selectionColor = tokens::wave::line().withAlpha(0.25f);
 
   // Grid/time scale
   juce::Colour gridColor = juce::Colour(0x30FFFFFF);
   juce::Colour timeTextColor = juce::Colour(0x80FFFFFF);
   bool showGrid = true;
   bool showTimeScale = true;
+};
+
+//==============================================================================
+/**
+ * @brief Type of a cue marker (broadcast/DJ clip editing).
+ */
+enum class CueType {
+  Hook,  ///< Song hook / main phrase
+  Drop,  ///< Drop / impact point
+  Outro, ///< Outro / tail-out cue
+  Custom ///< App-defined
+};
+
+//==============================================================================
+/**
+ * @brief A labelled, typed, colourable cue marker at a sample position.
+ *
+ * First-class markers the WaveformEditor draws and lets the user drag. This is
+ * table-stakes for broadcast/DJ editing and Clip Composer's Hook/Drop/Outro/
+ * Custom cues (OCC153 G4).
+ */
+struct CueMarker {
+  juce::String id;                ///< Unique key
+  int64_t sample = 0;             ///< Position in samples
+  CueType type = CueType::Custom; ///< Semantic type
+  juce::Colour color;             ///< Explicit colour (transparent = per-type default)
+  juce::String label;             ///< Optional display label
+};
+
+//==============================================================================
+/**
+ * @brief Viewport auto-follow mode for real-time playback (OCC153 G6).
+ */
+enum class FollowMode {
+  Off,   ///< No auto-scroll
+  Page,  ///< Jump one page when the playhead leaves the viewport
+  Center ///< Keep the playhead centered
 };
 
 //==============================================================================
@@ -231,6 +273,55 @@ public:
   /// @}
 
   //==============================================================================
+  /// @name Cue Markers (G4)
+  /// @{
+
+  /** Add or replace a cue marker (keyed by id). */
+  void addCueMarker(const CueMarker& marker);
+
+  /** Remove a cue marker by id. */
+  void removeCueMarker(const juce::String& id);
+
+  /** Remove all cue markers. */
+  void clearCueMarkers();
+
+  /** Access the current markers (draw order). */
+  const std::vector<CueMarker>& getCueMarkers() const {
+    return m_cueMarkers;
+  }
+
+  /** Fired when the user drags a marker to a new sample position. */
+  std::function<void(const juce::String& id, int64_t newSample)> onCueMarkerMoved;
+
+  /// @}
+
+  //==============================================================================
+  /// @name Audition Region (G5)
+  /// @{
+
+  /**
+   * @brief Highlight a sub-region for end-of-clip audition (e.g. last 2 s).
+   * Distinct from the edit selection; drawn as a tinted overlay.
+   */
+  void setAuditionRegion(int64_t startSamples, int64_t endSamples);
+
+  /** Convenience: audition the final @p seconds of the clip. */
+  void setAuditionRegionFromEnd(double seconds);
+
+  /** Clear the audition region. */
+  void clearAuditionRegion();
+
+  /** @return true if an audition region is set. */
+  bool hasAuditionRegion() const {
+    return m_auditionStart < m_auditionEnd;
+  }
+
+  /** Fired when the user double-clicks inside the audition region. */
+  std::function<void()> onAuditionRequested;
+
+  /// @}
+
+  //==============================================================================
   /// @name Zoom & Scroll
   /// @{
 
@@ -267,6 +358,25 @@ public:
    * @brief Zoom to selection region.
    */
   void zoomToSelection();
+
+  /// @}
+
+  //==============================================================================
+  /// @name Play-follow (G6)
+  /// @{
+
+  /**
+   * @brief Auto-scroll the viewport to keep the playhead visible at high zoom.
+   * Repaints/scrolls are throttled (see setFollowThrottleHz) so real-time
+   * playback holds frame rate on large sessions.
+   */
+  void setFollowMode(FollowMode mode);
+  FollowMode getFollowMode() const {
+    return m_followMode;
+  }
+
+  /** Set the max follow-scroll update rate (Hz). */
+  void setFollowThrottleHz(float hz);
 
   /// @}
 
@@ -311,11 +421,12 @@ public:
   void mouseDrag(const juce::MouseEvent& e) override;
   void mouseUp(const juce::MouseEvent& e) override;
   void mouseMove(const juce::MouseEvent& e) override;
+  void mouseDoubleClick(const juce::MouseEvent& e) override;
   void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
 private:
   //==============================================================================
-  enum class DragHandle { None, TrimIn, TrimOut, Playhead, Selection };
+  enum class DragHandle { None, TrimIn, TrimOut, Playhead, Selection, CueMarker };
 
   void generateWaveformData(const juce::File& audioFile);
   void drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds);
@@ -323,6 +434,8 @@ private:
   void drawFadeCurves(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawPlayhead(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawSelection(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void drawAuditionRegion(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void drawCueMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawTimeScale(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds);
 
@@ -331,6 +444,10 @@ private:
   bool isNearHandle(float mouseX, float handleX, float tolerance = 8.0f) const;
   DragHandle getHandleAt(float x, float y) const;
   void updateCursor(DragHandle handle);
+
+  juce::Colour cueColour(const CueMarker& marker) const;
+  int cueMarkerIndexAt(float x, float width) const; // -1 if none near
+  void followPlayhead();                            // G6 viewport auto-scroll
 
   juce::String formatTime(int64_t samples) const;
 
@@ -353,15 +470,31 @@ private:
   int64_t m_selectionStart = 0;
   int64_t m_selectionEnd = 0;
 
+  // Audition region (G5) — preview highlight, distinct from selection
+  int64_t m_auditionStart = 0;
+  int64_t m_auditionEnd = 0;
+
+  // Cue markers (G4)
+  std::vector<CueMarker> m_cueMarkers;
+
   // Zoom/Scroll
   float m_zoomLevel = 1.0f;
   float m_scrollPosition = 0.0f;
+
+  // Play-follow (G6). Playhead-advance repaints are coalesced through a
+  // shared RepaintThrottle (G9) so rapid setPlayheadPosition() calls don't
+  // each force a full repaint at high update rates.
+  FollowMode m_followMode = FollowMode::Off;
+  float m_followThrottleHz = 30.0f;
+  int64_t m_lastFollowMs = 0;
+  RepaintThrottle m_playheadRepaint{*this, 60.0f};
 
   // Interaction state
   DragHandle m_draggedHandle = DragHandle::None;
   juce::Point<float> m_dragStartPoint;
   int64_t m_dragStartValue = 0;
   bool m_isSelecting = false;
+  int m_draggedCueIndex = -1; // index into m_cueMarkers while dragging a cue
 
   // Caching
   juce::String m_cachedFilePath;
