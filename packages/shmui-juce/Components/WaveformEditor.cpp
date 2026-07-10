@@ -10,6 +10,8 @@
 */
 
 #include "WaveformEditor.h"
+#include <algorithm>
+#include <utility>
 
 namespace shmui {
 
@@ -91,6 +93,8 @@ void WaveformEditor::setPlayheadPosition(int64_t samplePosition) {
   const int64_t clamped = juce::jlimit(int64_t(0), m_waveformData.totalSamples, samplePosition);
   if (m_playheadPosition != clamped) {
     m_playheadPosition = clamped;
+    if (m_followMode != FollowMode::Off)
+      followPlayhead(); // may adjust scroll (throttled) and repaint
     repaint();
   }
 }
@@ -175,9 +179,11 @@ void WaveformEditor::paint(juce::Graphics& g) {
     drawGrid(g, waveformBounds);
 
   drawSelection(g, waveformBounds);
+  drawAuditionRegion(g, waveformBounds);
   drawWaveform(g, waveformBounds);
   drawFadeCurves(g, waveformBounds);
   drawTrimMarkers(g, waveformBounds);
+  drawCueMarkers(g, waveformBounds);
   drawPlayhead(g, waveformBounds);
 
   if (m_style.showTimeScale)
@@ -202,11 +208,21 @@ void WaveformEditor::mouseDown(const juce::MouseEvent& e) {
 
   m_draggedHandle = getHandleAt(x, y);
   m_dragStartPoint = {x, y};
+  m_draggedCueIndex = -1;
+
+  // A cue marker under the cursor takes precedence over a seek click.
+  const int cueIdx = cueMarkerIndexAt(x, bounds.getWidth());
+  if (m_draggedHandle == DragHandle::None && cueIdx >= 0) {
+    m_draggedHandle = DragHandle::CueMarker;
+    m_draggedCueIndex = cueIdx;
+  }
 
   if (m_draggedHandle == DragHandle::TrimIn) {
     m_dragStartValue = m_trimInSamples;
   } else if (m_draggedHandle == DragHandle::TrimOut) {
     m_dragStartValue = m_trimOutSamples;
+  } else if (m_draggedHandle == DragHandle::CueMarker) {
+    m_dragStartValue = m_cueMarkers[static_cast<size_t>(m_draggedCueIndex)].sample;
   } else if (e.mods.isShiftDown()) {
     // Start selection
     m_isSelecting = true;
@@ -218,6 +234,19 @@ void WaveformEditor::mouseDown(const juce::MouseEvent& e) {
     if (onSeek)
       onSeek(sample);
   }
+}
+
+void WaveformEditor::mouseDoubleClick(const juce::MouseEvent& e) {
+  if (!m_waveformData.isValid || !hasAuditionRegion())
+    return;
+
+  auto bounds = getLocalBounds().toFloat();
+  if (m_style.showTimeScale)
+    bounds.removeFromBottom(20.0f);
+
+  const int64_t sample = xToSample(static_cast<float>(e.getPosition().x), bounds.getWidth());
+  if (sample >= m_auditionStart && sample <= m_auditionEnd && onAuditionRequested)
+    onAuditionRequested();
 }
 
 void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
@@ -259,6 +288,17 @@ void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
       if (onTrimPointsChanged)
         onTrimPointsChanged(m_trimInSamples, m_trimOutSamples);
     }
+  } else if (m_draggedHandle == DragHandle::CueMarker && m_draggedCueIndex >= 0 &&
+             m_draggedCueIndex < static_cast<int>(m_cueMarkers.size())) {
+    int64_t newSample = xToSample(x, bounds.getWidth());
+    newSample = juce::jlimit(int64_t(0), m_waveformData.totalSamples, newSample);
+    auto& marker = m_cueMarkers[static_cast<size_t>(m_draggedCueIndex)];
+    if (marker.sample != newSample) {
+      marker.sample = newSample;
+      repaint();
+      if (onCueMarkerMoved)
+        onCueMarkerMoved(marker.id, newSample);
+    }
   }
 }
 
@@ -273,6 +313,7 @@ void WaveformEditor::mouseUp(const juce::MouseEvent& e) {
 
   m_draggedHandle = DragHandle::None;
   m_isSelecting = false;
+  m_draggedCueIndex = -1;
   updateCursor(DragHandle::None);
 }
 
@@ -626,6 +667,175 @@ juce::String WaveformEditor::formatTime(int64_t samples) const {
     return juce::String::formatted("%d:%02d.%03d", mins, secs, ms);
   else
     return juce::String::formatted("%d.%03d", secs, ms);
+}
+
+//==============================================================================
+// Cue markers (G4)
+//==============================================================================
+void WaveformEditor::addCueMarker(const CueMarker& marker) {
+  for (auto& m : m_cueMarkers) {
+    if (m.id == marker.id) {
+      m = marker; // update in place, preserve order
+      repaint();
+      return;
+    }
+  }
+  m_cueMarkers.push_back(marker);
+  repaint();
+}
+
+void WaveformEditor::removeCueMarker(const juce::String& id) {
+  const auto before = m_cueMarkers.size();
+  m_cueMarkers.erase(std::remove_if(m_cueMarkers.begin(), m_cueMarkers.end(),
+                                    [&](const CueMarker& m) { return m.id == id; }),
+                     m_cueMarkers.end());
+  if (m_cueMarkers.size() != before)
+    repaint();
+}
+
+void WaveformEditor::clearCueMarkers() {
+  if (!m_cueMarkers.empty()) {
+    m_cueMarkers.clear();
+    repaint();
+  }
+}
+
+juce::Colour WaveformEditor::cueColour(const CueMarker& marker) const {
+  // An explicit (non-transparent) colour wins; otherwise pick a per-type
+  // default from the Orpheus tokens.
+  if (!marker.color.isTransparent())
+    return marker.color;
+
+  switch (marker.type) {
+  case CueType::Hook:
+    return tokens::lab::tone();
+  case CueType::Drop:
+    return tokens::lab::danger();
+  case CueType::Outro:
+    return tokens::lab::warning();
+  case CueType::Custom:
+  default:
+    return tokens::wave::line();
+  }
+}
+
+int WaveformEditor::cueMarkerIndexAt(float x, float width) const {
+  // Topmost (last-drawn) marker within tolerance wins.
+  for (int i = static_cast<int>(m_cueMarkers.size()) - 1; i >= 0; --i) {
+    const float markerX = sampleToX(m_cueMarkers[static_cast<size_t>(i)].sample, width);
+    if (isNearHandle(x, markerX))
+      return i;
+  }
+  return -1;
+}
+
+void WaveformEditor::drawCueMarkers(juce::Graphics& g, juce::Rectangle<float> bounds) {
+  for (const auto& marker : m_cueMarkers) {
+    const float mx = sampleToX(marker.sample, bounds.getWidth()) + bounds.getX();
+    if (mx < bounds.getX() - 1.0f || mx > bounds.getRight() + 1.0f)
+      continue;
+
+    const juce::Colour c = cueColour(marker);
+    g.setColour(c);
+    g.drawLine(mx, bounds.getY(), mx, bounds.getBottom(), 1.5f);
+
+    // Flag + optional label at the top.
+    juce::Rectangle<float> flag(mx, bounds.getY(), 8.0f, 8.0f);
+    g.fillRect(flag);
+
+    if (marker.label.isNotEmpty()) {
+      g.setFont(juce::Font(9.0f, juce::Font::bold));
+      g.drawText(marker.label, juce::Rectangle<float>(mx + 10.0f, bounds.getY(), 80.0f, 12.0f),
+                 juce::Justification::topLeft, false);
+    }
+  }
+}
+
+//==============================================================================
+// Audition region (G5)
+//==============================================================================
+void WaveformEditor::setAuditionRegion(int64_t startSamples, int64_t endSamples) {
+  if (startSamples > endSamples)
+    std::swap(startSamples, endSamples);
+  m_auditionStart = juce::jlimit(int64_t(0), m_waveformData.totalSamples, startSamples);
+  m_auditionEnd = juce::jlimit(int64_t(0), m_waveformData.totalSamples, endSamples);
+  repaint();
+}
+
+void WaveformEditor::setAuditionRegionFromEnd(double seconds) {
+  if (!m_waveformData.isValid || m_waveformData.sampleRate <= 0)
+    return;
+  const int64_t span = static_cast<int64_t>(seconds * m_waveformData.sampleRate);
+  const int64_t end = m_waveformData.totalSamples;
+  setAuditionRegion(juce::jmax(int64_t(0), end - span), end);
+}
+
+void WaveformEditor::clearAuditionRegion() {
+  if (hasAuditionRegion()) {
+    m_auditionStart = 0;
+    m_auditionEnd = 0;
+    repaint();
+  }
+}
+
+void WaveformEditor::drawAuditionRegion(juce::Graphics& g, juce::Rectangle<float> bounds) {
+  if (!hasAuditionRegion())
+    return;
+
+  const float x1 = sampleToX(m_auditionStart, bounds.getWidth()) + bounds.getX();
+  const float x2 = sampleToX(m_auditionEnd, bounds.getWidth()) + bounds.getX();
+  juce::Rectangle<float> region(x1, bounds.getY(), juce::jmax(1.0f, x2 - x1), bounds.getHeight());
+
+  g.setColour(tokens::lab::tone().withAlpha(0.15f));
+  g.fillRect(region.getIntersection(bounds));
+
+  g.setColour(tokens::lab::tone().withAlpha(0.5f));
+  g.drawLine(x1, bounds.getY(), x1, bounds.getBottom(), 1.0f);
+  g.drawLine(x2, bounds.getY(), x2, bounds.getBottom(), 1.0f);
+}
+
+//==============================================================================
+// Play-follow (G6)
+//==============================================================================
+void WaveformEditor::setFollowMode(FollowMode mode) {
+  m_followMode = mode;
+  if (mode != FollowMode::Off)
+    followPlayhead();
+}
+
+void WaveformEditor::setFollowThrottleHz(float hz) {
+  m_followThrottleHz = juce::jlimit(1.0f, 120.0f, hz);
+}
+
+void WaveformEditor::followPlayhead() {
+  if (m_followMode == FollowMode::Off || m_zoomLevel <= 1.0f || m_waveformData.totalSamples <= 0)
+    return;
+
+  // Throttle: coalesce follow updates to m_followThrottleHz.
+  const int64_t now = juce::Time::currentTimeMillis();
+  const int64_t minInterval = static_cast<int64_t>(1000.0f / m_followThrottleHz);
+  if (now - m_lastFollowMs < minInterval)
+    return;
+  m_lastFollowMs = now;
+
+  const float visibleRatio = 1.0f / m_zoomLevel; // fraction visible
+  const float playheadRatio =
+      static_cast<float>(m_playheadPosition) / static_cast<float>(m_waveformData.totalSamples);
+  const float viewStart = m_scrollPosition;
+  const float viewEnd = viewStart + visibleRatio;
+
+  float newScroll = m_scrollPosition;
+  if (m_followMode == FollowMode::Center) {
+    newScroll = playheadRatio - visibleRatio * 0.5f;
+  } else // Page: only jump when the playhead leaves the viewport
+  {
+    if (playheadRatio < viewStart || playheadRatio > viewEnd)
+      newScroll = playheadRatio; // page so playhead sits at the left edge
+  }
+
+  newScroll = juce::jlimit(0.0f, 1.0f - visibleRatio, newScroll);
+  if (std::abs(newScroll - m_scrollPosition) > 1.0e-4f)
+    setScrollPosition(newScroll); // repaints
 }
 
 } // namespace shmui

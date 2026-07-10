@@ -108,9 +108,9 @@ namespace shmui {
  */
 namespace Version {
 constexpr int major = 2;
-constexpr int minor = 1;
+constexpr int minor = 2;
 constexpr int patch = 0;
-constexpr const char* string = "2.1.0";
+constexpr const char* string = "2.2.0";
 } // namespace Version
 
 } // namespace shmui
