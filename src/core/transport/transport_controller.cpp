@@ -106,8 +106,12 @@ TransportController::TransportController(core::SessionGraph* sessionGraph, uint3
     m_clipChannelPointers[i] = m_clipChannelBuffers[i].data();
   }
 
-  // TODO: m_sessionGraph will be used for querying clip metadata (trim points, routing, etc.)
-  (void)m_sessionGraph; // Suppress unused warning for now
+  // FTR027 §1: seed the tempo cache from the session graph so beats derive
+  // from the real session tempo immediately, before the first
+  // processCallbacks() pump.
+  if (m_sessionGraph) {
+    m_tempoBpm.store(m_sessionGraph->tempo(), std::memory_order_relaxed);
+  }
 }
 
 TransportController::~TransportController() = default;
@@ -283,8 +287,11 @@ TransportPosition TransportController::getCurrentPosition() const {
   position.samples = samples;
   position.seconds = static_cast<double>(samples) / static_cast<double>(m_sampleRate);
 
-  // TODO: Get tempo from SessionGraph
-  double tempo = 120.0; // Default tempo
+  // FTR027 §1: beats derive from the live session tempo. Read through the
+  // atomic cache, not SessionGraph::tempo() directly — this query is called
+  // from the audio thread (event position stamps) and tempo() is a plain
+  // control-thread field.
+  double tempo = m_tempoBpm.load(std::memory_order_relaxed);
   position.beats = position.seconds * tempo / 60.0;
 
   return position;
@@ -1340,6 +1347,14 @@ void TransportController::postTransportEvent(const TransportEvent& event) {
 }
 
 void TransportController::processCallbacks() {
+  // FTR027 §1: pick up session tempo changes on the control-thread pump.
+  // SessionGraph::set_tempo() mutates a plain field on the (single) control
+  // thread; this same-thread read republishes it through the atomic cache for
+  // getCurrentPosition() readers on any thread.
+  if (m_sessionGraph) {
+    m_tempoBpm.store(m_sessionGraph->tempo(), std::memory_order_relaxed);
+  }
+
   // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
   // UI thread reads POD events from the ring buffer (no mutex, no blocking)
   // and translates them into the host's ITransportCallback virtuals. Events
