@@ -12,6 +12,7 @@ option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
 option(ORPHEUS_ENABLE_APP_JUCE_HOST "Build the Orpheus JUCE demo host" OFF)
 option(ORPHEUS_ENABLE_APP_WAVE_FINDER "Build Orpheus Wave Finder application" OFF)
 option(ORPHEUS_BUILD_EXAMPLES "Build Orpheus SDK example applications" OFF)
+option(ORPHEUS_ENABLE_SHMUI_JUCE "Build + export the shmui-juce UI component package (requires JUCE)" OFF)
 option(ENABLE_LTO "Enable interprocedural optimization" OFF)
 option(ORP_BUILD_SHARED_CORE "Build Orpheus ABI libraries as shared" OFF)
 option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
@@ -110,6 +111,21 @@ if(ORPHEUS_ENABLE_APP_WAVE_FINDER)
   add_subdirectory(apps/wave-finder)
 endif()
 
+# shmui-juce UI components — built + exported only on request, and only when a
+# JUCE target is available (the core SDK does not depend on JUCE). Consumers
+# that provide JUCE (e.g. via FetchContent) can then link Orpheus::shmui_juce.
+if(ORPHEUS_ENABLE_SHMUI_JUCE)
+  if(TARGET juce::juce_gui_basics)
+    if(NOT TARGET orpheus_shmui_juce)
+      add_subdirectory(packages/shmui-juce)
+    endif()
+  else()
+    message(WARNING
+      "ORPHEUS_ENABLE_SHMUI_JUCE=ON but no juce::juce_gui_basics target is "
+      "available; skipping shmui-juce. Provide JUCE before configuring the SDK.")
+  endif()
+endif()
+
 include(CTest)
 if(ORP_WITH_TESTS)
   include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/Dependencies.cmake)
@@ -195,6 +211,27 @@ install(TARGETS orpheus_diagnostics
 
 install(TARGETS orpheus_sanitizers
   EXPORT OrpheusSDKTargets)
+
+# Export shmui-juce ONLY when the SDK itself was asked to build it for
+# distribution (ORPHEUS_ENABLE_SHMUI_JUCE). A consumer app that merely adds the
+# package as a subdirectory (wave-finder, Clip Composer) creates the target too,
+# but must NOT trigger an install/export here — its JUCE modules come from a
+# per-app FetchContent and are not in OrpheusSDKTargets, which would make the
+# export fail. In that mode the app links orpheus_shmui_juce directly.
+if(ORPHEUS_ENABLE_SHMUI_JUCE AND TARGET orpheus_shmui_juce)
+  install(TARGETS orpheus_shmui_juce
+    EXPORT OrpheusSDKTargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+  if(TARGET orpheus_shmui_juce_gl)
+    install(TARGETS orpheus_shmui_juce_gl
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+endif()
 
 if(ORPHEUS_ENABLE_ADAPTER_MINHOST)
   install(TARGETS orpheus_minhost

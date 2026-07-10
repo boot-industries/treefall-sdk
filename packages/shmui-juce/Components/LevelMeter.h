@@ -20,9 +20,12 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include <JuceHeader.h>
 #include <array>
+#include <cstdint>
+#include <vector>
 
 namespace shmui {
 
@@ -38,16 +41,32 @@ enum class MeterBallistics {
 
 //==============================================================================
 /**
+ * @brief A logged level event (clip / peak crossing) for playout history.
+ *
+ * Broadcast/theatre operators need a diagnostic trail of what played and how
+ * hot. The meter can keep an optional ring buffer of these and/or fire a
+ * callback, so apps log history without reimplementing the meter (OCC153 G2).
+ */
+struct LevelEvent {
+  int64_t timestampMs = 0; ///< juce::Time::currentTimeMillis() at the event
+  int channel = 0;         ///< channel (or group index when used in MeterGroup)
+  float peakDb = 0.0f;     ///< level in dBFS at the event
+  uint32_t tag = 0;        ///< optional app payload (e.g. clip index)
+};
+
+//==============================================================================
+/**
  * @brief Style configuration for LevelMeter.
  */
 struct LevelMeterStyle {
-  // Colors
-  juce::Colour backgroundColor = juce::Colour(0xFF1A1A1A);
-  juce::Colour meterColorLow = juce::Colour(0xFF22C55E);  // Green
-  juce::Colour meterColorMid = juce::Colour(0xFFF59E0B);  // Amber
-  juce::Colour meterColorHigh = juce::Colour(0xFFEF4444); // Red
+  // Colors — derived from the Orpheus --meter-* / --wave-bg token contract
+  // (see DesignTokens.h). Overridable per-instance via setStyle().
+  juce::Colour backgroundColor = tokens::wave::bg();
+  juce::Colour meterColorLow = tokens::meter::green();
+  juce::Colour meterColorMid = tokens::meter::yellow();
+  juce::Colour meterColorHigh = tokens::meter::red();
   juce::Colour peakHoldColor = juce::Colours::white;
-  juce::Colour clipColor = juce::Colour(0xFFDC2626); // Bright red
+  juce::Colour clipColor = tokens::meter::red();
   juce::Colour textColor = juce::Colour(0x80FFFFFF);
   juce::Colour tickColor = juce::Colour(0x40FFFFFF);
 
@@ -234,11 +253,55 @@ public:
   /// @}
 
   //==============================================================================
+  /// @name Level history / event log (optional; off by default)
+  /// @{
+
+  /**
+   * @brief Enable a ring buffer of level events with the given capacity.
+   *
+   * Pre-allocates so appends are allocation-free. Events are recorded on the
+   * message thread (from the meter's timer), so no audio-thread work is added.
+   * Call once from the message thread before use.
+   */
+  void enableHistory(int capacity);
+
+  /** Disable and release the history ring. */
+  void disableHistory();
+
+  /** @return number of events currently stored (0 if history disabled). */
+  int getHistorySize() const;
+
+  /**
+   * @brief Get a stored event, newest-first (index 0 = most recent).
+   * Returns a default LevelEvent if index is out of range.
+   */
+  LevelEvent getHistoryEntry(int indexFromNewest) const;
+
+  /** Clear stored events (keeps history enabled). */
+  void clearHistory();
+
+  /**
+   * @brief Optional payload tag applied to events recorded next
+   * (e.g. the current clip index). Purely app-defined.
+   */
+  void setEventTag(uint32_t tag) {
+    m_eventTag = tag;
+  }
+
+  /// @}
+
+  //==============================================================================
   /// @name Callbacks
   /// @{
 
   /** Callback when clip indicator is triggered. */
   std::function<void(int channel)> onClip;
+
+  /**
+   * @brief Fired (message thread) for each recorded level event when history
+   * is enabled — clip crossings today. Apps log playout history here.
+   */
+  std::function<void(const LevelEvent&)> onLevelEvent;
 
   /// @}
 
@@ -284,6 +347,15 @@ private:
   // Ballistics parameters
   float m_attackCoeff = 0.0f;
   float m_releaseCoeff = 0.0f;
+
+  // Level-event history (message-thread only). m_historyCount saturates at
+  // capacity; m_historyHead is the next write slot (ring). recordEvent()
+  // appends + fires onLevelEvent.
+  std::vector<LevelEvent> m_history; // sized to capacity when enabled
+  int m_historyHead = 0;
+  int m_historyCount = 0;
+  uint32_t m_eventTag = 0;
+  void recordEvent(int channel, float peakDb);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LevelMeter)
 };

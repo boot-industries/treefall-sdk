@@ -49,12 +49,19 @@
     - Use juce::MessageManager::callAsync for cross-thread updates
 
     Sync to Orpheus SDK:
-    rsync -av --delete ~/dev/shmui/juce/Source/ ~/dev/orpheus-sdk/packages/shmui-juce/
+    scripts/sync-juce.sh   (mirrors juce/Source/ → packages/shmui-juce/,
+                            formats to the SDK clang-format, regenerates the
+                            package CMakeLists; --check verifies no drift)
 
   ==============================================================================
 */
 
 #pragma once
+
+//==============================================================================
+// Design tokens + theme (must precede components — they read these by default)
+#include "Utils/DesignTokens.h"
+#include "Utils/ShmuiTheme.h"
 
 //==============================================================================
 // Icons
@@ -81,9 +88,11 @@
 #include "Components/BarVisualizer.h"
 #include "Components/LevelMeter.h"
 #include "Components/MatrixDisplay.h"
+#include "Components/MeterGroup.h"
 #include "Components/OrbVisualizer.h"
 #include "Components/ScrubBar.h"
 #include "Components/TransportBar.h"
+#include "Components/TransportContainer.h"
 #include "Components/WaveformEditor.h"
 #include "Components/WaveformVisualizer.h"
 
@@ -92,6 +101,7 @@
 #include "Utils/AgentState.h"
 #include "Utils/ColorUtils.h"
 #include "Utils/Interpolation.h"
+#include "Utils/RepaintThrottle.h"
 
 namespace shmui {
 
@@ -100,9 +110,9 @@ namespace shmui {
  */
 namespace Version {
 constexpr int major = 2;
-constexpr int minor = 0;
+constexpr int minor = 3;
 constexpr int patch = 0;
-constexpr const char* string = "2.0.0";
+constexpr const char* string = "2.3.0";
 } // namespace Version
 
 } // namespace shmui

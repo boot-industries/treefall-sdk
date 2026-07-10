@@ -23,6 +23,7 @@
 #include "../Controls/ToggleButton.h"
 #include "../Controls/TransportButton.h"
 #include "../Icons/Icons.h"
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 
 namespace shmui {
@@ -30,13 +31,16 @@ namespace shmui {
 //==============================================================================
 /**
  * @brief Style configuration for TransportBar.
+ *
+ * Colour defaults derive from the Orpheus Lab surface/text tokens
+ * (see DesignTokens.h); overridable per-instance via setStyle().
  */
 struct TransportBarStyle {
-  // Colors
-  juce::Colour backgroundColor = juce::Colour(0xFF1A1A1A);
-  juce::Colour textColor = juce::Colours::white;
-  juce::Colour dimTextColor = juce::Colour(0x80FFFFFF);
-  juce::Colour separatorColor = juce::Colour(0x30FFFFFF);
+  // Colors (--lab-surface-1 panel / --lab-text)
+  juce::Colour backgroundColor = tokens::lab::surface1();
+  juce::Colour textColor = tokens::lab::text();
+  juce::Colour dimTextColor = tokens::lab::muted();
+  juce::Colour separatorColor = tokens::lab::stroke();
 
   // Dimensions
   float height = 48.0f;
