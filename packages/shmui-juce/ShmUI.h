@@ -57,6 +57,11 @@
 #pragma once
 
 //==============================================================================
+// Design tokens + theme (must precede components — they read these by default)
+#include "Utils/DesignTokens.h"
+#include "Utils/ShmuiTheme.h"
+
+//==============================================================================
 // Icons
 #include "Icons/Icons.h"
 
@@ -100,9 +105,9 @@ namespace shmui {
  */
 namespace Version {
 constexpr int major = 2;
-constexpr int minor = 0;
+constexpr int minor = 1;
 constexpr int patch = 0;
-constexpr const char* string = "2.0.0";
+constexpr const char* string = "2.1.0";
 } // namespace Version
 
 } // namespace shmui

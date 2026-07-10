@@ -21,6 +21,7 @@
 #pragma once
 
 #include "../Icons/Icons.h"
+#include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include "Button.h"
 
@@ -189,7 +190,7 @@ private:
   int m_buttonIndex;
   State m_clipState = State::Empty;
   juce::String m_clipName;
-  juce::Colour m_clipColor = juce::Colour(0xFF3F3F3F);
+  juce::Colour m_clipColor = tokens::clip::empty(); // --clip-empty (unlit well)
   double m_durationSeconds = 0.0;
   juce::String m_keyboardShortcut;
 

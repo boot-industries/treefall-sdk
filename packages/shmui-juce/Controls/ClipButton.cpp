@@ -68,7 +68,7 @@ void ClipButton::setKeyboardShortcut(const juce::String& shortcut) {
 
 void ClipButton::clearClip() {
   m_clipName = "";
-  m_clipColor = juce::Colour(0xFF3F3F3F);
+  m_clipColor = tokens::clip::empty(); // --clip-empty (unlit well)
   m_durationSeconds = 0.0;
   m_keyboardShortcut = "";
   m_playbackProgress = 0.0f;
@@ -159,7 +159,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
     // Draw clip name
     if (m_clipName.isNotEmpty()) {
       g.setColour(juce::Colours::white);
-      g.setFont(juce::Font(juce::FontOptions(11.0f)));
+      g.setFont(juce::Font(11.0f));
 
       auto textBounds = bounds.reduced(PADDING);
       g.drawText(m_clipName, textBounds, juce::Justification::centred, true);
@@ -178,7 +178,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
   } else {
     // Draw button number for empty state
     g.setColour(juce::Colours::grey.withAlpha(0.3f));
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.setFont(juce::Font(10.0f));
     g.drawText(juce::String(m_buttonIndex + 1), bounds, juce::Justification::centred, false);
   }
 }
@@ -220,7 +220,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // Keyboard shortcut (top-left)
   if (m_keyboardShortcut.isNotEmpty()) {
     g.setColour(juce::Colours::white.withAlpha(0.6f));
-    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+    g.setFont(juce::Font(9.0f, juce::Font::bold));
     g.drawText(m_keyboardShortcut, hudBounds.removeFromTop(12.0f), juce::Justification::topLeft,
                false);
   }
@@ -228,7 +228,7 @@ void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
   // Duration (bottom-right)
   if (m_durationSeconds > 0.0) {
     g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(juce::Font(juce::FontOptions(8.0f)));
+    g.setFont(juce::Font(8.0f));
     g.drawText(formatDuration(m_durationSeconds), bounds.reduced(PADDING),
                juce::Justification::bottomRight, false);
   }

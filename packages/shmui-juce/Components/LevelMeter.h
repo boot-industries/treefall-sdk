@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include <JuceHeader.h>
 #include <array>
@@ -41,13 +42,14 @@ enum class MeterBallistics {
  * @brief Style configuration for LevelMeter.
  */
 struct LevelMeterStyle {
-  // Colors
-  juce::Colour backgroundColor = juce::Colour(0xFF1A1A1A);
-  juce::Colour meterColorLow = juce::Colour(0xFF22C55E);  // Green
-  juce::Colour meterColorMid = juce::Colour(0xFFF59E0B);  // Amber
-  juce::Colour meterColorHigh = juce::Colour(0xFFEF4444); // Red
+  // Colors — derived from the Orpheus --meter-* / --wave-bg token contract
+  // (see DesignTokens.h). Overridable per-instance via setStyle().
+  juce::Colour backgroundColor = tokens::wave::bg();
+  juce::Colour meterColorLow = tokens::meter::green();
+  juce::Colour meterColorMid = tokens::meter::yellow();
+  juce::Colour meterColorHigh = tokens::meter::red();
   juce::Colour peakHoldColor = juce::Colours::white;
-  juce::Colour clipColor = juce::Colour(0xFFDC2626); // Bright red
+  juce::Colour clipColor = tokens::meter::red();
   juce::Colour textColor = juce::Colour(0x80FFFFFF);
   juce::Colour tickColor = juce::Colour(0x40FFFFFF);
 
