@@ -98,6 +98,13 @@ SessionGraphError AudioFileWriterLibsndfile::open(const std::string& file_path,
   // letting them wrap (libsndfile default float->int conversion can wrap).
   sf_command(m_file, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
+  // libsndfile adds a PEAK chunk to float WAV/AIFF by default, and that chunk
+  // embeds a wall-clock timestamp — the same input would produce different
+  // bytes on every run, violating the SDK's bit-identical determinism
+  // guarantee (and FourTrack's byte-identical export gate, FTR025). Peak
+  // metadata is a nicety, determinism is a contract: disable it.
+  sf_command(m_file, SFC_SET_ADD_PEAK_CHUNK, nullptr, SF_FALSE);
+
   m_file_path = file_path;
   m_frames_written.store(0, std::memory_order_release);
 
@@ -168,7 +175,13 @@ SessionGraphError AudioFileWriterLibsndfile::close() {
     return SessionGraphError::OK; // Already closed — idempotent
   }
 
-  sf_write_sync(m_file);
+  // sf_close() flushes all encoder state through to the OS; it deliberately
+  // does NOT fsync. Durability ordering is host policy — hosts with an
+  // explicit fsync discipline (e.g. FourTrack's FTR002 commit-marker order)
+  // fsync at their own commit points. An unconditional sf_write_sync here
+  // put a multi-millisecond blocking fsync inside every close, which hosts
+  // cannot opt out of and which broke FourTrack's sub-ms transport
+  // transition bound the moment close() sat on a record-stop path.
   const int err = sf_close(m_file);
   m_file = nullptr;
   m_is_open.store(false, std::memory_order_release);

@@ -103,10 +103,16 @@ private:
 };
 
 /// Fixed-page streaming source for long files.
+///
+/// The resident window is BIDIRECTIONAL (FTR025 T3b): one page behind the
+/// demand position plus the demand page and two pages ahead. Forward playback
+/// keeps ~2.7 s of lookahead; reverse/scrub playback keeps ~1.4 s of runway
+/// behind the cursor, so position-explicit reads serve true backward playback
+/// (descending positions) without a miss at every backward page crossing.
 class StreamingClipSource : public IClipSource {
 public:
   static constexpr size_t kPageFrames = 65536; ///< frames per page (~1.4s @ 48k)
-  static constexpr size_t kNumPages = 4;       ///< resident window ≈ 5.5s @ 48k
+  static constexpr size_t kNumPages = 4;       ///< 1 behind + demand page + 2 ahead (≈5.5s @ 48k)
 
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
   /// from worker/control threads (guarded by an internal mutex).
@@ -127,10 +133,13 @@ public:
     return false;
   }
 
-  /// Fill every page of the window starting at `pos` synchronously.
-  /// CONTROL/WORKER THREAD. Called by prepareClipAudio so playback from the
-  /// trim-in point starts without an initial underrun.
-  void prefill(int64_t pos);
+  /// Fill up to `max_pages` non-resident pages of the window around `pos`
+  /// synchronously — the demand page first, then the forward pages, then the
+  /// behind page. CONTROL/WORKER THREAD. Called by prepareClipAudio so
+  /// playback from the trim-in point starts without an initial underrun.
+  /// Hosts with latency-bounded transitions can pass max_pages = 1 to prime
+  /// only the audible page and leave the rest to the worker.
+  void prefill(int64_t pos, size_t max_pages = kNumPages);
 
   /// One worker pass: refill FREE pages inside the current demand window.
   /// WORKER THREAD ONLY.

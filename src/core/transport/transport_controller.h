@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "clip_source.h" // ORP134 G1: prepared/streaming realtime sources
+#include <orpheus/clip_source.h> // ORP134 G1: prepared/streaming realtime sources
 
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/routing_matrix.h>
