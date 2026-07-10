@@ -67,6 +67,43 @@ struct WaveformEditorStyle {
 
 //==============================================================================
 /**
+ * @brief Type of a cue marker (broadcast/DJ clip editing).
+ */
+enum class CueType {
+  Hook,  ///< Song hook / main phrase
+  Drop,  ///< Drop / impact point
+  Outro, ///< Outro / tail-out cue
+  Custom ///< App-defined
+};
+
+//==============================================================================
+/**
+ * @brief A labelled, typed, colourable cue marker at a sample position.
+ *
+ * First-class markers the WaveformEditor draws and lets the user drag. This is
+ * table-stakes for broadcast/DJ editing and Clip Composer's Hook/Drop/Outro/
+ * Custom cues (OCC153 G4).
+ */
+struct CueMarker {
+  juce::String id;                ///< Unique key
+  int64_t sample = 0;             ///< Position in samples
+  CueType type = CueType::Custom; ///< Semantic type
+  juce::Colour color;             ///< Explicit colour (transparent = per-type default)
+  juce::String label;             ///< Optional display label
+};
+
+//==============================================================================
+/**
+ * @brief Viewport auto-follow mode for real-time playback (OCC153 G6).
+ */
+enum class FollowMode {
+  Off,   ///< No auto-scroll
+  Page,  ///< Jump one page when the playhead leaves the viewport
+  Center ///< Keep the playhead centered
+};
+
+//==============================================================================
+/**
  * @brief Waveform data storage with efficient caching.
  */
 struct WaveformData {
@@ -235,6 +272,55 @@ public:
   /// @}
 
   //==============================================================================
+  /// @name Cue Markers (G4)
+  /// @{
+
+  /** Add or replace a cue marker (keyed by id). */
+  void addCueMarker(const CueMarker& marker);
+
+  /** Remove a cue marker by id. */
+  void removeCueMarker(const juce::String& id);
+
+  /** Remove all cue markers. */
+  void clearCueMarkers();
+
+  /** Access the current markers (draw order). */
+  const std::vector<CueMarker>& getCueMarkers() const {
+    return m_cueMarkers;
+  }
+
+  /** Fired when the user drags a marker to a new sample position. */
+  std::function<void(const juce::String& id, int64_t newSample)> onCueMarkerMoved;
+
+  /// @}
+
+  //==============================================================================
+  /// @name Audition Region (G5)
+  /// @{
+
+  /**
+   * @brief Highlight a sub-region for end-of-clip audition (e.g. last 2 s).
+   * Distinct from the edit selection; drawn as a tinted overlay.
+   */
+  void setAuditionRegion(int64_t startSamples, int64_t endSamples);
+
+  /** Convenience: audition the final @p seconds of the clip. */
+  void setAuditionRegionFromEnd(double seconds);
+
+  /** Clear the audition region. */
+  void clearAuditionRegion();
+
+  /** @return true if an audition region is set. */
+  bool hasAuditionRegion() const {
+    return m_auditionStart < m_auditionEnd;
+  }
+
+  /** Fired when the user double-clicks inside the audition region. */
+  std::function<void()> onAuditionRequested;
+
+  /// @}
+
+  //==============================================================================
   /// @name Zoom & Scroll
   /// @{
 
@@ -271,6 +357,25 @@ public:
    * @brief Zoom to selection region.
    */
   void zoomToSelection();
+
+  /// @}
+
+  //==============================================================================
+  /// @name Play-follow (G6)
+  /// @{
+
+  /**
+   * @brief Auto-scroll the viewport to keep the playhead visible at high zoom.
+   * Repaints/scrolls are throttled (see setFollowThrottleHz) so real-time
+   * playback holds frame rate on large sessions.
+   */
+  void setFollowMode(FollowMode mode);
+  FollowMode getFollowMode() const {
+    return m_followMode;
+  }
+
+  /** Set the max follow-scroll update rate (Hz). */
+  void setFollowThrottleHz(float hz);
 
   /// @}
 
@@ -315,11 +420,12 @@ public:
   void mouseDrag(const juce::MouseEvent& e) override;
   void mouseUp(const juce::MouseEvent& e) override;
   void mouseMove(const juce::MouseEvent& e) override;
+  void mouseDoubleClick(const juce::MouseEvent& e) override;
   void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
 private:
   //==============================================================================
-  enum class DragHandle { None, TrimIn, TrimOut, Playhead, Selection };
+  enum class DragHandle { None, TrimIn, TrimOut, Playhead, Selection, CueMarker };
 
   void generateWaveformData(const juce::File& audioFile);
   void drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds);
@@ -327,6 +433,8 @@ private:
   void drawFadeCurves(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawPlayhead(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawSelection(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void drawAuditionRegion(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void drawCueMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawTimeScale(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds);
 
@@ -335,6 +443,10 @@ private:
   bool isNearHandle(float mouseX, float handleX, float tolerance = 8.0f) const;
   DragHandle getHandleAt(float x, float y) const;
   void updateCursor(DragHandle handle);
+
+  juce::Colour cueColour(const CueMarker& marker) const;
+  int cueMarkerIndexAt(float x, float width) const; // -1 if none near
+  void followPlayhead();                            // G6 viewport auto-scroll
 
   juce::String formatTime(int64_t samples) const;
 
@@ -357,15 +469,28 @@ private:
   int64_t m_selectionStart = 0;
   int64_t m_selectionEnd = 0;
 
+  // Audition region (G5) — preview highlight, distinct from selection
+  int64_t m_auditionStart = 0;
+  int64_t m_auditionEnd = 0;
+
+  // Cue markers (G4)
+  std::vector<CueMarker> m_cueMarkers;
+
   // Zoom/Scroll
   float m_zoomLevel = 1.0f;
   float m_scrollPosition = 0.0f;
+
+  // Play-follow (G6)
+  FollowMode m_followMode = FollowMode::Off;
+  float m_followThrottleHz = 30.0f;
+  int64_t m_lastFollowMs = 0;
 
   // Interaction state
   DragHandle m_draggedHandle = DragHandle::None;
   juce::Point<float> m_dragStartPoint;
   int64_t m_dragStartValue = 0;
   bool m_isSelecting = false;
+  int m_draggedCueIndex = -1; // index into m_cueMarkers while dragging a cue
 
   // Caching
   juce::String m_cachedFilePath;
