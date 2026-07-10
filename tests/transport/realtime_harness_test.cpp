@@ -400,6 +400,56 @@ TEST_F(RealtimeHarnessTest, StreamingClipSourceMissIsNonBlockingAndRecovers) {
   EXPECT_EQ(framesRead, kBufferFrames);
 }
 
+TEST_F(RealtimeHarnessTest, StreamingSourceServesDescendingReadsAcrossPageBoundaries) {
+  // FTR025 T3b: reverse scrub reads DESCENDING positions. The demand window
+  // keeps one page behind the demand page, so backward page crossings land on
+  // resident pages (given ordinary worker passes) all the way down to frame 0
+  // — no miss-per-page-boundary, no silence cliff.
+  std::string path = writeSineWav(m_tempDir, "stream_rev.wav", 220.0f, 10.0f);
+  auto reader = createAudioFileReader();
+  ASSERT_NE(reader, nullptr);
+  auto opened = reader->open(path);
+  ASSERT_TRUE(opened.isOk());
+  const uint16_t channels = opened.value.num_channels;
+
+  auto source =
+      std::make_shared<StreamingClipSource>(std::shared_ptr<IAudioFileReader>(std::move(reader)),
+                                            channels, opened.value.duration_samples);
+
+  // Start deep in the file (inside page 3, ~4.3s) and walk backward to 0.
+  const int64_t start = 3 * static_cast<int64_t>(StreamingClipSource::kPageFrames) + 1000;
+  source->prefill(start);
+
+  std::vector<float> buffer(kBufferFrames * channels, 0.0f);
+  int64_t pos = start;
+  int misses = 0;
+  int reads = 0;
+  while (pos >= 0) {
+    size_t framesRead = 0;
+    if (!source->read(pos, buffer.data(), kBufferFrames, framesRead)) {
+      ++misses;
+    } else {
+      EXPECT_GT(framesRead, 0u) << "descending read at " << pos;
+      float peak = 0.0f;
+      for (size_t i = 0; i < framesRead * channels; ++i) {
+        peak = std::max(peak, std::abs(buffer[i]));
+      }
+      EXPECT_GT(peak, 0.01f) << "silent descending read at " << pos;
+    }
+    ++reads;
+    // One synchronous worker pass per buffer — far LESS worker time than the
+    // production 10ms poll provides (~9 buffers per pass at 48k/512).
+    source->service();
+    if (pos == 0) {
+      break;
+    }
+    pos = std::max<int64_t>(0, pos - static_cast<int64_t>(kBufferFrames));
+  }
+
+  EXPECT_EQ(misses, 0) << "backward page crossings missed (" << misses << "/" << reads
+                       << " reads) — the behind-page window is not being kept resident";
+}
+
 // ============================================================================
 // Callback duration accounting (report always; bound only unsanitized).
 // ============================================================================
