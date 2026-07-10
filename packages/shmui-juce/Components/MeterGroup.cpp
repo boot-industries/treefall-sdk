@@ -38,7 +38,7 @@ MeterGroup::MeterGroup(int numGroups, bool withMaster) {
   for (int i = 0; i < numGroups; ++i) {
     GroupStrip strip;
     strip.meter = std::make_unique<LevelMeter>(2); // stereo per group
-    strip.label = juce::String::charToString(static_cast<juce_wchar>('A' + i));
+    strip.label = juce::String::charToString(static_cast<juce::juce_wchar>('A' + i));
     strip.colour = defaultGroupColour(i);
     addAndMakeVisible(*strip.meter);
     m_groups.push_back(std::move(strip));
