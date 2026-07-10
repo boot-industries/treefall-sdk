@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-10
+
+Release tag cut for Clip Composer's submodule bump (OCC155 Ask #1). Rolls up all
+work landed on `main` since `v0.3.0` (ORP127 voice/SRC, ORP132–136 hardening,
+ORP133/134 realtime safety, FTR live-tempo/routing fixes) and adds the transport
+API OCC requested below.
+
+### Added - OCC155 Transport API Requests (2026-07-10)
+
+- **`ITransportController::getRoutingMatrix()` (OCC155 Ask #3).** Public accessor
+  returning the transport's `IRoutingMatrix` (group gains/mutes/solos/meters).
+  Hosts that expose group faders/meters no longer need to reach into the internal
+  `transport_controller.h` with `#define private public`. The pointer is owned by
+  the transport and stable for its lifetime.
+- **`ITransportController::panic()` (OCC155 Ask #5).** Immediate hard-cut: drops
+  every active voice with no fade and silences output on the next audio block,
+  unlike `stopAllClips()` which rides each voice's fade-out envelope. Intended for
+  emergency "immediate mute" controls. Control-thread callable (SPSC command
+  queue), RT-safe on the audio side.
+- **`ITransportController::unregisterClipAudio(handle)` (OCC155 Ask #4).** Inverse
+  of `registerClipAudio()`: frees the clip's reader and prepared/streaming source.
+  No-op returning `NotReady` while any voice for the handle is still active
+  (caller must `stopClip`/`panic` first); idempotent `OK` on an unregistered
+  handle; `InvalidHandle` for handle 0. Prevents unbounded reader retention across
+  a long broadcast day of clear/reload cycles.
+
+  > **Implementer note:** these are new pure-virtuals on `ITransportController`.
+  > For consumers that use the interface through `createTransportController()`
+  > (the supported path — OCC included) this is source-additive: recompile only.
+  > Any code that *subclasses* `ITransportController` (e.g. a test double) must add
+  > stubs for the three methods.
+
+- **Confirmed: ORP134 G1 resolves the fade-overlap shared-cursor bug (OCC155
+  Ask #2).** In `v0.3.0`, the two voices of a `MonoWithFadeOverlap` clip shared a
+  single `IAudioFileReader` cursor during the fade-overlap window, corrupting each
+  other's file position on re-fire. ORP134 G1's position-explicit `IClipSource`
+  reads make multi-voice playback of one clip correct by construction. New
+  regression `occ155_api_test.FadeOverlapReFireHasIndependentCursors` fires,
+  stops into a fade tail, re-fires during the tail, and asserts the fresh voice
+  plays from near trim IN while the deep tail lives on independently — proving the
+  cursors no longer share state.
+
 ### Changed - ORP133 Realtime Callback Safety & Contract Truth (2026-07-09)
 
 - **Audio→UI event ring is now POD (ORP133 G1).** The transport's internal
