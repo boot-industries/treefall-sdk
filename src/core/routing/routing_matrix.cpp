@@ -511,13 +511,64 @@ SessionGraphError RoutingMatrix::reset() {
 // Audio Processing
 // ============================================================================
 
+uint32_t RoutingMatrix::maxBlockFrames() const {
+  return static_cast<uint32_t>(MAX_BUFFER_SIZE);
+}
+
 SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inputs,
                                                 float** master_output, uint32_t num_frames) {
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
 
+  // FTR028: Accept arbitrarily large blocks by chunking over slices of at most
+  // MAX_BUFFER_SIZE frames. This is allocation-free and lock-free — we only
+  // offset into the caller-supplied planar buffers and reuse the pre-allocated
+  // scratch inside processRoutingBlock. Offline hosts (bounce/export) can pass
+  // any block size and it "just works"; the previous private ceiling no longer
+  // silently rejects large blocks.
+  //
+  // Get active config (lock-free read) to know the channel/output counts for
+  // pointer offsetting.
+  {
+    int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
+    const RoutingConfig& cfg = m_config_buffers[cfg_idx];
+
+    // Stack-resident pointer scratch (no heap allocation). Sized to the ABI
+    // maxima (64 channels, 32 outputs) so a large channel/output count never
+    // allocates on the audio path.
+    const float* input_slice_ptrs[64];
+    float* output_slice_ptrs[32];
+
+    uint32_t offset = 0;
+    while (offset < num_frames) {
+      const uint32_t slice =
+          std::min<uint32_t>(num_frames - offset, static_cast<uint32_t>(MAX_BUFFER_SIZE));
+
+      for (uint8_t ch = 0; ch < cfg.num_channels; ++ch) {
+        const float* in = channel_inputs ? channel_inputs[ch] : nullptr;
+        input_slice_ptrs[ch] = in ? (in + offset) : nullptr;
+      }
+      for (uint8_t out = 0; out < cfg.num_outputs; ++out) {
+        output_slice_ptrs[out] = master_output[out] + offset;
+      }
+
+      SessionGraphError err = processRoutingBlock(input_slice_ptrs, output_slice_ptrs, slice);
+      if (err != SessionGraphError::OK) {
+        return err;
+      }
+
+      offset += slice;
+    }
+  }
+
+  return SessionGraphError::OK;
+}
+
+SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel_inputs,
+                                                     float** master_output, uint32_t num_frames) {
   if (num_frames > MAX_BUFFER_SIZE) {
+    // Defensive: processRouting() never hands us a slice larger than this.
     return SessionGraphError::InvalidParameter;
   }
 
