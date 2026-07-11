@@ -1,5 +1,4 @@
-# Other model configs (Gemini, Codex - not for Claude Code)
-GEMINI.md
+# Other model configs (Codex - not for Claude Code)
 .codex/
 
 # Terminal logs (token waste)
