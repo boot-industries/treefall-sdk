@@ -92,6 +92,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP129 Variable-Rate and Reverse Scrub Reader SDK Implementation]]
 - [[ORP130 CoreAudio Input Capture]]
 - [[ORP131 Clip Composer Subdirectory Archival]]
+- [[ORP135 Minhost Adapter Decomposition]]
+- [[ORP136 TODO and Incomplete-Feature Triage]]
 
 ## Navigation
 
