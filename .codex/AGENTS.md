@@ -95,7 +95,7 @@ The **shmui-juce** package provides audio visualization components for applicati
 
 **See Also:**
 
-- shmui docs: `~/dev/shmui/GEMINI.md`, `~/dev/shmui/.codex/AGENTS.md`
+- shmui docs: `~/dev/shmui/.codex/AGENTS.md`
 - Package source: `packages/shmui-juce/ShmUI.h`
 
 ---
