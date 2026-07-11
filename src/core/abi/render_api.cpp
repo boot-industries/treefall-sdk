@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "orpheus/abi.h"
+#include "orpheus/music_timing.h"
 
 #include "abi/abi_internal.h"
 #include "render/orpheus_wav.hpp"
@@ -19,7 +20,7 @@ using orpheus::abi_internal::GuardAbiCall;
 
 namespace {
 
-constexpr int kBeatsPerBar = 4;
+using orpheus::kBeatsPerBar;
 constexpr int kClickBitsPerSample = 16;
 
 struct RenderClickParams {
@@ -47,7 +48,7 @@ RenderClickParams NormalizeRenderSpec(const orpheus_render_click_spec& spec) {
 std::vector<int16_t> GenerateClickSamples(const RenderClickParams& params) {
   const std::uint64_t total_beats = static_cast<std::uint64_t>(params.bars) * kBeatsPerBar;
   const double samples_per_beat_f =
-      static_cast<double>(params.sample_rate) * 60.0 / params.tempo_bpm;
+      orpheus::samplesPerBeat(params.tempo_bpm, static_cast<double>(params.sample_rate));
   std::uint64_t samples_per_beat = static_cast<std::uint64_t>(std::llround(samples_per_beat_f));
   samples_per_beat = std::max<std::uint64_t>(1, samples_per_beat);
 
@@ -127,7 +128,7 @@ orpheus_status RenderTracks(orpheus_session_handle session, const char* out_path
     }
     const double session_start = session_graph->session_start_beats();
     const double session_end = session_graph->session_end_beats();
-    const double seconds_per_beat = 60.0 / tempo;
+    const double seconds_per_beat = orpheus::secondsPerBeat(tempo);
 
     const auto BeatsToSampleIndex = [&](double beats) -> std::size_t {
       const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);

@@ -6,6 +6,7 @@ add_executable(orpheus_minhost
 target_link_libraries(orpheus_minhost
   PRIVATE
     Orpheus::core
+    Orpheus::adapters_common
 )
 
 target_include_directories(orpheus_minhost

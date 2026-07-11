@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "render/render_tracks.h"
 
+#include "orpheus/music_timing.h"
 #include "render/orpheus_wav.hpp"
 #include "render/pcm.hpp"
 #include "session/json_io.h"
@@ -121,7 +122,7 @@ std::vector<std::filesystem::path> render_tracks(const Session& session, const T
   ValidateSpec(spec);
   std::filesystem::create_directories(spec.output_directory);
 
-  const double seconds_per_beat = 60.0 / session.tempo_bpm;
+  const double seconds_per_beat = orpheus::secondsPerBeat(session.tempo_bpm);
   const double total_beats = std::max(0.0, session.end_beats - session.start_beats);
   const std::size_t session_frames =
       BeatsToSampleCount(total_beats, seconds_per_beat, spec.sample_rate_hz);

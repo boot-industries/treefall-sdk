@@ -94,6 +94,10 @@ endif()
 
 add_subdirectory(src)
 
+if(ORPHEUS_ENABLE_ADAPTER_REAPER OR ORPHEUS_ENABLE_ADAPTER_MINHOST)
+  add_subdirectory(adapters/shared)
+endif()
+
 if(ORPHEUS_ENABLE_ADAPTER_REAPER)
   message(WARNING "REAPER adapter is EXPERIMENTAL and may change without notice. Not recommended for production use. See adapters/reaper/README.md for details.")
   add_subdirectory(adapters/reaper)

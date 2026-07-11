@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include "panel.h"
 
+#include "abi_negotiation.h"
 #include "json_io.h"
 #include "orpheus/abi.h"
 #include "orpheus/adapters/reaper/entry.h"
 #include "orpheus/errors.h"
-#include "../shared/session_guard.h"
+#include "orpheus/music_timing.h"
+#include "session_guard.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,36 +26,18 @@ namespace {
 std::mutex gStateMutex;
 orpheus::reaper::PanelSnapshot gSnapshot;
 std::string gPanelText;
-constexpr std::uint32_t kBeatsPerBar = 4;
+using orpheus::kBeatsPerBar;
 
 const orpheus_session_api_v1* SessionAbi() {
-  uint32_t major = 0;
-  uint32_t minor = 0;
-  const auto* api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
-    return nullptr;
-  }
-  return api;
+  return orpheus::adapters::NegotiateAbi(orpheus_session_abi_v1);
 }
 
 const orpheus_clipgrid_api_v1* ClipgridAbi() {
-  uint32_t major = 0;
-  uint32_t minor = 0;
-  const auto* api = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
-    return nullptr;
-  }
-  return api;
+  return orpheus::adapters::NegotiateAbi(orpheus_clipgrid_abi_v1);
 }
 
 const orpheus_render_api_v1* RenderAbi() {
-  uint32_t major = 0;
-  uint32_t minor = 0;
-  const auto* api = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, &major, &minor);
-  if (api == nullptr || major != ORPHEUS_ABI_MAJOR || minor != ORPHEUS_ABI_MINOR) {
-    return nullptr;
-  }
-  return api;
+  return orpheus::adapters::NegotiateAbi(orpheus_render_abi_v1);
 }
 
 std::string StatusToString(orpheus_status status) {
