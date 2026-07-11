@@ -89,6 +89,12 @@
 #include "Components/LevelMeter.h"
 #include "Components/MatrixDisplay.h"
 #include "Components/MeterGroup.h"
+#include "Components/ScrubBar.h"
+#include "Components/TransportBar.h"
+#include "Components/TransportContainer.h"
+#include "Components/WaveformEditor.h"
+#include "Components/WaveformVisualizer.h"
+
 // OrbVisualizer is the only OpenGL component (orpheus_shmui_juce_gl). Pulling it
 // into the umbrella unconditionally forces every consumer of <ShmUI.h> to link
 // juce_opengl even when GL is disabled (SHMUI_JUCE_ENABLE_OPENGL=OFF). Guard it
@@ -96,11 +102,6 @@
 #if defined(SHMUI_JUCE_ENABLE_OPENGL) && SHMUI_JUCE_ENABLE_OPENGL
 #include "Components/OrbVisualizer.h"
 #endif
-#include "Components/ScrubBar.h"
-#include "Components/TransportBar.h"
-#include "Components/TransportContainer.h"
-#include "Components/WaveformEditor.h"
-#include "Components/WaveformVisualizer.h"
 
 //==============================================================================
 // Utilities
@@ -116,9 +117,9 @@ namespace shmui {
  */
 namespace Version {
 constexpr int major = 2;
-constexpr int minor = 3;
+constexpr int minor = 4;
 constexpr int patch = 0;
-constexpr const char* string = "2.3.0";
+constexpr const char* string = "2.4.0";
 } // namespace Version
 
 } // namespace shmui
