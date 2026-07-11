@@ -216,6 +216,64 @@ public:
   /// @}
 
   //==============================================================================
+  /// @name Display numbering / labeling
+  /// @{
+
+  /**
+   * @brief App-supplied provider for the button's display number / label.
+   *
+   * By default a ClipButton labels itself `buttonIndex + 1` (drawn in the empty
+   * state, hidden once a clip is loaded). Hosts that number clips *consecutively
+   * across tabs* — e.g. Clip Composer, where the visible-grid density (and a
+   * per-session stride) drive the number, not the raw button index — set this to
+   * return their own label. Returning an empty string suppresses the number.
+   *
+   * This lets those hosts express cross-tab numbering without subclassing
+   * ClipButton. Called from paint on the message thread; keep it cheap and
+   * side-effect-free. Assign `nullptr` to restore the default `index + 1`.
+   */
+  std::function<juce::String(int buttonIndex)> displayNumberProvider;
+
+  /**
+   * @brief Show the display number even when a clip is loaded.
+   *
+   * Default `false` preserves the original look (number only in the empty state).
+   * When `true`, the resolved display number is drawn as a small corner label in
+   * the Loaded / Playing / Stopping states too — matching hosts that keep a
+   * persistent clip number visible on populated pads.
+   */
+  void setShowNumberWhenLoaded(bool shouldShow);
+  bool getShowNumberWhenLoaded() const {
+    return m_showNumberWhenLoaded;
+  }
+
+  /**
+   * @brief Corner slot for the loaded-state number label.
+   *
+   * Only used when @ref setShowNumberWhenLoaded is enabled. Defaults to
+   * `BottomLeft` so it clears the top-corner status badges and the top-left
+   * keyboard-shortcut HUD.
+   */
+  void setNumberSlot(BadgeSlot slot);
+  BadgeSlot getNumberSlot() const {
+    return m_numberSlot;
+  }
+
+  /** @return the resolved display number/label (provider result or `index + 1`). */
+  juce::String getDisplayNumber() const;
+
+  /**
+   * @brief Force a repaint after the numbering context changes.
+   *
+   * The provider closure is host-owned, so ClipButton cannot observe when its
+   * result changes (e.g. a tab switch alters the cross-tab stride). Hosts call
+   * this to re-pull the label. No-op safe to call from the message thread.
+   */
+  void refreshDisplayNumber();
+
+  /// @}
+
+  //==============================================================================
   /// @name Callbacks
   /// @{
 
@@ -240,6 +298,7 @@ private:
   void handleClipRightClick();
   void drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawStatusIcons(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void drawNumberLabel(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawProgressIndicator(juce::Graphics& g, juce::Rectangle<float> bounds);
   juce::String formatDuration(double seconds) const;
 
@@ -261,6 +320,10 @@ private:
   const ClipIndicator* findIndicator(const juce::String& name) const;
 
   bool m_isPlaybox = false;
+
+  // Display numbering (G12 — cross-tab numbering hook)
+  bool m_showNumberWhenLoaded = false;
+  BadgeSlot m_numberSlot = BadgeSlot::BottomLeft;
 
   // Animation
   float m_stateTransition = 0.0f;
