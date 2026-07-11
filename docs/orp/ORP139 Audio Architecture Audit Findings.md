@@ -5,7 +5,7 @@ related:
   - audio_processing_requires_determinism
 ---
 
-# ORP118: Audio Architecture Audit Findings
+# ORP139: Audio Architecture Audit Findings
 
 **Date:** November 26, 2025
 **Author:** Gemini 3 Pro

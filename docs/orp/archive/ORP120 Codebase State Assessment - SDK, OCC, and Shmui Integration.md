@@ -737,7 +737,7 @@ WarningsAsErrors: 'bugprone-*,performance-*'
 
 **Architecture & Safety:**
 
-- `docs/orp/ORP118 Audio Architecture Audit Findings.md` - Critical thread safety issues
+- `docs/orp/ORP139 Audio Architecture Audit Findings.md` - Critical thread safety issues
 - `docs/orp/ORP118 Multi-Voice Architecture and Audio Summing Topology.md` - Routing design
 - `docs/orp/ORP104 Codebase Optimization and Safety Audit.md` - Broadcast-safe verification
 
@@ -974,7 +974,7 @@ With focused effort on critical blockers and systematic gap closure, the Orpheus
 [3] ORP101 Phase 4 Completion Report: `docs/orp/ORP101 Phase 4 Completion Report.md`
 [4] ORP110 SDK Features for Clip Composer: `docs/orp/ORP110A App-Level Integration Report.md`
 [5] ORP112 Loop Fade Verification: `docs/orp/ORP112 SDK Transport Features Verification - ORP111 Complete.md`
-[6] ORP118 Audio Architecture Audit: `docs/orp/ORP118 Audio Architecture Audit Findings.md`
+[6] ORP139 Audio Architecture Audit (formerly ORP118): `docs/orp/ORP139 Audio Architecture Audit Findings.md`
 [7] ORP119 Shmui Integration Strategy: `docs/orp/ORP119 Shmui Integration Strategy.md`
 [8] OCC093 v0.2.0 Sprint Completion: `apps/clip-composer/docs/occ/OCC093 v020 Sprint - Completion Report.md`
 [9] OCC104 v0.2.1 Sprint Plan: `apps/clip-composer/docs/occ/OCC104 - v0.2.1 Sprint Plan.md`
