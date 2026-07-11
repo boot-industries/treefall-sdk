@@ -39,7 +39,7 @@ This audit reviewed 24 prefix documentation files (12 ORP, 12 OCC) to assess pla
 | ORP110A | App-Level Integration Report           | Integration documentation             | ✅ Complete |
 | ORP109  | SDK Feature Roadmap                    | Clip Composer integration roadmap     | 📋 Active   |
 | ORP108  | Network Audio Claims Cleanup           | Documentation cleanup                 | ✅ Complete |
-| ORP107  | FreqFinder Architecture Independence   | ADR for architecture                  | ✅ Complete |
+| ORP107  | FreqFinder Architecture Independence   | ADR for architecture                  | ⚠️ Superseded by ORP140 — archived (FreqFinder now integrates the SDK) |
 | ORP106  | Wave Finder Architecture Assessment    | JUCE vs SDK integration               | ✅ Complete |
 | ORP105  | CI Infrastructure Diagnosis            | CI troubleshooting                    | ✅ Complete |
 | ORP104  | Codebase Optimization and Safety Audit | Code quality review                   | ✅ Complete |

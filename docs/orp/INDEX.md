@@ -41,7 +41,6 @@ Project documentation index for orpheus-sdk.
 - [[ORP104 Codebase Optimization and Safety Audit]]
 - [[ORP105 CI Infrastructure Diagnosis]]
 - [[ORP106 Wave Finder Architecture Assessment - JUCE vs SDK Integration]]
-- [[ORP107 FreqFinder Architecture Independence - ADR]]
 - [[ORP108 Network Audio Claims Cleanup]]
 - [[ORP109 SDK Feature Roadmap for Clip Composer Integration]]
 - [[ORP110A App-Level Integration Report]]
@@ -64,6 +63,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP124 Architecture Cross-Reference Matrix]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
+- [[ORP140 FreqFinder Architecture Revision - SDK Integration Confirmed]]
 
 ## Archived Documents
 
@@ -84,6 +84,7 @@ Project documentation index for orpheus-sdk.
 - [[archive/ORP076]]
 - [[archive/ORP077_LATENCY_AUDIT]]
 - [[archive/ORP081]]
+- [[archive/ORP107 FreqFinder Architecture Independence - ADR]]
 
 ## Navigation
 
