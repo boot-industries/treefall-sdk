@@ -67,7 +67,6 @@ Project documentation index for orpheus-sdk.
 - [[ORP104 Codebase Optimization and Safety Audit]]
 - [[ORP105 CI Infrastructure Diagnosis]]
 - [[ORP106 Wave Finder Architecture Assessment - JUCE vs SDK Integration]]
-- [[ORP107 FreqFinder Architecture Independence - ADR]]
 - [[ORP108 Network Audio Claims Cleanup]]
 - [[ORP109 SDK Feature Roadmap for Clip Composer Integration]]
 - [[ORP110A App-Level Integration Report]]
@@ -94,6 +93,11 @@ Project documentation index for orpheus-sdk.
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP135 Minhost Adapter Decomposition]]
 - [[ORP136 TODO and Incomplete-Feature Triage]]
+- [[ORP140 FreqFinder Architecture Revision - SDK Integration Confirmed]]
+
+## Archived Documents
+
+- [[archive/ORP107 FreqFinder Architecture Independence - ADR]]
 
 ## Navigation
 
