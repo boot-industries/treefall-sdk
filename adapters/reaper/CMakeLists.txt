@@ -7,6 +7,7 @@ add_library(reaper_orpheus SHARED
 target_link_libraries(reaper_orpheus
   PRIVATE
     Orpheus::core
+    Orpheus::adapters_common
 )
 
 target_compile_definitions(reaper_orpheus

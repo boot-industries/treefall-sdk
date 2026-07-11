@@ -51,6 +51,7 @@ target_include_directories(orpheus_tests
     ${CMAKE_SOURCE_DIR}/src/core/session
     ${CMAKE_SOURCE_DIR}/tests
     ${CMAKE_SOURCE_DIR}/adapters/reaper/include
+    ${CMAKE_SOURCE_DIR}/adapters/shared
 )
 
 include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
