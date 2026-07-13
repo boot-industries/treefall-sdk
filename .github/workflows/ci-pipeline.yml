@@ -45,6 +45,12 @@ jobs:
           - os: macos-latest
             generator: 'Unix Makefiles'
             sanitizers: ON
+        # macOS runners bill at 10x. Keep the sanitizer-bearing Debug leg (the
+        # platform-specific value) and drop macOS Release — Ubuntu already covers
+        # Release, so the second 10x leg was near-redundant. Halves macOS spend.
+        exclude:
+          - os: macos-latest
+            build_type: Release
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
