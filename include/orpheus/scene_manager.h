@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/export.h>
+
 #include <cstdint>
 #include <memory>
 #include <orpheus/transport_controller.h> // For ClipHandle, SessionGraphError
@@ -233,6 +235,6 @@ public:
 ///
 /// @note The scene manager does NOT take ownership of sessionGraph
 /// @note Caller must ensure sessionGraph outlives the scene manager
-std::unique_ptr<ISceneManager> createSceneManager(core::SessionGraph* sessionGraph);
+ORPHEUS_API std::unique_ptr<ISceneManager> createSceneManager(core::SessionGraph* sessionGraph);
 
 } // namespace orpheus

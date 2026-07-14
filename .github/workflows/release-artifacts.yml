@@ -1,0 +1,58 @@
+name: Orpheus SDK Release Artifacts
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package, SBOM, and provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+
+      - name: Configure release
+        run: >-
+          cmake -S . -B build-release-artifact
+          -DCMAKE_BUILD_TYPE=Release
+          -DORPHEUS_ENABLE_REALTIME=ON
+          -DORP_BUILD_ABI_DYNAMIC=ON
+          -DORP_ENABLE_ASAN=OFF
+          -DORP_ENABLE_UBSAN=OFF
+
+      - name: Build and verify
+        run: |
+          cmake --build build-release-artifact --parallel
+          ctest --test-dir build-release-artifact --output-on-failure
+
+      - name: Build package
+        run: cmake --build build-release-artifact --target package --parallel
+
+      - name: Generate checksums, SBOM, and provenance
+        run: >-
+          python3 tools/generate_release_evidence.py
+          --root .
+          --output build-release-artifact/evidence
+          build-release-artifact/orpheus-sdk-*.zip
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: orpheus-sdk-release-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            build-release-artifact/orpheus-sdk-*.zip
+            build-release-artifact/orpheus-sdk-*.zip.sha256
+            build-release-artifact/evidence/SHA256SUMS
+            build-release-artifact/evidence/orpheus-sdk.spdx.json
+            build-release-artifact/evidence/orpheus-sdk.provenance.json

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sdkVersion": "@PROJECT_VERSION@",
+  "required": [
+    {"target": "Orpheus::core", "scenario": "session, render, and ABI facade"},
+    {"target": "Orpheus::diagnostics", "scenario": "standalone diagnostics"},
+    {"target": "Orpheus::audio_utils", "scenario": "analysis, reader, writer, input, and SRC"},
+    {"target": "Orpheus::audio_io", "scenario": "dummy driver and host-neutral audio I/O"},
+    {"target": "Orpheus::audio_driver_manager", "scenario": "device enumeration and capability queries"},
+    {"target": "Orpheus::routing", "scenario": "routing matrix"},
+    {"target": "Orpheus::transport", "scenario": "transport and prepared clip sources"}
+  ],
+  "platformConditional": [
+    {"target": "Orpheus::audio_driver_coreaudio", "platform": "macOS"},
+    {"target": "Orpheus::audio_driver_wasapi", "platform": "Windows"}
+  ],
+  "optional": [
+    {"target": "Orpheus::shmui_juce", "requires": ["JUCE::juce_gui_basics"], "feature": "ORPHEUS_ENABLE_SHMUI_JUCE"},
+    {"target": "Orpheus::shmui_juce_gl", "requires": ["JUCE::juce_opengl"], "feature": "ORPHEUS_SHMUI_ENABLE_OPENGL"}
+  ]
+}

@@ -124,6 +124,11 @@ if(Python3_Interpreter_FOUND)
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/docs_path_audit.py
       --root ${CMAKE_SOURCE_DIR})
+
+  add_test(NAME version_contract
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/version_contract.py
+      --check)
 endif()
 
 # Session tests (including Scene Manager)
@@ -131,10 +136,13 @@ add_subdirectory(session)
 
 set(FIND_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/find_package)
 set(FIND_PACKAGE_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/find_package_build)
+set(FIND_PACKAGE_INSTALL_DIR ${CMAKE_BINARY_DIR}/tests/find_package_prefix)
 
 add_test(NAME cmake_find_package
   COMMAND ${CMAKE_COMMAND}
-    -DOrpheusSDK_DIR=${CMAKE_BINARY_DIR}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${FIND_PACKAGE_INSTALL_DIR}
+    -Drequired_version=${PROJECT_VERSION}
     -Dbuild_type=$<CONFIG>
     -Dsource_dir=${FIND_PACKAGE_SOURCE_DIR}
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}

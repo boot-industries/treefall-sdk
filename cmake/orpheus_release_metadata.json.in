@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "orpheus-sdk",
+  "version": "@PROJECT_VERSION@",
+  "cAbi": {
+    "major": @ORPHEUS_ABI_MAJOR@,
+    "minor": @ORPHEUS_ABI_MINOR@
+  },
+  "cppAbi": "compiler-and-standard-library-specific",
+  "cmakePackage": "OrpheusSDK",
+  "targetManifest": "share/orpheus/installed-targets.json"
+}
