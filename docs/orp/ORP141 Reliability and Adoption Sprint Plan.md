@@ -46,6 +46,9 @@
   `add_subdirectory` consumer against `Orpheus::shmui_juce`, asserts that the
   OpenGL target and compile definition are absent, and runs in the Ubuntu
   Release CI leg.
+- Pause checkpoint: transaction and ShmUI work is pushed through `c5a1fc6c`.
+  Resume R4 at the fixed-capacity decimated realtime telemetry contract; no
+  telemetry implementation edits are pending in the working tree.
 - The Release Operating Model section is explicitly deferred to a later
   session; none of its remaining gates are represented as complete here.
 
