@@ -38,6 +38,10 @@
   coalesced revisioned change sets, rollback-on-destruction transactions, and
   snapshot restore for application-owned undo/redo. Runtime transport and
   application presentation state remain outside the transactional edit domain.
+- The ShmUI-JUCE import manifest now declares its hash algorithm and is checked
+  against all 53 imported files in CTest, alongside its source revision,
+  exported targets/components, JUCE modules, token contract, and default-off
+  OpenGL feature gate.
 
 ## 1. Decision
 
