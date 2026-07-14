@@ -8,12 +8,22 @@
 #include "orpheus/export.h"
 #include "session_graph.h"
 
+#include <utility>
 namespace orpheus::core::session_json {
+
+inline constexpr std::uint32_t kCurrentSessionSchemaVersion = 1;
+
+struct SessionLoadResult {
+  SessionGraph session;
+  bool recoveredFromBackup = false;
+  std::string sourcePath;
+};
 
 ORPHEUS_API SessionGraph ParseSession(const std::string& json_text);
 ORPHEUS_API std::string SerializeSession(const SessionGraph& session);
 
 ORPHEUS_API SessionGraph LoadSessionFromFile(const std::string& path);
+ORPHEUS_API SessionLoadResult LoadSessionWithRecovery(const std::string& path);
 ORPHEUS_API void SaveSessionToFile(const SessionGraph& session, const std::string& path);
 
 ORPHEUS_API std::string MakeRenderStemFilename(const std::string& session_name,

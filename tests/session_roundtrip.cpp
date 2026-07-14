@@ -155,6 +155,55 @@ TEST(SessionRoundTrip, GoldenFixturesAreStableAndDeterministic) {
   }
 }
 
+TEST(SessionRoundTrip, MigratesLegacySchemaAndRejectsFutureSchema) {
+  const std::string original = LoadFixtureText(FixturesRoot() / "solo_click.json");
+  const std::string schemaLine = "  \"schema_version\": 1,\n";
+  std::string legacy = original;
+  const size_t schemaPosition = legacy.find(schemaLine);
+  ASSERT_NE(schemaPosition, std::string::npos);
+  legacy.erase(schemaPosition, schemaLine.size());
+
+  const SessionGraph migrated = ParseSession(legacy);
+  EXPECT_NE(SerializeSession(migrated).find(schemaLine), std::string::npos);
+
+  std::string future = original;
+  const size_t versionPosition = future.find("\"schema_version\": 1");
+  ASSERT_NE(versionPosition, std::string::npos);
+  future.replace(versionPosition, std::string("\"schema_version\": 1").size(),
+                 "\"schema_version\": 999");
+  EXPECT_THROW(ParseSession(future), std::runtime_error);
+}
+
+TEST(SessionRoundTrip, AtomicSaveKeepsBackupAndRecoversCorruptPrimary) {
+  const fs::path root = fs::temp_directory_path() / "orpheus_session_atomic_test";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path path = root / "session.json";
+
+  SessionGraph session;
+  session.set_name("First");
+  session.set_session_range(0.0, 8.0);
+  SaveSessionToFile(session, path.string());
+  EXPECT_TRUE(fs::is_regular_file(path));
+  EXPECT_FALSE(fs::exists(path.string() + ".tmp"));
+
+  session.set_name("Second");
+  SaveSessionToFile(session, path.string());
+  EXPECT_EQ(LoadSessionFromFile(path.string()).name(), "Second");
+  EXPECT_EQ(LoadSessionFromFile(path.string() + ".bak").name(), "First");
+  EXPECT_FALSE(fs::exists(path.string() + ".bak.tmp"));
+
+  {
+    std::ofstream corrupt(path, std::ios::trunc);
+    corrupt << "{not valid json";
+  }
+  SessionLoadResult recovered = LoadSessionWithRecovery(path.string());
+  EXPECT_TRUE(recovered.recoveredFromBackup);
+  EXPECT_EQ(recovered.sourcePath, path.string() + ".bak");
+  EXPECT_EQ(recovered.session.name(), "First");
+  fs::remove_all(root);
+}
+
 TEST(SessionRoundTrip, RejectsOverlappingClips) {
   const std::string invalid = R"({
     "name": "Invalid",
