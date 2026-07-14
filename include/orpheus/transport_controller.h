@@ -202,35 +202,6 @@ class ITransportController {
 public:
   virtual ~ITransportController() = default;
 
-  /// Query the public audio-render contract.
-  ///
-  /// Control-thread query. The returned value is a copy; no SDK-owned storage
-  /// escapes. In v0.4.0 the transport's routing topology is fixed after
-  /// construction: hosts must not reinitialize the matrix returned by
-  /// getRoutingMatrix() while this controller is in use.
-  virtual TransportRenderConfig getRenderConfig() const noexcept = 0;
-
-  /// Render one transport block into planar output buffers.
-  ///
-  /// This is the audio-thread entry point and the sole consumer of the
-  /// control-to-audio SPSC command ring. It is non-reentrant and must be called
-  /// by exactly one audio thread. The host must supply exactly
-  /// getRenderConfig().outputChannels writable buffers and no more than
-  /// getRenderConfig().maxBlockFrames frames per call.
-  ///
-  /// Real-time contract: no allocation, locks, blocking, I/O, or host callbacks.
-  virtual void processAudio(float** outputBuffers, size_t numChannels,
-                            size_t numFrames) noexcept = 0;
-
-  /// Drain pending transport events on the control/message thread.
-  ///
-  /// This is the sole consumer of the audio-to-control SPSC event ring. Call
-  /// from exactly one control thread, never concurrently with setCallback().
-  /// The pump also republishes SessionGraph tempo changes for lock-free
-  /// TransportPosition::beats queries, so hosts must call it even when no
-  /// callback object is installed.
-  virtual void processCallbacks() = 0;
-
   /// Start playback of a specific clip
   ///
   /// This function is thread-safe and can be called from the UI thread.
@@ -811,6 +782,35 @@ public:
   /// with RealtimeTelemetry::tryRead(). The audio callback is the sole producer.
   /// Hosts must not retain the pointer after destroying the controller.
   virtual RealtimeTelemetry* getRealtimeTelemetry() noexcept = 0;
+
+  /// Query the public audio-render contract.
+  ///
+  /// Control-thread query. The returned value is a copy; no SDK-owned storage
+  /// escapes. In v0.4.0 the transport's routing topology is fixed after
+  /// construction: hosts must not reinitialize the matrix returned by
+  /// getRoutingMatrix() while this controller is in use.
+  virtual TransportRenderConfig getRenderConfig() const noexcept = 0;
+
+  /// Render one transport block into planar output buffers.
+  ///
+  /// This is the audio-thread entry point and the sole consumer of the
+  /// control-to-audio SPSC command ring. It is non-reentrant and must be called
+  /// by exactly one audio thread. The host must supply exactly
+  /// getRenderConfig().outputChannels writable buffers and no more than
+  /// getRenderConfig().maxBlockFrames frames per call.
+  ///
+  /// Real-time contract: no allocation, locks, blocking, I/O, or host callbacks.
+  virtual void processAudio(float** outputBuffers, size_t numChannels,
+                            size_t numFrames) noexcept = 0;
+
+  /// Drain pending transport events on the control/message thread.
+  ///
+  /// This is the sole consumer of the audio-to-control SPSC event ring. Call
+  /// from exactly one control thread, never concurrently with setCallback().
+  /// The pump also republishes SessionGraph tempo changes for lock-free
+  /// TransportPosition::beats queries, so hosts must call it even when no
+  /// callback object is installed.
+  virtual void processCallbacks() = 0;
 };
 
 /// Create a transport controller instance

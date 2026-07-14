@@ -180,8 +180,7 @@ TEST_F(TransportControllerTest, PublicInterfaceRendersAndDrainsCallbacks) {
   ASSERT_GE(config.maxBlockFrames, 64u);
 
   constexpr size_t kFrames = 64;
-  std::vector<std::vector<float>> storage(
-      config.outputChannels, std::vector<float>(kFrames, 1.0f));
+  std::vector<std::vector<float>> storage(config.outputChannels, std::vector<float>(kFrames, 1.0f));
   std::vector<float*> outputs;
   outputs.reserve(config.outputChannels);
   for (auto& channel : storage) {
