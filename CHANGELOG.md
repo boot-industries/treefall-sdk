@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-14
+
+Release for downstream ORP141 adoption. This is the first tagged package that
+combines generated release/version metadata, stable installed CMake target
+aliases, media SHA-256 references, routing-snapshot provenance, scene-recall
+transport stop semantics, fixed-capacity active-voice diagnostics, CoreAudio
+performance-monitor attachment, and the merged realtime reliability fixes.
+
+### Added
+
+- `ITransportController::getTotalActiveVoiceCount()` and
+  `ITransportCallback::onActiveClipLimitReached()` expose bounded voice-pool
+  admission truth without allocations or locks on the audio thread.
+- `MediaFingerprint`, `sha256File()`, and `resolveMediaReference()` provide one
+  verified media-identity and relative-path security contract.
+- Generated `orpheus/version.h`, package inventory JSON, stable
+  `Orpheus::*` installed-target aliases, and release-artifact metadata.
+- A self-contained `createSceneManager()` factory lets installed-package
+  consumers exercise scene capture/recall without private `SessionGraph`
+  headers.
+
+### Changed
+
+- Scene recall stops attached transport before applying captured routing/session
+  state, and routing snapshots retain optional control-time/audio-position
+  provenance.
+- CoreAudio reports total active voices and callback timing through an attached
+  performance monitor.
+- Realtime command/callback, transport snapshot, and routing reliability
+  contracts now fail explicitly instead of publishing partial state.
+
 ## [0.3.1] - 2026-07-10
 
 Release tag cut for Clip Composer's submodule bump (OCC155 Ask #1). Rolls up all
