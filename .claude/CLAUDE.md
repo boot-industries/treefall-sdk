@@ -9,8 +9,8 @@
 # ORP141 Resume Checkpoint (2026-07-14)
 
 - Pause boundary: do not begin R4 until R3 is resolved.
-- Active branch: `feat/orp141-reliability-adoption`; PR: #206; pushed tip:
-  `bc015758`.
+- Active branch: `feat/orp141-reliability-adoption`; PR: #206; all checkpoint
+  changes are pushed.
 - `ci/trim-macos-matrix-cost` is already merged into `main` (tip
   `b3e4d740` is an ancestor). Media integrity commit `d47fc60f` is also on
   `main`.
