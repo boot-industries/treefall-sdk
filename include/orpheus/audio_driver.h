@@ -72,6 +72,11 @@ public:
   /// @param num_frames Number of frames to process
   virtual void processAudio(const float** input_buffers, float** output_buffers,
                             size_t num_channels, size_t num_frames) = 0;
+
+  /// Realtime-safe active-voice diagnostic supplied by the host callback.
+  virtual uint32_t activeClipCount() const noexcept {
+    return 0;
+  }
 };
 
 /// Audio driver interface

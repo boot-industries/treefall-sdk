@@ -2064,6 +2064,11 @@ size_t TransportController::getActiveVoiceCount(ClipHandle handle) const {
   return countActiveVoicesSnapshot(handle);
 }
 
+size_t TransportController::getTotalActiveVoiceCount() const {
+  const size_t front = m_snapshotIndex.load(std::memory_order_acquire);
+  return m_snapshotBuffers[front].count;
+}
+
 SessionGraphError TransportController::restartClip(ClipHandle handle) {
   // ORP127 G1: Restart is now a command processed on the audio thread — the UI
   // thread no longer touches ActiveClip fields directly. Multi-voice: restarts

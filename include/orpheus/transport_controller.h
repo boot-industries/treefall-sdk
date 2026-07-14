@@ -604,6 +604,9 @@ public:
   /// Thread-safe: Can be called from any thread (reads a published snapshot).
   virtual size_t getActiveVoiceCount(ClipHandle handle) const = 0;
 
+  /// Total active voices, including fading tails, from the published snapshot.
+  virtual size_t getTotalActiveVoiceCount() const = 0;
+
   /// Restart clip playback from current IN point (seamless, no gap)
   ///
   /// Unlike startClip(), this method ALWAYS restarts playback even if already playing.
