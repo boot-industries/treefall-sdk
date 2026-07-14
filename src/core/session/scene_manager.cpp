@@ -197,6 +197,10 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
 
 class SceneManager : public ISceneManager {
 public:
+  SceneManager()
+      : ownedSessionGraph_(std::make_unique<core::SessionGraph>()),
+        sessionGraph_(ownedSessionGraph_.get()), routingMatrix_(nullptr), transport_(nullptr) {}
+
   explicit SceneManager(core::SessionGraph* sessionGraph)
       : sessionGraph_(sessionGraph), routingMatrix_(nullptr), transport_(nullptr) {
     if (!sessionGraph) {
@@ -451,7 +455,8 @@ public:
   }
 
 private:
-  [[maybe_unused]] core::SessionGraph* sessionGraph_; // Not owned
+  std::unique_ptr<core::SessionGraph> ownedSessionGraph_;
+  core::SessionGraph* sessionGraph_; // Owned by this manager or supplied by caller
   IRoutingMatrix* routingMatrix_;                     // Not owned (optional)
   ITransportController* transport_;                   // Not owned (required for recall)
   mutable std::mutex mutex_;                          // Protects scenes_
@@ -461,6 +466,10 @@ private:
 // ============================================================================
 // Factory Function
 // ============================================================================
+
+std::unique_ptr<ISceneManager> createSceneManager() {
+  return std::make_unique<SceneManager>();
+}
 
 std::unique_ptr<ISceneManager> createSceneManager(core::SessionGraph* sessionGraph) {
   return std::make_unique<SceneManager>(sessionGraph);
