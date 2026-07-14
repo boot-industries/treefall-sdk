@@ -3,11 +3,38 @@
 # ORP141 — Reliability and Adoption Sprint Plan
 
 **Document type:** Product and engineering sprint plan  
-**Status:** Proposed  
+**Status:** In progress — R0/R1/R2 complete; R3 implementation committed, CI and hardware evidence pending  
 **Scope:** Orpheus SDK core, packages, release artifacts, and SDK-owned conformance fixtures only. No child-app source changes, submodule-pin updates, application CI work, or UI feature work are deliverables of this plan.
 **Related:** [[ORP136 TODO and Incomplete-Feature Triage]] · [[ORP137 Hardening Program Completion and Downstream Follow-ups]] · [[ORP135 LATER Sprint - Platform Leadership Bets]] · [[ORP142 Downstream Consumer Adoption Notes]] · FreqFinder [[FRQ033 Orpheus SDK Release Package Refresh for Analysis Facade]] · FourTrack [[FTR027 SDK Note - Real-Time Sample-Accurate Event Primitive]] · [[FTR028 SDK Note - Routing Matrix Block-Size Ceiling]]
 
 ---
+
+## Implementation checkpoint — 2026-07-14
+
+- Active branch/PR: `feat/orp141-reliability-adoption` / GitHub PR #206.
+- R0 release truth is complete: CMake-sourced version metadata, installed-target
+  manifest, clean-prefix fixtures, package/ABI CI, support matrix, and release
+  checksum/SBOM/provenance generation.
+- R1 correctness is complete: deterministic routing snapshot provenance,
+  stereo metering, atomic scene routing/clip recall, voice-cap refusal events,
+  CoreAudio active-voice telemetry, large-block content checks, and canonical
+  transport event timestamps.
+- R2 media integrity is complete: provider-backed streaming SHA-256, versioned
+  media references, explicit verified/unverified/missing/mismatch outcomes,
+  mismatch refusal, atomic session save/backup recovery, schema migration, and
+  installed-package coverage.
+- R3 implementation is committed: all public factories carry DLL export
+  annotations; WASAPI shared-mode enumeration/playback and negotiated
+  capabilities are implemented; Windows compile/package tests are required;
+  Linux provider boundaries and conformance gates are documented. Hosted CI is
+  not real-device evidence. Promotion of WASAPI remains blocked until the
+  self-hosted `wasapi-hardware-acceptance` workflow publishes a passing record.
+- Local verification observed all 138 configured contracts passing across the
+  full run plus the corrected JSON conformance rerun. Windows CI run
+  `29309941110` is the pending cross-platform checkpoint.
+- Work intentionally pauses before R4. Resume by resolving the Windows CI run
+  and hardware-evidence status; do not begin R4/R5 until that checkpoint is
+  committed and pushed.
 
 ## 1. Decision
 
