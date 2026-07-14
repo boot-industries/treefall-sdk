@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -141,12 +142,12 @@ public:
 
 /// Factory function for dummy audio driver (for testing)
 /// @return New dummy audio driver instance
-std::unique_ptr<IAudioDriver> createDummyAudioDriver();
+ORPHEUS_API std::unique_ptr<IAudioDriver> createDummyAudioDriver();
 
 /// Factory function for CoreAudio driver (macOS only)
 /// @return New CoreAudio driver instance
 #ifdef __APPLE__
-std::unique_ptr<IAudioDriver> createCoreAudioDriver();
+ORPHEUS_API std::unique_ptr<IAudioDriver> createCoreAudioDriver();
 #endif
 
 } // namespace orpheus

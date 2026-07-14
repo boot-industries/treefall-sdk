@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <orpheus/export.h>
 #include <orpheus/transport_controller.h> // For ClipHandle, SessionGraphError
 
 namespace orpheus {
@@ -161,7 +162,7 @@ public:
 /// @param sessionGraph Session graph containing clip metadata
 /// @param sampleRate Audio sample rate (e.g., 48000)
 /// @return Unique pointer to clip routing matrix
-std::unique_ptr<IClipRoutingMatrix> createClipRoutingMatrix(core::SessionGraph* sessionGraph,
-                                                            uint32_t sampleRate);
+ORPHEUS_API std::unique_ptr<IClipRoutingMatrix>
+createClipRoutingMatrix(core::SessionGraph* sessionGraph, uint32_t sampleRate);
 
 } // namespace orpheus
