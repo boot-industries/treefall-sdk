@@ -81,6 +81,12 @@ target_include_directories(audio_analysis_test
 
 add_test(NAME audio_analysis_test COMMAND audio_analysis_test)
 
+add_executable(media_integrity_test media_integrity_test.cpp)
+target_link_libraries(media_integrity_test
+    PRIVATE orpheus_audio_utils GTest::gtest GTest::gtest_main)
+target_include_directories(media_integrity_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME media_integrity_test COMMAND media_integrity_test)
+
 # Find libsndfile (needed because orpheus_audio_io is static)
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)

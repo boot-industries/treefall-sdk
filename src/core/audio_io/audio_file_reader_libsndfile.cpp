@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "audio_file_reader_libsndfile.h"
+#include <orpheus/media_integrity.h>
 
 #include <cstring>
 #include <sstream>
@@ -250,10 +251,8 @@ std::string AudioFileReaderLibsndfile::codecFromSndfile(int format) const {
 }
 
 std::string AudioFileReaderLibsndfile::calculateFileHash(const std::string& file_path) const {
-  // TODO: Implement SHA-256 hashing
-  // For now, return placeholder
-  (void)file_path;
-  return "SHA256_NOT_IMPLEMENTED";
+  const FileHashResult result = sha256File(file_path);
+  return result.isOK() ? result.digestHex : std::string{};
 }
 
 // Factory function

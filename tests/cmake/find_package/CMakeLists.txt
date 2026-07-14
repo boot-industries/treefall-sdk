@@ -45,6 +45,9 @@ target_link_libraries(orpheus_find_package_diagnostics PRIVATE Orpheus::diagnost
 add_orpheus_fixture(orpheus_find_package_analysis analysis.cpp)
 target_link_libraries(orpheus_find_package_analysis PRIVATE Orpheus::audio_utils)
 
+add_orpheus_fixture(orpheus_find_package_media_integrity media_integrity.cpp)
+target_link_libraries(orpheus_find_package_media_integrity PRIVATE Orpheus::audio_utils)
+
 add_orpheus_fixture(orpheus_find_package_writer_input writer_input.cpp)
 target_link_libraries(orpheus_find_package_writer_input PRIVATE Orpheus::audio_utils)
 

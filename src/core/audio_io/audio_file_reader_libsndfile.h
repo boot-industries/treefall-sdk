@@ -34,7 +34,7 @@ private:
   /// Convert libsndfile format to codec string
   std::string codecFromSndfile(int format) const;
 
-  /// Calculate SHA-256 hash of file (stub for now)
+  /// Calculate the file's SHA-256 through the platform provider.
   std::string calculateFileHash(const std::string& file_path) const;
 
   // File state
