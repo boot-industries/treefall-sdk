@@ -42,6 +42,12 @@
   against all 53 imported files in CTest, alongside its source revision,
   exported targets/components, JUCE modules, token contract, and default-off
   OpenGL feature gate.
+- A pinned, checksum-verified JUCE 8.0.4 fixture builds and runs an actual
+  `add_subdirectory` consumer against `Orpheus::shmui_juce`, asserts that the
+  OpenGL target and compile definition are absent, and runs in the Ubuntu
+  Release CI leg.
+- The Release Operating Model section is explicitly deferred to a later
+  session; none of its remaining gates are represented as complete here.
 
 ## 1. Decision
 
