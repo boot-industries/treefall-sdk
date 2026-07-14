@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.22)
 
-project(orpheus VERSION 0.3.3 LANGUAGES CXX)
+project(orpheus VERSION 0.4.0 LANGUAGES CXX)
 
 set(ORPHEUS_ABI_MAJOR 1)
 set(ORPHEUS_ABI_MINOR 0)
@@ -312,10 +312,16 @@ configure_package_config_file(
   ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKConfig.cmake
   INSTALL_DESTINATION ${INSTALL_CONFIGDIR})
 
+if(PROJECT_VERSION_MAJOR EQUAL 0)
+  set(ORPHEUS_PACKAGE_COMPATIBILITY SameMinorVersion)
+else()
+  set(ORPHEUS_PACKAGE_COMPATIBILITY SameMajorVersion)
+endif()
+
 write_basic_package_version_file(
   ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKConfigVersion.cmake
   VERSION ${PROJECT_VERSION}
-  COMPATIBILITY AnyNewerVersion)
+  COMPATIBILITY ${ORPHEUS_PACKAGE_COMPATIBILITY})
 
 install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKConfig.cmake

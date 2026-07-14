@@ -3,9 +3,6 @@
 #include <orpheus/session_graph.h>
 #include <orpheus/transport_controller.h>
 
-// FTR027 §1: concrete controller access for processAudio()/processCallbacks()
-#include "transport/transport_controller.h"
-
 #include <memory>
 #include <vector>
 
@@ -123,7 +120,7 @@ namespace {
 
 // Advance the transport by exactly one second of silence (no active clips —
 // the timeline still moves).
-void advanceOneSecond(TransportController& transport, uint32_t sampleRate) {
+void advanceOneSecond(ITransportController& transport, uint32_t sampleRate) {
   constexpr size_t kBlock = 480;
   std::vector<float> left(kBlock, 0.0f);
   std::vector<float> right(kBlock, 0.0f);
@@ -139,7 +136,7 @@ void advanceOneSecond(TransportController& transport, uint32_t sampleRate) {
 // tempo, not a hardcoded 120 BPM.
 TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
   m_sessionGraph->set_tempo(90.0);
-  auto transport = std::make_unique<TransportController>(m_sessionGraph.get(), 48000);
+  auto transport = createTransportController(m_sessionGraph.get(), 48000);
 
   advanceOneSecond(*transport, 48000);
 
@@ -153,7 +150,7 @@ TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
 // FTR027 §1: a set_tempo() change after construction reaches beats on the
 // next processCallbacks() pump.
 TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
-  auto transport = std::make_unique<TransportController>(m_sessionGraph.get(), 48000);
+  auto transport = createTransportController(m_sessionGraph.get(), 48000);
 
   advanceOneSecond(*transport, 48000);
 
@@ -168,6 +165,44 @@ TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
   transport->processCallbacks(); // control-thread pump republishes the tempo
 
   EXPECT_DOUBLE_EQ(transport->getCurrentPosition().beats, 2.5);
+}
+
+TEST_F(TransportControllerTest, PublicInterfaceReportsRenderContract) {
+  const TransportRenderConfig config = m_transport->getRenderConfig();
+  EXPECT_EQ(config.sampleRate, 48000u);
+  EXPECT_EQ(config.outputChannels, 2u);
+  EXPECT_EQ(config.maxBlockFrames, 2048u);
+}
+
+TEST_F(TransportControllerTest, PublicInterfaceRendersAndDrainsCallbacks) {
+  const TransportRenderConfig config = m_transport->getRenderConfig();
+  ASSERT_GE(config.outputChannels, 2u);
+  ASSERT_GE(config.maxBlockFrames, 64u);
+
+  constexpr size_t kFrames = 64;
+  std::vector<std::vector<float>> storage(config.outputChannels, std::vector<float>(kFrames, 1.0f));
+  std::vector<float*> outputs;
+  outputs.reserve(config.outputChannels);
+  for (auto& channel : storage) {
+    outputs.push_back(channel.data());
+  }
+
+  TestCallback callback;
+  m_transport->setCallback(&callback);
+  ASSERT_EQ(m_transport->startClip(42), SessionGraphError::OK);
+
+  m_transport->processAudio(outputs.data(), outputs.size(), kFrames);
+  EXPECT_EQ(callback.startCount, 0);
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(callback.startCount, 1);
+  EXPECT_EQ(callback.lastHandle, 42u);
+  EXPECT_EQ(m_transport->getCurrentPosition().samples, static_cast<int64_t>(kFrames));
+  for (const auto& channel : storage) {
+    for (float sample : channel) {
+      EXPECT_FLOAT_EQ(sample, 0.0f);
+    }
+  }
 }
 
 TEST_F(TransportControllerTest, Callback) {
@@ -200,8 +235,6 @@ TEST_F(TransportControllerTest, StartClipTwice) {
 }
 
 TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
-  auto* concrete = dynamic_cast<TransportController*>(m_transport.get());
-  ASSERT_NE(concrete, nullptr);
 
   RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
   ASSERT_NE(telemetry, nullptr);
@@ -212,10 +245,10 @@ TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
   std::vector<float> right(kBlockFrames, 0.0f);
   float* buffers[2] = {left.data(), right.data()};
 
-  concrete->processAudio(buffers, 2, kBlockFrames);
+  m_transport->processAudio(buffers, 2, kBlockFrames);
   EXPECT_EQ(telemetry->pendingSnapshotCount(), 0u);
 
-  concrete->processAudio(buffers, 2, kBlockFrames);
+  m_transport->processAudio(buffers, 2, kBlockFrames);
   ASSERT_EQ(telemetry->pendingSnapshotCount(), 1u);
 
   RealtimeTelemetrySnapshot snapshot;

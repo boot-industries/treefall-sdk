@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-14
+
+Release of the public transport-rendering contract required by host applications
+that must not depend on SDK-private transport headers. The minor version
+acknowledges the source migration required for interface implementers.
+
+### Added
+
+- `TransportRenderConfig` and
+  `ITransportController::{getRenderConfig(), processAudio(), processCallbacks()}`
+  publish the renderer configuration, audio-thread render entry point, and
+  control-thread event/tempo pump through `<orpheus/transport_controller.h>`.
+- `getRenderConfig()` reports the constructor sample rate, the routing matrix's
+  current output count, and the concrete renderer's hard maximum block size.
+
+### Changed
+
+- Factory callers remain source-compatible after recompilation, but custom
+  `ITransportController` subclasses and test doubles must implement
+  `getRenderConfig() const noexcept`, `processAudio(float**, size_t, size_t)
+  noexcept`, and `processCallbacks()`. This implementer source break is why the
+  pre-1.0 minor version advances to `0.4.0`.
+- The new virtual methods are appended after every pre-`0.4.0` interface slot,
+  preserving the existing vtable entry order for factory consumers.
+- The transport's routing topology remains fixed after construction in this
+  release. Hosts must not call `getRoutingMatrix()->initialize(...)` on a live
+  transport; doing so would discard the transport's stereo channel layout.
+- Installed package version matching uses `SameMinorVersion` while the SDK is
+  pre-1.0, so `0.4.x` is not selected for a source-incompatible `0.3.x`
+  request. Stable major releases use `SameMajorVersion`.
+
+### Fixed
+
+- The realtime allocation-guard self-test now calls the replaceable allocation
+  functions explicitly, so optimized Release builds cannot elide its deliberate
+  violation and produce a false detector failure.
+
+### Integration contract
+
+- `processAudio()` is non-reentrant, is called by exactly one audio thread, and
+  is the sole consumer of the control-to-audio SPSC command ring. Its realtime
+  path permits no allocation, locks, blocking, I/O, or host callback dispatch.
+- `processCallbacks()` is called by exactly one control/message thread and is
+  the sole consumer of the audio-to-control event ring. It must run even without
+  a callback object because it also republishes session tempo.
+- Source-tree tests exercise the complete runtime contract through
+  `ITransportController`, and an installed-package CTest configures, builds, and
+  runs a public-header-only consumer linked only to `Orpheus::transport`.
+- Clip Composer adoption remains downstream work: it must own the factory result
+  as `std::unique_ptr<orpheus::ITransportController>`, render and pump callbacks
+  through that interface, and remove its SDK-private transport header include
+  and concrete-controller downcast. This release preparation does not claim that
+  application migration has occurred.
+
 ## [0.3.3] - 2026-07-14
 
 Release for downstream ORP141 adoption. This is the first tagged package that
