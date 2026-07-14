@@ -9,6 +9,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP144 Public Transport Runtime Contract and Clip Composer Handoff]]
 - [[ORP145 Prospective User Journey Research]]
 - [[ORP146 Child-App Prospective User Research]]
+- [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -106,6 +107,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP144 Public Transport Runtime Contract and Clip Composer Handoff]]
 - [[ORP145 Prospective User Journey Research]]
 - [[ORP146 Child-App Prospective User Research]]
+- [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 
 ## Archived Documents
 
