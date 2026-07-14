@@ -387,5 +387,5 @@ All examples built in < 15 seconds on modern hardware (M1 Pro, SSD).
 ---
 
 **Last Updated:** October 26, 2025
-**SDK Version:** M2 (Milestone 2)
+**SDK Version:** 0.3.2
 **Maintained By:** SDK Core Team

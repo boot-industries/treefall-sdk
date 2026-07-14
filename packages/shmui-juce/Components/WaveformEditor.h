@@ -60,8 +60,8 @@ struct WaveformEditorStyle {
   juce::Colour selectionColor = tokens::wave::line().withAlpha(0.25f);
 
   // Grid/time scale
-  juce::Colour gridColor = juce::Colour(0x30FFFFFF);
-  juce::Colour timeTextColor = juce::Colour(0x80FFFFFF);
+  juce::Colour gridColor = tokens::lab::text().withAlpha(0.19f);
+  juce::Colour timeTextColor = tokens::lab::text().withAlpha(0.5f);
   bool showGrid = true;
   bool showTimeScale = true;
 };

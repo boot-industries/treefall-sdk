@@ -14,6 +14,7 @@
 
 #include "../Audio/AudioAnalyzer.h"
 #include "../Utils/AgentState.h"
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 #include <vector>
 
@@ -157,10 +158,10 @@ private:
   int64_t lastAnimTime = 0;
   float demoTime = 0.0f;
 
-  // Colours
-  juce::Colour barColour = juce::Colour(0xFFE5E5E5);        // border color
-  juce::Colour highlightColour = juce::Colour(0xFF3B82F6);  // primary
-  juce::Colour backgroundColour = juce::Colour(0xFFF5F5F5); // muted
+  // Colours — Orpheus Lab tokens (override per-instance or via ShmuiTheme)
+  juce::Colour barColour = tokens::lab::muted();           // idle bars
+  juce::Colour highlightColour = tokens::lab::tone();      // active — accent (--lab-tone)
+  juce::Colour backgroundColour = tokens::lab::surface0(); // panel floor
 
   // Frequency band configuration (matches AudioAnalyzer defaults and React)
   static constexpr int kLoPass = 100;

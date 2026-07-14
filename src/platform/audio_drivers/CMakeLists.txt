@@ -36,13 +36,17 @@ target_link_libraries(orpheus_audio_driver_manager
 # Link platform-specific frameworks
 if(APPLE)
     target_link_libraries(orpheus_audio_driver_manager
-        PRIVATE
+        PUBLIC
             "-framework CoreAudio"
+            "-framework CoreFoundation"
     )
 endif()
 
 target_compile_features(orpheus_audio_driver_manager PUBLIC cxx_std_20)
 set_target_properties(orpheus_audio_driver_manager PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(Orpheus::audio_driver_manager ALIAS orpheus_audio_driver_manager)
+add_library(Orpheus::orpheus_audio_driver_manager ALIAS orpheus_audio_driver_manager)
 
 orpheus_enable_warnings(orpheus_audio_driver_manager)
 orpheus_enable_sanitizers(orpheus_audio_driver_manager)
@@ -82,7 +86,13 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     orpheus_enable_sanitizers(orpheus_audio_driver_coreaudio)
 
     message(STATUS "Orpheus: CoreAudio driver enabled")
+    target_link_libraries(orpheus_audio_driver_manager
+        PUBLIC
+            orpheus_audio_driver_coreaudio
+    )
+
 endif()
+
 
 # WASAPI driver (Windows)
 if(ORPHEUS_ENABLE_WASAPI)

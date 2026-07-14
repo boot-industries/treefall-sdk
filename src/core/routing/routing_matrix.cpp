@@ -74,6 +74,9 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   m_master_peak.store(0.0f, std::memory_order_release);
   m_master_rms.store(0.0f, std::memory_order_release);
   m_master_clip_count.store(0, std::memory_order_release);
+  for (auto& meter : m_master_true_peak_meters) {
+    meter.reset();
+  }
 
   m_initialized.store(true, std::memory_order_release);
 
@@ -431,10 +434,13 @@ AudioMeter RoutingMatrix::getMasterMeter() const {
 // Snapshots
 // ============================================================================
 
-RoutingSnapshot RoutingMatrix::saveSnapshot(const std::string& name) {
+RoutingSnapshot RoutingMatrix::saveSnapshot(const std::string& name,
+                                            RoutingSnapshotContext context) {
   RoutingSnapshot snapshot;
   snapshot.name = name;
-  snapshot.timestamp_ms = 0; // TODO: Get actual timestamp
+  snapshot.captureRevision = m_snapshot_revision.fetch_add(1, std::memory_order_relaxed) + 1;
+  snapshot.controlTimeMs = context.controlTimeMs;
+  snapshot.audioPosition = context.audioPosition;
 
   // Save channel states
   for (const auto& channel : m_channels) {
@@ -648,10 +654,10 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       group_buffer.right[frame] += sample_R;
     }
 
-    // Update channel meters using left channel (if enabled)
-    // TODO: Proper stereo metering would meter both channels
+    // Meter both sides of the stereo contribution.
     if (config.enable_metering) {
-      processMetering(group_buffer.left.data(), num_frames, channel.peak_level, channel.rms_level);
+      processStereoMetering(group_buffer.left.data(), group_buffer.right.data(), num_frames,
+                            channel.true_peak_meters, channel.peak_level, channel.rms_level);
       if (detectClipping(group_buffer.left.data(), num_frames) ||
           detectClipping(group_buffer.right.data(), num_frames)) {
         channel.clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -716,10 +722,10 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       }
     }
 
-    // Update group meters using left channel (if enabled)
-    // TODO: Proper stereo metering would meter both channels
+    // Meter both sides of the stereo group.
     if (config.enable_metering) {
-      processMetering(group_buffer.left.data(), num_frames, group.peak_level, group.rms_level);
+      processStereoMetering(group_buffer.left.data(), group_buffer.right.data(), num_frames,
+                            group.true_peak_meters, group.peak_level, group.rms_level);
       if (detectClipping(group_buffer.left.data(), num_frames) ||
           detectClipping(group_buffer.right.data(), num_frames)) {
         group.clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -751,8 +757,8 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   // Step 5: Update master meters (if enabled)
   // ========================================================================
   if (config.enable_metering) {
-    // Meter master left channel (or average of all channels)
-    processMetering(master_output[0], num_frames, m_master_peak, m_master_rms);
+    processStereoMetering(master_output[0], config.num_outputs > 1 ? master_output[1] : nullptr,
+                          num_frames, m_master_true_peak_meters, m_master_peak, m_master_rms);
 
     // Check for clipping on any master channel
     for (uint8_t out = 0; out < config.num_outputs; ++out) {
@@ -929,44 +935,42 @@ void RoutingMatrix::updatePanLaw(uint8_t channel_index, float pan) {
   m_channels[channel_index].pan_right->setTarget(gain_right);
 }
 
-void RoutingMatrix::processMetering(float* buffer, size_t num_frames, std::atomic<float>& peak,
-                                    std::atomic<float>& rms) {
-  // Get current config for metering mode
-  int config_idx = m_active_config_idx.load(std::memory_order_acquire);
-  const RoutingConfig& config = m_config_buffers[config_idx];
+void RoutingMatrix::processStereoMetering(const float* left, const float* right, size_t num_frames,
+                                          std::array<TruePeakMeter, 2>& true_peak_meters,
+                                          std::atomic<float>& peak, std::atomic<float>& rms) {
+  if (num_frames == 0 || (left == nullptr && right == nullptr)) {
+    peak.store(0.0f, std::memory_order_release);
+    rms.store(0.0f, std::memory_order_release);
+    return;
+  }
 
-  // Calculate peak based on metering mode
+  const int config_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const MeteringMode mode = m_config_buffers[config_idx].metering_mode;
   float peak_value = 0.0f;
+  double sum_squares = 0.0;
 
-  if (config.metering_mode == MeteringMode::TruePeak) {
-    // ORP121 Q-04: True-peak metering with 4x oversampling (ITU-R BS.1770-4)
-    // Note: We use the master true-peak meter here since processMetering is
-    // called for various metering points. For per-channel/group true-peak,
-    // the TruePeakMeter instances in ChannelState/GroupState should be used.
-    for (size_t i = 0; i < num_frames; ++i) {
-      float true_peak = m_master_true_peak_meter.process(buffer[i]);
-      if (true_peak > peak_value) {
-        peak_value = true_peak;
-      }
-    }
-  } else {
-    // Standard peak metering (maximum absolute value)
-    for (size_t i = 0; i < num_frames; ++i) {
-      float abs_sample = std::abs(buffer[i]);
-      if (abs_sample > peak_value) {
-        peak_value = abs_sample;
-      }
-    }
-  }
-
-  // Calculate RMS (root mean square) - same for all metering modes
-  float sum_squares = 0.0f;
   for (size_t i = 0; i < num_frames; ++i) {
-    sum_squares += buffer[i] * buffer[i];
+    const float left_sample = left != nullptr ? left[i] : 0.0f;
+    const float right_sample = right != nullptr ? right[i] : 0.0f;
+    peak_value = std::max(peak_value, std::max(std::abs(left_sample), std::abs(right_sample)));
+    sum_squares += static_cast<double>(left_sample) * left_sample +
+                   static_cast<double>(right_sample) * right_sample;
   }
-  float rms_value = std::sqrt(sum_squares / static_cast<float>(num_frames));
 
-  // Update atomics (simple replace for now, could use decay for smoother meters)
+  if (mode == MeteringMode::TruePeak) {
+    const float left_peak =
+        left != nullptr ? true_peak_meters[0].processBuffer(left, num_frames) : 0.0f;
+    const float right_peak =
+        right != nullptr ? true_peak_meters[1].processBuffer(right, num_frames) : 0.0f;
+    peak_value = std::max(left_peak, right_peak);
+  } else if (mode == MeteringMode::LUFS) {
+    const double mean_square = sum_squares / static_cast<double>(num_frames * 2);
+    const double lufs = mean_square > 0.0 ? -0.691 + 10.0 * std::log10(mean_square) : -100.0;
+    peak_value = static_cast<float>(std::pow(10.0, lufs / 20.0));
+  }
+
+  const float rms_value =
+      static_cast<float>(std::sqrt(sum_squares / static_cast<double>(num_frames * 2)));
   peak.store(peak_value, std::memory_order_release);
   rms.store(rms_value, std::memory_order_release);
 }

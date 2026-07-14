@@ -22,6 +22,8 @@ protected:
 
     // Create scene manager
     sceneManager = createSceneManager(sessionGraph.get());
+    transport = createTransportController(sessionGraph.get(), 48000);
+    sceneManager->setTransportController(transport.get());
 
     // Use std::filesystem for portable temp directory
     tempDir = std::filesystem::temp_directory_path().string();
@@ -43,6 +45,7 @@ protected:
 
   std::unique_ptr<core::SessionGraph> sessionGraph;
   std::unique_ptr<ISceneManager> sceneManager;
+  std::unique_ptr<ITransportController> transport;
   std::string tempDir;
 };
 

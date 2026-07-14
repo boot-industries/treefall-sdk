@@ -3,6 +3,8 @@
 Project documentation index for orpheus-sdk.
 
 ## Recent Documents
+- [[ORP141 Reliability and Adoption Sprint Plan]]
+- [[ORP142 Downstream Consumer Adoption Notes]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -94,6 +96,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP135 Minhost Adapter Decomposition]]
 - [[ORP136 TODO and Incomplete-Feature Triage]]
 - [[ORP140 FreqFinder Architecture Revision - SDK Integration Confirmed]]
+- [[ORP141 Reliability and Adoption Sprint Plan]]
+- [[ORP142 Downstream Consumer Adoption Notes]]
 
 ## Archived Documents
 
@@ -111,4 +115,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-07
+**Last Generated:** 2026-07-13

@@ -3,6 +3,23 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus VERSION 0.3.2 LANGUAGES CXX)
 
+set(ORPHEUS_ABI_MAJOR 1)
+set(ORPHEUS_ABI_MINOR 0)
+set(ORPHEUS_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+file(MAKE_DIRECTORY "${ORPHEUS_GENERATED_INCLUDE_DIR}/orpheus")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/orpheus_version.h.in"
+  "${ORPHEUS_GENERATED_INCLUDE_DIR}/orpheus/version.h"
+  @ONLY)
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/orpheus_release_metadata.json.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/orpheus-sdk.json"
+  @ONLY)
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed-targets.json.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/installed-targets.json"
+  @ONLY)
+
 set(ORPHEUS_ROOT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(ORP_WITH_TESTS "Build Orpheus tests" ON)
@@ -93,6 +110,9 @@ if(ENABLE_LTO)
 endif()
 
 add_subdirectory(src)
+target_include_directories(orpheus_core INTERFACE
+  $<BUILD_INTERFACE:${ORPHEUS_GENERATED_INCLUDE_DIR}>
+  $<INSTALL_INTERFACE:include>)
 
 if(ORPHEUS_ENABLE_ADAPTER_REAPER OR ORPHEUS_ENABLE_ADAPTER_MINHOST)
   add_subdirectory(adapters/shared)
@@ -147,6 +167,9 @@ if(ORP_WITH_TESTS)
 endif()
 
 install(DIRECTORY include/orpheus DESTINATION include)
+install(FILES
+  "${ORPHEUS_GENERATED_INCLUDE_DIR}/orpheus/version.h"
+  DESTINATION include/orpheus)
 
 install(TARGETS orpheus_session orpheus_clipgrid orpheus_render
   EXPORT OrpheusSDKTargets
@@ -172,6 +195,14 @@ if(ORPHEUS_ENABLE_REALTIME)
 
   if(TARGET orpheus_audio_utils)
     install(TARGETS orpheus_audio_utils
+      EXPORT OrpheusSDKTargets
+      ARCHIVE DESTINATION lib
+      LIBRARY DESTINATION lib
+      RUNTIME DESTINATION bin)
+  endif()
+
+  if(TARGET orpheus_audio_driver_manager)
+    install(TARGETS orpheus_audio_driver_manager
       EXPORT OrpheusSDKTargets
       ARCHIVE DESTINATION lib
       LIBRARY DESTINATION lib
@@ -262,6 +293,10 @@ if(TARGET orpheus_perf_render_click)
 endif()
 
 install(FILES README.md LICENSE DESTINATION .)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/orpheus-sdk.json"
+  "${CMAKE_CURRENT_BINARY_DIR}/installed-targets.json"
+  DESTINATION share/orpheus)
 
 set(INSTALL_CONFIGDIR lib/cmake/OrpheusSDK)
 

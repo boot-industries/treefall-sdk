@@ -27,12 +27,18 @@ namespace ColorUtils {
 
 //==============================================================================
 // Default Colors from shmui
+//
+// NOTE: these are the Orb's shader/canvas gradient stops. The Orpheus design
+// system deliberately keeps the Orb's canvas fills as literal hex — they are a
+// GPU gradient ramp, not a themeable UI surface (see orpheus-catalog.json, the
+// shmui Orb entry: "canvas fills are intentionally literal hex — out of scope
+// for tokenization"). Left literal by design; do not migrate to tokens::*.
 
-/** Default orb colors (light theme) */
+/** Default orb colors (light theme) — intentional literals (see note above) */
 constexpr uint32_t kOrbColor1Light = 0xFFCADCFC; // #CADCFC
 constexpr uint32_t kOrbColor2Light = 0xFFA0B9D1; // #A0B9D1
 
-/** Orb color ramp (black -> color1 -> color2 -> white) */
+/** Orb color ramp endpoints (black -> color1 -> color2 -> white) */
 constexpr uint32_t kRampBlack = 0xFF000000;
 constexpr uint32_t kRampWhite = 0xFFFFFFFF;
 

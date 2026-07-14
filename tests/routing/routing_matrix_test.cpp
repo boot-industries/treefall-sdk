@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "../../include/orpheus/routing_matrix.h"
 
+#include <array>
+
 #include <cmath>
 #include <gtest/gtest.h>
 #include <memory>
@@ -409,6 +411,30 @@ TEST_F(RoutingMatrixTest, MeteringDetectsClipping) {
   EXPECT_GE(meter.clip_count, 0); // Non-negative
 }
 
+TEST_F(RoutingMatrixTest, StereoMetersIncludeRightOnlySignal) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelPan(0, 1.0f), SessionGraphError::OK);
+
+  std::array<float, BUFFER_SIZE> input{};
+  input.fill(0.5f);
+  std::array<float, BUFFER_SIZE> left{};
+  std::array<float, BUFFER_SIZE> right{};
+  const float* inputs[] = {input.data()};
+  float* outputs[] = {left.data(), right.data()};
+
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+
+  const auto groupMeter = matrix->getGroupMeter(0);
+  const auto masterMeter = matrix->getMasterMeter();
+  EXPECT_GT(groupMeter.peak_db, -7.0f);
+  EXPECT_GT(masterMeter.peak_db, -7.0f);
+  EXPECT_GT(groupMeter.rms_db, -10.0f);
+}
+
 // ============================================================================
 // Snapshot Tests
 // ============================================================================
@@ -427,6 +453,32 @@ TEST_F(RoutingMatrixTest, SaveSnapshotCapturesState) {
   EXPECT_EQ(snapshot.name, "Test Snapshot");
   EXPECT_EQ(snapshot.channels.size(), 4);
   EXPECT_EQ(snapshot.groups.size(), 2);
+}
+
+TEST_F(RoutingMatrixTest, SnapshotRevisionAndProvenanceAreDeterministic) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  RoutingSnapshotContext firstContext;
+  firstContext.controlTimeMs = 1234;
+  firstContext.audioPosition = TimePoint::fromSamples(2048);
+  const auto first = matrix->saveSnapshot("First", firstContext);
+
+  RoutingSnapshotContext secondContext;
+  secondContext.controlTimeMs = 9999;
+  const auto second = matrix->saveSnapshot("Second", secondContext);
+
+  EXPECT_EQ(first.captureRevision, 1u);
+  EXPECT_EQ(second.captureRevision, 2u);
+  ASSERT_TRUE(first.controlTimeMs.has_value());
+  EXPECT_EQ(*first.controlTimeMs, 1234u);
+  ASSERT_TRUE(first.audioPosition.has_value());
+  EXPECT_EQ(first.audioPosition->samples(), 2048);
+  EXPECT_FALSE(second.audioPosition.has_value());
+
+  ASSERT_EQ(first.channels.size(), second.channels.size());
+  ASSERT_EQ(first.groups.size(), second.groups.size());
+  EXPECT_FLOAT_EQ(first.master_gain_db, second.master_gain_db);
+  EXPECT_EQ(first.master_mute, second.master_mute);
 }
 
 TEST_F(RoutingMatrixTest, LoadSnapshotRestoresState) {

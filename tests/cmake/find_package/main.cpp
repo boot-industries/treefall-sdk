@@ -7,8 +7,10 @@
 #include <orpheus/identity.h>
 #include <orpheus/media_model.h>
 #include <orpheus/time_domain.h>
+#include <orpheus/version.h>
 
 int main() {
+  static_assert(orpheus::kSdkVersionMajor == ORPHEUS_SDK_VERSION_MAJOR);
   uint32_t major = 0;
   uint32_t minor = 0;
   // ORP134 G2: exercise the installed identity/time primitives.

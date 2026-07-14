@@ -3,30 +3,29 @@
 
 include("${CMAKE_CURRENT_LIST_DIR}/OrpheusSDKTargets.cmake")
 
+set(OrpheusSDK_VERSION "@PROJECT_VERSION@")
+set(OrpheusSDK_C_ABI_MAJOR "@ORPHEUS_ABI_MAJOR@")
+set(OrpheusSDK_C_ABI_MINOR "@ORPHEUS_ABI_MINOR@")
+
+function(_orpheus_sdk_alias stable_name exported_name)
+  if(TARGET "${exported_name}" AND NOT TARGET "${stable_name}")
+    add_library("${stable_name}" INTERFACE IMPORTED)
+    set_property(TARGET "${stable_name}" PROPERTY INTERFACE_LINK_LIBRARIES "${exported_name}")
+  endif()
+endfunction()
+
 set(OrpheusSDK_INCLUDE_DIR "${PACKAGE_PREFIX_DIR}/include")
+_orpheus_sdk_alias(Orpheus::core Orpheus::orpheus_core)
+_orpheus_sdk_alias(Orpheus::diagnostics Orpheus::orpheus_diagnostics)
+_orpheus_sdk_alias(Orpheus::audio_utils Orpheus::orpheus_audio_utils)
+_orpheus_sdk_alias(Orpheus::audio_io Orpheus::orpheus_audio_io)
+_orpheus_sdk_alias(Orpheus::audio_driver_manager Orpheus::orpheus_audio_driver_manager)
+_orpheus_sdk_alias(Orpheus::routing Orpheus::orpheus_routing)
+_orpheus_sdk_alias(Orpheus::transport Orpheus::orpheus_transport)
+_orpheus_sdk_alias(Orpheus::audio_driver_coreaudio Orpheus::orpheus_audio_driver_coreaudio)
+_orpheus_sdk_alias(Orpheus::audio_driver_wasapi Orpheus::orpheus_audio_driver_wasapi)
+_orpheus_sdk_alias(Orpheus::shmui_juce Orpheus::orpheus_shmui_juce)
+_orpheus_sdk_alias(Orpheus::shmui_juce_gl Orpheus::orpheus_shmui_juce_gl)
 
-if(TARGET Orpheus::orpheus_core AND NOT TARGET Orpheus::core)
-  add_library(Orpheus::core INTERFACE IMPORTED)
-  set_property(TARGET Orpheus::core PROPERTY INTERFACE_LINK_LIBRARIES Orpheus::orpheus_core)
-endif()
+check_required_components(OrpheusSDK)
 
-if(TARGET Orpheus::orpheus_diagnostics AND NOT TARGET Orpheus::diagnostics)
-  add_library(Orpheus::diagnostics INTERFACE IMPORTED)
-  set_property(TARGET Orpheus::diagnostics PROPERTY INTERFACE_LINK_LIBRARIES
-    Orpheus::orpheus_diagnostics)
-endif()
-
-if(TARGET Orpheus::orpheus_audio_utils AND NOT TARGET Orpheus::audio_utils)
-  add_library(Orpheus::audio_utils INTERFACE IMPORTED)
-  set_property(TARGET Orpheus::audio_utils PROPERTY INTERFACE_LINK_LIBRARIES
-    Orpheus::orpheus_audio_utils)
-endif()
-
-# shmui-juce is exported only when the SDK was built with
-# ORPHEUS_ENABLE_SHMUI_JUCE=ON (it requires JUCE). Consumers link
-# Orpheus::shmui_juce for the on-brand meter/waveform/button components.
-if(TARGET Orpheus::orpheus_shmui_juce AND NOT TARGET Orpheus::shmui_juce)
-  add_library(Orpheus::shmui_juce INTERFACE IMPORTED)
-  set_property(TARGET Orpheus::shmui_juce PROPERTY INTERFACE_LINK_LIBRARIES
-    Orpheus::orpheus_shmui_juce)
-endif()
