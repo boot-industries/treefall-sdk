@@ -30,14 +30,17 @@
   not real-device evidence. Promotion of WASAPI remains blocked until the
   self-hosted `wasapi-hardware-acceptance` workflow publishes a passing record.
 - Local verification after R4 observed all 143 configured contracts passing.
-  Latest-commit Windows CI run `29316779217` is queued without job records;
-  WASAPI promotion and the three R3 evidence tasks remain open rather than
-  being inferred from workflow configuration or macOS verification.
-- A direct dispatch of `wasapi-hardware-acceptance.yml` returned GitHub API
-  `404` because that newly added manual workflow is not yet present on the
-  default branch. Real-device evidence therefore requires both the workflow to
-  land on the default branch and a matching self-hosted
-  `[Windows, x64, audio-hardware]` runner; neither condition is inferred here.
+  GitHub reports repository Actions as disabled (`enabled: false`), so
+  latest-commit Windows CI run `29316779217` remains queued without job records.
+  The user elected to keep Actions disabled; hosted Windows package/ABI proof
+  is therefore deferred, not inferred from workflow configuration or macOS
+  verification.
+- GitHub reports zero self-hosted runners for this repository. A direct dispatch
+  of `wasapi-hardware-acceptance.yml` also returned API `404` because that new
+  manual workflow is not yet on the default branch. Real-device evidence
+  requires the workflow to land plus a matching
+  `[Windows, x64, audio-hardware]` runner. The R3 evidence jobs remain
+  incomplete and Windows/WASAPI support is not promoted.
 - R4 is complete. The public `SessionGraph` header now exposes stable
   `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
   coalesced revisioned change sets, rollback-on-destruction transactions, and

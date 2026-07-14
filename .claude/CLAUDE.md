@@ -31,14 +31,14 @@
   - The live transport telemetry integration test passed.
   - `realtime_static_audit` and `cmake_find_package` passed.
   - Full configured suite passed: 143/143.
-- R3 remains truthfully open: latest-commit Windows CI run `29316779217` is
-  queued without job records, so hosted package/ABI proof is unavailable; no
-  self-hosted WASAPI real-device artifact exists. Do not promote the Windows
-  support tier without those observed records.
-- Direct dispatch of `wasapi-hardware-acceptance.yml` returned GitHub API 404
-  because the new manual workflow is not on the default branch. Hardware proof
-  requires that workflow to land and a matching self-hosted
-  `[Windows, x64, audio-hardware]` runner to execute it.
+- R3 evidence is explicitly deferred. GitHub reports repository Actions as
+  disabled (`enabled: false`); the user elected to keep it disabled, so
+  latest-commit Windows run `29316779217` remains queued without job records
+  and cannot prove package/ABI conformance.
+- GitHub reports zero self-hosted runners. Direct dispatch of
+  `wasapi-hardware-acceptance.yml` also returned API 404 because the new manual
+  workflow is not on the default branch. Do not promote Windows/WASAPI support
+  without a later hosted CI record and real-device artifact.
 - R5 gate review found only FourTrack's conditional interest, not two
   independent requirements, and R1–R4 have not shipped/soaked together. The
   voice implementation, policy, realtime tests, and migration guidance jobs
