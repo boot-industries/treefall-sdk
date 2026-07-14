@@ -27,6 +27,9 @@ protected:
     m_graph = std::make_unique<core::SessionGraph>();
     m_scenes = createSceneManager(m_graph.get());
     ASSERT_NE(m_scenes, nullptr);
+    m_transport = createTransportController(m_graph.get(), 48000);
+    ASSERT_NE(m_transport, nullptr);
+    m_scenes->setTransportController(m_transport.get());
 
     m_routing = createRoutingMatrix();
     ASSERT_NE(m_routing, nullptr);
@@ -53,6 +56,7 @@ protected:
 
   std::unique_ptr<core::SessionGraph> m_graph;
   std::unique_ptr<ISceneManager> m_scenes;
+  std::unique_ptr<ITransportController> m_transport;
   std::unique_ptr<IRoutingMatrix> m_routing;
 };
 
@@ -123,4 +127,24 @@ TEST_F(SceneRoutingTest, DetachedMatrixStillCapturesMetadata) {
   EXPECT_TRUE(scene->clipGroups.empty());
   EXPECT_TRUE(scene->groupGains.empty());
   EXPECT_EQ(m_scenes->recallScene(sceneId), SessionGraphError::OK);
+}
+
+TEST_F(SceneRoutingTest, RecallRestoresAssignmentsAtomically) {
+  m_graph->set_clip_assignments({11, 22, 33});
+  const std::string sceneId = m_scenes->captureScene("Assignments");
+  ASSERT_FALSE(sceneId.empty());
+
+  m_graph->set_clip_assignments({99});
+  ASSERT_EQ(m_scenes->recallScene(sceneId), SessionGraphError::OK);
+  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{11, 22, 33}));
+}
+
+TEST_F(SceneRoutingTest, RecallWithoutTransportDoesNotMutateAssignments) {
+  m_graph->set_clip_assignments({1, 2});
+  const std::string sceneId = m_scenes->captureScene("Rollback");
+  m_graph->set_clip_assignments({7, 8});
+  m_scenes->setTransportController(nullptr);
+
+  EXPECT_EQ(m_scenes->recallScene(sceneId), SessionGraphError::NotInitialized);
+  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{7, 8}));
 }
