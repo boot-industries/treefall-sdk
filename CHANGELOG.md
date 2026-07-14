@@ -31,12 +31,14 @@ acknowledges the source migration required for interface implementers.
   `getRenderConfig() const noexcept`, `processAudio(float**, size_t, size_t)
   noexcept`, and `processCallbacks()`. This implementer source break is why the
   pre-1.0 minor version advances to `0.4.0`.
+- The new virtual methods are appended after every pre-`0.4.0` interface slot,
+  preserving the existing vtable entry order for factory consumers.
 - The transport's routing topology remains fixed after construction in this
   release. Hosts must not call `getRoutingMatrix()->initialize(...)` on a live
   transport; doing so would discard the transport's stereo channel layout.
-- Installed package version matching now uses `SameMinorVersion`: pre-1.0 patch
-  releases remain compatible within a minor line, while `0.4.x` is not selected
-  for a consumer requesting source-incompatible `0.3.x`.
+- Installed package version matching uses `SameMinorVersion` while the SDK is
+  pre-1.0, so `0.4.x` is not selected for a source-incompatible `0.3.x`
+  request. Stable major releases use `SameMajorVersion`.
 
 ### Fixed
 
