@@ -33,6 +33,11 @@
   Latest-commit Windows CI run `29316779217` is queued without job records;
   WASAPI promotion and the three R3 evidence tasks remain open rather than
   being inferred from workflow configuration or macOS verification.
+- A direct dispatch of `wasapi-hardware-acceptance.yml` returned GitHub API
+  `404` because that newly added manual workflow is not yet present on the
+  default branch. Real-device evidence therefore requires both the workflow to
+  land on the default branch and a matching self-hosted
+  `[Windows, x64, audio-hardware]` runner; neither condition is inferred here.
 - R4 is complete. The public `SessionGraph` header now exposes stable
   `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
   coalesced revisioned change sets, rollback-on-destruction transactions, and

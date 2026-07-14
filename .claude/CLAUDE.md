@@ -35,6 +35,10 @@
   queued without job records, so hosted package/ABI proof is unavailable; no
   self-hosted WASAPI real-device artifact exists. Do not promote the Windows
   support tier without those observed records.
+- Direct dispatch of `wasapi-hardware-acceptance.yml` returned GitHub API 404
+  because the new manual workflow is not on the default branch. Hardware proof
+  requires that workflow to land and a matching self-hosted
+  `[Windows, x64, audio-hardware]` runner to execute it.
 - R5 gate review found only FourTrack's conditional interest, not two
   independent requirements, and R1–R4 have not shipped/soaked together. The
   voice implementation, policy, realtime tests, and migration guidance jobs
