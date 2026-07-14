@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "shmui",
+    "path": "juce/Source",
+    "revision": "a6e6b990631ed9fa64153d6f873d760da60b57e9",
+    "content_sha256": "950c6d2d677d2429b5a128a11714121da10ae084274989d2c550cbc97f16f1a8"
+  },
+  "design_token_contract_version": "0.2.0",
+  "targets": {
+    "Orpheus::shmui_juce": {
+      "components": [
+        "AudioAnalyzer",
+        "Icons",
+        "Button",
+        "IconButton",
+        "TextButton",
+        "ToggleButton",
+        "TransportButton",
+        "MuteButton",
+        "ClipButton",
+        "WaveformVisualizer",
+        "WaveformEditor",
+        "BarVisualizer",
+        "MatrixDisplay",
+        "LevelMeter",
+        "MeterGroup",
+        "AudioPlayerControls",
+        "ScrubBar",
+        "TransportBar",
+        "TransportContainer"
+      ],
+      "required_juce_modules": [
+        "juce_core",
+        "juce_audio_basics",
+        "juce_audio_formats",
+        "juce_dsp",
+        "juce_gui_basics"
+      ]
+    },
+    "Orpheus::shmui_juce_gl": {
+      "components": ["OrbVisualizer"],
+      "required_juce_modules": ["juce_opengl"],
+      "feature_flag": "SHMUI_JUCE_ENABLE_OPENGL",
+      "default_enabled": false
+    }
+  }
+}
