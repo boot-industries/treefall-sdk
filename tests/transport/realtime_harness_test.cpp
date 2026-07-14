@@ -34,6 +34,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
@@ -141,8 +142,12 @@ TEST_F(RealtimeHarnessTest, GuardDetectsViolations) {
 
   {
     RtSection section;
-    volatile int* leak = new int(42); // deliberate violation
-    delete leak;                      // second deliberate violation
+    // Use explicit replaceable allocation-function calls rather than a
+    // new-expression: C++ permits new/delete elision in optimized builds even
+    // when the replacement functions have observable side effects.
+    void* allocation = ::operator new(sizeof(int)); // deliberate violation
+    *static_cast<int*>(allocation) = 42;
+    ::operator delete(allocation); // second deliberate violation
   }
 
   EXPECT_EQ(RtGuardState::allocViolations(), 1u) << "operator new inside an RtSection must red";
@@ -151,8 +156,8 @@ TEST_F(RealtimeHarnessTest, GuardDetectsViolations) {
 
   // Outside a section, allocations are not violations.
   RtGuardState::reset();
-  volatile int* fine = new int(7);
-  delete fine;
+  void* allocation = ::operator new(sizeof(int));
+  ::operator delete(allocation);
   EXPECT_EQ(RtGuardState::totalViolations(), 0u);
 }
 

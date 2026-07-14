@@ -41,9 +41,31 @@ endif()
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" ${configure_args}
-  RESULT_VARIABLE configure_result)
+  RESULT_VARIABLE configure_result
+  OUTPUT_VARIABLE configure_stdout
+  ERROR_VARIABLE configure_stderr)
+string(CONCAT configure_output "${configure_stdout}" "\n" "${configure_stderr}")
+
+if(DEFINED expect_configure_failure AND expect_configure_failure)
+  if(NOT configure_result)
+    message(FATAL_ERROR
+      "Configure unexpectedly accepted incompatible SDK version ${required_version}")
+  endif()
+
+  string(FIND "${configure_output}"
+    "compatible with requested version \"${required_version}\""
+    version_rejection_index)
+  if(version_rejection_index EQUAL -1)
+    message(FATAL_ERROR
+      "Configure failed for an unexpected reason:\n${configure_output}")
+  endif()
+
+  message(STATUS "Configure correctly rejected incompatible SDK version ${required_version}")
+  return()
+endif()
 if(configure_result)
-  message(FATAL_ERROR "Configure failed with code ${configure_result}")
+  message(FATAL_ERROR
+    "Configure failed with code ${configure_result}:\n${configure_output}")
 endif()
 
 execute_process(
