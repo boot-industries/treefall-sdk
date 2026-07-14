@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "orpheus/export.h"
-#include "session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <utility>
 namespace orpheus::core::session_json {

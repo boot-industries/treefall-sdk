@@ -2,11 +2,11 @@
 #include "transport_controller.h"
 
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
-#include "session/session_graph.h"                 // For SessionGraph
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <orpheus/session_graph.h> // For SessionGraph
 
 // MSVC and some platforms don't define M_PI_2 by default
 #ifndef M_PI_2

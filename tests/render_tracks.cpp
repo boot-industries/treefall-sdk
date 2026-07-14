@@ -2,7 +2,7 @@
 #include "orpheus/abi.h"
 
 #include "session/json_io.h"
-#include "session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <algorithm>
 #include <chrono>

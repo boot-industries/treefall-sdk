@@ -3,7 +3,7 @@
 # ORP141 — Reliability and Adoption Sprint Plan
 
 **Document type:** Product and engineering sprint plan  
-**Status:** In progress — R0/R1/R2 complete; R3 implementation committed, CI and hardware evidence pending  
+**Status:** In progress — R0/R1/R2 complete; R3 implementation committed with external CI/hardware evidence pending; R4 active
 **Scope:** Orpheus SDK core, packages, release artifacts, and SDK-owned conformance fixtures only. No child-app source changes, submodule-pin updates, application CI work, or UI feature work are deliverables of this plan.
 **Related:** [[ORP136 TODO and Incomplete-Feature Triage]] · [[ORP137 Hardening Program Completion and Downstream Follow-ups]] · [[ORP135 LATER Sprint - Platform Leadership Bets]] · [[ORP142 Downstream Consumer Adoption Notes]] · FreqFinder [[FRQ033 Orpheus SDK Release Package Refresh for Analysis Facade]] · FourTrack [[FTR027 SDK Note - Real-Time Sample-Accurate Event Primitive]] · [[FTR028 SDK Note - Routing Matrix Block-Size Ceiling]]
 
@@ -31,10 +31,13 @@
   self-hosted `wasapi-hardware-acceptance` workflow publishes a passing record.
 - Local verification observed all 138 configured contracts passing across the
   full run plus the corrected JSON conformance rerun. Windows CI run
-  `29309941110` is the pending cross-platform checkpoint.
-- Work intentionally pauses before R4. Resume by resolving the Windows CI run
-  and hardware-evidence status; do not begin R4/R5 until that checkpoint is
-  committed and pushed.
+  `29309941110` remains queued without jobs; WASAPI promotion and the three R3
+  evidence tasks remain open rather than being inferred from hosted CI.
+- R4 is active. The public `SessionGraph` header now exposes stable
+  `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
+  coalesced revisioned change sets, rollback-on-destruction transactions, and
+  snapshot restore for application-owned undo/redo. Runtime transport and
+  application presentation state remain outside the transactional edit domain.
 
 ## 1. Decision
 

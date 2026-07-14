@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include "session/session_graph.h"
 #include <gtest/gtest.h>
+#include <orpheus/session_graph.h>
 #include <orpheus/transport_controller.h>
 
 // FTR027 §1: concrete controller access for processAudio()/processCallbacks()
