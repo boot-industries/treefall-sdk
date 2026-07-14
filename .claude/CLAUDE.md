@@ -8,31 +8,39 @@
 
 # ORP141 Resume Checkpoint (2026-07-14)
 
-- Pause boundary: do not begin R4 until R3 is resolved.
-- Active branch: `feat/orp141-reliability-adoption`; PR: #206; all checkpoint
-  changes are pushed.
-- `ci/trim-macos-matrix-cost` is already merged into `main` (tip
-  `b3e4d740` is an ancestor). Media integrity commit `d47fc60f` is also on
-  `main`.
-- R0, R1, and R2 are complete. See the implementation checkpoint in
-  `docs/orp/ORP141 Reliability and Adoption Sprint Plan.md`.
-- R3 committed work: public DLL factory exports; WASAPI shared-mode endpoint
-  enumeration, format fallback, negotiated rate/buffer reporting, callback
-  lifecycle, tests, package target, support matrix, Linux backend decision, and
-  manual self-hosted hardware acceptance workflow.
-- Pending CI: manually dispatched run `29309941110` for PR #206 was still
-  queued when pausing. Inspect Windows compile/package results first. Likely
-  risk area: MSVC/WASAPI headers, warnings, and import/export behavior.
-- Hardware gate: no Windows real-device record exists yet. Do not label WASAPI
-  Supported until `.github/workflows/wasapi-hardware-acceptance.yml` produces a
-  passing artifact on `[self-hosted, Windows, x64, audio-hardware]`.
-- Verification: local macOS build passed. Full CTest passed 137/138; the sole
-  failure was stale duplicate JSON golden fixtures under `tools/fixtures`.
-  Those were versioned in `f16b6c5c`, then `conformance_json` passed. Thus all
-  138 configured contracts were observed passing across the full run and
-  targeted rerun.
+- Pause boundary: R4 transaction and ShmUI contracts are complete. The next
+  task is `Expose fixed-capacity decimated realtime telemetry`; it is marked in
+  progress but has no edits yet.
+- Active branch: `feat/orp141-reliability-adoption`; PR #206. Working tree was
+  clean and all work was pushed through `c5a1fc6c`.
+- Recent commits:
+  - `5fbae07f` — public stable-ID `SessionGraph` transactions/snapshots
+  - `120cabb7` — versioned ShmUI-JUCE manifest integrity validator
+  - `c5a1fc6c` — real JUCE 8.0.4 no-OpenGL add_subdirectory consumer
+- R4 completed work:
+  - `include/orpheus/session_graph.h` is installed/public and exposes stable
+    `SessionId`/`TrackId`/`ClipId`, canonical `TimeRange` snapshots, coalesced
+    revision change sets, rollback-on-destruction transactions, and restore for
+    app-owned undo/redo.
+  - `packages/shmui-juce/shmui-juce-import.json` records the upstream revision,
+    exported components, required JUCE modules, token contract, optional
+    default-off OpenGL feature, hash algorithm, and imported-content SHA-256.
+  - `tools/shmui_juce_manifest.py --check` is registered in CTest.
+  - The checksum-pinned JUCE fixture builds and runs
+    `Orpheus::shmui_juce` without creating/linking the OpenGL target. The Ubuntu
+    Release CI leg now runs it.
+- Verification observed:
+  - `SessionGraphTransactions.*:SessionGraphInvariants.*`: 8/8 passed.
+  - `shmui_juce_manifest` CTest passed; 53 imported files matched the manifest.
+  - The non-OpenGL fixture built all ShmUI sources and its runtime smoke test
+    passed locally.
+- R4 remaining: fixed-capacity decimated realtime telemetry; explicitly keep
+  app analysis/view-model state outside core; export both public contracts
+  through clean-prefix package fixtures.
+- R3 remains truthfully open: hosted run `29309941110` is still queued without
+  jobs, Windows package/ABI proof is unavailable, and no self-hosted WASAPI
+  real-device artifact exists. Do not promote the Windows support tier.
+- The entire `Release Operating Model` todo phase was dropped for this session
+  at the user's direction. It remains deferred work, not completed work.
 - Fixture quirk: session goldens exist in both `tests/fixtures/session` and
   `tools/fixtures`; schema changes must update both sets.
-- Resume sequence: inspect/fix CI run, commit and push any R3 fixes, obtain or
-  explicitly retain the hardware-evidence blocker, then update R3 todos. Only
-  after that start R4.
