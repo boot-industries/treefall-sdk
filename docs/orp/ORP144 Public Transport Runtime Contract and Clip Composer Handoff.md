@@ -2,9 +2,9 @@
 
 # ORP144 — Public Transport Runtime Contract and Clip Composer Handoff
 
-**Document type:** SDK release-candidate completion record and downstream handoff
+**Document type:** SDK release completion record and downstream handoff
 **Version target:** `0.4.0`
-**Status:** SDK release candidate verified; tag/publication and child-app adoption pending
+**Status:** SDK `v0.4.0` tagged and published; Clip Composer adoption pending
 **Date:** 2026-07-14
 
 ---
@@ -23,9 +23,9 @@ release JSON, package-version file, and CPack metadata. Those artifacts consume
 `PROJECT_VERSION`; their templates do not contain an independent version literal
 and require no separate version edit.
 
-This document does **not** claim that `v0.4.0` has been tagged, published, or
-adopted by Clip Composer. The Release package candidate was built and inspected;
-publication and downstream migration remain pending.
+Release tag `v0.4.0` is published at merge commit `1f4bd48f` from PR #209.
+The Release package candidate was built and inspected before tagging. Clip
+Composer adoption remains pending and is not inferred from the SDK release.
 
 ---
 
@@ -162,10 +162,9 @@ Verified candidate checks:
 because `/proc/self/io` is unavailable; the containing CTest target passes and
 the static realtime audit remains green.
 
-Remaining gates:
+Remaining gate:
 
-- create and publish the `v0.4.0` tag; and
 - migrate Clip Composer to the public interface and run its build/test/smoke and
   installed-package gates.
 
-The accurate state is **SDK-verified/downstream-pending**.
+The accurate state is **SDK-released/downstream-pending**.
