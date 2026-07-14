@@ -5,3 +5,34 @@
 
 *No recent activity*
 </claude-mem-context>
+
+# ORP141 Resume Checkpoint (2026-07-14)
+
+- Pause boundary: do not begin R4 until R3 is resolved.
+- Active branch: `feat/orp141-reliability-adoption`; PR: #206; pushed tip:
+  `bc015758`.
+- `ci/trim-macos-matrix-cost` is already merged into `main` (tip
+  `b3e4d740` is an ancestor). Media integrity commit `d47fc60f` is also on
+  `main`.
+- R0, R1, and R2 are complete. See the implementation checkpoint in
+  `docs/orp/ORP141 Reliability and Adoption Sprint Plan.md`.
+- R3 committed work: public DLL factory exports; WASAPI shared-mode endpoint
+  enumeration, format fallback, negotiated rate/buffer reporting, callback
+  lifecycle, tests, package target, support matrix, Linux backend decision, and
+  manual self-hosted hardware acceptance workflow.
+- Pending CI: manually dispatched run `29309941110` for PR #206 was still
+  queued when pausing. Inspect Windows compile/package results first. Likely
+  risk area: MSVC/WASAPI headers, warnings, and import/export behavior.
+- Hardware gate: no Windows real-device record exists yet. Do not label WASAPI
+  Supported until `.github/workflows/wasapi-hardware-acceptance.yml` produces a
+  passing artifact on `[self-hosted, Windows, x64, audio-hardware]`.
+- Verification: local macOS build passed. Full CTest passed 137/138; the sole
+  failure was stale duplicate JSON golden fixtures under `tools/fixtures`.
+  Those were versioned in `f16b6c5c`, then `conformance_json` passed. Thus all
+  138 configured contracts were observed passing across the full run and
+  targeted rerun.
+- Fixture quirk: session goldens exist in both `tests/fixtures/session` and
+  `tools/fixtures`; schema changes must update both sets.
+- Resume sequence: inspect/fix CI run, commit and push any R3 fixes, obtain or
+  explicitly retain the hardware-evidence blocker, then update R3 todos. Only
+  after that start R4.
