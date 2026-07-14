@@ -5,6 +5,8 @@ Project documentation index for orpheus-sdk.
 ## Recent Documents
 - [[ORP141 Reliability and Adoption Sprint Plan]]
 - [[ORP142 Downstream Consumer Adoption Notes]]
+- [[ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff]]
+- [[ORP144 Public Transport Runtime Contract and Clip Composer Handoff]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -98,6 +100,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP140 FreqFinder Architecture Revision - SDK Integration Confirmed]]
 - [[ORP141 Reliability and Adoption Sprint Plan]]
 - [[ORP142 Downstream Consumer Adoption Notes]]
+- [[ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff]]
+- [[ORP144 Public Transport Runtime Contract and Clip Composer Handoff]]
 
 ## Archived Documents
 
@@ -115,4 +119,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-13
+**Last Generated:** 2026-07-14

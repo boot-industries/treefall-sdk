@@ -38,6 +38,8 @@ ctest --test-dir build --output-on-failure
 - **Integrate SDK:** See [`docs/orp/_process/archive/GETTING_STARTED.md`](docs/orp/_process/archive/GETTING_STARTED.md)
 - **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
+- **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
+- **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
 
 ## Lightweight Integration Targets
 
@@ -55,6 +57,51 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
   `audio_file_reader_extended.h`, and `channel_format.h` for file I/O and format
   conversion helpers.
 
+## Reliability and Adoption Completion
+
+ORP141 is implemented on `main`. The durable delivery and child-team handoff is
+[`ORP143`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md).
+The final implementation verification passed 143/143 configured CTest contracts,
+the installed `find_package` consumer, and the strict in-repository realtime
+audit.
+
+New workflow contracts include stable-ID session transactions and bounded
+message-thread telemetry:
+
+```cpp
+orpheus::core::SessionGraph graph;
+auto transaction = graph.begin_transaction();
+auto trackId = graph.create_track("Program");
+auto clipId = graph.create_clip(
+    trackId,
+    "Intro",
+    orpheus::TimeRange::fromStartLength(
+        orpheus::TimePoint::fromSamples(0), 48000));
+auto change = transaction.commit();
+
+auto transport = orpheus::createTransportController(&graph, 48000);
+auto* telemetry = transport->getRealtimeTelemetry();
+telemetry->setDecimationBlocks(8);
+
+orpheus::RealtimeTelemetrySnapshot snapshot;
+while (telemetry->tryRead(snapshot)) {
+  // Message-thread work only: presentation, history, or app-owned analysis.
+}
+```
+
+The SDK telemetry bridge is fixed-capacity and presentation-neutral. FFTs,
+histories, smoothing, analyzer selection, musical policy, and UI view models
+remain application state.
+
+Child-app teams should use
+[`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
+for Clip Composer, FreqFinder, FourTrack, and ShmUI adoption checklists. No child
+application was migrated by the SDK sprint.
+
+Windows/WASAPI is not yet a release-supported backend. The implementation is
+present, but hosted Windows package/ABI proof and a real-device acceptance
+artifact remain required; see [`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md).
+
 ---
 
 ## Table of Contents
@@ -62,6 +109,7 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 - [Feature Highlights](#feature-highlights)
 - [Core Capabilities](#core-capabilities)
 - [Repository Layout](#repository-layout)
+- [Reliability and Adoption Completion](#reliability-and-adoption-completion)
 - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
   - [C++ Toolchain](#c-toolchain)
@@ -202,12 +250,15 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - **Performance monitoring** – Real-time CPU/latency/underrun tracking (ORP109)
 - **Real-time metering** – Peak/RMS/TruePeak/LUFS (ORP109)
 - **Callback timing histogram** – Jitter profiling (ORP109)
+- **Bounded realtime telemetry** – Decimated transport/routing/diagnostic snapshots for message-thread consumers
 
 ### Workflow Management
 
 - **Scene/Preset system** – Lightweight snapshot management (ORP109)
 - **Session JSON** – Human-readable format with metadata persistence
 - **Metadata persistence** – Clip settings survive stop/start cycles
+- **Stable session transactions** – Stable-ID edits, rollback, revisioned change sets, and pointer-free snapshots
+- **Media integrity and recovery** – Versioned SHA-256 fingerprints, explicit resolution states, atomic save, and schema migration
 
 ### Developer Tools
 

@@ -308,6 +308,10 @@ public:
     return m_routingMatrix.get();
   }
 
+  RealtimeTelemetry* getRealtimeTelemetry() noexcept override {
+    return &m_realtimeTelemetry;
+  }
+
   /// ORP134 G1 test hook: clips whose engine-rate length exceeds this many
   /// frames stream from a page ring instead of being fully decoded to memory.
   /// Control thread only; affects sources prepared after the call.
@@ -505,6 +509,9 @@ private:
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
+
+  // Fixed-capacity audio-thread → message-thread telemetry bridge.
+  RealtimeTelemetry m_realtimeTelemetry{};
 
   // ORP134 G1: streaming-source machinery. The worker thread is created
   // lazily when the first streaming source is prepared (short-clip-only hosts

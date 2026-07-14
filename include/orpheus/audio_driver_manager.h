@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstdint>
 #include <functional>
@@ -39,8 +40,8 @@ struct AudioDeviceInfo {
 ///
 /// Platform Support:
 /// - macOS: CoreAudio device enumeration
-/// - Windows: WASAPI/ASIO device enumeration (stub in Phase 1)
-/// - Linux: ALSA device enumeration (stub in Phase 1)
+/// - Windows: WASAPI shared-mode device enumeration and playback
+/// - Linux: no released device backend; dummy/offline only
 /// - All platforms: Dummy driver (for testing)
 class IAudioDriverManager {
 public:
@@ -128,6 +129,6 @@ public:
 /// that enumerates and manages audio devices on the current platform.
 ///
 /// @return Unique pointer to driver manager instance
-std::unique_ptr<IAudioDriverManager> createAudioDriverManager();
+ORPHEUS_API std::unique_ptr<IAudioDriverManager> createAudioDriverManager();
 
 } // namespace orpheus

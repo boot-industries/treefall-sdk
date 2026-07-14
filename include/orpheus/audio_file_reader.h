@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstdint>
 #include <memory>
@@ -151,6 +152,6 @@ public:
 /// Uses libsndfile for decoding (supports WAV, AIFF, FLAC).
 ///
 /// @return Unique pointer to audio file reader
-std::unique_ptr<IAudioFileReader> createAudioFileReader();
+ORPHEUS_API std::unique_ptr<IAudioFileReader> createAudioFileReader();
 
 } // namespace orpheus

@@ -151,6 +151,6 @@ public:
 ///     // Render waveform in UI
 /// }
 /// @endcode
-std::unique_ptr<IAudioFileReaderExtended> createAudioFileReaderExtended();
+ORPHEUS_API std::unique_ptr<IAudioFileReaderExtended> createAudioFileReaderExtended();
 
 } // namespace orpheus

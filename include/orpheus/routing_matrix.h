@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/export.h>
 #include <orpheus/time_domain.h>
 
 #include <cstdint>
@@ -484,6 +485,6 @@ public:
 
 /// Create routing matrix instance
 /// @return Unique pointer to routing matrix
-std::unique_ptr<IRoutingMatrix> createRoutingMatrix();
+ORPHEUS_API std::unique_ptr<IRoutingMatrix> createRoutingMatrix();
 
 } // namespace orpheus

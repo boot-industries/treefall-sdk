@@ -129,6 +129,11 @@ if(Python3_Interpreter_FOUND)
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/version_contract.py
       --check)
+
+  add_test(NAME shmui_juce_manifest
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/shmui_juce_manifest.py
+      --check)
 endif()
 
 # Session tests (including Scene Manager)

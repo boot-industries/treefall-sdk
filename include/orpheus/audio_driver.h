@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,7 @@ struct AudioDriverConfig {
   uint32_t sample_rate = 48000; ///< Sample rate in Hz
   uint16_t buffer_size = 512;   ///< Buffer size in frames
   uint16_t num_inputs = 2;      ///< Number of input channels
+  std::string device_id;        ///< Stable backend device ID (empty = default)
   uint16_t num_outputs = 2;     ///< Number of output channels
   std::string device_name;      ///< Device name (empty = default device)
 };
@@ -141,12 +143,17 @@ public:
 
 /// Factory function for dummy audio driver (for testing)
 /// @return New dummy audio driver instance
-std::unique_ptr<IAudioDriver> createDummyAudioDriver();
+ORPHEUS_API std::unique_ptr<IAudioDriver> createDummyAudioDriver();
 
 /// Factory function for CoreAudio driver (macOS only)
 /// @return New CoreAudio driver instance
 #ifdef __APPLE__
-std::unique_ptr<IAudioDriver> createCoreAudioDriver();
+ORPHEUS_API std::unique_ptr<IAudioDriver> createCoreAudioDriver();
+#endif
+
+#ifdef _WIN32
+/// Factory function for shared-mode WASAPI driver.
+ORPHEUS_API std::unique_ptr<IAudioDriver> createWASAPIAudioDriver();
 #endif
 
 } // namespace orpheus

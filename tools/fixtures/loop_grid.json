@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "name": "Loop Grid",
   "tempo_bpm": 128,
   "start_beats": 0,

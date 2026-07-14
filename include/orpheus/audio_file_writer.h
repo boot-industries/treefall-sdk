@@ -3,6 +3,7 @@
 
 #include <orpheus/audio_file_reader.h> // AudioFileFormat, AudioFileMetadata
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstdint>
 #include <memory>
@@ -90,6 +91,6 @@ public:
 ///
 /// Uses libsndfile for encoding (WAV/AIFF/FLAC). Returns nullptr when the
 /// SDK was built without libsndfile — callers must check.
-std::unique_ptr<IAudioFileWriter> createAudioFileWriter();
+ORPHEUS_API std::unique_ptr<IAudioFileWriter> createAudioFileWriter();
 
 } // namespace orpheus

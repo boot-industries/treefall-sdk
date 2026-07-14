@@ -9,7 +9,7 @@
 #include <memory>
 #include <thread>
 
-#include "../../src/core/session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 using namespace orpheus;
 
