@@ -146,6 +146,9 @@ public:
   /// Called when a buffer underrun occurs (audio dropout)
   /// @param position Position where underrun occurred
   virtual void onBufferUnderrun(TransportPosition position) = 0;
+
+  /// Called when the fixed global active-voice pool refuses a start.
+  virtual void onActiveClipLimitReached(ClipHandle /*handle*/, TransportPosition /*position*/) {}
 };
 
 /// Transport controller interface for sample-accurate clip playback

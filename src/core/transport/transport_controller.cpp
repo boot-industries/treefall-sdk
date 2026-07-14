@@ -1120,7 +1120,11 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   }
 
   if (m_activeClipCount >= MAX_ACTIVE_CLIPS) {
-    // TODO: Report error (too many active clips globally)
+    TransportEvent event{};
+    event.type = TransportEventType::ActiveClipLimitReached;
+    event.handle = handle;
+    event.position = getCurrentPosition();
+    postTransportEvent(event);
     return;
   }
 
@@ -1419,6 +1423,9 @@ void TransportController::processCallbacks() {
         break;
       case TransportEventType::BufferUnderrun:
         m_callback->onBufferUnderrun(event.position);
+        break;
+      case TransportEventType::ActiveClipLimitReached:
+        m_callback->onActiveClipLimitReached(event.handle, event.position);
         break;
       }
     }

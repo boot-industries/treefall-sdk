@@ -198,7 +198,8 @@ enum class TransportEventType : uint8_t {
   ClipLooped,
   ClipRestarted,
   ClipSeeked,
-  BufferUnderrun
+  BufferUnderrun,
+  ActiveClipLimitReached
 };
 
 /// ORP133 G1: Trivially-copyable event payload for the audio→UI SPSC ring.
