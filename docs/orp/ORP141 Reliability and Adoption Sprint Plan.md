@@ -3,7 +3,7 @@
 # ORP141 — Reliability and Adoption Sprint Plan
 
 **Document type:** Product and engineering sprint plan  
-**Status:** In progress — R0/R1/R2/R4 complete; R3 external CI/hardware evidence pending; R5 entry criteria not yet met
+**Status:** Implemented on `main` — R0/R1/R2/R4 complete; R3 evidence and gated R5 work explicitly deferred
 **Scope:** Orpheus SDK core, packages, release artifacts, and SDK-owned conformance fixtures only. No child-app source changes, submodule-pin updates, application CI work, or UI feature work are deliverables of this plan.
 **Related:** [[ORP136 TODO and Incomplete-Feature Triage]] · [[ORP137 Hardening Program Completion and Downstream Follow-ups]] · [[ORP135 LATER Sprint - Platform Leadership Bets]] · [[ORP142 Downstream Consumer Adoption Notes]] · FreqFinder [[FRQ033 Orpheus SDK Release Package Refresh for Analysis Facade]] · FourTrack [[FTR027 SDK Note - Real-Time Sample-Accurate Event Primitive]] · [[FTR028 SDK Note - Routing Matrix Block-Size Ceiling]]
 
@@ -11,7 +11,7 @@
 
 ## Implementation checkpoint — 2026-07-14
 
-- Active branch/PR: `feat/orp141-reliability-adoption` / GitHub PR #206.
+- Merged to `main` via GitHub PR #206 as `f5d703cd`.
 - R0 release truth is complete: CMake-sourced version metadata, installed-target
   manifest, clean-prefix fixtures, package/ABI CI, support matrix, and release
   checksum/SBOM/provenance generation.
