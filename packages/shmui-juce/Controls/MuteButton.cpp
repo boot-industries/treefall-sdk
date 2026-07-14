@@ -11,6 +11,8 @@
 
 #include "MuteButton.h"
 
+#include "../Utils/DesignTokens.h"
+
 namespace shmui {
 
 //==============================================================================
@@ -75,13 +77,13 @@ IconType MuteButton::getCurrentIcon() const {
 juce::Colour MuteButton::getActiveColor() const {
   switch (m_type) {
   case Type::Mute:
-    return juce::Colour(0xFFEF4444); // Red for mute
+    return tokens::lab::danger(); // --lab-danger
 
   case Type::Solo:
-    return juce::Colour(0xFFF59E0B); // Amber for solo
+    return tokens::lab::warning(); // --lab-warning
 
   case Type::Bypass:
-    return juce::Colour(0xFF6B7280); // Gray for bypass
+    return tokens::lab::muted(); // --lab-muted
 
   default:
     return juce::Colours::white;

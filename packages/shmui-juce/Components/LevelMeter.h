@@ -67,8 +67,8 @@ struct LevelMeterStyle {
   juce::Colour meterColorHigh = tokens::meter::red();
   juce::Colour peakHoldColor = juce::Colours::white;
   juce::Colour clipColor = tokens::meter::red();
-  juce::Colour textColor = juce::Colour(0x80FFFFFF);
-  juce::Colour tickColor = juce::Colour(0x40FFFFFF);
+  juce::Colour textColor = tokens::lab::text().withAlpha(0.5f);
+  juce::Colour tickColor = tokens::lab::text().withAlpha(0.25f);
 
   // Thresholds (in dB)
   float yellowThreshold = -12.0f; // Start yellow here

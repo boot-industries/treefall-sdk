@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 #include <functional>
 
@@ -95,10 +96,10 @@ public:
   /** Style configuration for the controls. */
   struct Style {
     juce::Colour backgroundColor{0x00000000};
-    juce::Colour buttonColor{0xff3b82f6};      // Primary blue
-    juce::Colour buttonHoverColor{0xff2563eb}; // Darker blue
-    juce::Colour textColor{0xffa1a1aa};        // Muted foreground
-    juce::Colour iconColor{0xffffffff};        // White icons
+    juce::Colour buttonColor = tokens::lab::tone(); // accent (--lab-tone)
+    juce::Colour buttonHoverColor = tokens::lab::tone().darker(0.15f);
+    juce::Colour textColor = tokens::lab::muted(); // muted fg
+    juce::Colour iconColor = tokens::lab::text();  // fg icons
     float buttonSize{40.0f};
     float fontSize{14.0f};
     float cornerRadius{8.0f};
