@@ -10,19 +10,18 @@
 #include <vector>
 
 #include "orpheus/export.h"
+#include "orpheus/identity.h"
+#include "orpheus/time_domain.h"
 
 namespace orpheus::core {
 
 class Clip {
 public:
-  ORPHEUS_API Clip(std::string name, double start_beats, double length_beats,
-                   std::uint32_t scene_index = 0u);
   ORPHEUS_API ~Clip();
 
-  ORPHEUS_API void set_start(double start_beats);
-  ORPHEUS_API void set_length(double length_beats);
-  ORPHEUS_API void set_scene_index(std::uint32_t scene_index);
-
+  [[nodiscard]] ClipId id() const {
+    return id_;
+  }
   [[nodiscard]] double start() const {
     return start_beats_;
   }
@@ -37,15 +36,24 @@ public:
   }
 
 private:
+  Clip(ClipId id, std::string name, double start_beats, double length_beats,
+       std::uint32_t scene_index);
+  void set_start(double start_beats);
+  void set_length(double length_beats);
+  void set_scene_index(std::uint32_t scene_index);
+
+  ClipId id_{};
   std::string name_;
   double start_beats_;
   double length_beats_;
   std::uint32_t scene_index_;
+
+  friend class Track;
+  friend class SessionGraph;
 };
 
 class Track {
 public:
-  ORPHEUS_API explicit Track(std::string name);
   ORPHEUS_API ~Track();
 
   Track(const Track&) = delete;
@@ -56,11 +64,9 @@ public:
   [[nodiscard]] const std::string& name() const {
     return name_;
   }
-
-  [[nodiscard]] ORPHEUS_API Clip* add_clip(std::string name, double start_beats,
-                                           double length_beats, std::uint32_t scene_index = 0u);
-  [[nodiscard]] ORPHEUS_API bool remove_clip(const Clip* clip);
-  [[nodiscard]] ORPHEUS_API Clip* find_clip(const Clip* clip);
+  [[nodiscard]] TrackId id() const {
+    return id_;
+  }
 
   [[nodiscard]] const std::vector<std::unique_ptr<Clip>>& clips() const {
     return clips_;
@@ -74,11 +80,16 @@ public:
     return clips_.end();
   }
 
-  ORPHEUS_API void sort_clips();
-
 private:
+  Track(TrackId id, std::string name);
+  [[nodiscard]] Clip* add_clip(ClipId id, std::string name, double start_beats, double length_beats,
+                               std::uint32_t scene_index);
+  [[nodiscard]] bool remove_clip(const Clip* clip);
+  [[nodiscard]] Clip* find_clip(const Clip* clip);
+  void sort_clips();
   void validate_clip_layout() const;
 
+  TrackId id_{};
   std::string name_;
   std::vector<std::unique_ptr<Clip>> clips_;
 
@@ -156,10 +167,100 @@ struct ORPHEUS_API CommittedClip {
   double arranged_start_beats{0.0};
   double arranged_length_beats{0.0};
 };
+enum class SessionChangeFlags : std::uint32_t {
+  None = 0u,
+  Metadata = 1u << 0u,
+  Structure = 1u << 1u,
+  Timing = 1u << 2u,
+  ClipAssignments = 1u << 3u,
+  RenderSettings = 1u << 4u,
+};
+
+[[nodiscard]] constexpr SessionChangeFlags operator|(SessionChangeFlags lhs,
+                                                     SessionChangeFlags rhs) {
+  return static_cast<SessionChangeFlags>(static_cast<std::uint32_t>(lhs) |
+                                         static_cast<std::uint32_t>(rhs));
+}
+
+constexpr SessionChangeFlags& operator|=(SessionChangeFlags& lhs, SessionChangeFlags rhs) {
+  lhs = lhs | rhs;
+  return lhs;
+}
+
+[[nodiscard]] constexpr bool has_change(SessionChangeFlags value, SessionChangeFlags flag) {
+  return (static_cast<std::uint32_t>(value) & static_cast<std::uint32_t>(flag)) != 0u;
+}
+
+struct SessionGraphChangeSet {
+  std::uint64_t base_revision{0u};
+  std::uint64_t revision{0u};
+  SessionChangeFlags changes{SessionChangeFlags::None};
+
+  [[nodiscard]] bool empty() const {
+    return changes == SessionChangeFlags::None;
+  }
+};
+
+struct SessionClipSnapshot {
+  ClipId id{};
+  TrackId track_id{};
+  std::string name;
+  TimeRange range{};
+  std::uint32_t scene_index{0u};
+};
+
+struct SessionTrackSnapshot {
+  TrackId id{};
+  std::string name;
+  std::vector<SessionClipSnapshot> clips;
+};
+
+/// Pointer-free state for persistence, undo/redo, and cross-thread handoff.
+///
+/// Time values are canonical sample-domain values at render_sample_rate_hz.
+/// Runtime transport, scene-trigger, marker, and playlist state are deliberately
+/// excluded from the transactional edit domain.
+struct SessionGraphSnapshot {
+  static constexpr std::uint32_t kSchemaVersion = 1u;
+
+  std::uint32_t schema_version{kSchemaVersion};
+  SessionId session_id{};
+  std::uint64_t revision{0u};
+  std::string name;
+  double tempo_bpm{120.0};
+  std::uint32_t render_sample_rate_hz{48000u};
+  std::uint16_t render_bit_depth_bits{24u};
+  bool render_dither_enabled{true};
+  TimeRange session_range{};
+  std::vector<SessionTrackSnapshot> tracks;
+  std::vector<ClipId> clip_assignments;
+};
 
 class SessionGraph {
 public:
+  class Transaction {
+  public:
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+    ORPHEUS_API Transaction(Transaction&& other) noexcept;
+    ORPHEUS_API Transaction& operator=(Transaction&& other) noexcept;
+    ORPHEUS_API ~Transaction();
+
+    [[nodiscard]] ORPHEUS_API SessionGraphChangeSet commit();
+    ORPHEUS_API void rollback() noexcept;
+
+  private:
+    friend class SessionGraph;
+    Transaction(SessionGraph& graph, SessionGraphSnapshot before);
+
+    SessionGraph* graph_{nullptr};
+    SessionGraphSnapshot before_{};
+    SessionGraphChangeSet before_change_{};
+    std::uint64_t base_revision_{0u};
+  };
+
   ORPHEUS_API SessionGraph();
+  ORPHEUS_API explicit SessionGraph(SessionId session_id);
   ORPHEUS_API ~SessionGraph();
 
   SessionGraph(const SessionGraph&) = delete;
@@ -171,6 +272,28 @@ public:
   [[nodiscard]] const std::string& name() const {
     return name_;
   }
+
+  [[nodiscard]] SessionId id() const {
+    return session_id_;
+  }
+  [[nodiscard]] std::uint64_t revision() const {
+    return revision_;
+  }
+  [[nodiscard]] const SessionGraphChangeSet& last_change() const {
+    return last_change_;
+  }
+
+  [[nodiscard]] ORPHEUS_API Transaction begin_transaction();
+  [[nodiscard]] ORPHEUS_API SessionGraphSnapshot snapshot() const;
+  ORPHEUS_API void restore(const SessionGraphSnapshot& snapshot);
+
+  [[nodiscard]] ORPHEUS_API TrackId create_track(std::string name);
+  [[nodiscard]] ORPHEUS_API bool remove_track(TrackId track_id);
+  [[nodiscard]] ORPHEUS_API ClipId create_clip(TrackId track_id, std::string name, TimeRange range,
+                                               std::uint32_t scene_index = 0u);
+  [[nodiscard]] ORPHEUS_API bool remove_clip(ClipId clip_id);
+  ORPHEUS_API void set_clip_range(ClipId clip_id, TimeRange range);
+  ORPHEUS_API void set_clip_scene(ClipId clip_id, std::uint32_t scene_index);
 
   [[nodiscard]] ORPHEUS_API Track* add_track(std::string name);
   [[nodiscard]] ORPHEUS_API bool remove_track(const Track* track);
@@ -231,6 +354,8 @@ public:
   }
 
   ORPHEUS_API void set_clip_assignments(std::vector<std::uint64_t> assignments);
+  [[nodiscard]] ORPHEUS_API std::vector<ClipId> clip_assignment_ids() const;
+  ORPHEUS_API void set_clip_assignment_ids(std::vector<ClipId> assignments);
 
   [[nodiscard]] const std::vector<std::unique_ptr<Track>>& tracks() const {
     return tracks_;
@@ -274,6 +399,10 @@ private:
   Track* find_track(const Track* track);
   Track* find_clip_track(const Clip* clip);
   Clip* find_clip(const Clip* clip);
+  Track* find_track(TrackId track_id);
+  Clip* find_clip(ClipId clip_id);
+  void record_change(SessionChangeFlags changes);
+  void restore_unchecked(const SessionGraphSnapshot& snapshot);
   void mark_clip_grid_dirty() {
     clip_grid_dirty_ = true;
   }
@@ -296,6 +425,13 @@ private:
     std::size_t timeline_index{0};
   };
 
+  SessionId session_id_{SessionId::fromRaw(1u)};
+  IdAllocator<TrackId> track_ids_{};
+  IdAllocator<ClipId> clip_ids_{};
+  std::uint64_t revision_{0u};
+  SessionGraphChangeSet last_change_{};
+  SessionChangeFlags pending_changes_{SessionChangeFlags::None};
+  bool transaction_active_{false};
   double tempo_bpm_{120.0};
   double transport_position_beats_{0.0};
   bool transport_is_playing_{false};

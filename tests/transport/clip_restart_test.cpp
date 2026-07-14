@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include "../../src/core/session/session_graph.h"
 #include <gtest/gtest.h>
+#include <orpheus/session_graph.h>
 
 #include "../../src/core/transport/transport_controller.h"
 #include <filesystem>

@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cmath>
 
-#include "session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 namespace orpheus {
 

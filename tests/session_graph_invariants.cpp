@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <gtest/gtest.h>
 
@@ -98,6 +98,93 @@ TEST(SessionGraphInvariants, RejectsOverlappingClips) {
 
   EXPECT_THROW(session.set_clip_length(*second, 10.0), std::invalid_argument);
   EXPECT_DOUBLE_EQ(second->length(), 4.0);
+}
+
+TEST(SessionGraphTransactions, CoalescesStableIdEditsIntoOneRevision) {
+  SessionGraph session;
+  const std::uint64_t base_revision = session.revision();
+
+  auto transaction = session.begin_transaction();
+  const TrackId track_id = session.create_track("Music");
+  const TimeRange range = TimeRange::fromStartLength(TimePoint::fromSamples(48000), 96000);
+  const ClipId clip_id = session.create_clip(track_id, "Intro", range, 3u);
+  session.set_name("Edited");
+  session.set_clip_assignment_ids({clip_id});
+  const SessionGraphChangeSet change = transaction.commit();
+
+  EXPECT_EQ(change.base_revision, base_revision);
+  EXPECT_EQ(change.revision, base_revision + 1u);
+  EXPECT_EQ(session.revision(), change.revision);
+  EXPECT_TRUE(has_change(change.changes, SessionChangeFlags::Metadata));
+  EXPECT_TRUE(has_change(change.changes, SessionChangeFlags::Structure));
+  EXPECT_TRUE(has_change(change.changes, SessionChangeFlags::ClipAssignments));
+
+  const SessionGraphSnapshot snapshot = session.snapshot();
+  ASSERT_EQ(snapshot.tracks.size(), 1u);
+  ASSERT_EQ(snapshot.tracks[0].clips.size(), 1u);
+  EXPECT_EQ(snapshot.tracks[0].id, track_id);
+  EXPECT_EQ(snapshot.tracks[0].clips[0].id, clip_id);
+  EXPECT_EQ(snapshot.tracks[0].clips[0].track_id, track_id);
+  EXPECT_EQ(snapshot.tracks[0].clips[0].range, range);
+  EXPECT_EQ(snapshot.clip_assignments, (std::vector<ClipId>{clip_id}));
+}
+
+TEST(SessionGraphTransactions, DestructionRollsBackStateAndIdWatermarks) {
+  SessionGraph session;
+  const TrackId first_id = session.create_track("Existing");
+  const std::uint64_t base_revision = session.revision();
+  TrackId rolled_back_id;
+
+  {
+    auto transaction = session.begin_transaction();
+    rolled_back_id = session.create_track("Temporary");
+    session.set_name("Temporary name");
+  }
+
+  EXPECT_EQ(session.revision(), base_revision);
+  EXPECT_EQ(session.name(), "Session");
+  ASSERT_EQ(session.tracks().size(), 1u);
+  EXPECT_EQ(session.tracks()[0]->id(), first_id);
+  EXPECT_EQ(session.create_track("Replacement"), rolled_back_id);
+}
+
+TEST(SessionGraphTransactions, RestoreProvidesUndoRedoWithoutReusingOldRevision) {
+  SessionGraph session;
+  const TrackId track_id = session.create_track("Track");
+  const ClipId clip_id = session.create_clip(
+      track_id, "Clip", TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000));
+  const SessionGraphSnapshot before = session.snapshot();
+
+  {
+    auto transaction = session.begin_transaction();
+    session.set_name("After");
+    session.set_clip_range(clip_id,
+                           TimeRange::fromStartLength(TimePoint::fromSamples(96000), 24000));
+    static_cast<void>(transaction.commit());
+  }
+  const SessionGraphSnapshot after = session.snapshot();
+  const std::uint64_t edited_revision = session.revision();
+
+  session.restore(before);
+  EXPECT_EQ(session.revision(), edited_revision + 1u);
+  EXPECT_EQ(session.name(), "Session");
+  ASSERT_EQ(session.snapshot().tracks[0].clips.size(), 1u);
+  EXPECT_EQ(session.snapshot().tracks[0].clips[0].id, clip_id);
+  EXPECT_EQ(session.snapshot().tracks[0].clips[0].range,
+            TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000));
+
+  session.restore(after);
+  EXPECT_EQ(session.revision(), edited_revision + 2u);
+  EXPECT_EQ(session.name(), "After");
+  EXPECT_EQ(session.snapshot().tracks[0].clips[0].range,
+            TimeRange::fromStartLength(TimePoint::fromSamples(96000), 24000));
+}
+
+TEST(SessionGraphTransactions, RejectsNestedTransactions) {
+  SessionGraph session;
+  auto transaction = session.begin_transaction();
+  EXPECT_THROW(static_cast<void>(session.begin_transaction()), std::logic_error);
+  transaction.rollback();
 }
 
 } // namespace orpheus::core::tests
