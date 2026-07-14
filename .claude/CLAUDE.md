@@ -31,12 +31,15 @@
   - The live transport telemetry integration test passed.
   - `realtime_static_audit` and `cmake_find_package` passed.
   - Full configured suite passed: 143/143.
-- R3 remains truthfully open: hosted Windows CI has not supplied package/ABI
-  proof, and no self-hosted WASAPI real-device artifact exists. Do not promote
-  the Windows support tier without those observed records.
-- R5 remains gated on its stated two-independent-consumer evidence and shipped/
-  soaked R1–R4 entry criteria. Do not infer evidence or start the voice utility
-  until the gate is met.
+- R3 remains truthfully open: latest-commit Windows CI run `29316779217` is
+  queued without job records, so hosted package/ABI proof is unavailable; no
+  self-hosted WASAPI real-device artifact exists. Do not promote the Windows
+  support tier without those observed records.
+- R5 gate review found only FourTrack's conditional interest, not two
+  independent requirements, and R1–R4 have not shipped/soaked together. The
+  voice implementation, policy, realtime tests, and migration guidance jobs
+  are explicitly dropped for this checkpoint rather than implemented without
+  the required evidence.
 - The entire Release Operating Model is deferred at the user's direction. Its
   recorded, incomplete jobs for a later session are:
   - enforce CMake single-source versioning;
