@@ -40,8 +40,8 @@ struct AudioDeviceInfo {
 ///
 /// Platform Support:
 /// - macOS: CoreAudio device enumeration
-/// - Windows: WASAPI/ASIO device enumeration (stub in Phase 1)
-/// - Linux: ALSA device enumeration (stub in Phase 1)
+/// - Windows: WASAPI shared-mode device enumeration and playback
+/// - Linux: no released device backend; dummy/offline only
 /// - All platforms: Dummy driver (for testing)
 class IAudioDriverManager {
 public:
