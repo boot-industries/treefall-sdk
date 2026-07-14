@@ -85,8 +85,16 @@ foreach(target ${ORPHEUS_CORE_TARGETS})
   set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
+# performance_monitor.cpp (in orpheus_diagnostics_objects) includes
+# session/session_graph.h and holds a core::SessionGraph*, so it emits references
+# to SessionGraph's member destructors (Clip/Track/MarkerSet/PlaylistLane). Bundle
+# orpheus_core_runtime's objects so orpheus_diagnostics is genuinely self-contained
+# — the standalone link check (verify_diagnostics_standalone) requires it, and
+# MSVC's strict archive resolution fails to link without it (LNK2019).
 add_library(orpheus_diagnostics STATIC
   $<TARGET_OBJECTS:orpheus_diagnostics_objects>
+  $<TARGET_OBJECTS:orpheus_core_runtime>
+  $<TARGET_OBJECTS:orpheus_channel_format_objects>
 )
 target_compile_features(orpheus_diagnostics PUBLIC cxx_std_20)
 target_include_directories(orpheus_diagnostics
