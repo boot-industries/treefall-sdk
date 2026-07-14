@@ -64,6 +64,21 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
   return path.string();
 }
 
+class CapacityCallback final : public ITransportCallback {
+public:
+  void onClipStarted(ClipHandle, TransportPosition) override {}
+  void onClipStopped(ClipHandle, TransportPosition) override {}
+  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onBufferUnderrun(TransportPosition) override {}
+  void onActiveClipLimitReached(ClipHandle handle, TransportPosition) override {
+    refusedHandle = handle;
+    ++refusalCount;
+  }
+
+  ClipHandle refusedHandle{0};
+  int refusalCount{0};
+};
+
 } // namespace
 
 class ChokeAndVoiceCapTest : public ::testing::Test {
@@ -191,4 +206,20 @@ TEST_F(ChokeAndVoiceCapTest, VoiceCapOfTwoAllowsOneOverlapPair) {
   }
   EXPECT_LE(m_transport->getActiveVoiceCount(h), 2u)
       << "A cap of 2 must never exceed two coexisting voices";
+}
+
+TEST_F(ChokeAndVoiceCapTest, GlobalVoiceCapPublishesRefusalEvent) {
+  const std::string path = writeSineWav(m_dir / "global-cap.wav", 440.0f, 0.1f);
+  CapacityCallback callback;
+  m_transport->setCallback(&callback);
+
+  for (ClipHandle handle = 1; handle <= 33; ++handle) {
+    ASSERT_EQ(m_transport->registerClipAudio(handle, path), SessionGraphError::OK);
+    ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  }
+
+  pump();
+  m_transport->processCallbacks();
+  EXPECT_EQ(callback.refusalCount, 1);
+  EXPECT_EQ(callback.refusedHandle, 33u);
 }
