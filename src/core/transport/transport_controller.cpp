@@ -308,8 +308,18 @@ void TransportController::setCallback(ITransportCallback* callback) {
   m_callback = callback;
 }
 
+TransportRenderConfig TransportController::getRenderConfig() const noexcept {
+  TransportRenderConfig config;
+  config.sampleRate = m_sampleRate;
+  config.maxBlockFrames = static_cast<uint32_t>(MAX_BUFFER_FRAMES);
+  if (m_routingMatrix) {
+    config.outputChannels = m_routingMatrix->getConfig().num_outputs;
+  }
+  return config;
+}
+
 void TransportController::processAudio(float** outputBuffers, size_t numChannels,
-                                       size_t numFrames) {
+                                       size_t numFrames) noexcept {
   // Process pending commands from UI thread
   processCommands();
 

@@ -3,6 +3,7 @@
 
 #include <orpheus/errors.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -66,6 +67,18 @@ struct TransportPosition {
   int64_t samples; ///< Absolute position in samples (authoritative)
   double seconds;  ///< Derived: samples / sample_rate
   double beats;    ///< Derived: seconds * session tempo (SessionGraph::tempo) / 60.0
+};
+
+/// Immutable capacities and current output shape for the transport renderer.
+///
+/// Hosts query this on the control thread before attaching an audio driver.
+/// sampleRate and maxBlockFrames are fixed for the controller lifetime.
+/// outputChannels is the controller's configured output count and must match the
+/// number of writable output buffers supplied to processAudio().
+struct TransportRenderConfig {
+  uint32_t sampleRate = 0;
+  uint32_t outputChannels = 0;
+  uint32_t maxBlockFrames = 0;
 };
 
 /// Clip metadata for batch updates
@@ -186,6 +199,35 @@ public:
 class ITransportController {
 public:
   virtual ~ITransportController() = default;
+
+  /// Query the public audio-render contract.
+  ///
+  /// Control-thread query. The returned value is a copy; no SDK-owned storage
+  /// escapes. In v0.4.0 the transport's routing topology is fixed after
+  /// construction: hosts must not reinitialize the matrix returned by
+  /// getRoutingMatrix() while this controller is in use.
+  virtual TransportRenderConfig getRenderConfig() const noexcept = 0;
+
+  /// Render one transport block into planar output buffers.
+  ///
+  /// This is the audio-thread entry point and the sole consumer of the
+  /// control-to-audio SPSC command ring. It is non-reentrant and must be called
+  /// by exactly one audio thread. The host must supply exactly
+  /// getRenderConfig().outputChannels writable buffers and no more than
+  /// getRenderConfig().maxBlockFrames frames per call.
+  ///
+  /// Real-time contract: no allocation, locks, blocking, I/O, or host callbacks.
+  virtual void processAudio(float** outputBuffers, size_t numChannels,
+                            size_t numFrames) noexcept = 0;
+
+  /// Drain pending transport events on the control/message thread.
+  ///
+  /// This is the sole consumer of the audio-to-control SPSC event ring. Call
+  /// from exactly one control thread, never concurrently with setCallback().
+  /// The pump also republishes SessionGraph tempo changes for lock-free
+  /// TransportPosition::beats queries, so hosts must call it even when no
+  /// callback object is installed.
+  virtual void processCallbacks() = 0;
 
   /// Start playback of a specific clip
   ///

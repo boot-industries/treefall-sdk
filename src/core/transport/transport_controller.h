@@ -234,6 +234,11 @@ public:
   TransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate);
   ~TransportController() override;
 
+  TransportRenderConfig getRenderConfig() const noexcept override;
+  void processAudio(float** outputBuffers, size_t numChannels,
+                    size_t numFrames) noexcept override;
+  void processCallbacks() override;
+
   // ITransportController interface
   SessionGraphError startClip(ClipHandle handle) override;
   SessionGraphError stopClip(ClipHandle handle) override;
@@ -279,15 +284,6 @@ public:
   SessionGraphError seekToCuePoint(ClipHandle handle, uint32_t cueIndex) override;
   SessionGraphError removeCuePoint(ClipHandle handle, uint32_t cueIndex) override;
 
-  /// Process audio (called from audio thread)
-  /// @param outputBuffers Output buffers (one per channel)
-  /// @param numChannels Number of output channels
-  /// @param numFrames Number of frames to process
-  void processAudio(float** outputBuffers, size_t numChannels, size_t numFrames);
-
-  /// Process callbacks on UI thread
-  /// Must be called periodically from UI thread to dispatch transport events
-  void processCallbacks();
 
   /// Register audio file for a clip (UI thread)
   /// @param handle Clip handle

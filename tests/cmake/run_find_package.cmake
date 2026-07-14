@@ -42,6 +42,14 @@ endif()
 execute_process(
   COMMAND "${CMAKE_COMMAND}" ${configure_args}
   RESULT_VARIABLE configure_result)
+if(DEFINED expect_configure_failure AND expect_configure_failure)
+  if(NOT configure_result)
+    message(FATAL_ERROR
+      "Configure unexpectedly accepted incompatible SDK version ${required_version}")
+  endif()
+  message(STATUS "Configure correctly rejected incompatible SDK version ${required_version}")
+  return()
+endif()
 if(configure_result)
   message(FATAL_ERROR "Configure failed with code ${configure_result}")
 endif()

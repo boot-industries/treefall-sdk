@@ -148,6 +148,41 @@ add_test(NAME cmake_find_package
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 
+set(PACKAGE_RUNTIME_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/package_runtime_consumer)
+set(PACKAGE_RUNTIME_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/package_runtime_consumer_build)
+set(PACKAGE_RUNTIME_INSTALL_DIR ${CMAKE_BINARY_DIR}/tests/package_runtime_consumer_prefix)
+
+add_test(NAME cmake_package_runtime_consumer
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${PACKAGE_RUNTIME_INSTALL_DIR}
+    -Drequired_version=${PROJECT_VERSION}
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${PACKAGE_RUNTIME_SOURCE_DIR}
+    -Dbinary_dir=${PACKAGE_RUNTIME_BINARY_DIR}
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
+
+if(PROJECT_VERSION_MAJOR EQUAL 0 AND PROJECT_VERSION_MINOR GREATER 0)
+  math(EXPR PREVIOUS_MINOR "${PROJECT_VERSION_MINOR} - 1")
+  set(PREVIOUS_MINOR_VERSION
+    "${PROJECT_VERSION_MAJOR}.${PREVIOUS_MINOR}.${PROJECT_VERSION_PATCH}")
+  set(PACKAGE_REJECTION_BINARY_DIR
+    ${CMAKE_BINARY_DIR}/tests/package_runtime_consumer_rejection_build)
+  set(PACKAGE_REJECTION_INSTALL_DIR
+    ${CMAKE_BINARY_DIR}/tests/package_runtime_consumer_rejection_prefix)
+
+  add_test(NAME cmake_package_rejects_previous_minor
+    COMMAND ${CMAKE_COMMAND}
+      -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+      -Dinstall_prefix=${PACKAGE_REJECTION_INSTALL_DIR}
+      -Drequired_version=${PREVIOUS_MINOR_VERSION}
+      -Dbuild_type=$<CONFIG>
+      -Dsource_dir=${PACKAGE_RUNTIME_SOURCE_DIR}
+      -Dbinary_dir=${PACKAGE_REJECTION_BINARY_DIR}
+      -Dexpect_configure_failure=ON
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
+endif()
+
 # ORP127 T10: submodule (add_subdirectory) external-consumer smoke test. Covers
 # the co-development consumption path (FourTrack's choice) whose failure mode
 # differs from find_package — missing add_subdirectory target/alias visibility
