@@ -140,6 +140,21 @@ jobs:
         shell: bash
         timeout-minutes: 10
 
+      - name: Build ShmUI-JUCE consumer without OpenGL
+        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Release'
+        run: |
+          sudo apt-get install -y \
+            libfontconfig1-dev libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
+          cmake \
+            -Dsource_dir=tests/cmake/shmui_no_opengl \
+            -Dbinary_dir="${RUNNER_TEMP}/shmui-no-opengl" \
+            -Dshmui_source_dir=packages/shmui-juce \
+            -Dbuild_type=Release \
+            -P tests/cmake/run_shmui_no_opengl.cmake
+        shell: bash
+        timeout-minutes: 10
+
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

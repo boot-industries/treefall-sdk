@@ -5,9 +5,9 @@
 # Shmui Audio Visualization & UI Components (v2.1)
 # Icons, Buttons, Visualizers, and Controls for Orpheus SDK audio applications.
 #
-# This is the SOURCE OF TRUTH for the shmui-juce build. It is synced (verbatim,
-# including this file adapted for the flattened layout) into the Orpheus SDK at
-# packages/shmui-juce/ by scripts/sync-juce.sh. Edit here, not there.
+# This is the SDK-imported package described by shmui-juce-import.json.
+# Update imported content and its manifest hash together with
+# tools/shmui_juce_manifest.py --sync.
 #
 # TARGETS
 #   orpheus_shmui_juce        core: Icons, Controls, Audio, non-GL Components.

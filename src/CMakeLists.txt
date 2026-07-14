@@ -7,6 +7,7 @@ endif()
 add_library(orpheus_diagnostics_objects OBJECT
   core/common/performance_monitor.cpp
   core/common/realtime_diagnostics.cpp
+  core/common/realtime_telemetry.cpp
 )
 
 target_compile_features(orpheus_diagnostics_objects PUBLIC cxx_std_20)
@@ -85,9 +86,9 @@ foreach(target ${ORPHEUS_CORE_TARGETS})
   set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
-# performance_monitor.cpp (in orpheus_diagnostics_objects) includes
-# session/session_graph.h and holds a core::SessionGraph*, so it emits references
-# to SessionGraph's member destructors (Clip/Track/MarkerSet/PlaylistLane). Bundle
+# performance_monitor.cpp (in orpheus_diagnostics_objects) holds a public
+# core::SessionGraph pointer, so it emits references to SessionGraph's member
+# destructors (Clip/Track/MarkerSet/PlaylistLane). Bundle
 # orpheus_core_runtime's objects so orpheus_diagnostics is genuinely self-contained
 # — the standalone link check (verify_diagnostics_standalone) requires it, and
 # MSVC's strict archive resolution fails to link without it (LNK2019).

@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "name": "Two Tracks",
   "tempo_bpm": 100,
   "start_beats": 0,

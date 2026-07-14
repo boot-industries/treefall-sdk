@@ -5,3 +5,12 @@ endif()
 
 add_subdirectory(perf)
 add_subdirectory(cli)
+
+if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
+  add_executable(orpheus_wasapi_hardware_acceptance
+    wasapi_hardware_acceptance.cpp)
+  target_compile_features(orpheus_wasapi_hardware_acceptance PRIVATE cxx_std_20)
+  target_link_libraries(orpheus_wasapi_hardware_acceptance
+    PRIVATE orpheus_audio_driver_manager)
+  orpheus_enable_warnings(orpheus_wasapi_hardware_acceptance)
+endif()

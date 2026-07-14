@@ -55,6 +55,10 @@ add_orpheus_fixture(orpheus_find_package_transport_routing transport_routing.cpp
 target_link_libraries(orpheus_find_package_transport_routing
   PRIVATE Orpheus::transport Orpheus::routing Orpheus::audio_driver_manager)
 
+add_orpheus_fixture(orpheus_find_package_workflow_contracts workflow_contracts.cpp)
+target_link_libraries(orpheus_find_package_workflow_contracts
+  PRIVATE Orpheus::transport)
+
 if(APPLE AND NOT TARGET Orpheus::audio_driver_coreaudio)
   message(FATAL_ERROR "macOS package is missing Orpheus::audio_driver_coreaudio")
 endif()

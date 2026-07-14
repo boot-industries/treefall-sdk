@@ -14,7 +14,7 @@
 
 #include "orpheus/json.hpp"
 #include "orpheus/routing_matrix.h"
-#include "session_graph.h"
+#include <orpheus/session_graph.h>
 
 namespace orpheus {
 

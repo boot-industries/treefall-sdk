@@ -14,7 +14,7 @@ repository claims.
 | Installed CMake package and documented target manifest | Supported; clean-prefix fixture | Supported; clean-prefix fixture and DLL ABI-link gate | Supported; clean-prefix fixture |
 | Dummy audio driver | Supported | Supported | Supported |
 | CoreAudio device backend | Supported on Apple platforms | Unavailable | Unavailable |
-| WASAPI device backend | Unavailable | Experimental; disabled by default and not release-supported | Unavailable |
+| WASAPI device backend | Unavailable | Release candidate: shared-mode enumeration/playback enabled by default; hardware acceptance pending | Unavailable |
 | ASIO device backend | Unavailable | Optional source integration requiring a separately supplied ASIO SDK; not release-supported | Unavailable |
 | ALSA device backend | Unavailable | Unavailable | Not implemented |
 | JACK device backend | Unavailable | Unavailable | Not implemented |
@@ -54,12 +54,33 @@ Platform and optional targets appear only when their build feature and dependenc
 are enabled. Consumers must not infer availability from the operating system; they
 must test the CMake target or query the driver capability API.
 
+## Linux backend decision
+
+ALSA, JACK, and PipeWire are distinct providers, not interchangeable labels for
+a generic Linux backend. Orpheus currently ships none of them and therefore
+claims only host-neutral core/package support on Linux. The first provider must
+land behind its own CMake target and capability identity, then pass the common
+device conformance contract: truthful enumeration, selected-device open,
+negotiated format/buffer reporting, callback lifecycle, xrun accounting, and a
+hardware-backed acceptance artifact. Until all gates pass, the dummy driver is
+the only advertised Linux audio driver.
+
+## Hardware acceptance records
+
+CoreAudio hardware acceptance is exercised on the maintained macOS workstation.
+WASAPI has no passing real-device artifact in this repository yet. The manual
+`wasapi-hardware-acceptance` workflow is the release gate; ordinary hosted
+Windows CI is compile/package conformance only and cannot promote the backend.
+
 ## Known unavailable capabilities
 
 - No Linux production device backend is shipped. ALSA, JACK, and PipeWire remain
   separate future capabilities; Orpheus does not advertise a generic Linux driver.
-- WASAPI source is experimental and disabled by default. Shared/exclusive-mode and
-  real-device acceptance remain prerequisites for release support.
+- WASAPI shared-mode enumeration, requested-format negotiation, callback
+  playback, and negotiated rate/buffer reporting are implemented and required
+  to compile in Windows CI. Promotion from release candidate to Supported is
+  blocked until the self-hosted real-device acceptance workflow publishes a
+  passing artifact.
 - ASIO requires a separately supplied vendor SDK and is not part of release
   artifacts or required CI.
 - Plugin hosting, network audio, WASM/mobile, and device-specific control drivers
