@@ -320,6 +320,10 @@ public:
   }
 
 private:
+  /// Derive seconds/beats from the sample-canonical coordinate and current
+  /// block-boundary tempo snapshot.
+  TransportPosition positionAtSamples(int64_t samples) const;
+
   /// Process pending commands from UI thread
   void processCommands();
 

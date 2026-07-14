@@ -914,6 +914,21 @@ TEST_F(RoutingMatrixTest, ProcessRoutingBoundaryBlockPassesSignal) {
   EXPECT_NEAR(outputs[1][frames - 1], expected, 0.01f);
 }
 
+TEST_F(RoutingMatrixTest, ProcessRoutingOnePastBoundaryPassesTailSample) {
+  configureSingleChannelDC(*matrix, config);
+  const uint32_t frames = kRoutingSliceFrames + 1;
+  const float amplitude = 0.5f;
+  std::vector<float> input(frames, amplitude);
+  const float* input_ptrs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(frames, -999.0f));
+  auto output_ptrs = toPointerArray(outputs);
+
+  ASSERT_EQ(matrix->processRouting(input_ptrs, output_ptrs.data(), frames), SessionGraphError::OK);
+  const float expected = amplitude * kConstantPowerCenter;
+  EXPECT_NEAR(outputs[0][2048], expected, 0.01f);
+  EXPECT_NEAR(outputs[1][2048], expected, 0.01f);
+}
+
 TEST_F(RoutingMatrixTest, ProcessRoutingLargeBlockChunksAndPassesSignal) {
   // FTR028 core: a 4096-frame block (2x the internal slice) must NOT be
   // rejected and must pass signal across the WHOLE block, including samples

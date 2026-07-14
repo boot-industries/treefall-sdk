@@ -36,6 +36,8 @@ option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
 
 # M2: Real-time infrastructure options
 option(ORPHEUS_ENABLE_REALTIME "Build real-time playback engine (M2)" ON)
+option(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING
+  "Collect bounded device-callback timing diagnostics" ON)
 
 if(DEFINED ORPHEUS_BUILD_SHARED)
   set(ORP_BUILD_SHARED_CORE ${ORPHEUS_BUILD_SHARED} CACHE BOOL "" FORCE)

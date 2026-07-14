@@ -12,6 +12,8 @@
 
 namespace orpheus {
 
+class IPerformanceMonitor;
+
 /// Audio driver configuration
 struct AudioDriverConfig {
   uint32_t sample_rate = 48000; ///< Sample rate in Hz
@@ -129,6 +131,11 @@ public:
     caps.supports_multichannel_output = getConfig().num_outputs > 2;
     caps.reports_hardware_latency = getLatencySamples() > 0;
     return caps;
+  }
+
+  /// Attach a non-owning realtime performance sink; nullptr detaches it.
+  virtual void setPerformanceMonitor(IPerformanceMonitor* monitor) {
+    (void)monitor;
   }
 };
 

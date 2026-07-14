@@ -43,7 +43,7 @@ public:
   /// Set performance monitor for audio metrics tracking
   /// @param monitor Performance monitor instance (can be nullptr to disable)
   /// @note Thread-safe: Can be called before or after start()
-  void setPerformanceMonitor(IPerformanceMonitor* monitor);
+  void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
 private:
   /// Audio Unit render callback (invoked on audio thread)
