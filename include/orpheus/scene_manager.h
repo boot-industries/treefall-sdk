@@ -112,6 +112,12 @@ public:
     (void)routingMatrix;
   }
 
+  /// Attach the transport stopped before any scene state is applied.
+  /// Not owned; must outlive the scene manager or be detached first.
+  virtual void setTransportController(ITransportController* transport) {
+    (void)transport;
+  }
+
   // ========================================================================
   // Scene Capture & Recall (UI Thread)
   // ========================================================================
