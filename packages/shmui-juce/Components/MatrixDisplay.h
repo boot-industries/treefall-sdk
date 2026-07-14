@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 #include <vector>
 
@@ -203,8 +204,8 @@ private:
   // Appearance
   float ledSize = 10.0f;
   float ledGap = 2.0f;
-  juce::Colour onColour = juce::Colours::white;      // currentColor default
-  juce::Colour offColour = juce::Colour(0x80808080); // muted-foreground
+  juce::Colour onColour = tokens::lab::text();                   // lit LED — fg
+  juce::Colour offColour = tokens::lab::muted().withAlpha(0.5f); // unlit LED — muted
   float brightness = 1.0f;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MatrixDisplay)

@@ -11,6 +11,8 @@
 
 #include "TransportButton.h"
 
+#include "../Utils/DesignTokens.h"
+
 namespace shmui {
 
 //==============================================================================
@@ -77,9 +79,9 @@ void TransportButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bou
   // Special color handling for active states
   juce::Colour iconColor = foregroundColor;
   if (m_type == Type::Record && m_isRecording) {
-    iconColor = juce::Colour(0xFFEF4444); // Red when recording
+    iconColor = tokens::lab::danger(); // --lab-danger when recording
   } else if (m_type == Type::Loop && m_isLooping) {
-    iconColor = juce::Colour(0xFF3B82F6); // Blue when looping
+    iconColor = tokens::lab::tone(); // accent (--lab-tone) when looping
   }
 
   // Center the icon in bounds

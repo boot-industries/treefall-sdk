@@ -74,7 +74,10 @@ ButtonColors Button::getEffectiveColors() const {
   if (m_hasCustomColors)
     return m_customColors;
 
-  return m_isDarkTheme ? getButtonColorsDark(m_style) : getButtonColorsLight(m_style);
+  // Flavor-aware: resolve from the active Orpheus theme (Lab by default).
+  // Each flavor already encodes its own dark-first surfaces, so the legacy
+  // m_isDarkTheme flag no longer selects a palette (kept for API compat).
+  return getButtonColors(m_style, defaultTheme());
 }
 
 //==============================================================================

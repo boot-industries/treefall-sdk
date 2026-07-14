@@ -12,6 +12,7 @@
 #pragma once
 
 #include "../Utils/DesignTokens.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 
 namespace shmui {
@@ -161,70 +162,89 @@ struct ButtonColors {
 };
 
 /**
- * @brief Get colors for a button style (light theme).
+ * @brief Get the token-driven, flavor-aware colors for a button style.
+ *
+ * Resolves every variant from the active @ref ShmuiTheme surface + accent
+ * tokens, mirroring the web `_shared/primitives.jsx` Btn variant→token map so
+ * the JUCE and web buttons tint identically across the Lab / Console flavors:
+ *
+ *   default/secondary : bg = bg-raise,                      fg = fg,        bd = stroke
+ *   primary           : bg = mix(accent 22%, bg-card),      fg = accent,    bd = accent
+ *   ghost             : bg = transparent,                   fg = fg-muted,  bd = transparent
+ *   destructive       : bg = mix(danger 20%, bg-card),      fg = danger,    bd = danger
+ *   success           : bg = mix(meter.green 22%, bg-card), fg = green,     bd = green
+ *   muted             : bg = bg-card,                       fg = fg-muted,  bd = stroke
+ *
+ * Orpheus is dark-first and each flavor already encodes its own surfaces, so a
+ * single theme-driven path replaces the former hardcoded light/dark split.
  */
-inline ButtonColors getButtonColorsLight(ButtonStyle style) {
+inline ButtonColors getButtonColors(ButtonStyle style, const ShmuiTheme& theme) {
   ButtonColors colors;
+
+  // color-mix(in oklab, tint P%, bg-card) ≈ bgCard blended toward tint.
+  auto mixWithCard = [&theme](juce::Colour tint, float proportion) {
+    return theme.bgCard.interpolatedWith(tint, proportion);
+  };
 
   switch (style) {
   case ButtonStyle::Primary:
-    colors.background = juce::Colour(0xFF1A1A1A);
-    colors.backgroundHover = juce::Colour(0xFF2D2D2D);
-    colors.backgroundPressed = juce::Colour(0xFF0A0A0A);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
+    colors.background = mixWithCard(theme.accent, 0.22f);
+    colors.backgroundHover = mixWithCard(theme.accent, 0.32f);
+    colors.backgroundPressed = mixWithCard(theme.accent, 0.16f);
+    colors.foreground = theme.accent;
+    colors.foregroundDisabled = theme.accent.withAlpha(0.5f);
+    colors.border = theme.accent;
+    colors.borderHover = theme.accent.brighter(0.15f);
     break;
 
   case ButtonStyle::Secondary:
-    colors.background = juce::Colours::transparentBlack;
-    colors.backgroundHover = juce::Colour(0x10000000);
-    colors.backgroundPressed = juce::Colour(0x20000000);
-    colors.foreground = juce::Colour(0xFF1A1A1A);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
-    colors.border = juce::Colour(0xFFD0D0D0);
-    colors.borderHover = juce::Colour(0xFF1A1A1A);
+    colors.background = theme.bgRaise;
+    colors.backgroundHover = theme.bgRaise.brighter(0.08f);
+    colors.backgroundPressed = theme.bgRaise.darker(0.10f);
+    colors.foreground = theme.fg;
+    colors.foregroundDisabled = theme.fgMuted;
+    colors.border = theme.stroke;
+    colors.borderHover = theme.fg;
     break;
 
   case ButtonStyle::Ghost:
     colors.background = juce::Colours::transparentBlack;
-    colors.backgroundHover = juce::Colour(0x10000000);
-    colors.backgroundPressed = juce::Colour(0x20000000);
-    colors.foreground = juce::Colour(0xFF1A1A1A);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
+    colors.backgroundHover = theme.fg.withAlpha(0.06f);
+    colors.backgroundPressed = theme.fg.withAlpha(0.10f);
+    colors.foreground = theme.fgMuted;
+    colors.foregroundDisabled = theme.fgMuted.withAlpha(0.5f);
     colors.border = juce::Colours::transparentBlack;
     colors.borderHover = juce::Colours::transparentBlack;
     break;
 
   case ButtonStyle::Destructive:
-    colors.background = tokens::lab::danger(); // --lab-danger
-    colors.backgroundHover = tokens::lab::danger().brighter(0.15f);
-    colors.backgroundPressed = tokens::lab::danger().darker(0.20f);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = tokens::lab::danger().withAlpha(0.5f);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
+    colors.background = mixWithCard(theme.danger, 0.20f);
+    colors.backgroundHover = mixWithCard(theme.danger, 0.30f);
+    colors.backgroundPressed = mixWithCard(theme.danger, 0.14f);
+    colors.foreground = theme.danger;
+    colors.foregroundDisabled = theme.danger.withAlpha(0.5f);
+    colors.border = theme.danger;
+    colors.borderHover = theme.danger.brighter(0.15f);
     break;
 
   case ButtonStyle::Success:
-    colors.background = tokens::meter::green(); // --meter-green
-    colors.backgroundHover = tokens::meter::green().brighter(0.15f);
-    colors.backgroundPressed = tokens::meter::green().darker(0.20f);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = tokens::meter::green().withAlpha(0.5f);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
+    colors.background = mixWithCard(theme.meter.green, 0.22f);
+    colors.backgroundHover = mixWithCard(theme.meter.green, 0.32f);
+    colors.backgroundPressed = mixWithCard(theme.meter.green, 0.16f);
+    colors.foreground = theme.meter.green;
+    colors.foregroundDisabled = theme.meter.green.withAlpha(0.5f);
+    colors.border = theme.meter.green;
+    colors.borderHover = theme.meter.green.brighter(0.15f);
     break;
 
   case ButtonStyle::Muted:
-    colors.background = juce::Colour(0xFFF5F5F5);
-    colors.backgroundHover = juce::Colour(0xFFE5E5E5);
-    colors.backgroundPressed = juce::Colour(0xFFD5D5D5);
-    colors.foreground = juce::Colour(0xFF737373);
-    colors.foregroundDisabled = juce::Colour(0xFFA3A3A3);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
+    colors.background = theme.bgCard;
+    colors.backgroundHover = theme.bgCard.brighter(0.06f);
+    colors.backgroundPressed = theme.bgCard.darker(0.08f);
+    colors.foreground = theme.fgMuted;
+    colors.foregroundDisabled = theme.fgMuted.withAlpha(0.5f);
+    colors.border = theme.stroke;
+    colors.borderHover = theme.stroke.brighter(0.10f);
     break;
   }
 
@@ -232,74 +252,21 @@ inline ButtonColors getButtonColorsLight(ButtonStyle style) {
 }
 
 /**
- * @brief Get colors for a button style (dark theme).
+ * @brief Deprecated — use getButtonColors(style, theme).
+ *
+ * Retained for one release as a thin forwarder onto the active default theme so
+ * existing call sites keep compiling. The former hardcoded light/dark palettes
+ * are gone; both forwarders now resolve through the flavor-aware token path.
  */
+[[deprecated("use getButtonColors(style, theme)")]]
+inline ButtonColors getButtonColorsLight(ButtonStyle style) {
+  return getButtonColors(style, defaultTheme());
+}
+
+/** @brief Deprecated — use getButtonColors(style, theme). */
+[[deprecated("use getButtonColors(style, theme)")]]
 inline ButtonColors getButtonColorsDark(ButtonStyle style) {
-  ButtonColors colors;
-
-  switch (style) {
-  case ButtonStyle::Primary:
-    colors.background = juce::Colour(0xFFFFFFFF);
-    colors.backgroundHover = juce::Colour(0xFFE5E5E5);
-    colors.backgroundPressed = juce::Colour(0xFFD5D5D5);
-    colors.foreground = juce::Colour(0xFF1A1A1A);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
-    break;
-
-  case ButtonStyle::Secondary:
-    colors.background = juce::Colours::transparentWhite;
-    colors.backgroundHover = juce::Colour(0x20FFFFFF);
-    colors.backgroundPressed = juce::Colour(0x30FFFFFF);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
-    colors.border = juce::Colour(0xFF404040);
-    colors.borderHover = juce::Colour(0xFFFFFFFF);
-    break;
-
-  case ButtonStyle::Ghost:
-    colors.background = juce::Colours::transparentWhite;
-    colors.backgroundHover = juce::Colour(0x20FFFFFF);
-    colors.backgroundPressed = juce::Colour(0x30FFFFFF);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = juce::Colour(0xFF808080);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
-    break;
-
-  case ButtonStyle::Destructive:
-    colors.background = tokens::lab::danger(); // --lab-danger
-    colors.backgroundHover = tokens::lab::danger().brighter(0.15f);
-    colors.backgroundPressed = tokens::lab::danger().darker(0.20f);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = tokens::lab::danger().withAlpha(0.5f);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
-    break;
-
-  case ButtonStyle::Success:
-    colors.background = tokens::meter::green(); // --meter-green
-    colors.backgroundHover = tokens::meter::green().brighter(0.15f);
-    colors.backgroundPressed = tokens::meter::green().darker(0.20f);
-    colors.foreground = juce::Colour(0xFFFFFFFF);
-    colors.foregroundDisabled = tokens::meter::green().withAlpha(0.5f);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
-    break;
-
-  case ButtonStyle::Muted:
-    colors.background = juce::Colour(0xFF262626);
-    colors.backgroundHover = juce::Colour(0xFF363636);
-    colors.backgroundPressed = juce::Colour(0xFF464646);
-    colors.foreground = juce::Colour(0xFFA3A3A3);
-    colors.foregroundDisabled = juce::Colour(0xFF737373);
-    colors.border = juce::Colours::transparentBlack;
-    colors.borderHover = juce::Colours::transparentBlack;
-    break;
-  }
-
-  return colors;
+  return getButtonColors(style, defaultTheme());
 }
 
 } // namespace shmui
