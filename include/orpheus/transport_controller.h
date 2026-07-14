@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstdint>
 #include <memory>
@@ -766,7 +767,7 @@ public:
 /// @param sessionGraph The session graph containing clip metadata
 /// @param sampleRate Audio sample rate (e.g., 48000)
 /// @return Unique pointer to transport controller
-std::unique_ptr<ITransportController> createTransportController(core::SessionGraph* sessionGraph,
-                                                                uint32_t sampleRate);
+ORPHEUS_API std::unique_ptr<ITransportController>
+createTransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate);
 
 } // namespace orpheus

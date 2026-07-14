@@ -22,6 +22,7 @@
 // punch in/out, latency compensation, arming semantics, file naming.
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <atomic>
 #include <cstddef>
@@ -127,6 +128,7 @@ public:
 };
 
 /// Create the SDK's ring-backed input stream.
-std::unique_ptr<IAudioInputStream> createAudioInputStream(const AudioInputStreamConfig& config);
+ORPHEUS_API std::unique_ptr<IAudioInputStream>
+createAudioInputStream(const AudioInputStreamConfig& config);
 
 } // namespace orpheus

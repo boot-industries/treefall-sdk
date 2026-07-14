@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/errors.h>
+#include <orpheus/export.h>
 
 #include <cstdint>
 #include <functional>
@@ -128,6 +129,6 @@ public:
 /// that enumerates and manages audio devices on the current platform.
 ///
 /// @return Unique pointer to driver manager instance
-std::unique_ptr<IAudioDriverManager> createAudioDriverManager();
+ORPHEUS_API std::unique_ptr<IAudioDriverManager> createAudioDriverManager();
 
 } // namespace orpheus
