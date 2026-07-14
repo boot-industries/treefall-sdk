@@ -3,7 +3,7 @@
 
 #include "orpheus/abi.h"
 
-#include "session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <filesystem>
 #include <ios>

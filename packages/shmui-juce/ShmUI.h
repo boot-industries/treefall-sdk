@@ -48,10 +48,10 @@
     - UI components should be used on the message thread
     - Use juce::MessageManager::callAsync for cross-thread updates
 
-    Sync to Orpheus SDK:
-    scripts/sync-juce.sh   (mirrors juce/Source/ → packages/shmui-juce/,
-                            formats to the SDK clang-format, regenerates the
-                            package CMakeLists; --check verifies no drift)
+    Sync contract:
+    packages/shmui-juce/shmui-juce-import.json records the source revision,
+    exported components, JUCE modules, feature gates, token contract, and the
+    imported content hash. tools/shmui_juce_manifest.py verifies drift.
 
   ==============================================================================
 */

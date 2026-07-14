@@ -10,7 +10,7 @@
 
 # Build options
 option(ORPHEUS_ENABLE_COREAUDIO "Build CoreAudio driver (macOS)" ${APPLE})
-option(ORPHEUS_ENABLE_WASAPI "Build WASAPI driver (Windows)" OFF)  # Not yet implemented
+option(ORPHEUS_ENABLE_WASAPI "Build WASAPI driver (Windows)" ${WIN32})
 option(ORPHEUS_ENABLE_ASIO "Build ASIO driver (Windows, requires ASIO SDK)" OFF)
 
 # Note: Dummy driver is built in core/audio_io alongside audio file reader
@@ -131,6 +131,8 @@ if(ORPHEUS_ENABLE_WASAPI)
     orpheus_enable_sanitizers(orpheus_audio_driver_wasapi)
 
     message(STATUS "Orpheus: WASAPI driver enabled")
+    target_link_libraries(orpheus_audio_driver_manager
+        PUBLIC orpheus_audio_driver_wasapi)
 endif()
 
 # ASIO driver (Windows, optional)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "session/session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <gtest/gtest.h>
 

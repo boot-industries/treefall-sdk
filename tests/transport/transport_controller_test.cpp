@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include "session/session_graph.h"
 #include <gtest/gtest.h>
+#include <orpheus/session_graph.h>
 #include <orpheus/transport_controller.h>
 
 // FTR027 §1: concrete controller access for processAudio()/processCallbacks()
@@ -197,6 +197,38 @@ TEST_F(TransportControllerTest, StartClipTwice) {
   // Starting twice should be idempotent
   EXPECT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
   EXPECT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+}
+
+TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
+  auto* concrete = dynamic_cast<TransportController*>(m_transport.get());
+  ASSERT_NE(concrete, nullptr);
+
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  ASSERT_NE(telemetry, nullptr);
+  telemetry->setDecimationBlocks(2);
+
+  constexpr size_t kBlockFrames = 256;
+  std::vector<float> left(kBlockFrames, 0.0f);
+  std::vector<float> right(kBlockFrames, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+
+  concrete->processAudio(buffers, 2, kBlockFrames);
+  EXPECT_EQ(telemetry->pendingSnapshotCount(), 0u);
+
+  concrete->processAudio(buffers, 2, kBlockFrames);
+  ASSERT_EQ(telemetry->pendingSnapshotCount(), 1u);
+
+  RealtimeTelemetrySnapshot snapshot;
+  ASSERT_TRUE(telemetry->tryRead(snapshot));
+  EXPECT_EQ(snapshot.position.samples(), 512);
+  EXPECT_EQ(snapshot.diagnostics.callback_count, 2u);
+  EXPECT_EQ(snapshot.diagnostics.samples_processed, 512u);
+  EXPECT_EQ(snapshot.diagnostics.last_buffer_frames, kBlockFrames);
+  EXPECT_EQ(snapshot.diagnostics.last_sample_rate, 48000u);
+  EXPECT_EQ(snapshot.active_voice_count, 0u);
+  EXPECT_EQ(snapshot.group_count, 4u);
+  EXPECT_FLOAT_EQ(snapshot.master_meter.peak_db, -100.0f);
+  EXPECT_FALSE(telemetry->tryRead(snapshot));
 }
 
 // TODO: Add more comprehensive tests:

@@ -3,11 +3,76 @@
 # ORP141 — Reliability and Adoption Sprint Plan
 
 **Document type:** Product and engineering sprint plan  
-**Status:** Proposed  
+**Status:** In progress — R0/R1/R2/R4 complete; R3 external CI/hardware evidence pending; R5 entry criteria not yet met
 **Scope:** Orpheus SDK core, packages, release artifacts, and SDK-owned conformance fixtures only. No child-app source changes, submodule-pin updates, application CI work, or UI feature work are deliverables of this plan.
 **Related:** [[ORP136 TODO and Incomplete-Feature Triage]] · [[ORP137 Hardening Program Completion and Downstream Follow-ups]] · [[ORP135 LATER Sprint - Platform Leadership Bets]] · [[ORP142 Downstream Consumer Adoption Notes]] · FreqFinder [[FRQ033 Orpheus SDK Release Package Refresh for Analysis Facade]] · FourTrack [[FTR027 SDK Note - Real-Time Sample-Accurate Event Primitive]] · [[FTR028 SDK Note - Routing Matrix Block-Size Ceiling]]
 
 ---
+
+## Implementation checkpoint — 2026-07-14
+
+- Active branch/PR: `feat/orp141-reliability-adoption` / GitHub PR #206.
+- R0 release truth is complete: CMake-sourced version metadata, installed-target
+  manifest, clean-prefix fixtures, package/ABI CI, support matrix, and release
+  checksum/SBOM/provenance generation.
+- R1 correctness is complete: deterministic routing snapshot provenance,
+  stereo metering, atomic scene routing/clip recall, voice-cap refusal events,
+  CoreAudio active-voice telemetry, large-block content checks, and canonical
+  transport event timestamps.
+- R2 media integrity is complete: provider-backed streaming SHA-256, versioned
+  media references, explicit verified/unverified/missing/mismatch outcomes,
+  mismatch refusal, atomic session save/backup recovery, schema migration, and
+  installed-package coverage.
+- R3 implementation is committed: all public factories carry DLL export
+  annotations; WASAPI shared-mode enumeration/playback and negotiated
+  capabilities are implemented; Windows compile/package tests are required;
+  Linux provider boundaries and conformance gates are documented. Hosted CI is
+  not real-device evidence. Promotion of WASAPI remains blocked until the
+  self-hosted `wasapi-hardware-acceptance` workflow publishes a passing record.
+- Local verification after R4 observed all 143 configured contracts passing.
+  GitHub reports repository Actions as disabled (`enabled: false`), so
+  latest-commit Windows CI run `29316779217` remains queued without job records.
+  The user elected to keep Actions disabled; hosted Windows package/ABI proof
+  is therefore deferred, not inferred from workflow configuration or macOS
+  verification.
+- GitHub reports zero self-hosted runners for this repository. A direct dispatch
+  of `wasapi-hardware-acceptance.yml` also returned API `404` because that new
+  manual workflow is not yet on the default branch. Real-device evidence
+  requires the workflow to land plus a matching
+  `[Windows, x64, audio-hardware]` runner. The R3 evidence jobs remain
+  incomplete and Windows/WASAPI support is not promoted.
+- R4 is complete. The public `SessionGraph` header now exposes stable
+  `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
+  coalesced revisioned change sets, rollback-on-destruction transactions, and
+  snapshot restore for application-owned undo/redo. Runtime transport and
+  application presentation state remain outside the transactional edit domain.
+- The ShmUI-JUCE import manifest now declares its hash algorithm and is checked
+  against all 53 imported files in CTest, alongside its source revision,
+  exported targets/components, JUCE modules, token contract, and default-off
+  OpenGL feature gate.
+- A pinned, checksum-verified JUCE 8.0.4 fixture builds and runs an actual
+  `add_subdirectory` consumer against `Orpheus::shmui_juce`, asserts that the
+  OpenGL target and compile definition are absent, and runs in the Ubuntu
+  Release CI leg.
+- The transport now owns a public `RealtimeTelemetry` bridge: a fixed 64-slot
+  SPSC ring with configurable block decimation, monotonic sequence/drop
+  reporting, canonical post-block `TimePoint`, callback/underrun diagnostics,
+  active-voice count, and fixed group/master meters. Full rings drop the newest
+  capture rather than blocking or overwriting unread data.
+- Telemetry is presentation-neutral by contract. FFTs, histories, smoothing,
+  analyzer selection, and UI view models remain message-thread application
+  state; the SDK audio path only records and publishes bounded POD snapshots.
+- Local verification passed four queue/cadence/diagnostic tests, the live
+  transport integration test, and the strict in-repository realtime audit. A
+  clean-prefix `find_package` fixture also compiles and runs the public
+  `SessionGraph` transaction/snapshot and `RealtimeTelemetry` APIs, including
+  the transport-owned telemetry accessor, without any private header.
+- R5 evidence review found one conditional requirement: FourTrack may consider
+  the one-shot voice utility if R5 lands. ORP142 records no second independent
+  consumer requirement, and R1–R4 have not shipped/soaked together. The R5
+  implementation jobs therefore remain gated and are not started.
+- The Release Operating Model section is explicitly deferred to a later
+  session; none of its remaining gates are represented as complete here.
 
 ## 1. Decision
 
@@ -169,6 +234,12 @@ No API is advertised as complete while it returns placeholder values, swallows a
 
 **Entry criteria:** two independent, existing consumer requirements substantiate a host-neutral contract; R1–R4 have shipped and soaked in at least one release. No consumer migration is part of this sprint.
 
+**Gate review (2026-07-14):** not met. [[ORP142 Downstream Consumer Adoption
+Notes]] records only FourTrack's conditional interest and explicitly creates no
+SDK requirement. No second independent consumer requirement is documented, and
+R1–R4 have not shipped and soaked together. Per the exit rule below, do not add
+the voice primitive, policy surface, tests, or migration API in this checkpoint.
+
 **SDK deliverables**
 
 - Specify and implement a standalone preloaded-PCM one-shot voice utility: control-thread sample load/preallocation; audio-thread sample-offset trigger; fixed voice pool; explicit retrigger/steal policy; no allocation, lock, or I/O in `trigger`/`render`.
@@ -183,6 +254,19 @@ No API is advertised as complete while it returns placeholder values, swallows a
 ---
 
 ## 5. Release and adoption operating model
+
+**Execution status:** deferred as a unit to a later session. The following jobs
+are recorded, remain incomplete, and are not prerequisites for closing the
+current R4 implementation checkpoint:
+
+- Enforce the CMake single-source versioning policy.
+- Run installed ABI compatibility and migration checks.
+- Model consumer needs only in SDK-owned fixtures.
+- Preserve the realtime release-blocker suite.
+- Maintain a hardware-backed long-running soak scenario.
+- Gate release supply-chain metadata and dependency audits.
+- Update public contract documentation atomically with API changes.
+- Verify overall installation and truthfulness criteria.
 
 | Practice | Required rule |
 | --- | --- |

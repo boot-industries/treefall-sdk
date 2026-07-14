@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "name": "Solo Click",
   "tempo_bpm": 120,
   "start_beats": 0,

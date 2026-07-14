@@ -3,12 +3,9 @@
 
 // ORP134 G2: stable identity primitives.
 //
-// The existing session graph identifies Clip/Track objects by POINTER
-// (session_graph.h) — fine in-memory, but useless for serialization, undo,
-// cross-process references, or takes/comping (ORP135 B2). These strong ID
-// types are ADDITIVE: they live alongside the pointer-based graph (which is
-// deliberately NOT rewritten — see ORP134 §7 "Do Not Touch Yet"); new code
-// and serialization should prefer IDs.
+// SessionGraph now uses these IDs for its public transaction/snapshot contract.
+// Pointer-returning methods remain control-thread conveniences for the legacy C
+// ABI, while persistence, undo, and cross-thread handoff use stable IDs.
 //
 // Properties:
 //  * Opaque strong typedefs over uint64_t — SessionId and ClipId do not

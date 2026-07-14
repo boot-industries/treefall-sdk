@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+#include <orpheus/realtime_telemetry.h>
+
+#include <algorithm>
+
+namespace orpheus {
+
+RealtimeTelemetry::RealtimeTelemetry(uint32_t decimationBlocks) noexcept {
+  setDecimationBlocks(decimationBlocks);
+}
+
+bool RealtimeTelemetry::beginRealtimeBlock(uint32_t bufferFrames, uint32_t sampleRate) noexcept {
+  diagnostics_.recordCallback(bufferFrames, sampleRate);
+
+  ++blocks_since_snapshot_;
+  const uint32_t blocks = decimation_blocks_.load(std::memory_order_relaxed);
+  if (blocks_since_snapshot_ < blocks) {
+    return false;
+  }
+
+  blocks_since_snapshot_ = 0;
+  return true;
+}
+
+void RealtimeTelemetry::reportUnderrunFromRealtime() noexcept {
+  diagnostics_.reportUnderrun();
+}
+
+bool RealtimeTelemetry::publishFromRealtime(RealtimeTelemetrySnapshot snapshot) noexcept {
+  snapshot.schema_version = kRealtimeTelemetrySchemaVersion;
+  snapshot.sequence = next_sequence_++;
+  snapshot.diagnostics = diagnostics_.snapshot();
+
+  const uint64_t writeIndex = write_index_.load(std::memory_order_relaxed);
+  const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
+  if ((writeIndex - readIndex) >= kRealtimeTelemetryCapacity) {
+    dropped_snapshot_count_.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+
+  snapshots_[writeIndex % kRealtimeTelemetryCapacity] = snapshot;
+  write_index_.store(writeIndex + 1, std::memory_order_release);
+  return true;
+}
+
+bool RealtimeTelemetry::tryRead(RealtimeTelemetrySnapshot& snapshot) noexcept {
+  const uint64_t readIndex = read_index_.load(std::memory_order_relaxed);
+  const uint64_t writeIndex = write_index_.load(std::memory_order_acquire);
+  if (readIndex == writeIndex) {
+    return false;
+  }
+
+  snapshot = snapshots_[readIndex % kRealtimeTelemetryCapacity];
+  read_index_.store(readIndex + 1, std::memory_order_release);
+  return true;
+}
+
+void RealtimeTelemetry::setDecimationBlocks(uint32_t blocks) noexcept {
+  decimation_blocks_.store(std::max(blocks, uint32_t{1}), std::memory_order_relaxed);
+}
+
+uint32_t RealtimeTelemetry::decimationBlocks() const noexcept {
+  return decimation_blocks_.load(std::memory_order_relaxed);
+}
+
+uint64_t RealtimeTelemetry::droppedSnapshotCount() const noexcept {
+  return dropped_snapshot_count_.load(std::memory_order_relaxed);
+}
+
+size_t RealtimeTelemetry::pendingSnapshotCount() const noexcept {
+  const uint64_t writeIndex = write_index_.load(std::memory_order_acquire);
+  const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
+  return static_cast<size_t>(writeIndex - readIndex);
+}
+
+} // namespace orpheus
