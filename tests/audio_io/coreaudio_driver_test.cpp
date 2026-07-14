@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 #include <orpheus/audio_driver.h>
+#include <orpheus/performance_monitor.h>
 
 #include <atomic>
 #include <chrono>
@@ -43,6 +44,14 @@ public:
     }
   }
 
+  uint32_t activeClipCount() const noexcept override {
+    return m_active_clip_count.load(std::memory_order_relaxed);
+  }
+
+  void setActiveClipCount(uint32_t count) {
+    m_active_clip_count.store(count, std::memory_order_relaxed);
+  }
+
   int getCallCount() const {
     return m_call_count.load(std::memory_order_relaxed);
   }
@@ -79,6 +88,7 @@ public:
 private:
   std::atomic<int> m_call_count{0};
   std::atomic<uint64_t> m_total_frames{0};
+  std::atomic<uint32_t> m_active_clip_count{0};
   size_t m_last_num_channels{0};
   size_t m_last_num_frames{0};
   std::chrono::steady_clock::time_point m_start_time{};
@@ -289,6 +299,23 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
 
   m_driver->stop();
+}
+
+TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_outputs = 2;
+  auto monitor = createStandalonePerformanceMonitor();
+  m_callback->setActiveClipCount(7);
+  m_driver->setPerformanceMonitor(monitor.get());
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+
+  EXPECT_EQ(monitor->getMetrics().activeClipCount, 7u);
 }
 
 TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {

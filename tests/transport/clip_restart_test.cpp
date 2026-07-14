@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "../../src/core/session/session_graph.h"
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
@@ -176,7 +177,10 @@ protected:
   };
 
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_session = std::make_unique<core::SessionGraph>();
+    m_session->set_tempo(90.0);
+    m_transport = std::make_unique<TransportController>(m_session.get(), 48000);
+    m_transport->processCallbacks();
     m_callback = std::make_unique<TestCallback>();
     m_transport->setCallback(m_callback.get());
 
@@ -234,6 +238,7 @@ protected:
   }
 
   std::unique_ptr<TransportController> m_transport;
+  std::unique_ptr<core::SessionGraph> m_session;
   std::unique_ptr<TestCallback> m_callback;
   std::string m_testFilePath;
 };
@@ -244,6 +249,7 @@ TEST_F(ClipRestartCallbackTest, RestartCallbackFired) {
   // Register clip with audio file
   auto regResult = m_transport->registerClipAudio(handle, m_testFilePath.c_str());
   ASSERT_EQ(regResult, SessionGraphError::OK) << "Failed to register test clip";
+  ASSERT_EQ(m_transport->updateClipTrimPoints(handle, 24000, 48000), SessionGraphError::OK);
 
   // Start clip
   m_transport->startClip(handle);
@@ -268,7 +274,9 @@ TEST_F(ClipRestartCallbackTest, RestartCallbackFired) {
 
   EXPECT_EQ(m_callback->restartedHandle, handle);
   EXPECT_EQ(m_callback->restartCount, 1);
-  EXPECT_EQ(m_callback->restartedPosition.samples, 0); // Should be at trim IN (0)
+  EXPECT_EQ(m_callback->restartedPosition.samples, 24000);
+  EXPECT_DOUBLE_EQ(m_callback->restartedPosition.seconds, 0.5);
+  EXPECT_DOUBLE_EQ(m_callback->restartedPosition.beats, 0.75);
 }
 
 TEST_F(ClipRestartCallbackTest, RestartCallbackNotFiredForStart) {

@@ -291,21 +291,17 @@ bool TransportController::isClipPlaying(ClipHandle handle) const {
   return state == PlaybackState::Playing || state == PlaybackState::Stopping;
 }
 
-TransportPosition TransportController::getCurrentPosition() const {
-  int64_t samples = m_currentSample.load(std::memory_order_relaxed);
-
-  TransportPosition position;
+TransportPosition TransportController::positionAtSamples(int64_t samples) const {
+  TransportPosition position{};
   position.samples = samples;
   position.seconds = static_cast<double>(samples) / static_cast<double>(m_sampleRate);
-
-  // FTR027 §1: beats derive from the live session tempo. Read through the
-  // atomic cache, not SessionGraph::tempo() directly — this query is called
-  // from the audio thread (event position stamps) and tempo() is a plain
-  // control-thread field.
-  double tempo = m_tempoBpm.load(std::memory_order_relaxed);
+  const double tempo = m_tempoBpm.load(std::memory_order_relaxed);
   position.beats = position.seconds * tempo / 60.0;
-
   return position;
+}
+
+TransportPosition TransportController::getCurrentPosition() const {
+  return positionAtSamples(m_currentSample.load(std::memory_order_relaxed));
 }
 
 void TransportController::setCallback(ITransportCallback* callback) {
@@ -866,9 +862,7 @@ void TransportController::processCommands() {
         TransportEvent event{};
         event.type = TransportEventType::ClipRestarted;
         event.handle = cmd.handle;
-        event.position.samples = trimIn;
-        event.position.seconds = static_cast<double>(trimIn) / static_cast<double>(m_sampleRate);
-        event.position.beats = 0.0;
+        event.position = positionAtSamples(trimIn);
         postTransportEvent(event);
       }
     } break;
@@ -893,9 +887,7 @@ void TransportController::processCommands() {
         TransportEvent event{};
         event.type = TransportEventType::ClipSeeked;
         event.handle = cmd.handle;
-        event.position.samples = position;
-        event.position.seconds = static_cast<double>(position) / static_cast<double>(m_sampleRate);
-        event.position.beats = 0.0;
+        event.position = positionAtSamples(position);
         postTransportEvent(event);
       }
     } break;

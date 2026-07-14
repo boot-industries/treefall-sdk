@@ -81,6 +81,10 @@ if(ORPHEUS_ENABLE_COREAUDIO)
         PUBLIC
             ORPHEUS_ENABLE_COREAUDIO
     )
+    if(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
+        target_compile_definitions(orpheus_audio_driver_coreaudio
+            PRIVATE ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
+    endif()
 
     orpheus_enable_warnings(orpheus_audio_driver_coreaudio)
     orpheus_enable_sanitizers(orpheus_audio_driver_coreaudio)
