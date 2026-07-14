@@ -10,6 +10,8 @@
 
 - PR #206 merged to `main` as `f5d703cd`. The R4 implementation checkpoint is
   complete; deferred evidence and operating-model jobs remain recorded below.
+- Durable completion and child-app handoff: `docs/orp/ORP143 Reliability and
+  Adoption Sprint Completion and Child-App Handoff.md`.
 - R4 public contracts:
   - `include/orpheus/session_graph.h` exposes stable-ID transactions,
     pointer-free canonical snapshots, revisioned change sets, rollback, and
