@@ -269,8 +269,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     uint64_t buffer_duration_us =
         (static_cast<uint64_t>(frames_to_process) * 1'000'000ull) / driver->config_.sample_rate;
 
-    // TODO: Get active clip count from transport controller (for now, use 0)
-    uint32_t active_clips = 0;
+    const uint32_t active_clips = callback->activeClipCount();
 
     monitor->recordAudioCallback(callback_duration_us, buffer_duration_us, active_clips,
                                  driver->config_.sample_rate, frames_to_process);
