@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/time_domain.h>
+
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <orpheus/errors.h>
 #include <string>
 #include <vector>
@@ -174,22 +177,25 @@ struct AudioMeter {
   AudioMeter() : peak_db(-100.0f), rms_db(-100.0f), clipping(false), clip_count(0) {}
 };
 
+/// Optional caller-supplied provenance for a routing snapshot. Neither field
+/// participates in deterministic routing identity or render hashes.
+struct RoutingSnapshotContext {
+  std::optional<uint64_t> controlTimeMs;
+  std::optional<TimePoint> audioPosition;
+};
+
 /// Routing snapshot (preset) - stores complete routing state
 struct RoutingSnapshot {
-  std::string name;      ///< Snapshot name
-  uint32_t timestamp_ms; ///< Creation timestamp
+  std::string name;
+  uint64_t captureRevision{0};            ///< Monotonic per-matrix capture order
+  std::optional<uint64_t> controlTimeMs;  ///< Caller-provided display provenance
+  std::optional<TimePoint> audioPosition; ///< Caller-provided audio coordinate
 
-  // Channel states
   std::vector<ChannelConfig> channels;
-
-  // Group states
   std::vector<GroupConfig> groups;
 
-  // Master output state
-  float master_gain_db;
-  bool master_mute;
-
-  RoutingSnapshot() : name("Default"), timestamp_ms(0), master_gain_db(0.0f), master_mute(false) {}
+  float master_gain_db{0.0f};
+  bool master_mute{false};
 };
 
 // ============================================================================
@@ -388,7 +394,8 @@ public:
   /// Save current routing state as snapshot
   /// @param name Snapshot name
   /// @return Snapshot object
-  virtual RoutingSnapshot saveSnapshot(const std::string& name) = 0;
+  virtual RoutingSnapshot saveSnapshot(const std::string& name,
+                                       RoutingSnapshotContext context = {}) = 0;
 
   /// Load routing state from snapshot
   /// @param snapshot Snapshot to load

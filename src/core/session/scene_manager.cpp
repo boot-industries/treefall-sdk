@@ -198,7 +198,7 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
 class SceneManager : public ISceneManager {
 public:
   explicit SceneManager(core::SessionGraph* sessionGraph)
-      : sessionGraph_(sessionGraph), routingMatrix_(nullptr) {
+      : sessionGraph_(sessionGraph), routingMatrix_(nullptr), transport_(nullptr) {
     if (!sessionGraph) {
       throw std::invalid_argument("SessionGraph cannot be null");
     }
@@ -212,6 +212,11 @@ public:
   void setRoutingMatrix(IRoutingMatrix* routingMatrix) override {
     std::lock_guard<std::mutex> lock(mutex_);
     routingMatrix_ = routingMatrix;
+  }
+
+  void setTransportController(ITransportController* transport) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    transport_ = transport;
   }
 
   // ========================================================================
@@ -229,9 +234,8 @@ public:
     auto now = std::chrono::system_clock::now();
     scene.timestamp = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(now));
 
-    // TODO: Capture clip assignments from SessionGraph.
-    // For now these vectors are empty; once wired to the session graph this
-    // would iterate over registered clips and store their handles in order.
+    scene.assignedClips.assign(sessionGraph_->clip_assignments().begin(),
+                               sessionGraph_->clip_assignments().end());
 
     // Capture routing state (if routing matrix is available)
     if (routingMatrix_) {
@@ -277,41 +281,44 @@ public:
 
     const SceneSnapshot& scene = it->second;
 
-    // TODO: Stop all playback (requires ITransportController reference)
-    // For now, we assume the caller handles stopping playback
+    if (transport_ == nullptr) {
+      return SessionGraphError::NotInitialized;
+    }
 
-    // Restore routing state (if routing matrix is available)
-    if (routingMatrix_) {
-      // Build routing snapshot
+    if (routingMatrix_ != nullptr) {
+      const auto config = routingMatrix_->getConfig();
+      if ((!scene.clipGroups.empty() && scene.clipGroups.size() != config.num_channels) ||
+          (!scene.groupGains.empty() && scene.groupGains.size() != config.num_groups)) {
+        return SessionGraphError::InvalidParameter;
+      }
+    }
+
+    const auto stopResult = transport_->stopAllClips();
+    if (stopResult != SessionGraphError::OK) {
+      return stopResult;
+    }
+
+    if (routingMatrix_ != nullptr && (!scene.clipGroups.empty() || !scene.groupGains.empty())) {
       RoutingSnapshot snapshot;
       snapshot.name = scene.name;
-      snapshot.timestamp_ms = static_cast<uint32_t>(scene.timestamp);
 
-      // Restore channels
-      auto config = routingMatrix_->getConfig();
+      const auto config = routingMatrix_->getConfig();
       snapshot.channels.resize(config.num_channels);
-      for (size_t i = 0; i < scene.clipGroups.size() && i < snapshot.channels.size(); ++i) {
+      for (size_t i = 0; i < scene.clipGroups.size(); ++i) {
         snapshot.channels[i].group_index = scene.clipGroups[i];
-        // Other channel properties (gain, pan, mute, solo) use defaults
       }
 
-      // Restore groups
       snapshot.groups.resize(config.num_groups);
-      for (size_t i = 0; i < scene.groupGains.size() && i < snapshot.groups.size(); ++i) {
+      for (size_t i = 0; i < scene.groupGains.size(); ++i) {
         snapshot.groups[i].gain_db = scene.groupGains[i];
-        // Other group properties use defaults
       }
 
-      // Load snapshot into routing matrix
-      auto result = routingMatrix_->loadSnapshot(snapshot);
+      const auto result = routingMatrix_->loadSnapshot(snapshot);
       if (result != SessionGraphError::OK) {
         return result;
       }
     }
-
-    // TODO: Restore clip assignments (requires SessionGraph API extension)
-    // For now, we only restore routing state
-
+    sessionGraph_->set_clip_assignments(scene.assignedClips);
     return SessionGraphError::OK;
   }
 
@@ -446,6 +453,7 @@ public:
 private:
   [[maybe_unused]] core::SessionGraph* sessionGraph_; // Not owned
   IRoutingMatrix* routingMatrix_;                     // Not owned (optional)
+  ITransportController* transport_;                   // Not owned (required for recall)
   mutable std::mutex mutex_;                          // Protects scenes_
   std::map<std::string, SceneSnapshot> scenes_;       // In-memory storage
 };
