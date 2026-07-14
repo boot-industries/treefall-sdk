@@ -268,6 +268,7 @@ public:
   SessionGraphError setClipVoiceMode(ClipHandle handle, VoiceMode mode) override;
   VoiceMode getClipVoiceMode(ClipHandle handle) const override;
   size_t getActiveVoiceCount(ClipHandle handle) const override;
+  size_t getTotalActiveVoiceCount() const override;
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
