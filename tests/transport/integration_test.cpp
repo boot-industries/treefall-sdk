@@ -118,6 +118,26 @@ protected:
     m_transport_callback.reset();
   }
 
+  // Poll until `pred` holds or the deadline elapses, draining UI callbacks each
+  // tick. The dummy driver fires processAudio from a background thread on a
+  // timer; a fixed sleep is flaky on loaded CI runners (the first tick can be
+  // delayed past any single sleep), so wait *up to* a generous deadline and
+  // return as soon as the condition is met. Returns pred()'s final value so
+  // callers can assert on it.
+  template <typename Pred>
+  bool waitForCallback(Pred pred, std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    do {
+      m_transport->processCallbacks();
+      if (pred()) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    } while (std::chrono::steady_clock::now() < deadline);
+    m_transport->processCallbacks();
+    return pred();
+  }
+
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<TestTransportCallback> m_transport_callback;
   std::unique_ptr<TransportAudioAdapter> m_adapter;
@@ -130,11 +150,8 @@ TEST_F(TransportIntegrationTest, DriverCallsTransportProcessAudio) {
   // Start driver with transport adapter
   ASSERT_EQ(m_driver->start(m_adapter.get()), SessionGraphError::OK);
 
-  // Wait for a few callbacks
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
   // Verify transport's processAudio was called via adapter
-  EXPECT_GT(m_adapter->getCallbackCount(), 0);
+  EXPECT_TRUE(waitForCallback([&] { return m_adapter->getCallbackCount() > 0; }));
 
   m_driver->stop();
 }
@@ -147,14 +164,8 @@ TEST_F(TransportIntegrationTest, StartClipTriggersCallback) {
   ClipHandle handle = 42;
   ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
 
-  // Wait for audio callbacks to process the command
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  // Process UI callbacks
-  m_transport->processCallbacks();
-
   // Verify clip started callback was triggered
-  EXPECT_EQ(m_transport_callback->getStartCount(), 1);
+  EXPECT_TRUE(waitForCallback([&] { return m_transport_callback->getStartCount() == 1; }));
   EXPECT_EQ(m_transport_callback->getLastStartedHandle(), handle);
 
   m_driver->stop();
@@ -169,19 +180,13 @@ TEST_F(TransportIntegrationTest, StopClipTriggersCallback) {
   ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
 
   // Wait for clip to start
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  m_transport->processCallbacks();
-  ASSERT_EQ(m_transport_callback->getStartCount(), 1);
+  ASSERT_TRUE(waitForCallback([&] { return m_transport_callback->getStartCount() == 1; }));
 
   // Stop the clip
   ASSERT_EQ(m_transport->stopClip(handle), SessionGraphError::OK);
 
-  // Wait for fade-out (10ms + margin)
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  m_transport->processCallbacks();
-
-  // Verify clip stopped callback was triggered
-  EXPECT_EQ(m_transport_callback->getStopCount(), 1);
+  // Verify clip stopped callback was triggered (after fade-out)
+  EXPECT_TRUE(waitForCallback([&] { return m_transport_callback->getStopCount() == 1; }));
   EXPECT_EQ(m_transport_callback->getLastStoppedHandle(), handle);
 
   m_driver->stop();
@@ -220,15 +225,17 @@ TEST_F(TransportIntegrationTest, MultipleClipsCanStart) {
   ASSERT_EQ(m_transport->startClip(h2), SessionGraphError::OK);
   ASSERT_EQ(m_transport->startClip(h3), SessionGraphError::OK);
 
-  // Wait for clips to start
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  m_transport->processCallbacks();
-
-  // Verify all clips started
+  // Verify all clips started. Wait on the published voice snapshot itself, not
+  // the onClipStarted callback count: the callback fires when the start command
+  // is consumed, but getClipState() reads a separately-published voice snapshot
+  // that can lag the callback by a tick, so polling the state is the correct
+  // condition (and implies the callbacks fired).
+  EXPECT_TRUE(waitForCallback([&] {
+    return m_transport->getClipState(h1) == PlaybackState::Playing &&
+           m_transport->getClipState(h2) == PlaybackState::Playing &&
+           m_transport->getClipState(h3) == PlaybackState::Playing;
+  }));
   EXPECT_EQ(m_transport_callback->getStartCount(), 3);
-  EXPECT_EQ(m_transport->getClipState(h1), PlaybackState::Playing);
-  EXPECT_EQ(m_transport->getClipState(h2), PlaybackState::Playing);
-  EXPECT_EQ(m_transport->getClipState(h3), PlaybackState::Playing);
 
   m_driver->stop();
 }
@@ -242,23 +249,23 @@ TEST_F(TransportIntegrationTest, StopAllClipsWorks) {
   ASSERT_EQ(m_transport->startClip(2), SessionGraphError::OK);
   ASSERT_EQ(m_transport->startClip(3), SessionGraphError::OK);
 
-  // Wait for clips to start
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  m_transport->processCallbacks();
-  ASSERT_EQ(m_transport_callback->getStartCount(), 3);
+  // Wait for clips to start (poll the published snapshot, per above).
+  ASSERT_TRUE(waitForCallback([&] {
+    return m_transport->getClipState(1) == PlaybackState::Playing &&
+           m_transport->getClipState(2) == PlaybackState::Playing &&
+           m_transport->getClipState(3) == PlaybackState::Playing;
+  }));
 
   // Stop all clips
   ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
 
-  // Wait for fade-out
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  m_transport->processCallbacks();
-
-  // Verify all clips stopped
+  // Verify all clips stopped (after fade-out).
+  EXPECT_TRUE(waitForCallback([&] {
+    return m_transport->getClipState(1) == PlaybackState::Stopped &&
+           m_transport->getClipState(2) == PlaybackState::Stopped &&
+           m_transport->getClipState(3) == PlaybackState::Stopped;
+  }));
   EXPECT_EQ(m_transport_callback->getStopCount(), 3);
-  EXPECT_EQ(m_transport->getClipState(1), PlaybackState::Stopped);
-  EXPECT_EQ(m_transport->getClipState(2), PlaybackState::Stopped);
-  EXPECT_EQ(m_transport->getClipState(3), PlaybackState::Stopped);
 
   m_driver->stop();
 }

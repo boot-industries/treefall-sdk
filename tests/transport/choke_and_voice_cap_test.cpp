@@ -18,6 +18,12 @@
 #include <string>
 #include <vector>
 
+// MSVC's <cmath> does not define M_PI without _USE_MATH_DEFINES; guard it so
+// the Windows build resolves the constant. Matches the codebase's M_PI_2 guard.
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 using namespace orpheus;
 
 namespace {
