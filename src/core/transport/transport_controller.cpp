@@ -319,6 +319,9 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
   // Clamp frames to max buffer size
   numFrames = std::min(numFrames, MAX_BUFFER_FRAMES);
 
+  const bool publishTelemetry =
+      m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
+
   // ORP121 A-01: Clear all clip channel buffers (stereo - 2 per clip)
   static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
   for (size_t i = 0; i < MAX_ROUTING_CHANNELS; ++i) {
@@ -453,6 +456,7 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       event.voiceId = clip.voiceId;
       event.position = getCurrentPosition();
       postTransportEvent(event);
+      m_realtimeTelemetry.reportUnderrunFromRealtime();
 
       clip.source->setDemand(clip.currentSample);
       clip.currentSample += static_cast<int64_t>(framesToRead);
@@ -686,6 +690,22 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
 
   // ORP127 G1: Publish the post-render voice state for lock-free UI queries.
   publishVoiceSnapshot();
+
+  if (publishTelemetry) {
+    RealtimeTelemetrySnapshot snapshot;
+    snapshot.position = TimePoint::fromSamples(newSample);
+    snapshot.active_voice_count = static_cast<uint32_t>(m_activeClipCount);
+
+    const RoutingConfig routingConfig = m_routingMatrix->getConfig();
+    snapshot.group_count = static_cast<uint8_t>(
+        std::min<size_t>(routingConfig.num_groups, kRealtimeTelemetryMaxGroups));
+    for (uint8_t group = 0; group < snapshot.group_count; ++group) {
+      snapshot.group_meters[group] = m_routingMatrix->getGroupMeter(group);
+    }
+    snapshot.master_meter = m_routingMatrix->getMasterMeter();
+
+    (void)m_realtimeTelemetry.publishFromRealtime(snapshot);
+  }
 }
 
 void TransportController::processCommands() {
