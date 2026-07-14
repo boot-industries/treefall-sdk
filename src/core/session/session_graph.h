@@ -226,6 +226,12 @@ public:
     return committed_clips_;
   }
 
+  [[nodiscard]] const std::vector<std::uint64_t>& clip_assignments() const {
+    return clip_assignments_;
+  }
+
+  ORPHEUS_API void set_clip_assignments(std::vector<std::uint64_t> assignments);
+
   [[nodiscard]] const std::vector<std::unique_ptr<Track>>& tracks() const {
     return tracks_;
   }
@@ -297,6 +303,7 @@ private:
   double session_start_beats_{0.0};
   double session_end_beats_{0.0};
   std::vector<std::unique_ptr<Track>> tracks_;
+  std::vector<std::uint64_t> clip_assignments_;
   bool clip_grid_dirty_{false};
   std::uint32_t render_sample_rate_hz_{48000u};
   std::uint16_t render_bit_depth_bits_{24u};

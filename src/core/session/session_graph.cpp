@@ -150,6 +150,10 @@ void SessionGraph::set_name(std::string name) {
   name_ = std::move(name);
 }
 
+void SessionGraph::set_clip_assignments(std::vector<std::uint64_t> assignments) {
+  clip_assignments_ = std::move(assignments);
+}
+
 Track* SessionGraph::add_track(std::string name) {
   auto& slot = tracks_.emplace_back(std::make_unique<Track>(std::move(name)));
   mark_clip_grid_dirty();

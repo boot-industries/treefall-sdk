@@ -3,42 +3,58 @@ cmake_minimum_required(VERSION 3.22)
 
 project(orpheus_find_package_smoke LANGUAGES CXX)
 
-find_package(OrpheusSDK REQUIRED CONFIG)
-
-add_executable(orpheus_find_package_smoke main.cpp)
-
-target_link_libraries(orpheus_find_package_smoke PRIVATE Orpheus::core)
-
-if(NOT TARGET Orpheus::diagnostics)
-  message(FATAL_ERROR "Expected Orpheus::diagnostics to be exported by OrpheusSDK")
+if(NOT DEFINED ORPHEUS_REQUIRED_VERSION)
+  message(FATAL_ERROR "ORPHEUS_REQUIRED_VERSION is required")
 endif()
 
-add_executable(orpheus_find_package_diagnostics
+find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+
+foreach(required_target
+    Orpheus::core
+    Orpheus::diagnostics
+    Orpheus::audio_utils
+    Orpheus::audio_io
+    Orpheus::audio_driver_manager
+    Orpheus::routing
+    Orpheus::transport)
+  if(NOT TARGET ${required_target})
+    message(FATAL_ERROR "Installed target manifest is missing ${required_target}")
+  endif()
+endforeach()
+
+if(NOT OrpheusSDK_VERSION VERSION_EQUAL ORPHEUS_REQUIRED_VERSION)
+  message(FATAL_ERROR
+    "Package reports ${OrpheusSDK_VERSION}; expected ${ORPHEUS_REQUIRED_VERSION}")
+endif()
+
+enable_testing()
+
+function(add_orpheus_fixture target source)
+  add_executable(${target} ${source})
+  target_compile_features(${target} PRIVATE cxx_std_20)
+  add_test(NAME ${target} COMMAND ${target})
+endfunction()
+
+add_orpheus_fixture(orpheus_find_package_core main.cpp)
+target_link_libraries(orpheus_find_package_core PRIVATE Orpheus::core)
+
+add_orpheus_fixture(orpheus_find_package_diagnostics
   ${CMAKE_CURRENT_LIST_DIR}/../../verify_diagnostics_standalone.cpp)
 target_link_libraries(orpheus_find_package_diagnostics PRIVATE Orpheus::diagnostics)
 
-if(NOT TARGET Orpheus::audio_utils)
-  message(FATAL_ERROR "Expected Orpheus::audio_utils to be exported by OrpheusSDK")
+add_orpheus_fixture(orpheus_find_package_analysis analysis.cpp)
+target_link_libraries(orpheus_find_package_analysis PRIVATE Orpheus::audio_utils)
+
+add_orpheus_fixture(orpheus_find_package_writer_input writer_input.cpp)
+target_link_libraries(orpheus_find_package_writer_input PRIVATE Orpheus::audio_utils)
+
+add_orpheus_fixture(orpheus_find_package_transport_routing transport_routing.cpp)
+target_link_libraries(orpheus_find_package_transport_routing
+  PRIVATE Orpheus::transport Orpheus::routing Orpheus::audio_driver_manager)
+
+if(APPLE AND NOT TARGET Orpheus::audio_driver_coreaudio)
+  message(FATAL_ERROR "macOS package is missing Orpheus::audio_driver_coreaudio")
 endif()
-
-add_executable(orpheus_find_package_audio_utils
-  ${CMAKE_CURRENT_LIST_DIR}/../../verify_audio_utils_standalone.cpp)
-target_link_libraries(orpheus_find_package_audio_utils PRIVATE Orpheus::audio_utils)
-
-# When the SDK is consumed via find_package, CompilerWarnings.cmake is expected
-# to live next to the generated package config inside a "cmake" directory.
-# Fall back to the in-tree helper when running the smoke test from the source
-# tree so we reuse the exact same warning policy.
-set(_orpheus_warning_module "${CMAKE_CURRENT_LIST_DIR}/cmake/CompilerWarnings.cmake")
-if(NOT EXISTS "${_orpheus_warning_module}")
-  set(_orpheus_warning_module
-      "${CMAKE_CURRENT_LIST_DIR}/../../cmake/CompilerWarnings.cmake")
-endif()
-
-include(${_orpheus_warning_module})
-orpheus_enable_warnings(orpheus_find_package_smoke)
-orpheus_enable_warnings(orpheus_find_package_diagnostics)
-orpheus_enable_warnings(orpheus_find_package_audio_utils)
 
 if(APPLE)
   add_compile_options(-stdlib=libc++)

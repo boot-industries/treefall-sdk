@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/export.h>
+
 #include <cstdint>
 #include <memory>
 #include <orpheus/transport_controller.h> // For ClipHandle, SessionGraphError
@@ -108,6 +110,12 @@ public:
   ///       implementations keep compiling (additive, ORP134).
   virtual void setRoutingMatrix(IRoutingMatrix* routingMatrix) {
     (void)routingMatrix;
+  }
+
+  /// Attach the transport stopped before any scene state is applied.
+  /// Not owned; must outlive the scene manager or be detached first.
+  virtual void setTransportController(ITransportController* transport) {
+    (void)transport;
   }
 
   // ========================================================================
@@ -233,6 +241,6 @@ public:
 ///
 /// @note The scene manager does NOT take ownership of sessionGraph
 /// @note Caller must ensure sessionGraph outlives the scene manager
-std::unique_ptr<ISceneManager> createSceneManager(core::SessionGraph* sessionGraph);
+ORPHEUS_API std::unique_ptr<ISceneManager> createSceneManager(core::SessionGraph* sessionGraph);
 
 } // namespace orpheus

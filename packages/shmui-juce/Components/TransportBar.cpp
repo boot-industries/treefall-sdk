@@ -224,7 +224,7 @@ void TransportBar::setupButtons() {
   m_loopButton = std::make_unique<ToggleButton>(IconType::Loop);
   m_loopButton->setSize(ButtonSize::Large);
   m_loopButton->setStyle(ButtonStyle::Ghost);
-  m_loopButton->setOnColor(juce::Colour(0xFF3B82F6)); // Blue when active
+  m_loopButton->setOnColor(tokens::lab::tone()); // accent (--lab-tone) when active
   m_loopButton->onToggle = [this](bool enabled) {
     m_isLooping = enabled;
     if (onLoopToggle)

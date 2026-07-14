@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
 #include <functional>
 
@@ -103,10 +104,10 @@ public:
   //==========================================================================
   /** Style configuration for the scrub bar. */
   struct Style {
-    juce::Colour trackColor{0xff27272a};       // Secondary/muted
-    juce::Colour progressColor{0xff3b82f6};    // Primary blue
-    juce::Colour thumbColor{0xff3b82f6};       // Primary blue
-    juce::Colour thumbBorderColor{0xffffffff}; // White border
+    juce::Colour trackColor = tokens::lab::surface3();   // muted track well
+    juce::Colour progressColor = tokens::lab::tone();    // accent (--lab-tone)
+    juce::Colour thumbColor = tokens::lab::tone();       // accent (--lab-tone)
+    juce::Colour thumbBorderColor = tokens::lab::text(); // fg border
     float trackHeight{8.0f};
     float thumbSize{16.0f};
     float thumbBorderWidth{2.0f};

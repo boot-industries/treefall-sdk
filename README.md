@@ -6,10 +6,9 @@
 
 Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
 
-**Current version:** 0.3.1 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
-version is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt) —
-docs reference it rather than restating it. (The 2025-10-31 "v1.0.0-rc.1"
-banner predated the 0.x renumbering; see `CHANGELOG.md` for history.)
+**Current version:** 0.3.2 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
+value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
+`tools/version_contract.py` synchronizes public claims and CI rejects drift.
 
 ## ⚡ Quick Start
 
@@ -31,8 +30,8 @@ ctest --test-dir build --output-on-failure
 **Prerequisites:**
 
 - CMake 3.22+
-- C++20 compiler (MSVC 2019+, Clang 13+, GCC 11+)
-- libsndfile (audio file I/O): `brew install libsndfile` (macOS) or `vcpkg install libsndfile` (Windows)
+- C++20 compiler: VS 2022 MSVC, Apple Clang with libc++, or GCC 11+
+- libsndfile (audio file I/O): Homebrew, apt, or vcpkg package
 
 **Next Steps:**
 
@@ -187,7 +186,7 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 ### Audio I/O
 
 - **Audio file reader** – WAV/AIFF/FLAC via libsndfile
-- **Platform drivers** – CoreAudio (macOS), WASAPI/ASIO (Windows)
+- **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and Linux device backends are not yet release-supported
 - **Dummy driver** – Testing and offline rendering
 - **Device selection** – Runtime device enumeration and hot-swap (ORP109)
 - **Waveform processing** – Fast downsampling for UI rendering (ORP109)
@@ -248,13 +247,13 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 
 ## Supported Platforms
 
-The core SDK is regularly built and tested on:
-
-- Windows (MSVC toolchains for x64)
-- macOS (Clang toolchains for x86_64 and arm64)
-- Linux (GCC and Clang)
-
-Other platforms may work but are not part of automated coverage.
+The host-neutral core, Dummy driver, installed package, and conformance fixtures
+are required on macOS, Windows, and Linux. Device backend support is narrower:
+CoreAudio is supported on macOS; WASAPI is not yet a supported release backend;
+and ALSA, JACK, and PipeWire are not implemented. Exact compiler, architecture,
+backend, and unavailable-capability status lives in
+[`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md). Planned backends are not
+shipped capabilities.
 
 ## Getting Started
 

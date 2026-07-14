@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#define ORPHEUS_SDK_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define ORPHEUS_SDK_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define ORPHEUS_SDK_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define ORPHEUS_SDK_VERSION "@PROJECT_VERSION@"
+
+namespace orpheus {
+inline constexpr int kSdkVersionMajor = ORPHEUS_SDK_VERSION_MAJOR;
+inline constexpr int kSdkVersionMinor = ORPHEUS_SDK_VERSION_MINOR;
+inline constexpr int kSdkVersionPatch = ORPHEUS_SDK_VERSION_PATCH;
+inline constexpr const char* kSdkVersion = ORPHEUS_SDK_VERSION;
+} // namespace orpheus

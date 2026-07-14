@@ -151,20 +151,10 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================================
-  # C++ Build & Test (Windows) — on demand only
+  # C++ Build, ABI, Installed-Package Test (Windows)
   # ============================================================================
-  # Windows is NOT part of the required per-PR gate. It is currently RED on a
-  # pre-existing SDK defect unrelated to CI config: the ABI core builds as DLLs
-  # (ORP_BUILD_ABI_DYNAMIC forces ORP_BUILD_SHARED_CORE ON) but internal factory
-  # entry points the test suite links — createPerformanceMonitor,
-  # createStandalonePerformanceMonitor, createSceneManager, render_tracks — are
-  # not annotated for DLL export, so consumers fail with LNK2019/LNK1120. That is
-  # an SDK export-annotation fix (see the ORP handoff), not a CI-config issue.
-  # Run it from the Actions tab (workflow_dispatch) to validate Windows; fold it
-  # back into cpp-build-test once the export work lands.
   cpp-build-test-windows:
     name: C++ Build & Test (windows-2022, ${{ matrix.build_type }})
-    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 30
     strategy:
@@ -209,6 +199,10 @@ jobs:
         shell: bash
         timeout-minutes: 10
 
+      - name: Package
+        run: cmake --build build --config ${{ matrix.build_type }} --target package --parallel
+        timeout-minutes: 10
+
   # ============================================================================
   # C++ Linting
   # ============================================================================
@@ -232,6 +226,9 @@ jobs:
 
       - name: Validate docs paths (ORP133 G6)
         run: python3 tools/docs_path_audit.py --root .
+
+      - name: Verify CMake-sourced SDK version
+        run: python3 tools/version_contract.py --check
 
       - name: Lint Windows includes
         run: |
@@ -337,16 +334,18 @@ jobs:
   ci-status:
     name: CI Status Check
     runs-on: ubuntu-latest
-    needs: [cpp-build-test, cpp-lint]
+    needs: [cpp-build-test, cpp-build-test-windows, cpp-lint]
     if: always()
 
     steps:
       - name: Check all jobs succeeded
         run: |
           if [[ "${{ needs.cpp-build-test.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.cpp-build-test-windows.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test-windows.result }}" == "cancelled" ]] || \
              [[ "${{ needs.cpp-lint.result }}" == "failure" ]] || [[ "${{ needs.cpp-lint.result }}" == "cancelled" ]]; then
-            echo "❌ One or more jobs failed"
+            echo "One or more required jobs failed"
             echo "cpp-build-test: ${{ needs.cpp-build-test.result }}"
+            echo "cpp-build-test-windows: ${{ needs.cpp-build-test-windows.result }}"
             echo "cpp-lint: ${{ needs.cpp-lint.result }}"
             exit 1
           fi

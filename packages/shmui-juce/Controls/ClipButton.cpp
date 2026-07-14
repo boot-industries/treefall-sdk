@@ -214,7 +214,7 @@ void ClipButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
   juce::Colour bgColor;
   switch (m_clipState) {
   case State::Empty:
-    bgColor = juce::Colour(0xFF2A2A2A);
+    bgColor = tokens::clip::empty(); // --clip-empty
     break;
   case State::Loaded:
     bgColor = m_clipColor.withAlpha(0.8f);

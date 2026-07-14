@@ -157,8 +157,10 @@ private:
   float animationSpeed = 0.1f;
   float opacity = 0.0f;
 
-  // Colors
-  juce::Colour color1{0xFFCADCFC}; // Default from shmui
+  // Colors — Orb shader gradient stops. Intentionally literal hex (a GPU
+  // gradient ramp, not a themeable UI surface); see ColorUtils.h kOrbColor*
+  // and orpheus-catalog.json. Do not migrate to tokens::*.
+  juce::Colour color1{0xFFCADCFC};
   juce::Colour color2{0xFFA0B9D1};
   juce::Colour targetColor1{0xFFCADCFC};
   juce::Colour targetColor2{0xFFA0B9D1};
