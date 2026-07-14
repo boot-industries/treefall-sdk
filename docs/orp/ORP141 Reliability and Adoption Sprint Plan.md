@@ -29,10 +29,10 @@
   Linux provider boundaries and conformance gates are documented. Hosted CI is
   not real-device evidence. Promotion of WASAPI remains blocked until the
   self-hosted `wasapi-hardware-acceptance` workflow publishes a passing record.
-- Local verification observed all 138 configured contracts passing across the
-  full run plus the corrected JSON conformance rerun. Windows CI run
-  `29309941110` remains queued without jobs; WASAPI promotion and the three R3
-  evidence tasks remain open rather than being inferred from hosted CI.
+- Local verification after R4 observed all 143 configured contracts passing.
+  Latest-commit Windows CI run `29316779217` is queued without job records;
+  WASAPI promotion and the three R3 evidence tasks remain open rather than
+  being inferred from workflow configuration or macOS verification.
 - R4 is complete. The public `SessionGraph` header now exposes stable
   `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
   coalesced revisioned change sets, rollback-on-destruction transactions, and
@@ -59,8 +59,10 @@
   clean-prefix `find_package` fixture also compiles and runs the public
   `SessionGraph` transaction/snapshot and `RealtimeTelemetry` APIs, including
   the transport-owned telemetry accessor, without any private header.
-- R5 remains gated on its stated two-consumer evidence and shipped/soaked
-  R1–R4 entry criteria; this checkpoint does not infer that evidence.
+- R5 evidence review found one conditional requirement: FourTrack may consider
+  the one-shot voice utility if R5 lands. ORP142 records no second independent
+  consumer requirement, and R1–R4 have not shipped/soaked together. The R5
+  implementation jobs therefore remain gated and are not started.
 - The Release Operating Model section is explicitly deferred to a later
   session; none of its remaining gates are represented as complete here.
 
@@ -223,6 +225,12 @@ No API is advertised as complete while it returns placeholder values, swallows a
 **Goal:** add the smallest reusable control feature with proven adoption demand.
 
 **Entry criteria:** two independent, existing consumer requirements substantiate a host-neutral contract; R1–R4 have shipped and soaked in at least one release. No consumer migration is part of this sprint.
+
+**Gate review (2026-07-14):** not met. [[ORP142 Downstream Consumer Adoption
+Notes]] records only FourTrack's conditional interest and explicitly creates no
+SDK requirement. No second independent consumer requirement is documented, and
+R1–R4 have not shipped and soaked together. Per the exit rule below, do not add
+the voice primitive, policy surface, tests, or migration API in this checkpoint.
 
 **SDK deliverables**
 
