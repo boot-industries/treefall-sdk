@@ -3,7 +3,7 @@
 # ORP141 — Reliability and Adoption Sprint Plan
 
 **Document type:** Product and engineering sprint plan  
-**Status:** In progress — R0/R1/R2 complete; R3 implementation committed with external CI/hardware evidence pending; R4 active
+**Status:** In progress — R0/R1/R2/R4 complete; R3 external CI/hardware evidence pending; R5 entry criteria not yet met
 **Scope:** Orpheus SDK core, packages, release artifacts, and SDK-owned conformance fixtures only. No child-app source changes, submodule-pin updates, application CI work, or UI feature work are deliverables of this plan.
 **Related:** [[ORP136 TODO and Incomplete-Feature Triage]] · [[ORP137 Hardening Program Completion and Downstream Follow-ups]] · [[ORP135 LATER Sprint - Platform Leadership Bets]] · [[ORP142 Downstream Consumer Adoption Notes]] · FreqFinder [[FRQ033 Orpheus SDK Release Package Refresh for Analysis Facade]] · FourTrack [[FTR027 SDK Note - Real-Time Sample-Accurate Event Primitive]] · [[FTR028 SDK Note - Routing Matrix Block-Size Ceiling]]
 
@@ -33,7 +33,7 @@
   full run plus the corrected JSON conformance rerun. Windows CI run
   `29309941110` remains queued without jobs; WASAPI promotion and the three R3
   evidence tasks remain open rather than being inferred from hosted CI.
-- R4 is active. The public `SessionGraph` header now exposes stable
+- R4 is complete. The public `SessionGraph` header now exposes stable
   `SessionId`/`TrackId`/`ClipId` edits, canonical `TimeRange` snapshots,
   coalesced revisioned change sets, rollback-on-destruction transactions, and
   snapshot restore for application-owned undo/redo. Runtime transport and
@@ -46,9 +46,21 @@
   `add_subdirectory` consumer against `Orpheus::shmui_juce`, asserts that the
   OpenGL target and compile definition are absent, and runs in the Ubuntu
   Release CI leg.
-- Pause checkpoint: transaction and ShmUI work is pushed through `c5a1fc6c`.
-  Resume R4 at the fixed-capacity decimated realtime telemetry contract; no
-  telemetry implementation edits are pending in the working tree.
+- The transport now owns a public `RealtimeTelemetry` bridge: a fixed 64-slot
+  SPSC ring with configurable block decimation, monotonic sequence/drop
+  reporting, canonical post-block `TimePoint`, callback/underrun diagnostics,
+  active-voice count, and fixed group/master meters. Full rings drop the newest
+  capture rather than blocking or overwriting unread data.
+- Telemetry is presentation-neutral by contract. FFTs, histories, smoothing,
+  analyzer selection, and UI view models remain message-thread application
+  state; the SDK audio path only records and publishes bounded POD snapshots.
+- Local verification passed four queue/cadence/diagnostic tests, the live
+  transport integration test, and the strict in-repository realtime audit. A
+  clean-prefix `find_package` fixture also compiles and runs the public
+  `SessionGraph` transaction/snapshot and `RealtimeTelemetry` APIs, including
+  the transport-owned telemetry accessor, without any private header.
+- R5 remains gated on its stated two-consumer evidence and shipped/soaked
+  R1–R4 entry criteria; this checkpoint does not infer that evidence.
 - The Release Operating Model section is explicitly deferred to a later
   session; none of its remaining gates are represented as complete here.
 
@@ -226,6 +238,19 @@ No API is advertised as complete while it returns placeholder values, swallows a
 ---
 
 ## 5. Release and adoption operating model
+
+**Execution status:** deferred as a unit to a later session. The following jobs
+are recorded, remain incomplete, and are not prerequisites for closing the
+current R4 implementation checkpoint:
+
+- Enforce the CMake single-source versioning policy.
+- Run installed ABI compatibility and migration checks.
+- Model consumer needs only in SDK-owned fixtures.
+- Preserve the realtime release-blocker suite.
+- Maintain a hardware-backed long-running soak scenario.
+- Gate release supply-chain metadata and dependency audits.
+- Update public contract documentation atomically with API changes.
+- Verify overall installation and truthfulness criteria.
 
 | Practice | Required rule |
 | --- | --- |

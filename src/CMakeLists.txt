@@ -7,6 +7,7 @@ endif()
 add_library(orpheus_diagnostics_objects OBJECT
   core/common/performance_monitor.cpp
   core/common/realtime_diagnostics.cpp
+  core/common/realtime_telemetry.cpp
 )
 
 target_compile_features(orpheus_diagnostics_objects PUBLIC cxx_std_20)

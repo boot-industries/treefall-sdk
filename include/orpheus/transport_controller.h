@@ -3,6 +3,7 @@
 
 #include <orpheus/errors.h>
 #include <orpheus/export.h>
+#include <orpheus/realtime_telemetry.h>
 
 #include <cstdint>
 #include <memory>
@@ -760,6 +761,14 @@ public:
   ///
   /// @see addCuePoint(), getCuePoints()
   virtual SessionGraphError removeCuePoint(ClipHandle handle, uint32_t cueIndex) = 0;
+
+  /// Access the fixed-capacity realtime telemetry bridge.
+  ///
+  /// The transport owns the returned object for its lifetime. Exactly one
+  /// message-thread consumer may configure its decimation and drain snapshots
+  /// with RealtimeTelemetry::tryRead(). The audio callback is the sole producer.
+  /// Hosts must not retain the pointer after destroying the controller.
+  virtual RealtimeTelemetry* getRealtimeTelemetry() noexcept = 0;
 };
 
 /// Create a transport controller instance
