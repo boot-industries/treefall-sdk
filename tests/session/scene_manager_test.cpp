@@ -123,6 +123,21 @@ TEST_F(SceneManagerTest, CaptureSceneTimestampIncreases) {
 // Scene Recall Tests
 // ============================================================================
 
+TEST(SceneManagerPackageContract, SelfContainedFactoryCanCaptureAndRecall) {
+  auto manager = createSceneManager();
+  auto packageTransport = createTransportController(nullptr, 48000);
+  ASSERT_NE(manager, nullptr);
+  ASSERT_NE(packageTransport, nullptr);
+  ASSERT_NE(packageTransport->getRoutingMatrix(), nullptr);
+
+  manager->setTransportController(packageTransport.get());
+  manager->setRoutingMatrix(packageTransport->getRoutingMatrix());
+  const auto sceneId = manager->captureScene("Installed Package Scene");
+
+  ASSERT_FALSE(sceneId.empty());
+  EXPECT_EQ(manager->recallScene(sceneId), SessionGraphError::OK);
+}
+
 TEST_F(SceneManagerTest, RecallSceneSucceeds) {
   std::string sceneId = sceneManager->captureScene("Test Scene");
 
