@@ -5,7 +5,9 @@
 #include <cctype>
 #include <cerrno>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -13,6 +15,14 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+
+#if defined(_WIN32)
+#include <io.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "common/json_parser.h"
 
@@ -31,6 +41,87 @@ using ::orpheus::core::json::RequireString;
 using ::orpheus::core::json::WriteIndent;
 
 constexpr double kClipOrderingTolerance = 1e-9;
+
+std::string ReadTextFile(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to open session: " + path.string());
+  }
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  if (!file.eof() && file.fail()) {
+    throw std::runtime_error("Failed to read session: " + path.string());
+  }
+  return buffer.str();
+}
+
+void SyncFile(std::FILE* file, const std::filesystem::path& path) {
+  if (std::fflush(file) != 0) {
+    throw std::runtime_error("Failed to flush session: " + path.string());
+  }
+#if defined(_WIN32)
+  if (_commit(_fileno(file)) != 0) {
+#else
+  if (::fsync(fileno(file)) != 0) {
+#endif
+    throw std::runtime_error("Failed to sync session: " + path.string());
+  }
+}
+
+void WriteDurableFile(const std::filesystem::path& path, const std::string& contents) {
+#if defined(_WIN32)
+  std::FILE* file = _wfopen(path.c_str(), L"wb");
+#else
+  std::FILE* file = std::fopen(path.c_str(), "wb");
+#endif
+  if (file == nullptr) {
+    throw std::runtime_error("Unable to write session: " + path.string());
+  }
+  try {
+    const size_t written = std::fwrite(contents.data(), 1, contents.size(), file);
+    if (written != contents.size()) {
+      throw std::runtime_error("Failed to write session: " + path.string());
+    }
+    SyncFile(file, path);
+  } catch (...) {
+    std::fclose(file);
+    throw;
+  }
+  if (std::fclose(file) != 0) {
+    throw std::runtime_error("Failed to close session: " + path.string());
+  }
+}
+
+void ReplaceFile(const std::filesystem::path& source, const std::filesystem::path& destination) {
+#if defined(_WIN32)
+  if (MoveFileExW(source.c_str(), destination.c_str(),
+                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
+    throw std::runtime_error("Failed to replace session: " + destination.string());
+  }
+#else
+  if (::rename(source.c_str(), destination.c_str()) != 0) {
+    throw std::runtime_error("Failed to replace session: " + destination.string());
+  }
+#endif
+}
+
+void SyncParentDirectory(const std::filesystem::path& path) {
+#if !defined(_WIN32)
+  const std::filesystem::path parent =
+      path.parent_path().empty() ? std::filesystem::path{"."} : path.parent_path();
+  const int directory = ::open(parent.c_str(), O_RDONLY);
+  if (directory < 0) {
+    throw std::runtime_error("Unable to open session directory: " + parent.string());
+  }
+  const int result = ::fsync(directory);
+  ::close(directory);
+  if (result != 0) {
+    throw std::runtime_error("Failed to sync session directory: " + parent.string());
+  }
+#else
+  (void)path;
+#endif
+}
 
 std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
   if (sample_rate_hz == 0u) {
@@ -88,6 +179,12 @@ SessionGraph ParseSession(const std::string& json_text) {
   JsonParser parser(json_text);
   const JsonValue root = parser.Parse();
   const JsonValue& object = ExpectObject(root, "session root");
+  if (auto schema_it = object.object.find("schema_version"); schema_it != object.object.end()) {
+    const double version = RequireNumber(schema_it->second, "schema_version");
+    if (version != 0.0 && version != static_cast<double>(kCurrentSessionSchemaVersion)) {
+      throw std::runtime_error("Unsupported session schema_version");
+    }
+  }
 
   SessionGraph session;
   const JsonValue* session_name_field = RequireField(object, "name");
@@ -206,6 +303,8 @@ SessionGraph ParseSession(const std::string& json_text) {
 std::string SerializeSession(const SessionGraph& session) {
   std::ostringstream stream;
   stream << "{\n";
+  WriteIndent(stream, 2);
+  stream << "\"schema_version\": " << kCurrentSessionSchemaVersion << ",\n";
   WriteIndent(stream, 2);
   stream << "\"name\": \"" << EscapeString(session.name()) << "\",\n";
   WriteIndent(stream, 2);
@@ -383,24 +482,48 @@ std::string SerializeSession(const SessionGraph& session) {
   return stream.str();
 }
 
-SessionGraph LoadSessionFromFile(const std::string& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    throw std::runtime_error("Unable to open session fixture: " + path);
+SessionLoadResult LoadSessionWithRecovery(const std::string& path) {
+  try {
+    return {ParseSession(ReadTextFile(path)), false, path};
+  } catch (const std::exception& primaryError) {
+    const std::filesystem::path backup = std::filesystem::path(path).concat(".bak");
+    try {
+      return {ParseSession(ReadTextFile(backup)), true, backup.string()};
+    } catch (const std::exception& backupError) {
+      throw std::runtime_error("Unable to load session primary (" +
+                               std::string(primaryError.what()) + ") or backup (" +
+                               backupError.what() + ")");
+    }
   }
-  std::ostringstream buffer;
-  buffer << file.rdbuf();
-  return ParseSession(buffer.str());
+}
+
+SessionGraph LoadSessionFromFile(const std::string& path) {
+  return LoadSessionWithRecovery(path).session;
 }
 
 void SaveSessionToFile(const SessionGraph& session, const std::string& path) {
-  std::ofstream file(path);
-  if (!file.is_open()) {
-    throw std::runtime_error("Unable to write session: " + path);
+  if (path.empty()) {
+    throw std::invalid_argument("Session path must not be empty");
   }
-  file << SerializeSession(session);
-  if (!file) {
-    throw std::runtime_error("Failed to write session: " + path);
+  const std::filesystem::path destination(path);
+  const std::filesystem::path temporary = std::filesystem::path(path).concat(".tmp");
+  const std::filesystem::path backup = std::filesystem::path(path).concat(".bak");
+  const std::filesystem::path backupTemporary = std::filesystem::path(path).concat(".bak.tmp");
+  std::error_code cleanupError;
+
+  try {
+    WriteDurableFile(temporary, SerializeSession(session));
+    if (std::filesystem::exists(destination)) {
+      WriteDurableFile(backupTemporary, ReadTextFile(destination));
+      ReplaceFile(backupTemporary, backup);
+    }
+    ReplaceFile(temporary, destination);
+    SyncParentDirectory(destination);
+  } catch (...) {
+    std::filesystem::remove(temporary, cleanupError);
+    cleanupError.clear();
+    std::filesystem::remove(backupTemporary, cleanupError);
+    throw;
   }
 }
 

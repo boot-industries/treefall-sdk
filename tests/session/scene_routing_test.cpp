@@ -10,7 +10,7 @@
 #include <orpheus/routing_matrix.h>
 #include <orpheus/scene_manager.h>
 
-#include "session_graph.h"
+#include <orpheus/session_graph.h>
 
 #include <gtest/gtest.h>
 #include <memory>

@@ -3,8 +3,9 @@
 # ORP142 — Downstream Consumer Adoption Notes
 
 **Document type:** Non-binding downstream guidance  
-**Status:** Proposed; separate from [[ORP141 Reliability and Adoption Sprint Plan]]  
+**Status:** Published handoff; SDK implementation merged through [[ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff]]  
 **Scope:** Suggested adoption and validation work for `~/dev/clip-composer`, `~/dev/freqfinder`, `~/dev/fourtrack`, and `~/dev/shmui`. This document creates **no SDK requirement** and does not authorize changes in those repositories.
+**Completion record:** Child-app leads should use ORP143 §5 for the contract-by-contract adoption checklist, ownership boundaries, and explicit non-deliverables.
 
 ---
 

@@ -267,6 +267,15 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     add_test(NAME coreaudio_driver_test COMMAND coreaudio_driver_test)
 endif()
 
+if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
+    add_executable(wasapi_driver_test wasapi_driver_test.cpp)
+    target_link_libraries(wasapi_driver_test
+        PRIVATE orpheus_audio_driver_wasapi orpheus_audio_driver_manager
+                GTest::gtest GTest::gtest_main)
+    target_include_directories(wasapi_driver_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    add_test(NAME wasapi_driver_test COMMAND wasapi_driver_test)
+endif()
+
 # Audio Driver Manager tests
 add_executable(driver_manager_test
     driver_manager_test.cpp

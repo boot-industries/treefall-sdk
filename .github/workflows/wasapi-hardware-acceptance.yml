@@ -1,0 +1,44 @@
+name: WASAPI Hardware Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-device:
+    name: Shared-mode real-device acceptance
+    runs-on: [self-hosted, Windows, x64, audio-hardware]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-hardware -G "Visual Studio 17 2022" -A x64
+          -DORP_WITH_TESTS=OFF
+          -DORPHEUS_ENABLE_REALTIME=ON
+          -DORPHEUS_ENABLE_WASAPI=ON
+
+      - name: Build acceptance executable
+        run: >-
+          cmake --build build-hardware --config Release
+          --target orpheus_wasapi_hardware_acceptance --parallel
+
+      - name: Exercise default hardware endpoint
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-hardware/evidence | Out-Null
+          & build-hardware/tools/Release/orpheus_wasapi_hardware_acceptance.exe |
+            Tee-Object -FilePath build-hardware/evidence/wasapi-hardware.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload acceptance record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: wasapi-hardware-${{ github.run_id }}
+          path: build-hardware/evidence/wasapi-hardware.json
+          if-no-files-found: error
+          retention-days: 90

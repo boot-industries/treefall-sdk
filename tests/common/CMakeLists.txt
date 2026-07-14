@@ -49,6 +49,7 @@ add_test(
 
 add_executable(realtime_diagnostics_test
     realtime_diagnostics_test.cpp
+    realtime_telemetry_test.cpp
 )
 
 target_link_libraries(realtime_diagnostics_test

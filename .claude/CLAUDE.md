@@ -5,3 +5,55 @@
 
 *No recent activity*
 </claude-mem-context>
+
+# ORP141 Resume Checkpoint (2026-07-14)
+
+- PR #206 merged to `main` as `f5d703cd`. The R4 implementation checkpoint is
+  complete; deferred evidence and operating-model jobs remain recorded below.
+- Durable completion and child-app handoff: `docs/orp/ORP143 Reliability and
+  Adoption Sprint Completion and Child-App Handoff.md`.
+- R4 public contracts:
+  - `include/orpheus/session_graph.h` exposes stable-ID transactions,
+    pointer-free canonical snapshots, revisioned change sets, rollback, and
+    restore for application-owned undo/redo.
+  - The ShmUI-JUCE import has a versioned 53-file manifest and a real pinned
+    JUCE 8.0.4 non-OpenGL `add_subdirectory` consumer.
+  - `include/orpheus/realtime_telemetry.h` exposes a fixed 64-slot SPSC ring,
+    configurable callback-block decimation, monotonic sequence/drop reporting,
+    canonical post-block `TimePoint`, callback/underrun diagnostics,
+    active-voice count, and fixed group/master meters.
+  - `ITransportController::getRealtimeTelemetry()` exposes the transport-owned
+    bridge. FFTs, histories, smoothing, analyzers, and UI view models remain
+    message-thread application state outside core.
+  - The clean-prefix `find_package` workflow fixture compiles and runs both the
+    public `SessionGraph` and telemetry contracts with no private header.
+- Verification observed after R4:
+  - Four telemetry queue/cadence/diagnostic tests passed.
+  - The live transport telemetry integration test passed.
+  - `realtime_static_audit` and `cmake_find_package` passed.
+  - Full configured suite passed: 143/143.
+- R3 evidence is explicitly deferred. GitHub reports repository Actions as
+  disabled (`enabled: false`); the user elected to keep it disabled, so
+  latest-commit Windows run `29316779217` remains queued without job records
+  and cannot prove package/ABI conformance.
+- GitHub reports zero self-hosted runners. Direct dispatch of
+  `wasapi-hardware-acceptance.yml` also returned API 404 because the new manual
+  workflow is not on the default branch. Do not promote Windows/WASAPI support
+  without a later hosted CI record and real-device artifact.
+- R5 gate review found only FourTrack's conditional interest, not two
+  independent requirements, and R1–R4 have not shipped/soaked together. The
+  voice implementation, policy, realtime tests, and migration guidance jobs
+  are explicitly dropped for this checkpoint rather than implemented without
+  the required evidence.
+- The entire Release Operating Model is deferred at the user's direction. Its
+  recorded, incomplete jobs for a later session are:
+  - enforce CMake single-source versioning;
+  - run installed ABI compatibility and migration checks;
+  - model consumer needs only in SDK-owned fixtures;
+  - preserve the realtime release-blocker suite;
+  - maintain a hardware-backed long-running soak scenario;
+  - gate release supply-chain metadata and dependency audits;
+  - update public contract documentation atomically; and
+  - verify overall installation and truthfulness criteria.
+- Fixture quirk: session goldens exist in both `tests/fixtures/session` and
+  `tools/fixtures`; schema changes must update both sets.
