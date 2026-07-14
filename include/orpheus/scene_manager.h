@@ -234,6 +234,14 @@ public:
 // Factory Function
 // ============================================================================
 
+/// Create a self-contained scene manager for installed-package consumers.
+///
+/// The manager owns an empty session graph internally. This is the preferred
+/// factory when the host does not build against SDK-private SessionGraph
+/// headers; routing and transport may then be attached through the public
+/// ISceneManager wiring methods.
+ORPHEUS_API std::unique_ptr<ISceneManager> createSceneManager();
+
 /// Create scene manager instance
 ///
 /// @param sessionGraph The session graph containing clip metadata
