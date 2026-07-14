@@ -42,6 +42,9 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_input.cpp)
 # and buffer statistics). Host-neutral, dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_analysis.cpp)
 
+# R2: versioned media fingerprints and deterministic resolution.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES media_integrity.cpp)
+
 if(SNDFILE_FOUND)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_writer_libsndfile.cpp) # ORP134 G5 / FTR007
@@ -77,6 +80,13 @@ if(SNDFILE_FOUND)
     if(SNDFILE_LIBRARY_DIRS)
         target_link_directories(orpheus_audio_utils PUBLIC ${SNDFILE_LIBRARY_DIRS})
     endif()
+endif()
+
+if(WIN32)
+    target_link_libraries(orpheus_audio_utils PUBLIC bcrypt)
+elseif(NOT APPLE)
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+    target_link_libraries(orpheus_audio_utils PUBLIC OpenSSL::Crypto)
 endif()
 
 set_target_properties(orpheus_audio_utils PROPERTIES POSITION_INDEPENDENT_CODE ON)
