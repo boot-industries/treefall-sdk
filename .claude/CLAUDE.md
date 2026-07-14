@@ -8,39 +8,44 @@
 
 # ORP141 Resume Checkpoint (2026-07-14)
 
-- Pause boundary: R4 transaction and ShmUI contracts are complete. The next
-  task is `Expose fixed-capacity decimated realtime telemetry`; it is marked in
-  progress but has no edits yet.
-- Active branch: `feat/orp141-reliability-adoption`; PR #206. Working tree was
-  clean and all work was pushed through `c5a1fc6c`.
-- Recent commits:
-  - `5fbae07f` — public stable-ID `SessionGraph` transactions/snapshots
-  - `120cabb7` — versioned ShmUI-JUCE manifest integrity validator
-  - `c5a1fc6c` — real JUCE 8.0.4 no-OpenGL add_subdirectory consumer
-- R4 completed work:
-  - `include/orpheus/session_graph.h` is installed/public and exposes stable
-    `SessionId`/`TrackId`/`ClipId`, canonical `TimeRange` snapshots, coalesced
-    revision change sets, rollback-on-destruction transactions, and restore for
-    app-owned undo/redo.
-  - `packages/shmui-juce/shmui-juce-import.json` records the upstream revision,
-    exported components, required JUCE modules, token contract, optional
-    default-off OpenGL feature, hash algorithm, and imported-content SHA-256.
-  - `tools/shmui_juce_manifest.py --check` is registered in CTest.
-  - The checksum-pinned JUCE fixture builds and runs
-    `Orpheus::shmui_juce` without creating/linking the OpenGL target. The Ubuntu
-    Release CI leg now runs it.
-- Verification observed:
-  - `SessionGraphTransactions.*:SessionGraphInvariants.*`: 8/8 passed.
-  - `shmui_juce_manifest` CTest passed; 53 imported files matched the manifest.
-  - The non-OpenGL fixture built all ShmUI sources and its runtime smoke test
-    passed locally.
-- R4 remaining: fixed-capacity decimated realtime telemetry; explicitly keep
-  app analysis/view-model state outside core; export both public contracts
-  through clean-prefix package fixtures.
-- R3 remains truthfully open: hosted run `29309941110` is still queued without
-  jobs, Windows package/ABI proof is unavailable, and no self-hosted WASAPI
-  real-device artifact exists. Do not promote the Windows support tier.
-- The entire `Release Operating Model` todo phase was dropped for this session
-  at the user's direction. It remains deferred work, not completed work.
+- Active branch: `feat/orp141-reliability-adoption`; PR #206. R4 is complete
+  and pushed through `3e6daffd` (`feat(telemetry): add bounded realtime
+  snapshots`).
+- R4 public contracts:
+  - `include/orpheus/session_graph.h` exposes stable-ID transactions,
+    pointer-free canonical snapshots, revisioned change sets, rollback, and
+    restore for application-owned undo/redo.
+  - The ShmUI-JUCE import has a versioned 53-file manifest and a real pinned
+    JUCE 8.0.4 non-OpenGL `add_subdirectory` consumer.
+  - `include/orpheus/realtime_telemetry.h` exposes a fixed 64-slot SPSC ring,
+    configurable callback-block decimation, monotonic sequence/drop reporting,
+    canonical post-block `TimePoint`, callback/underrun diagnostics,
+    active-voice count, and fixed group/master meters.
+  - `ITransportController::getRealtimeTelemetry()` exposes the transport-owned
+    bridge. FFTs, histories, smoothing, analyzers, and UI view models remain
+    message-thread application state outside core.
+  - The clean-prefix `find_package` workflow fixture compiles and runs both the
+    public `SessionGraph` and telemetry contracts with no private header.
+- Verification observed after R4:
+  - Four telemetry queue/cadence/diagnostic tests passed.
+  - The live transport telemetry integration test passed.
+  - `realtime_static_audit` and `cmake_find_package` passed.
+  - Full configured suite passed: 143/143.
+- R3 remains truthfully open: hosted Windows CI has not supplied package/ABI
+  proof, and no self-hosted WASAPI real-device artifact exists. Do not promote
+  the Windows support tier without those observed records.
+- R5 remains gated on its stated two-independent-consumer evidence and shipped/
+  soaked R1–R4 entry criteria. Do not infer evidence or start the voice utility
+  until the gate is met.
+- The entire Release Operating Model is deferred at the user's direction. Its
+  recorded, incomplete jobs for a later session are:
+  - enforce CMake single-source versioning;
+  - run installed ABI compatibility and migration checks;
+  - model consumer needs only in SDK-owned fixtures;
+  - preserve the realtime release-blocker suite;
+  - maintain a hardware-backed long-running soak scenario;
+  - gate release supply-chain metadata and dependency audits;
+  - update public contract documentation atomically; and
+  - verify overall installation and truthfulness criteria.
 - Fixture quirk: session goldens exist in both `tests/fixtures/session` and
   `tools/fixtures`; schema changes must update both sets.
