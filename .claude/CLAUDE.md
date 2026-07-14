@@ -8,9 +8,8 @@
 
 # ORP141 Resume Checkpoint (2026-07-14)
 
-- Active branch: `feat/orp141-reliability-adoption`; PR #206. R4 is complete
-  and pushed through `3e6daffd` (`feat(telemetry): add bounded realtime
-  snapshots`).
+- PR #206 merged to `main` as `f5d703cd`. The R4 implementation checkpoint is
+  complete; deferred evidence and operating-model jobs remain recorded below.
 - R4 public contracts:
   - `include/orpheus/session_graph.h` exposes stable-ID transactions,
     pointer-free canonical snapshots, revisioned change sets, rollback, and
