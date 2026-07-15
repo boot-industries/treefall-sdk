@@ -111,7 +111,44 @@ These are meaningful game-audio opportunities, especially for studios that strad
 interactive content and IP-media production. They do not make NMOS a mandatory
 engine dependency.
 
-### 3.2 A viable first joint study: read-only endpoint observation
+### 3.2 Location-based entertainment is the primary joint opportunity
+
+Location-based entertainment (LBE)—attractions, themed venues, immersive
+installations, interactive museums, and park-scale games—is where Orpheus's local
+audio role and Aurora's external orchestration role reinforce one another most
+directly. This is not a speculative “smart venue” label: a current themed-entertainment
+deployment documents distinct operating zones, show start/stop, audio/video/lighting
+control, special-event changes, and weather-related adjustment [9].
+
+An LBE flow has four separable phases:
+
+| Phase | Orpheus host/application | Aurora | Must remain elsewhere |
+| --- | --- | --- | --- |
+| Content commissioning | Verify local media, session identity, source layout, and render fixtures | Audit approved facility topology/version | Asset library, show authoring, rights, operator UI |
+| Pre-open preflight | Validate local device/media/session readiness and report bounded health | Discover/validate external senders, receivers, clock/route compatibility, and stage dry-run plan | Physical safety inspection and venue sign-off |
+| Show operation | Execute the application's already approved local playback behavior and preserve panic/stop independence | Activate/verify external media routes and retain auditable state transitions | Show narrative, lighting/video cues, guest interaction logic |
+| Fault/recovery | Report local failure, stop or enter a host-defined safe state | Report route/clock mismatch, restore a recorded external snapshot where valid | Human incident command, evacuation/safety systems, mechanical ride control |
+
+This gives LBE a more concrete first target than a generic IoT appliance:
+**a local Orpheus audio node can remain correct when the venue network is absent,
+while Aurora makes facility dependencies observable and recoverable.**
+
+The dependency order remains strict. G-04's fixed channel-aware render topology is
+needed before making physical-output/cue claims; G-02's bounded ingress is needed
+before more than one local control source is admitted; G-03 scheduling is an
+optional later timing primitive, not a show-control product; and G-05 immersive
+PCM-bed work stays strategic [2]. The initial LBE profile must therefore describe
+what exists today, not promise cues, timecode, distributed synchronization, or
+immersive rendering.
+
+**Recommended LBE proof.** Replace the abstract R1 study with a simulated
+three-zone attraction fixture: one Orpheus host per zone, a deliberately missing
+asset in one zone, a changed external route in another, and a panic/stop event in
+the third. Aurora must dry-run/audit the facility plan; the hosts must report
+truthful readiness; no simulated control result may modify the audio callback or
+claim a physical route.
+
+### 3.3 A viable first joint study: read-only endpoint observation
 
 The first study should be intentionally modest and simulated:
 
@@ -133,7 +170,7 @@ The first study should be intentionally modest and simulated:
 useful. A passing demo is not a new Orpheus target, an NMOS implementation, or
 permission for live control.
 
-### 3.3 Future game-audio control plane: staged, never direct
+### 3.4 Future game-audio control plane: staged, never direct
 
 If the read-only study earns real adopter interest, a later integration can advance
 in small steps:
@@ -154,7 +191,60 @@ The future Orpheus G-02 bounded multi-producer dispatcher and G-03
 sample-addressed-event research are relevant internal safety seams, but neither
 should be built as an “NMOS API.” They remain protocol-neutral SDK work first [2].
 
-### 3.4 Explicit game-audio non-goals
+### 3.5 Augmented-reality audio: local pose, external facility
+
+AR makes the real-time boundary even sharper. ARCore anchors maintain a
+world-relative pose while the platform's environmental understanding updates; their
+pose can change as the world estimate improves [10]. An AR application must handle
+that local, frame-rate-sensitive spatial relationship in its engine/runtime. It
+cannot wait for Aurora, an NMOS registry, an MCP client, or an IoT broker.
+
+**What Orpheus can plausibly offer first:** the authoring/tool side—asset analysis,
+format validation, controlled audition, deterministic offline render, and eventually
+the protocol-neutral local timing/voice/topology contracts recorded in ORP147/148.
+For a venue AR installation it may also be the local audio component that reports
+readiness to an Aurora adapter.
+
+**What remains outside Orpheus today:** mobile/wearable device backend, ARKit/ARCore/
+OpenXR bindings, world-anchor lifecycle, head pose, HRTF/spatialization, occlusion,
+shared-anchor/cloud service, game object model, and rendered AR scene policy. A
+future adapter may translate an engine-owned anchor/pose into a host-owned audio
+intent, but no pose or network event may cross directly into the audio callback.
+
+**AR admission gate.** Before adding an audio-anchor API, two independent AR
+developers must identify the same engine-neutral contract, including coordinate
+space, update rate, pose-loss/relocalization behavior, listener semantics, mobile
+platform, spatial renderer ownership, and the proof that a generic SDK boundary is
+better than an engine adapter. Until then, AR is an LBE/tooling research extension,
+not a runtime promise.
+
+### 3.6 Livestreaming: an honourable but real control-plane fit
+
+Livestreaming is not Orpheus network audio. It is, however, a meaningful
+professional-audio workflow: a local app may provide prepared playback, cue/bed
+handling, media integrity, diagnostics, and deterministic recovery while a separate
+production stack carries the encoded stream to an ingest service/CDN.
+
+NMOS is relevant where a livestream is produced inside a professional IP-media
+facility. The NMOS model describes professional networked-media control separately
+from audio/video transport, and Aurora already implements discovery, connection
+management, channel mapping, compatibility, and clock observation [3], [11]. This
+makes a credible joint path for a streaming control room or event facility:
+
+| Concern | Orpheus host | Aurora | External streaming stack |
+| --- | --- | --- | --- |
+| Local playout/cue | Owns playback, local stop/panic, media/session recovery | Observes approved endpoint state | None |
+| Facility route | Reports only host readiness/capability | Plans/stages/activates/verifies real NMOS routes | Encoder receives its configured input |
+| Stream encode/distribution | Never owns encoder or CDN behavior | Never substitutes for stream transport | Encoder, packager, ingest, CDN, viewer telemetry |
+| Incident response | Truthful local diagnostics; host-defined safe state | Audited topology/clock/route evidence | Platform-specific stream health and failover |
+
+**Recommendation:** keep livestreaming an honourable secondary LBE/broadcast
+opportunity. The first study can reuse the LBE fixture with an encoder-shaped
+simulated receiver. Do not add RTMP/SRT/WebRTC/HLS, CDN APIs, chat, ad insertion,
+viewer metrics, or stream redundancy to either core merely because a local audio
+node participates in a livestream.
+
+### 3.7 Explicit game-audio non-goals
 
 - No consumer-game NMOS discovery or registration requirement.
 - No MCP, HTTP, WebSocket, MQTT, or Aurora client on the audio thread.
@@ -324,7 +414,7 @@ bypass.
 | Order | Research or branch | Goal | Exit criterion |
 | --- | --- | --- | --- |
 | R0 | Preserve boundaries | No code; retain this record and ORP147/148 gates | Owners agree Aurora is control plane, Orpheus is audio infrastructure |
-| R1 | Read-only simulated endpoint study | Determine whether shared status/topology language is useful | Public-only Orpheus fixture + Aurora dry-run/audit; zero audio-thread network work |
+| R1 | Read-only three-zone LBE simulation | Determine whether shared status/topology language handles local failure and external facility context honestly | Three public-only Orpheus fixtures + Aurora dry-run/audit; one missing-asset, one route-change, and one panic case; zero audio-thread network work |
 | R2 | Endpoint schema review | Make the adapter data durable and safe | Versioned schema, redaction, failure, and ownership rules reviewed by both projects |
 | R3 | Aurora IS-12 / security maturity | Establish credible professional device-control preconditions | Named device, protocol scope, security model, bench acceptance in Aurora; no Orpheus change required |
 | R4 | One controlled appliance integration | Prove one allowlisted intent/result round trip | Hardware evidence, re-read verification, audit correlation, panic/stop independence |
@@ -338,20 +428,25 @@ or merely a diagram connecting two interesting repositories.
 
 ## 7. Recommendations
 
-1. **Treat game audio as viable, but separate runtime from facility control.**
-   Orpheus can grow game-audio facilities; Aurora can complement professional
-   production/stage/test environments. Neither should be a required dependency of
-   a normal game build.
-2. **Treat IoT as an appliance-control opportunity, not a generic platform claim.**
+1. **Make location-based entertainment the first joint-market research target.**
+   It exercises multi-zone audio, external route/clock state, operator recovery,
+   and IoT-adjacent endpoint health without turning either core into show control.
+2. **Treat AR as local runtime first, venue integration second.** Orpheus can earn
+   AR relevance through assets/tooling and later neutral local contracts; Aurora may
+   coordinate a venue, never an AR frame loop.
+3. **Keep livestreaming as an honourable secondary facility flow.** It validates
+   the same Orpheus local-playout + Aurora route-control split without claiming an
+   encoder, CDN, or network-audio stack.
+4. **Treat IoT as an appliance-control opportunity, not a generic platform claim.**
    Begin with trusted, professional audio endpoints and explicit host policy.
-3. **Fund a read-only simulation before protocol work.** This is the highest-value,
-   lowest-risk answer to “do these systems need each other?”
-4. **Do not put network clients in Orpheus core.** Aurora/MQTT/NMOS/IS-12 belong in
+5. **Fund the read-only three-zone LBE simulation before protocol work.** This is
+   the highest-value, lowest-risk answer to whether the systems need each other.
+6. **Do not put network clients in Orpheus core.** Aurora/MQTT/NMOS/IS-12 belong in
    external adapters and host control threads.
-5. **Do not reopen Aurora write scope through this integration.** Aurora's current
+7. **Do not reopen Aurora write scope through this integration.** Aurora's current
    Lawo work must complete its own bench gate; IS-12/MQTT must earn their own
    security/device evidence.
-6. **If R1 succeeds, create a dedicated integration plan rather than editing either
+8. **If R1 succeeds, create a dedicated integration plan rather than editing either
    core opportunistically.** It should name one endpoint, one deployment, one
    protocol path, one test fixture, and one verification record.
 
@@ -391,3 +486,14 @@ Jul. 14, 2026].
 [8] OASIS, “MQTT Version 5.0,” *OASIS Standard*, Mar. 2019. [Online]. Available:
 https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html [Accessed: Jul. 14,
 2026].
+
+[9] Q-SYS, “Movie Park Germany has ultimate control with Q-SYS,” *Themed
+Entertainment Case Study*, 2025. [Online]. Available:
+https://www.qsys.com/resources/case-studies/movie-park/ [Accessed: Jul. 14, 2026].
+
+[10] Google, “Working with Anchors,” *ARCore documentation*, 2026. [Online].
+Available: https://developers.google.com/ar/develop/anchors [Accessed: Jul. 14, 2026].
+
+[11] Advanced Media Workflow Association, “NMOS Technical Overview,” 2026.
+[Online]. Available:
+https://specs.amwa.tv/nmos/main/docs/Technical_Overview.html [Accessed: Jul. 14, 2026].
