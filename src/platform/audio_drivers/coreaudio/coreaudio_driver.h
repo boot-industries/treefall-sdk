@@ -6,6 +6,7 @@
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -45,6 +46,15 @@ public:
   /// @note Thread-safe: Can be called before or after start()
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
+  /// Count of AudioUnitRender calls on the capture bus that returned a
+  /// non-noErr status since the last initialize(). A structural regression
+  /// guard: input_buffers_ are always non-null once allocated (pre-zeroed),
+  /// so a null-buffer check alone cannot distinguish "captured real silence"
+  /// from "AudioUnitRender has failed on every single block" (e.g. capturing
+  /// against a device with no input channels -- see
+  /// resolveInputOutputDevice()). Thread-safe; read from any thread.
+  uint64_t getInputRenderFailureCount() const;
+
 private:
   /// Audio Unit render callback (invoked on audio thread)
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
@@ -59,6 +69,30 @@ private:
   /// @param device_name Device name (empty = default device)
   /// @return Device ID or 0 if not found
   AudioDeviceID findDevice(const std::string& device_name);
+
+  /// Get the system default device for a given selector (e.g.
+  /// kAudioHardwarePropertyDefaultOutputDevice / ...DefaultInputDevice).
+  /// @return Device ID or 0 on failure
+  AudioDeviceID getDefaultDevice(AudioObjectPropertySelector selector);
+
+  /// Resolve the device to open when the host requests capture
+  /// (config_.num_inputs > 0) and no device name was specified. The default
+  /// input and default output devices are frequently *different* HAL
+  /// AudioDeviceIDs (e.g. a MacBook's built-in microphone and built-in
+  /// speakers) even though a single AUHAL unit can only address one
+  /// kAudioOutputUnitProperty_CurrentDevice. When they differ, bridges the
+  /// two with a private CoreAudio Aggregate Device so bus 0 (playback) and
+  /// bus 1 (capture) each reach real hardware; falls back to the default
+  /// output device alone if aggregation fails.
+  /// @return Device ID (possibly an aggregate) or 0 on failure
+  AudioDeviceID resolveInputOutputDevice();
+
+  /// Create a private, non-stacked Aggregate Device combining a capture
+  /// sub-device and a playback sub-device so one AUHAL unit can drive both.
+  /// Torn down in cleanupAudioUnit() via AudioHardwareDestroyAggregateDevice.
+  /// @return Aggregate device ID, or 0 on failure
+  AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
+                                      AudioDeviceID output_device_id);
 
   /// Get device name from device ID
   /// @param device_id Device ID
@@ -84,8 +118,12 @@ private:
   // CoreAudio state
   AudioUnit audio_unit_{nullptr};
   AudioDeviceID device_id_{0};
+  // Set only when resolveInputOutputDevice() had to bridge separate default
+  // input/output devices; torn down in cleanupAudioUnit().
+  AudioDeviceID aggregate_device_id_{0};
   std::atomic<bool> is_running_{false};
   std::atomic<uint32_t> latency_samples_{0};
+  std::atomic<uint64_t> input_render_failures_{0};
 
   // Callback
   IAudioCallback* callback_{nullptr};
