@@ -11,6 +11,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP146 Child-App Prospective User Research]]
 - [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 - [[ORP148 Game-Audio Developer Opportunity Research]]
+- [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -110,6 +111,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP146 Child-App Prospective User Research]]
 - [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 - [[ORP148 Game-Audio Developer Opportunity Research]]
+- [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
 
 ## Archived Documents
 
