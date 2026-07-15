@@ -209,6 +209,7 @@ enum class TransportEventType : uint8_t {
 /// ORP133 G1: Trivially-copyable event payload for the audio→UI SPSC ring.
 struct TransportEvent {
   TransportEventType type;
+  uint64_t sequence;          ///< Monotonic attempted-delivery sequence
   ClipHandle handle;          ///< Subject clip (0 for transport-wide events)
   uint32_t voiceId;           ///< Voice instance when known, 0 otherwise (diagnostic)
   TransportPosition position; ///< Position payload delivered to the callback
@@ -218,19 +219,10 @@ static_assert(std::is_trivially_copyable_v<TransportEvent>,
               "TransportEvent must stay POD: it is copied through the audio->UI ring "
               "with no construction/destruction on the audio thread");
 
-/// ORP127 G1: Immutable per-voice snapshot published by the audio thread for
-/// lock-free UI-thread queries. Plain-old-data so it can be copied wholesale
-/// without touching the live (audio-thread-owned) ActiveClip array.
-struct VoiceSnapshot {
-  ClipHandle handle;
-  uint32_t voiceId;
-  int64_t startSample;
-  int64_t currentSample;
-  int64_t trimInSamples;
-  int64_t trimOutSamples;
-  bool isStopping;
-  bool loopEnabled;
-};
+static_assert(std::atomic<uint8_t>::is_always_lock_free);
+static_assert(std::atomic<uint32_t>::is_always_lock_free);
+static_assert(std::atomic<uint64_t>::is_always_lock_free);
+static_assert(std::atomic<int64_t>::is_always_lock_free);
 
 /// Transport controller implementation
 class TransportController : public ITransportController {
@@ -282,6 +274,8 @@ public:
   VoiceMode getClipVoiceMode(ClipHandle handle) const override;
   size_t getActiveVoiceCount(ClipHandle handle) const override;
   size_t getTotalActiveVoiceCount() const override;
+  TransportCallbackTelemetry getCallbackDeliveryTelemetry() const noexcept override;
+  ActiveVoiceSnapshot getActiveVoiceSnapshot() const noexcept override;
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
@@ -326,6 +320,11 @@ public:
     m_preparedSourceMaxFrames = maxFrames;
   }
 
+  /// Test-only control of the next RT voice-ID candidate.
+  void setNextVoiceIdForTesting(uint32_t nextVoiceId) noexcept {
+    m_nextVoiceId = nextVoiceId;
+  }
+
 private:
   /// Derive seconds/beats from the sample-canonical coordinate and current
   /// block-boundary tempo snapshot.
@@ -361,6 +360,10 @@ private:
   /// Add a clip to the active list. Returns false when the global voice pool
   /// cannot accept the start.
   bool addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
+
+  /// Allocate a nonzero ID distinct from every active voice. Audio-thread only;
+  /// bounded by the fixed active-voice capacity.
+  uint32_t allocateVoiceId() noexcept;
   void configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
                              uint16_t numChannels) noexcept;
 
@@ -385,10 +388,12 @@ private:
   /// @note Deprecated: Use removeActiveVoice() for multi-voice
   void removeActiveClip(ClipHandle handle);
 
-  /// ORP133 G1: Post a POD transport event to the UI thread (audio thread only).
-  /// Drops the event (and bumps m_droppedCallbackCount) if the ring is full —
-  /// never blocks the audio thread.
-  void postTransportEvent(const TransportEvent& event);
+  /// Post a POD transport event to the control-thread ring (audio thread only).
+  /// Every attempt advances cumulative telemetry before the capacity check.
+  void postTransportEvent(const TransportEvent& event) noexcept;
+
+  /// Publish callback delivery counters through a coherent atomic seqlock.
+  void publishCallbackTelemetry() noexcept;
 
   /// Calculate fade gain based on curve type
   /// @param normalizedPosition Position in fade (0.0 to 1.0)
@@ -396,11 +401,9 @@ private:
   /// @return Gain value (0.0 to 1.0)
   float calculateFadeGain(float normalizedPosition, FadeCurve curve) const;
 
-  /// ORP127 G1: Publish a snapshot of all active voices for UI-thread queries.
-  /// Called from the audio thread at the end of processAudio(). Writes into the
-  /// back buffer, then flips m_snapshotIndex with release ordering so UI readers
-  /// (acquire) always see a fully-consistent set of voices — never a torn view.
-  void publishVoiceSnapshot();
+  /// Publish a coherent per-handle aggregate of all surviving voices.
+  /// Audio-thread only; fixed work bounded by the configured 32-voice ceiling.
+  void publishVoiceSnapshot() noexcept;
 
   /// ORP127 G1: Post a command to the audio thread. Returns OK, or InternalError
   /// if the SPSC command queue is full. Centralizes the write-index/full-check
@@ -427,16 +430,33 @@ private:
   std::array<ActiveClip, MAX_ACTIVE_CLIPS> m_activeClips;
   size_t m_activeClipCount{0};
 
-  // ORP127 G1: Double-buffered voice snapshot for lock-free UI-thread queries.
-  // Audio thread writes the back buffer in publishVoiceSnapshot() and flips
-  // m_snapshotIndex (release); UI-thread queries read the front buffer via
-  // m_snapshotIndex (acquire). No UI thread ever touches m_activeClips.
-  struct VoiceSnapshotBuffer {
-    std::array<VoiceSnapshot, MAX_ACTIVE_CLIPS> voices;
-    size_t count{0};
+  // Atomic seqlock publication. Every payload field is atomic, so a reader that
+  // overlaps publication can retry without a C++ data race; the RT writer never
+  // waits, locks, or allocates.
+  struct AtomicActiveVoiceSnapshotEntry {
+    std::atomic<ClipHandle> handle{0};
+    std::atomic<uint32_t> activeVoiceCount{0};
+    std::atomic<uint32_t> newestVoiceId{0};
+    std::atomic<uint8_t> state{static_cast<uint8_t>(PlaybackState::Stopped)};
+    std::atomic<uint8_t> newestVoiceStopping{0};
+    std::atomic<uint8_t> newestVoiceLoopEnabled{0};
+    std::atomic<int64_t> newestStartSample{0};
+    std::atomic<int64_t> newestTrimInSamples{0};
+    std::atomic<int64_t> newestTrimOutSamples{0};
+    std::atomic<int64_t> newestPositionSamples{0};
   };
-  std::array<VoiceSnapshotBuffer, 2> m_snapshotBuffers;
-  std::atomic<size_t> m_snapshotIndex{0}; // Index of the front (published) buffer
+  struct AtomicActiveVoiceSnapshot {
+    std::atomic<uint64_t> revision{0};
+    std::atomic<uint64_t> publicationSequence{0};
+    std::atomic<uint32_t> entryCount{0};
+    std::atomic<uint32_t> totalActiveVoiceCount{0};
+    std::array<AtomicActiveVoiceSnapshotEntry, kActiveVoiceSnapshotCapacity> entries{};
+  };
+  AtomicActiveVoiceSnapshot m_publishedVoiceSnapshot{};
+  ActiveVoiceSnapshot m_voiceSnapshotScratch{};
+  std::array<bool, kActiveVoiceSnapshotCapacity> m_voiceSnapshotHasNewest{};
+  uint64_t m_voiceSnapshotRevision{0};
+  uint64_t m_voiceSnapshotSequence{0};
 
   // Multi-voice management (ORP127 G7: configurable voice cap for resource
   // protection). Default 8, hard ceiling 32; hosts typically set 2/4/8/16.
@@ -465,8 +485,23 @@ private:
   std::atomic<size_t> m_callbackWriteIndex{0};
   std::atomic<size_t> m_callbackReadIndex{0};
 
-  // Diagnostic counter for dropped callbacks (queue overflow)
-  std::atomic<uint32_t> m_droppedCallbackCount{0};
+  // Lifetime-cumulative callback-delivery telemetry. The audio thread is the
+  // only writer; arbitrary non-RT readers obtain a coherent value copy through
+  // the atomic revision.
+  struct AtomicCallbackTelemetry {
+    std::atomic<uint64_t> revision{0};
+    std::atomic<uint64_t> lastAttemptedSequence{0};
+    std::atomic<uint64_t> lastPostedSequence{0};
+    std::atomic<uint64_t> cumulativeDroppedCount{0};
+    std::atomic<uint64_t> lastDroppedSequence{0};
+    std::atomic<uint64_t> activeVoiceSnapshotSequence{0};
+  };
+  AtomicCallbackTelemetry m_publishedCallbackTelemetry{};
+  uint64_t m_callbackTelemetryRevision{0};
+  uint64_t m_callbackAttemptedSequence{0};
+  uint64_t m_callbackPostedSequence{0};
+  uint64_t m_callbackDroppedCount{0};
+  uint64_t m_callbackLastDroppedSequence{0};
 
 #ifndef NDEBUG
   // ORP133 G3: Debug-only enforcement of the command queue's single-producer
