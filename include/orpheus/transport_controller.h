@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <orpheus/channel_format.h>
 #include <orpheus/errors.h>
 #include <orpheus/export.h>
 #include <orpheus/realtime_telemetry.h>
-#include <orpheus/channel_format.h>
 #include <orpheus/routing_matrix.h>
 
 #include <array>
@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace orpheus {
@@ -21,7 +22,6 @@ namespace orpheus {
 namespace core {
 class SessionGraph;
 } // namespace core
-
 
 using ClipHandle = uint64_t;
 
@@ -73,7 +73,83 @@ struct TransportPosition {
   double beats;    ///< Derived: seconds * session tempo (SessionGraph::tempo) / 60.0
 };
 
+/// Stable schema version for TransportCallbackTelemetry.
+inline constexpr uint32_t kTransportCallbackTelemetrySchemaVersion = 1;
 
+/// Stable schema version for ActiveVoiceSnapshot.
+inline constexpr uint32_t kActiveVoiceSnapshotSchemaVersion = 1;
+
+/// Maximum number of distinct clip handles represented in one active snapshot.
+///
+/// The transport admits at most 32 simultaneous voices, so the same fixed
+/// capacity is sufficient even when every surviving voice has a different
+/// ClipHandle.
+inline constexpr size_t kActiveVoiceSnapshotCapacity = 32;
+
+/// Cumulative delivery health for the audio-to-control callback ring.
+///
+/// Every attempted transport event receives the next sequence before the ring
+/// capacity check. lastPostedSequence advances only when that event is retained;
+/// lastDroppedSequence identifies the most recent rejected attempt. Therefore a
+/// host can detect loss by polling even when no later callback is posted.
+/// activeVoiceSnapshotSequence is the already-published reconciliation snapshot
+/// watermark for this telemetry observation.
+///
+/// All counters start at zero when a controller is constructed, never reset when
+/// processCallbacks() drains the ring, and remain valid until that controller is
+/// destroyed. Counters saturate at UINT64_MAX rather than wrapping.
+struct TransportCallbackTelemetry {
+  uint32_t schemaVersion = kTransportCallbackTelemetrySchemaVersion;
+  uint32_t reserved = 0;
+  uint64_t lastAttemptedSequence = 0;
+  uint64_t lastPostedSequence = 0;
+  uint64_t cumulativeDroppedCount = 0;
+  uint64_t lastDroppedSequence = 0;
+  uint64_t activeVoiceSnapshotSequence = 0;
+};
+
+/// Per-ClipHandle aggregate in an ActiveVoiceSnapshot.
+///
+/// "Newest" is the surviving voice with the greatest transport start sample;
+/// when starts share that sample, the later accepted start wins even when its
+/// voice ID wrapped. state is Playing when any voice for the handle is playing
+/// and Stopping only when all of them are stopping.
+struct ActiveVoiceSnapshotEntry {
+  ClipHandle handle = 0;
+  uint32_t activeVoiceCount = 0;
+  uint32_t newestVoiceId = 0;
+  PlaybackState state = PlaybackState::Stopped;
+  uint8_t newestVoiceStopping = 0;
+  uint8_t newestVoiceLoopEnabled = 0;
+  std::array<uint8_t, 5> reserved{};
+  int64_t newestStartSample = 0;
+  int64_t newestTrimInSamples = 0;
+  int64_t newestTrimOutSamples = 0;
+  TransportPosition newestPosition{};
+};
+
+/// Coherent fixed-capacity view of all currently surviving transport voices.
+///
+/// Entries [0, entryCount) are keyed by distinct ClipHandle values.
+/// totalActiveVoiceCount includes playing voices and fading tails. The
+/// publication sequence starts at zero and advances once after every completed
+/// processAudio() block. A value copy is coherent: it never combines fields from
+/// two audio blocks.
+struct ActiveVoiceSnapshot {
+  uint32_t schemaVersion = kActiveVoiceSnapshotSchemaVersion;
+  uint32_t entryCount = 0;
+  uint32_t totalActiveVoiceCount = 0;
+  uint32_t reserved = 0;
+  uint64_t publicationSequence = 0;
+  std::array<ActiveVoiceSnapshotEntry, kActiveVoiceSnapshotCapacity> entries{};
+};
+
+static_assert(std::is_trivially_copyable_v<TransportCallbackTelemetry>);
+static_assert(std::is_standard_layout_v<TransportCallbackTelemetry>);
+static_assert(std::is_trivially_copyable_v<ActiveVoiceSnapshotEntry>);
+static_assert(std::is_standard_layout_v<ActiveVoiceSnapshotEntry>);
+static_assert(std::is_trivially_copyable_v<ActiveVoiceSnapshot>);
+static_assert(std::is_standard_layout_v<ActiveVoiceSnapshot>);
 /// Immutable construction contract for the transport renderer.
 ///
 /// All capacities are validated by createTransportController() and remain fixed
@@ -109,13 +185,13 @@ struct ClipMetadata {
   bool loopEnabled = false;                   ///< true = loop indefinitely
   bool stopOthersOnPlay = false;              ///< true = stop other clips on play
   float gainDb = 0.0f;                        ///< Gain in decibels (0 = unity)
-  VoiceMode voiceMode = VoiceMode::Polyphonic; ///< Voice allocation policy (ORP127 G5)
-  RoutingGroupIndex routingGroup = 0;          ///< Logical bus assignment
+  VoiceMode voiceMode = VoiceMode::Polyphonic;             ///< Voice allocation policy (ORP127 G5)
+  RoutingGroupIndex routingGroup = 0;                      ///< Logical bus assignment
   ChannelLayout sourceLayout = ChannelLayout::Unspecified; ///< Explicit source channel meaning
   uint8_t speakerPatchSize = 0; ///< Number of valid entries in speakerPatch
-  std::array<Speaker, 8> speakerPatch = {
-      Speaker::None, Speaker::None, Speaker::None, Speaker::None,
-      Speaker::None, Speaker::None, Speaker::None, Speaker::None};
+  std::array<Speaker, 8> speakerPatch = {Speaker::None, Speaker::None, Speaker::None,
+                                         Speaker::None, Speaker::None, Speaker::None,
+                                         Speaker::None, Speaker::None};
 };
 
 /// Session-level default metadata for new clips.
@@ -193,9 +269,10 @@ public:
 ///
 /// Threading contract (ORP133 G3 — this is the real, enforced contract):
 ///
-/// - **Control-mutating methods are single-producer.** startClip(), stopClip(),
-///   stopAllClips(), stopOtherClips(), restartClip(), seekClip(), and every
-///   updateClip*/setClip* method post commands onto a lock-free
+/// - **Control-mutating methods are single-producer.** startClip(),
+///   startClipWithGroupChoke(), stopClip(), stopAllClips(), stopOtherClips(),
+///   restartClip(), seekClip(), and every updateClip*/setClip* method post
+///   commands onto a lock-free
 ///   single-producer/single-consumer (SPSC) queue drained by the audio thread.
 ///   Exactly ONE control thread may call them — typically the host's UI/message
 ///   thread. They are NOT safe to call concurrently from multiple threads: the
@@ -271,13 +348,12 @@ public:
   /// Stop all clips in a specific routing group
   ///
   /// @deprecated ORP133 G2: NOT SUPPORTED — always returns
-  /// SessionGraphError::NotSupported. This method was a silent no-op in every
-  /// SDK release (the transport has no clip→group mapping; grouping is a host
-  /// concern), and it now reports that truthfully instead. Hosts that need
-  /// scoped group-stop should implement it with their own group model on top
-  /// of stopOtherClips() (host-neutral choke, ORP127 G7) and/or stopClip().
-  /// The method is retained only for source compatibility and may be removed
-  /// in a future major version.
+  /// SessionGraphError::NotSupported. This legacy method was a silent no-op in
+  /// earlier releases and remains unavailable for arbitrary group-only stops.
+  /// Registered ClipMetadata::routingGroup is now consumed only by the atomic
+  /// startClipWithGroupChoke() contract below. Hosts needing a standalone
+  /// group stop must enqueue explicit stopClip() operations under their own
+  /// policy. The method remains only for source compatibility.
   ///
   /// @param groupIndex Ignored
   /// @return SessionGraphError::NotSupported, always
@@ -576,12 +652,11 @@ public:
   virtual std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const = 0;
 
   /// Route one logical clip group to a contiguous physical output bus.
-  virtual SessionGraphError setGroupOutputBus(
-      RoutingGroupIndex group, const OutputBusRoute& route) = 0;
+  virtual SessionGraphError setGroupOutputBus(RoutingGroupIndex group,
+                                              const OutputBusRoute& route) = 0;
 
   /// Query the current physical destination of a logical clip group.
-  virtual std::optional<OutputBusRoute>
-  getGroupOutputBus(RoutingGroupIndex group) const = 0;
+  virtual std::optional<OutputBusRoute> getGroupOutputBus(RoutingGroupIndex group) const = 0;
 
   /// Set session-level default metadata for new clips
   ///
@@ -839,6 +914,47 @@ public:
   /// TransportPosition::beats queries, so hosts must call it even when no
   /// callback object is installed.
   virtual void processCallbacks() = 0;
+
+  /// Atomically start a clip and choke active peers in its registered group.
+  ///
+  /// The firing clip and peer choke are admitted as one bounded SPSC command.
+  /// If the command ring is full, the clip is unregistered/unavailable, or the
+  /// realtime voice pool later refuses the start, no peer voice is changed.
+  /// After successful voice admission, every active voice with a different
+  /// handle and the same ClipMetadata::routingGroup begins its normal configured
+  /// stop fade. Other groups and the firing handle are untouched.
+  ///
+  /// The firing handle retains its configured VoiceMode, including
+  /// MonoWithFadeOverlap refire behavior. Start-event processing precedes peer
+  /// mutation, so surviving callbacks retain Start-before-peer-Stop order.
+  /// Publication is not guaranteed when the bounded callback ring overflows;
+  /// hosts detect that history gap through ORP151 callback-loss telemetry and
+  /// must not infer a complete lifecycle from surviving callbacks.
+  ///
+  /// Control thread only; this method shares the single-producer contract of
+  /// startClip() and the other control-mutating methods. The default preserves
+  /// source compatibility for external interface implementations; concrete
+  /// controllers that do not override it report an unavailable capability.
+  virtual SessionGraphError startClipWithGroupChoke(ClipHandle /*handle*/) {
+    return SessionGraphError::NotSupported;
+  }
+
+  /// Poll cumulative audio-to-control callback delivery health.
+  ///
+  /// Lock-free any-thread query. Draining callbacks does not reset counters.
+  /// The default preserves source compatibility for recompiled custom
+  /// implementations; it is not a C++ binary-compatibility guarantee.
+  virtual TransportCallbackTelemetry getCallbackDeliveryTelemetry() const noexcept {
+    return {};
+  }
+
+  /// Poll a coherent fixed-capacity aggregate of all active voices.
+  ///
+  /// Lock-free non-realtime query. The default preserves source compatibility
+  /// for recompiled custom implementations; it is not a C++ ABI guarantee.
+  virtual ActiveVoiceSnapshot getActiveVoiceSnapshot() const noexcept {
+    return {};
+  }
 };
 
 /// Create a transport controller with an immutable render contract.
