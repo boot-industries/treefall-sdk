@@ -3,6 +3,8 @@
 #include <orpheus/audio_driver.h>
 #include <orpheus/performance_monitor.h>
 
+#include "coreaudio/coreaudio_driver.h"
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -621,6 +623,59 @@ TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
                  "Route a signal (loopback/aggregate device) to assert non-zero capture."
               << std::endl;
   }
+}
+
+namespace {
+
+AudioDeviceID getDefaultDeviceForTest(AudioObjectPropertySelector selector) {
+  AudioObjectPropertyAddress addr = {selector, kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain};
+  AudioDeviceID deviceID = 0;
+  UInt32 size = sizeof(AudioDeviceID);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, &deviceID);
+  return deviceID;
+}
+
+} // namespace
+
+// Regression test for the "default input and default output are different HAL
+// devices" bug (e.g. a Mac's built-in microphone vs. built-in speakers): the
+// driver used to resolve only the default *output* device and reuse it for
+// both AUHAL scopes, so AudioUnitRender on the capture bus deterministically
+// failed with kAudioUnitErr_NoConnection on every single callback -- 100%
+// capture failure, but init/start both reported success and the host-visible
+// input buffer was still non-null (pre-zeroed), so InputBufferReachesCallback
+// above could not (and still cannot, by itself) catch it. This test uses the
+// getInputRenderFailureCount() diagnostic added alongside the fix specifically
+// because that gap existed.
+TEST_F(CoreAudioDriverTest, CrossDeviceCaptureHasNoRenderFailures) {
+  AudioDeviceID defaultOutput = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultOutputDevice);
+  AudioDeviceID defaultInput = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultInputDevice);
+  if (defaultOutput == 0 || defaultInput == 0 || defaultOutput == defaultInput) {
+    GTEST_SKIP() << "Default input and output resolve to the same (or an unavailable) device on "
+                    "this machine -- nothing to regress-test for the cross-device bridge.";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_outputs = 2;
+  config.num_inputs = 1;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+
+  auto* driver = static_cast<CoreAudioDriver*>(m_driver.get());
+  InputCaptureCallback capture;
+  ASSERT_EQ(m_driver->start(&capture), SessionGraphError::OK);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  m_driver->stop();
+
+  ASSERT_GT(capture.getCallCount(), 0) << "Audio callback never fired";
+  EXPECT_EQ(driver->getInputRenderFailureCount(), 0u)
+      << "AudioUnitRender failed on the capture bus -- default input (" << defaultInput
+      << ") and default output (" << defaultOutput
+      << ") are different HAL devices and were not bridged into one addressable device.";
 }
 
 #endif // ORPHEUS_ENABLE_COREAUDIO

@@ -262,6 +262,7 @@ if(ORPHEUS_ENABLE_COREAUDIO)
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/src/platform/audio_drivers
     )
 
     add_test(NAME coreaudio_driver_test COMMAND coreaudio_driver_test)
