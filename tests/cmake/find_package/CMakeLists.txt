@@ -64,6 +64,11 @@ add_orpheus_fixture(orpheus_find_package_legacy_transport
 target_link_libraries(orpheus_find_package_legacy_transport
   PRIVATE Orpheus::transport)
 
+add_orpheus_fixture(orpheus_find_package_legacy_transport_defaults
+  legacy_transport_defaults.cpp)
+target_link_libraries(orpheus_find_package_legacy_transport_defaults
+  PRIVATE Orpheus::transport)
+
 if(APPLE AND NOT TARGET Orpheus::audio_driver_coreaudio)
   message(FATAL_ERROR "macOS package is missing Orpheus::audio_driver_coreaudio")
 endif()

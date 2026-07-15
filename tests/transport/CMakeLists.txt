@@ -443,6 +443,38 @@ if(TARGET orpheus_audio_io)
         COMMAND callback_queue_stress_test
     )
 
+    # ORP151: public callback-loss telemetry and coherent reconciliation snapshot.
+    add_executable(callback_loss_telemetry_test
+        callback_loss_telemetry_test.cpp
+    )
+
+    target_link_libraries(callback_loss_telemetry_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(callback_loss_telemetry_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(callback_loss_telemetry_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(callback_loss_telemetry_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME callback_loss_telemetry_test
+        COMMAND callback_loss_telemetry_test
+    )
+
     # ORP127 T2: ThreadSanitizer stress harness for per-voice state.
     # Builds/runs under normal Debug too (liveness check); TSan is the verdict.
     add_executable(voice_state_tsan_test
