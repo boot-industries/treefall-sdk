@@ -9,11 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-14
+
+Release of the explicit multichannel source, logical group-bus, and physical
+output-routing contracts required by broadcast playout hosts. The pre-1.0 minor
+version advances because public transport/clip metadata structures gained
+source-channel fields and interface implementers must provide the group-bus
+route methods.
+
+### Added
+
+- `TransportConfig` now declares output width, maximum source lanes, block
+  capacity, voice capacity, and the source-channel policy used by the immutable
+  renderer.
+- `ClipMetadata` publishes logical routing group, explicit `ChannelLayout`, and
+  a fixed eight-speaker patch. The transport validates the declared layout
+  against the decoded file before atomically committing metadata.
+- `ITransportController::{setGroupOutputBus(), getGroupOutputBus()}` routes a
+  logical group to one contiguous physical output bus without rebuilding the
+  transport.
+- CoreAudio, WASAPI, and dummy drivers publish and render their configured
+  multichannel output width. Scene snapshots preserve group/output routing and
+  source-channel metadata.
+
+### Changed
+
+- Transport voices render up to eight discrete planar source lanes into the
+  routing matrix instead of forcing every decoded file through a stereo pair.
+  Named group buses can share, isolate, or span physical outputs without a
+  hidden fold-down.
+- Installed-package consumers and examples construct the public
+  `TransportConfig` explicitly and exercise the same transport render contract
+  as source-tree hosts.
+
 ### Fixed
 
+- Channel-solo and group-solo are independent domains. Soloing a group no
+  longer mutes every source channel before group summing, and soloing a channel
+  no longer mutes every logical group after summing.
 - A stopping loop no longer wraps from its OUT point back to IN. Stop fades now
   complete across the loop boundary, so host-level group chokes and Stop All
   cannot leave a looping voice active indefinitely.
+
+### Verification
+
+- The complete 147-test SDK suite passes, including eight-output
+  channel-order/render-hash, group-route, scene, device-swap, driver, and
+  installed-package consumer coverage.
+- Real multichannel CoreAudio hardware remains a downstream release gate; this
+  release does not infer hardware validation from dummy-driver buffers.
 
 ## [0.4.0] - 2026-07-14
 
