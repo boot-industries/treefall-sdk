@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <sstream>
 #include <thread>
@@ -38,6 +39,8 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
 
   // Store configuration
   config_ = config;
+  expected_stream_sample_ = 0;
+  stream_timeline_initialized_ = false;
 
   // Find device
   device_id_ = findDevice(config.device_name);
@@ -164,6 +167,14 @@ AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
   caps.max_input_channels = config_.num_inputs;
   caps.native_sample_rates.push_back(config_.sample_rate);
   caps.native_buffer_sizes.push_back(config_.buffer_size);
+  const std::string endpoint =
+      config_.device_id.empty() ? "coreaudio:default" : config_.device_id;
+  for (uint16_t channel = 0; channel < config_.num_inputs; ++channel) {
+    caps.input_channel_ids.push_back(endpoint + ":input:" + std::to_string(channel));
+  }
+  for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
+    caps.output_channel_ids.push_back(endpoint + ":output:" + std::to_string(channel));
+  }
   caps.supports_exclusive_mode = false;
   caps.supports_shared_mode = true;
   caps.supports_device_hot_swap = true;
@@ -250,16 +261,43 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
 
   // Invoke user callback (lock-free). Timing is opt-in for diagnostics builds;
-  // production callbacks should not pay for hot-path instrumentation.
+  // production callbacks should not pay for callback-duration instrumentation.
   const float** input_ptrs = driver->input_buffers_.empty()
                                  ? nullptr
                                  : const_cast<const float**>(driver->input_buffers_.data());
   float** output_ptrs = driver->output_buffers_.data();
 
+  const bool sample_time_valid =
+      inTimeStamp != nullptr && (inTimeStamp->mFlags & kAudioTimeStampSampleTimeValid) != 0;
+  const int64_t reported_sample_time =
+      sample_time_valid ? static_cast<int64_t>(std::llround(inTimeStamp->mSampleTime)) : 0;
+  const bool device_position_available = sample_time_valid && reported_sample_time >= 0;
+  const int64_t stream_time =
+      device_position_available ? reported_sample_time : driver->expected_stream_sample_;
+  const bool discontinuity = !driver->stream_timeline_initialized_ ||
+                             !device_position_available ||
+                             stream_time != driver->expected_stream_sample_;
+  const bool host_time_valid =
+      inTimeStamp != nullptr && (inTimeStamp->mFlags & kAudioTimeStampHostTimeValid) != 0;
+
+  AudioProcessBlock block;
+  block.input_buffers = input_ptrs;
+  block.output_buffers = output_ptrs;
+  block.num_input_channels = static_cast<uint16_t>(num_input_channels);
+  block.num_output_channels = static_cast<uint16_t>(num_channels);
+  block.num_frames = frames_to_process;
+  block.device_sample_position =
+      device_position_available ? static_cast<uint64_t>(reported_sample_time) : 0;
+  block.host_time_nanoseconds =
+      host_time_valid ? AudioConvertHostTimeToNanos(inTimeStamp->mHostTime) : 0;
+  block.discontinuity = discontinuity;
+
 #if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
   const UInt64 callback_start = AudioGetCurrentHostTime();
 #endif
-  callback->processAudio(input_ptrs, output_ptrs, num_channels, frames_to_process);
+  callback->processAudio(block);
+  driver->expected_stream_sample_ = stream_time + frames_to_process;
+  driver->stream_timeline_initialized_ = true;
 #if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
   const UInt64 callback_end = AudioGetCurrentHostTime();
 

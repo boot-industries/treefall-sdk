@@ -44,7 +44,7 @@ struct SceneSnapshot {
   std::vector<ClipHandle> assignedClips; ///< Clip handles per button/position
 
   // Routing configuration (from Feature 1: Routing Matrix)
-  std::vector<uint8_t> clipGroups; ///< Group assignment per clip (0-3, or 255 for unassigned)
+  std::vector<RoutingGroupIndex> clipGroups; ///< Group assignment per clip or UNASSIGNED_GROUP
   std::vector<float> groupGains;   ///< Gain per Clip Group in dB (-inf to +12.0)
 
   /// Default constructor

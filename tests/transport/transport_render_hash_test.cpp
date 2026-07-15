@@ -141,7 +141,8 @@ protected:
   uint64_t renderScenarioHash(size_t blockFrames) {
     EXPECT_EQ(kTotalFrames % blockFrames, 0u) << "block size must divide the render window";
 
-    TransportController transport(nullptr, kSampleRate);
+    TransportController transport(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
 
     EXPECT_EQ(transport.registerClipAudio(1, m_fixture1), SessionGraphError::OK);
     EXPECT_EQ(transport.registerClipAudio(2, m_fixture2), SessionGraphError::OK);
@@ -149,16 +150,20 @@ protected:
 
     // Clip 2: trim + fades + gain. All metadata lands before the first
     // buffer, so every block size sees identical voice state.
-    ClipMetadata meta;
-    meta.trimInSamples = 1000;
-    meta.trimOutSamples = 40000;
-    meta.fadeInSeconds = 0.05;
-    meta.fadeOutSeconds = 0.05;
-    meta.fadeInCurve = FadeCurve::EqualPower;
-    meta.fadeOutCurve = FadeCurve::Linear;
-    meta.gainDb = -6.0f;
-    meta.loopEnabled = false;
-    EXPECT_EQ(transport.updateClipMetadata(2, meta), SessionGraphError::OK);
+    auto meta = transport.getClipMetadata(2);
+    EXPECT_TRUE(meta.has_value());
+    if (!meta)
+      return 0;
+    meta->trimInSamples = 1000;
+    meta->trimOutSamples = 40000;
+    meta->fadeInSeconds = 0.05;
+    meta->fadeOutSeconds = 0.05;
+    meta->fadeInCurve = FadeCurve::EqualPower;
+    meta->fadeOutCurve = FadeCurve::Linear;
+    meta->gainDb = -6.0f;
+    meta->loopEnabled = false;
+    EXPECT_EQ(transport.updateClipMetadata(2, *meta),
+              SessionGraphError::OK);
     EXPECT_EQ(transport.updateClipGain(3, 3.0f), SessionGraphError::OK);
 
     EXPECT_EQ(transport.prepareClipAudio(1), SessionGraphError::OK);

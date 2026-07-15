@@ -17,7 +17,7 @@ using namespace orpheus;
 int main() {
   // Transport is host-neutral: a null SessionGraph is fine for a link/compile
   // smoke test (we never register real audio here).
-  auto transport = createTransportController(nullptr, 48000);
+  auto transport = createTransportController(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   if (!transport) {
     return 1;
   }

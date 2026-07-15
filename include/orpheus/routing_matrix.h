@@ -23,8 +23,12 @@ class IRoutingCallback;
 // Constants
 // ============================================================================
 
-/// Special value indicating channel is not assigned to any group
-constexpr uint8_t UNASSIGNED_GROUP = 255;
+using RoutingChannelIndex = uint16_t;
+using RoutingGroupIndex = uint16_t;
+using RoutingOutputIndex = uint16_t;
+
+/// Special value indicating channel is not assigned to any group.
+constexpr RoutingGroupIndex UNASSIGNED_GROUP = UINT16_MAX;
 
 /// FTR028: Internal processing-slice size (frames) used by processRouting().
 ///
@@ -105,8 +109,9 @@ enum class DownmixPolicy : uint8_t {
 
 /// Channel strip configuration (like a console channel)
 struct ChannelConfig {
-  std::string name;    ///< Channel name (e.g., "Kick", "Snare", "Music Bed 1")
-  uint8_t group_index; ///< Assigned group (0-15, or 255 for unassigned)
+  std::string name;               ///< Human-readable channel name
+  RoutingGroupIndex group_index;  ///< Assigned group, or UNASSIGNED_GROUP
+  RoutingOutputIndex output_channel; ///< Discrete destination within the group bus
   float gain_db;       ///< Channel gain in dB (-inf to +12 dB)
   float pan;           ///< Pan position (-1.0 = hard left, 0.0 = center, +1.0 = hard right)
   bool mute;           ///< Mute flag
@@ -115,8 +120,8 @@ struct ChannelConfig {
 
   /// Default constructor
   ChannelConfig()
-      : name(""), group_index(0), gain_db(0.0f), pan(0.0f), mute(false), solo(false),
-        color(0xFFFFFFFF) {}
+      : name(""), group_index(0), output_channel(0), gain_db(0.0f), pan(0.0f), mute(false),
+        solo(false), color(0xFFFFFFFF) {}
 };
 
 /// Group (bus) configuration (like a console subgroup)
@@ -125,19 +130,21 @@ struct GroupConfig {
   float gain_db;      ///< Group gain in dB (-inf to +12 dB)
   bool mute;          ///< Mute flag
   bool solo;          ///< Solo flag (groups can be solo'd too)
-  uint8_t output_bus; ///< Output bus assignment (0 = master, 1-15 = aux/submix)
-  uint32_t color;     ///< UI color hint (RGBA)
+  RoutingOutputIndex output_start; ///< First physical output for this logical bus
+  uint16_t output_width;           ///< Number of routed channels in this bus
+  uint32_t color;                  ///< UI color hint (RGBA)
 
   /// Default constructor
   GroupConfig()
-      : name(""), gain_db(0.0f), mute(false), solo(false), output_bus(0), color(0xFFFFFFFF) {}
+      : name(""), gain_db(0.0f), mute(false), solo(false), output_start(0),
+        output_width(2), color(0xFFFFFFFF) {}
 };
 
 /// Routing matrix configuration (complete topology)
 struct RoutingConfig {
-  uint8_t num_channels; ///< Number of input channels (clips) [1-64]
-  uint8_t num_groups;   ///< Number of groups (buses) [1-16]
-  uint8_t num_outputs;  ///< Number of output channels [2-32]
+  RoutingChannelIndex num_channels; ///< Number of input routing lanes [1-256]
+  RoutingGroupIndex num_groups;     ///< Number of logical groups [1-32]
+  RoutingOutputIndex num_outputs;   ///< Number of output channels [1-32]
 
   SoloMode solo_mode;         ///< Solo behavior
   MeteringMode metering_mode; ///< Metering algorithm
@@ -274,43 +281,50 @@ public:
 
   /// Assign channel to group (bus assignment)
   /// @param channel_index Channel index [0, num_channels)
-  /// @param group_index Group index [0, num_groups) or 255 for unassigned
+  /// @param group_index Group index [0, num_groups) or UNASSIGNED_GROUP
   /// @return Error code
   /// @note Lock-free update, takes effect on next audio callback
-  virtual SessionGraphError setChannelGroup(uint8_t channel_index, uint8_t group_index) = 0;
+  virtual SessionGraphError setChannelGroup(RoutingChannelIndex channel_index,
+                                            RoutingGroupIndex group_index) = 0;
+
+  /// Atomically assign one source lane to a logical bus and hardware output.
+  /// Audio-thread-safe: updates fixed-capacity POD routing state only.
+  virtual SessionGraphError setChannelRoute(RoutingChannelIndex channel_index,
+                                            RoutingGroupIndex group_index,
+                                            RoutingOutputIndex output_index) = 0;
 
   /// Set channel gain
   /// @param channel_index Channel index [0, num_channels)
   /// @param gain_db Gain in dB [-inf, +12.0]
   /// @return Error code
   /// @note Smoothed over gain_smoothing_ms to prevent clicks
-  virtual SessionGraphError setChannelGain(uint8_t channel_index, float gain_db) = 0;
+  virtual SessionGraphError setChannelGain(RoutingChannelIndex channel_index, float gain_db) = 0;
 
   /// Set channel pan (stereo positioning)
   /// @param channel_index Channel index [0, num_channels)
   /// @param pan Pan position [-1.0 = hard left, 0.0 = center, +1.0 = hard right]
   /// @return Error code
   /// @note Smoothed pan law: constant-power (-3 dB at center)
-  virtual SessionGraphError setChannelPan(uint8_t channel_index, float pan) = 0;
+  virtual SessionGraphError setChannelPan(RoutingChannelIndex channel_index, float pan) = 0;
 
   /// Set channel mute
   /// @param channel_index Channel index [0, num_channels)
   /// @param mute Mute flag
   /// @return Error code
-  virtual SessionGraphError setChannelMute(uint8_t channel_index, bool mute) = 0;
+  virtual SessionGraphError setChannelMute(RoutingChannelIndex channel_index, bool mute) = 0;
 
   /// Set channel solo
   /// @param channel_index Channel index [0, num_channels)
   /// @param solo Solo flag
   /// @return Error code
   /// @note Behavior depends on solo_mode (SIP, AFL, PFL, Destructive)
-  virtual SessionGraphError setChannelSolo(uint8_t channel_index, bool solo) = 0;
+  virtual SessionGraphError setChannelSolo(RoutingChannelIndex channel_index, bool solo) = 0;
 
   /// Configure channel (batch update for efficiency)
   /// @param channel_index Channel index [0, num_channels)
   /// @param config Channel configuration
   /// @return Error code
-  virtual SessionGraphError configureChannel(uint8_t channel_index,
+  virtual SessionGraphError configureChannel(RoutingChannelIndex channel_index,
                                              const ChannelConfig& config) = 0;
 
   // ========================================================================
@@ -322,25 +336,32 @@ public:
   /// @param gain_db Gain in dB [-inf, +12.0]
   /// @return Error code
   /// @note Smoothed over gain_smoothing_ms
-  virtual SessionGraphError setGroupGain(uint8_t group_index, float gain_db) = 0;
+  virtual SessionGraphError setGroupGain(RoutingGroupIndex group_index, float gain_db) = 0;
 
   /// Set group mute
   /// @param group_index Group index [0, num_groups)
   /// @param mute Mute flag
   /// @return Error code
-  virtual SessionGraphError setGroupMute(uint8_t group_index, bool mute) = 0;
+  virtual SessionGraphError setGroupMute(RoutingGroupIndex group_index, bool mute) = 0;
 
   /// Set group solo
   /// @param group_index Group index [0, num_groups)
   /// @param solo Solo flag
   /// @return Error code
-  virtual SessionGraphError setGroupSolo(uint8_t group_index, bool solo) = 0;
+  virtual SessionGraphError setGroupSolo(RoutingGroupIndex group_index, bool solo) = 0;
 
   /// Configure group (batch update)
   /// @param group_index Group index [0, num_groups)
   /// @param config Group configuration
   /// @return Error code
-  virtual SessionGraphError configureGroup(uint8_t group_index, const GroupConfig& config) = 0;
+  virtual SessionGraphError configureGroup(RoutingGroupIndex group_index,
+                                           const GroupConfig& config) = 0;
+
+  /// Atomically route a logical group bus to a contiguous physical output range.
+  virtual SessionGraphError
+  setGroupOutputRoute(RoutingGroupIndex group_index,
+                      RoutingOutputIndex output_start,
+                      uint16_t output_width) = 0;
 
   // ========================================================================
   // Master Output Configuration (UI Thread, Lock-Free)
@@ -367,22 +388,22 @@ public:
   /// Check if channel is muted (considering solo logic)
   /// @param channel_index Channel index [0, num_channels)
   /// @return True if effectively muted
-  virtual bool isChannelMuted(uint8_t channel_index) const = 0;
+  virtual bool isChannelMuted(RoutingChannelIndex channel_index) const = 0;
 
   /// Check if group is muted (considering solo logic)
   /// @param group_index Group index [0, num_groups)
   /// @return True if effectively muted
-  virtual bool isGroupMuted(uint8_t group_index) const = 0;
+  virtual bool isGroupMuted(RoutingGroupIndex group_index) const = 0;
 
   /// Get channel meter
   /// @param channel_index Channel index [0, num_channels)
   /// @return Audio meter (peak, RMS, clipping)
-  virtual AudioMeter getChannelMeter(uint8_t channel_index) const = 0;
+  virtual AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const = 0;
 
   /// Get group meter
   /// @param group_index Group index [0, num_groups)
   /// @return Audio meter
-  virtual AudioMeter getGroupMeter(uint8_t group_index) const = 0;
+  virtual AudioMeter getGroupMeter(RoutingGroupIndex group_index) const = 0;
 
   /// Get master meter
   /// @return Audio meter
@@ -437,7 +458,7 @@ public:
   ///       without the host needing to cap its render block size. Metering
   ///       reflects the final slice of the call.
   virtual SessionGraphError processRouting(const float* const* channel_inputs,
-                                           float** master_output, uint32_t num_frames) = 0;
+                                           float* const* master_output, uint32_t num_frames) = 0;
 
   /// FTR028: Largest number of frames processed in a single internal slice.
   ///
@@ -462,21 +483,21 @@ public:
   /// Called when channel gain changes
   /// @param channel_index Channel that changed
   /// @param gain_db New gain value
-  virtual void onChannelGainChanged(uint8_t channel_index, float gain_db) = 0;
+  virtual void onChannelGainChanged(RoutingChannelIndex channel_index, float gain_db) = 0;
 
   /// Called when group gain changes
   /// @param group_index Group that changed
   /// @param gain_db New gain value
-  virtual void onGroupGainChanged(uint8_t group_index, float gain_db) = 0;
+  virtual void onGroupGainChanged(RoutingGroupIndex group_index, float gain_db) = 0;
 
   /// Called when solo state changes
   /// @param active True if any channel/group is solo'd
   virtual void onSoloStateChanged(bool active) = 0;
 
   /// Called when clipping detected
-  /// @param channel_index Channel that clipped (255 for master)
+  /// @param channel_index Channel that clipped (UNASSIGNED_GROUP for master)
   /// @param peak_db Peak level in dBFS
-  virtual void onClippingDetected(uint8_t channel_index, float peak_db) = 0;
+  virtual void onClippingDetected(RoutingChannelIndex channel_index, float peak_db) = 0;
 };
 
 // ============================================================================

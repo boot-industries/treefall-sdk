@@ -40,7 +40,7 @@ int main() {
     return 4;
   }
 
-  auto transport = orpheus::createTransportController(&graph, 48000);
+  auto transport = orpheus::createTransportController(&graph, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   if (!transport || !transport->getRealtimeTelemetry()) {
     return 5;
   }

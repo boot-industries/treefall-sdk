@@ -28,12 +28,12 @@ int main() {
   constexpr orpheus::ClipHandle kHandle = 17;
   constexpr size_t kFrames = 64;
 
-  auto transport = orpheus::createTransportController(nullptr, kSampleRate);
+  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
   if (!transport) {
     return 1;
   }
 
-  const orpheus::TransportRenderConfig config = transport->getRenderConfig();
+  const orpheus::TransportConfig config = transport->getRenderConfig();
   if (config.sampleRate != kSampleRate || config.outputChannels != 2 ||
       config.maxBlockFrames < kFrames) {
     return 2;

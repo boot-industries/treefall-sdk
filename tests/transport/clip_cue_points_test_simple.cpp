@@ -9,7 +9,7 @@ using namespace orpheus;
 /// Test invalid handle error cases (no audio file needed)
 TEST(ClipCuePointsSimpleTest, AddCuePointInvalidHandle) {
   // No audio file needed - testing error handling
-  auto transport = createTransportController(nullptr, 48000);
+  auto transport = createTransportController(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   // Try to add cue point to non-existent clip
   int index = transport->addCuePoint(99999, 1000, "Invalid", 0xFFFFFFFF);
@@ -18,7 +18,7 @@ TEST(ClipCuePointsSimpleTest, AddCuePointInvalidHandle) {
 
 /// Test getting cue points from invalid handle
 TEST(ClipCuePointsSimpleTest, GetCuePointsInvalidHandle) {
-  auto transport = createTransportController(nullptr, 48000);
+  auto transport = createTransportController(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   // Try to get cue points from non-existent clip
   auto cuePoints = transport->getCuePoints(99999);

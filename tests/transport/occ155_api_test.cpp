@@ -119,7 +119,7 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
 class Occ155ApiTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, kSampleRate);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_dir = std::filesystem::temp_directory_path() / "occ155_api";
     std::filesystem::create_directories(m_dir);
     m_constPath = writeConstantWav(m_dir / "const.wav", 2.0f, kSampleRate);

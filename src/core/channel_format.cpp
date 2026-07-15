@@ -60,6 +60,31 @@ ChannelFormat ChannelFormat::LCR() {
   return fmt;
 }
 
+ChannelFormat ChannelFormat::Quad() {
+  ChannelFormat fmt{};
+  fmt.layout = ChannelLayout::Quad;
+  fmt.num_channels = 4;
+  fmt.channel_map[0] = Speaker::L;
+  fmt.channel_map[1] = Speaker::R;
+  fmt.channel_map[2] = Speaker::Ls;
+  fmt.channel_map[3] = Speaker::Rs;
+  fmt.name = "Quad";
+  return fmt;
+}
+
+ChannelFormat ChannelFormat::Surround50() {
+  ChannelFormat fmt{};
+  fmt.layout = ChannelLayout::Surround_5_0;
+  fmt.num_channels = 5;
+  fmt.channel_map[0] = Speaker::L;
+  fmt.channel_map[1] = Speaker::R;
+  fmt.channel_map[2] = Speaker::C;
+  fmt.channel_map[3] = Speaker::Ls;
+  fmt.channel_map[4] = Speaker::Rs;
+  fmt.name = "5.0 Surround";
+  return fmt;
+}
+
 ChannelFormat ChannelFormat::Surround51() {
   ChannelFormat fmt{};
   fmt.layout = ChannelLayout::Surround_5_1;
@@ -91,6 +116,40 @@ ChannelFormat ChannelFormat::Surround71() {
   fmt.channel_map[6] = Speaker::Lb;
   fmt.channel_map[7] = Speaker::Rb;
   fmt.name = "7.1 Surround";
+  return fmt;
+}
+
+ChannelFormat ChannelFormat::SMPTE51Stereo() {
+  ChannelFormat fmt{};
+  fmt.layout = ChannelLayout::SMPTE_51_ST;
+  fmt.num_channels = 8;
+  fmt.channel_map.fill(Speaker::None);
+  fmt.channel_map[0] = Speaker::L;
+  fmt.channel_map[1] = Speaker::R;
+  fmt.channel_map[2] = Speaker::C;
+  fmt.channel_map[3] = Speaker::LFE;
+  fmt.channel_map[4] = Speaker::Ls;
+  fmt.channel_map[5] = Speaker::Rs;
+  fmt.channel_map[6] = Speaker::Lo;
+  fmt.channel_map[7] = Speaker::Ro;
+  fmt.name = "SMPTE 5.1 + Lo/Ro";
+  return fmt;
+}
+
+ChannelFormat ChannelFormat::SMPTE51MatrixStereo() {
+  ChannelFormat fmt{};
+  fmt.layout = ChannelLayout::SMPTE_51_LTRT;
+  fmt.num_channels = 8;
+  fmt.channel_map.fill(Speaker::None);
+  fmt.channel_map[0] = Speaker::L;
+  fmt.channel_map[1] = Speaker::R;
+  fmt.channel_map[2] = Speaker::C;
+  fmt.channel_map[3] = Speaker::LFE;
+  fmt.channel_map[4] = Speaker::Ls;
+  fmt.channel_map[5] = Speaker::Rs;
+  fmt.channel_map[6] = Speaker::Lt;
+  fmt.channel_map[7] = Speaker::Rt;
+  fmt.name = "SMPTE 5.1 + Lt/Rt";
   return fmt;
 }
 

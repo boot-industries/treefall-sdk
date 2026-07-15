@@ -61,10 +61,10 @@ json::JsonValue serializeSceneToJson(const SceneSnapshot& scene) {
     root.object["assignedClips"].array.push_back(clip);
   }
 
-  // Clip groups (array of uint8_t)
+  // Clip groups
   root.object["clipGroups"] = json::JsonValue{};
   root.object["clipGroups"].type = json::JsonValue::Type::kArray;
-  for (uint8_t group : scene.clipGroups) {
+  for (RoutingGroupIndex group : scene.clipGroups) {
     json::JsonValue g;
     g.type = json::JsonValue::Type::kNumber;
     g.number = static_cast<double>(group);
@@ -172,8 +172,9 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
   if (auto* clipGroups = json::RequireField(root, "clipGroups")) {
     const auto& arr = json::ExpectArray(*clipGroups, "clipGroups");
     for (const auto& item : arr.array) {
-      uint8_t group = static_cast<uint8_t>(item.number);
-      scene.clipGroups.push_back(group);
+      const auto stored = static_cast<uint64_t>(item.number);
+      scene.clipGroups.push_back(stored == 255 ? UNASSIGNED_GROUP
+                                               : static_cast<RoutingGroupIndex>(stored));
     }
   }
 
@@ -246,7 +247,7 @@ public:
       auto config = routingMatrix_->getConfig();
 
       // Reserve space for clip groups (one per channel)
-      scene.clipGroups.resize(config.num_channels, 255); // 255 = unassigned
+      scene.clipGroups.resize(config.num_channels, UNASSIGNED_GROUP);
 
       // Reserve space for group gains (one per group)
       scene.groupGains.resize(config.num_groups, 0.0f);
