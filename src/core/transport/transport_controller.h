@@ -121,6 +121,7 @@ struct TransportCommand {
 struct ActiveClip {
   ClipHandle handle;
   uint32_t voiceId;      // Unique voice instance ID (for multi-voice layering)
+  uint64_t startOrdinal; // Chronological start generation (wrap-aware)
   int64_t startSample;   // When clip started playing (transport time)
   int64_t currentSample; // Current position within clip audio
 
@@ -325,6 +326,16 @@ public:
     m_nextVoiceId = nextVoiceId;
   }
 
+  /// Test-only control of the next chronological start ordinal.
+  void setNextVoiceStartOrdinalForTesting(uint64_t nextOrdinal) noexcept {
+    m_nextVoiceStartOrdinal = nextOrdinal;
+  }
+
+  /// Test-only mutation while the audio callback is stopped.
+  bool setVoiceSnapshotFieldsForTesting(uint32_t voiceId, bool stopping, bool looping,
+                                        int64_t trimIn, int64_t trimOut,
+                                        int64_t currentSample) noexcept;
+
 private:
   /// Derive seconds/beats from the sample-canonical coordinate and current
   /// block-boundary tempo snapshot.
@@ -356,6 +367,10 @@ private:
   /// Find oldest active voice for a given clip handle
   /// @return Pointer to oldest voice, or nullptr if none found
   ActiveClip* findOldestVoice(ClipHandle handle);
+
+  /// Allocate the chronological start ordinal, rebasing the bounded live set
+  /// before serial-number comparisons could become ambiguous.
+  uint64_t allocateVoiceStartOrdinal() noexcept;
 
   /// Add a clip to the active list. Returns false when the global voice pool
   /// cannot accept the start.
@@ -444,6 +459,8 @@ private:
     std::atomic<int64_t> newestTrimInSamples{0};
     std::atomic<int64_t> newestTrimOutSamples{0};
     std::atomic<int64_t> newestPositionSamples{0};
+    std::atomic<uint64_t> newestPositionSecondsBits{0};
+    std::atomic<uint64_t> newestPositionBeatsBits{0};
   };
   struct AtomicActiveVoiceSnapshot {
     std::atomic<uint64_t> revision{0};
@@ -455,6 +472,7 @@ private:
   AtomicActiveVoiceSnapshot m_publishedVoiceSnapshot{};
   ActiveVoiceSnapshot m_voiceSnapshotScratch{};
   std::array<bool, kActiveVoiceSnapshotCapacity> m_voiceSnapshotHasNewest{};
+  std::array<uint64_t, kActiveVoiceSnapshotCapacity> m_voiceSnapshotNewestStartOrdinal{};
   uint64_t m_voiceSnapshotRevision{0};
   uint64_t m_voiceSnapshotSequence{0};
 
@@ -464,6 +482,11 @@ private:
   static constexpr uint32_t DEFAULT_MAX_VOICES_PER_CLIP = 8;
   std::atomic<uint32_t> m_maxVoicesPerClip{DEFAULT_MAX_VOICES_PER_CLIP};
   uint32_t m_nextVoiceId{1}; // Incrementing voice ID counter (0 = invalid)
+  // Chronological serial-number arithmetic. Unsigned wrap is intentional.
+  // The bounded live set is rebased before any pair can be separated by 2^63,
+  // keeping comparisons unambiguous for the controller lifetime.
+  uint64_t m_nextVoiceStartOrdinal{0};
+  std::array<uint64_t, MAX_ACTIVE_CLIPS> m_voiceStartOrdinalScratch{};
 
   // Transport position (audio thread writes, UI thread reads)
   std::atomic<int64_t> m_currentSample{0};

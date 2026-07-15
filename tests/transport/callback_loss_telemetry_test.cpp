@@ -254,6 +254,10 @@ TEST_F(CallbackLossTelemetryTest, ConcurrentSnapshotsRemainCoherentDuringPublica
       EXPECT_TRUE(entry.state == orpheus::PlaybackState::Playing ||
                   entry.state == orpheus::PlaybackState::Stopping);
       EXPECT_GE(entry.newestPosition.samples, 0);
+      const double expectedSeconds =
+          static_cast<double>(entry.newestPosition.samples) / static_cast<double>(kSampleRate);
+      EXPECT_DOUBLE_EQ(entry.newestPosition.seconds, expectedSeconds);
+      EXPECT_DOUBLE_EQ(entry.newestPosition.beats, expectedSeconds * 2.0);
       summedVoices += entry.activeVoiceCount;
       for (uint32_t other = index + 1; other < snapshot.entryCount; ++other) {
         EXPECT_NE(entry.handle, snapshot.entries[other].handle);
@@ -402,6 +406,59 @@ TEST_F(CallbackLossTelemetryTest, VoiceIdsWrapWithoutZeroCollisionAndSurviveComp
   EXPECT_EQ(restarted->newestVoiceId, 3u);
   EXPECT_EQ(restarted->state, orpheus::PlaybackState::Playing);
   EXPECT_EQ(snapshot.totalActiveVoiceCount, 4u);
+}
+
+TEST_F(CallbackLossTelemetryTest, SameSampleOrdinalWrapSelectsChronologicallyNewestVoice) {
+  orpheus::TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kBlockFrames);
+  config.maxActiveVoices = 2;
+  auto wrapped = std::make_unique<orpheus::TransportController>(nullptr, config);
+
+  constexpr orpheus::ClipHandle handle = 501;
+  ASSERT_EQ(wrapped->registerClipAudio(handle, audioPath), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(wrapped->prepareClipAudio(handle), orpheus::SessionGraphError::OK);
+
+  std::array<float, kBlockFrames> wrapLeft{};
+  std::array<float, kBlockFrames> wrapRight{};
+  auto renderWrapped = [&] {
+    float* outputs[2] = {wrapLeft.data(), wrapRight.data()};
+    wrapped->processAudio(outputs, 2, kBlockFrames);
+  };
+
+  wrapped->setNextVoiceIdForTesting(std::numeric_limits<uint32_t>::max());
+  wrapped->setNextVoiceStartOrdinalForTesting(std::numeric_limits<uint64_t>::max());
+  ASSERT_EQ(wrapped->startClip(handle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(wrapped->startClip(handle), orpheus::SessionGraphError::OK);
+  renderWrapped();
+
+  auto snapshot = wrapped->getActiveVoiceSnapshot();
+  const auto* aggregate = findEntry(snapshot, handle);
+  ASSERT_NE(aggregate, nullptr);
+  EXPECT_EQ(aggregate->activeVoiceCount, 2u);
+  EXPECT_EQ(aggregate->newestStartSample, 0);
+  EXPECT_EQ(aggregate->newestVoiceId, 1u);
+
+  ASSERT_TRUE(wrapped->setVoiceSnapshotFieldsForTesting(std::numeric_limits<uint32_t>::max(), true,
+                                                        false, 10, 1000, 20));
+  ASSERT_TRUE(wrapped->setVoiceSnapshotFieldsForTesting(1, false, true, 30, 2000, 40));
+  renderWrapped();
+
+  snapshot = wrapped->getActiveVoiceSnapshot();
+  aggregate = findEntry(snapshot, handle);
+  ASSERT_NE(aggregate, nullptr);
+  EXPECT_EQ(aggregate->activeVoiceCount, 2u);
+  EXPECT_EQ(aggregate->state, orpheus::PlaybackState::Playing);
+  EXPECT_EQ(aggregate->newestVoiceId, 1u);
+  EXPECT_EQ(aggregate->newestVoiceStopping, 0u);
+  EXPECT_EQ(aggregate->newestVoiceLoopEnabled, 1u);
+  EXPECT_EQ(aggregate->newestTrimInSamples, 30);
+  EXPECT_EQ(aggregate->newestTrimOutSamples, 2000);
+  EXPECT_EQ(aggregate->newestPosition.samples, 104);
+  const double expectedSeconds = 104.0 / static_cast<double>(kSampleRate);
+  EXPECT_DOUBLE_EQ(aggregate->newestPosition.seconds, expectedSeconds);
+  EXPECT_DOUBLE_EQ(aggregate->newestPosition.beats, expectedSeconds * 2.0);
 }
 
 } // namespace
