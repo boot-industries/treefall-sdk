@@ -413,6 +413,21 @@ CFStringRef copyDeviceUID(AudioDeviceID device_id) {
   return (status == noErr) ? uid : nullptr;
 }
 
+/// Query a device's clock domain. Devices sharing a non-zero domain are
+/// synchronized to the same underlying hardware clock (e.g. a MacBook's
+/// built-in microphone and built-in speakers both run off the machine's
+/// single audio clock) -- 0 or a mismatch means the OS cannot prove they
+/// share a clock and drift compensation is genuinely needed to bridge them.
+UInt32 getClockDomain(AudioDeviceID device_id) {
+  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyClockDomain,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+  UInt32 domain = 0;
+  UInt32 dataSize = sizeof(UInt32);
+  AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &domain);
+  return domain;
+}
+
 } // namespace
 
 AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
@@ -464,10 +479,37 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
     return 0;
   }
 
+  // Drift compensation resamples a non-master sub-device to track the
+  // master's clock -- necessary (and worth its latency cost) when the two
+  // devices run off genuinely independent hardware clocks, but pure
+  // overhead when they don't. Built-in devices on the same Mac (e.g. the
+  // microphone and speakers here) commonly share one hardware clock domain,
+  // in which case forcing compensation on adds real, otherwise-avoidable
+  // capture latency for no correctness benefit. Query it and only enable
+  // compensation on the (non-master) input sub-device when the domains
+  // actually differ.
+  const bool sameClockDomain = getClockDomain(input_device_id) != 0 &&
+                               getClockDomain(input_device_id) == getClockDomain(output_device_id);
+  const int driftCompensation = sameClockDomain ? 0 : 1;
+
   CFMutableDictionaryRef inputSubDevice = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceUIDKey), inputUID);
+  CFNumberRef driftCompensationValue =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &driftCompensation);
+  CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceDriftCompensationKey),
+                       driftCompensationValue);
+  if (!sameClockDomain) {
+    const int maxQuality = kAudioSubDeviceDriftCompensationMaxQuality;
+    CFNumberRef qualityValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxQuality);
+    CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceDriftCompensationQualityKey),
+                         qualityValue);
+    CFRelease(qualityValue);
+  }
+  CFRelease(driftCompensationValue);
 
+  // The master (clock source) sub-device is never compensated against
+  // itself.
   CFMutableDictionaryRef outputSubDevice = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(outputSubDevice, CFSTR(kAudioSubDeviceUIDKey), outputUID);
