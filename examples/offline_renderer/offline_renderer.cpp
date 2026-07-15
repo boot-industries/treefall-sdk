@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
   double max_duration = 0.0;
 
   // Create transport controller
-  auto transport = orpheus::createTransportController(nullptr, config.sample_rate);
+  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(config.sample_rate)});
 
   orpheus::TransportConfig transport_config;
   transport_config.sample_rate = config.sample_rate;

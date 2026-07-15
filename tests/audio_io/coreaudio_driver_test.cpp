@@ -22,8 +22,10 @@ using namespace orpheus;
 // Test callback that counts invocations and measures timing
 class TestCallback : public IAudioCallback {
 public:
-  void processAudio(const float** input_buffers, float** output_buffers, size_t num_channels,
-                    size_t num_frames) override {
+  void processAudio(const AudioProcessBlock& block) noexcept override {
+    auto output_buffers = block.output_buffers;
+    const size_t num_channels = block.num_output_channels;
+    const size_t num_frames = block.num_frames;
     m_call_count.fetch_add(1, std::memory_order_relaxed);
     m_last_num_channels = num_channels;
     m_last_num_frames = num_frames;
@@ -101,8 +103,11 @@ private:
 // zero; this callback makes that observable.
 class InputCaptureCallback : public IAudioCallback {
 public:
-  void processAudio(const float** input_buffers, float** output_buffers, size_t num_channels,
-                    size_t num_frames) override {
+  void processAudio(const AudioProcessBlock& block) noexcept override {
+    auto input_buffers = block.input_buffers;
+    auto output_buffers = block.output_buffers;
+    const size_t num_channels = block.num_output_channels;
+    const size_t num_frames = block.num_frames;
     m_call_count.fetch_add(1, std::memory_order_relaxed);
 
     if (input_buffers != nullptr && input_buffers[0] != nullptr) {

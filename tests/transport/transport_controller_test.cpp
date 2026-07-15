@@ -19,7 +19,7 @@ class TransportControllerTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_sessionGraph = std::make_unique<MockSessionGraph>();
-    m_transport = createTransportController(m_sessionGraph.get(), 48000);
+    m_transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   }
 
   void TearDown() override {
@@ -136,7 +136,7 @@ void advanceOneSecond(ITransportController& transport, uint32_t sampleRate) {
 // tempo, not a hardcoded 120 BPM.
 TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
   m_sessionGraph->set_tempo(90.0);
-  auto transport = createTransportController(m_sessionGraph.get(), 48000);
+  auto transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   advanceOneSecond(*transport, 48000);
 
@@ -150,7 +150,7 @@ TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
 // FTR027 §1: a set_tempo() change after construction reaches beats on the
 // next processCallbacks() pump.
 TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
-  auto transport = createTransportController(m_sessionGraph.get(), 48000);
+  auto transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   advanceOneSecond(*transport, 48000);
 
@@ -168,14 +168,14 @@ TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
 }
 
 TEST_F(TransportControllerTest, PublicInterfaceReportsRenderContract) {
-  const TransportRenderConfig config = m_transport->getRenderConfig();
+  const TransportConfig config = m_transport->getRenderConfig();
   EXPECT_EQ(config.sampleRate, 48000u);
   EXPECT_EQ(config.outputChannels, 2u);
   EXPECT_EQ(config.maxBlockFrames, 2048u);
 }
 
 TEST_F(TransportControllerTest, PublicInterfaceRendersAndDrainsCallbacks) {
-  const TransportRenderConfig config = m_transport->getRenderConfig();
+  const TransportConfig config = m_transport->getRenderConfig();
   ASSERT_GE(config.outputChannels, 2u);
   ASSERT_GE(config.maxBlockFrames, 64u);
 

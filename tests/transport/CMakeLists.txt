@@ -147,6 +147,37 @@ if(TARGET orpheus_audio_io)
         COMMAND transport_integration_test
     )
 
+    add_executable(multichannel_transport_test
+        multichannel_transport_test.cpp
+    )
+
+    target_link_libraries(multichannel_transport_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(multichannel_transport_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(multichannel_transport_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(multichannel_transport_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME multichannel_transport_test
+        COMMAND multichannel_transport_test
+    )
+
     # Multi-clip stress test
     add_executable(multi_clip_stress_test
         multi_clip_stress_test.cpp

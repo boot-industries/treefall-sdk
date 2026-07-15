@@ -21,10 +21,8 @@ public:
   explicit MultiClipAudioCallback(orpheus::ITransportController* transport)
       : transport_(transport) {}
 
-  void processAudio(const float** /*inputs*/, float** outputs, size_t num_channels,
-                    size_t num_frames) override {
-    transport_->processAudio(outputs, static_cast<uint32_t>(num_channels),
-                             static_cast<uint32_t>(num_frames));
+  void processAudio(const orpheus::AudioProcessBlock& block) noexcept override {
+    transport_->processAudio(block.output_buffers, block.num_output_channels, block.num_frames);
   }
 
 private:
@@ -120,7 +118,7 @@ int main(int argc, char** argv) {
   config.buffer_size = 512;
   config.num_outputs = 2;
 
-  auto transport = orpheus::createTransportController(nullptr, config.sample_rate);
+  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(config.sample_rate)});
 
   if (transport->initialize(config) != orpheus::SessionGraphError::OK) {
     std::cerr << "Failed to initialize transport" << std::endl;

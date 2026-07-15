@@ -22,7 +22,7 @@ using namespace orpheus;
 class ClipGainTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_gain.wav").string();
     // Create test audio file with known samples for verification
     createTestAudioFile();

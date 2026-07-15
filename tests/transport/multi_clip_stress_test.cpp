@@ -30,7 +30,7 @@ class MultiClipStressTest : public ::testing::Test {
 protected:
   void SetUp() override {
     // Create transport controller (no SessionGraph for now)
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
     // Create dummy audio driver
     m_driver = createDummyAudioDriver();
@@ -109,12 +109,10 @@ protected:
   public:
     explicit TransportAudioAdapter(TransportController* transport) : m_transport(transport) {}
 
-    void processAudio(const float** input_buffers, float** output_buffers, size_t num_channels,
-                      size_t num_frames) override {
-      (void)input_buffers; // Not used for playback
-
+    void processAudio(const AudioProcessBlock& block) noexcept override {
       if (m_transport) {
-        m_transport->processAudio(output_buffers, num_channels, num_frames);
+        m_transport->processAudio(block.output_buffers, block.num_output_channels,
+                                  block.num_frames);
       }
 
       m_callbackCount.fetch_add(1, std::memory_order_relaxed);

@@ -9,6 +9,7 @@
 //   MonoStrict          — fire while playing restarts from zero, no fade tail;
 //                         a single voice at all times.
 
+#include <algorithm>
 #include "../../src/core/transport/transport_controller.h"
 #include <cmath>
 #include <cstdint>
@@ -66,12 +67,27 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
   return path.string();
 }
 
+class HandleTransitionCallback : public ITransportCallback {
+public:
+  void onClipStarted(ClipHandle handle, TransportPosition) override {
+    started.push_back(handle);
+  }
+  void onClipStopped(ClipHandle handle, TransportPosition) override {
+    stopped.push_back(handle);
+  }
+  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onBufferUnderrun(TransportPosition) override {}
+
+  std::vector<ClipHandle> started;
+  std::vector<ClipHandle> stopped;
+};
+
 } // namespace
 
 class VoiceModeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, kSampleRate);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_dir = std::filesystem::temp_directory_path() / "orp127_voicemode";
     std::filesystem::create_directories(m_dir);
     m_path = writeSineWav(m_dir / "vm.wav", 440.0f, 2.0f);
@@ -213,6 +229,65 @@ TEST_F(VoiceModeTest, MonoFadeOverlapTailCompletesAndTearsDown) {
   EXPECT_EQ(m_transport->getActiveVoiceCount(h), 1u)
       << "The fade tail must complete and be torn down, leaving only the fresh voice";
   EXPECT_EQ(m_transport->getClipState(h), PlaybackState::Playing);
+}
+
+TEST_F(VoiceModeTest, StopAllTailCompletionCannotEvictRefiredSiblingVoice) {
+  constexpr ClipHandle first = 1;
+  constexpr ClipHandle refired = 2;
+  for (const auto handle : {first, refired}) {
+    ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+    ASSERT_EQ(m_transport->updateClipFades(
+                  handle, 0.0, 0.1, FadeCurve::Linear, FadeCurve::Linear),
+              SessionGraphError::OK);
+    ASSERT_EQ(m_transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap),
+              SessionGraphError::OK);
+  }
+
+  HandleTransitionCallback callback;
+  m_transport->setCallback(&callback);
+  ASSERT_EQ(m_transport->startClip(first), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(refired), SessionGraphError::OK);
+  pump();
+
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  pump();
+  ASSERT_EQ(m_transport->getClipState(refired), PlaybackState::Stopping);
+
+  ASSERT_EQ(m_transport->startClip(refired), SessionGraphError::OK);
+  pump();
+  ASSERT_EQ(m_transport->getActiveVoiceCount(refired), 2u);
+
+  pump(14);
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(m_transport->getActiveVoiceCount(first), 0u);
+  EXPECT_EQ(m_transport->getActiveVoiceCount(refired), 1u);
+  EXPECT_EQ(m_transport->getClipState(refired), PlaybackState::Playing);
+  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), first), 1);
+  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), refired), 0)
+      << "A handle-level stop must not be emitted while the fresh voice remains live";
+}
+
+TEST_F(VoiceModeTest, StopAllNearLoopBoundaryCompletesFadeInsteadOfLoopingForever) {
+  constexpr ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->updateClipFades(
+                handle, 0.0, 0.5, FadeCurve::Linear, FadeCurve::Linear),
+            SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipLoopMode(handle, true), SessionGraphError::OK);
+
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  pump();
+  ASSERT_EQ(m_transport->seekClip(handle, 91200), SessionGraphError::OK);
+  pump();
+  ASSERT_GT(m_transport->getClipPosition(handle), 91200);
+
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  pump(60);
+
+  EXPECT_EQ(m_transport->getActiveVoiceCount(handle), 0u);
+  EXPECT_EQ(m_transport->getClipState(handle), PlaybackState::Stopped)
+      << "A stopping loop must not wrap to trim IN and restart its fade clock";
 }
 
 // ---- MonoStrict ------------------------------------------------------------

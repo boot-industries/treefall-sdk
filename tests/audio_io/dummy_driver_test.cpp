@@ -11,11 +11,13 @@ using namespace orpheus;
 // Test callback that counts invocations
 class TestCallback : public IAudioCallback {
 public:
-  void processAudio(const float** input_buffers, float** output_buffers, size_t num_channels,
-                    size_t num_frames) override {
+  void processAudio(const AudioProcessBlock& block) noexcept override {
+    auto output_buffers = block.output_buffers;
+    const size_t num_channels = block.num_output_channels;
+    const size_t num_frames = block.num_frames;
     m_call_count.fetch_add(1, std::memory_order_relaxed);
-    m_last_num_channels = num_channels;
-    m_last_num_frames = num_frames;
+    m_last_num_channels.store(num_channels, std::memory_order_relaxed);
+    m_last_num_frames.store(num_frames, std::memory_order_relaxed);
 
     // Fill output with a simple pattern for verification
     for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -23,6 +25,20 @@ public:
         output_buffers[ch][i] = 0.5f; // Simple constant
       }
     }
+    bool distinct = true;
+    bool patternVerified = num_frames > 0;
+    for (size_t ch = 0; ch < num_channels; ++ch) {
+      for (size_t other = 0; other < ch; ++other) {
+        distinct = distinct && output_buffers[ch] != output_buffers[other];
+      }
+      if (num_frames > 0) {
+        output_buffers[ch][0] = static_cast<float>(ch + 1) / 16.0f;
+        patternVerified =
+            patternVerified && output_buffers[ch][0] == static_cast<float>(ch + 1) / 16.0f;
+      }
+    }
+    m_distinct_output_channels.store(distinct, std::memory_order_relaxed);
+    m_channel_pattern_verified.store(patternVerified, std::memory_order_relaxed);
   }
 
   int getCallCount() const {
@@ -34,16 +50,24 @@ public:
   }
 
   size_t getLastNumChannels() const {
-    return m_last_num_channels;
+    return m_last_num_channels.load(std::memory_order_relaxed);
   }
   size_t getLastNumFrames() const {
-    return m_last_num_frames;
+    return m_last_num_frames.load(std::memory_order_relaxed);
+  }
+  bool hasDistinctOutputChannels() const {
+    return m_distinct_output_channels.load(std::memory_order_relaxed);
+  }
+  bool isChannelPatternVerified() const {
+    return m_channel_pattern_verified.load(std::memory_order_relaxed);
   }
 
 private:
   std::atomic<int> m_call_count{0};
-  size_t m_last_num_channels{0};
-  size_t m_last_num_frames{0};
+  std::atomic<size_t> m_last_num_channels{0};
+  std::atomic<size_t> m_last_num_frames{0};
+  std::atomic<bool> m_distinct_output_channels{false};
+  std::atomic<bool> m_channel_pattern_verified{false};
 };
 
 // Test fixture
@@ -165,6 +189,24 @@ TEST_F(DummyDriverTest, CallbackIsInvoked) {
   EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
 
   m_driver->stop();
+}
+
+TEST_F(DummyDriverTest, EightOutputCallbackReceivesDistinctWritableLanes) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 64;
+  config.num_outputs = 8;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+
+  EXPECT_GT(m_callback->getCallCount(), 0);
+  EXPECT_EQ(m_callback->getLastNumChannels(), 8u);
+  EXPECT_EQ(m_callback->getLastNumFrames(), 64u);
+  EXPECT_TRUE(m_callback->hasDistinctOutputChannels());
+  EXPECT_TRUE(m_callback->isChannelPatternVerified());
 }
 
 TEST_F(DummyDriverTest, CallbackIsNotInvokedAfterStop) {

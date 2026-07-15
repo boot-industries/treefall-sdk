@@ -12,6 +12,7 @@ namespace orpheus {
 /// Standard channel layouts (ST2110/SMPTE aligned)
 /// Values match channel count for bed formats
 enum class ChannelLayout : uint8_t {
+  Unspecified = 0,
   Mono = 1,
   Stereo = 2,
   LCR = 3,          // Left, Center, Right (film/theater)
@@ -22,6 +23,8 @@ enum class ChannelLayout : uint8_t {
   Atmos_5_1_2 = 8,  // 5.1 + 2 height (Ltf, Rtf)
   Atmos_5_1_4 = 10, // 5.1 + 4 height (Ltf, Rtf, Ltb, Rtb)
   Atmos_7_1_4 = 12, // 7.1 + 4 height
+  SMPTE_51_ST = 108, // ST 2110-30 compound order: L, R, C, LFE, Ls, Rs, Lo, Ro
+  SMPTE_51_LTRT = 109, // Matrix-stereo alternative: L, R, C, LFE, Ls, Rs, Lt, Rt
 
   // Scene-based formats (ambisonics)
   Ambisonics_FOA = 4,   // First-order: W, Y, Z, X (ACN/SN3D)
@@ -44,6 +47,12 @@ enum class Speaker : uint8_t {
   // Rear layer (7.1+)
   Lb = 6, // Left Back
   Rb = 7, // Right Back
+
+  // Discrete stereo downmix pair used by SMPTE2110.(51,ST)
+  Lo = 15, // Left only
+  Ro = 16, // Right only
+  Lt = 17, // Left total (matrix-encoded)
+  Rt = 18, // Right total (matrix-encoded)
 
   // Height layer (Atmos/Auro)
   Ltf = 8,  // Left Top Front
@@ -79,6 +88,15 @@ struct ChannelFormat {
   std::array<Speaker, MAX_FORMAT_CHANNELS> channel_map; // Speaker per channel
   std::string name;
 
+  ChannelFormat() : layout(ChannelLayout::Unspecified), num_channels(0), channel_map{}, name() {
+    channel_map.fill(Speaker::None);
+  }
+
+  /// True only after a host or parser has established an explicit layout.
+  [[nodiscard]] bool isSpecified() const {
+    return layout != ChannelLayout::Unspecified && num_channels > 0;
+  }
+
   /// Check if format is bed-based (discrete speaker feeds)
   [[nodiscard]] bool isBedFormat() const {
     return layout != ChannelLayout::Ambisonics_FOA && layout != ChannelLayout::Ambisonics_HOA2 &&
@@ -101,8 +119,12 @@ struct ChannelFormat {
   static ChannelFormat Mono();
   static ChannelFormat Stereo();
   static ChannelFormat LCR();
+  static ChannelFormat Quad();
+  static ChannelFormat Surround50();
   static ChannelFormat Surround51();
   static ChannelFormat Surround71();
+  static ChannelFormat SMPTE51Stereo();
+  static ChannelFormat SMPTE51MatrixStereo();
   static ChannelFormat Atmos714();
   static ChannelFormat Ambisonics(uint8_t order);
   static ChannelFormat Custom(uint8_t numChannels);

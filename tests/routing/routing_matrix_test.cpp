@@ -82,7 +82,7 @@ TEST_F(RoutingMatrixTest, InitializeWithInvalidChannelCount) {
 }
 
 TEST_F(RoutingMatrixTest, InitializeWithTooManyChannels) {
-  config.num_channels = 65; // > 64
+  config.num_channels = 257; // > 256 logical source lanes
   auto result = matrix->initialize(config);
 
   EXPECT_EQ(result, SessionGraphError::InvalidParameter);
@@ -95,11 +95,12 @@ TEST_F(RoutingMatrixTest, InitializeWithInvalidGroupCount) {
   EXPECT_EQ(result, SessionGraphError::InvalidParameter);
 }
 
-TEST_F(RoutingMatrixTest, InitializeWithInvalidOutputCount) {
-  config.num_outputs = 1; // < 2 (stereo minimum)
+TEST_F(RoutingMatrixTest, InitializeWithMonoOutput) {
+  config.num_outputs = 1;
   auto result = matrix->initialize(config);
 
-  EXPECT_EQ(result, SessionGraphError::InvalidParameter);
+  EXPECT_EQ(result, SessionGraphError::OK);
+  EXPECT_EQ(matrix->getConfig().num_outputs, 1);
 }
 
 // ============================================================================
@@ -352,6 +353,28 @@ TEST_F(RoutingMatrixTest, SoloChannelMutesOthers) {
 
   // Channel 1 should be effectively muted (solo active, not solo'd)
   EXPECT_TRUE(matrix->isChannelMuted(1));
+}
+
+TEST_F(RoutingMatrixTest, GroupSoloDoesNotMuteSourceChannels) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupSolo(0, true), SessionGraphError::OK);
+
+  EXPECT_TRUE(matrix->isSoloActive());
+  for (RoutingChannelIndex channel = 0; channel < config.num_channels; ++channel)
+    EXPECT_FALSE(matrix->isChannelMuted(channel));
+  EXPECT_FALSE(matrix->isGroupMuted(0));
+  EXPECT_TRUE(matrix->isGroupMuted(1));
+}
+
+TEST_F(RoutingMatrixTest, ChannelSoloDoesNotMuteLogicalGroups) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelSolo(0, true), SessionGraphError::OK);
+
+  EXPECT_TRUE(matrix->isSoloActive());
+  EXPECT_FALSE(matrix->isChannelMuted(0));
+  EXPECT_TRUE(matrix->isChannelMuted(1));
+  for (RoutingGroupIndex group = 0; group < config.num_groups; ++group)
+    EXPECT_FALSE(matrix->isGroupMuted(group));
 }
 
 // ============================================================================

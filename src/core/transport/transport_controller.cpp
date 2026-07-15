@@ -15,100 +15,159 @@
 
 namespace orpheus {
 
-TransportController::TransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate)
-    : m_sessionGraph(sessionGraph), m_sampleRate(sampleRate), m_callback(nullptr) {
-  // Calculate fade-out samples
-  m_fadeOutSamples =
-      static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) * static_cast<float>(sampleRate));
+namespace {
 
-  // Calculate restart crossfade samples (broadcast-safe restart mechanism)
-  m_restartCrossfadeSamples = static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
-                                                  static_cast<float>(sampleRate));
+std::optional<ChannelFormat> standardChannelFormat(ChannelLayout layout) {
+  switch (layout) {
+  case ChannelLayout::Mono:
+    return ChannelFormat::Mono();
+  case ChannelLayout::Stereo:
+    return ChannelFormat::Stereo();
+  case ChannelLayout::LCR:
+    return ChannelFormat::LCR();
+  case ChannelLayout::Quad:
+    return ChannelFormat::Quad();
+  case ChannelLayout::Surround_5_0:
+    return ChannelFormat::Surround50();
+  case ChannelLayout::Surround_5_1:
+    return ChannelFormat::Surround51();
+  case ChannelLayout::Surround_7_1:
+    return ChannelFormat::Surround71();
+  case ChannelLayout::SMPTE_51_ST:
+    return ChannelFormat::SMPTE51Stereo();
+  case ChannelLayout::SMPTE_51_LTRT:
+    return ChannelFormat::SMPTE51MatrixStereo();
+  default:
+    return std::nullopt;
+  }
+}
 
-  // ORP127 G4: per-sample clip-gain ramp increment for the default smoothing
-  // time. A full 0→1 change takes CLIP_GAIN_SMOOTHING_MS; each sample moves by
-  // 1 / (ms/1000 * sampleRate).
-  {
-    float smoothingSamples = (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(sampleRate);
-    m_clipGainRampIncrement = (smoothingSamples > 0.0f) ? (1.0f / smoothingSamples) : 1.0f;
+std::optional<ChannelFormat> inferUnambiguousChannelFormat(uint16_t channels) {
+  switch (channels) {
+  case 1:
+    return ChannelFormat::Mono();
+  case 2:
+    return ChannelFormat::Stereo();
+  case 3:
+    return ChannelFormat::LCR();
+  case 4:
+    return ChannelFormat::Quad();
+  case 5:
+    return ChannelFormat::Surround50();
+  case 6:
+    return ChannelFormat::Surround51();
+  default:
+    return std::nullopt;
+  }
+}
+
+bool isValidSpeakerPatch(ChannelLayout layout, uint8_t patchSize,
+                         const std::array<Speaker, 8>& patch, uint16_t fileChannels) {
+  if (layout == ChannelLayout::Unspecified) {
+    return patchSize == 0;
+  }
+  if (fileChannels == 0 || fileChannels > patch.size() || patchSize != fileChannels) {
+    return false;
+  }
+  for (size_t channel = 0; channel < patchSize; ++channel) {
+    if (patch[channel] == Speaker::None) {
+      return false;
+    }
+    for (size_t earlier = 0; earlier < channel; ++earlier) {
+      if (patch[channel] == patch[earlier]) {
+        return false;
+      }
+    }
   }
 
-  // Create and initialize routing matrix
-  m_routingMatrix = createRoutingMatrix();
+  if (layout == ChannelLayout::Custom) {
+    return true;
+  }
+  const auto standard = standardChannelFormat(layout);
+  if (!standard.has_value() || standard->num_channels != fileChannels) {
+    return false;
+  }
+  return std::equal(patch.begin(), patch.begin() + patchSize,
+                    standard->channel_map.begin());
+}
 
-  // ORP121 A-01: ST2110-aligned channel architecture
-  // Each clip can use up to 2 routing channels (L/R for stereo sources)
-  // Mono sources use 1 channel, stereo sources use 2 independent channels
-  // This follows ST2110-30 principle: audio as discrete independent channels
-  static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
+} // namespace
+
+TransportController::TransportController(core::SessionGraph* sessionGraph,
+                                         const TransportConfig& config)
+    : m_sessionGraph(sessionGraph), m_config(config), m_sampleRate(config.sampleRate),
+      m_callback(nullptr) {
+  m_fadeOutSamples = static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) *
+                                         static_cast<float>(m_sampleRate));
+  m_restartCrossfadeSamples =
+      static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
+                          static_cast<float>(m_sampleRate));
+
+  const float smoothingSamples =
+      (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(m_sampleRate);
+  m_clipGainRampIncrement = smoothingSamples > 0.0f ? 1.0f / smoothingSamples : 1.0f;
+
+  m_routingMatrix = createRoutingMatrix();
+  const size_t routingLaneCount =
+      static_cast<size_t>(m_config.maxActiveVoices) * m_config.maxSourceChannels;
 
   RoutingConfig routingConfig;
-  // num_channels is structural: 2 routing channels per active clip (L/R), so it
-  // scales with MAX_ACTIVE_CLIPS. num_groups is a typical soundboard default;
-  // hosts that need a different grouping topology can reconfigure the matrix.
-  routingConfig.num_channels = MAX_ROUTING_CHANNELS; // 2 channels per clip (stereo)
-  routingConfig.num_groups = 4;                      // typical soundboard default
-  routingConfig.num_outputs = 2;                     // stereo output
+  routingConfig.num_channels = static_cast<RoutingChannelIndex>(routingLaneCount);
+  routingConfig.num_groups = static_cast<RoutingGroupIndex>(m_config.numGroups);
+  routingConfig.num_outputs = static_cast<RoutingOutputIndex>(m_config.outputChannels);
+  routingConfig.sample_rate = m_sampleRate;
   routingConfig.solo_mode = SoloMode::SIP;
   routingConfig.metering_mode = MeteringMode::Peak;
-  routingConfig.gain_smoothing_ms =
-      0.0f; // DISABLED: Fades handled at clip level, smoothing causes zigzag artifacts
+  routingConfig.gain_smoothing_ms = 0.0f;
   routingConfig.enable_metering = true;
-  routingConfig.enable_clipping_protection =
-      true; // Enabled by default: prevents distortion when many voices fade out
-            // simultaneously (soft-knee tanh limiter, no audible quality loss).
-
+  routingConfig.enable_clipping_protection = true;
+  routingConfig.source_channel_policy = m_config.sourceChannelPolicy;
+  routingConfig.downmix_policy =
+      m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete
+          ? DownmixPolicy::None
+          : DownmixPolicy::ITU_BS775_3;
   m_routingMatrix->initialize(routingConfig);
 
-  // ORP121 A-01: Configure channel pairs for stereo routing
-  // Each clip's L channel: pan = -1.0 (hard left)
-  // Each clip's R channel: pan = +1.0 (hard right)
-  // Both channels route to the same group (group 0 by default)
-  for (size_t clip = 0; clip < MAX_ACTIVE_CLIPS; ++clip) {
-    size_t ch_L = clip * 2;
-    size_t ch_R = clip * 2 + 1;
-
-    // Configure L channel (hard left pan)
-    ChannelConfig configL;
-    configL.gain_db = 0.0f;
-    configL.pan = -1.0f; // Hard left for stereo L channel
-    configL.mute = false;
-    configL.solo = false;
-    m_routingMatrix->configureChannel(static_cast<uint8_t>(ch_L), configL);
-    m_routingMatrix->setChannelGroup(static_cast<uint8_t>(ch_L), 0);
-
-    // Configure R channel (hard right pan)
-    ChannelConfig configR;
-    configR.gain_db = 0.0f;
-    configR.pan = 1.0f; // Hard right for stereo R channel
-    configR.mute = false;
-    configR.solo = false;
-    m_routingMatrix->configureChannel(static_cast<uint8_t>(ch_R), configR);
-    m_routingMatrix->setChannelGroup(static_cast<uint8_t>(ch_R), 0);
+  for (size_t voice = 0; voice < m_config.maxActiveVoices; ++voice) {
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+      const auto channel =
+          static_cast<RoutingChannelIndex>(voice * m_config.maxSourceChannels + lane);
+      ChannelConfig channelConfig;
+      channelConfig.gain_db = 0.0f;
+      channelConfig.pan = lane % 2 == 0 ? -1.0f : 1.0f;
+      channelConfig.output_channel =
+          static_cast<RoutingOutputIndex>(lane % m_config.outputChannels);
+      m_routingMatrix->configureChannel(channel, channelConfig);
+      m_routingMatrix->setChannelGroup(channel, UNASSIGNED_GROUP);
+    }
+  }
+  for (size_t group = 0; group < MAX_LOGICAL_GROUPS; ++group) {
+    m_groupOutputStarts[group].store(0, std::memory_order_relaxed);
+    m_groupOutputWidths[group].store(0, std::memory_order_relaxed);
+  }
+  for (RoutingGroupIndex group = 0; group < m_config.numGroups; ++group) {
+    m_groupOutputWidths[group].store(
+        static_cast<uint16_t>(m_config.outputChannels),
+        std::memory_order_relaxed);
+    (void)m_routingMatrix->setGroupOutputRoute(
+        group, 0, static_cast<uint16_t>(m_config.outputChannels));
   }
 
-  // Pre-allocate per-clip read buffers (interleaved audio from files)
-  m_clipReadBuffers.resize(MAX_ACTIVE_CLIPS);
+  m_clipReadBuffers.resize(m_config.maxActiveVoices);
   for (auto& buffer : m_clipReadBuffers) {
-    buffer.resize(MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS, 0.0f);
+    buffer.resize(static_cast<size_t>(m_config.maxBlockFrames) * m_config.maxSourceChannels, 0.0f);
   }
 
-  // ORP121 A-01: Pre-allocate stereo clip channel buffers
-  // Each clip has L and R buffers: index = clip * 2 + (0 for L, 1 for R)
-  m_clipChannelBuffers.resize(MAX_ROUTING_CHANNELS);
+  m_clipChannelBuffers.resize(routingLaneCount);
   for (auto& buffer : m_clipChannelBuffers) {
-    buffer.resize(MAX_BUFFER_FRAMES, 0.0f);
+    buffer.resize(m_config.maxBlockFrames, 0.0f);
   }
 
-  // Pre-allocate pointer array for processRouting()
-  m_clipChannelPointers.resize(MAX_ROUTING_CHANNELS);
-  for (size_t i = 0; i < MAX_ROUTING_CHANNELS; ++i) {
-    m_clipChannelPointers[i] = m_clipChannelBuffers[i].data();
+  m_clipChannelPointers.resize(routingLaneCount);
+  for (size_t lane = 0; lane < routingLaneCount; ++lane) {
+    m_clipChannelPointers[lane] = m_clipChannelBuffers[lane].data();
   }
 
-  // FTR027 §1: seed the tempo cache from the session graph so beats derive
-  // from the real session tempo immediately, before the first
-  // processCallbacks() pump.
   if (m_sessionGraph) {
     m_tempoBpm.store(m_sessionGraph->tempo(), std::memory_order_relaxed);
   }
@@ -131,6 +190,11 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
       auto& entry = it->second;
+      if (entry.sourceLayout == ChannelLayout::Unspecified ||
+          !isValidSpeakerPatch(entry.sourceLayout, entry.speakerPatchSize,
+                               entry.speakerPatch, entry.metadata.num_channels)) {
+        return SessionGraphError::InvalidParameter;
+      }
       // ORP134 G1: lazy preparation for hosts that never call
       // prepareClipAudio() — decode/stream setup happens HERE on the control
       // thread, never on the audio thread.
@@ -152,6 +216,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       // Precompute linear gain
       context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
+      context->routingGroup = entry.routingGroup;
       context->voiceMode = entry.voiceMode; // ORP127 G5
     } else {
       // Clip not registered - use defaults for testing
@@ -167,6 +232,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
       context->gainDb = 0.0f;
       context->gainLinear = 1.0f;
       context->loopEnabled = false;
+      context->routingGroup = 0;
       context->voiceMode = VoiceMode::Polyphonic; // ORP127 G5: default
     }
   }
@@ -251,9 +317,8 @@ SessionGraphError TransportController::stopOtherClips(ClipHandle exceptHandle) {
 }
 
 SessionGraphError TransportController::setMaxVoicesPerClip(uint32_t maxVoices) {
-  // ORP127 G7: clamp to [1, hard max]. Atomic so the audio thread reads a
-  // consistent value in addActiveClip.
-  uint32_t clamped = std::clamp(maxVoices, 1u, VOICE_CAP_HARD_MAX);
+  const uint32_t configuredLimit = std::min(m_config.maxActiveVoices, VOICE_CAP_HARD_MAX);
+  const uint32_t clamped = std::clamp(maxVoices, 1u, configuredLimit);
   m_maxVoicesPerClip.store(clamped, std::memory_order_relaxed);
   return SessionGraphError::OK;
 }
@@ -308,34 +373,31 @@ void TransportController::setCallback(ITransportCallback* callback) {
   m_callback = callback;
 }
 
-TransportRenderConfig TransportController::getRenderConfig() const noexcept {
-  TransportRenderConfig config;
-  config.sampleRate = m_sampleRate;
-  config.maxBlockFrames = static_cast<uint32_t>(MAX_BUFFER_FRAMES);
-  if (m_routingMatrix) {
-    config.outputChannels = m_routingMatrix->getConfig().num_outputs;
-  }
-  return config;
+TransportConfig TransportController::getRenderConfig() const noexcept {
+  return m_config;
 }
 
-void TransportController::processAudio(float** outputBuffers, size_t numChannels,
+void TransportController::processAudio(float* const* outputBuffers, size_t numChannels,
                                        size_t numFrames) noexcept {
-  // Process pending commands from UI thread
+  if (outputBuffers == nullptr || numChannels != m_config.outputChannels ||
+      numFrames > m_config.maxBlockFrames) {
+    if (outputBuffers != nullptr) {
+      for (size_t channel = 0; channel < numChannels; ++channel) {
+        if (outputBuffers[channel] != nullptr) {
+          std::memset(outputBuffers[channel], 0, numFrames * sizeof(float));
+        }
+      }
+    }
+    return;
+  }
+
   processCommands();
-
-  // Routing matrix controls output channel count
-  (void)numChannels;
-
-  // Clamp frames to max buffer size
-  numFrames = std::min(numFrames, MAX_BUFFER_FRAMES);
 
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
 
-  // ORP121 A-01: Clear all clip channel buffers (stereo - 2 per clip)
-  static constexpr size_t MAX_ROUTING_CHANNELS = MAX_ACTIVE_CLIPS * 2;
-  for (size_t i = 0; i < MAX_ROUTING_CHANNELS; ++i) {
-    std::memset(m_clipChannelBuffers[i].data(), 0, numFrames * sizeof(float));
+  for (auto& lane : m_clipChannelBuffers) {
+    std::memset(lane.data(), 0, numFrames * sizeof(float));
   }
 
   // ORP127 G2: The stop fade-out is now computed per sample inside the render
@@ -370,7 +432,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       clip.source->setDemand(trimIn);
     } else if (clip.currentSample >= trimOut) {
       // Position at or past OUT point - handle loop or stop
-      bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
+      const bool shouldLoop =
+          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
       if (shouldLoop) {
         // Loop mode: restart from IN point
         clip.currentSample = trimIn;
@@ -567,32 +630,30 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
         }
       }
 
-      // ORP121 A-01: Preserve stereo from source (ST2110-aligned)
-      // Each file channel maps to discrete routing channels
-      // - Mono: Duplicate to L/R (phantom center image)
-      // - Stereo: Direct L→L, R→R mapping
-      // - Multi-channel (>2): ITU-R BS.775-3 downmix to stereo
-      float sample_L, sample_R;
-
-      if (numFileChannels == 1) {
-        // Mono source: Duplicate to both L/R (centered phantom image)
-        float mono = clipReadBuffer[frame];
-        sample_L = mono;
-        sample_R = mono;
-      } else if (numFileChannels == 2) {
-        // Stereo source: Preserve L/R separation
-        sample_L = clipReadBuffer[frame * 2 + 0];
-        sample_R = clipReadBuffer[frame * 2 + 1];
+      const size_t laneBase = i * m_config.maxSourceChannels;
+      if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
+        for (size_t channel = 0; channel < numFileChannels; ++channel) {
+          m_clipChannelBuffers[laneBase + channel][frame] =
+              clipReadBuffer[frame * numFileChannels + channel] * gain;
+        }
       } else {
-        // Multi-channel (>2): Apply ITU-R BS.775-3 downmix to stereo
-        sample_L = applyDownmixLeft(clipReadBuffer, frame, numFileChannels);
-        sample_R = applyDownmixRight(clipReadBuffer, frame, numFileChannels);
+        float left = 0.0f;
+        float right = 0.0f;
+        if (numFileChannels == 1) {
+          left = clipReadBuffer[frame];
+          right = left;
+        } else if (numFileChannels == 2) {
+          left = clipReadBuffer[frame * 2];
+          right = clipReadBuffer[frame * 2 + 1];
+        } else {
+          left = applyDownmixLeft(clipReadBuffer, frame, numFileChannels);
+          right = applyDownmixRight(clipReadBuffer, frame, numFileChannels);
+        }
+        m_clipChannelBuffers[laneBase][frame] = left * gain;
+        if (m_config.maxSourceChannels > 1) {
+          m_clipChannelBuffers[laneBase + 1][frame] = right * gain;
+        }
       }
-
-      // Apply gain and write to stereo clip buffers
-      // L channel at index i*2, R channel at index i*2+1
-      m_clipChannelBuffers[i * 2][frame] = sample_L * gain;
-      m_clipChannelBuffers[i * 2 + 1][frame] = sample_R * gain;
     }
 
     // Advance clip position by actual frames read (not buffer size!)
@@ -633,16 +694,22 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
       int64_t fadeProgress = clip.currentSample - clip.fadeOutStartPos;
 
       if (fadeProgress >= fadeOutSampleCount) {
-        // Fade-out complete, remove clip
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStopped;
-        event.handle = clip.handle;
-        event.voiceId = clip.voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+        const ClipHandle stoppedHandle = clip.handle;
+        const uint32_t stoppedVoiceId = clip.voiceId;
+        removeActiveVoice(stoppedVoiceId);
 
-        removeActiveClip(clip.handle);
-        continue; // Don't increment i, we just removed this clip
+        // Callbacks are handle-level state transitions. A fading tail ending
+        // must not report the clip stopped while a newly fired voice for the
+        // same handle is still live.
+        if (countActiveVoices(stoppedHandle) == 0) {
+          TransportEvent event{};
+          event.type = TransportEventType::ClipStopped;
+          event.handle = stoppedHandle;
+          event.voiceId = stoppedVoiceId;
+          event.position = getCurrentPosition();
+          postTransportEvent(event);
+        }
+        continue;
       }
     }
 
@@ -650,7 +717,8 @@ void TransportController::processAudio(float** outputBuffers, size_t numChannels
     int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
     if (clip.currentSample >= clipTrimOut) {
       // Check if clip should loop
-      bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
+      const bool shouldLoop =
+          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
 
       if (shouldLoop) {
         // Loop: jump back to trim IN point (works even without a source)
@@ -727,9 +795,7 @@ void TransportController::processCommands() {
 
     switch (cmd.type) {
     case TransportCommand::Type::Start: {
-      // ORP127 G5: honor the clip's voice policy when firing.
-      if (cmd.startContext) {
-        startVoiceWithMode(cmd.startContext);
+      if (cmd.startContext && startVoiceWithMode(cmd.startContext)) {
         TransportEvent event{};
         event.type = TransportEventType::ClipStarted;
         event.handle = cmd.handle;
@@ -760,20 +826,25 @@ void TransportController::processCommands() {
       break;
 
     case TransportCommand::Type::Panic:
-      // OCC155 Ask #5: hard-cut. Drop every voice with no fade so output is
-      // silent on this block. Post ClipStopped for each so the host's UI state
-      // (playing indicators) clears exactly as it would on a natural stop.
-      // Releasing each voice's source shared_ptr here is the same refcount
-      // decrement that removeActiveVoice() already does on the audio thread —
-      // no new RT hazard. Iterate before zeroing the count.
+      // Emit one handle-level stop transition even if a handle currently has
+      // both a fading tail and a freshly fired voice.
       for (size_t i = 0; i < m_activeClipCount; ++i) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStopped;
-        event.handle = m_activeClips[i].handle;
-        event.voiceId = m_activeClips[i].voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
-        m_activeClips[i].source.reset(); // release source reference (refcount--)
+        bool firstVoiceForHandle = true;
+        for (size_t earlier = 0; earlier < i; ++earlier) {
+          if (m_activeClips[earlier].handle == m_activeClips[i].handle) {
+            firstVoiceForHandle = false;
+            break;
+          }
+        }
+        if (firstVoiceForHandle) {
+          TransportEvent event{};
+          event.type = TransportEventType::ClipStopped;
+          event.handle = m_activeClips[i].handle;
+          event.voiceId = m_activeClips[i].voiceId;
+          event.position = getCurrentPosition();
+          postTransportEvent(event);
+        }
+        m_activeClips[i].source.reset();
       }
       m_activeClipCount = 0;
       break;
@@ -939,6 +1010,8 @@ void TransportController::processCommands() {
           clip.loopEnabled.store(cmd.data.metadata.loopEnabled, std::memory_order_release);
           clip.gainDb.store(cmd.data.metadata.gainDb, std::memory_order_release);
           clip.gainLinear.store(cmd.data.metadata.gainLinear, std::memory_order_release);
+          clip.routingGroup = cmd.data.metadata.routingGroup;
+          configureVoiceRouting(i, clip.routingGroup, clip.numChannels);
         }
       }
       break;
@@ -1017,43 +1090,30 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
 }
 
-void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
+bool TransportController::startVoiceWithMode(
+    const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
-    return;
+    return false;
 
   const ClipHandle handle = context->handle;
   const VoiceMode mode = context->voiceMode;
 
   switch (mode) {
   case VoiceMode::Polyphonic:
-    // Historical behavior: always allocate a new voice (addActiveClip evicts
-    // the oldest voice for this handle if already at MAX_VOICES_PER_CLIP).
-    addActiveClip(context);
-    return;
+    return addActiveClip(context);
 
   case VoiceMode::MonoStrict: {
-    // Strict single voice: fire-while-anything replaces it from zero with no
-    // fade tail. Cut every existing voice for this handle (including fading
-    // tails) and restart the first in place; if none exist, add fresh.
     ActiveClip* primary = nullptr;
     for (size_t i = 0; i < m_activeClipCount; ++i) {
-      if (m_activeClips[i].handle == handle) {
-        if (!primary) {
-          primary = &m_activeClips[i];
-        }
-      }
+      if (m_activeClips[i].handle == handle && !primary)
+        primary = &m_activeClips[i];
     }
-    if (!primary) {
-      addActiveClip(context);
-      return;
-    }
-    // Remove any *other* voices for this handle (no fade — strict cut). Iterate
-    // from the end so removeActiveVoice's slot compaction is safe.
+    if (!primary)
+      return addActiveClip(context);
+
     for (size_t i = m_activeClipCount; i-- > 0;) {
       if (m_activeClips[i].handle == handle && &m_activeClips[i] != primary) {
         removeActiveVoice(m_activeClips[i].voiceId);
-        // primary pointer may have moved if the last slot was compacted into
-        // its position; re-find it.
         primary = nullptr;
         for (size_t j = 0; j < m_activeClipCount; ++j) {
           if (m_activeClips[j].handle == handle) {
@@ -1065,32 +1125,23 @@ void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
           break;
       }
     }
-    if (primary) {
-      // MonoStrict restarts from zero with NO crossfade tail (hard, sample-
-      // accurate replace) — just reset position; the clip fade-in (if any)
-      // still applies via hasLoopedOnce=false.
-      int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
-      primary->currentSample = trimIn;
-      if (primary->source) {
-        primary->source->setDemand(trimIn);
-      }
-      primary->isStopping = false;
-      primary->fadeOutGain = 1.0f;
-      primary->hasLoopedOnce = false;
-      primary->isRestarting = false;
-      primary->restartFadeFramesRemaining = 0;
-      primary->voiceMode = mode;
-    } else {
-      addActiveClip(context);
-    }
-    return;
+    if (!primary)
+      return addActiveClip(context);
+
+    const int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
+    primary->currentSample = trimIn;
+    if (primary->source)
+      primary->source->setDemand(trimIn);
+    primary->isStopping = false;
+    primary->fadeOutGain = 1.0f;
+    primary->hasLoopedOnce = false;
+    primary->isRestarting = false;
+    primary->restartFadeFramesRemaining = 0;
+    primary->voiceMode = mode;
+    return true;
   }
 
   case VoiceMode::MonoWithFadeOverlap: {
-    // One primary voice. If a live (non-stopping) voice exists, restart it in
-    // place (with a short crossfade). If only fading tails exist, add a fresh
-    // voice alongside them so the tail completes naturally (voices == 2 during
-    // the overlap window).
     ActiveClip* live = nullptr;
     for (size_t i = 0; i < m_activeClipCount; ++i) {
       if (m_activeClips[i].handle == handle && !m_activeClips[i].isStopping) {
@@ -1098,23 +1149,36 @@ void TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
         break;
       }
     }
-    if (live) {
-      restartVoiceInPlace(*live);
-      live->voiceMode = mode;
-    } else {
-      addActiveClip(context);
-    }
-    return;
+    if (!live)
+      return addActiveClip(context);
+
+    restartVoiceInPlace(*live);
+    live->voiceMode = mode;
+    return true;
   }
   }
 
-  // Defensive default (unknown enum) — behave polyphonically.
-  addActiveClip(context);
+  return addActiveClip(context);
 }
 
-void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
+void TransportController::configureVoiceRouting(
+    size_t voiceIndex, RoutingGroupIndex group, uint16_t numChannels) noexcept {
+  const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+  for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+    const bool activeLane = lane < numChannels;
+    const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
+    const auto output =
+        activeLane ? static_cast<RoutingOutputIndex>(lane)
+                   : static_cast<RoutingOutputIndex>(0);
+    (void)m_routingMatrix->setChannelRoute(
+        static_cast<RoutingChannelIndex>(laneBase + lane), routeGroup, output);
+  }
+}
+
+bool TransportController::addActiveClip(
+    const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
-    return;
+    return false;
 
   ClipHandle handle = context->handle;
 
@@ -1126,32 +1190,24 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     // At max capacity - remove oldest voice instance for this clip
     ActiveClip* oldest = findOldestVoice(handle);
     if (oldest) {
-      uint32_t oldestVoiceId = oldest->voiceId;
-
-      // Post event that voice was stopped (for UI tracking)
-      // Note: Callback reports handle, not specific voiceId (UI tracks per-handle, not per-voice)
-      TransportEvent event{};
-      event.type = TransportEventType::ClipStopped;
-      event.handle = handle;
-      event.voiceId = oldestVoiceId;
-      event.position = getCurrentPosition();
-      postTransportEvent(event);
-
+      const uint32_t oldestVoiceId = oldest->voiceId;
+      // Replacing one voice for a handle is not a handle-level stop.
       removeActiveVoice(oldestVoiceId);
     }
   }
 
-  if (m_activeClipCount >= MAX_ACTIVE_CLIPS) {
+  if (m_activeClipCount >= m_config.maxActiveVoices) {
     TransportEvent event{};
     event.type = TransportEventType::ActiveClipLimitReached;
     event.handle = handle;
     event.position = getCurrentPosition();
     postTransportEvent(event);
-    return;
+    return false;
   }
 
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
-  ActiveClip& clip = m_activeClips[m_activeClipCount++];
+  const size_t voiceIndex = m_activeClipCount++;
+  ActiveClip& clip = m_activeClips[voiceIndex];
   clip.handle = handle;
   clip.voiceId = m_nextVoiceId++; // Multi-voice: Assign unique voice ID
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
@@ -1189,6 +1245,8 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
+  clip.routingGroup = context->routingGroup;
+  configureVoiceRouting(voiceIndex, clip.routingGroup, clip.numChannels);
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
   clip.fadeOutStartPos = 0; // Will be set when stopClip() is called
@@ -1205,6 +1263,7 @@ void TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   if (clip.source) {
     clip.source->setDemand(context->trimInSamples);
   }
+  return true;
 }
 
 void TransportController::removeActiveVoice(uint32_t voiceId) {
@@ -1255,7 +1314,10 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
         dest.voiceMode = src.voiceMode;                 // ORP127 G5
+        dest.routingGroup = src.routingGroup;
+        configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
+      configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
       --m_activeClipCount;
       return;
     }
@@ -1309,7 +1371,12 @@ void TransportController::removeActiveClip(ClipHandle handle) {
         dest.hasLoopedOnce = src.hasLoopedOnce; // ORP097 Bug 7 Fix
         dest.source = src.source;               // Copy shared_ptr (atomic refcount increment)
         dest.numChannels = src.numChannels;
+        dest.fileLengthSamples = src.fileLengthSamples;
+        dest.voiceMode = src.voiceMode;
+        dest.routingGroup = src.routingGroup;
+        configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
+      configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
       --m_activeClipCount;
       return;
     }
@@ -1508,6 +1575,20 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
     entry.metadata = result.value;
   }
 
+  if (entry.metadata.num_channels == 0 ||
+      entry.metadata.num_channels > m_config.maxSourceChannels ||
+      (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete &&
+       entry.metadata.num_channels > m_config.outputChannels)) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  if (const auto inferred = inferUnambiguousChannelFormat(entry.metadata.num_channels)) {
+    entry.sourceLayout = inferred->layout;
+    entry.speakerPatchSize = inferred->num_channels;
+    std::copy_n(inferred->channel_map.begin(), inferred->num_channels,
+                entry.speakerPatch.begin());
+  }
+
   // Apply session defaults to new clip
   entry.fadeInSeconds = m_sessionDefaults.fadeInSeconds;
   entry.fadeOutSeconds = m_sessionDefaults.fadeOutSeconds;
@@ -1581,7 +1662,7 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry
 
   const uint16_t numChannels = entry.metadata.num_channels;
   if (!entry.reader || !entry.reader->isOpen() || numChannels == 0 ||
-      numChannels > MAX_FILE_CHANNELS) {
+      numChannels > m_config.maxSourceChannels) {
     return SessionGraphError::NotReady;
   }
 
@@ -1892,6 +1973,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   // Validate metadata before applying changes (atomic operation)
   // Get file duration for validation
   int64_t fileDurationSamples = 0;
+  uint16_t fileChannels = 0;
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
@@ -1899,6 +1981,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       return SessionGraphError::ClipNotRegistered;
     }
     fileDurationSamples = it->second.metadata.duration_samples;
+    fileChannels = it->second.metadata.num_channels;
   }
 
   // Validate trim points
@@ -1933,6 +2016,17 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return SessionGraphError::InvalidParameter;
   }
 
+  if (metadata.routingGroup >= m_config.numGroups ||
+      fileChannels >
+          m_groupOutputWidths[metadata.routingGroup].load(
+              std::memory_order_acquire)) {
+    return SessionGraphError::InvalidParameter;
+  }
+  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize,
+                           metadata.speakerPatch, fileChannels)) {
+    return SessionGraphError::InvalidParameter;
+  }
+
   // All validation passed - apply changes atomically
   // Calculate fade sample counts
   int64_t fadeInSampleCount =
@@ -1955,6 +2049,10 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
       it->second.voiceMode = metadata.voiceMode; // ORP127 G5
       it->second.gainDb = metadata.gainDb;
+      it->second.routingGroup = metadata.routingGroup;
+      it->second.sourceLayout = metadata.sourceLayout;
+      it->second.speakerPatchSize = metadata.speakerPatchSize;
+      it->second.speakerPatch = metadata.speakerPatch;
     }
   }
 
@@ -1975,6 +2073,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.loopEnabled = metadata.loopEnabled;
   cmd.data.metadata.gainDb = metadata.gainDb;
   cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
+  cmd.data.metadata.routingGroup = metadata.routingGroup;
 
   // Post best-effort: if the queue is full the persistent store already holds
   // the new metadata and it will be picked up on next start. Return OK to match
@@ -2007,6 +2106,10 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   metadata.stopOthersOnPlay = it->second.stopOthersOnPlay;
   metadata.voiceMode = it->second.voiceMode; // ORP127 G5
   metadata.gainDb = it->second.gainDb;
+  metadata.routingGroup = it->second.routingGroup;
+  metadata.sourceLayout = it->second.sourceLayout;
+  metadata.speakerPatchSize = it->second.speakerPatchSize;
+  metadata.speakerPatch = it->second.speakerPatch;
 
   // If trim OUT is not set (0), use file duration
   if (metadata.trimOutSamples == 0) {
@@ -2014,6 +2117,44 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   }
 
   return metadata;
+}
+
+SessionGraphError TransportController::setGroupOutputBus(
+    RoutingGroupIndex group, const OutputBusRoute& route) {
+  if (group >= m_config.numGroups || route.channelCount == 0 ||
+      static_cast<uint32_t>(route.outputStart) + route.channelCount >
+          m_config.outputChannels) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  for (const auto& [handle, entry] : m_audioFiles) {
+    (void)handle;
+    if (entry.routingGroup == group &&
+        entry.metadata.num_channels > route.channelCount) {
+      return SessionGraphError::InvalidParameter;
+    }
+  }
+  const auto result = m_routingMatrix->setGroupOutputRoute(
+      group, route.outputStart, route.channelCount);
+  if (result != SessionGraphError::OK) {
+    return result;
+  }
+  m_groupOutputStarts[group].store(route.outputStart,
+                                    std::memory_order_release);
+  m_groupOutputWidths[group].store(route.channelCount,
+                                   std::memory_order_release);
+  return SessionGraphError::OK;
+}
+
+std::optional<OutputBusRoute>
+TransportController::getGroupOutputBus(RoutingGroupIndex group) const {
+  if (group >= m_config.numGroups) {
+    return std::nullopt;
+  }
+  return OutputBusRoute{
+      m_groupOutputStarts[group].load(std::memory_order_acquire),
+      m_groupOutputWidths[group].load(std::memory_order_acquire)};
 }
 
 float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve curve) const {
@@ -2323,9 +2464,22 @@ float TransportController::applyDownmixRight(const float* src, size_t frame, siz
 }
 
 // Factory function
-std::unique_ptr<ITransportController> createTransportController(core::SessionGraph* sessionGraph,
-                                                                uint32_t sampleRate) {
-  return std::make_unique<TransportController>(sessionGraph, sampleRate);
+std::unique_ptr<ITransportController>
+createTransportController(core::SessionGraph* sessionGraph, const TransportConfig& config) {
+  constexpr uint32_t maxBlockFrames = 2048;
+  constexpr uint32_t maxActiveVoices = 32;
+  constexpr uint32_t maxSourceChannels = 8;
+  const uint64_t routingLanes =
+      static_cast<uint64_t>(config.maxActiveVoices) * config.maxSourceChannels;
+  if (config.sampleRate == 0 || config.outputChannels == 0 || config.outputChannels > 32 ||
+      config.maxBlockFrames == 0 || config.maxBlockFrames > maxBlockFrames ||
+      config.maxActiveVoices == 0 || config.maxActiveVoices > maxActiveVoices ||
+      config.numGroups == 0 || config.numGroups > 32 ||
+      config.maxSourceChannels == 0 || config.maxSourceChannels > maxSourceChannels ||
+      routingLanes > 256) {
+    return nullptr;
+  }
+  return std::make_unique<TransportController>(sessionGraph, config);
 }
 
 } // namespace orpheus
