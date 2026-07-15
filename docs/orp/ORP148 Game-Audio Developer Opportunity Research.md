@@ -19,7 +19,7 @@ feature to the current SDK.
 **Games are a large opportunity area, not one customer category.** The useful
 question is not “can Orpheus replace a game-audio engine?” It is which game-audio
 jobs benefit from Orpheus's current deterministic C++ contracts, and which jobs
-would require a deliberately separate product strategy.
+need a separate, staged product strategy before Orpheus can serve them credibly.
 
 The present answer is narrow but credible:
 
@@ -349,6 +349,40 @@ replacement by accident.
 | Unity/Unreal/Wwise companion integration | External tool that writes/validates inputs consumed by the engine/middleware | Medium if integration owner exists | Separate adapter/product; no core coupling |
 | Full game-audio middleware | Authoring, events, banks, spatial runtime, multi-platform support | None | Out of scope |
 
+### 6.1 Relationship to git-av
+
+git-av and Orpheus solve complementary layers of a game-audio workflow:
+
+| Product | Owns | Does not own |
+| --- | --- | --- |
+| **Orpheus SDK** | Audio decode/analysis, local audition/render, realtime-safe playback components, routing, timing, and audio diagnostics | Asset-version graph, C2PA manifest lifecycle, source provenance, timeline merge, game-engine policy |
+| **git-av** | Content-addressed asset versions, branches, C2PA provenance/audit, timeline-domain history, and JSON-RPC access to those records | Audio rendering/DSP, decoder behavior, game runtime playback, routing, voice management, spatial audio |
+
+git-av's current content-addressable vault, C2PA sidecars/audit, timeline audio
+domain, and CLI/JSON-RPC surfaces make it a credible provenance companion for
+game-audio assets [19], [20]. They do **not** remove the need for Orpheus game-audio
+facilities. A team still needs correct decode, inspect, analysis, audition, render,
+and—in a later scope—runtime audio behavior.
+
+The first integration, if a real adopter requires it, belongs in an **external tool
+adapter**, not in either core:
+
+1. the tool asks Orpheus to inspect/analyze/render the resolved source bytes;
+2. it records Orpheus's input metadata, analysis version, and output/report as
+   ordinary game-tool artifacts;
+3. git-av snapshots those artifacts and records their content provenance; and
+4. the game engine/middleware consumes the team's own validated import/build output.
+
+Do not force Orpheus's SHA-256 media identity and git-av's BLAKE3 vault identity
+into one hash abstraction: they answer different contracts and can coexist in an
+adapter record. Do not add C2PA, a vault, branching, or provenance policy to the
+audio SDK merely because game teams benefit from both products.
+
+**Strategic conclusion:** game audio is viable as an Orpheus expansion. git-av
+strengthens the surrounding toolchain, but neither delays nor substitutes for an
+evidence-led Orpheus path from game-asset tooling to carefully bounded bespoke
+desktop runtime facilities.
+
 ---
 
 ## 7. Admission gates and next research
@@ -449,3 +483,11 @@ installed public headers, 2026. Local sources: `include/orpheus/audio_graph.h`,
 
 [18] Orpheus SDK, “Orpheus SDK support matrix,” repository documentation, 2026.
 Local source: `docs/SUPPORT_MATRIX.md`. [Accessed: Jul. 14, 2026].
+
+[19] git-av, “README,” repository root, Jul. 2026. Local source:
+`~/dev/git-av/README.md`. [Accessed: Jul. 14, 2026].
+
+[20] git-av, “GAV030 — S8.1 Cross-Role Collaboration Proof,” repository
+documentation, Jul. 2026. Local source:
+`~/dev/git-av/docs/gav/GAV030 S8.1 Collaboration Proof Report.md`. [Accessed:
+Jul. 14, 2026].
