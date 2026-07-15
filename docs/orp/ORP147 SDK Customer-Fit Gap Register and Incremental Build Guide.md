@@ -34,10 +34,12 @@ The initial resource-preserving order is:
 
 1. maintain truthfulness and close already-recorded platform evidence when its
    prerequisites are available;
-2. take one small, broadly reusable control-plane contract;
-3. require independent adopter evidence before musical scheduling, topology
-   execution, codec expansion, or immersive work;
-4. leave product policy and unproven demand outside the SDK.
+2. prove the existing offline composition surface through one public-only fixture,
+   and repair or retire any source-tree example that contradicts that proof;
+3. take one small, broadly reusable control-plane contract;
+4. require independent adopter evidence before musical scheduling, topology
+   execution, codec expansion, or immersive work; and
+5. leave product policy and unproven demand outside the SDK.
 
 ---
 
@@ -388,16 +390,24 @@ independent-tool developers; ORP146 FourTrack bounce users.
 content-preserving routing, writers, resampling, and offline analysis. It does not
 currently advertise one installed, composable offline-render job contract that owns
 input enumeration, progress, cancellation, render settings, or output policy [4],
-[5], [8].
+[5], [8]. A legacy source-tree `examples/offline_renderer` does not close that gap:
+it includes the absent public header `orpheus/offline_render.h` and fails to compile
+when examples are enabled [12]. It is neither a clean-prefix consumer nor support
+evidence.
 
 **Decision.** Do not prematurely make that job object part of core. The missing
 items are largely application policy: bounce history, destination naming, progress
-UI, cancel semantics, delivery profile, and retry behavior. First add a documented
-SDK-owned clean-prefix offline render fixture/recipe showing how public transport,
-dummy driver, routing, reader, and writer compose. Promote a shared contract only
-when two adopters demonstrate the same non-policy boundary.
+UI, cancel semantics, delivery profile, and retry behavior. First retire or repair
+the stale example as part of an SDK-owned clean-prefix offline-render
+fixture/recipe. The replacement must show how public transport rendering, routing,
+reader, and writer compose, hash a known output, and report representative
+media failures. Promote a shared contract only when two adopters demonstrate the
+same non-policy boundary.
 
-**Priority:** **P4 documentation/fixture work**, not a P1 API branch.
+**Priority:** **P1 documentation/fixture remediation**, not a P1 API branch. It
+may proceed before feature branches because it tests existing public composition and
+corrects an invalid support artifact; it does not authorize an `OfflineRenderJob`
+API.
 
 ---
 
@@ -490,12 +500,12 @@ at the audio signal.
 | Order | Work | Why now / why not sooner | Entry gate |
 | --- | --- | --- | --- |
 | 0 | G-01a Windows/WASAPI evidence | Existing implementation cannot be promoted without proof; no new API. | CI and real-device prerequisites available. |
-| 1 | G-02 bounded control ingress | Broad local-control reuse; narrow protocol-neutral contract. | Two concrete host control sources and API/fixture proposal. |
+| 1 | G-08 offline fixture remediation | A non-compiling source-tree example is not support evidence; a public-only fixture proves the actual offline composition boundary before policy/API work. | Retire or repair the stale example; a relocated-package fixture compiles/runs, hashes known output, and reports defined media failures. |
+| 1a | G-02 bounded control ingress | Broad local-control reuse; narrow protocol-neutral contract. | Two concrete host control sources and API/fixture proposal. |
 | 2 | G-03 sample-addressed events | Broad timing value, but carries R5/musical-control risk. | Existing R5 gate plus event semantics proposal. |
 | 3 | G-04 fixed executable topology | Enables truthful output/cue/multichannel claims; high realtime design cost. | Render-config proposal and eight-output fixture plan. |
 | 3a | G-06 scoped choke | Must reuse the G-04 topology identity, not invent a parallel group model. | G-04 identity decision and scoped-action fixture. |
 | 4 | G-07 codec capability registry | Improves preflight truth without promising codecs. | All entry points identified; installed capability contract. |
-| 4 | G-08 offline fixture/recipe | Gives adopters a supported composition path before adding policy-heavy API. | Public-only clean-prefix example and deterministic hash. |
 | 5 | G-05 immersive PCM beds | Strategic strength, no present urgency; requires topology maturity. | Specific shared PCM-bed workflow, layout fixtures, device plan. |
 | 5 | G-10 cross-platform analysis artifacts | Only matters when exported cross-platform analysis needs identical/tolerant output. | Two consumers and reference-artifact decision. |
 
@@ -519,9 +529,13 @@ boundary.
 
 ## 6. Next research, not implementation
 
-The next informed action is **not** to open all ten gaps. Conduct focused discovery
-for G-02, G-03, G-04, G-05, and G-07 with prospective SDK adopters outside the
-current project family. For each, capture the required device/platform/layout,
+The next informed action is **not** to open all ten gaps. First conduct G-08
+evidence remediation: prove a public-only render path from a relocated install,
+with a declared same-platform/toolchain hash policy and explicit media failures. If
+that reveals a missing public seam, record the exact operation; do not recreate the
+obsolete offline-render API by inference. In parallel, conduct focused discovery for
+G-02, G-03, G-04, G-05, and G-07 with prospective SDK adopters outside the current
+project family. For each, capture the required device/platform/layout,
 control-source count, latency/timing proof, current workaround, failure cost, and
 what the adopter refuses to delegate.
 
@@ -575,3 +589,7 @@ Program,” *Clip Composer repository*, Jul. 2026. Local source:
 
 [11] Orpheus SDK, “audio_analysis.h,” installed public header, 2026. Local source:
 `include/orpheus/audio_analysis.h`. [Accessed: Jul. 14, 2026].
+
+[12] Orpheus SDK, “offline_renderer example,” repository source and build target,
+2026. Local sources: `examples/offline_renderer/offline_renderer.cpp`,
+`examples/offline_renderer/CMakeLists.txt`. [Accessed: Jul. 14, 2026].

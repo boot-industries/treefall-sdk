@@ -188,8 +188,10 @@ Unity, Unreal, or proprietary build policy.
 SoundBanks, Addressables/AssetBundles, engine importers, user-facing asset browser,
 and project database.
 
-**Priority:** **Near, P2 candidate.** It is a low-risk expansion of media
-truthfulness if two independent tool adopters need the same report contract.
+**Priority:** **Near, P2 candidate within the game-tool lane.** It is a low-risk
+expansion of media truthfulness if two independent tool adopters need the same
+report contract. This does not override ORP147's cross-SDK G-07 sequence; only its
+admission packet can re-rank that portfolio decision.
 
 ### N-02 — Versioned derived-analysis artifacts
 
@@ -218,21 +220,25 @@ prove duplicate cache invalidation work.
 **Problem.** Orpheus offers dummy/offline use, transport, routing, reader, writer,
 and large-block-safe routing, but not one installed example showing a complete
 public-only audio render. ORP147 classifies this as fixture/recipe work before a
-policy-heavy render-job API [2].
+policy-heavy render-job API [2]. The legacy source-tree `offline_renderer` example
+cannot fill that role: it includes `orpheus/offline_render.h`, which is not a
+current public header, and fails to compile with examples enabled [21].
 
-**Candidate SDK contribution.** A clean-prefix fixture that renders a known
-session/media set through the dummy driver, hashes the output, and reports exact
-failure states. It becomes a reference for game-tool CI as well as DAW/editor/podcast
-users.
+**Candidate SDK contribution.** First retire or repair that stale example. Its
+replacement is a clean-prefix fixture that drives public transport rendering against
+caller-owned fixed buffers, hashes the output, and reports exact failure states. It
+becomes a reference for game-tool CI as well as DAW/editor/podcast users.
 
 **Value.** A game tools team can test a source/trim/fade/routing change without
-requiring an audio device or embedding SDK internals.
+requiring an audio device or embedding SDK internals. More importantly, the fixture
+establishes which current public contracts actually compose; it must not perpetuate
+an unavailable offline-render API.
 
 **Must remain outside core.** Build-system orchestration, cancel/progress UI,
 destination naming, bank packaging, platform compression, and delivery policy.
 
-**Priority:** **Near, P1 documentation/fixture candidate.** It has low semantic
-risk and establishes a reliable adoption path before new runtime APIs.
+**Priority:** **Near, P1 documentation/fixture remediation.** It may precede
+feature branches, but does not authorize an offline-render job API.
 
 ### N-04 — Format-aware PCM bed path
 
@@ -270,8 +276,10 @@ results. A game engine adapter would translate its own event system into this se
 curves, Blueprint/C#/ECS bindings, scripting, network replication, and authoring
 UI.
 
-**Priority:** **Near, P2 shared infrastructure candidate.** Its value is broader
-than games, so a game-specific API is neither required nor desirable.
+**Priority:** **Near, P2 shared-infrastructure candidate within the game lane.**
+Its value is broader than games, so a game-specific API is neither required nor
+desirable. ORP147's G-02 remains the overall first feature candidate and retains
+its separate two-source admission gate.
 
 ---
 
@@ -404,9 +412,11 @@ audio/tool teams:
    silence, or crash/telemetry? The SDK must not choose this product policy.
 7. What is explicitly *not* delegated to Orpheus?
 
-**Recommended first exploration:** validate N-03 with a tiny game-audio asset QA
-fixture, then interview two teams about N-01. This supplies a real public adoption
-path without committing to an engine plug-in, runtime, or middleware roadmap.
+**Recommended first exploration:** first repair the offline proof boundary: retire
+or rebuild the stale source-tree example as a clean-prefix fixture that compiles,
+runs, hashes output, and exercises explicit failures. Then interview two teams about
+N-01. This creates an honest public adoption path without committing to an engine
+plug-in, runtime, or middleware roadmap.
 
 ---
 
@@ -491,3 +501,7 @@ Local source: `docs/SUPPORT_MATRIX.md`. [Accessed: Jul. 14, 2026].
 documentation, Jul. 2026. Local source:
 `~/dev/git-av/docs/gav/GAV030 S8.1 Collaboration Proof Report.md`. [Accessed:
 Jul. 14, 2026].
+
+[21] Orpheus SDK, “offline_renderer example,” repository source and build target,
+2026. Local sources: `examples/offline_renderer/offline_renderer.cpp`,
+`examples/offline_renderer/CMakeLists.txt`. [Accessed: Jul. 14, 2026].
