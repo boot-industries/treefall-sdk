@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-15
+
+Patch release for failure-atomic playout control and observable transport
+callback loss. C++ consumers must recompile for the appended virtual query
+methods; the stable C ABI remains at 1.0.
+
+### Added
+
+- `ITransportController::startClipWithGroupChoke()` admits a firing voice and
+  same-`routingGroup` peer choke as one bounded command. Peer fades begin only
+  after the firing voice is admitted.
+- Cumulative callback-delivery telemetry exposes attempted, retained, and
+  dropped event sequences without resetting on callback drains.
+- Coherent fixed-capacity active-voice snapshots let hosts reconcile surviving
+  per-handle state after a callback-ring gap.
+
+### Fixed
+
+- Metadata updates now enter the transport command ring before persistent
+  metadata commits, so queue saturation cannot split active and registered
+  routing state.
+- Voice IDs skip zero and active collisions when the 32-bit allocator wraps;
+  newest-voice aggregation no longer depends on zero as a sentinel.
+- Snapshot publication precedes callback-loss visibility and carries an exact
+  snapshot watermark, preventing hosts from accepting stale reconciliation
+  state.
+
+### Verification
+
+- All 149 configured SDK tests pass, including atomic choke saturation,
+  callback overflow/reconciliation, multi-voice aggregation, real-time static
+  and runtime harnesses, installed `find_package` consumers, C ABI linkage,
+  package version policy, and documentation audits.
+
 ## [0.5.0] - 2026-07-14
 
 Release of the explicit multichannel source, logical group-bus, and physical

@@ -12,6 +12,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 - [[ORP148 Game-Audio Developer Opportunity Research]]
 - [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
+- [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -112,6 +113,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 - [[ORP148 Game-Audio Developer Opportunity Research]]
 - [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
+- [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 
 ## Archived Documents
 
@@ -129,4 +131,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-14
+**Last Generated:** 2026-07-15

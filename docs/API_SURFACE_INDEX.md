@@ -3,8 +3,8 @@
 This index catalogs public entry points exposed by the Orpheus SDK workspace. Update this document whenever new packages or
 notable APIs are added.
 
-**Last Updated:** 2026-07-09 (ORP133 truth pass)
-**SDK Version:** 0.5.0 — the authoritative version is `project(orpheus VERSION ...)`
+**Last Updated:** 2026-07-15 (ORP151 callback-loss reconciliation)
+**SDK Version:** 0.5.1 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
 labels.)
@@ -19,6 +19,7 @@ labels.)
 | ---------------------------------------------- | -------------------------- | ------------------------------------------------------- | ------------------- |
 | `include/orpheus/transport_controller.h`       | `ITransportController`     | Multi-clip transport with gain/loop/seek/restart        | v1.0.0-rc.1         |
 | `include/orpheus/transport_controller.h`       | Cue point extensions       | In-clip markers with seek-to-cue operations             | ORP109 (unreleased) |
+| `include/orpheus/transport_controller.h`       | Callback telemetry / active snapshot | Cumulative ring-loss detection and fixed-capacity voice reconciliation | ORP151 (`0.5.1`) |
 | `include/orpheus/session_graph.h`              | `SessionGraph`             | In-memory session representation (tracks, clips, tempo) | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader.h`          | `IAudioFileReader`         | Audio file decoding (WAV/AIFF/FLAC via libsndfile)      | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader_extended.h` | `IAudioFileReaderExtended` | Waveform pre-processing for UI rendering                | ORP109 (unreleased) |
@@ -147,6 +148,8 @@ the tree** — nothing under `packages/` is JavaScript today. See
 - [Contract Guide](orp/_process/archive/CONTRACT_DEVELOPMENT.md) – Command/event schemas shared across drivers (archived)
 - [ORP109 Roadmap](orp/ORP109%20SDK%20Feature%20Roadmap%20for%20Clip%20Composer%20Integration.md) – Feature specifications
 - [ORP110 Implementation Reports](orp/ORP110A%20App-Level%20Integration%20Report.md) – Complete feature documentation (see also ORP110B)
+- [ORP150 Atomic Clip-Group Choke Admission](orp/ORP150%20Atomic%20Clip-Group%20Choke%20Admission.md) – One-command metadata-group start/choke semantics and failure atomicity
+- [ORP151 Callback Loss Telemetry and Active Voice Reconciliation](orp/ORP151%20Callback%20Loss%20Telemetry%20and%20Active%20Voice%20Reconciliation.md) – Counter lifetime, snapshot semantics, realtime publication, and installed-host reconciliation
 
 ---
 
@@ -163,6 +166,65 @@ transport->startClip(handle);
 transport->updateClipGain(handle, -6.0f);
 transport->setClipLoopMode(handle, true);
 ```
+
+### Atomic Metadata-Group Choke (ORP150)
+
+```cpp
+auto metadata = transport->getClipMetadata(handle).value();
+metadata.routingGroup = 1;
+metadata.voiceMode = VoiceMode::MonoWithFadeOverlap;
+transport->updateClipMetadata(handle, metadata);
+
+// One SPSC command: admit this start first, then fade only active peers whose
+// registered routingGroup is also 1. Check the immediate queue-admission result.
+const auto result = transport->startClipWithGroupChoke(handle);
+```
+
+Do not replace this operation with multiple `stopClip()` calls: queue
+saturation could admit only a prefix. `SessionGraphError::OK` means the atomic
+command entered the ring; a later voice-pool refusal is reported through
+`ITransportCallback::onActiveClipLimitReached` and leaves peers untouched.
+
+### Callback Loss Detection and Reconciliation (ORP151)
+
+```cpp
+auto previousDrops = uint64_t{0};
+
+// In the single control/message-thread pump:
+const auto before = transport->getCallbackDeliveryTelemetry();
+transport->processCallbacks();
+const auto after = transport->getCallbackDeliveryTelemetry();
+
+const bool lossDuringPump =
+    after.cumulativeDroppedCount != before.cumulativeDroppedCount;
+if (lossDuringPump ||
+    after.cumulativeDroppedCount != previousDrops) {
+  // Retained callbacks are incomplete. Reconcile current surviving state by
+  // ClipHandle; keep the historical interval marked indeterminate.
+  ActiveVoiceSnapshot active;
+  do {
+    active = transport->getActiveVoiceSnapshot();
+  } while (active.publicationSequence <
+           after.activeVoiceSnapshotSequence);
+  for (uint32_t i = 0; i < active.entryCount; ++i) {
+    reconcile(active.entries[i].handle,
+              active.entries[i].activeVoiceCount,
+              active.entries[i].state,
+              active.entries[i].newestPosition.samples);
+  }
+  previousDrops = after.cumulativeDroppedCount;
+}
+```
+
+Counters are cumulative for one controller lifetime and are not reset by
+`processCallbacks()`. Polling detects loss even when the dropped event was the
+last event in a burst. See ORP151 for the stable-copy pattern when audio remains
+active during reconciliation.
+
+`ITransportController` is a C++ virtual interface. The new queries have defaults
+for source compatibility, but `0.5.1` C++ consumers and custom implementations
+must recompile; the stable ABI promise in the repository README applies to the C
+ABI, not binary compatibility of this C++ vtable.
 
 ### Routing Matrix (ORP109)
 

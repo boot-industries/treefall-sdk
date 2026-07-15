@@ -3,9 +3,12 @@
 
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <new>
 #include <orpheus/session_graph.h> // For SessionGraph
 
 // MSVC and some platforms don't define M_PI_2 by default
@@ -87,8 +90,16 @@ bool isValidSpeakerPatch(ChannelLayout layout, uint8_t patchSize,
   if (!standard.has_value() || standard->num_channels != fileChannels) {
     return false;
   }
-  return std::equal(patch.begin(), patch.begin() + patchSize,
-                    standard->channel_map.begin());
+  return std::equal(patch.begin(), patch.begin() + patchSize, standard->channel_map.begin());
+}
+
+uint64_t incrementSaturated(uint64_t value) noexcept {
+  return value == std::numeric_limits<uint64_t>::max() ? value : value + 1;
+}
+
+bool isLaterStartOrdinal(uint64_t candidate, uint64_t reference) noexcept {
+  const uint64_t delta = candidate - reference;
+  return delta != 0 && delta < (uint64_t{1} << 63);
 }
 
 } // namespace
@@ -97,11 +108,10 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
                                          const TransportConfig& config)
     : m_sessionGraph(sessionGraph), m_config(config), m_sampleRate(config.sampleRate),
       m_callback(nullptr) {
-  m_fadeOutSamples = static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) *
-                                         static_cast<float>(m_sampleRate));
-  m_restartCrossfadeSamples =
-      static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
-                          static_cast<float>(m_sampleRate));
+  m_fadeOutSamples =
+      static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) * static_cast<float>(m_sampleRate));
+  m_restartCrossfadeSamples = static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
+                                                  static_cast<float>(m_sampleRate));
 
   const float smoothingSamples =
       (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(m_sampleRate);
@@ -122,10 +132,9 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
   routingConfig.enable_metering = true;
   routingConfig.enable_clipping_protection = true;
   routingConfig.source_channel_policy = m_config.sourceChannelPolicy;
-  routingConfig.downmix_policy =
-      m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete
-          ? DownmixPolicy::None
-          : DownmixPolicy::ITU_BS775_3;
+  routingConfig.downmix_policy = m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete
+                                     ? DownmixPolicy::None
+                                     : DownmixPolicy::ITU_BS775_3;
   m_routingMatrix->initialize(routingConfig);
 
   for (size_t voice = 0; voice < m_config.maxActiveVoices; ++voice) {
@@ -146,11 +155,10 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     m_groupOutputWidths[group].store(0, std::memory_order_relaxed);
   }
   for (RoutingGroupIndex group = 0; group < m_config.numGroups; ++group) {
-    m_groupOutputWidths[group].store(
-        static_cast<uint16_t>(m_config.outputChannels),
-        std::memory_order_relaxed);
-    (void)m_routingMatrix->setGroupOutputRoute(
-        group, 0, static_cast<uint16_t>(m_config.outputChannels));
+    m_groupOutputWidths[group].store(static_cast<uint16_t>(m_config.outputChannels),
+                                     std::memory_order_relaxed);
+    (void)m_routingMatrix->setGroupOutputRoute(group, 0,
+                                               static_cast<uint16_t>(m_config.outputChannels));
   }
 
   m_clipReadBuffers.resize(m_config.maxActiveVoices);
@@ -175,69 +183,85 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
 
 TransportController::~TransportController() = default;
 
-SessionGraphError TransportController::startClip(ClipHandle handle) {
-  // Validate handle
+SessionGraphError
+TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredSource,
+                                      std::shared_ptr<ClipPlaybackContext>& context) {
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Resolve playback context (UI thread - safe to lock mutex)
-  auto context = std::make_shared<ClipPlaybackContext>();
-  context->handle = handle;
+  try {
+    context = std::make_shared<ClipPlaybackContext>();
+    context->handle = handle;
 
-  {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
       auto& entry = it->second;
       if (entry.sourceLayout == ChannelLayout::Unspecified ||
-          !isValidSpeakerPatch(entry.sourceLayout, entry.speakerPatchSize,
-                               entry.speakerPatch, entry.metadata.num_channels)) {
+          !isValidSpeakerPatch(entry.sourceLayout, entry.speakerPatchSize, entry.speakerPatch,
+                               entry.metadata.num_channels)) {
         return SessionGraphError::InvalidParameter;
       }
-      // ORP134 G1: lazy preparation for hosts that never call
-      // prepareClipAudio() — decode/stream setup happens HERE on the control
-      // thread, never on the audio thread.
-      ensurePreparedSourceLocked(entry);
+
+      // Source construction is control-thread work. Group-choke starts must
+      // reject unavailable media before posting the one atomic realtime command.
+      const SessionGraphError prepareResult = ensurePreparedSourceLocked(entry);
+      if (requireRegisteredSource && prepareResult != SessionGraphError::OK) {
+        return prepareResult;
+      }
       context->source = entry.source;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
-      context->fileLengthSamples = entry.metadata.duration_samples; // ORP127 G3
-
-      // If trim OUT is not set (0), use file duration
+      context->fileLengthSamples = entry.metadata.duration_samples;
       context->trimOutSamples =
-          (entry.trimOutSamples == 0) ? entry.metadata.duration_samples : entry.trimOutSamples;
-
+          entry.trimOutSamples == 0 ? entry.metadata.duration_samples : entry.trimOutSamples;
       context->fadeInSeconds = entry.fadeInSeconds;
       context->fadeOutSeconds = entry.fadeOutSeconds;
       context->fadeInCurve = entry.fadeInCurve;
       context->fadeOutCurve = entry.fadeOutCurve;
       context->gainDb = entry.gainDb;
-      // Precompute linear gain
       context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
       context->routingGroup = entry.routingGroup;
-      context->voiceMode = entry.voiceMode; // ORP127 G5
-    } else {
-      // Clip not registered - use defaults for testing
-      context->source = nullptr;
-      context->numChannels = 2;
-      context->trimInSamples = 0;
-      context->trimOutSamples = 48000 * 60;    // Default 60s
-      context->fileLengthSamples = 48000 * 60; // ORP127 G3: match default OUT
-      context->fadeInSeconds = 0.0;
-      context->fadeOutSeconds = 0.0;
-      context->fadeInCurve = FadeCurve::Linear;
-      context->fadeOutCurve = FadeCurve::Linear;
-      context->gainDb = 0.0f;
-      context->gainLinear = 1.0f;
-      context->loopEnabled = false;
-      context->routingGroup = 0;
-      context->voiceMode = VoiceMode::Polyphonic; // ORP127 G5: default
+      context->voiceMode = entry.voiceMode;
+      return SessionGraphError::OK;
     }
+
+    if (requireRegisteredSource) {
+      context.reset();
+      return SessionGraphError::ClipNotRegistered;
+    }
+
+    // Preserve the historical source-less test/default start contract.
+    context->source = nullptr;
+    context->numChannels = 2;
+    context->trimInSamples = 0;
+    context->trimOutSamples = 48000 * 60;
+    context->fileLengthSamples = 48000 * 60;
+    context->fadeInSeconds = 0.0;
+    context->fadeOutSeconds = 0.0;
+    context->fadeInCurve = FadeCurve::Linear;
+    context->fadeOutCurve = FadeCurve::Linear;
+    context->gainDb = 0.0f;
+    context->gainLinear = 1.0f;
+    context->loopEnabled = false;
+    context->routingGroup = 0;
+    context->voiceMode = VoiceMode::Polyphonic;
+    return SessionGraphError::OK;
+  } catch (const std::bad_alloc&) {
+    context.reset();
+    return SessionGraphError::InternalError;
+  }
+}
+
+SessionGraphError TransportController::startClip(ClipHandle handle) {
+  std::shared_ptr<ClipPlaybackContext> context;
+  const SessionGraphError contextResult = makeStartContext(handle, false, context);
+  if (contextResult != SessionGraphError::OK) {
+    return contextResult;
   }
 
-  // Check "Stop Others" mode (UI thread check is fine for initiating stop command)
   bool stopOthers = false;
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
@@ -248,16 +272,25 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   if (stopOthers) {
-    // ORP127 G7: choke OTHER clips (not this one) before the Start command that
-    // follows in queue order. Using stopOtherClips(handle) instead of the old
-    // global stopAllClips() means existing voices of THIS clip are preserved and
-    // the choke is correctly scoped to everything else.
     stopOtherClips(handle);
   }
 
-  // Post Start command to audio thread
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Start;
+  cmd.handle = handle;
+  cmd.startContext = context;
+  return postCommand(cmd);
+}
+
+SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle) {
+  std::shared_ptr<ClipPlaybackContext> context;
+  const SessionGraphError contextResult = makeStartContext(handle, true, context);
+  if (contextResult != SessionGraphError::OK) {
+    return contextResult;
+  }
+
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::StartWithGroupChoke;
   cmd.handle = handle;
   cmd.startContext = context;
   return postCommand(cmd);
@@ -328,27 +361,13 @@ uint32_t TransportController::getMaxVoicesPerClip() const {
 }
 
 PlaybackState TransportController::getClipState(ClipHandle handle) const {
-  // ORP127 G1: Read from the published voice snapshot — no access to the live
-  // audio-thread voice array. Multi-voice: Playing if ANY voice is playing,
-  // Stopping if voices exist but all are stopping, Stopped if none.
-  size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-  const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-
-  bool hasAnyVoice = false;
-  for (size_t i = 0; i < buf.count; ++i) {
-    if (buf.voices[i].handle == handle) {
-      hasAnyVoice = true;
-      if (!buf.voices[i].isStopping) {
-        return PlaybackState::Playing;
-      }
+  const ActiveVoiceSnapshot snapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+    if (snapshot.entries[index].handle == handle) {
+      return snapshot.entries[index].state;
     }
   }
-
-  if (hasAnyVoice) {
-    return PlaybackState::Stopping; // All voices are stopping
-  }
-
-  return PlaybackState::Stopped; // No voices found
+  return PlaybackState::Stopped;
 }
 
 bool TransportController::isClipPlaying(ClipHandle handle) const {
@@ -432,8 +451,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       clip.source->setDemand(trimIn);
     } else if (clip.currentSample >= trimOut) {
       // Position at or past OUT point - handle loop or stop
-      const bool shouldLoop =
-          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
+      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
       if (shouldLoop) {
         // Loop mode: restart from IN point
         clip.currentSample = trimIn;
@@ -717,8 +735,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
     if (clip.currentSample >= clipTrimOut) {
       // Check if clip should loop
-      const bool shouldLoop =
-          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
+      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
 
       if (shouldLoop) {
         // Loop: jump back to trim IN point (works even without a source)
@@ -768,6 +785,9 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
   // ORP127 G1: Publish the post-render voice state for lock-free UI queries.
   publishVoiceSnapshot();
+  // Callback loss becomes visible only after the voice state caused by every
+  // attempted event in this block is published for reconciliation.
+  publishCallbackTelemetry();
 
   if (publishTelemetry) {
     RealtimeTelemetrySnapshot snapshot;
@@ -801,6 +821,31 @@ void TransportController::processCommands() {
         event.handle = cmd.handle;
         event.position = getCurrentPosition();
         postTransportEvent(event);
+      }
+    } break;
+
+    case TransportCommand::Type::StartWithGroupChoke: {
+      // Admission is deliberately first. A voice-pool refusal may publish the
+      // existing typed rejection event, but it cannot mutate any peer.
+      if (cmd.startContext && startVoiceWithMode(cmd.startContext)) {
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStarted;
+        event.handle = cmd.handle;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
+
+        // Only after the firing voice is live do same-group peers enter their
+        // normal configured stop fades. The firing handle is always spared so
+        // MonoWithFadeOverlap and other per-handle policies remain authoritative.
+        const RoutingGroupIndex group = cmd.startContext->routingGroup;
+        for (size_t i = 0; i < m_activeClipCount; ++i) {
+          ActiveClip& peer = m_activeClips[i];
+          if (peer.handle != cmd.handle && peer.routingGroup == group && !peer.isStopping) {
+            peer.isStopping = true;
+            peer.fadeOutGain = 1.0f;
+            peer.fadeOutStartPos = peer.currentSample;
+          }
+        }
       }
     } break;
 
@@ -1046,33 +1091,63 @@ size_t TransportController::countActiveVoices(ClipHandle handle) const {
 }
 
 size_t TransportController::countActiveVoicesSnapshot(ClipHandle handle) const {
-  // ORP127 G1: UI-thread-safe voice count via the published snapshot.
-  size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-  const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-  size_t count = 0;
-  for (size_t i = 0; i < buf.count; ++i) {
-    if (buf.voices[i].handle == handle) {
-      ++count;
+  const ActiveVoiceSnapshot snapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+    if (snapshot.entries[index].handle == handle) {
+      return snapshot.entries[index].activeVoiceCount;
     }
   }
-  return count;
+  return 0;
 }
 
 ActiveClip* TransportController::findOldestVoice(ClipHandle handle) {
   ActiveClip* oldest = nullptr;
-  int64_t oldestStartSample = INT64_MAX;
-
   for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      // Find voice with earliest start time (oldest)
-      if (m_activeClips[i].startSample < oldestStartSample) {
-        oldestStartSample = m_activeClips[i].startSample;
-        oldest = &m_activeClips[i];
+    ActiveClip& candidate = m_activeClips[i];
+    if (candidate.handle != handle) {
+      continue;
+    }
+    if (oldest == nullptr || candidate.startSample < oldest->startSample ||
+        (candidate.startSample == oldest->startSample &&
+         isLaterStartOrdinal(oldest->startOrdinal, candidate.startOrdinal))) {
+      oldest = &candidate;
+    }
+  }
+  return oldest;
+}
+
+uint64_t TransportController::allocateVoiceStartOrdinal() noexcept {
+  constexpr uint64_t kSerialHalfRange = uint64_t{1} << 63;
+  if (m_activeClipCount != 0) {
+    uint64_t oldestOrdinal = m_activeClips[0].startOrdinal;
+    for (size_t index = 1; index < m_activeClipCount; ++index) {
+      const uint64_t candidate = m_activeClips[index].startOrdinal;
+      if (isLaterStartOrdinal(oldestOrdinal, candidate)) {
+        oldestOrdinal = candidate;
       }
+    }
+
+    if (m_nextVoiceStartOrdinal - oldestOrdinal >= kSerialHalfRange) {
+      for (size_t index = 0; index < m_activeClipCount; ++index) {
+        m_voiceStartOrdinalScratch[index] = m_activeClips[index].startOrdinal;
+      }
+      for (size_t index = 0; index < m_activeClipCount; ++index) {
+        uint64_t rank = 0;
+        for (size_t other = 0; other < m_activeClipCount; ++other) {
+          if (isLaterStartOrdinal(m_voiceStartOrdinalScratch[index],
+                                  m_voiceStartOrdinalScratch[other])) {
+            ++rank;
+          }
+        }
+        m_activeClips[index].startOrdinal = rank;
+      }
+      m_nextVoiceStartOrdinal = static_cast<uint64_t>(m_activeClipCount);
     }
   }
 
-  return oldest;
+  const uint64_t ordinal = m_nextVoiceStartOrdinal;
+  ++m_nextVoiceStartOrdinal;
+  return ordinal;
 }
 
 void TransportController::restartVoiceInPlace(ActiveClip& clip) {
@@ -1090,8 +1165,7 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
 }
 
-bool TransportController::startVoiceWithMode(
-    const std::shared_ptr<ClipPlaybackContext>& context) {
+bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return false;
 
@@ -1161,22 +1235,62 @@ bool TransportController::startVoiceWithMode(
   return addActiveClip(context);
 }
 
-void TransportController::configureVoiceRouting(
-    size_t voiceIndex, RoutingGroupIndex group, uint16_t numChannels) noexcept {
+void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
+                                                uint16_t numChannels) noexcept {
   const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
   for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
     const bool activeLane = lane < numChannels;
     const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
     const auto output =
-        activeLane ? static_cast<RoutingOutputIndex>(lane)
-                   : static_cast<RoutingOutputIndex>(0);
-    (void)m_routingMatrix->setChannelRoute(
-        static_cast<RoutingChannelIndex>(laneBase + lane), routeGroup, output);
+        activeLane ? static_cast<RoutingOutputIndex>(lane) : static_cast<RoutingOutputIndex>(0);
+    (void)m_routingMatrix->setChannelRoute(static_cast<RoutingChannelIndex>(laneBase + lane),
+                                           routeGroup, output);
   }
 }
 
-bool TransportController::addActiveClip(
-    const std::shared_ptr<ClipPlaybackContext>& context) {
+uint32_t TransportController::allocateVoiceId() noexcept {
+  for (size_t attempt = 0; attempt <= MAX_ACTIVE_CLIPS; ++attempt) {
+    uint32_t candidate = m_nextVoiceId;
+    if (candidate == 0) {
+      candidate = 1;
+    }
+    m_nextVoiceId = candidate == std::numeric_limits<uint32_t>::max() ? 1 : candidate + 1;
+
+    bool inUse = false;
+    for (size_t active = 0; active < m_activeClipCount; ++active) {
+      if (m_activeClips[active].voiceId == candidate) {
+        inUse = true;
+        break;
+      }
+    }
+    if (!inUse) {
+      return candidate;
+    }
+  }
+  return 0;
+}
+
+bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, bool stopping,
+                                                           bool looping, int64_t trimIn,
+                                                           int64_t trimOut,
+                                                           int64_t currentSample) noexcept {
+  for (size_t index = 0; index < m_activeClipCount; ++index) {
+    ActiveClip& voice = m_activeClips[index];
+    if (voice.voiceId != voiceId) {
+      continue;
+    }
+    voice.isStopping = stopping;
+    voice.fadeOutGain = 1.0f;
+    voice.fadeOutStartPos = currentSample;
+    voice.loopEnabled.store(looping, std::memory_order_relaxed);
+    voice.trimInSamples.store(trimIn, std::memory_order_relaxed);
+    voice.trimOutSamples.store(trimOut, std::memory_order_relaxed);
+    voice.currentSample = currentSample;
+    return true;
+  }
+  return false;
+}
+bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return false;
 
@@ -1205,11 +1319,19 @@ bool TransportController::addActiveClip(
     return false;
   }
 
+  const uint32_t voiceId = allocateVoiceId();
+  if (voiceId == 0) {
+    return false;
+  }
+
+  const uint64_t startOrdinal = allocateVoiceStartOrdinal();
+
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
   clip.handle = handle;
-  clip.voiceId = m_nextVoiceId++; // Multi-voice: Assign unique voice ID
+  clip.voiceId = voiceId;
+  clip.startOrdinal = startOrdinal;
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
   clip.currentSample = context->trimInSamples; // CRITICAL: Start from IN point
 
@@ -1277,6 +1399,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
 
         dest.handle = src.handle;
         dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
@@ -1336,6 +1459,7 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 
         dest.handle = src.handle;
         dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
@@ -1418,55 +1542,126 @@ SessionGraphError TransportController::postCommand(const TransportCommand& comma
   return SessionGraphError::OK;
 }
 
-void TransportController::publishVoiceSnapshot() {
-  // ORP127 G1: Audio-thread-only. Copy the live voice array into the back
-  // buffer, then flip the published index with release ordering. UI-thread
-  // readers acquire the index and see a complete, self-consistent snapshot.
-  size_t front = m_snapshotIndex.load(std::memory_order_relaxed);
-  size_t back = front ^ 1;
-  VoiceSnapshotBuffer& buf = m_snapshotBuffers[back];
+void TransportController::publishVoiceSnapshot() noexcept {
+  ActiveVoiceSnapshot& snapshot = m_voiceSnapshotScratch;
+  snapshot.entryCount = 0;
+  snapshot.totalActiveVoiceCount = static_cast<uint32_t>(m_activeClipCount);
+  snapshot.publicationSequence = incrementSaturated(m_voiceSnapshotSequence);
+  m_voiceSnapshotSequence = snapshot.publicationSequence;
 
-  size_t count = m_activeClipCount;
-  buf.count = count;
-  for (size_t i = 0; i < count; ++i) {
-    const ActiveClip& clip = m_activeClips[i];
-    VoiceSnapshot& snap = buf.voices[i];
-    snap.handle = clip.handle;
-    snap.voiceId = clip.voiceId;
-    snap.startSample = clip.startSample;
-    snap.currentSample = clip.currentSample;
-    snap.trimInSamples = clip.trimInSamples.load(std::memory_order_relaxed);
-    snap.trimOutSamples = clip.trimOutSamples.load(std::memory_order_relaxed);
-    snap.isStopping = clip.isStopping;
-    snap.loopEnabled = clip.loopEnabled.load(std::memory_order_relaxed);
+  for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
+    const ActiveClip& voice = m_activeClips[voiceIndex];
+    uint32_t entryIndex = 0;
+    while (entryIndex < snapshot.entryCount &&
+           snapshot.entries[entryIndex].handle != voice.handle) {
+      ++entryIndex;
+    }
+
+    if (entryIndex == snapshot.entryCount) {
+      if (snapshot.entryCount >= kActiveVoiceSnapshotCapacity) {
+        break;
+      }
+      ++snapshot.entryCount;
+      ActiveVoiceSnapshotEntry& entry = snapshot.entries[entryIndex];
+      entry = {};
+      entry.handle = voice.handle;
+      entry.state = PlaybackState::Stopping;
+      m_voiceSnapshotHasNewest[entryIndex] = false;
+      m_voiceSnapshotNewestStartOrdinal[entryIndex] = 0;
+    }
+
+    ActiveVoiceSnapshotEntry& entry = snapshot.entries[entryIndex];
+    ++entry.activeVoiceCount;
+    if (!voice.isStopping) {
+      entry.state = PlaybackState::Playing;
+    }
+
+    if (!m_voiceSnapshotHasNewest[entryIndex] || voice.startSample > entry.newestStartSample ||
+        (voice.startSample == entry.newestStartSample &&
+         isLaterStartOrdinal(voice.startOrdinal, m_voiceSnapshotNewestStartOrdinal[entryIndex]))) {
+      entry.newestVoiceId = voice.voiceId;
+      entry.newestVoiceStopping = voice.isStopping ? 1 : 0;
+      entry.newestVoiceLoopEnabled = voice.loopEnabled.load(std::memory_order_relaxed) ? 1 : 0;
+      entry.newestStartSample = voice.startSample;
+      entry.newestTrimInSamples = voice.trimInSamples.load(std::memory_order_relaxed);
+      entry.newestTrimOutSamples = voice.trimOutSamples.load(std::memory_order_relaxed);
+      entry.newestPosition = positionAtSamples(voice.currentSample);
+      m_voiceSnapshotHasNewest[entryIndex] = true;
+      m_voiceSnapshotNewestStartOrdinal[entryIndex] = voice.startOrdinal;
+    }
   }
 
-  m_snapshotIndex.store(back, std::memory_order_release);
+  const uint64_t oddRevision = m_voiceSnapshotRevision + 1;
+  m_voiceSnapshotRevision = oddRevision;
+  m_publishedVoiceSnapshot.revision.store(oddRevision, std::memory_order_release);
+  m_publishedVoiceSnapshot.publicationSequence.store(snapshot.publicationSequence,
+                                                     std::memory_order_release);
+  m_publishedVoiceSnapshot.entryCount.store(snapshot.entryCount, std::memory_order_release);
+  m_publishedVoiceSnapshot.totalActiveVoiceCount.store(snapshot.totalActiveVoiceCount,
+                                                       std::memory_order_release);
+
+  for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+    const ActiveVoiceSnapshotEntry& source = snapshot.entries[index];
+    AtomicActiveVoiceSnapshotEntry& destination = m_publishedVoiceSnapshot.entries[index];
+    destination.handle.store(source.handle, std::memory_order_release);
+    destination.activeVoiceCount.store(source.activeVoiceCount, std::memory_order_release);
+    destination.newestVoiceId.store(source.newestVoiceId, std::memory_order_release);
+    destination.state.store(static_cast<uint8_t>(source.state), std::memory_order_release);
+    destination.newestVoiceStopping.store(source.newestVoiceStopping, std::memory_order_release);
+    destination.newestVoiceLoopEnabled.store(source.newestVoiceLoopEnabled,
+                                             std::memory_order_release);
+    destination.newestStartSample.store(source.newestStartSample, std::memory_order_release);
+    destination.newestTrimInSamples.store(source.newestTrimInSamples, std::memory_order_release);
+    destination.newestTrimOutSamples.store(source.newestTrimOutSamples, std::memory_order_release);
+    destination.newestPositionSamples.store(source.newestPosition.samples,
+                                            std::memory_order_release);
+    destination.newestPositionSecondsBits.store(
+        std::bit_cast<uint64_t>(source.newestPosition.seconds), std::memory_order_release);
+    destination.newestPositionBeatsBits.store(std::bit_cast<uint64_t>(source.newestPosition.beats),
+                                              std::memory_order_release);
+  }
+
+  const uint64_t evenRevision = m_voiceSnapshotRevision + 1;
+  m_voiceSnapshotRevision = evenRevision;
+  m_publishedVoiceSnapshot.revision.store(evenRevision, std::memory_order_release);
 }
 
-void TransportController::postTransportEvent(const TransportEvent& event) {
-  // ORP121 C-03 / ORP133 G1: Lock-free SPSC event queue
-  // Audio thread writes POD events to the ring buffer (no mutex, no blocking,
-  // no std::function construction/destruction on the audio thread)
-  //
-  // Memory ordering rationale:
-  // - relaxed for same-thread reads (writeIdx in postTransportEvent)
-  // - acquire for cross-thread reads (readIdx check for full detection)
-  // - release for writes (ensures event data visible before index update)
+void TransportController::postTransportEvent(const TransportEvent& sourceEvent) noexcept {
+  TransportEvent event = sourceEvent;
+  m_callbackAttemptedSequence = incrementSaturated(m_callbackAttemptedSequence);
+  event.sequence = m_callbackAttemptedSequence;
 
-  size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
-  size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1); // Mask for wrap (power of 2)
+  const size_t writeIdx = m_callbackWriteIndex.load(std::memory_order_relaxed);
+  const size_t nextIdx = (writeIdx + 1) & (CALLBACK_QUEUE_SIZE - 1);
 
-  // Check if queue full (read index caught up)
   if (nextIdx == m_callbackReadIndex.load(std::memory_order_acquire)) {
-    // Queue full - drop event (better than blocking audio thread)
-    // Increment dropped callback counter for diagnostics
-    m_droppedCallbackCount.fetch_add(1, std::memory_order_relaxed);
+    m_callbackDroppedCount = incrementSaturated(m_callbackDroppedCount);
+    m_callbackLastDroppedSequence = event.sequence;
     return;
   }
 
   m_eventRing[writeIdx] = event;
   m_callbackWriteIndex.store(nextIdx, std::memory_order_release);
+  m_callbackPostedSequence = event.sequence;
+}
+
+void TransportController::publishCallbackTelemetry() noexcept {
+  const uint64_t oddRevision = m_callbackTelemetryRevision + 1;
+  m_callbackTelemetryRevision = oddRevision;
+  m_publishedCallbackTelemetry.revision.store(oddRevision, std::memory_order_release);
+  m_publishedCallbackTelemetry.lastAttemptedSequence.store(m_callbackAttemptedSequence,
+                                                           std::memory_order_release);
+  m_publishedCallbackTelemetry.lastPostedSequence.store(m_callbackPostedSequence,
+                                                        std::memory_order_release);
+  m_publishedCallbackTelemetry.cumulativeDroppedCount.store(m_callbackDroppedCount,
+                                                            std::memory_order_release);
+  m_publishedCallbackTelemetry.lastDroppedSequence.store(m_callbackLastDroppedSequence,
+                                                         std::memory_order_release);
+  m_publishedCallbackTelemetry.activeVoiceSnapshotSequence.store(m_voiceSnapshotSequence,
+                                                                 std::memory_order_release);
+  const uint64_t evenRevision = m_callbackTelemetryRevision + 1;
+  m_callbackTelemetryRevision = evenRevision;
+  m_publishedCallbackTelemetry.revision.store(evenRevision, std::memory_order_release);
 }
 
 void TransportController::processCallbacks() {
@@ -1585,8 +1780,7 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   if (const auto inferred = inferUnambiguousChannelFormat(entry.metadata.num_channels)) {
     entry.sourceLayout = inferred->layout;
     entry.speakerPatchSize = inferred->num_channels;
-    std::copy_n(inferred->channel_map.begin(), inferred->num_channels,
-                entry.speakerPatch.begin());
+    std::copy_n(inferred->channel_map.begin(), inferred->num_channels, entry.speakerPatch.begin());
   }
 
   // Apply session defaults to new clip
@@ -1760,16 +1954,13 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
   // Get current trim points (or use defaults). ORP127 G1: read from the
   // published snapshot for active voices instead of the live audio-thread array.
   bool foundActiveClip = false;
-  {
-    size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-    const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-    for (size_t i = 0; i < buf.count; ++i) {
-      if (buf.voices[i].handle == handle) {
-        currentTrimIn = buf.voices[i].trimInSamples;
-        currentTrimOut = buf.voices[i].trimOutSamples;
-        foundActiveClip = true;
-        break;
-      }
+  const ActiveVoiceSnapshot activeSnapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < activeSnapshot.entryCount; ++index) {
+    if (activeSnapshot.entries[index].handle == handle) {
+      currentTrimIn = activeSnapshot.entries[index].newestTrimInSamples;
+      currentTrimOut = activeSnapshot.entries[index].newestTrimOutSamples;
+      foundActiveClip = true;
+      break;
     }
   }
 
@@ -1821,15 +2012,12 @@ SessionGraphError TransportController::getClipTrimPoints(ClipHandle handle, int6
   }
 
   // ORP127 G1: Try the published snapshot first (most recent active values).
-  {
-    size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-    const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-    for (size_t i = 0; i < buf.count; ++i) {
-      if (buf.voices[i].handle == handle) {
-        trimInSamples = buf.voices[i].trimInSamples;
-        trimOutSamples = buf.voices[i].trimOutSamples;
-        return SessionGraphError::OK;
-      }
+  const ActiveVoiceSnapshot activeSnapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < activeSnapshot.entryCount; ++index) {
+    if (activeSnapshot.entries[index].handle == handle) {
+      trimInSamples = activeSnapshot.entries[index].newestTrimInSamples;
+      trimOutSamples = activeSnapshot.entries[index].newestTrimOutSamples;
+      return SessionGraphError::OK;
     }
   }
 
@@ -1908,34 +2096,21 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
 }
 
 int64_t TransportController::getClipPosition(ClipHandle handle) const {
-  // ORP127 G1: Multi-voice position from the published snapshot (UI-safe).
-  // Return the position of the newest voice (most recently started).
-  size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-  const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-
-  int64_t newestPosition = -1;
-  int64_t newestStartSample = INT64_MIN;
-  const VoiceSnapshot* newestVoice = nullptr;
-
-  for (size_t i = 0; i < buf.count; ++i) {
-    if (buf.voices[i].handle == handle) {
-      if (buf.voices[i].startSample > newestStartSample) {
-        newestStartSample = buf.voices[i].startSample;
-        newestPosition = buf.voices[i].currentSample;
-        newestVoice = &buf.voices[i];
-      }
+  const ActiveVoiceSnapshot snapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+    const ActiveVoiceSnapshotEntry& entry = snapshot.entries[index];
+    if (entry.handle != handle) {
+      continue;
     }
-  }
 
-  // Clamp reported position to last valid playback position (trimOut - 1) for stopping clips
-  // (internally position advances past OUT to complete fade, but UI shouldn't see this)
-  // Edit Law #2: "Playhead < OUT" - position must be strictly less than OUT
-  if (newestVoice && newestVoice->isStopping) {
-    int64_t maxValidPosition = newestVoice->trimOutSamples - 1; // Last valid playback sample
-    newestPosition = std::min(newestPosition, maxValidPosition);
+    int64_t position = entry.newestPosition.samples;
+    if (entry.newestVoiceStopping != 0) {
+      const int64_t maxValidPosition = entry.newestTrimOutSamples - 1;
+      position = std::min(position, maxValidPosition);
+    }
+    return position;
   }
-
-  return newestPosition; // Returns -1 if no voices found
+  return -1;
 }
 
 SessionGraphError TransportController::setClipStopOthersMode(ClipHandle handle, bool enabled) {
@@ -2017,13 +2192,11 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   }
 
   if (metadata.routingGroup >= m_config.numGroups ||
-      fileChannels >
-          m_groupOutputWidths[metadata.routingGroup].load(
-              std::memory_order_acquire)) {
+      fileChannels > m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
     return SessionGraphError::InvalidParameter;
   }
-  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize,
-                           metadata.speakerPatch, fileChannels)) {
+  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize, metadata.speakerPatch,
+                           fileChannels)) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -2033,28 +2206,6 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));
   int64_t fadeOutSampleCount =
       static_cast<int64_t>(metadata.fadeOutSeconds * static_cast<double>(m_sampleRate));
-
-  // Update persistent storage
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
-      it->second.trimInSamples = metadata.trimInSamples;
-      it->second.trimOutSamples = trimOut;
-      it->second.fadeInSeconds = metadata.fadeInSeconds;
-      it->second.fadeOutSeconds = metadata.fadeOutSeconds;
-      it->second.fadeInCurve = metadata.fadeInCurve;
-      it->second.fadeOutCurve = metadata.fadeOutCurve;
-      it->second.loopEnabled = metadata.loopEnabled;
-      it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
-      it->second.voiceMode = metadata.voiceMode; // ORP127 G5
-      it->second.gainDb = metadata.gainDb;
-      it->second.routingGroup = metadata.routingGroup;
-      it->second.sourceLayout = metadata.sourceLayout;
-      it->second.speakerPatchSize = metadata.speakerPatchSize;
-      it->second.speakerPatch = metadata.speakerPatch;
-    }
-  }
 
   // ORP127 G1: Apply to active voices via a command on the audio thread — no
   // direct writes to the live voice array from the UI thread. Precompute linear
@@ -2075,10 +2226,35 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
   cmd.data.metadata.routingGroup = metadata.routingGroup;
 
-  // Post best-effort: if the queue is full the persistent store already holds
-  // the new metadata and it will be picked up on next start. Return OK to match
-  // the historical contract (validation success == OK).
-  postCommand(cmd);
+  // Queue admission precedes the persistent commit. A full ring therefore
+  // cannot publish metadata that active voices did not receive, which is
+  // required when group choke compares registered and active routing groups.
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it == m_audioFiles.end()) {
+      return SessionGraphError::ClipNotRegistered;
+    }
+    const SessionGraphError postResult = postCommand(cmd);
+    if (postResult != SessionGraphError::OK) {
+      return postResult;
+    }
+
+    it->second.trimInSamples = metadata.trimInSamples;
+    it->second.trimOutSamples = trimOut;
+    it->second.fadeInSeconds = metadata.fadeInSeconds;
+    it->second.fadeOutSeconds = metadata.fadeOutSeconds;
+    it->second.fadeInCurve = metadata.fadeInCurve;
+    it->second.fadeOutCurve = metadata.fadeOutCurve;
+    it->second.loopEnabled = metadata.loopEnabled;
+    it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
+    it->second.voiceMode = metadata.voiceMode;
+    it->second.gainDb = metadata.gainDb;
+    it->second.routingGroup = metadata.routingGroup;
+    it->second.sourceLayout = metadata.sourceLayout;
+    it->second.speakerPatchSize = metadata.speakerPatchSize;
+    it->second.speakerPatch = metadata.speakerPatch;
+  }
 
   return SessionGraphError::OK;
 }
@@ -2119,31 +2295,27 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   return metadata;
 }
 
-SessionGraphError TransportController::setGroupOutputBus(
-    RoutingGroupIndex group, const OutputBusRoute& route) {
+SessionGraphError TransportController::setGroupOutputBus(RoutingGroupIndex group,
+                                                         const OutputBusRoute& route) {
   if (group >= m_config.numGroups || route.channelCount == 0 ||
-      static_cast<uint32_t>(route.outputStart) + route.channelCount >
-          m_config.outputChannels) {
+      static_cast<uint32_t>(route.outputStart) + route.channelCount > m_config.outputChannels) {
     return SessionGraphError::InvalidParameter;
   }
 
   std::lock_guard<std::mutex> lock(m_audioFilesMutex);
   for (const auto& [handle, entry] : m_audioFiles) {
     (void)handle;
-    if (entry.routingGroup == group &&
-        entry.metadata.num_channels > route.channelCount) {
+    if (entry.routingGroup == group && entry.metadata.num_channels > route.channelCount) {
       return SessionGraphError::InvalidParameter;
     }
   }
-  const auto result = m_routingMatrix->setGroupOutputRoute(
-      group, route.outputStart, route.channelCount);
+  const auto result =
+      m_routingMatrix->setGroupOutputRoute(group, route.outputStart, route.channelCount);
   if (result != SessionGraphError::OK) {
     return result;
   }
-  m_groupOutputStarts[group].store(route.outputStart,
-                                    std::memory_order_release);
-  m_groupOutputWidths[group].store(route.channelCount,
-                                   std::memory_order_release);
+  m_groupOutputStarts[group].store(route.outputStart, std::memory_order_release);
+  m_groupOutputWidths[group].store(route.channelCount, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -2152,9 +2324,8 @@ TransportController::getGroupOutputBus(RoutingGroupIndex group) const {
   if (group >= m_config.numGroups) {
     return std::nullopt;
   }
-  return OutputBusRoute{
-      m_groupOutputStarts[group].load(std::memory_order_acquire),
-      m_groupOutputWidths[group].load(std::memory_order_acquire)};
+  return OutputBusRoute{m_groupOutputStarts[group].load(std::memory_order_acquire),
+                        m_groupOutputWidths[group].load(std::memory_order_acquire)};
 }
 
 float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve curve) const {
@@ -2184,15 +2355,13 @@ SessionDefaults TransportController::getSessionDefaults() const {
 }
 
 bool TransportController::isClipLooping(ClipHandle handle) const {
-  // ORP127 G1: Query the published snapshot (UI-safe, no live-array access).
-  size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-  const VoiceSnapshotBuffer& buf = m_snapshotBuffers[front];
-  for (size_t i = 0; i < buf.count; ++i) {
-    if (buf.voices[i].handle == handle) {
-      return buf.voices[i].loopEnabled;
+  const ActiveVoiceSnapshot snapshot = getActiveVoiceSnapshot();
+  for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+    if (snapshot.entries[index].handle == handle) {
+      return snapshot.entries[index].newestVoiceLoopEnabled != 0;
     }
   }
-  return false; // Clip not playing
+  return false;
 }
 
 SessionGraphError TransportController::setClipVoiceMode(ClipHandle handle, VoiceMode mode) {
@@ -2228,8 +2397,82 @@ size_t TransportController::getActiveVoiceCount(ClipHandle handle) const {
 }
 
 size_t TransportController::getTotalActiveVoiceCount() const {
-  const size_t front = m_snapshotIndex.load(std::memory_order_acquire);
-  return m_snapshotBuffers[front].count;
+  return getActiveVoiceSnapshot().totalActiveVoiceCount;
+}
+
+TransportCallbackTelemetry TransportController::getCallbackDeliveryTelemetry() const noexcept {
+  for (;;) {
+    const uint64_t revisionBefore =
+        m_publishedCallbackTelemetry.revision.load(std::memory_order_acquire);
+    if ((revisionBefore & 1u) != 0) {
+      continue;
+    }
+
+    TransportCallbackTelemetry telemetry{};
+    telemetry.lastAttemptedSequence =
+        m_publishedCallbackTelemetry.lastAttemptedSequence.load(std::memory_order_acquire);
+    telemetry.lastPostedSequence =
+        m_publishedCallbackTelemetry.lastPostedSequence.load(std::memory_order_acquire);
+    telemetry.cumulativeDroppedCount =
+        m_publishedCallbackTelemetry.cumulativeDroppedCount.load(std::memory_order_acquire);
+    telemetry.lastDroppedSequence =
+        m_publishedCallbackTelemetry.lastDroppedSequence.load(std::memory_order_acquire);
+    telemetry.activeVoiceSnapshotSequence =
+        m_publishedCallbackTelemetry.activeVoiceSnapshotSequence.load(std::memory_order_acquire);
+
+    const uint64_t revisionAfter =
+        m_publishedCallbackTelemetry.revision.load(std::memory_order_acquire);
+    if (revisionBefore == revisionAfter) {
+      return telemetry;
+    }
+  }
+}
+
+ActiveVoiceSnapshot TransportController::getActiveVoiceSnapshot() const noexcept {
+  for (;;) {
+    const uint64_t revisionBefore =
+        m_publishedVoiceSnapshot.revision.load(std::memory_order_acquire);
+    if ((revisionBefore & 1u) != 0) {
+      continue;
+    }
+
+    ActiveVoiceSnapshot snapshot{};
+    snapshot.publicationSequence =
+        m_publishedVoiceSnapshot.publicationSequence.load(std::memory_order_acquire);
+    snapshot.entryCount =
+        std::min<uint32_t>(m_publishedVoiceSnapshot.entryCount.load(std::memory_order_acquire),
+                           static_cast<uint32_t>(kActiveVoiceSnapshotCapacity));
+    snapshot.totalActiveVoiceCount =
+        m_publishedVoiceSnapshot.totalActiveVoiceCount.load(std::memory_order_acquire);
+
+    for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+      const AtomicActiveVoiceSnapshotEntry& source = m_publishedVoiceSnapshot.entries[index];
+      ActiveVoiceSnapshotEntry& destination = snapshot.entries[index];
+      destination.handle = source.handle.load(std::memory_order_acquire);
+      destination.activeVoiceCount = source.activeVoiceCount.load(std::memory_order_acquire);
+      destination.newestVoiceId = source.newestVoiceId.load(std::memory_order_acquire);
+      destination.state = static_cast<PlaybackState>(source.state.load(std::memory_order_acquire));
+      destination.newestVoiceStopping = source.newestVoiceStopping.load(std::memory_order_acquire);
+      destination.newestVoiceLoopEnabled =
+          source.newestVoiceLoopEnabled.load(std::memory_order_acquire);
+      destination.newestStartSample = source.newestStartSample.load(std::memory_order_acquire);
+      destination.newestTrimInSamples = source.newestTrimInSamples.load(std::memory_order_acquire);
+      destination.newestTrimOutSamples =
+          source.newestTrimOutSamples.load(std::memory_order_acquire);
+      destination.newestPosition.samples =
+          source.newestPositionSamples.load(std::memory_order_acquire);
+      destination.newestPosition.seconds =
+          std::bit_cast<double>(source.newestPositionSecondsBits.load(std::memory_order_acquire));
+      destination.newestPosition.beats =
+          std::bit_cast<double>(source.newestPositionBeatsBits.load(std::memory_order_acquire));
+    }
+
+    const uint64_t revisionAfter =
+        m_publishedVoiceSnapshot.revision.load(std::memory_order_acquire);
+    if (revisionBefore == revisionAfter) {
+      return snapshot;
+    }
+  }
 }
 
 SessionGraphError TransportController::restartClip(ClipHandle handle) {
@@ -2464,8 +2707,8 @@ float TransportController::applyDownmixRight(const float* src, size_t frame, siz
 }
 
 // Factory function
-std::unique_ptr<ITransportController>
-createTransportController(core::SessionGraph* sessionGraph, const TransportConfig& config) {
+std::unique_ptr<ITransportController> createTransportController(core::SessionGraph* sessionGraph,
+                                                                const TransportConfig& config) {
   constexpr uint32_t maxBlockFrames = 2048;
   constexpr uint32_t maxActiveVoices = 32;
   constexpr uint32_t maxSourceChannels = 8;
@@ -2474,9 +2717,8 @@ createTransportController(core::SessionGraph* sessionGraph, const TransportConfi
   if (config.sampleRate == 0 || config.outputChannels == 0 || config.outputChannels > 32 ||
       config.maxBlockFrames == 0 || config.maxBlockFrames > maxBlockFrames ||
       config.maxActiveVoices == 0 || config.maxActiveVoices > maxActiveVoices ||
-      config.numGroups == 0 || config.numGroups > 32 ||
-      config.maxSourceChannels == 0 || config.maxSourceChannels > maxSourceChannels ||
-      routingLanes > 256) {
+      config.numGroups == 0 || config.numGroups > 32 || config.maxSourceChannels == 0 ||
+      config.maxSourceChannels > maxSourceChannels || routingLanes > 256) {
     return nullptr;
   }
   return std::make_unique<TransportController>(sessionGraph, config);
