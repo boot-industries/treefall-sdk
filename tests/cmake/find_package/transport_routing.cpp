@@ -27,7 +27,7 @@ int main() {
     return 2;
   }
 
-  auto transport = orpheus::createTransportController(nullptr, 48000);
+  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   auto manager = orpheus::createAudioDriverManager();
   return transport != nullptr && manager != nullptr && routing->maxBlockFrames() >= 1 ? 0 : 1;
 }

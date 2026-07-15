@@ -13,7 +13,7 @@ class ClipCuePointsTest : public ::testing::Test {
 protected:
   void SetUp() override {
     // Create transport controller (nullptr for SessionGraph - not needed for cue point tests)
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
     // Register a test clip handle
     m_clipHandle = 12345;

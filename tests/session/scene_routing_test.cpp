@@ -27,7 +27,7 @@ protected:
     m_graph = std::make_unique<core::SessionGraph>();
     m_scenes = createSceneManager(m_graph.get());
     ASSERT_NE(m_scenes, nullptr);
-    m_transport = createTransportController(m_graph.get(), 48000);
+    m_transport = createTransportController(m_graph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     ASSERT_NE(m_transport, nullptr);
     m_scenes->setTransportController(m_transport.get());
 

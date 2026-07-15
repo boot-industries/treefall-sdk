@@ -14,7 +14,7 @@ using namespace orpheus;
 class ClipRestartTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_restart.wav").string();
     createTestAudioFile();
   }
@@ -179,7 +179,7 @@ protected:
   void SetUp() override {
     m_session = std::make_unique<core::SessionGraph>();
     m_session->set_tempo(90.0);
-    m_transport = std::make_unique<TransportController>(m_session.get(), 48000);
+    m_transport = std::make_unique<TransportController>(m_session.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_transport->processCallbacks();
     m_callback = std::make_unique<TestCallback>();
     m_transport->setCallback(m_callback.get());

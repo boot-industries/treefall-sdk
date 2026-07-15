@@ -16,7 +16,7 @@ protected:
   void SetUp() override {
     m_sessionGraph = std::make_unique<core::SessionGraph>();
     m_monitor = createPerformanceMonitor(m_sessionGraph.get());
-    m_transport = createTransportController(m_sessionGraph.get(), 48000);
+    m_transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   }
 
   void TearDown() override {

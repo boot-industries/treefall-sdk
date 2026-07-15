@@ -247,6 +247,12 @@ public:
     if (initialized_) {
       capabilities.native_sample_rates.push_back(config_.sample_rate);
       capabilities.native_buffer_sizes.push_back(config_.buffer_size);
+      const std::string endpoint =
+          config_.device_id.empty() ? "wasapi:default" : config_.device_id;
+      for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
+        capabilities.output_channel_ids.push_back(endpoint + ":output:" +
+                                                  std::to_string(channel));
+      }
     }
     return capabilities;
   }
@@ -261,19 +267,23 @@ private:
     const bool uninitialize = SUCCEEDED(comResult);
     DWORD taskIndex = 0;
     HANDLE task = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+    bool discontinuity = true;
 
     while (running_.load(std::memory_order_acquire)) {
       if (WaitForSingleObject(event_, 2000) != WAIT_OBJECT_0 ||
           !running_.load(std::memory_order_acquire)) {
+        discontinuity = true;
         continue;
       }
       UINT32 padding = 0;
       if (FAILED(client_->GetCurrentPadding(&padding)) || padding >= bufferFrames_) {
+        discontinuity = true;
         continue;
       }
       const UINT32 frames = bufferFrames_ - padding;
       BYTE* deviceBuffer = nullptr;
       if (FAILED(renderClient_->GetBuffer(frames, &deviceBuffer))) {
+        discontinuity = true;
         continue;
       }
 
@@ -284,9 +294,19 @@ private:
       const auto started = std::chrono::steady_clock::now();
       uint32_t activeClips = 0;
       if (callback != nullptr) {
-        callback->processAudio(nullptr, planarPointers_.data(), planarPointers_.size(), frames);
+        AudioProcessBlock block;
+        block.output_buffers = planarPointers_.data();
+        block.num_output_channels = static_cast<uint16_t>(planarPointers_.size());
+        block.num_frames = frames;
+        block.device_sample_position = 0;
+        block.host_time_nanoseconds = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(started.time_since_epoch())
+                .count());
+        block.discontinuity = discontinuity;
+        callback->processAudio(block);
         activeClips = callback->activeClipCount();
       }
+      discontinuity = false;
 
       if (isFloatFormat(format_)) {
         auto* output = reinterpret_cast<float*>(deviceBuffer);

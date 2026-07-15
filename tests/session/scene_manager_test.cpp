@@ -22,7 +22,7 @@ protected:
 
     // Create scene manager
     sceneManager = createSceneManager(sessionGraph.get());
-    transport = createTransportController(sessionGraph.get(), 48000);
+    transport = createTransportController(sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     sceneManager->setTransportController(transport.get());
 
     // Use std::filesystem for portable temp directory
@@ -125,7 +125,7 @@ TEST_F(SceneManagerTest, CaptureSceneTimestampIncreases) {
 
 TEST(SceneManagerPackageContract, SelfContainedFactoryCanCaptureAndRecall) {
   auto manager = createSceneManager();
-  auto packageTransport = createTransportController(nullptr, 48000);
+  auto packageTransport = createTransportController(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   ASSERT_NE(manager, nullptr);
   ASSERT_NE(packageTransport, nullptr);
   ASSERT_NE(packageTransport->getRoutingMatrix(), nullptr);

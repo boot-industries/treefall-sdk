@@ -42,6 +42,7 @@ struct ClipPlaybackContext {
   float gainLinear;
   bool loopEnabled;
   uint16_t numChannels;
+  RoutingGroupIndex routingGroup{0};
   VoiceMode voiceMode; // ORP127 G5: voice policy captured at fire time
 };
 
@@ -110,6 +111,7 @@ struct TransportCommand {
       bool loopEnabled;
       float gainDb;
       float gainLinear;
+      RoutingGroupIndex routingGroup;
     } metadata;
   } data;
 };
@@ -167,6 +169,7 @@ struct ActiveClip {
       hasLoopedOnce; // true if clip has looped at least once (prevents re-applying start/end fades)
 
   uint16_t numChannels; // Number of channels in audio file
+  RoutingGroupIndex routingGroup{0};
 
   // ORP134 G1: thread-safe clip-source reference (captured from AudioFileEntry
   // when the clip starts). shared_ptr gives reference-counted lifetime:
@@ -231,11 +234,11 @@ struct VoiceSnapshot {
 /// Transport controller implementation
 class TransportController : public ITransportController {
 public:
-  TransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate);
+  TransportController(core::SessionGraph* sessionGraph, const TransportConfig& config);
   ~TransportController() override;
 
-  TransportRenderConfig getRenderConfig() const noexcept override;
-  void processAudio(float** outputBuffers, size_t numChannels,
+  TransportConfig getRenderConfig() const noexcept override;
+  void processAudio(float* const* outputBuffers, size_t numChannels,
                     size_t numFrames) noexcept override;
   void processCallbacks() override;
 
@@ -267,6 +270,10 @@ public:
   bool getClipStopOthersMode(ClipHandle handle) const override;
   SessionGraphError updateClipMetadata(ClipHandle handle, const ClipMetadata& metadata) override;
   std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const override;
+  SessionGraphError setGroupOutputBus(
+      RoutingGroupIndex group, const OutputBusRoute& route) override;
+  std::optional<OutputBusRoute>
+  getGroupOutputBus(RoutingGroupIndex group) const override;
   void setSessionDefaults(const SessionDefaults& defaults) override;
   SessionDefaults getSessionDefaults() const override;
   bool isClipLooping(ClipHandle handle) const override;
@@ -344,9 +351,11 @@ private:
   /// @return Pointer to oldest voice, or nullptr if none found
   ActiveClip* findOldestVoice(ClipHandle handle);
 
-  /// Add a clip to active list (audio thread only)
-  /// @param context Playback context with immutable state
-  void addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
+  /// Add a clip to the active list. Returns false when the global voice pool
+  /// cannot accept the start.
+  bool addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
+  void configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
+                             uint16_t numChannels) noexcept;
 
   /// ORP127 G5: Fire a voice honoring the context's VoiceMode (audio thread).
   /// - Polyphonic: always allocate a new voice (historical behavior).
@@ -354,7 +363,7 @@ private:
   ///   only fading tails exist, add a fresh voice alongside them.
   /// - MonoStrict: restart in place with no fade tail; if a voice is fading,
   ///   cut it and start fresh (single voice, sample-accurate replace).
-  void startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
+  bool startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
 
   /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
   /// restart (used by the mono voice modes). Applies the broadcast-safe restart
@@ -393,6 +402,7 @@ private:
 
   // Configuration
   core::SessionGraph* m_sessionGraph;
+  TransportConfig m_config;
   uint32_t m_sampleRate;
   ITransportCallback* m_callback; // User-provided callback
 
@@ -472,6 +482,8 @@ private:
   size_t m_fadeOutSamples;          // Calculated from sample rate
   size_t m_restartCrossfadeSamples; // Calculated from sample rate
 
+  static constexpr size_t MAX_FILE_CHANNELS = 8;
+
   // Audio file registry (UI thread access, mutex protected)
   struct AudioFileEntry {
     std::shared_ptr<orpheus::IAudioFileReader> reader;
@@ -491,6 +503,12 @@ private:
     // ORP127 G5: voice allocation policy for this clip (default preserves the
     // SDK's historical polyphonic behavior).
     VoiceMode voiceMode = VoiceMode::Polyphonic;
+    RoutingGroupIndex routingGroup = 0;
+    ChannelLayout sourceLayout = ChannelLayout::Unspecified;
+    uint8_t speakerPatchSize = 0;
+    std::array<Speaker, MAX_FILE_CHANNELS> speakerPatch = {
+        Speaker::None, Speaker::None, Speaker::None, Speaker::None,
+        Speaker::None, Speaker::None, Speaker::None, Speaker::None};
 
     // ORP134 G1: the realtime playback source built by prepareClipAudio()
     // (or lazily by startClip). The reader above remains the background
@@ -509,6 +527,11 @@ private:
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
+  static constexpr size_t MAX_LOGICAL_GROUPS = 32;
+  std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS>
+      m_groupOutputStarts{};
+  std::array<std::atomic<uint16_t>, MAX_LOGICAL_GROUPS>
+      m_groupOutputWidths{};
 
   // Fixed-capacity audio-thread → message-thread telemetry bridge.
   RealtimeTelemetry m_realtimeTelemetry{};
@@ -522,21 +545,18 @@ private:
   int64_t m_preparedSourceMaxFrames{DEFAULT_PREPARED_SOURCE_MAX_FRAMES};
   std::unique_ptr<MediaStreamWorker> m_streamWorker; // guarded by m_audioFilesMutex
 
-  // Per-clip buffers (audio thread only, pre-allocated)
+  // Compile-time ceilings; each instance allocates only its configured shape.
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
-  static constexpr size_t MAX_FILE_CHANNELS = 8;
 
-  // Each clip gets its own read buffer (for interleaved audio from file)
-  std::vector<std::vector<float>>
-      m_clipReadBuffers; // [MAX_ACTIVE_CLIPS][MAX_BUFFER_FRAMES * MAX_FILE_CHANNELS]
+  // Per-voice interleaved decode buffers.
+  std::vector<std::vector<float>> m_clipReadBuffers;
 
-  // ORP121 A-01: Stereo clip buffers for routing (preserves source L/R)
-  // Each clip has L and R buffers: [clip_index * 2 + 0] = L, [clip_index * 2 + 1] = R
-  // Total channels = MAX_ACTIVE_CLIPS * 2 for stereo preservation
-  std::vector<std::vector<float>> m_clipChannelBuffers; // [MAX_ACTIVE_CLIPS * 2][MAX_BUFFER_FRAMES]
-  std::vector<float*> m_clipChannelPointers;            // Pointers for processRouting()
+  // Preallocated planar routing lanes:
+  // [voice slot * maxSourceChannels + source channel][frame].
+  std::vector<std::vector<float>> m_clipChannelBuffers;
+  std::vector<float*> m_clipChannelPointers;
 
-  // ORP121 A-01: ITU-R BS.775-3 downmix helpers for multi-channel sources
+  // StereoPairs compatibility downmix.
   float applyDownmixLeft(const float* src, size_t frame, size_t numCh) const;
   float applyDownmixRight(const float* src, size_t frame, size_t numCh) const;
 };

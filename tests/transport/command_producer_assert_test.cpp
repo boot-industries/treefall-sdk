@@ -27,7 +27,8 @@ constexpr uint32_t kSampleRate = 48000;
 
 TEST(CommandProducerAssertTest, SingleThreadProducerIsAccepted) {
   // The legal pattern: every control-mutating call from one thread.
-  TransportController transport(nullptr, kSampleRate);
+  TransportController transport(
+      nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
   for (int i = 0; i < 64; ++i) {
     EXPECT_EQ(transport.startClip(static_cast<ClipHandle>(i % 8 + 1)), SessionGraphError::OK);
     EXPECT_EQ(transport.stopClip(static_cast<ClipHandle>(i % 8 + 1)), SessionGraphError::OK);
@@ -38,7 +39,8 @@ TEST(CommandProducerAssertTest, SingleThreadProducerIsAccepted) {
 TEST(CommandProducerAssertTest, DedicatedControlThreadIsAccepted) {
   // A single non-main control thread is equally legal — the contract is ONE
   // producer thread, not specifically the thread that constructed the object.
-  TransportController transport(nullptr, kSampleRate);
+  TransportController transport(
+      nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
   std::thread control([&transport]() {
     for (int i = 0; i < 64; ++i) {
       EXPECT_EQ(transport.startClip(static_cast<ClipHandle>(i % 8 + 1)), SessionGraphError::OK);
@@ -56,7 +58,8 @@ TEST(CommandProducerAssertTest, SecondProducerThreadAsserts) {
 
   EXPECT_DEATH(
       {
-        TransportController transport(nullptr, kSampleRate);
+        TransportController transport(
+            nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
         // Main thread claims the producer role...
         transport.startClip(1);
         // ...so a post from any other thread violates the SPSC contract.

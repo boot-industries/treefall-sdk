@@ -4,7 +4,10 @@
 #include <orpheus/errors.h>
 #include <orpheus/export.h>
 #include <orpheus/realtime_telemetry.h>
+#include <orpheus/channel_format.h>
+#include <orpheus/routing_matrix.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -19,7 +22,6 @@ namespace core {
 class SessionGraph;
 } // namespace core
 
-class IRoutingMatrix; // OCC155 Ask #3: public routing-matrix accessor
 
 using ClipHandle = uint64_t;
 
@@ -71,16 +73,28 @@ struct TransportPosition {
   double beats;    ///< Derived: seconds * session tempo (SessionGraph::tempo) / 60.0
 };
 
-/// Immutable capacities and current output shape for the transport renderer.
+
+/// Immutable construction contract for the transport renderer.
 ///
-/// Hosts query this on the control thread before attaching an audio driver.
-/// sampleRate and maxBlockFrames are fixed for the controller lifetime.
-/// outputChannels is the controller's configured output count and must match the
-/// number of writable output buffers supplied to processAudio().
-struct TransportRenderConfig {
-  uint32_t sampleRate = 0;
-  uint32_t outputChannels = 0;
-  uint32_t maxBlockFrames = 0;
+/// All capacities are validated by createTransportController() and remain fixed
+/// for the controller lifetime. outputChannels is the exact number of writable
+/// planar buffers required by processAudio(). maxSourceChannels is the largest
+/// registered file width accepted by the renderer.
+struct TransportConfig {
+  uint32_t sampleRate = 48000;
+  uint32_t outputChannels = 2;
+  uint32_t maxBlockFrames = 2048;
+  uint32_t maxActiveVoices = 32;
+  uint32_t numGroups = 4;
+  uint32_t maxSourceChannels = 8;
+  SourceChannelPolicy sourceChannelPolicy = SourceChannelPolicy::Discrete;
+};
+
+struct OutputBusRoute {
+  RoutingOutputIndex outputStart = 0;
+  uint16_t channelCount = 2;
+
+  bool operator==(const OutputBusRoute&) const = default;
 };
 
 /// Clip metadata for batch updates
@@ -96,6 +110,12 @@ struct ClipMetadata {
   bool stopOthersOnPlay = false;              ///< true = stop other clips on play
   float gainDb = 0.0f;                        ///< Gain in decibels (0 = unity)
   VoiceMode voiceMode = VoiceMode::Polyphonic; ///< Voice allocation policy (ORP127 G5)
+  RoutingGroupIndex routingGroup = 0;          ///< Logical bus assignment
+  ChannelLayout sourceLayout = ChannelLayout::Unspecified; ///< Explicit source channel meaning
+  uint8_t speakerPatchSize = 0; ///< Number of valid entries in speakerPatch
+  std::array<Speaker, 8> speakerPatch = {
+      Speaker::None, Speaker::None, Speaker::None, Speaker::None,
+      Speaker::None, Speaker::None, Speaker::None, Speaker::None};
 };
 
 /// Session-level default metadata for new clips.
@@ -555,6 +575,14 @@ public:
   /// Thread-safe: Can be called from any thread
   virtual std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const = 0;
 
+  /// Route one logical clip group to a contiguous physical output bus.
+  virtual SessionGraphError setGroupOutputBus(
+      RoutingGroupIndex group, const OutputBusRoute& route) = 0;
+
+  /// Query the current physical destination of a logical clip group.
+  virtual std::optional<OutputBusRoute>
+  getGroupOutputBus(RoutingGroupIndex group) const = 0;
+
   /// Set session-level default metadata for new clips
   ///
   /// @param defaults Default metadata structure
@@ -783,13 +811,13 @@ public:
   /// Hosts must not retain the pointer after destroying the controller.
   virtual RealtimeTelemetry* getRealtimeTelemetry() noexcept = 0;
 
-  /// Query the public audio-render contract.
+  /// Query the immutable audio-render contract.
   ///
   /// Control-thread query. The returned value is a copy; no SDK-owned storage
-  /// escapes. In v0.4.0 the transport's routing topology is fixed after
-  /// construction: hosts must not reinitialize the matrix returned by
-  /// getRoutingMatrix() while this controller is in use.
-  virtual TransportRenderConfig getRenderConfig() const noexcept = 0;
+  /// escapes. The transport's capacities and routing topology are fixed after
+  /// construction: hosts must not reinitialize the routing matrix while this
+  /// controller is in use.
+  virtual TransportConfig getRenderConfig() const noexcept = 0;
 
   /// Render one transport block into planar output buffers.
   ///
@@ -800,7 +828,7 @@ public:
   /// getRenderConfig().maxBlockFrames frames per call.
   ///
   /// Real-time contract: no allocation, locks, blocking, I/O, or host callbacks.
-  virtual void processAudio(float** outputBuffers, size_t numChannels,
+  virtual void processAudio(float* const* outputBuffers, size_t numChannels,
                             size_t numFrames) noexcept = 0;
 
   /// Drain pending transport events on the control/message thread.
@@ -813,12 +841,12 @@ public:
   virtual void processCallbacks() = 0;
 };
 
-/// Create a transport controller instance
+/// Create a transport controller with an immutable render contract.
 ///
 /// @param sessionGraph The session graph containing clip metadata
-/// @param sampleRate Audio sample rate (e.g., 48000)
-/// @return Unique pointer to transport controller
+/// @param config Validated renderer capacities and output shape
+/// @return Controller, or nullptr when any capacity is unsupported
 ORPHEUS_API std::unique_ptr<ITransportController>
-createTransportController(core::SessionGraph* sessionGraph, uint32_t sampleRate);
+createTransportController(core::SessionGraph* sessionGraph, const TransportConfig& config);
 
 } // namespace orpheus

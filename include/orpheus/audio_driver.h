@@ -55,6 +55,8 @@ struct AudioDriverCapabilities {
   uint32_t max_input_channels = 0;
   std::vector<uint32_t> native_sample_rates;
   std::vector<uint32_t> native_buffer_sizes;
+  std::vector<std::string> input_channel_ids;
+  std::vector<std::string> output_channel_ids;
   bool supports_exclusive_mode = false;
   bool supports_shared_mode = true;
   bool supports_device_hot_swap = false;
@@ -63,19 +65,38 @@ struct AudioDriverCapabilities {
   bool reports_hardware_latency = false;
 };
 
+/// One realtime audio callback block.
+///
+/// Channel buffers are planar. Input and output channel counts are independent:
+/// hosts must not infer one from the other. device_sample_position identifies
+/// the first frame in the block on the backend timeline. A value of zero means
+/// the backend cannot provide a position. host_time_nanoseconds is a monotonic
+/// host-clock timestamp for that frame; zero likewise means unavailable.
+/// A discontinuity marks a device reset, gap, or non-contiguous stream position.
+struct AudioProcessBlock {
+  const float* const* input_buffers = nullptr;
+  float* const* output_buffers = nullptr;
+  uint16_t num_input_channels = 0;
+  uint16_t num_output_channels = 0;
+  uint32_t num_frames = 0;
+  uint64_t device_sample_position = 0;
+  uint64_t host_time_nanoseconds = 0;
+  bool discontinuity = false;
+};
+
+
 /// Audio driver callback interface
 /// Called on the audio thread - must be lock-free
 class IAudioCallback {
 public:
   virtual ~IAudioCallback() = default;
 
-  /// Process audio callback (audio thread)
-  /// @param input_buffers Array of input channel buffers (may be nullptr if num_inputs == 0)
-  /// @param output_buffers Array of output channel buffers (never nullptr)
-  /// @param num_channels Number of channels (matches config)
-  /// @param num_frames Number of frames to process
-  virtual void processAudio(const float** input_buffers, float** output_buffers,
-                            size_t num_channels, size_t num_frames) = 0;
+  /// Process one planar audio block on the backend realtime thread.
+  ///
+  /// The block and its pointed-to buffers remain valid only for this call.
+  /// Implementations must not allocate, lock, block, perform I/O, or retain any
+  /// pointer from the block.
+  virtual void processAudio(const AudioProcessBlock& block) noexcept = 0;
 
   /// Realtime-safe active-voice diagnostic supplied by the host callback.
   virtual uint32_t activeClipCount() const noexcept {

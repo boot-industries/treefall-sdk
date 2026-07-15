@@ -93,6 +93,8 @@ private:
   // Performance monitoring (optional, only read by diagnostics callback builds)
   std::atomic<IPerformanceMonitor*> performance_monitor_{nullptr};
   std::atomic<uint32_t> callbacks_in_flight_{0};
+  int64_t expected_stream_sample_{0};
+  bool stream_timeline_initialized_{false};
 
   // Audio thread buffers (allocated once in initialize)
   std::vector<float*> input_buffers_;

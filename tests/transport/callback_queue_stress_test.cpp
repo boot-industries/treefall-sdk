@@ -62,7 +62,7 @@ protected:
   static constexpr size_t BUFFER_SIZE = 512;
 
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, SAMPLE_RATE);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(SAMPLE_RATE)});
     m_callback = std::make_unique<CountingCallback>();
     m_transport->setCallback(m_callback.get());
   }
