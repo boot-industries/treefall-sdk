@@ -14,8 +14,10 @@ using namespace orpheus;
 /// Simple audio callback for testing (generates silence)
 class SilenceCallback : public IAudioCallback {
 public:
-  void processAudio(const float** /*input_buffers*/, float** output_buffers, size_t num_channels,
-                    size_t num_frames) override {
+  void processAudio(const AudioProcessBlock& block) noexcept override {
+    auto output_buffers = block.output_buffers;
+    const size_t num_channels = block.num_output_channels;
+    const size_t num_frames = block.num_frames;
     // Generate silence
     for (size_t ch = 0; ch < num_channels; ++ch) {
       for (size_t i = 0; i < num_frames; ++i) {

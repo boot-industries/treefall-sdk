@@ -103,7 +103,7 @@ protected:
   void SetUp() override {
     m_tempDir = std::filesystem::temp_directory_path() / "orp136_rt_harness";
     std::filesystem::create_directories(m_tempDir);
-    m_transport = std::make_unique<TransportController>(nullptr, kSampleRate);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_left.assign(kBufferFrames, 0.0f);
     m_right.assign(kBufferFrames, 0.0f);
     m_buffers[0] = m_left.data();

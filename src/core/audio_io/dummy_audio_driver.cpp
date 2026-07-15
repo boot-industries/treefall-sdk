@@ -124,6 +124,14 @@ AudioDriverCapabilities DummyAudioDriver::getCapabilities() const {
   caps.max_input_channels = m_config.num_inputs;
   caps.native_sample_rates.push_back(m_config.sample_rate);
   caps.native_buffer_sizes.push_back(m_config.buffer_size);
+  const std::string endpoint =
+      m_config.device_id.empty() ? "dummy:default" : m_config.device_id;
+  for (uint16_t channel = 0; channel < m_config.num_inputs; ++channel) {
+    caps.input_channel_ids.push_back(endpoint + ":input:" + std::to_string(channel));
+  }
+  for (uint16_t channel = 0; channel < m_config.num_outputs; ++channel) {
+    caps.output_channel_ids.push_back(endpoint + ":output:" + std::to_string(channel));
+  }
   caps.supports_exclusive_mode = false;
   caps.supports_shared_mode = true;
   caps.supports_device_hot_swap = false;
@@ -142,6 +150,9 @@ void DummyAudioDriver::audioThreadMain() {
       static_cast<int64_t>(buffer_duration_sec * 1e6 * 0.95) // 95% to account for jitter
   );
 
+  uint64_t stream_position = 0;
+  bool discontinuity = true;
+
   while (!m_should_stop.load(std::memory_order_acquire)) {
     // Clear input buffers (simulate silence from input device)
     for (auto& buffer : m_input_buffer_storage) {
@@ -155,10 +166,20 @@ void DummyAudioDriver::audioThreadMain() {
 
     // Call audio callback (with safety check for shutdown race)
     if (m_callback && m_running.load(std::memory_order_acquire)) {
-      const float** input_ptrs = m_config.num_inputs > 0 ? m_input_ptrs.data() : nullptr;
-
-      m_callback->processAudio(input_ptrs, m_output_ptrs.data(), m_config.num_outputs,
-                               m_config.buffer_size);
+      const auto now = std::chrono::steady_clock::now().time_since_epoch();
+      AudioProcessBlock block;
+      block.input_buffers = m_config.num_inputs > 0 ? m_input_ptrs.data() : nullptr;
+      block.output_buffers = m_output_ptrs.data();
+      block.num_input_channels = m_config.num_inputs;
+      block.num_output_channels = m_config.num_outputs;
+      block.num_frames = m_config.buffer_size;
+      block.device_sample_position = stream_position;
+      block.host_time_nanoseconds =
+          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+      block.discontinuity = discontinuity;
+      m_callback->processAudio(block);
+      stream_position += m_config.buffer_size;
+      discontinuity = false;
     }
 
     // Sleep to simulate real-time constraints

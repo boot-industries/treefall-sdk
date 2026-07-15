@@ -89,7 +89,7 @@ protected:
   void SetUp() override {
     m_dir = std::filesystem::temp_directory_path() / "orp127_src";
     std::filesystem::create_directories(m_dir);
-    m_transport = std::make_unique<TransportController>(nullptr, kEngineRate);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kEngineRate)});
   }
   void TearDown() override {
     m_transport.reset();

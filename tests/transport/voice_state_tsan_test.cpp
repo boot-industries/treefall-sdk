@@ -95,7 +95,7 @@ protected:
   void SetUp() override {
     m_tempDir = std::filesystem::temp_directory_path() / "orp127_tsan";
     std::filesystem::create_directories(m_tempDir);
-    m_transport = std::make_unique<TransportController>(nullptr, 48000);
+    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   }
 
   void TearDown() override {
