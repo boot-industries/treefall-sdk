@@ -3,6 +3,7 @@
 
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -94,6 +95,11 @@ bool isValidSpeakerPatch(ChannelLayout layout, uint8_t patchSize,
 
 uint64_t incrementSaturated(uint64_t value) noexcept {
   return value == std::numeric_limits<uint64_t>::max() ? value : value + 1;
+}
+
+bool isLaterStartOrdinal(uint64_t candidate, uint64_t reference) noexcept {
+  const uint64_t delta = candidate - reference;
+  return delta != 0 && delta < (uint64_t{1} << 63);
 }
 
 } // namespace
@@ -1096,19 +1102,52 @@ size_t TransportController::countActiveVoicesSnapshot(ClipHandle handle) const {
 
 ActiveClip* TransportController::findOldestVoice(ClipHandle handle) {
   ActiveClip* oldest = nullptr;
-  int64_t oldestStartSample = INT64_MAX;
-
   for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      // Find voice with earliest start time (oldest)
-      if (m_activeClips[i].startSample < oldestStartSample) {
-        oldestStartSample = m_activeClips[i].startSample;
-        oldest = &m_activeClips[i];
+    ActiveClip& candidate = m_activeClips[i];
+    if (candidate.handle != handle) {
+      continue;
+    }
+    if (oldest == nullptr || candidate.startSample < oldest->startSample ||
+        (candidate.startSample == oldest->startSample &&
+         isLaterStartOrdinal(oldest->startOrdinal, candidate.startOrdinal))) {
+      oldest = &candidate;
+    }
+  }
+  return oldest;
+}
+
+uint64_t TransportController::allocateVoiceStartOrdinal() noexcept {
+  constexpr uint64_t kSerialHalfRange = uint64_t{1} << 63;
+  if (m_activeClipCount != 0) {
+    uint64_t oldestOrdinal = m_activeClips[0].startOrdinal;
+    for (size_t index = 1; index < m_activeClipCount; ++index) {
+      const uint64_t candidate = m_activeClips[index].startOrdinal;
+      if (isLaterStartOrdinal(oldestOrdinal, candidate)) {
+        oldestOrdinal = candidate;
       }
+    }
+
+    if (m_nextVoiceStartOrdinal - oldestOrdinal >= kSerialHalfRange) {
+      for (size_t index = 0; index < m_activeClipCount; ++index) {
+        m_voiceStartOrdinalScratch[index] = m_activeClips[index].startOrdinal;
+      }
+      for (size_t index = 0; index < m_activeClipCount; ++index) {
+        uint64_t rank = 0;
+        for (size_t other = 0; other < m_activeClipCount; ++other) {
+          if (isLaterStartOrdinal(m_voiceStartOrdinalScratch[index],
+                                  m_voiceStartOrdinalScratch[other])) {
+            ++rank;
+          }
+        }
+        m_activeClips[index].startOrdinal = rank;
+      }
+      m_nextVoiceStartOrdinal = static_cast<uint64_t>(m_activeClipCount);
     }
   }
 
-  return oldest;
+  const uint64_t ordinal = m_nextVoiceStartOrdinal;
+  ++m_nextVoiceStartOrdinal;
+  return ordinal;
 }
 
 void TransportController::restartVoiceInPlace(ActiveClip& clip) {
@@ -1230,6 +1269,27 @@ uint32_t TransportController::allocateVoiceId() noexcept {
   }
   return 0;
 }
+
+bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, bool stopping,
+                                                           bool looping, int64_t trimIn,
+                                                           int64_t trimOut,
+                                                           int64_t currentSample) noexcept {
+  for (size_t index = 0; index < m_activeClipCount; ++index) {
+    ActiveClip& voice = m_activeClips[index];
+    if (voice.voiceId != voiceId) {
+      continue;
+    }
+    voice.isStopping = stopping;
+    voice.fadeOutGain = 1.0f;
+    voice.fadeOutStartPos = currentSample;
+    voice.loopEnabled.store(looping, std::memory_order_relaxed);
+    voice.trimInSamples.store(trimIn, std::memory_order_relaxed);
+    voice.trimOutSamples.store(trimOut, std::memory_order_relaxed);
+    voice.currentSample = currentSample;
+    return true;
+  }
+  return false;
+}
 bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return false;
@@ -1264,11 +1324,14 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     return false;
   }
 
+  const uint64_t startOrdinal = allocateVoiceStartOrdinal();
+
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
   clip.handle = handle;
   clip.voiceId = voiceId;
+  clip.startOrdinal = startOrdinal;
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
   clip.currentSample = context->trimInSamples; // CRITICAL: Start from IN point
 
@@ -1336,6 +1399,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
 
         dest.handle = src.handle;
         dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
@@ -1395,6 +1459,7 @@ void TransportController::removeActiveClip(ClipHandle handle) {
 
         dest.handle = src.handle;
         dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
@@ -1502,6 +1567,7 @@ void TransportController::publishVoiceSnapshot() noexcept {
       entry.handle = voice.handle;
       entry.state = PlaybackState::Stopping;
       m_voiceSnapshotHasNewest[entryIndex] = false;
+      m_voiceSnapshotNewestStartOrdinal[entryIndex] = 0;
     }
 
     ActiveVoiceSnapshotEntry& entry = snapshot.entries[entryIndex];
@@ -1511,7 +1577,8 @@ void TransportController::publishVoiceSnapshot() noexcept {
     }
 
     if (!m_voiceSnapshotHasNewest[entryIndex] || voice.startSample > entry.newestStartSample ||
-        (voice.startSample == entry.newestStartSample && voice.voiceId > entry.newestVoiceId)) {
+        (voice.startSample == entry.newestStartSample &&
+         isLaterStartOrdinal(voice.startOrdinal, m_voiceSnapshotNewestStartOrdinal[entryIndex]))) {
       entry.newestVoiceId = voice.voiceId;
       entry.newestVoiceStopping = voice.isStopping ? 1 : 0;
       entry.newestVoiceLoopEnabled = voice.loopEnabled.load(std::memory_order_relaxed) ? 1 : 0;
@@ -1520,6 +1587,7 @@ void TransportController::publishVoiceSnapshot() noexcept {
       entry.newestTrimOutSamples = voice.trimOutSamples.load(std::memory_order_relaxed);
       entry.newestPosition = positionAtSamples(voice.currentSample);
       m_voiceSnapshotHasNewest[entryIndex] = true;
+      m_voiceSnapshotNewestStartOrdinal[entryIndex] = voice.startOrdinal;
     }
   }
 
@@ -1547,6 +1615,10 @@ void TransportController::publishVoiceSnapshot() noexcept {
     destination.newestTrimOutSamples.store(source.newestTrimOutSamples, std::memory_order_release);
     destination.newestPositionSamples.store(source.newestPosition.samples,
                                             std::memory_order_release);
+    destination.newestPositionSecondsBits.store(
+        std::bit_cast<uint64_t>(source.newestPosition.seconds), std::memory_order_release);
+    destination.newestPositionBeatsBits.store(std::bit_cast<uint64_t>(source.newestPosition.beats),
+                                              std::memory_order_release);
   }
 
   const uint64_t evenRevision = m_voiceSnapshotRevision + 1;
@@ -2387,8 +2459,12 @@ ActiveVoiceSnapshot TransportController::getActiveVoiceSnapshot() const noexcept
       destination.newestTrimInSamples = source.newestTrimInSamples.load(std::memory_order_acquire);
       destination.newestTrimOutSamples =
           source.newestTrimOutSamples.load(std::memory_order_acquire);
-      destination.newestPosition =
-          positionAtSamples(source.newestPositionSamples.load(std::memory_order_acquire));
+      destination.newestPosition.samples =
+          source.newestPositionSamples.load(std::memory_order_acquire);
+      destination.newestPosition.seconds =
+          std::bit_cast<double>(source.newestPositionSecondsBits.load(std::memory_order_acquire));
+      destination.newestPosition.beats =
+          std::bit_cast<double>(source.newestPositionBeatsBits.load(std::memory_order_acquire));
     }
 
     const uint64_t revisionAfter =

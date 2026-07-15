@@ -111,8 +111,9 @@ struct TransportCallbackTelemetry {
 /// Per-ClipHandle aggregate in an ActiveVoiceSnapshot.
 ///
 /// "Newest" is the surviving voice with the greatest transport start sample;
-/// voice ID breaks a tie. state is Playing when any voice for the handle is
-/// playing and Stopping only when all of them are stopping.
+/// when starts share that sample, the later accepted start wins even when its
+/// voice ID wrapped. state is Playing when any voice for the handle is playing
+/// and Stopping only when all of them are stopping.
 struct ActiveVoiceSnapshotEntry {
   ClipHandle handle = 0;
   uint32_t activeVoiceCount = 0;

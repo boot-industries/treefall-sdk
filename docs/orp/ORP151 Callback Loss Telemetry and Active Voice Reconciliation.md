@@ -117,15 +117,19 @@ Each entry aggregates all surviving voices for one handle:
 - `state` is `Playing` when any voice is playing and `Stopping` only when all
   voices for the handle are stopping; and
 - the newest fields come from the voice with the greatest transport start
-  sample, with voice ID as the deterministic tie-breaker.
+  sample; when starts share that sample, the later accepted start wins via an
+  internal wrap-aware chronological ordinal rather than numeric voice-ID order.
 
 `publicationSequence` starts at zero and advances after each completed
 `processAudio()` block. A returned value never mixes fields from different
 publications.
 
 Voice IDs remain nonzero across `uint32_t` rollover. The bounded audio-thread
-allocator skips zero and every ID still owned by an active voice, so the newest
-tie-break remains unambiguous through removal and slot compaction.
+allocator skips zero and every ID still owned by an active voice. A separate
+`uint64_t` start ordinal uses serial-number arithmetic across wrap. Before any
+surviving pair could become separated by half the serial range, the fixed live
+set is rank-rebased in place. No allocation or lock is introduced, and removal
+or slot compaction preserves both identities.
 
 ---
 
@@ -187,13 +191,14 @@ as an integrity condition and use their own policy for indeterminate history.
 
 Observed on macOS arm64, Debug, with realtime support enabled:
 
-- `callback_loss_telemetry_test`: **5/5 passed**; the cases force 302
+- `callback_loss_telemetry_test`: **6/6 passed**; the cases force 302
   attempted events without draining, observe exactly 255 retained and 47
   dropped with last dropped sequence 302, prove the reconciliation watermark,
   verify a later retained sequence 303 without counter reset, verify the
   zero-drop path, hammer concurrent coherent publication, aggregate one
-  handle across playing/fading voices and compaction, and cross `uint32_t`
-  voice-ID rollover without zero or active-ID collision;
+  handle across playing/fading voices and compaction, cross `uint32_t`
+  voice-ID rollover without zero or active-ID collision, and prove that a
+  same-sample start after ordinal/voice-ID wrap owns every newest field;
 - focused transport CTest set (`transport_controller_test`,
   `callback_queue_stress_test`, `callback_loss_telemetry_test`, and
   `voice_state_tsan_test`): **4/4 passed**;
