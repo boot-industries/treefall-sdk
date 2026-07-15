@@ -605,6 +605,38 @@ if(TARGET orpheus_audio_io)
         COMMAND choke_and_voice_cap_test
     )
 
+    # ORP150: one-command atomic metadata-group start/choke admission.
+    add_executable(atomic_group_choke_test
+        atomic_group_choke_test.cpp
+    )
+
+    target_link_libraries(atomic_group_choke_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(atomic_group_choke_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(atomic_group_choke_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(atomic_group_choke_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME atomic_group_choke_test
+        COMMAND atomic_group_choke_test
+    )
+
     # OCC155: SDK API requests — getRoutingMatrix / panic / unregisterClipAudio,
     # plus the fade-overlap re-fire independent-cursor regression (Ask #2).
     add_executable(occ155_api_test

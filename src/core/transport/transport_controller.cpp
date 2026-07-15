@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <new>
 #include <orpheus/session_graph.h> // For SessionGraph
 
 // MSVC and some platforms don't define M_PI_2 by default
@@ -87,8 +88,7 @@ bool isValidSpeakerPatch(ChannelLayout layout, uint8_t patchSize,
   if (!standard.has_value() || standard->num_channels != fileChannels) {
     return false;
   }
-  return std::equal(patch.begin(), patch.begin() + patchSize,
-                    standard->channel_map.begin());
+  return std::equal(patch.begin(), patch.begin() + patchSize, standard->channel_map.begin());
 }
 
 } // namespace
@@ -97,11 +97,10 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
                                          const TransportConfig& config)
     : m_sessionGraph(sessionGraph), m_config(config), m_sampleRate(config.sampleRate),
       m_callback(nullptr) {
-  m_fadeOutSamples = static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) *
-                                         static_cast<float>(m_sampleRate));
-  m_restartCrossfadeSamples =
-      static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
-                          static_cast<float>(m_sampleRate));
+  m_fadeOutSamples =
+      static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) * static_cast<float>(m_sampleRate));
+  m_restartCrossfadeSamples = static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
+                                                  static_cast<float>(m_sampleRate));
 
   const float smoothingSamples =
       (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(m_sampleRate);
@@ -122,10 +121,9 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
   routingConfig.enable_metering = true;
   routingConfig.enable_clipping_protection = true;
   routingConfig.source_channel_policy = m_config.sourceChannelPolicy;
-  routingConfig.downmix_policy =
-      m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete
-          ? DownmixPolicy::None
-          : DownmixPolicy::ITU_BS775_3;
+  routingConfig.downmix_policy = m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete
+                                     ? DownmixPolicy::None
+                                     : DownmixPolicy::ITU_BS775_3;
   m_routingMatrix->initialize(routingConfig);
 
   for (size_t voice = 0; voice < m_config.maxActiveVoices; ++voice) {
@@ -146,11 +144,10 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     m_groupOutputWidths[group].store(0, std::memory_order_relaxed);
   }
   for (RoutingGroupIndex group = 0; group < m_config.numGroups; ++group) {
-    m_groupOutputWidths[group].store(
-        static_cast<uint16_t>(m_config.outputChannels),
-        std::memory_order_relaxed);
-    (void)m_routingMatrix->setGroupOutputRoute(
-        group, 0, static_cast<uint16_t>(m_config.outputChannels));
+    m_groupOutputWidths[group].store(static_cast<uint16_t>(m_config.outputChannels),
+                                     std::memory_order_relaxed);
+    (void)m_routingMatrix->setGroupOutputRoute(group, 0,
+                                               static_cast<uint16_t>(m_config.outputChannels));
   }
 
   m_clipReadBuffers.resize(m_config.maxActiveVoices);
@@ -175,69 +172,85 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
 
 TransportController::~TransportController() = default;
 
-SessionGraphError TransportController::startClip(ClipHandle handle) {
-  // Validate handle
+SessionGraphError
+TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredSource,
+                                      std::shared_ptr<ClipPlaybackContext>& context) {
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Resolve playback context (UI thread - safe to lock mutex)
-  auto context = std::make_shared<ClipPlaybackContext>();
-  context->handle = handle;
+  try {
+    context = std::make_shared<ClipPlaybackContext>();
+    context->handle = handle;
 
-  {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
       auto& entry = it->second;
       if (entry.sourceLayout == ChannelLayout::Unspecified ||
-          !isValidSpeakerPatch(entry.sourceLayout, entry.speakerPatchSize,
-                               entry.speakerPatch, entry.metadata.num_channels)) {
+          !isValidSpeakerPatch(entry.sourceLayout, entry.speakerPatchSize, entry.speakerPatch,
+                               entry.metadata.num_channels)) {
         return SessionGraphError::InvalidParameter;
       }
-      // ORP134 G1: lazy preparation for hosts that never call
-      // prepareClipAudio() — decode/stream setup happens HERE on the control
-      // thread, never on the audio thread.
-      ensurePreparedSourceLocked(entry);
+
+      // Source construction is control-thread work. Group-choke starts must
+      // reject unavailable media before posting the one atomic realtime command.
+      const SessionGraphError prepareResult = ensurePreparedSourceLocked(entry);
+      if (requireRegisteredSource && prepareResult != SessionGraphError::OK) {
+        return prepareResult;
+      }
       context->source = entry.source;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
-      context->fileLengthSamples = entry.metadata.duration_samples; // ORP127 G3
-
-      // If trim OUT is not set (0), use file duration
+      context->fileLengthSamples = entry.metadata.duration_samples;
       context->trimOutSamples =
-          (entry.trimOutSamples == 0) ? entry.metadata.duration_samples : entry.trimOutSamples;
-
+          entry.trimOutSamples == 0 ? entry.metadata.duration_samples : entry.trimOutSamples;
       context->fadeInSeconds = entry.fadeInSeconds;
       context->fadeOutSeconds = entry.fadeOutSeconds;
       context->fadeInCurve = entry.fadeInCurve;
       context->fadeOutCurve = entry.fadeOutCurve;
       context->gainDb = entry.gainDb;
-      // Precompute linear gain
       context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
       context->routingGroup = entry.routingGroup;
-      context->voiceMode = entry.voiceMode; // ORP127 G5
-    } else {
-      // Clip not registered - use defaults for testing
-      context->source = nullptr;
-      context->numChannels = 2;
-      context->trimInSamples = 0;
-      context->trimOutSamples = 48000 * 60;    // Default 60s
-      context->fileLengthSamples = 48000 * 60; // ORP127 G3: match default OUT
-      context->fadeInSeconds = 0.0;
-      context->fadeOutSeconds = 0.0;
-      context->fadeInCurve = FadeCurve::Linear;
-      context->fadeOutCurve = FadeCurve::Linear;
-      context->gainDb = 0.0f;
-      context->gainLinear = 1.0f;
-      context->loopEnabled = false;
-      context->routingGroup = 0;
-      context->voiceMode = VoiceMode::Polyphonic; // ORP127 G5: default
+      context->voiceMode = entry.voiceMode;
+      return SessionGraphError::OK;
     }
+
+    if (requireRegisteredSource) {
+      context.reset();
+      return SessionGraphError::ClipNotRegistered;
+    }
+
+    // Preserve the historical source-less test/default start contract.
+    context->source = nullptr;
+    context->numChannels = 2;
+    context->trimInSamples = 0;
+    context->trimOutSamples = 48000 * 60;
+    context->fileLengthSamples = 48000 * 60;
+    context->fadeInSeconds = 0.0;
+    context->fadeOutSeconds = 0.0;
+    context->fadeInCurve = FadeCurve::Linear;
+    context->fadeOutCurve = FadeCurve::Linear;
+    context->gainDb = 0.0f;
+    context->gainLinear = 1.0f;
+    context->loopEnabled = false;
+    context->routingGroup = 0;
+    context->voiceMode = VoiceMode::Polyphonic;
+    return SessionGraphError::OK;
+  } catch (const std::bad_alloc&) {
+    context.reset();
+    return SessionGraphError::InternalError;
+  }
+}
+
+SessionGraphError TransportController::startClip(ClipHandle handle) {
+  std::shared_ptr<ClipPlaybackContext> context;
+  const SessionGraphError contextResult = makeStartContext(handle, false, context);
+  if (contextResult != SessionGraphError::OK) {
+    return contextResult;
   }
 
-  // Check "Stop Others" mode (UI thread check is fine for initiating stop command)
   bool stopOthers = false;
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
@@ -248,16 +261,25 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   if (stopOthers) {
-    // ORP127 G7: choke OTHER clips (not this one) before the Start command that
-    // follows in queue order. Using stopOtherClips(handle) instead of the old
-    // global stopAllClips() means existing voices of THIS clip are preserved and
-    // the choke is correctly scoped to everything else.
     stopOtherClips(handle);
   }
 
-  // Post Start command to audio thread
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::Start;
+  cmd.handle = handle;
+  cmd.startContext = context;
+  return postCommand(cmd);
+}
+
+SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle) {
+  std::shared_ptr<ClipPlaybackContext> context;
+  const SessionGraphError contextResult = makeStartContext(handle, true, context);
+  if (contextResult != SessionGraphError::OK) {
+    return contextResult;
+  }
+
+  TransportCommand cmd{};
+  cmd.type = TransportCommand::Type::StartWithGroupChoke;
   cmd.handle = handle;
   cmd.startContext = context;
   return postCommand(cmd);
@@ -432,8 +454,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       clip.source->setDemand(trimIn);
     } else if (clip.currentSample >= trimOut) {
       // Position at or past OUT point - handle loop or stop
-      const bool shouldLoop =
-          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
+      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
       if (shouldLoop) {
         // Loop mode: restart from IN point
         clip.currentSample = trimIn;
@@ -717,8 +738,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
     if (clip.currentSample >= clipTrimOut) {
       // Check if clip should loop
-      const bool shouldLoop =
-          clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
+      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
 
       if (shouldLoop) {
         // Loop: jump back to trim IN point (works even without a source)
@@ -801,6 +821,31 @@ void TransportController::processCommands() {
         event.handle = cmd.handle;
         event.position = getCurrentPosition();
         postTransportEvent(event);
+      }
+    } break;
+
+    case TransportCommand::Type::StartWithGroupChoke: {
+      // Admission is deliberately first. A voice-pool refusal may publish the
+      // existing typed rejection event, but it cannot mutate any peer.
+      if (cmd.startContext && startVoiceWithMode(cmd.startContext)) {
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStarted;
+        event.handle = cmd.handle;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
+
+        // Only after the firing voice is live do same-group peers enter their
+        // normal configured stop fades. The firing handle is always spared so
+        // MonoWithFadeOverlap and other per-handle policies remain authoritative.
+        const RoutingGroupIndex group = cmd.startContext->routingGroup;
+        for (size_t i = 0; i < m_activeClipCount; ++i) {
+          ActiveClip& peer = m_activeClips[i];
+          if (peer.handle != cmd.handle && peer.routingGroup == group && !peer.isStopping) {
+            peer.isStopping = true;
+            peer.fadeOutGain = 1.0f;
+            peer.fadeOutStartPos = peer.currentSample;
+          }
+        }
       }
     } break;
 
@@ -1090,8 +1135,7 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
 }
 
-bool TransportController::startVoiceWithMode(
-    const std::shared_ptr<ClipPlaybackContext>& context) {
+bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return false;
 
@@ -1161,22 +1205,20 @@ bool TransportController::startVoiceWithMode(
   return addActiveClip(context);
 }
 
-void TransportController::configureVoiceRouting(
-    size_t voiceIndex, RoutingGroupIndex group, uint16_t numChannels) noexcept {
+void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
+                                                uint16_t numChannels) noexcept {
   const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
   for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
     const bool activeLane = lane < numChannels;
     const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
     const auto output =
-        activeLane ? static_cast<RoutingOutputIndex>(lane)
-                   : static_cast<RoutingOutputIndex>(0);
-    (void)m_routingMatrix->setChannelRoute(
-        static_cast<RoutingChannelIndex>(laneBase + lane), routeGroup, output);
+        activeLane ? static_cast<RoutingOutputIndex>(lane) : static_cast<RoutingOutputIndex>(0);
+    (void)m_routingMatrix->setChannelRoute(static_cast<RoutingChannelIndex>(laneBase + lane),
+                                           routeGroup, output);
   }
 }
 
-bool TransportController::addActiveClip(
-    const std::shared_ptr<ClipPlaybackContext>& context) {
+bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
     return false;
 
@@ -1585,8 +1627,7 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   if (const auto inferred = inferUnambiguousChannelFormat(entry.metadata.num_channels)) {
     entry.sourceLayout = inferred->layout;
     entry.speakerPatchSize = inferred->num_channels;
-    std::copy_n(inferred->channel_map.begin(), inferred->num_channels,
-                entry.speakerPatch.begin());
+    std::copy_n(inferred->channel_map.begin(), inferred->num_channels, entry.speakerPatch.begin());
   }
 
   // Apply session defaults to new clip
@@ -2017,13 +2058,11 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   }
 
   if (metadata.routingGroup >= m_config.numGroups ||
-      fileChannels >
-          m_groupOutputWidths[metadata.routingGroup].load(
-              std::memory_order_acquire)) {
+      fileChannels > m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
     return SessionGraphError::InvalidParameter;
   }
-  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize,
-                           metadata.speakerPatch, fileChannels)) {
+  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize, metadata.speakerPatch,
+                           fileChannels)) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -2033,28 +2072,6 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));
   int64_t fadeOutSampleCount =
       static_cast<int64_t>(metadata.fadeOutSeconds * static_cast<double>(m_sampleRate));
-
-  // Update persistent storage
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
-      it->second.trimInSamples = metadata.trimInSamples;
-      it->second.trimOutSamples = trimOut;
-      it->second.fadeInSeconds = metadata.fadeInSeconds;
-      it->second.fadeOutSeconds = metadata.fadeOutSeconds;
-      it->second.fadeInCurve = metadata.fadeInCurve;
-      it->second.fadeOutCurve = metadata.fadeOutCurve;
-      it->second.loopEnabled = metadata.loopEnabled;
-      it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
-      it->second.voiceMode = metadata.voiceMode; // ORP127 G5
-      it->second.gainDb = metadata.gainDb;
-      it->second.routingGroup = metadata.routingGroup;
-      it->second.sourceLayout = metadata.sourceLayout;
-      it->second.speakerPatchSize = metadata.speakerPatchSize;
-      it->second.speakerPatch = metadata.speakerPatch;
-    }
-  }
 
   // ORP127 G1: Apply to active voices via a command on the audio thread — no
   // direct writes to the live voice array from the UI thread. Precompute linear
@@ -2075,10 +2092,35 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
   cmd.data.metadata.routingGroup = metadata.routingGroup;
 
-  // Post best-effort: if the queue is full the persistent store already holds
-  // the new metadata and it will be picked up on next start. Return OK to match
-  // the historical contract (validation success == OK).
-  postCommand(cmd);
+  // Queue admission precedes the persistent commit. A full ring therefore
+  // cannot publish metadata that active voices did not receive, which is
+  // required when group choke compares registered and active routing groups.
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it == m_audioFiles.end()) {
+      return SessionGraphError::ClipNotRegistered;
+    }
+    const SessionGraphError postResult = postCommand(cmd);
+    if (postResult != SessionGraphError::OK) {
+      return postResult;
+    }
+
+    it->second.trimInSamples = metadata.trimInSamples;
+    it->second.trimOutSamples = trimOut;
+    it->second.fadeInSeconds = metadata.fadeInSeconds;
+    it->second.fadeOutSeconds = metadata.fadeOutSeconds;
+    it->second.fadeInCurve = metadata.fadeInCurve;
+    it->second.fadeOutCurve = metadata.fadeOutCurve;
+    it->second.loopEnabled = metadata.loopEnabled;
+    it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
+    it->second.voiceMode = metadata.voiceMode;
+    it->second.gainDb = metadata.gainDb;
+    it->second.routingGroup = metadata.routingGroup;
+    it->second.sourceLayout = metadata.sourceLayout;
+    it->second.speakerPatchSize = metadata.speakerPatchSize;
+    it->second.speakerPatch = metadata.speakerPatch;
+  }
 
   return SessionGraphError::OK;
 }
@@ -2119,31 +2161,27 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   return metadata;
 }
 
-SessionGraphError TransportController::setGroupOutputBus(
-    RoutingGroupIndex group, const OutputBusRoute& route) {
+SessionGraphError TransportController::setGroupOutputBus(RoutingGroupIndex group,
+                                                         const OutputBusRoute& route) {
   if (group >= m_config.numGroups || route.channelCount == 0 ||
-      static_cast<uint32_t>(route.outputStart) + route.channelCount >
-          m_config.outputChannels) {
+      static_cast<uint32_t>(route.outputStart) + route.channelCount > m_config.outputChannels) {
     return SessionGraphError::InvalidParameter;
   }
 
   std::lock_guard<std::mutex> lock(m_audioFilesMutex);
   for (const auto& [handle, entry] : m_audioFiles) {
     (void)handle;
-    if (entry.routingGroup == group &&
-        entry.metadata.num_channels > route.channelCount) {
+    if (entry.routingGroup == group && entry.metadata.num_channels > route.channelCount) {
       return SessionGraphError::InvalidParameter;
     }
   }
-  const auto result = m_routingMatrix->setGroupOutputRoute(
-      group, route.outputStart, route.channelCount);
+  const auto result =
+      m_routingMatrix->setGroupOutputRoute(group, route.outputStart, route.channelCount);
   if (result != SessionGraphError::OK) {
     return result;
   }
-  m_groupOutputStarts[group].store(route.outputStart,
-                                    std::memory_order_release);
-  m_groupOutputWidths[group].store(route.channelCount,
-                                   std::memory_order_release);
+  m_groupOutputStarts[group].store(route.outputStart, std::memory_order_release);
+  m_groupOutputWidths[group].store(route.channelCount, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -2152,9 +2190,8 @@ TransportController::getGroupOutputBus(RoutingGroupIndex group) const {
   if (group >= m_config.numGroups) {
     return std::nullopt;
   }
-  return OutputBusRoute{
-      m_groupOutputStarts[group].load(std::memory_order_acquire),
-      m_groupOutputWidths[group].load(std::memory_order_acquire)};
+  return OutputBusRoute{m_groupOutputStarts[group].load(std::memory_order_acquire),
+                        m_groupOutputWidths[group].load(std::memory_order_acquire)};
 }
 
 float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve curve) const {
@@ -2464,8 +2501,8 @@ float TransportController::applyDownmixRight(const float* src, size_t frame, siz
 }
 
 // Factory function
-std::unique_ptr<ITransportController>
-createTransportController(core::SessionGraph* sessionGraph, const TransportConfig& config) {
+std::unique_ptr<ITransportController> createTransportController(core::SessionGraph* sessionGraph,
+                                                                const TransportConfig& config) {
   constexpr uint32_t maxBlockFrames = 2048;
   constexpr uint32_t maxActiveVoices = 32;
   constexpr uint32_t maxSourceChannels = 8;
@@ -2474,9 +2511,8 @@ createTransportController(core::SessionGraph* sessionGraph, const TransportConfi
   if (config.sampleRate == 0 || config.outputChannels == 0 || config.outputChannels > 32 ||
       config.maxBlockFrames == 0 || config.maxBlockFrames > maxBlockFrames ||
       config.maxActiveVoices == 0 || config.maxActiveVoices > maxActiveVoices ||
-      config.numGroups == 0 || config.numGroups > 32 ||
-      config.maxSourceChannels == 0 || config.maxSourceChannels > maxSourceChannels ||
-      routingLanes > 256) {
+      config.numGroups == 0 || config.numGroups > 32 || config.maxSourceChannels == 0 ||
+      config.maxSourceChannels > maxSourceChannels || routingLanes > 256) {
     return nullptr;
   }
   return std::make_unique<TransportController>(sessionGraph, config);

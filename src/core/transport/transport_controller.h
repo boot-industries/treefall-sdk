@@ -63,11 +63,12 @@ struct TransportCommand {
     UpdateStopOthers,
     // ORP127 G1: UI-thread voice mutations routed onto the audio thread so no
     // ActiveClip field is written from two threads.
-    Restart,        // Restart all voices for a handle from trim IN (with fade-in)
-    Seek,           // Seek all voices for a handle to an absolute position
-    UpdateMetadata, // Apply a full metadata batch to active voices
-    SetVoiceMode,   // ORP127 G5: change a clip's voice policy (audio-thread state)
-    StopOthers      // ORP127 G7: stop every voice except cmd.handle (choke primitive)
+    Restart,            // Restart all voices for a handle from trim IN (with fade-in)
+    Seek,               // Seek all voices for a handle to an absolute position
+    UpdateMetadata,     // Apply a full metadata batch to active voices
+    SetVoiceMode,       // ORP127 G5: change a clip's voice policy (audio-thread state)
+    StopOthers,         // ORP127 G7: stop every voice except cmd.handle (choke primitive)
+    StartWithGroupChoke // Atomically admit start, then fade registered same-group peers
   };
 
   Type type;
@@ -249,6 +250,7 @@ public:
   SessionGraphError panic() override; // OCC155 Ask #5: hard-cut, no fade
   SessionGraphError stopAllInGroup(uint8_t groupIndex) override;
   SessionGraphError stopOtherClips(ClipHandle exceptHandle) override;
+  SessionGraphError startClipWithGroupChoke(ClipHandle handle) override;
   SessionGraphError setMaxVoicesPerClip(uint32_t maxVoices) override;
   uint32_t getMaxVoicesPerClip() const override;
   PlaybackState getClipState(ClipHandle handle) const override;
@@ -270,10 +272,9 @@ public:
   bool getClipStopOthersMode(ClipHandle handle) const override;
   SessionGraphError updateClipMetadata(ClipHandle handle, const ClipMetadata& metadata) override;
   std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const override;
-  SessionGraphError setGroupOutputBus(
-      RoutingGroupIndex group, const OutputBusRoute& route) override;
-  std::optional<OutputBusRoute>
-  getGroupOutputBus(RoutingGroupIndex group) const override;
+  SessionGraphError setGroupOutputBus(RoutingGroupIndex group,
+                                      const OutputBusRoute& route) override;
+  std::optional<OutputBusRoute> getGroupOutputBus(RoutingGroupIndex group) const override;
   void setSessionDefaults(const SessionDefaults& defaults) override;
   SessionDefaults getSessionDefaults() const override;
   bool isClipLooping(ClipHandle handle) const override;
@@ -290,7 +291,6 @@ public:
   std::vector<CuePoint> getCuePoints(ClipHandle handle) const override;
   SessionGraphError seekToCuePoint(ClipHandle handle, uint32_t cueIndex) override;
   SessionGraphError removeCuePoint(ClipHandle handle, uint32_t cueIndex) override;
-
 
   /// Register audio file for a clip (UI thread)
   /// @param handle Clip handle
@@ -330,6 +330,13 @@ private:
   /// Derive seconds/beats from the sample-canonical coordinate and current
   /// block-boundary tempo snapshot.
   TransportPosition positionAtSamples(int64_t samples) const;
+
+  /// Resolve and prepare immutable start state on the control thread.
+  ///
+  /// Group-choke starts require a registered, available source so every
+  /// pre-admission failure is reported before the atomic command is posted.
+  SessionGraphError makeStartContext(ClipHandle handle, bool requireRegisteredSource,
+                                     std::shared_ptr<ClipPlaybackContext>& context);
 
   /// Process pending commands from UI thread
   void processCommands();
@@ -528,10 +535,8 @@ private:
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;
-  std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS>
-      m_groupOutputStarts{};
-  std::array<std::atomic<uint16_t>, MAX_LOGICAL_GROUPS>
-      m_groupOutputWidths{};
+  std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS> m_groupOutputStarts{};
+  std::array<std::atomic<uint16_t>, MAX_LOGICAL_GROUPS> m_groupOutputWidths{};
 
   // Fixed-capacity audio-thread → message-thread telemetry bridge.
   RealtimeTelemetry m_realtimeTelemetry{};

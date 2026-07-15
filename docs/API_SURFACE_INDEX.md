@@ -147,6 +147,7 @@ the tree** — nothing under `packages/` is JavaScript today. See
 - [Contract Guide](orp/_process/archive/CONTRACT_DEVELOPMENT.md) – Command/event schemas shared across drivers (archived)
 - [ORP109 Roadmap](orp/ORP109%20SDK%20Feature%20Roadmap%20for%20Clip%20Composer%20Integration.md) – Feature specifications
 - [ORP110 Implementation Reports](orp/ORP110A%20App-Level%20Integration%20Report.md) – Complete feature documentation (see also ORP110B)
+- [ORP150 Atomic Clip-Group Choke Admission](orp/ORP150%20Atomic%20Clip-Group%20Choke%20Admission.md) – One-command metadata-group start/choke semantics and failure atomicity
 
 ---
 
@@ -163,6 +164,24 @@ transport->startClip(handle);
 transport->updateClipGain(handle, -6.0f);
 transport->setClipLoopMode(handle, true);
 ```
+
+### Atomic Metadata-Group Choke (ORP150)
+
+```cpp
+auto metadata = transport->getClipMetadata(handle).value();
+metadata.routingGroup = 1;
+metadata.voiceMode = VoiceMode::MonoWithFadeOverlap;
+transport->updateClipMetadata(handle, metadata);
+
+// One SPSC command: admit this start first, then fade only active peers whose
+// registered routingGroup is also 1. Check the immediate queue-admission result.
+const auto result = transport->startClipWithGroupChoke(handle);
+```
+
+Do not replace this operation with multiple `stopClip()` calls: queue
+saturation could admit only a prefix. `SessionGraphError::OK` means the atomic
+command entered the ring; a later voice-pool refusal is reported through
+`ITransportCallback::onActiveClipLimitReached` and leaves peers untouched.
 
 ### Routing Matrix (ORP109)
 

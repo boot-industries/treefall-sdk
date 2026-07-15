@@ -27,7 +27,15 @@ int main() {
     return 2;
   }
 
-  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+  auto transport = orpheus::createTransportController(
+      nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   auto manager = orpheus::createAudioDriverManager();
-  return transport != nullptr && manager != nullptr && routing->maxBlockFrames() >= 1 ? 0 : 1;
+  if (transport == nullptr || manager == nullptr || routing->maxBlockFrames() < 1) {
+    return 3;
+  }
+  if (transport->startClipWithGroupChoke(0) != orpheus::SessionGraphError::InvalidHandle ||
+      transport->startClipWithGroupChoke(42) != orpheus::SessionGraphError::ClipNotRegistered) {
+    return 4;
+  }
+  return 0;
 }
