@@ -458,6 +458,117 @@ TEST_F(RoutingMatrixTest, StereoMetersIncludeRightOnlySignal) {
   EXPECT_GT(groupMeter.rms_db, -10.0f);
 }
 
+TEST_F(RoutingMatrixTest, ChannelMetersReportIsolatedEffectiveContributions) {
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.gain_smoothing_ms = 0.0f;
+
+  const auto render = [&](bool reverse_channels) {
+    auto routed = createRoutingMatrix();
+    EXPECT_EQ(routed->initialize(config), SessionGraphError::OK);
+
+    std::array<std::array<float, BUFFER_SIZE>, 2> input{};
+    for (RoutingChannelIndex channel = 0; channel < 2; ++channel) {
+      const bool source_a = reverse_channels ? channel == 1 : channel == 0;
+      input[channel].fill(source_a ? 0.8f : 0.5f);
+      EXPECT_EQ(routed->setChannelGroup(channel, 0), SessionGraphError::OK);
+      EXPECT_EQ(routed->setChannelGain(channel, source_a ? -6.0f : -12.0f), SessionGraphError::OK);
+      EXPECT_EQ(routed->setChannelPan(channel, source_a ? -1.0f : 1.0f), SessionGraphError::OK);
+    }
+
+    const float* inputs[] = {input[0].data(), input[1].data()};
+    std::array<float, BUFFER_SIZE> left{};
+    std::array<float, BUFFER_SIZE> right{};
+    float* outputs[] = {left.data(), right.data()};
+    EXPECT_EQ(routed->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+
+    std::array<AudioMeter, 2> readings = {routed->getChannelMeter(0), routed->getChannelMeter(1)};
+    if (reverse_channels) {
+      std::swap(readings[0], readings[1]);
+    }
+    return readings;
+  };
+
+  const auto forward = render(false);
+  const auto reversed = render(true);
+  const float source_a_peak = 0.8f * std::pow(10.0f, -6.0f / 20.0f);
+  const float source_b_peak = 0.5f * std::pow(10.0f, -12.0f / 20.0f);
+  const auto to_db = [](float linear) { return 20.0f * std::log10(linear); };
+
+  EXPECT_NEAR(forward[0].peak_db, to_db(source_a_peak), 0.01f);
+  EXPECT_NEAR(forward[0].rms_db, to_db(source_a_peak / std::sqrt(2.0f)), 0.01f);
+  EXPECT_NEAR(forward[1].peak_db, to_db(source_b_peak), 0.01f);
+  EXPECT_NEAR(forward[1].rms_db, to_db(source_b_peak / std::sqrt(2.0f)), 0.01f);
+  EXPECT_NEAR(reversed[0].peak_db, forward[0].peak_db, 0.0001f);
+  EXPECT_NEAR(reversed[0].rms_db, forward[0].rms_db, 0.0001f);
+  EXPECT_NEAR(reversed[1].peak_db, forward[1].peak_db, 0.0001f);
+  EXPECT_NEAR(reversed[1].rms_db, forward[1].rms_db, 0.0001f);
+}
+
+TEST_F(RoutingMatrixTest, ChannelMetersPublishCurrentSilenceForMuteSoloAndNullInput) {
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::array<float, BUFFER_SIZE> source_a{};
+  std::array<float, BUFFER_SIZE> source_b{};
+  source_a.fill(0.4f);
+  source_b.fill(0.3f);
+  std::array<float, BUFFER_SIZE> left{};
+  std::array<float, BUFFER_SIZE> right{};
+  float* outputs[] = {left.data(), right.data()};
+  const float* inputs[] = {source_a.data(), source_b.data()};
+
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_GT(matrix->getChannelMeter(1).peak_db, -100.0f);
+
+  ASSERT_EQ(matrix->setChannelMute(1, true), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).peak_db, -100.0f);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).rms_db, -100.0f);
+  EXPECT_GT(matrix->getGroupMeter(0).peak_db, -100.0f);
+  EXPECT_GT(matrix->getMasterMeter().peak_db, -100.0f);
+
+  ASSERT_EQ(matrix->setChannelMute(1, false), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelSolo(0, true), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).peak_db, -100.0f);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).rms_db, -100.0f);
+
+  ASSERT_EQ(matrix->setChannelSolo(0, false), SessionGraphError::OK);
+  const float* null_input[] = {source_a.data(), nullptr};
+  ASSERT_EQ(matrix->processRouting(null_input, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).peak_db, -100.0f);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).rms_db, -100.0f);
+}
+
+TEST_F(RoutingMatrixTest, GroupAndMasterMetersRetainSummedStageReadings) {
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::array<float, BUFFER_SIZE> source_a{};
+  std::array<float, BUFFER_SIZE> source_b{};
+  source_a.fill(0.25f);
+  source_b.fill(0.25f);
+  const float* inputs[] = {source_a.data(), source_b.data()};
+  std::array<float, BUFFER_SIZE> left{};
+  std::array<float, BUFFER_SIZE> right{};
+  float* outputs[] = {left.data(), right.data()};
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+
+  const AudioMeter channel = matrix->getChannelMeter(0);
+  const AudioMeter group = matrix->getGroupMeter(0);
+  const AudioMeter master = matrix->getMasterMeter();
+  EXPECT_NEAR(group.peak_db - channel.peak_db, 6.0206f, 0.01f);
+  EXPECT_NEAR(group.rms_db - channel.rms_db, 6.0206f, 0.01f);
+  EXPECT_NEAR(master.peak_db, group.peak_db, 0.01f);
+  EXPECT_NEAR(master.rms_db, group.rms_db, 0.01f);
+}
+
 // ============================================================================
 // Snapshot Tests
 // ============================================================================
