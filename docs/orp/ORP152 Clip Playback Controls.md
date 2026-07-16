@@ -75,6 +75,14 @@ A mono source is duplicated to the first two discrete lanes when available, so
 pan can create a real left/right placement. Wider sources retain their existing
 source-to-output mapping; only their first stereo pair receives a balance gain.
 
+Long-file streaming keeps a four-page playback window plus one bounded restart
+page. Each control-thread start primes the clip's trim-in page before posting
+the realtime command. A `MonoWithFadeOverlap` restart or atomic group-choke
+refire therefore cannot emit an initial silent buffer merely because a prior
+playback advanced the streaming cache beyond trim-in. Worker and control-thread
+page claims are serialized; the audio thread still performs only resident-page
+reads and atomic ownership handoffs.
+
 ## Verification
 
 `clip_controls_test` covers:
@@ -93,3 +101,7 @@ source-to-output mapping; only their first stereo pair receives a balance gain.
 The pre-existing stop-fade and transport tests remain the regression coverage
 for trim boundaries, restart, loop behavior, routing, voice ownership, and
 callback delivery.
+
+`realtime_harness_test` additionally advances a streaming clip beyond its first
+page and verifies that an atomic group-choke refire restarts at trim-in with
+audible output, zero underrun callbacks, and no realtime allocation.
