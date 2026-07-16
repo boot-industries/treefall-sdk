@@ -20,6 +20,22 @@ TEST(WASAPIDriverTest, FactoryReportsTruthfulSharedModeCapabilities) {
   EXPECT_FALSE(capabilities.supports_exclusive_mode);
   EXPECT_FALSE(capabilities.supports_input);
 }
+TEST(WASAPIDriverTest, RejectsUnsupportedExplicitOutputEndpointsWithoutFallback) {
+  auto driver = createWASAPIAudioDriver();
+  ASSERT_NE(driver, nullptr);
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+
+  config.output_device_id = "unsupported:explicit-endpoint";
+  EXPECT_EQ(driver->initialize(config), SessionGraphError::InvalidParameter);
+
+  config.output_device_id = "wasapi:orpheus.invalid.endpoint";
+  EXPECT_EQ(driver->initialize(config), SessionGraphError::InvalidParameter);
+}
 
 TEST(WASAPIDriverTest, ManagerReportsOnlyQueriedEndpointFormats) {
   auto manager = createAudioDriverManager();

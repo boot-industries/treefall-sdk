@@ -96,15 +96,22 @@ public:
       return SessionGraphError::InternalError;
     }
 
+    const bool useDefaultEndpoint = requested.output_device_id.empty();
     HRESULT result = E_FAIL;
-    if (requested.device_id.rfind("wasapi:", 0) == 0) {
-      const std::wstring id = utf8ToWide(requested.device_id.substr(7));
+    if (requested.output_device_id.empty()) {
+      result = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+    } else if (requested.output_device_id.rfind("wasapi:", 0) == 0) {
+      const std::wstring id = utf8ToWide(requested.output_device_id.substr(7));
       result = id.empty() ? E_INVALIDARG : enumerator_->GetDevice(id.c_str(), &device_);
     } else {
-      result = enumerator_->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+      cleanup();
+      return SessionGraphError::InvalidParameter;
     }
-    if (FAILED(result) || device_ == nullptr ||
-        FAILED(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+    if (FAILED(result) || device_ == nullptr) {
+      cleanup();
+      return useDefaultEndpoint ? SessionGraphError::NotReady : SessionGraphError::InvalidParameter;
+    }
+    if (FAILED(device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                                  reinterpret_cast<void**>(&client_)))) {
       cleanup();
       return SessionGraphError::NotReady;
@@ -248,10 +255,9 @@ public:
       capabilities.native_sample_rates.push_back(config_.sample_rate);
       capabilities.native_buffer_sizes.push_back(config_.buffer_size);
       const std::string endpoint =
-          config_.device_id.empty() ? "wasapi:default" : config_.device_id;
+          config_.output_device_id.empty() ? "wasapi:default" : config_.output_device_id;
       for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
-        capabilities.output_channel_ids.push_back(endpoint + ":output:" +
-                                                  std::to_string(channel));
+        capabilities.output_channel_ids.push_back(endpoint + ":output:" + std::to_string(channel));
       }
     }
     return capabilities;
