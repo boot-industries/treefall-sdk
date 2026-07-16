@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-16
+
+Patch release for reliable simultaneous CoreAudio capture and playback when the
+system defaults resolve to different HAL devices. The public C and C++ audio
+driver contracts remain source-compatible.
+
+### Fixed
+
+- The CoreAudio driver now resolves default input and output independently and
+  creates a private aggregate endpoint when AUHAL must address both devices.
+- Aggregate sub-devices sharing one hardware clock avoid redundant drift
+  compensation; cross-clock devices retain drift correction.
+- Capture render failures remain observable through the driver's cumulative
+  diagnostic counter instead of being hidden behind a zero-filled input buffer.
+- Aggregate-device setup avoids redundant clock-domain property reads.
+
+### Verification
+
+- All 149 configured SDK tests pass.
+- `coreaudio_driver_test`, `driver_manager_test`, and `device_hot_swap_test`
+  pass on macOS.
+- The live cross-device capture regression observes callbacks with zero
+  `AudioUnitRender` failures on separate default input and output devices.
+- All files changed since `v0.5.1` pass `clang-format --dry-run --Werror` and
+  `git diff --check`. The repository-wide formatting audit still reports
+  pre-existing drift in unrelated files.
+
 ## [0.5.1] - 2026-07-15
 
 Patch release for failure-atomic playout control and observable transport
