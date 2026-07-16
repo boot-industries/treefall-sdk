@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CoreAudio round-trip latency now queries the active physical input/output
+  routes live, including device and stream latency, safety offsets, actual I/O
+  buffer depth, and AudioUnit processing latency. Private aggregate endpoints no
+  longer hide high-latency consumer outputs such as Bluetooth headsets.
+
 ## [0.5.2] - 2026-07-16
 
 Patch release for reliable simultaneous CoreAudio capture and playback when the

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <thread>
 
@@ -52,6 +53,12 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   if (device_id_ == 0) {
     return SessionGraphError::InvalidParameter;
   }
+  if (output_device_id_ == 0) {
+    output_device_id_ = device_id_;
+  }
+  if (config_.num_inputs > 0 && input_device_id_ == 0) {
+    input_device_id_ = device_id_;
+  }
 
   // Set up AudioUnit
   SessionGraphError result = setupAudioUnit(device_id_);
@@ -59,9 +66,6 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     cleanupAudioUnit();
     return result;
   }
-
-  // Query and store latency
-  latency_samples_.store(queryDeviceLatency(device_id_), std::memory_order_release);
 
   // Pre-allocate audio buffers (no allocations in audio callback)
   uint32_t num_outputs = config_.num_outputs;
@@ -159,7 +163,11 @@ std::string CoreAudioDriver::getDriverName() const {
 }
 
 uint32_t CoreAudioDriver::getLatencySamples() const {
-  return latency_samples_.load(std::memory_order_acquire);
+  std::lock_guard<std::mutex> lock(mutex_);
+  // Query the physical routes, not the private aggregate wrapper. Consumer
+  // outputs (Bluetooth/AirPods in particular) report their transport delay on
+  // the output sub-device, and that report can change while a route is active.
+  return queryDeviceLatency();
 }
 
 uint64_t CoreAudioDriver::getInputRenderFailureCount() const {
@@ -428,6 +436,41 @@ UInt32 getClockDomain(AudioDeviceID device_id) {
   return domain;
 }
 
+UInt32 getUInt32Property(AudioDeviceID device_id, AudioObjectPropertySelector selector,
+                         AudioObjectPropertyScope scope) {
+  if (device_id == 0) {
+    return 0;
+  }
+  AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
+  UInt32 value = 0;
+  UInt32 size = sizeof(value);
+  return AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) == noErr ? value
+                                                                                             : 0;
+}
+
+UInt32 getStreamLatency(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
+  AudioObjectPropertyAddress streams_address = {kAudioDevicePropertyStreams, scope,
+                                                kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &streams_address, 0, nullptr, &size) != noErr ||
+      size == 0) {
+    return 0;
+  }
+
+  std::vector<AudioStreamID> streams(size / sizeof(AudioStreamID));
+  if (AudioObjectGetPropertyData(device_id, &streams_address, 0, nullptr, &size, streams.data()) !=
+      noErr) {
+    return 0;
+  }
+
+  UInt32 latency = 0;
+  for (AudioStreamID stream : streams) {
+    latency = std::max(latency, getUInt32Property(stream, kAudioStreamPropertyLatency,
+                                                  kAudioObjectPropertyScopeGlobal));
+  }
+  return latency;
+}
+
 } // namespace
 
 AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
@@ -435,12 +478,14 @@ AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
   if (outputID == 0) {
     return 0;
   }
+  output_device_id_ = outputID;
 
   AudioDeviceID inputID = getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice);
   if (inputID == 0 || inputID == outputID) {
     // No distinct default input (or none available). Either the device
     // already handles both directions (common on audio interfaces) or
     // capture will simply fail later -- nothing to bridge here.
+    input_device_id_ = outputID;
     return outputID;
   }
 
@@ -450,20 +495,20 @@ AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
   // kAudioOutputUnitProperty_CurrentDevice can only address one device, so
   // capturing bus 1 against an output-only device deterministically fails
   // AudioUnitRender with kAudioUnitErr_NoConnection while bus 0 (playback)
-  // keeps working -- this is precisely the "meters/playback silent, but the
-  // device selection and driver init all report success" symptom. Bridge the
-  // two with a private, non-stacked Aggregate Device so one AUHAL unit can
-  // drive playback through the output sub-device and capture through the
-  // input sub-device.
+  // keeps working. Bridge the two with a private, non-stacked Aggregate Device
+  // so one AUHAL unit can drive playback through the output sub-device and
+  // capture through the input sub-device.
   AudioDeviceID aggregateID = createAggregateDevice(inputID, outputID);
   if (aggregateID != 0) {
+    input_device_id_ = inputID;
     aggregate_device_id_ = aggregateID;
     return aggregateID;
   }
 
-  // Aggregation failed (permissions, unsupported hardware, etc.). Fall back
-  // to the prior behavior: the output device alone. Playback still works;
-  // capture will fail, same as before this fix.
+  // Aggregation failed (permissions, unsupported hardware, etc.). Fall back to
+  // the output device alone. Capture will fail as before, so report only the
+  // route actually opened rather than claiming the unavailable input's delay.
+  input_device_id_ = outputID;
   return outputID;
 }
 
@@ -577,24 +622,46 @@ std::string CoreAudioDriver::getDeviceName(AudioDeviceID device_id) {
   return success ? std::string(buffer) : "";
 }
 
-uint32_t CoreAudioDriver::queryDeviceLatency(AudioDeviceID device_id) {
-  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyLatency,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
+uint32_t CoreAudioDriver::queryDeviceLatency() const {
+  uint64_t latency = 0;
 
-  UInt32 latency = 0;
-  UInt32 dataSize = sizeof(UInt32);
+  const auto add_route = [&](AudioDeviceID device_id, AudioObjectPropertyScope scope) {
+    latency += getUInt32Property(device_id, kAudioDevicePropertyLatency, scope);
+    latency += getUInt32Property(device_id, kAudioDevicePropertySafetyOffset, scope);
+    latency += getStreamLatency(device_id, scope);
+  };
 
-  OSStatus status =
-      AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &latency);
-
-  if (status != noErr) {
-    // If we can't query latency, estimate based on buffer size
-    return config_.buffer_size * 2; // Conservative estimate (double buffer)
+  if (config_.num_inputs > 0) {
+    add_route(input_device_id_, kAudioObjectPropertyScopeInput);
+  }
+  if (config_.num_outputs > 0) {
+    add_route(output_device_id_, kAudioObjectPropertyScopeOutput);
   }
 
-  // Add buffer size to device latency
-  return latency + config_.buffer_size;
+  // CoreAudio's round-trip formula counts the active I/O buffer once. The
+  // requested size is only advisory, so an unavailable readback means latency
+  // is undetected — never substitute an estimate.
+  const UInt32 buffer_frames = getUInt32Property(device_id_, kAudioDevicePropertyBufferFrameSize,
+                                                 kAudioObjectPropertyScopeGlobal);
+  if (buffer_frames == 0) {
+    return 0;
+  }
+  latency += buffer_frames;
+
+  // Includes converters and aggregate-device drift compensation not represented
+  // by the physical endpoint properties.
+  if (audio_unit_ != nullptr) {
+    Float64 seconds = 0.0;
+    UInt32 size = sizeof(seconds);
+    if (AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
+                             &seconds, &size) == noErr &&
+        seconds > 0.0) {
+      latency +=
+          static_cast<uint64_t>(std::llround(seconds * static_cast<Float64>(config_.sample_rate)));
+    }
+  }
+
+  return static_cast<uint32_t>(std::min<uint64_t>(latency, std::numeric_limits<uint32_t>::max()));
 }
 
 SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
@@ -736,6 +803,8 @@ void CoreAudioDriver::cleanupAudioUnit() {
   }
 
   device_id_ = 0;
+  input_device_id_ = 0;
+  output_device_id_ = 0;
 }
 
 // Factory function
