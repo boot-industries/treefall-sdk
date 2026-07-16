@@ -3,7 +3,7 @@
 # ORP155 — ORP154 Implementation Handoff
 
 **Document type:** Engineering handoff
-**Status:** Implementation verified; pull-request delivery pending
+**Status:** Completed; pull request open and unmerged
 **Branch:** `feat/orp154-fourtrack-contracts`
 **Base:** `main` at `1ab644c6`
 **Date:** 2026-07-16
@@ -129,6 +129,14 @@ the realtime static audit, documentation path audit, version contract, installed
 package consumers, and add-subdirectory checks. The Windows-only WASAPI source
 and fixture were reviewed and updated, but this macOS run does not claim Windows
 compile or execution evidence.
+
+## Delivery record
+
+- Commit: `feat(audio): add directional endpoint contracts`
+- Branch: `feat/orp154-fourtrack-contracts`
+- Pull request: [#218](https://github.com/chrislyons/orpheus-sdk/pull/218)
+- Target: `main`
+- Merge state at handoff completion: open; not merged
 
 ## Documentation and delivery
 
