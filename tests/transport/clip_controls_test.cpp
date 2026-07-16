@@ -262,6 +262,56 @@ TEST_F(ClipAudioControlsTest, PlaybackRateControlsSourcePosition) {
   EXPECT_EQ(transport->getClipPosition(handle), 16);
 }
 
+TEST_F(ClipAudioControlsTest, SegmentProgramRepeatsAndAdvancesWithinOneRenderBlock) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  value.segmentCount = 2;
+  value.segments[0] = {100, 116, 2};
+  value.segments[1] = {200, 216, 1};
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 40> left{};
+  std::array<float, 40> right{};
+  render(left, right);
+
+  EXPECT_EQ(transport->getClipPosition(handle), 208);
+  for (float sample : left)
+    EXPECT_GT(std::abs(sample), 0.1f);
+}
+
+TEST_F(ClipAudioControlsTest, SegmentProgramValidationIsAtomicAndUnrelatedUpdatesDoNotRestart) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  value.segmentCount = 1;
+  value.segments[0] = {100, 200, 3};
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+  EXPECT_EQ(transport->getClipPosition(handle), 116);
+
+  value.gainDb = -3.0f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  render(left, right);
+  EXPECT_EQ(transport->getClipPosition(handle), 132);
+
+  auto invalid = value;
+  invalid.segments[0].repeatCount = 0;
+  EXPECT_EQ(transport->updateClipMetadata(handle, invalid), SessionGraphError::InvalidParameter);
+  invalid = value;
+  invalid.segments[0].endSample = kFileFrames + 1;
+  EXPECT_EQ(transport->updateClipMetadata(handle, invalid), SessionGraphError::InvalidParameter);
+
+  const auto restored = metadata();
+  EXPECT_EQ(restored.segmentCount, 1u);
+  EXPECT_EQ(restored.segments[0], value.segments[0]);
+}
+
 TEST_F(ClipAudioControlsTest, OperatorStopFadeIsIndependentFromTailFade) {
   auto value = metadata();
   value.fadeInSeconds = 0.0;
