@@ -244,6 +244,38 @@ if(TARGET orpheus_audio_io)
         COMMAND clip_gain_test
     )
 
+    # Per-clip audio-control contract tests (ORP152)
+    add_executable(clip_controls_test
+        clip_controls_test.cpp
+    )
+
+    target_link_libraries(clip_controls_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(clip_controls_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(clip_controls_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(clip_controls_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+    )
+
+    add_test(
+        NAME clip_controls_test
+        COMMAND clip_controls_test
+    )
+
     # Clip loop tests (ORP099 Task 1.2)
     add_executable(clip_loop_test
         clip_loop_test.cpp
@@ -800,4 +832,5 @@ if(TARGET orpheus_audio_io)
         NAME sample_rate_conversion_test
         COMMAND sample_rate_conversion_test
     )
+
 endif()
