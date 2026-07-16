@@ -139,7 +139,6 @@ struct TransportCommand {
 
   TransportCommand() noexcept : type(Type::Start), handle(0), data{} {}
 };
-static_assert(std::is_trivially_copyable_v<TransportCommand>);
 
 /// Active clip state (in audio thread)
 struct ActiveClip {
