@@ -49,6 +49,8 @@ struct ClipPlaybackContext {
   double playbackRate;
   int64_t playDelayFrames;
   bool loopEnabled;
+  uint32_t segmentCount{0};
+  std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
   uint16_t numChannels;
   RoutingGroupIndex routingGroup{0};
   VoiceMode voiceMode; // ORP127 G5: voice policy captured at fire time
@@ -130,9 +132,14 @@ struct TransportCommand {
       double playbackRate;
       int64_t playDelayFrames;
       RoutingGroupIndex routingGroup;
+      uint32_t segmentCount;
+      std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments;
     } metadata;
   } data;
+
+  TransportCommand() noexcept : type(Type::Start), handle(0), data{} {}
 };
+static_assert(std::is_trivially_copyable_v<TransportCommand>);
 
 /// Active clip state (in audio thread)
 struct ActiveClip {
@@ -185,6 +192,10 @@ struct ActiveClip {
 
   // Loop mode (atomic for thread safety)
   std::atomic<bool> loopEnabled{false}; // true = loop indefinitely
+  uint32_t segmentCount{0};
+  uint32_t segmentIndex{0};
+  uint32_t segmentRepeatsRemaining{0};
+  std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
 
   float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
   bool isStopping;         // true if fade-out in progress
@@ -610,6 +621,8 @@ private:
     std::array<Speaker, MAX_FILE_CHANNELS> speakerPatch = {
         Speaker::None, Speaker::None, Speaker::None, Speaker::None,
         Speaker::None, Speaker::None, Speaker::None, Speaker::None};
+    uint32_t segmentCount = 0;
+    std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
 
     // ORP134 G1: the realtime playback source built by prepareClipAudio()
     // (or lazily by startClip). The reader above remains the background

@@ -173,6 +173,22 @@ struct OutputBusRoute {
   bool operator==(const OutputBusRoute&) const = default;
 };
 
+inline constexpr uint32_t kMaxClipPlaybackSegments = 64;
+inline constexpr uint32_t kMaxClipSegmentRepeatCount = 9999;
+
+/// One source-range entry in a clip's bounded realtime segment program.
+///
+/// Segment programs are host-authored control metadata. Stable segment IDs and
+/// source-identity reconciliation remain host/session concerns; the transport
+/// consumes only validated sample windows and repeat counts.
+struct ClipPlaybackSegment {
+  int64_t startSample = 0;
+  int64_t endSample = 0;
+  uint32_t repeatCount = 1;
+
+  bool operator==(const ClipPlaybackSegment&) const = default;
+};
+
 /// Clip metadata for batch updates.
 ///
 /// `fadeOut*` defines the envelope at a natural trim-OUT boundary. The
@@ -201,6 +217,8 @@ struct ClipMetadata {
   std::array<Speaker, 8> speakerPatch = {Speaker::None, Speaker::None, Speaker::None,
                                          Speaker::None, Speaker::None, Speaker::None,
                                          Speaker::None, Speaker::None};
+  uint32_t segmentCount = 0; ///< Valid entries in segments; zero uses trim IN/OUT
+  std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
 };
 /// Session-level default metadata for new clips.
 ///

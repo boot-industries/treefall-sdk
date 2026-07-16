@@ -128,6 +128,42 @@ void beginOperatorStop(ActiveClip& clip) noexcept {
           : 0;
 }
 
+enum class PlaybackBoundaryAction : uint8_t { Ended, Advanced, Looped };
+
+int64_t playbackWindowStart(const ActiveClip& clip) noexcept {
+  return clip.segmentCount == 0 ? clip.trimInSamples.load(std::memory_order_relaxed)
+                                : clip.segments[clip.segmentIndex].startSample;
+}
+
+int64_t playbackWindowEnd(const ActiveClip& clip) noexcept {
+  return clip.segmentCount == 0 ? clip.trimOutSamples.load(std::memory_order_relaxed)
+                                : clip.segments[clip.segmentIndex].endSample;
+}
+
+void resetSegmentCursor(ActiveClip& clip) noexcept {
+  clip.segmentIndex = 0;
+  clip.segmentRepeatsRemaining = clip.segmentCount == 0 ? 0 : clip.segments[0].repeatCount;
+}
+
+PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled) noexcept {
+  if (clip.segmentCount != 0) {
+    if (clip.segmentRepeatsRemaining > 1) {
+      --clip.segmentRepeatsRemaining;
+      return PlaybackBoundaryAction::Advanced;
+    }
+    if (clip.segmentIndex + 1 < clip.segmentCount) {
+      ++clip.segmentIndex;
+      clip.segmentRepeatsRemaining = clip.segments[clip.segmentIndex].repeatCount;
+      return PlaybackBoundaryAction::Advanced;
+    }
+    if (!loopEnabled)
+      return PlaybackBoundaryAction::Ended;
+    resetSegmentCursor(clip);
+    return PlaybackBoundaryAction::Looped;
+  }
+  return loopEnabled ? PlaybackBoundaryAction::Looped : PlaybackBoundaryAction::Ended;
+}
+
 } // namespace
 
 TransportController::TransportController(core::SessionGraph* sessionGraph,
@@ -263,6 +299,8 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
       context->gainDb = entry.gainDb;
       context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
+      context->segmentCount = entry.segmentCount;
+      context->segments = entry.segments;
       context->routingGroup = entry.routingGroup;
       context->voiceMode = entry.voiceMode;
       return SessionGraphError::OK;
@@ -477,8 +515,6 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       continue;
     }
 
-    const int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-    const int64_t trimOut = clip.trimOutSamples.load(std::memory_order_acquire);
     const int64_t fadeInSampleCount = clip.fadeInSamples.load(std::memory_order_acquire);
     const int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
     const FadeCurve fadeInCurveType = clip.fadeInCurve.load(std::memory_order_acquire);
@@ -505,33 +541,47 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     }
 
     while (outputFrame < numFrames) {
-      if (clip.sourcePosition < static_cast<double>(trimIn)) {
-        clip.sourcePosition = static_cast<double>(trimIn);
-        clip.currentSample = trimIn;
-        clip.source->setDemand(trimIn);
+      int64_t activeWindowStart = playbackWindowStart(clip);
+      int64_t activeWindowEnd = playbackWindowEnd(clip);
+      if (clip.sourcePosition < static_cast<double>(activeWindowStart)) {
+        clip.sourcePosition = static_cast<double>(activeWindowStart);
+        clip.currentSample = activeWindowStart;
+        clip.source->setDemand(activeWindowStart);
       }
 
-      if (!clip.isStopping && clip.sourcePosition >= static_cast<double>(trimOut)) {
-        if (loopEnabled) {
-          clip.sourcePosition = static_cast<double>(trimIn);
-          clip.currentSample = trimIn;
-          clip.source->setDemand(trimIn);
+      if (!clip.isStopping && clip.sourcePosition >= static_cast<double>(activeWindowEnd)) {
+        const auto boundary = advancePlaybackWindow(clip, loopEnabled);
+        if (boundary != PlaybackBoundaryAction::Ended) {
+          activeWindowStart = playbackWindowStart(clip);
+          activeWindowEnd = playbackWindowEnd(clip);
+          clip.sourcePosition = static_cast<double>(activeWindowStart);
+          clip.currentSample = activeWindowStart;
+          clip.source->setDemand(activeWindowStart);
           clip.hasLoopedOnce = true;
 
-          TransportEvent event{};
-          event.type = TransportEventType::ClipLooped;
-          event.handle = clip.handle;
-          event.voiceId = clip.voiceId;
-          event.position = getCurrentPosition();
-          postTransportEvent(event);
+          if (boundary == PlaybackBoundaryAction::Looped) {
+            TransportEvent event{};
+            event.type = TransportEventType::ClipLooped;
+            event.handle = clip.handle;
+            event.voiceId = clip.voiceId;
+            event.position = getCurrentPosition();
+            postTransportEvent(event);
+          }
         } else {
           clip.isStopping = true;
           clip.isNaturalEnding = true;
           clip.fadeOutGain = 1.0f;
-          clip.fadeOutStartPos = trimOut;
+          clip.fadeOutStartPos = activeWindowEnd;
           clip.stopFadeFramesElapsed = 0;
         }
       }
+
+      const bool atProgramStart =
+          clip.segmentCount == 0 ||
+          (clip.segmentIndex == 0 && clip.segmentRepeatsRemaining == clip.segments[0].repeatCount);
+      const bool atProgramEnd =
+          clip.segmentCount == 0 ||
+          (clip.segmentIndex + 1 == clip.segmentCount && clip.segmentRepeatsRemaining == 1);
 
       int64_t activeStopFadeSamples = 0;
       FadeCurve activeStopFadeCurve = operatorStopFadeCurve;
@@ -557,7 +607,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         segmentFrames = std::min(
             segmentFrames, static_cast<size_t>(activeStopFadeSamples - clip.stopFadeFramesElapsed));
       } else {
-        const double sourceFramesToOut = static_cast<double>(trimOut) - clip.sourcePosition;
+        const double sourceFramesToOut = static_cast<double>(activeWindowEnd) - clip.sourcePosition;
         const size_t outputFramesToOut =
             static_cast<size_t>(std::max(1.0, std::ceil(sourceFramesToOut / playbackRate)));
         segmentFrames = std::min(segmentFrames, outputFramesToOut);
@@ -590,13 +640,14 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       }
       std::array<float, 8> loopStartFrame{};
       bool hasLoopStartFrame = false;
-      if (loopEnabled && readStart + static_cast<int64_t>(requestedInputFrames) > trimOut) {
+      if (clip.segmentCount == 0 && loopEnabled &&
+          readStart + static_cast<int64_t>(requestedInputFrames) > activeWindowEnd) {
         size_t loopStartFramesRead = 0;
         hasLoopStartFrame =
-            clip.source->read(trimIn, loopStartFrame.data(), 1, loopStartFramesRead) &&
+            clip.source->read(activeWindowStart, loopStartFrame.data(), 1, loopStartFramesRead) &&
             loopStartFramesRead == 1;
         if (!hasLoopStartFrame) {
-          clip.source->setDemand(trimIn);
+          clip.source->setDemand(activeWindowStart);
         }
       }
 
@@ -638,19 +689,20 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
             static_cast<float>(localPosition - static_cast<double>(firstInputFrame));
 
         const int64_t relativePosition =
-            static_cast<int64_t>(std::floor(frameSourcePosition)) - trimIn;
+            static_cast<int64_t>(std::floor(frameSourcePosition)) - activeWindowStart;
         if (!loopEnabled) {
-          if (fadeInSampleCount > 0 && relativePosition >= 0 &&
+          if (atProgramStart && fadeInSampleCount > 0 && relativePosition >= 0 &&
               relativePosition < fadeInSampleCount) {
             const float fadePosition =
                 static_cast<float>(relativePosition) / static_cast<float>(fadeInSampleCount);
             gain *= calculateFadeGain(fadePosition, fadeInCurveType);
           }
 
-          const int64_t trimmedDuration = trimOut - trimIn;
-          if (fadeOutSampleCount > 0 && relativePosition >= trimmedDuration - fadeOutSampleCount) {
+          const int64_t activeWindowDuration = activeWindowEnd - activeWindowStart;
+          if (atProgramEnd && fadeOutSampleCount > 0 &&
+              relativePosition >= activeWindowDuration - fadeOutSampleCount) {
             const float fadePosition = std::clamp(
-                static_cast<float>(relativePosition - (trimmedDuration - fadeOutSampleCount)) /
+                static_cast<float>(relativePosition - (activeWindowDuration - fadeOutSampleCount)) /
                     static_cast<float>(fadeOutSampleCount),
                 0.0f, 1.0f);
             gain *= 1.0f - calculateFadeGain(fadePosition, fadeOutCurveType);
@@ -660,11 +712,14 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         std::array<float, 8> sourceFrame{};
         for (size_t channel = 0; channel < numFileChannels; ++channel) {
           const float first = clipReadBuffer[firstInputFrame * numFileChannels + channel];
-          const bool secondFrameWraps =
-              loopEnabled && readStart + static_cast<int64_t>(secondInputFrame) >= trimOut;
-          const float second = secondFrameWraps
-                                   ? (hasLoopStartFrame ? loopStartFrame[channel] : first)
-                                   : clipReadBuffer[secondInputFrame * numFileChannels + channel];
+          const bool secondFrameCrossesWindow =
+              readStart + static_cast<int64_t>(secondInputFrame) >= activeWindowEnd;
+          const float second =
+              secondFrameCrossesWindow && clip.segmentCount != 0
+                  ? first
+                  : (secondFrameCrossesWindow && loopEnabled
+                         ? (hasLoopStartFrame ? loopStartFrame[channel] : first)
+                         : clipReadBuffer[secondInputFrame * numFileChannels + channel]);
           sourceFrame[channel] = first + (second - first) * fraction;
         }
 
@@ -771,29 +826,32 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       continue;
     }
 
-    const int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
-    if (clip.currentSample >= clipTrimOut) {
+    const int64_t activeWindowEnd = playbackWindowEnd(clip);
+    if (clip.currentSample >= activeWindowEnd) {
       const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
-      if (shouldLoop) {
-        const int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-        clip.currentSample = trimIn;
-        clip.sourcePosition = static_cast<double>(trimIn);
+      const auto boundary = advancePlaybackWindow(clip, shouldLoop);
+      if (boundary != PlaybackBoundaryAction::Ended) {
+        const int64_t nextStart = playbackWindowStart(clip);
+        clip.currentSample = nextStart;
+        clip.sourcePosition = static_cast<double>(nextStart);
         if (clip.source) {
-          clip.source->setDemand(trimIn);
+          clip.source->setDemand(nextStart);
         }
         clip.hasLoopedOnce = true;
 
-        TransportEvent event{};
-        event.type = TransportEventType::ClipLooped;
-        event.handle = clip.handle;
-        event.voiceId = clip.voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+        if (boundary == PlaybackBoundaryAction::Looped) {
+          TransportEvent event{};
+          event.type = TransportEventType::ClipLooped;
+          event.handle = clip.handle;
+          event.voiceId = clip.voiceId;
+          event.position = getCurrentPosition();
+          postTransportEvent(event);
+        }
       } else {
         clip.isStopping = true;
         clip.isNaturalEnding = true;
         clip.fadeOutGain = 1.0f;
-        clip.fadeOutStartPos = clipTrimOut;
+        clip.fadeOutStartPos = activeWindowEnd;
         clip.stopFadeFramesElapsed = 0;
       }
     }
@@ -998,20 +1056,21 @@ void TransportController::processCommands() {
       // ORP127 G1: Restart moved onto the audio thread (was a UI-thread mutation
       // of currentSample/reader/isStopping/hasLoopedOnce). Restart ALL voices
       // for the handle back to trim IN, applying the broadcast-safe crossfade.
-      int64_t trimIn = 0;
+      int64_t startPosition = 0;
       bool foundAnyVoice = false;
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
           foundAnyVoice = true;
           ActiveClip& clip = m_activeClips[i];
 
-          trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
-          clip.currentSample = trimIn;
-          clip.sourcePosition = static_cast<double>(trimIn);
+          resetSegmentCursor(clip);
+          startPosition = playbackWindowStart(clip);
+          clip.currentSample = startPosition;
+          clip.sourcePosition = static_cast<double>(startPosition);
           clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
           clip.isNaturalEnding = false;
           if (clip.source) {
-            clip.source->setDemand(trimIn);
+            clip.source->setDemand(startPosition);
           }
 
           // Cancel any fade-out in progress.
@@ -1032,7 +1091,7 @@ void TransportController::processCommands() {
         TransportEvent event{};
         event.type = TransportEventType::ClipRestarted;
         event.handle = cmd.handle;
-        event.position = positionAtSamples(trimIn);
+        event.position = positionAtSamples(startPosition);
         postTransportEvent(event);
       }
     } break;
@@ -1069,6 +1128,26 @@ void TransportController::processCommands() {
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
           ActiveClip& clip = m_activeClips[i];
+          const bool segmentProgramChanged =
+              clip.segmentCount != cmd.data.metadata.segmentCount ||
+              !std::equal(clip.segments.begin(),
+                          clip.segments.begin() +
+                              std::min(clip.segmentCount, cmd.data.metadata.segmentCount),
+                          cmd.data.metadata.segments.begin());
+          if (segmentProgramChanged) {
+            clip.segmentCount = cmd.data.metadata.segmentCount;
+            clip.segments = cmd.data.metadata.segments;
+            resetSegmentCursor(clip);
+            const int64_t startPosition =
+                clip.segmentCount == 0 ? cmd.data.metadata.trimIn : clip.segments[0].startSample;
+            clip.currentSample = startPosition;
+            clip.sourcePosition = static_cast<double>(startPosition);
+            clip.isStopping = false;
+            clip.isNaturalEnding = false;
+            if (clip.source) {
+              clip.source->setDemand(startPosition);
+            }
+          }
           clip.trimInSamples.store(cmd.data.metadata.trimIn, std::memory_order_release);
           clip.trimOutSamples.store(cmd.data.metadata.trimOut, std::memory_order_release);
           clip.fadeInSeconds.store(cmd.data.metadata.fadeInSeconds, std::memory_order_release);
@@ -1190,14 +1269,15 @@ uint64_t TransportController::allocateVoiceStartOrdinal() noexcept {
   return ordinal;
 }
 void TransportController::restartVoiceInPlace(ActiveClip& clip) {
-  // ORP127 G5: reset a live voice to its trim IN for an in-place restart.
-  int64_t trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
-  clip.currentSample = trimIn;
-  clip.sourcePosition = static_cast<double>(trimIn);
+  // ORP127 G5: reset a live voice to its first programmed source window.
+  resetSegmentCursor(clip);
+  const int64_t startPosition = playbackWindowStart(clip);
+  clip.currentSample = startPosition;
+  clip.sourcePosition = static_cast<double>(startPosition);
   clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
   clip.isNaturalEnding = false;
   if (clip.source) {
-    clip.source->setDemand(trimIn);
+    clip.source->setDemand(startPosition);
   }
   clip.isStopping = false;
   clip.fadeOutGain = 1.0f;
@@ -1244,13 +1324,14 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
     if (!primary)
       return addActiveClip(context);
 
-    const int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
-    primary->currentSample = trimIn;
-    primary->sourcePosition = static_cast<double>(trimIn);
+    resetSegmentCursor(*primary);
+    const int64_t startPosition = playbackWindowStart(*primary);
+    primary->currentSample = startPosition;
+    primary->sourcePosition = static_cast<double>(startPosition);
     primary->playDelayFramesRemaining = primary->playDelayFrames.load(std::memory_order_relaxed);
     primary->isNaturalEnding = false;
     if (primary->source)
-      primary->source->setDemand(trimIn);
+      primary->source->setDemand(startPosition);
     primary->isStopping = false;
     primary->fadeOutGain = 1.0f;
     primary->hasLoopedOnce = false;
@@ -1379,12 +1460,17 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
-  clip.sourcePosition = static_cast<double>(context->trimInSamples);
+  clip.segmentCount = context->segmentCount;
+  clip.segments = context->segments;
+  resetSegmentCursor(clip);
+  const int64_t startPosition =
+      clip.segmentCount == 0 ? context->trimInSamples : clip.segments[0].startSample;
+  clip.sourcePosition = static_cast<double>(startPosition);
   clip.handle = handle;
   clip.voiceId = voiceId;
   clip.startOrdinal = startOrdinal;
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
-  clip.currentSample = context->trimInSamples; // CRITICAL: Start from IN point
+  clip.currentSample = startPosition;
 
   // Initialize trim points
   clip.trimInSamples.store(context->trimInSamples, std::memory_order_release);
@@ -1444,10 +1530,10 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // ORP097 Bug 7 Fix: Initialize loop state
   clip.hasLoopedOnce = false;
 
-  // Prime the streaming prefetcher at the trim IN point (no-op for prepared
-  // sources; sources are position-explicit so there is nothing to seek).
+  // Prime the streaming prefetcher at the first programmed source window
+  // (no-op for prepared sources; reads remain position-explicit).
   if (clip.source) {
-    clip.source->setDemand(context->trimInSamples);
+    clip.source->setDemand(startPosition);
   }
   return true;
 }
@@ -1510,6 +1596,10 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.playDelayFramesRemaining = src.playDelayFramesRemaining;
         dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
                                std::memory_order_relaxed);
+        dest.segmentCount = src.segmentCount;
+        dest.segmentIndex = src.segmentIndex;
+        dest.segmentRepeatsRemaining = src.segmentRepeatsRemaining;
+        dest.segments = src.segments;
         dest.fadeOutGain = src.fadeOutGain;
         dest.isStopping = src.isStopping;
         dest.fadeOutStartPos = src.fadeOutStartPos;
@@ -1943,6 +2033,12 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
       return SessionGraphError::ClipNotRegistered;
     }
     fileDurationSamples = it->second.metadata.duration_samples;
+    for (uint32_t index = 0; index < it->second.segmentCount; ++index) {
+      const auto& segment = it->second.segments[index];
+      if (segment.startSample < trimInSamples || segment.endSample > trimOutSamples) {
+        return SessionGraphError::InvalidClipTrimPoints;
+      }
+    }
   }
 
   // Validate trim points
@@ -2117,6 +2213,7 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
 }
 
 SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool shouldLoop) {
+
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }
@@ -2217,6 +2314,18 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return SessionGraphError::InvalidClipTrimPoints;
   }
 
+  if (metadata.segmentCount > kMaxClipPlaybackSegments) {
+    return SessionGraphError::InvalidParameter;
+  }
+  for (uint32_t index = 0; index < metadata.segmentCount; ++index) {
+    const auto& segment = metadata.segments[index];
+    if (segment.startSample < metadata.trimInSamples || segment.endSample <= segment.startSample ||
+        segment.endSample > trimOut || segment.repeatCount == 0 ||
+        segment.repeatCount > kMaxClipSegmentRepeatCount) {
+      return SessionGraphError::InvalidParameter;
+    }
+  }
+
   // Validate fade durations
   int64_t clipDuration = trimOut - metadata.trimInSamples;
   double clipDurationSeconds =
@@ -2293,6 +2402,8 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.playbackRate = metadata.playbackRate;
   cmd.data.metadata.playDelayFrames = playDelayFrames;
   cmd.data.metadata.routingGroup = metadata.routingGroup;
+  cmd.data.metadata.segmentCount = metadata.segmentCount;
+  cmd.data.metadata.segments = metadata.segments;
 
   // Queue admission precedes the persistent commit. A full ring therefore
   // cannot publish metadata that active voices did not receive, which is
@@ -2328,6 +2439,8 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     it->second.sourceLayout = metadata.sourceLayout;
     it->second.speakerPatchSize = metadata.speakerPatchSize;
     it->second.speakerPatch = metadata.speakerPatch;
+    it->second.segmentCount = metadata.segmentCount;
+    it->second.segments = metadata.segments;
   }
 
   return SessionGraphError::OK;
@@ -2355,6 +2468,8 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   metadata.stopFadeOutSeconds = it->second.stopFadeOutSeconds;
   metadata.stopFadeOutCurve = it->second.stopFadeOutCurve;
   metadata.loopEnabled = it->second.loopEnabled;
+  metadata.segmentCount = it->second.segmentCount;
+  metadata.segments = it->second.segments;
   metadata.stopOthersOnPlay = it->second.stopOthersOnPlay;
   metadata.voiceMode = it->second.voiceMode; // ORP127 G5
   metadata.gainDb = it->second.gainDb;
