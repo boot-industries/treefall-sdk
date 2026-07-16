@@ -101,9 +101,10 @@ private:
 
   /// Query the complete capture-to-playback latency of the active physical
   /// routes, including device latency, safety offsets, actual I/O buffer
-  /// depths, and AudioUnit processing latency.
-  /// @return Round-trip latency in samples
-  uint32_t queryDeviceLatency();
+  /// depth, and AudioUnit processing latency. Queried live so a consumer
+  /// route's reported delay is refreshed for every host take.
+  /// @return Round-trip latency in samples, or 0 when it cannot be detected
+  uint32_t queryDeviceLatency() const;
 
   /// Set up AudioUnit with configuration
   /// @param device_id Device to use
@@ -127,7 +128,6 @@ private:
   AudioDeviceID input_device_id_{0};
   AudioDeviceID output_device_id_{0};
   std::atomic<bool> is_running_{false};
-  std::atomic<uint32_t> latency_samples_{0};
   std::atomic<uint64_t> input_render_failures_{0};
 
   // Callback

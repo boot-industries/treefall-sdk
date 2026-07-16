@@ -67,11 +67,6 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     return result;
   }
 
-  // Query the physical routes, not the private aggregate wrapper. Consumer
-  // outputs (Bluetooth/AirPods in particular) report their large transport
-  // delay on the output sub-device.
-  latency_samples_.store(queryDeviceLatency(), std::memory_order_release);
-
   // Pre-allocate audio buffers (no allocations in audio callback)
   uint32_t num_outputs = config_.num_outputs;
   uint32_t buffer_size = config_.buffer_size;
@@ -168,7 +163,10 @@ std::string CoreAudioDriver::getDriverName() const {
 }
 
 uint32_t CoreAudioDriver::getLatencySamples() const {
-  return latency_samples_.load(std::memory_order_acquire);
+  // Query the physical routes, not the private aggregate wrapper. Consumer
+  // outputs (Bluetooth/AirPods in particular) report their transport delay on
+  // the output sub-device, and that report can change while a route is active.
+  return queryDeviceLatency();
 }
 
 uint64_t CoreAudioDriver::getInputRenderFailureCount() const {
@@ -623,7 +621,7 @@ std::string CoreAudioDriver::getDeviceName(AudioDeviceID device_id) {
   return success ? std::string(buffer) : "";
 }
 
-uint32_t CoreAudioDriver::queryDeviceLatency() {
+uint32_t CoreAudioDriver::queryDeviceLatency() const {
   uint64_t latency = 0;
 
   const auto add_route = [&](AudioDeviceID device_id, AudioObjectPropertyScope scope) {
@@ -639,12 +637,15 @@ uint32_t CoreAudioDriver::queryDeviceLatency() {
     add_route(output_device_id_, kAudioObjectPropertyScopeOutput);
   }
 
-  // CoreAudio's round-trip formula counts the active I/O buffer once. Read it
-  // back from the opened device because the requested size is advisory and is
-  // commonly rejected by high-latency consumer routes.
+  // CoreAudio's round-trip formula counts the active I/O buffer once. The
+  // requested size is only advisory, so an unavailable readback means latency
+  // is undetected — never substitute an estimate.
   const UInt32 buffer_frames = getUInt32Property(device_id_, kAudioDevicePropertyBufferFrameSize,
                                                  kAudioObjectPropertyScopeGlobal);
-  latency += buffer_frames == 0 ? config_.buffer_size : buffer_frames;
+  if (buffer_frames == 0) {
+    return 0;
+  }
+  latency += buffer_frames;
 
   // Includes converters and aggregate-device drift compensation not represented
   // by the physical endpoint properties.
