@@ -62,6 +62,10 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     buffer.resize(config.num_outputs, MAX_BUFFER_SIZE);
   }
 
+  // One reusable stereo scratch buffer keeps channel meters isolated from the
+  // shared group accumulators without allocating in processRouting().
+  m_channel_meter_buffer.resize(2, MAX_BUFFER_SIZE);
+
   m_temp_buffer.clear();
   m_temp_buffer.resize(MAX_BUFFER_SIZE, 0.0f);
 
@@ -640,12 +644,21 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     const RoutingGroupIndex group_index = channel.group_index;
 
     if (group_index == UNASSIGNED_GROUP || group_index >= config.num_groups) {
+      if (config.enable_metering) {
+        publishChannelMeterSilence(channel);
+      }
       continue;
     }
 
     const float* input = channel_inputs ? channel_inputs[channel_index] : nullptr;
     const bool muted = isChannelMuted(channel_index) || input == nullptr;
     auto& group_buffer = m_group_buffers[group_index];
+    auto& meter_left = m_channel_meter_buffer.channels[0];
+    auto& meter_right = m_channel_meter_buffer.channels[1];
+    if (config.enable_metering) {
+      std::fill_n(meter_left.begin(), num_frames, 0.0f);
+      std::fill_n(meter_right.begin(), num_frames, 0.0f);
+    }
 
     RoutingOutputIndex discrete_output = channel.config.output_channel;
     if (discrete_output >= config.num_outputs) {
@@ -664,25 +677,47 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       switch (config.source_channel_policy) {
       case SourceChannelPolicy::Discrete:
         group_buffer.channels[discrete_output][frame] += sample;
-        break;
-      case SourceChannelPolicy::StereoPairs:
-        group_buffer.channels[0][frame] += sample * pan_left;
-        if (config.num_outputs > 1) {
-          group_buffer.channels[1][frame] += sample * pan_right;
+        if (config.enable_metering) {
+          meter_left[frame] = sample;
         }
         break;
+      case SourceChannelPolicy::StereoPairs: {
+        const float left = sample * pan_left;
+        group_buffer.channels[0][frame] += left;
+        if (config.enable_metering) {
+          meter_left[frame] = left;
+        }
+        if (config.num_outputs > 1) {
+          const float right = sample * pan_right;
+          group_buffer.channels[1][frame] += right;
+          if (config.enable_metering) {
+            meter_right[frame] = right;
+          }
+        }
+        break;
+      }
       case SourceChannelPolicy::MonoFoldDown:
         group_buffer.channels[0][frame] += sample;
+        if (config.enable_metering) {
+          meter_left[frame] = sample;
+        }
         break;
       }
     }
 
-    if (config.enable_metering && !muted) {
-      const float* right =
-          config.num_outputs > 1 ? group_buffer.channels[1].data() : nullptr;
-      processStereoMetering(group_buffer.channels[0].data(), right, num_frames,
-                            channel.true_peak_meters, channel.peak_level, channel.rms_level);
-      if (detectClipping(group_buffer.channels[discrete_output].data(), num_frames)) {
+    if (config.enable_metering) {
+      if (muted) {
+        publishChannelMeterSilence(channel);
+        continue;
+      }
+
+      const bool stereo = config.source_channel_policy == SourceChannelPolicy::StereoPairs &&
+                          config.num_outputs > 1;
+      const float* right = stereo ? meter_right.data() : nullptr;
+      processStereoMetering(meter_left.data(), right, num_frames, channel.true_peak_meters,
+                            channel.peak_level, channel.rms_level);
+      if (detectClipping(meter_left.data(), num_frames) ||
+          (right != nullptr && detectClipping(meter_right.data(), num_frames))) {
         channel.clip_count.fetch_add(1, std::memory_order_relaxed);
       }
     }
@@ -951,6 +986,14 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
       static_cast<float>(std::sqrt(sum_squares / static_cast<double>(num_frames * 2)));
   peak.store(peak_value, std::memory_order_release);
   rms.store(rms_value, std::memory_order_release);
+}
+
+void RoutingMatrix::publishChannelMeterSilence(ChannelState& channel) {
+  channel.peak_level.store(0.0f, std::memory_order_release);
+  channel.rms_level.store(0.0f, std::memory_order_release);
+  for (auto& meter : channel.true_peak_meters) {
+    meter.reset();
+  }
 }
 
 bool RoutingMatrix::detectClipping(float* buffer, size_t num_frames) {

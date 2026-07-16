@@ -190,6 +190,7 @@ private:
   void processStereoMetering(const float* left, const float* right, size_t num_frames,
                              std::array<TruePeakMeter, 2>& true_peak_meters,
                              std::atomic<float>& peak, std::atomic<float>& rms);
+  void publishChannelMeterSilence(ChannelState& channel);
   bool detectClipping(float* buffer, size_t num_frames);
 
   // Configuration (lock-free double-buffer pattern)
@@ -222,6 +223,7 @@ private:
 
   // Audio processing buffers, allocated once during initialize().
   std::vector<MultichannelGroupBuffer> m_group_buffers;
+  MultichannelGroupBuffer m_channel_meter_buffer;
   std::vector<float> m_temp_buffer;
 
   // FTR028: Internal slice size. Kept in lock-step with the public
