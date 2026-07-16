@@ -41,12 +41,33 @@ void writeStereoFixture(const std::string& path) {
   ASSERT_EQ(written.value, kFileFrames);
   ASSERT_EQ(writer->close(), SessionGraphError::OK);
 }
+void writeMonoFixture(const std::string& path) {
+  auto writer = createAudioFileWriter();
+  ASSERT_NE(writer, nullptr);
+
+  AudioFileWriterConfig config;
+  config.format = AudioFileFormat::WAV;
+  config.sample_rate = kSampleRate;
+  config.num_channels = 1;
+  config.sample_format = AudioSampleFormat::Float32;
+  ASSERT_EQ(writer->open(path, config), SessionGraphError::OK);
+
+  std::array<float, kFileFrames> samples{};
+  samples.fill(0.5f);
+  const Result<size_t> written = writer->writeSamples(samples.data(), kFileFrames);
+  ASSERT_TRUE(written.isOk()) << written.errorMessage;
+  ASSERT_EQ(written.value, kFileFrames);
+  ASSERT_EQ(writer->close(), SessionGraphError::OK);
+}
 
 class ClipAudioControlsTest : public ::testing::Test {
 protected:
   void SetUp() override {
     path = (std::filesystem::temp_directory_path() / "orpheus_clip_audio_controls.wav").string();
     writeStereoFixture(path);
+    monoPath =
+        (std::filesystem::temp_directory_path() / "orpheus_clip_audio_controls_mono.wav").string();
+    writeMonoFixture(monoPath);
     transport =
         std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = kSampleRate});
     ASSERT_EQ(transport->registerClipAudio(handle, path.c_str()), SessionGraphError::OK);
@@ -56,6 +77,7 @@ protected:
     transport.reset();
     std::error_code error;
     std::filesystem::remove(path, error);
+    std::filesystem::remove(monoPath, error);
   }
 
   ClipMetadata metadata() const {
@@ -74,6 +96,7 @@ protected:
 
   std::unique_ptr<TransportController> transport;
   std::string path;
+  std::string monoPath;
   const ClipHandle handle = 1;
 };
 
@@ -128,6 +151,28 @@ TEST_F(ClipAudioControlsTest, DelayDefersAudioWithoutAdvancingSource) {
   EXPECT_GT(std::abs(right[48]), 0.2f);
   EXPECT_EQ(transport->getClipPosition(handle), 16);
 }
+TEST_F(ClipAudioControlsTest, StopCancelsVoiceWaitingForDelay) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  value.stopFadeOutSeconds = 0.02;
+  value.playDelaySeconds = 0.05;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+  ASSERT_EQ(transport->stopClip(handle), SessionGraphError::OK);
+
+  std::array<float, 32> left{};
+  std::array<float, 32> right{};
+  render(left, right);
+
+  EXPECT_EQ(transport->getClipState(handle), PlaybackState::Stopped);
+  for (float sample : left) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
+  }
+  for (float sample : right) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
+  }
+}
 
 TEST_F(ClipAudioControlsTest, LiveMuteRampsToSilenceWhileTransportAdvances) {
   auto value = metadata();
@@ -176,6 +221,25 @@ TEST_F(ClipAudioControlsTest, HardLeftPanSuppressesOnlyRightOutput) {
   for (float sample : right) {
     EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
   }
+}
+TEST_F(ClipAudioControlsTest, MonoCenterPanDuplicatesWithConstantPowerGain) {
+  constexpr ClipHandle monoHandle = 2;
+  ASSERT_EQ(transport->registerClipAudio(monoHandle, monoPath.c_str()), SessionGraphError::OK);
+  auto value = transport->getClipMetadata(monoHandle);
+  ASSERT_TRUE(value.has_value());
+  value->fadeInSeconds = 0.0;
+  value->fadeOutSeconds = 0.0;
+  value->pan = 0.0f;
+  ASSERT_EQ(transport->updateClipMetadata(monoHandle, *value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(monoHandle), SessionGraphError::OK);
+
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+
+  constexpr float expected = 0.3535533906f;
+  EXPECT_NEAR(left.front(), expected, 1.0e-5f);
+  EXPECT_NEAR(right.front(), expected, 1.0e-5f);
 }
 
 TEST_F(ClipAudioControlsTest, PlaybackRateControlsSourcePosition) {

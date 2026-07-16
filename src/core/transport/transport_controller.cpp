@@ -115,6 +115,18 @@ std::pair<float, float> panGains(float pan, uint16_t numChannels) noexcept {
       static_cast<double>(std::max(-normalized, 0.0f)) * static_cast<double>(M_PI_2);
   return {static_cast<float>(std::cos(leftAngle)), static_cast<float>(std::cos(rightAngle))};
 }
+void beginOperatorStop(ActiveClip& clip) noexcept {
+  const bool wasWaitingForDelay = clip.playDelayFramesRemaining > 0;
+  clip.isStopping = true;
+  clip.isNaturalEnding = false;
+  clip.fadeOutGain = 1.0f;
+  clip.fadeOutStartPos = clip.currentSample;
+  clip.playDelayFramesRemaining = 0;
+  clip.stopFadeFramesElapsed =
+      wasWaitingForDelay
+          ? std::max<int64_t>(clip.stopFadeOutSamples.load(std::memory_order_relaxed), 0)
+          : 0;
+}
 
 } // namespace
 
@@ -576,6 +588,17 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         clip.source->setDemand(readStart);
         framesRead = 0;
       }
+      std::array<float, 8> loopStartFrame{};
+      bool hasLoopStartFrame = false;
+      if (loopEnabled && readStart + static_cast<int64_t>(requestedInputFrames) > trimOut) {
+        size_t loopStartFramesRead = 0;
+        hasLoopStartFrame =
+            clip.source->read(trimIn, loopStartFrame.data(), 1, loopStartFramesRead) &&
+            loopStartFramesRead == 1;
+        if (!hasLoopStartFrame) {
+          clip.source->setDemand(trimIn);
+        }
+      }
 
       for (size_t frame = 0; frame < segmentFrames; ++frame) {
         if (clip.gainCurrent < clipGainTarget) {
@@ -637,7 +660,11 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         std::array<float, 8> sourceFrame{};
         for (size_t channel = 0; channel < numFileChannels; ++channel) {
           const float first = clipReadBuffer[firstInputFrame * numFileChannels + channel];
-          const float second = clipReadBuffer[secondInputFrame * numFileChannels + channel];
+          const bool secondFrameWraps =
+              loopEnabled && readStart + static_cast<int64_t>(secondInputFrame) >= trimOut;
+          const float second = secondFrameWraps
+                                   ? (hasLoopStartFrame ? loopStartFrame[channel] : first)
+                                   : clipReadBuffer[secondInputFrame * numFileChannels + channel];
           sourceFrame[channel] = first + (second - first) * fraction;
         }
 
@@ -836,11 +863,7 @@ void TransportController::processCommands() {
         for (size_t i = 0; i < m_activeClipCount; ++i) {
           ActiveClip& peer = m_activeClips[i];
           if (peer.handle != cmd.handle && peer.routingGroup == group && !peer.isStopping) {
-            peer.isStopping = true;
-            peer.fadeOutGain = 1.0f;
-            peer.fadeOutStartPos = peer.currentSample;
-            peer.stopFadeFramesElapsed = 0;
-            peer.isNaturalEnding = false;
+            beginOperatorStop(peer);
           }
         }
       }
@@ -850,24 +873,14 @@ void TransportController::processCommands() {
       // Multi-voice: Stop ALL voice instances for this handle
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle && !m_activeClips[i].isStopping) {
-          m_activeClips[i].isStopping = true;
-          m_activeClips[i].fadeOutGain = 1.0f;
-          m_activeClips[i].fadeOutStartPos =
-              m_activeClips[i].currentSample; // Record position when fade-out started
-          m_activeClips[i].stopFadeFramesElapsed = 0;
-          m_activeClips[i].isNaturalEnding = false;
+          beginOperatorStop(m_activeClips[i]);
         }
       }
     } break;
 
     case TransportCommand::Type::StopAll:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
-        m_activeClips[i].isStopping = true;
-        m_activeClips[i].fadeOutGain = 1.0f;
-        m_activeClips[i].fadeOutStartPos =
-            m_activeClips[i].currentSample; // Record position when fade-out started
-        m_activeClips[i].stopFadeFramesElapsed = 0;
-        m_activeClips[i].isNaturalEnding = false;
+        beginOperatorStop(m_activeClips[i]);
       }
       break;
 
@@ -899,11 +912,7 @@ void TransportController::processCommands() {
       // ORP127 G7: choke primitive — stop every voice except cmd.handle.
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle != cmd.handle && !m_activeClips[i].isStopping) {
-          m_activeClips[i].isStopping = true;
-          m_activeClips[i].fadeOutGain = 1.0f;
-          m_activeClips[i].fadeOutStartPos = m_activeClips[i].currentSample;
-          m_activeClips[i].stopFadeFramesElapsed = 0;
-          m_activeClips[i].isNaturalEnding = false;
+          beginOperatorStop(m_activeClips[i]);
         }
       }
       break;

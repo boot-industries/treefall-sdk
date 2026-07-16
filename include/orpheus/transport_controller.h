@@ -191,7 +191,7 @@ struct ClipMetadata {
   bool stopOthersOnPlay = false;                  ///< true = stop other clips on play
   float gainDb = 0.0f;                            ///< Gain in decibels (0 = unity)
   bool muted = false;            ///< Silence the clip while preserving gainDb for later unmute
-  float pan = 0.0f;              ///< Stereo balance [-1, +1]; center preserves source channel level
+  float pan = 0.0f;              ///< Normalized mono pan / stereo balance [-1, +1]
   double playbackRate = 1.0;     ///< Forward varispeed multiplier [0.25, 4.0], pitch-coupled
   double playDelaySeconds = 0.0; ///< Trigger-to-audible delay [0, 99.9] seconds
   VoiceMode voiceMode = VoiceMode::Polyphonic;             ///< Voice allocation policy (ORP127 G5)
