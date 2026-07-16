@@ -82,12 +82,13 @@ source-to-output mapping; only their first stereo pair receives a balance gain.
 1. round-trip persistence and transactional rejection of invalid control
    values;
 2. session-default normalization and propagation to a newly registered clip;
-3. delay without source-cursor advancement;
-4. mute-to-silence while preserving transport advancement, and hard-left
-   suppression of the right output;
-5. variable-rate source-cursor advancement, including an active rate change;
+3. delay without source-cursor advancement and immediate cancellation of a
+   still-delayed voice;
+4. smoothed live mute while preserving transport advancement and gain metadata;
+5. hard-left stereo balance plus constant-power mono center placement;
+6. variable-rate source-cursor advancement, including an active rate change;
    and
-6. independent, output-frame-counted operator-stop fades.
+7. independent, output-frame-counted operator-stop fades.
 
 The pre-existing stop-fade and transport tests remain the regression coverage
 for trim boundaries, restart, loop behavior, routing, voice ownership, and
