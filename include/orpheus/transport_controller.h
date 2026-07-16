@@ -173,18 +173,27 @@ struct OutputBusRoute {
   bool operator==(const OutputBusRoute&) const = default;
 };
 
-/// Clip metadata for batch updates
-/// Contains all configurable playback parameters for a clip
+/// Clip metadata for batch updates.
+///
+/// `fadeOut*` defines the envelope at a natural trim-OUT boundary. The
+/// `stopFadeOut*` fields independently define the envelope for an operator
+/// stop: stopClip(), stopAllClips(), stopOtherClips(), or group choke.
 struct ClipMetadata {
   int64_t trimInSamples = 0;                  ///< Trim IN point in samples (0 = start of file)
   int64_t trimOutSamples = 0;                 ///< Trim OUT point in samples (0 = use file duration)
   double fadeInSeconds = 0.0;                 ///< Fade-in duration in seconds
-  double fadeOutSeconds = 0.0;                ///< Fade-out duration in seconds
+  double fadeOutSeconds = 0.0;                ///< Natural-END fade duration in seconds
   FadeCurve fadeInCurve = FadeCurve::Linear;  ///< Fade-in curve type
-  FadeCurve fadeOutCurve = FadeCurve::Linear; ///< Fade-out curve type
-  bool loopEnabled = false;                   ///< true = loop indefinitely
-  bool stopOthersOnPlay = false;              ///< true = stop other clips on play
-  float gainDb = 0.0f;                        ///< Gain in decibels (0 = unity)
+  FadeCurve fadeOutCurve = FadeCurve::Linear; ///< Natural-END fade curve type
+  double stopFadeOutSeconds = 0.01;           ///< Operator-stop fade duration in seconds
+  FadeCurve stopFadeOutCurve = FadeCurve::Linear; ///< Operator-stop fade curve type
+  bool loopEnabled = false;                       ///< true = loop indefinitely
+  bool stopOthersOnPlay = false;                  ///< true = stop other clips on play
+  float gainDb = 0.0f;                            ///< Gain in decibels (0 = unity)
+  bool muted = false;            ///< Silence the clip while preserving gainDb for later unmute
+  float pan = 0.0f;              ///< Stereo balance [-1, +1]; center preserves source channel level
+  double playbackRate = 1.0;     ///< Forward varispeed multiplier [0.25, 4.0], pitch-coupled
+  double playDelaySeconds = 0.0; ///< Trigger-to-audible delay [0, 99.9] seconds
   VoiceMode voiceMode = VoiceMode::Polyphonic;             ///< Voice allocation policy (ORP127 G5)
   RoutingGroupIndex routingGroup = 0;                      ///< Logical bus assignment
   ChannelLayout sourceLayout = ChannelLayout::Unspecified; ///< Explicit source channel meaning
@@ -193,17 +202,26 @@ struct ClipMetadata {
                                          Speaker::None, Speaker::None, Speaker::None,
                                          Speaker::None, Speaker::None};
 };
-
 /// Session-level default metadata for new clips.
-/// These defaults are applied when registerClipAudio() is called.
+///
+/// These values are copied when registerClipAudio() creates a registry entry;
+/// later default changes do not mutate existing clips. The setter normalizes
+/// pan, rate, and delay to their ClipMetadata bounds; an operator-stop default
+/// longer than a new clip is clamped to that clip's duration.
 struct SessionDefaults {
-  double fadeInSeconds = 0.0;                 ///< Default fade-in time (0.0 = no fade)
-  double fadeOutSeconds = 0.0;                ///< Default fade-out time (0.0 = no fade)
-  FadeCurve fadeInCurve = FadeCurve::Linear;  ///< Default fade-in curve
-  FadeCurve fadeOutCurve = FadeCurve::Linear; ///< Default fade-out curve
-  bool loopEnabled = false;                   ///< Default loop mode
-  bool stopOthersOnPlay = false;              ///< Default "stop others" mode
-  float gainDb = 0.0f;                        ///< Default gain in dB (0.0 = unity)
+  double fadeInSeconds = 0.0;                     ///< Default fade-in time (0.0 = no fade)
+  double fadeOutSeconds = 0.0;                    ///< Default natural-END fade time
+  FadeCurve fadeInCurve = FadeCurve::Linear;      ///< Default fade-in curve
+  FadeCurve fadeOutCurve = FadeCurve::Linear;     ///< Default natural-END fade curve
+  double stopFadeOutSeconds = 0.01;               ///< Default operator-stop fade duration
+  FadeCurve stopFadeOutCurve = FadeCurve::Linear; ///< Default operator-stop fade curve
+  bool loopEnabled = false;                       ///< Default loop mode
+  bool stopOthersOnPlay = false;                  ///< Default "stop others" mode
+  float gainDb = 0.0f;                            ///< Default gain in dB (0.0 = unity)
+  bool muted = false;                             ///< Default mute state
+  float pan = 0.0f;                               ///< Default stereo balance
+  double playbackRate = 1.0;                      ///< Default forward varispeed multiplier
+  double playDelaySeconds = 0.0;                  ///< Default trigger-to-audible delay
 
   // Note: Color is not part of SDK metadata; hosts store presentation state
   // (color, labels, etc.) separately.
@@ -515,13 +533,14 @@ public:
   /// @param fadeOutCurve Fade-out curve type (Linear, EqualPower, Exponential)
   /// @return SessionGraphError::OK on success, error code on failure
   ///
-  /// Thread-safe: Can be called from UI thread
-  /// Takes effect: On next clip start (does not affect currently playing clips)
+  /// Thread-safe: Can be called from UI thread.
+  /// Takes effect: on command consumption for active clips and at the next
+  /// start for stopped clips.
   ///
-  /// Fade behavior:
-  /// - Fade-in: Applied from trimInSamples (0.0 → 1.0 gain over N seconds)
-  /// - Fade-out: Applied before trimOutSamples (1.0 → 0.0 gain over N seconds)
-  /// - Fade curves:
+  /// Compatibility: this legacy convenience method sets both the natural-END
+  /// fade-out and the operator-stop fade-out to its `fadeOut*` arguments. Use
+  /// updateClipMetadata() when those envelopes must differ.
+  /// Fade curve shape:
   ///   - Linear: y = x
   ///   - EqualPower: y = sin(x * π/2)  [smooth crossfades]
   ///   - Exponential: y = x²  [dramatic effect]
@@ -639,8 +658,12 @@ public:
   /// Takes effect: Immediately for active clips (where applicable), on next start for stopped clips
   ///
   /// Validation:
-  /// - All validation rules from individual update methods apply
-  /// - If any validation fails, NO changes are applied (atomic operation)
+  /// - All validation rules from individual update methods apply.
+  /// - stopFadeOutSeconds is finite, non-negative, and no longer than the
+  ///   trimmed clip duration.
+  /// - pan is finite and in [-1, +1]; playbackRate is finite and in
+  ///   [0.25, 4.0]; playDelaySeconds is finite and in [0, 99.9].
+  /// - If any validation fails, NO changes are applied (atomic operation).
   virtual SessionGraphError updateClipMetadata(ClipHandle handle, const ClipMetadata& metadata) = 0;
 
   /// Get all clip metadata in a single query

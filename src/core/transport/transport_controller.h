@@ -38,8 +38,16 @@ struct ClipPlaybackContext {
   double fadeOutSeconds;
   FadeCurve fadeInCurve;
   FadeCurve fadeOutCurve;
+  double stopFadeOutSeconds;
+  FadeCurve stopFadeOutCurve;
   float gainDb;
   float gainLinear;
+  bool muted;
+  float pan;
+  float panLeftGain;
+  float panRightGain;
+  double playbackRate;
+  int64_t playDelayFrames;
   bool loopEnabled;
   uint16_t numChannels;
   RoutingGroupIndex routingGroup{0};
@@ -109,9 +117,18 @@ struct TransportCommand {
       double fadeOutSeconds;
       FadeCurve fadeInCurve;
       FadeCurve fadeOutCurve;
+      int64_t stopFadeOutSamples;
+      double stopFadeOutSeconds;
+      FadeCurve stopFadeOutCurve;
       bool loopEnabled;
       float gainDb;
       float gainLinear;
+      bool muted;
+      float pan;
+      float panLeftGain;
+      float panRightGain;
+      double playbackRate;
+      int64_t playDelayFrames;
       RoutingGroupIndex routingGroup;
     } metadata;
   } data;
@@ -124,6 +141,7 @@ struct ActiveClip {
   uint64_t startOrdinal; // Chronological start generation (wrap-aware)
   int64_t startSample;   // When clip started playing (transport time)
   int64_t currentSample; // Current position within clip audio
+  double sourcePosition; // Fractional source cursor for varispeed interpolation
 
   // Trim points (atomic for thread safety)
   std::atomic<int64_t> trimInSamples{0};  // Trim IN point (from metadata)
@@ -143,10 +161,21 @@ struct ActiveClip {
   // Cached fade sample counts (computed when fades are updated)
   std::atomic<int64_t> fadeInSamples{0};
   std::atomic<int64_t> fadeOutSamples{0};
+  std::atomic<double> stopFadeOutSeconds{0.01};
+  std::atomic<FadeCurve> stopFadeOutCurve{FadeCurve::Linear};
+  std::atomic<int64_t> stopFadeOutSamples{0};
+  int64_t stopFadeFramesElapsed{0};
 
   // Gain control (atomic for thread safety)
   std::atomic<float> gainDb{0.0f};     // Gain in decibels (0.0 = unity)
   std::atomic<float> gainLinear{1.0f}; // Cached linear gain target (precomputed from gainDb)
+  std::atomic<bool> muted{false};
+  std::atomic<float> pan{0.0f};
+  std::atomic<float> panLeftGain{1.0f};
+  std::atomic<float> panRightGain{1.0f};
+  std::atomic<double> playbackRate{1.0};
+  std::atomic<int64_t> playDelayFrames{0};
+  int64_t playDelayFramesRemaining{0};
 
   // ORP127 G4: per-voice gain smoothing state (audio-thread only). gainCurrent
   // ramps toward gainLinear by gainRampIncrement per sample so Set-Gain changes
@@ -160,6 +189,7 @@ struct ActiveClip {
   float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
   bool isStopping;         // true if fade-out in progress
   int64_t fadeOutStartPos; // Sample position when fade-out started (for additive time)
+  bool isNaturalEnding;    // true when OUT, false for operator/choke stop
 
   // Restart crossfade state (broadcast-safe restart mechanism)
   bool isRestarting; // true if restart crossfade in progress
@@ -561,9 +591,15 @@ private:
     double fadeOutSeconds = 0.0;
     FadeCurve fadeInCurve = FadeCurve::Linear;
     FadeCurve fadeOutCurve = FadeCurve::Linear;
+    double stopFadeOutSeconds = 0.01;
+    FadeCurve stopFadeOutCurve = FadeCurve::Linear;
     float gainDb = 0.0f;           // Gain in decibels (0.0 = unity)
     bool loopEnabled = false;      // true = loop indefinitely
     bool stopOthersOnPlay = false; // true = stop all other clips when this one starts
+    bool muted = false;
+    float pan = 0.0f;
+    double playbackRate = 1.0;
+    double playDelaySeconds = 0.0;
 
     // ORP127 G5: voice allocation policy for this clip (default preserves the
     // SDK's historical polyphonic behavior).

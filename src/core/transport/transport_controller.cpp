@@ -101,6 +101,20 @@ bool isLaterStartOrdinal(uint64_t candidate, uint64_t reference) noexcept {
   const uint64_t delta = candidate - reference;
   return delta != 0 && delta < (uint64_t{1} << 63);
 }
+std::pair<float, float> panGains(float pan, uint16_t numChannels) noexcept {
+  const float normalized = std::clamp(pan, -1.0f, 1.0f);
+  if (numChannels == 1) {
+    const double angle =
+        (static_cast<double>(normalized) + 1.0) * (static_cast<double>(M_PI_2) * 0.5);
+    return {static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))};
+  }
+
+  const double leftAngle =
+      static_cast<double>(std::max(normalized, 0.0f)) * static_cast<double>(M_PI_2);
+  const double rightAngle =
+      static_cast<double>(std::max(-normalized, 0.0f)) * static_cast<double>(M_PI_2);
+  return {static_cast<float>(std::cos(leftAngle)), static_cast<float>(std::cos(rightAngle))};
+}
 
 } // namespace
 
@@ -161,9 +175,13 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
                                                static_cast<uint16_t>(m_config.outputChannels));
   }
 
+  constexpr size_t kMaxPlaybackRate = 4;
+  constexpr size_t kInterpolationGuardFrames = 2;
   m_clipReadBuffers.resize(m_config.maxActiveVoices);
   for (auto& buffer : m_clipReadBuffers) {
-    buffer.resize(static_cast<size_t>(m_config.maxBlockFrames) * m_config.maxSourceChannels, 0.0f);
+    const size_t inputFrames =
+        static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + kInterpolationGuardFrames;
+    buffer.resize(inputFrames * m_config.maxSourceChannels, 0.0f);
   }
 
   m_clipChannelBuffers.resize(routingLaneCount);
@@ -213,9 +231,19 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
       context->source = entry.source;
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
+      context->stopFadeOutSeconds = entry.stopFadeOutSeconds;
+      context->stopFadeOutCurve = entry.stopFadeOutCurve;
       context->fileLengthSamples = entry.metadata.duration_samples;
       context->trimOutSamples =
           entry.trimOutSamples == 0 ? entry.metadata.duration_samples : entry.trimOutSamples;
+      context->muted = entry.muted;
+      context->pan = entry.pan;
+      const auto [leftGain, rightGain] = panGains(entry.pan, entry.metadata.num_channels);
+      context->panLeftGain = leftGain;
+      context->panRightGain = rightGain;
+      context->playbackRate = entry.playbackRate;
+      context->playDelayFrames =
+          static_cast<int64_t>(entry.playDelaySeconds * static_cast<double>(m_sampleRate));
       context->fadeInSeconds = entry.fadeInSeconds;
       context->fadeOutSeconds = entry.fadeOutSeconds;
       context->fadeInCurve = entry.fadeInCurve;
@@ -236,8 +264,17 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
     // Preserve the historical source-less test/default start contract.
     context->source = nullptr;
     context->numChannels = 2;
+    context->stopFadeOutSeconds = 0.01;
+    context->stopFadeOutCurve = FadeCurve::Linear;
     context->trimInSamples = 0;
     context->trimOutSamples = 48000 * 60;
+    context->muted = false;
+    context->pan = 0.0f;
+    const auto [leftGain, rightGain] = panGains(0.0f, 2);
+    context->panLeftGain = leftGain;
+    context->panRightGain = rightGain;
+    context->playbackRate = 1.0;
+    context->playDelayFrames = 0;
     context->fileLengthSamples = 48000 * 60;
     context->fadeInSeconds = 0.0;
     context->fadeOutSeconds = 0.0;
@@ -419,275 +456,251 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     std::memset(lane.data(), 0, numFrames * sizeof(float));
   }
 
-  // ORP127 G2: The stop fade-out is now computed per sample inside the render
-  // loop (see below), so no per-buffer fadeOutGain pre-pass is needed. This
-  // both removes the F-SDK-2 staircase and drops a redundant loop.
-
-  // Render each active clip to its own channel buffer
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    ActiveClip& clip = m_activeClips[i];
-
-    // Skip if no audio source prepared (unregistered/test clips)
+  // Render each active voice into its preallocated routing lanes. Playback
+  // delay is measured in output frames; playback rate advances the fractional
+  // source cursor and uses linear interpolation without allocating or blocking.
+  for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
+    ActiveClip& clip = m_activeClips[voiceIndex];
     if (!clip.source) {
       continue;
     }
 
-    // Load trim and fade settings (atomic read for thread safety)
-    int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
-    int64_t trimOut = clip.trimOutSamples.load(std::memory_order_acquire);
-    int64_t fadeInSampleCount = clip.fadeInSamples.load(std::memory_order_acquire);
-    int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
-    FadeCurve fadeInCurveType = clip.fadeInCurve.load(std::memory_order_acquire);
-    FadeCurve fadeOutCurveType = clip.fadeOutCurve.load(std::memory_order_acquire);
+    const int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
+    const int64_t trimOut = clip.trimOutSamples.load(std::memory_order_acquire);
+    const int64_t fadeInSampleCount = clip.fadeInSamples.load(std::memory_order_acquire);
+    const int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
+    const FadeCurve fadeInCurveType = clip.fadeInCurve.load(std::memory_order_acquire);
+    const FadeCurve fadeOutCurveType = clip.fadeOutCurve.load(std::memory_order_acquire);
+    const int64_t operatorStopFadeSamples = clip.stopFadeOutSamples.load(std::memory_order_acquire);
+    const FadeCurve operatorStopFadeCurve = clip.stopFadeOutCurve.load(std::memory_order_acquire);
+    const bool loopEnabled = clip.loopEnabled.load(std::memory_order_acquire);
+    const double playbackRate = clip.playbackRate.load(std::memory_order_acquire);
+    const bool muted = clip.muted.load(std::memory_order_acquire);
+    const float panLeft = clip.panLeftGain.load(std::memory_order_acquire);
+    const float panRight = clip.panRightGain.load(std::memory_order_acquire);
+    const float clipGainTarget = muted ? 0.0f : clip.gainLinear.load(std::memory_order_acquire);
+    const size_t numFileChannels = clip.numChannels;
+    const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+    float* const clipReadBuffer = m_clipReadBuffers[voiceIndex].data();
+    const size_t clipReadBufferSize = m_clipReadBuffers[voiceIndex].size();
 
-    // ORP093: Enforce trim boundaries BEFORE rendering (prevents position escape bug)
-    // CRITICAL: Clamp position to [trimIn, trimOut) range to maintain edit laws
-    // This ensures getClipPosition() never returns values outside user-defined boundaries
-    if (clip.currentSample < trimIn) {
-      // Position below IN point - clamp to IN (enforce Edit Law #1).
-      // ORP134 G1: sources are position-explicit — no reader seek; just hint
-      // the streaming prefetcher.
-      clip.currentSample = trimIn;
-      clip.source->setDemand(trimIn);
-    } else if (clip.currentSample >= trimOut) {
-      // Position at or past OUT point - handle loop or stop
-      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
-      if (shouldLoop) {
-        // Loop mode: restart from IN point
+    size_t outputFrame = 0;
+    if (clip.playDelayFramesRemaining > 0) {
+      const size_t delayedFrames = static_cast<size_t>(
+          std::min<int64_t>(clip.playDelayFramesRemaining, static_cast<int64_t>(numFrames)));
+      clip.playDelayFramesRemaining -= static_cast<int64_t>(delayedFrames);
+      outputFrame += delayedFrames;
+    }
+
+    while (outputFrame < numFrames) {
+      if (clip.sourcePosition < static_cast<double>(trimIn)) {
+        clip.sourcePosition = static_cast<double>(trimIn);
         clip.currentSample = trimIn;
         clip.source->setDemand(trimIn);
-
-        // ORP097 Bug 7 Fix: Mark that clip has looped
-        clip.hasLoopedOnce = true;
-      } else {
-        // Non-loop mode: trigger stop fade-out when reaching OUT point.
-        // ORP127 G3: Keep the reader alive and let the per-sample stop fade
-        // (T4) render REAL audio through the fade tail, instead of nulling the
-        // reader and fading silence — which produced a click at OUT. Reading
-        // continues past trimOut only for the fade duration, bounded by the
-        // true file length (below), so libsndfile never wraps past EOF.
-        if (!clip.isStopping) {
-          clip.isStopping = true;
-          clip.fadeOutGain = 1.0f;
-          clip.fadeOutStartPos = clip.currentSample;
-        }
-      }
-    } else if (!clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping &&
-               (clip.currentSample + static_cast<int64_t>(numFrames)) > trimOut) {
-      // ORP127 G3: This buffer will CROSS trimOut mid-way. Start the stop fade
-      // now, anchored exactly at trimOut, so the fade renders continuously from
-      // the OUT sample within this same buffer — previously the read was capped
-      // at trimOut and the rest of the buffer rendered as (cleared) silence,
-      // producing a hard cut. The reader stays alive; the read horizon below is
-      // extended to cover the fade tail.
-      clip.isStopping = true;
-      clip.fadeOutGain = 1.0f;
-      clip.fadeOutStartPos = trimOut;
-    }
-
-    // ORP127 G3: When stopping (e.g. after OUT), extend the read horizon past
-    // trimOut for the remaining fade tail so the fade applies to real audio.
-    // Otherwise the read is bounded by trimOut as before. Everything is clamped
-    // to the true file length so we never read past EOF.
-    int64_t readHorizon = trimOut;
-    if (clip.isStopping) {
-      int64_t stopFadeSamples = fadeOutSampleCount;
-      if (stopFadeSamples == 0) {
-        stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
-      }
-      int64_t fadeEnd = clip.fadeOutStartPos + stopFadeSamples;
-      readHorizon = std::max(readHorizon, fadeEnd);
-    }
-    if (clip.fileLengthSamples > 0) {
-      readHorizon = std::min(readHorizon, clip.fileLengthSamples);
-    }
-
-    // Calculate how many frames to read (respecting the read horizon)
-    int64_t framesUntilEnd = readHorizon - clip.currentSample;
-    if (framesUntilEnd <= 0) {
-      // ORP127 G3: Past the read horizon (e.g. OUT tail reached EOF) but the
-      // reader is still held. Advance position by the buffer so the stop fade
-      // can still complete — the reader-less advance loop below only handles
-      // clips whose reader is already null.
-      if (clip.isStopping) {
-        clip.currentSample += static_cast<int64_t>(numFrames);
-      }
-      continue;
-    }
-
-    size_t framesToRead =
-        static_cast<size_t>(std::min(static_cast<int64_t>(numFrames), framesUntilEnd));
-
-    // ORP134 G1: reads are position-explicit against the prepared/streamed
-    // source — the audio thread never touches a file reader or a shared
-    // cursor. (This also makes multi-voice playback of one clip correct:
-    // every voice reads at its own currentSample.)
-    size_t numFileChannels = clip.numChannels;
-
-    // Use this clip's dedicated read buffer (no shared buffer conflicts!)
-    float* clipReadBuffer = m_clipReadBuffers[i].data();
-    size_t clipReadBufferSize = m_clipReadBuffers[i].size();
-
-    // Check if read fits in pre-allocated buffer
-    size_t samplesNeeded = framesToRead * numFileChannels;
-    if (samplesNeeded > clipReadBufferSize) {
-      // Clip too large for buffer - skip (should not happen with reasonable buffer size)
-      continue;
-    }
-
-    // Copy decoded PCM from this clip's source into THIS clip's buffer.
-    // A streaming cache miss NEVER blocks: the clip renders silence for this
-    // buffer, the transport reports a BufferUnderrun, and the position still
-    // advances so the timeline keeps moving while the worker catches up.
-    size_t framesRead = 0;
-    if (!clip.source->read(clip.currentSample, clipReadBuffer, framesToRead, framesRead)) {
-      TransportEvent event{};
-      event.type = TransportEventType::BufferUnderrun;
-      event.handle = clip.handle;
-      event.voiceId = clip.voiceId;
-      event.position = getCurrentPosition();
-      postTransportEvent(event);
-      m_realtimeTelemetry.reportUnderrunFromRealtime();
-
-      clip.source->setDemand(clip.currentSample);
-      clip.currentSample += static_cast<int64_t>(framesToRead);
-      continue;
-    }
-
-    if (framesRead == 0) {
-      // Past EOF (e.g. OUT-tail horizon beyond the file). Advance so stop
-      // fades can complete, mirroring the source-less advance path.
-      if (clip.isStopping) {
-        clip.currentSample += static_cast<int64_t>(numFrames);
-      }
-      continue;
-    }
-
-    // ORP121 A-01: Stereo output to L/R channel buffers (indices i*2 and i*2+1)
-    // No mono sum - preserves source channel separation per ST2110-30
-
-    // Load the clip gain TARGET (atomic read, no pow() in the audio thread).
-    // ORP127 G4: gainCurrent ramps toward this target per sample below.
-    float clipGainTarget = clip.gainLinear.load(std::memory_order_acquire);
-
-    for (size_t frame = 0; frame < framesRead; ++frame) {
-      // Calculate base gain (starts at 1.0)
-      float gain = 1.0f;
-
-      // ORP127 G4: ramp the smoothed clip gain toward the target by at most
-      // gainRampIncrement per sample, so fader drags apply as a short ramp
-      // instead of a per-buffer step (no zipper noise).
-      if (clip.gainCurrent < clipGainTarget) {
-        clip.gainCurrent = std::min(clipGainTarget, clip.gainCurrent + clip.gainRampIncrement);
-      } else if (clip.gainCurrent > clipGainTarget) {
-        clip.gainCurrent = std::max(clipGainTarget, clip.gainCurrent - clip.gainRampIncrement);
       }
 
-      // Apply the smoothed clip gain (from gainDb setting)
-      gain *= clip.gainCurrent;
+      if (!clip.isStopping && clip.sourcePosition >= static_cast<double>(trimOut)) {
+        if (loopEnabled) {
+          clip.sourcePosition = static_cast<double>(trimIn);
+          clip.currentSample = trimIn;
+          clip.source->setDemand(trimIn);
+          clip.hasLoopedOnce = true;
 
-      // Apply broadcast-safe restart crossfade (5ms linear fade-in)
-      if (clip.isRestarting && clip.restartFadeFramesRemaining > 0) {
-        // Calculate fade-in gain (0.0 → 1.0 over restartCrossfadeSamples)
-        int64_t fadeProgress =
-            static_cast<int64_t>(m_restartCrossfadeSamples) - clip.restartFadeFramesRemaining;
-        float restartFadeGain =
-            static_cast<float>(fadeProgress) / static_cast<float>(m_restartCrossfadeSamples);
-        gain *= restartFadeGain; // Linear fade-in
-
-        // Decrement remaining frames (will be disabled when reaches 0)
-        clip.restartFadeFramesRemaining--;
-        if (clip.restartFadeFramesRemaining == 0) {
-          clip.isRestarting = false; // Crossfade complete
-        }
-      }
-
-      // ORP127 G2: Apply the stop fade-out PER SAMPLE. Previously a single
-      // fadeOutGain scalar was computed once per buffer (F-SDK-2), which turned
-      // short fades (e.g. 10ms @ 512-sample buffers) into a 1-2 step staircase —
-      // audible as bitcrush when many clips stop at once. Now each sample's fade
-      // position is computed from its own offset into the fade, matching the
-      // per-sample fade-in / clip-fade-out envelopes below.
-      if (clip.isStopping) {
-        int64_t stopFadeSamples = fadeOutSampleCount;
-        if (stopFadeSamples == 0) {
-          stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples); // default 10ms
-        }
-        int64_t stopFadeProgress =
-            (clip.currentSample + static_cast<int64_t>(frame)) - clip.fadeOutStartPos;
-        float stopFadePos =
-            static_cast<float>(stopFadeProgress) / static_cast<float>(stopFadeSamples);
-        stopFadePos = std::clamp(stopFadePos, 0.0f, 1.0f);
-        float stopFadeGain = 1.0f - calculateFadeGain(stopFadePos, fadeOutCurveType);
-        gain *= std::max(0.0f, stopFadeGain);
-      }
-
-      // ORP097 Fix: Only apply clip fade-in/out for NON-LOOPED clips
-      // Looped clips should have seamless loops with no fades at boundaries
-      // Note: STOP fades (when clip.isStopping) are applied separately and work for all clips
-      bool isLooped = clip.loopEnabled.load(std::memory_order_acquire);
-      if (!isLooped) {
-        // Apply clip fade-in (first N samples from trim IN)
-        int64_t relativePos = clip.currentSample + static_cast<int64_t>(frame) - trimIn;
-        if (fadeInSampleCount > 0 && relativePos >= 0 && relativePos < fadeInSampleCount) {
-          float fadeInPos = static_cast<float>(relativePos) / static_cast<float>(fadeInSampleCount);
-          gain *= calculateFadeGain(fadeInPos, fadeInCurveType);
-        }
-
-        // Apply clip fade-out (last N samples before trim OUT)
-        int64_t trimmedDuration = trimOut - trimIn;
-        if (fadeOutSampleCount > 0 && relativePos >= (trimmedDuration - fadeOutSampleCount)) {
-          int64_t fadeOutRelativePos = relativePos - (trimmedDuration - fadeOutSampleCount);
-          float fadeOutPos =
-              static_cast<float>(fadeOutRelativePos) / static_cast<float>(fadeOutSampleCount);
-          // ORP127 G3: clamp to [0,1]. With the OUT-tail read horizon, relativePos
-          // can exceed trimmedDuration; without clamping calculateFadeGain(>1)
-          // would drive the multiplier negative (phase flip).
-          fadeOutPos = std::clamp(fadeOutPos, 0.0f, 1.0f);
-          gain *= (1.0f - calculateFadeGain(fadeOutPos, fadeOutCurveType));
-        }
-      }
-
-      const size_t laneBase = i * m_config.maxSourceChannels;
-      if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
-        for (size_t channel = 0; channel < numFileChannels; ++channel) {
-          m_clipChannelBuffers[laneBase + channel][frame] =
-              clipReadBuffer[frame * numFileChannels + channel] * gain;
-        }
-      } else {
-        float left = 0.0f;
-        float right = 0.0f;
-        if (numFileChannels == 1) {
-          left = clipReadBuffer[frame];
-          right = left;
-        } else if (numFileChannels == 2) {
-          left = clipReadBuffer[frame * 2];
-          right = clipReadBuffer[frame * 2 + 1];
+          TransportEvent event{};
+          event.type = TransportEventType::ClipLooped;
+          event.handle = clip.handle;
+          event.voiceId = clip.voiceId;
+          event.position = getCurrentPosition();
+          postTransportEvent(event);
         } else {
-          left = applyDownmixLeft(clipReadBuffer, frame, numFileChannels);
-          right = applyDownmixRight(clipReadBuffer, frame, numFileChannels);
-        }
-        m_clipChannelBuffers[laneBase][frame] = left * gain;
-        if (m_config.maxSourceChannels > 1) {
-          m_clipChannelBuffers[laneBase + 1][frame] = right * gain;
+          clip.isStopping = true;
+          clip.isNaturalEnding = true;
+          clip.fadeOutGain = 1.0f;
+          clip.fadeOutStartPos = trimOut;
+          clip.stopFadeFramesElapsed = 0;
         }
       }
-    }
 
-    // Advance clip position by actual frames read (not buffer size!)
-    // CRITICAL (Copilot feedback): This must happen AFTER fade processing, not before
-    // Previously this was at line 341 (before fade loop), causing fade timing to be off by one
-    // buffer
-    clip.currentSample += static_cast<int64_t>(framesRead);
+      int64_t activeStopFadeSamples = 0;
+      FadeCurve activeStopFadeCurve = operatorStopFadeCurve;
+      if (clip.isStopping) {
+        if (clip.isNaturalEnding) {
+          activeStopFadeSamples = fadeOutSampleCount;
+          if (activeStopFadeSamples == 0) {
+            activeStopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
+          }
+          activeStopFadeCurve = fadeOutCurveType;
+        } else {
+          activeStopFadeSamples = operatorStopFadeSamples;
+        }
+
+        if (activeStopFadeSamples <= 0 || clip.stopFadeFramesElapsed >= activeStopFadeSamples) {
+          clip.stopFadeFramesElapsed = std::max<int64_t>(activeStopFadeSamples, 0);
+          break;
+        }
+      }
+
+      size_t segmentFrames = numFrames - outputFrame;
+      if (clip.isStopping) {
+        segmentFrames = std::min(
+            segmentFrames, static_cast<size_t>(activeStopFadeSamples - clip.stopFadeFramesElapsed));
+      } else {
+        const double sourceFramesToOut = static_cast<double>(trimOut) - clip.sourcePosition;
+        const size_t outputFramesToOut =
+            static_cast<size_t>(std::max(1.0, std::ceil(sourceFramesToOut / playbackRate)));
+        segmentFrames = std::min(segmentFrames, outputFramesToOut);
+      }
+
+      const int64_t readStart = static_cast<int64_t>(std::floor(clip.sourcePosition));
+      const double lastSourcePosition =
+          clip.sourcePosition + playbackRate * static_cast<double>(segmentFrames - 1);
+      const size_t requestedInputFrames =
+          static_cast<size_t>(std::floor(lastSourcePosition - static_cast<double>(readStart))) + 2;
+      const size_t samplesNeeded = requestedInputFrames * numFileChannels;
+
+      size_t framesRead = 0;
+      bool readSucceeded = true;
+      if (readStart < clip.fileLengthSamples && samplesNeeded <= clipReadBufferSize) {
+        readSucceeded =
+            clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
+      }
+
+      if (!readSucceeded) {
+        TransportEvent event{};
+        event.type = TransportEventType::BufferUnderrun;
+        event.handle = clip.handle;
+        event.voiceId = clip.voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
+        m_realtimeTelemetry.reportUnderrunFromRealtime();
+        clip.source->setDemand(readStart);
+        framesRead = 0;
+      }
+
+      for (size_t frame = 0; frame < segmentFrames; ++frame) {
+        if (clip.gainCurrent < clipGainTarget) {
+          clip.gainCurrent = std::min(clipGainTarget, clip.gainCurrent + clip.gainRampIncrement);
+        } else if (clip.gainCurrent > clipGainTarget) {
+          clip.gainCurrent = std::max(clipGainTarget, clip.gainCurrent - clip.gainRampIncrement);
+        }
+
+        float gain = clip.gainCurrent;
+        if (clip.isRestarting && clip.restartFadeFramesRemaining > 0) {
+          const int64_t fadeProgress =
+              static_cast<int64_t>(m_restartCrossfadeSamples) - clip.restartFadeFramesRemaining;
+          gain *= static_cast<float>(fadeProgress) / static_cast<float>(m_restartCrossfadeSamples);
+          --clip.restartFadeFramesRemaining;
+          if (clip.restartFadeFramesRemaining == 0) {
+            clip.isRestarting = false;
+          }
+        }
+
+        if (clip.isStopping) {
+          const float stopFadePosition = std::clamp(
+              static_cast<float>(clip.stopFadeFramesElapsed + static_cast<int64_t>(frame)) /
+                  static_cast<float>(activeStopFadeSamples),
+              0.0f, 1.0f);
+          gain *= std::max(0.0f, 1.0f - calculateFadeGain(stopFadePosition, activeStopFadeCurve));
+        }
+
+        const double frameSourcePosition =
+            clip.sourcePosition + playbackRate * static_cast<double>(frame);
+        const double localPosition = frameSourcePosition - static_cast<double>(readStart);
+        const size_t firstInputFrame = static_cast<size_t>(std::floor(localPosition));
+        if (firstInputFrame >= framesRead) {
+          continue;
+        }
+        const size_t secondInputFrame = std::min(firstInputFrame + 1, framesRead - 1);
+        const float fraction =
+            static_cast<float>(localPosition - static_cast<double>(firstInputFrame));
+
+        const int64_t relativePosition =
+            static_cast<int64_t>(std::floor(frameSourcePosition)) - trimIn;
+        if (!loopEnabled) {
+          if (fadeInSampleCount > 0 && relativePosition >= 0 &&
+              relativePosition < fadeInSampleCount) {
+            const float fadePosition =
+                static_cast<float>(relativePosition) / static_cast<float>(fadeInSampleCount);
+            gain *= calculateFadeGain(fadePosition, fadeInCurveType);
+          }
+
+          const int64_t trimmedDuration = trimOut - trimIn;
+          if (fadeOutSampleCount > 0 && relativePosition >= trimmedDuration - fadeOutSampleCount) {
+            const float fadePosition = std::clamp(
+                static_cast<float>(relativePosition - (trimmedDuration - fadeOutSampleCount)) /
+                    static_cast<float>(fadeOutSampleCount),
+                0.0f, 1.0f);
+            gain *= 1.0f - calculateFadeGain(fadePosition, fadeOutCurveType);
+          }
+        }
+
+        std::array<float, 8> sourceFrame{};
+        for (size_t channel = 0; channel < numFileChannels; ++channel) {
+          const float first = clipReadBuffer[firstInputFrame * numFileChannels + channel];
+          const float second = clipReadBuffer[secondInputFrame * numFileChannels + channel];
+          sourceFrame[channel] = first + (second - first) * fraction;
+        }
+
+        const size_t destinationFrame = outputFrame + frame;
+        if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
+          if (numFileChannels == 1 && m_config.maxSourceChannels > 1) {
+            m_clipChannelBuffers[laneBase][destinationFrame] = sourceFrame[0] * gain * panLeft;
+            m_clipChannelBuffers[laneBase + 1][destinationFrame] = sourceFrame[0] * gain * panRight;
+          } else {
+            for (size_t channel = 0; channel < numFileChannels; ++channel) {
+              const float panGain = channel == 0 ? panLeft : (channel == 1 ? panRight : 1.0f);
+              m_clipChannelBuffers[laneBase + channel][destinationFrame] =
+                  sourceFrame[channel] * gain * panGain;
+            }
+          }
+        } else {
+          float left = 0.0f;
+          float right = 0.0f;
+          if (numFileChannels == 1) {
+            left = sourceFrame[0];
+            right = left;
+          } else if (numFileChannels == 2) {
+            left = sourceFrame[0];
+            right = sourceFrame[1];
+          } else {
+            left = applyDownmixLeft(sourceFrame.data(), 0, numFileChannels);
+            right = applyDownmixRight(sourceFrame.data(), 0, numFileChannels);
+          }
+          m_clipChannelBuffers[laneBase][destinationFrame] = left * gain * panLeft;
+          if (m_config.maxSourceChannels > 1) {
+            m_clipChannelBuffers[laneBase + 1][destinationFrame] = right * gain * panRight;
+          }
+        }
+      }
+
+      clip.sourcePosition += playbackRate * static_cast<double>(segmentFrames);
+      clip.currentSample = static_cast<int64_t>(std::floor(clip.sourcePosition));
+      if (clip.isStopping) {
+        clip.stopFadeFramesElapsed += static_cast<int64_t>(segmentFrames);
+      }
+      outputFrame += segmentFrames;
+    }
   }
 
-  // Multi-voice fix: Advance position for clips WITHOUT sources (test clips)
-  // This ensures fade-outs complete properly even when no audio is being rendered
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    ActiveClip& clip = m_activeClips[i];
-    if (!clip.source) {
-      // Clip has no source - advance position by buffer size so fades can complete
-      clip.currentSample += static_cast<int64_t>(numFrames);
+  // Source-less voices exist only in transport tests. Keep their clocks and
+  // stop envelopes moving without introducing a fake render source.
+  for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
+    ActiveClip& clip = m_activeClips[voiceIndex];
+    if (clip.source) {
+      continue;
+    }
+    size_t activeFrames = numFrames;
+    if (clip.playDelayFramesRemaining > 0) {
+      const size_t delayedFrames = static_cast<size_t>(
+          std::min<int64_t>(clip.playDelayFramesRemaining, static_cast<int64_t>(numFrames)));
+      clip.playDelayFramesRemaining -= static_cast<int64_t>(delayedFrames);
+      activeFrames -= delayedFrames;
+    }
+    const double playbackRate = clip.playbackRate.load(std::memory_order_acquire);
+    clip.sourcePosition += playbackRate * static_cast<double>(activeFrames);
+    clip.currentSample = static_cast<int64_t>(std::floor(clip.sourcePosition));
+    if (clip.isStopping) {
+      clip.stopFadeFramesElapsed += static_cast<int64_t>(activeFrames);
     }
   }
 
@@ -700,18 +713,15 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   while (i < m_activeClipCount) {
     ActiveClip& clip = m_activeClips[i];
 
-    // Check if fade-out is complete (fadeOutGain was pre-computed in pre-render loop)
     if (clip.isStopping) {
-      int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
-
-      // If no fade-out configured, use default 10ms fade
-      if (fadeOutSampleCount == 0) {
-        fadeOutSampleCount = static_cast<int64_t>(m_fadeOutSamples);
+      int64_t stopFadeSamples = clip.isNaturalEnding
+                                    ? clip.fadeOutSamples.load(std::memory_order_acquire)
+                                    : clip.stopFadeOutSamples.load(std::memory_order_acquire);
+      if (clip.isNaturalEnding && stopFadeSamples == 0) {
+        stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
       }
 
-      int64_t fadeProgress = clip.currentSample - clip.fadeOutStartPos;
-
-      if (fadeProgress >= fadeOutSampleCount) {
+      if (clip.stopFadeFramesElapsed >= stopFadeSamples) {
         const ClipHandle stoppedHandle = clip.handle;
         const uint32_t stoppedVoiceId = clip.voiceId;
         removeActiveVoice(stoppedVoiceId);
@@ -729,53 +739,38 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         }
         continue;
       }
+
+      ++i;
+      continue;
     }
 
-    // Check if clip reached trim OUT point
-    int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
+    const int64_t clipTrimOut = clip.trimOutSamples.load(std::memory_order_acquire);
     if (clip.currentSample >= clipTrimOut) {
-      // Check if clip should loop
-      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire) && !clip.isStopping;
-
+      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
       if (shouldLoop) {
-        // Loop: jump back to trim IN point (works even without a source)
-        int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
+        const int64_t trimIn = clip.trimInSamples.load(std::memory_order_acquire);
+        clip.currentSample = trimIn;
+        clip.sourcePosition = static_cast<double>(trimIn);
         if (clip.source) {
           clip.source->setDemand(trimIn);
         }
-        clip.currentSample = trimIn;
-
-        // ORP097 Bug 7 Fix: Mark that clip has looped (prevents fade-in/out on subsequent loops)
         clip.hasLoopedOnce = true;
 
-        // Post loop event
         TransportEvent event{};
         event.type = TransportEventType::ClipLooped;
         event.handle = clip.handle;
         event.voiceId = clip.voiceId;
         event.position = getCurrentPosition();
         postTransportEvent(event);
-
-        // Continue playback (don't remove clip, don't increment i)
-        ++i;
       } else {
-        // Non-loop mode: Clip reached OUT point.
-        // ORP127 G3: Trigger the stop fade but KEEP the reader so the in-render
-        // OUT-tail path (bounded by file length) can render real audio through
-        // the fade — no hard cut, no click. The reader is released naturally
-        // when the fade completes (removeActiveClip) or when the read horizon
-        // reaches EOF (the reader-less advance loop then finishes the fade).
-        if (!clip.isStopping) {
-          clip.isStopping = true;
-          clip.fadeOutGain = 1.0f;
-          clip.fadeOutStartPos = clip.currentSample;
-        }
-        // Continue rendering with fade-out (normal fade-out completion logic will remove clip)
-        ++i;
+        clip.isStopping = true;
+        clip.isNaturalEnding = true;
+        clip.fadeOutGain = 1.0f;
+        clip.fadeOutStartPos = clipTrimOut;
+        clip.stopFadeFramesElapsed = 0;
       }
-    } else {
-      ++i;
     }
+    ++i;
   }
 
   // Update transport position
@@ -844,6 +839,8 @@ void TransportController::processCommands() {
             peer.isStopping = true;
             peer.fadeOutGain = 1.0f;
             peer.fadeOutStartPos = peer.currentSample;
+            peer.stopFadeFramesElapsed = 0;
+            peer.isNaturalEnding = false;
           }
         }
       }
@@ -857,6 +854,8 @@ void TransportController::processCommands() {
           m_activeClips[i].fadeOutGain = 1.0f;
           m_activeClips[i].fadeOutStartPos =
               m_activeClips[i].currentSample; // Record position when fade-out started
+          m_activeClips[i].stopFadeFramesElapsed = 0;
+          m_activeClips[i].isNaturalEnding = false;
         }
       }
     } break;
@@ -867,6 +866,8 @@ void TransportController::processCommands() {
         m_activeClips[i].fadeOutGain = 1.0f;
         m_activeClips[i].fadeOutStartPos =
             m_activeClips[i].currentSample; // Record position when fade-out started
+        m_activeClips[i].stopFadeFramesElapsed = 0;
+        m_activeClips[i].isNaturalEnding = false;
       }
       break;
 
@@ -901,6 +902,8 @@ void TransportController::processCommands() {
           m_activeClips[i].isStopping = true;
           m_activeClips[i].fadeOutGain = 1.0f;
           m_activeClips[i].fadeOutStartPos = m_activeClips[i].currentSample;
+          m_activeClips[i].stopFadeFramesElapsed = 0;
+          m_activeClips[i].isNaturalEnding = false;
         }
       }
       break;
@@ -919,11 +922,13 @@ void TransportController::processCommands() {
           // This prevents fade calculation overflow in processAudio()
           if (m_activeClips[i].currentSample < trimIn) {
             m_activeClips[i].currentSample = trimIn;
+            m_activeClips[i].sourcePosition = static_cast<double>(trimIn);
             if (m_activeClips[i].source) {
               m_activeClips[i].source->setDemand(trimIn);
             }
           } else if (m_activeClips[i].currentSample >= trimOut) {
             m_activeClips[i].currentSample = trimOut;
+            m_activeClips[i].sourcePosition = static_cast<double>(trimOut);
             // Position clamps to OUT; playback stops naturally in processAudio.
           }
         }
@@ -947,6 +952,13 @@ void TransportController::processCommands() {
 
           m_activeClips[i].fadeInSamples.store(inSamples, std::memory_order_release);
           m_activeClips[i].fadeOutSamples.store(outSamples, std::memory_order_release);
+          // Preserve updateClipFades()'s historical meaning for callers that
+          // predate the independently configurable operator-stop fields.
+          m_activeClips[i].stopFadeOutSeconds.store(cmd.data.fade.outSeconds,
+                                                    std::memory_order_release);
+          m_activeClips[i].stopFadeOutCurve.store(cmd.data.fade.outCurve,
+                                                  std::memory_order_release);
+          m_activeClips[i].stopFadeOutSamples.store(outSamples, std::memory_order_release);
         }
       }
       break;
@@ -986,6 +998,9 @@ void TransportController::processCommands() {
 
           trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
           clip.currentSample = trimIn;
+          clip.sourcePosition = static_cast<double>(trimIn);
+          clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
+          clip.isNaturalEnding = false;
           if (clip.source) {
             clip.source->setDemand(trimIn);
           }
@@ -1023,6 +1038,7 @@ void TransportController::processCommands() {
           foundAnyVoice = true;
           ActiveClip& clip = m_activeClips[i];
           clip.currentSample = position;
+          clip.sourcePosition = static_cast<double>(position);
           if (clip.source) {
             clip.source->setDemand(position);
           }
@@ -1052,9 +1068,24 @@ void TransportController::processCommands() {
           clip.fadeOutCurve.store(cmd.data.metadata.fadeOutCurve, std::memory_order_release);
           clip.fadeInSamples.store(cmd.data.metadata.fadeInSamples, std::memory_order_release);
           clip.fadeOutSamples.store(cmd.data.metadata.fadeOutSamples, std::memory_order_release);
+          clip.stopFadeOutSamples.store(cmd.data.metadata.stopFadeOutSamples,
+                                        std::memory_order_release);
+          clip.stopFadeOutSeconds.store(cmd.data.metadata.stopFadeOutSeconds,
+                                        std::memory_order_release);
+          clip.stopFadeOutCurve.store(cmd.data.metadata.stopFadeOutCurve,
+                                      std::memory_order_release);
           clip.loopEnabled.store(cmd.data.metadata.loopEnabled, std::memory_order_release);
           clip.gainDb.store(cmd.data.metadata.gainDb, std::memory_order_release);
           clip.gainLinear.store(cmd.data.metadata.gainLinear, std::memory_order_release);
+          clip.muted.store(cmd.data.metadata.muted, std::memory_order_release);
+          clip.pan.store(cmd.data.metadata.pan, std::memory_order_release);
+          clip.panLeftGain.store(cmd.data.metadata.panLeftGain, std::memory_order_release);
+          clip.panRightGain.store(cmd.data.metadata.panRightGain, std::memory_order_release);
+          clip.playbackRate.store(cmd.data.metadata.playbackRate, std::memory_order_release);
+          clip.playDelayFrames.store(cmd.data.metadata.playDelayFrames, std::memory_order_release);
+          if (clip.playDelayFramesRemaining > 0) {
+            clip.playDelayFramesRemaining = cmd.data.metadata.playDelayFrames;
+          }
           clip.routingGroup = cmd.data.metadata.routingGroup;
           configureVoiceRouting(i, clip.routingGroup, clip.numChannels);
         }
@@ -1149,11 +1180,13 @@ uint64_t TransportController::allocateVoiceStartOrdinal() noexcept {
   ++m_nextVoiceStartOrdinal;
   return ordinal;
 }
-
 void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   // ORP127 G5: reset a live voice to its trim IN for an in-place restart.
   int64_t trimIn = clip.trimInSamples.load(std::memory_order_relaxed);
   clip.currentSample = trimIn;
+  clip.sourcePosition = static_cast<double>(trimIn);
+  clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
+  clip.isNaturalEnding = false;
   if (clip.source) {
     clip.source->setDemand(trimIn);
   }
@@ -1204,6 +1237,9 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
 
     const int64_t trimIn = primary->trimInSamples.load(std::memory_order_relaxed);
     primary->currentSample = trimIn;
+    primary->sourcePosition = static_cast<double>(trimIn);
+    primary->playDelayFramesRemaining = primary->playDelayFrames.load(std::memory_order_relaxed);
+    primary->isNaturalEnding = false;
     if (primary->source)
       primary->source->setDemand(trimIn);
     primary->isStopping = false;
@@ -1238,8 +1274,12 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
 void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
                                                 uint16_t numChannels) noexcept {
   const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+  const bool panMonoToStereo = numChannels == 1 && m_config.maxSourceChannels > 1 &&
+                               group < m_config.numGroups &&
+                               m_groupOutputWidths[group].load(std::memory_order_relaxed) >= 2;
+  const uint16_t renderedChannels = panMonoToStereo ? 2 : numChannels;
   for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
-    const bool activeLane = lane < numChannels;
+    const bool activeLane = lane < renderedChannels;
     const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
     const auto output =
         activeLane ? static_cast<RoutingOutputIndex>(lane) : static_cast<RoutingOutputIndex>(0);
@@ -1286,6 +1326,7 @@ bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, boo
     voice.trimInSamples.store(trimIn, std::memory_order_relaxed);
     voice.trimOutSamples.store(trimOut, std::memory_order_relaxed);
     voice.currentSample = currentSample;
+    voice.sourcePosition = static_cast<double>(currentSample);
     return true;
   }
   return false;
@@ -1329,6 +1370,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
+  clip.sourcePosition = static_cast<double>(context->trimInSamples);
   clip.handle = handle;
   clip.voiceId = voiceId;
   clip.startOrdinal = startOrdinal;
@@ -1345,22 +1387,34 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.fadeInCurve.store(context->fadeInCurve, std::memory_order_release);
   clip.fadeOutCurve.store(context->fadeOutCurve, std::memory_order_release);
 
-  // Calculate and store fade sample counts
-  int64_t fadeInSampleCount =
+  // Calculate and store fade sample counts.
+  const int64_t fadeInSampleCount =
       static_cast<int64_t>(context->fadeInSeconds * static_cast<double>(m_sampleRate));
-  int64_t fadeOutSampleCount =
+  const int64_t fadeOutSampleCount =
       static_cast<int64_t>(context->fadeOutSeconds * static_cast<double>(m_sampleRate));
+  const int64_t stopFadeOutSampleCount =
+      static_cast<int64_t>(context->stopFadeOutSeconds * static_cast<double>(m_sampleRate));
   clip.fadeInSamples.store(fadeInSampleCount, std::memory_order_release);
   clip.fadeOutSamples.store(fadeOutSampleCount, std::memory_order_release);
+  clip.stopFadeOutSeconds.store(context->stopFadeOutSeconds, std::memory_order_release);
+  clip.stopFadeOutCurve.store(context->stopFadeOutCurve, std::memory_order_release);
+  clip.stopFadeOutSamples.store(stopFadeOutSampleCount, std::memory_order_release);
 
-  // Initialize gain (start the smoother AT the target so the clip opens at its
-  // configured gain with no initial ramp — ORP127 G4).
+  // A muted start must remain silent from its first frame. Unmuting later
+  // ramps from zero through the normal gain-smoothing path.
   clip.gainDb.store(context->gainDb, std::memory_order_release);
   clip.gainLinear.store(context->gainLinear, std::memory_order_release);
-  clip.gainCurrent = context->gainLinear;
+  clip.gainCurrent = context->muted ? 0.0f : context->gainLinear;
   clip.gainRampIncrement = m_clipGainRampIncrement;
 
   // Initialize loop mode
+  clip.muted.store(context->muted, std::memory_order_release);
+  clip.pan.store(context->pan, std::memory_order_release);
+  clip.panLeftGain.store(context->panLeftGain, std::memory_order_release);
+  clip.panRightGain.store(context->panRightGain, std::memory_order_release);
+  clip.playbackRate.store(context->playbackRate, std::memory_order_release);
+  clip.playDelayFrames.store(context->playDelayFrames, std::memory_order_release);
+  clip.playDelayFramesRemaining = context->playDelayFrames;
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
   clip.source = context->source; // Store shared_ptr (maintains reference count)
@@ -1375,6 +1429,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 
   // Initialize restart crossfade state
   clip.isRestarting = false;
+  clip.isNaturalEnding = false;
   clip.restartFadeFramesRemaining = 0;
 
   // ORP097 Bug 7 Fix: Initialize loop state
@@ -1402,6 +1457,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
+        dest.sourcePosition = src.sourcePosition;
         dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
                                  std::memory_order_relaxed);
         dest.trimOutSamples.store(src.trimOutSamples.load(std::memory_order_relaxed),
@@ -1418,6 +1474,13 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
                                  std::memory_order_relaxed);
         dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
                                   std::memory_order_relaxed);
+        dest.stopFadeOutSeconds.store(src.stopFadeOutSeconds.load(std::memory_order_relaxed),
+                                      std::memory_order_relaxed);
+        dest.stopFadeOutCurve.store(src.stopFadeOutCurve.load(std::memory_order_relaxed),
+                                    std::memory_order_relaxed);
+        dest.stopFadeOutSamples.store(src.stopFadeOutSamples.load(std::memory_order_relaxed),
+                                      std::memory_order_relaxed);
+        dest.stopFadeFramesElapsed = src.stopFadeFramesElapsed;
         dest.gainDb.store(src.gainDb.load(std::memory_order_relaxed), std::memory_order_relaxed);
         // ORP127 G4: carry the linear gain target + smoothing ramp state across
         // the slot move (gainLinear was previously not copied here).
@@ -1425,11 +1488,23 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
                               std::memory_order_relaxed);
         dest.gainCurrent = src.gainCurrent;
         dest.gainRampIncrement = src.gainRampIncrement;
+        dest.muted.store(src.muted.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        dest.pan.store(src.pan.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        dest.panLeftGain.store(src.panLeftGain.load(std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+        dest.panRightGain.store(src.panRightGain.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+        dest.playbackRate.store(src.playbackRate.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+        dest.playDelayFrames.store(src.playDelayFrames.load(std::memory_order_relaxed),
+                                   std::memory_order_relaxed);
+        dest.playDelayFramesRemaining = src.playDelayFramesRemaining;
         dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
                                std::memory_order_relaxed);
         dest.fadeOutGain = src.fadeOutGain;
         dest.isStopping = src.isStopping;
         dest.fadeOutStartPos = src.fadeOutStartPos;
+        dest.isNaturalEnding = src.isNaturalEnding;
         dest.isRestarting = src.isRestarting;
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce;
@@ -1441,6 +1516,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
       configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
+      m_activeClips[m_activeClipCount - 1].source.reset();
       --m_activeClipCount;
       return;
     }
@@ -1448,60 +1524,9 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
 }
 
 void TransportController::removeActiveClip(ClipHandle handle) {
-  // Multi-voice: This removes FIRST instance found (deprecated - use removeActiveVoice)
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
-      // can't be copied)
-      if (i < m_activeClipCount - 1) {
-        ActiveClip& dest = m_activeClips[i];
-        ActiveClip& src = m_activeClips[m_activeClipCount - 1];
-
-        dest.handle = src.handle;
-        dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
-        dest.startOrdinal = src.startOrdinal;
-        dest.startSample = src.startSample;
-        dest.currentSample = src.currentSample;
-        dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
-                                 std::memory_order_relaxed);
-        dest.trimOutSamples.store(src.trimOutSamples.load(std::memory_order_relaxed),
-                                  std::memory_order_relaxed);
-        dest.fadeInSeconds.store(src.fadeInSeconds.load(std::memory_order_relaxed),
-                                 std::memory_order_relaxed);
-        dest.fadeOutSeconds.store(src.fadeOutSeconds.load(std::memory_order_relaxed),
-                                  std::memory_order_relaxed);
-        dest.fadeInCurve.store(src.fadeInCurve.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-        dest.fadeOutCurve.store(src.fadeOutCurve.load(std::memory_order_relaxed),
-                                std::memory_order_relaxed);
-        dest.fadeInSamples.store(src.fadeInSamples.load(std::memory_order_relaxed),
-                                 std::memory_order_relaxed);
-        dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
-                                  std::memory_order_relaxed);
-        dest.gainDb.store(src.gainDb.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        // ORP127 G4: carry the linear gain target + smoothing ramp state across
-        // the slot move (gainLinear was previously not copied here).
-        dest.gainLinear.store(src.gainLinear.load(std::memory_order_relaxed),
-                              std::memory_order_relaxed);
-        dest.gainCurrent = src.gainCurrent;
-        dest.gainRampIncrement = src.gainRampIncrement;
-        dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-        dest.fadeOutGain = src.fadeOutGain;
-        dest.isStopping = src.isStopping;
-        dest.fadeOutStartPos = src.fadeOutStartPos;
-        dest.isRestarting = src.isRestarting;
-        dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
-        dest.hasLoopedOnce = src.hasLoopedOnce; // ORP097 Bug 7 Fix
-        dest.source = src.source;               // Copy shared_ptr (atomic refcount increment)
-        dest.numChannels = src.numChannels;
-        dest.fileLengthSamples = src.fileLengthSamples;
-        dest.voiceMode = src.voiceMode;
-        dest.routingGroup = src.routingGroup;
-        configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
-      }
-      configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
-      --m_activeClipCount;
+  for (size_t index = 0; index < m_activeClipCount; ++index) {
+    if (m_activeClips[index].handle == handle) {
+      removeActiveVoice(m_activeClips[index].voiceId);
       return;
     }
   }
@@ -1782,8 +1807,16 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
     entry.speakerPatchSize = inferred->num_channels;
     std::copy_n(inferred->channel_map.begin(), inferred->num_channels, entry.speakerPatch.begin());
   }
+  const double clipDurationSeconds =
+      static_cast<double>(entry.metadata.duration_samples) / static_cast<double>(m_sampleRate);
+  entry.stopFadeOutSeconds = std::min(m_sessionDefaults.stopFadeOutSeconds, clipDurationSeconds);
+  entry.stopFadeOutCurve = m_sessionDefaults.stopFadeOutCurve;
 
   // Apply session defaults to new clip
+  entry.muted = m_sessionDefaults.muted;
+  entry.pan = m_sessionDefaults.pan;
+  entry.playbackRate = m_sessionDefaults.playbackRate;
+  entry.playDelaySeconds = m_sessionDefaults.playDelaySeconds;
   entry.fadeInSeconds = m_sessionDefaults.fadeInSeconds;
   entry.fadeOutSeconds = m_sessionDefaults.fadeOutSeconds;
   entry.fadeInCurve = m_sessionDefaults.fadeInCurve;
@@ -1991,6 +2024,8 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
       it->second.fadeOutSeconds = fadeOutSeconds;
       it->second.fadeInCurve = fadeInCurve;
       it->second.fadeOutCurve = fadeOutCurve;
+      it->second.stopFadeOutSeconds = fadeOutSeconds;
+      it->second.stopFadeOutCurve = fadeOutCurve;
     }
   }
 
@@ -2185,9 +2220,19 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   if (metadata.fadeOutSeconds < 0.0 || metadata.fadeOutSeconds > clipDurationSeconds) {
     return SessionGraphError::InvalidFadeDuration;
   }
+  if (!std::isfinite(metadata.stopFadeOutSeconds) || metadata.stopFadeOutSeconds < 0.0 ||
+      metadata.stopFadeOutSeconds > clipDurationSeconds) {
+    return SessionGraphError::InvalidFadeDuration;
+  }
 
   // Validate gain
   if (!std::isfinite(metadata.gainDb)) {
+    return SessionGraphError::InvalidParameter;
+  }
+  if (!std::isfinite(metadata.pan) || metadata.pan < -1.0f || metadata.pan > 1.0f ||
+      !std::isfinite(metadata.playbackRate) || metadata.playbackRate < 0.25 ||
+      metadata.playbackRate > 4.0 || !std::isfinite(metadata.playDelaySeconds) ||
+      metadata.playDelaySeconds < 0.0 || metadata.playDelaySeconds > 99.9) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -2206,6 +2251,11 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));
   int64_t fadeOutSampleCount =
       static_cast<int64_t>(metadata.fadeOutSeconds * static_cast<double>(m_sampleRate));
+  const int64_t stopFadeOutSampleCount =
+      static_cast<int64_t>(metadata.stopFadeOutSeconds * static_cast<double>(m_sampleRate));
+  const int64_t playDelayFrames =
+      static_cast<int64_t>(metadata.playDelaySeconds * static_cast<double>(m_sampleRate));
+  const auto [panLeftGain, panRightGain] = panGains(metadata.pan, fileChannels);
 
   // ORP127 G1: Apply to active voices via a command on the audio thread — no
   // direct writes to the live voice array from the UI thread. Precompute linear
@@ -2221,9 +2271,18 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.fadeOutSeconds = metadata.fadeOutSeconds;
   cmd.data.metadata.fadeInCurve = metadata.fadeInCurve;
   cmd.data.metadata.fadeOutCurve = metadata.fadeOutCurve;
+  cmd.data.metadata.stopFadeOutSamples = stopFadeOutSampleCount;
+  cmd.data.metadata.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
+  cmd.data.metadata.stopFadeOutCurve = metadata.stopFadeOutCurve;
   cmd.data.metadata.loopEnabled = metadata.loopEnabled;
   cmd.data.metadata.gainDb = metadata.gainDb;
   cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
+  cmd.data.metadata.muted = metadata.muted;
+  cmd.data.metadata.pan = metadata.pan;
+  cmd.data.metadata.panLeftGain = panLeftGain;
+  cmd.data.metadata.panRightGain = panRightGain;
+  cmd.data.metadata.playbackRate = metadata.playbackRate;
+  cmd.data.metadata.playDelayFrames = playDelayFrames;
   cmd.data.metadata.routingGroup = metadata.routingGroup;
 
   // Queue admission precedes the persistent commit. A full ring therefore
@@ -2246,10 +2305,16 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     it->second.fadeOutSeconds = metadata.fadeOutSeconds;
     it->second.fadeInCurve = metadata.fadeInCurve;
     it->second.fadeOutCurve = metadata.fadeOutCurve;
+    it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
+    it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
     it->second.loopEnabled = metadata.loopEnabled;
     it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
     it->second.voiceMode = metadata.voiceMode;
     it->second.gainDb = metadata.gainDb;
+    it->second.muted = metadata.muted;
+    it->second.pan = metadata.pan;
+    it->second.playbackRate = metadata.playbackRate;
+    it->second.playDelaySeconds = metadata.playDelaySeconds;
     it->second.routingGroup = metadata.routingGroup;
     it->second.sourceLayout = metadata.sourceLayout;
     it->second.speakerPatchSize = metadata.speakerPatchSize;
@@ -2278,10 +2343,16 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   metadata.fadeOutSeconds = it->second.fadeOutSeconds;
   metadata.fadeInCurve = it->second.fadeInCurve;
   metadata.fadeOutCurve = it->second.fadeOutCurve;
+  metadata.stopFadeOutSeconds = it->second.stopFadeOutSeconds;
+  metadata.stopFadeOutCurve = it->second.stopFadeOutCurve;
   metadata.loopEnabled = it->second.loopEnabled;
   metadata.stopOthersOnPlay = it->second.stopOthersOnPlay;
   metadata.voiceMode = it->second.voiceMode; // ORP127 G5
   metadata.gainDb = it->second.gainDb;
+  metadata.muted = it->second.muted;
+  metadata.pan = it->second.pan;
+  metadata.playbackRate = it->second.playbackRate;
+  metadata.playDelaySeconds = it->second.playDelaySeconds;
   metadata.routingGroup = it->second.routingGroup;
   metadata.sourceLayout = it->second.sourceLayout;
   metadata.speakerPatchSize = it->second.speakerPatchSize;
@@ -2345,8 +2416,19 @@ float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve
 }
 
 void TransportController::setSessionDefaults(const SessionDefaults& defaults) {
+  SessionDefaults sanitized = defaults;
+  if (!std::isfinite(sanitized.stopFadeOutSeconds) || sanitized.stopFadeOutSeconds < 0.0) {
+    sanitized.stopFadeOutSeconds = 0.01;
+  }
+  sanitized.pan = std::isfinite(sanitized.pan) ? std::clamp(sanitized.pan, -1.0f, 1.0f) : 0.0f;
+  sanitized.playbackRate =
+      std::isfinite(sanitized.playbackRate) ? std::clamp(sanitized.playbackRate, 0.25, 4.0) : 1.0;
+  sanitized.playDelaySeconds = std::isfinite(sanitized.playDelaySeconds)
+                                   ? std::clamp(sanitized.playDelaySeconds, 0.0, 99.9)
+                                   : 0.0;
+
   std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  m_sessionDefaults = defaults;
+  m_sessionDefaults = sanitized;
 }
 
 SessionDefaults TransportController::getSessionDefaults() const {
