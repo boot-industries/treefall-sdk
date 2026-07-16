@@ -362,33 +362,27 @@ TEST_F(CoreAudioDriverTest, GetLatency) {
 
   uint32_t latency = m_driver->getLatencySamples();
 
-  // Latency should be at least buffer size, and reasonable (<10ms @ 48kHz = <480 samples)
+  // The active route may be a high-latency consumer device. The only universal
+  // lower bound is the I/O buffer itself; imposing a studio-interface ceiling
+  // would reject correct Bluetooth/AirPods detection.
   EXPECT_GE(latency, config.buffer_size);
-  EXPECT_LT(latency, 10000u); // Less than 10ms @ 48kHz
 }
 
-TEST_F(CoreAudioDriverTest, LatencyUnder10ms) {
+TEST_F(CoreAudioDriverTest, RoundTripLatencyIsDetectedForActiveRoute) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 1;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
-  uint32_t latency = m_driver->getLatencySamples();
+  const uint32_t first = m_driver->getLatencySamples();
+  const uint32_t second = m_driver->getLatencySamples();
 
-  // ORP070 target: <10ms @ 48kHz, but many consumer devices have higher latency
-  // Relaxed to 30ms for compatibility with a wider range of devices
-  uint32_t max_latency_samples = (48000 * 30) / 1000; // 1440 samples (~30ms)
-  EXPECT_LT(latency, max_latency_samples) << "Latency " << latency << " samples ("
-                                          << (latency * 1000.0 / 48000) << "ms) exceeds 30ms limit";
-
-  // Log warning if > 10ms but < 30ms
-  uint32_t target_latency_samples = (48000 * 10) / 1000;
-  if (latency > target_latency_samples) {
-    std::cout << "NOTE: Latency " << latency << " samples (" << (latency * 1000.0 / 48000)
-              << "ms) exceeds 10ms target but is acceptable" << std::endl;
-  }
+  EXPECT_GE(first, config.buffer_size);
+  EXPECT_EQ(second, first);
+  EXPECT_TRUE(m_driver->getCapabilities().reports_hardware_latency);
 }
 
 // ============================================================================
