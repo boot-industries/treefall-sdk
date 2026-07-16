@@ -488,8 +488,9 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
   // capture latency for no correctness benefit. Query it and only enable
   // compensation on the (non-master) input sub-device when the domains
   // actually differ.
-  const bool sameClockDomain = getClockDomain(input_device_id) != 0 &&
-                               getClockDomain(input_device_id) == getClockDomain(output_device_id);
+  const UInt32 inputClockDomain = getClockDomain(input_device_id);
+  const UInt32 outputClockDomain = getClockDomain(output_device_id);
+  const bool sameClockDomain = inputClockDomain != 0 && inputClockDomain == outputClockDomain;
   const int driftCompensation = sameClockDomain ? 0 : 1;
 
   CFMutableDictionaryRef inputSubDevice = CFDictionaryCreateMutable(
