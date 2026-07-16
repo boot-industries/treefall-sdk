@@ -131,6 +131,19 @@ TEST_F(ClipAudioControlsTest, MetadataRoundTripsAndRejectsUnsafeBounds) {
   EXPECT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::InvalidFadeDuration);
 }
 
+TEST_F(ClipAudioControlsTest, LegacyFadeUpdateRespectsStoppedClipTrimWindow) {
+  auto value = metadata();
+  value.trimInSamples = 0;
+  value.trimOutSamples = 100;
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  value.stopFadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+
+  EXPECT_EQ(transport->updateClipFades(handle, 0.0, 0.01, FadeCurve::Linear, FadeCurve::Linear),
+            SessionGraphError::InvalidFadeDuration);
+}
+
 TEST_F(ClipAudioControlsTest, DelayDefersAudioWithoutAdvancingSource) {
   auto value = metadata();
   value.fadeInSeconds = 0.0;
@@ -240,6 +253,28 @@ TEST_F(ClipAudioControlsTest, MonoCenterPanDuplicatesWithConstantPowerGain) {
   constexpr float expected = 0.3535533906f;
   EXPECT_NEAR(left.front(), expected, 1.0e-5f);
   EXPECT_NEAR(right.front(), expected, 1.0e-5f);
+}
+
+TEST_F(ClipAudioControlsTest, MonoRoutePreservesLevelRegardlessOfPan) {
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 1;
+  auto monoTransport = std::make_unique<TransportController>(nullptr, config);
+  constexpr ClipHandle monoHandle = 3;
+  ASSERT_EQ(monoTransport->registerClipAudio(monoHandle, monoPath.c_str()), SessionGraphError::OK);
+
+  auto value = monoTransport->getClipMetadata(monoHandle);
+  ASSERT_TRUE(value.has_value());
+  value->fadeInSeconds = 0.0;
+  value->fadeOutSeconds = 0.0;
+  value->pan = 1.0f;
+  ASSERT_EQ(monoTransport->updateClipMetadata(monoHandle, *value), SessionGraphError::OK);
+  ASSERT_EQ(monoTransport->startClip(monoHandle), SessionGraphError::OK);
+
+  std::array<float, 16> output{};
+  float* outputs[] = {output.data()};
+  monoTransport->processAudio(outputs, 1, output.size());
+  EXPECT_NEAR(output.front(), 0.5f, 1.0e-5f);
 }
 
 TEST_F(ClipAudioControlsTest, PlaybackRateControlsSourcePosition) {

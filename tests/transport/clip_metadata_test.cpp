@@ -12,7 +12,8 @@ using namespace orpheus;
 class ClipMetadataTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_metadata.wav").string();
     createTestAudioFile();
   }
@@ -201,14 +202,14 @@ TEST_F(ClipMetadataTest, BatchUpdateMetadata) {
   m_transport->updateClipGain(handle, 0.9f);
   m_transport->updateClipTrimPoints(handle, 500, 2000);
   m_transport->setClipLoopMode(handle, true);
-  m_transport->updateClipFades(handle, 0.1, 0.1, FadeCurve::Linear, FadeCurve::Linear);
+  m_transport->updateClipFades(handle, 0.01, 0.01, FadeCurve::Linear, FadeCurve::Linear);
 
   auto meta = m_transport->getClipMetadata(handle);
   EXPECT_FLOAT_EQ(meta->gainDb, 0.9f);
   EXPECT_EQ(meta->trimInSamples, 500);
   EXPECT_EQ(meta->trimOutSamples, 2000);
   EXPECT_TRUE(meta->loopEnabled);
-  EXPECT_DOUBLE_EQ(meta->fadeInSeconds, 0.1);
+  EXPECT_DOUBLE_EQ(meta->fadeInSeconds, 0.01);
 }
 
 // Test 8: Defaults applied correctly on registration
