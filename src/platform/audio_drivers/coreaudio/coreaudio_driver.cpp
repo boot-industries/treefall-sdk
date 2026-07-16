@@ -42,22 +42,13 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   config_ = config;
   expected_stream_sample_ = 0;
   stream_timeline_initialized_ = false;
-  input_render_failures_.store(0, std::memory_order_release);
 
-  // Find device. Capture requests (num_inputs > 0) against the default
-  // device need to check whether the default input and default output are
-  // the same HAL device -- see resolveInputOutputDevice().
-  device_id_ = (config.device_name.empty() && config.num_inputs > 0)
-                   ? resolveInputOutputDevice()
-                   : findDevice(config.device_name);
+  // Resolve both requested directions before creating the AudioUnit. A
+  // non-empty directional ID is a persistent HAL DeviceUID; resolution errors
+  // are terminal and must never silently select a default endpoint.
+  device_id_ = resolveInputOutputDevice();
   if (device_id_ == 0) {
     return SessionGraphError::InvalidParameter;
-  }
-  if (output_device_id_ == 0) {
-    output_device_id_ = device_id_;
-  }
-  if (config_.num_inputs > 0 && input_device_id_ == 0) {
-    input_device_id_ = device_id_;
   }
 
   // Set up AudioUnit
@@ -94,6 +85,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     input_abl_storage_.assign(abl_bytes, 0);
   }
 
+  input_render_failures_.store(0, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -170,8 +162,24 @@ uint32_t CoreAudioDriver::getLatencySamples() const {
   return queryDeviceLatency();
 }
 
-uint64_t CoreAudioDriver::getInputRenderFailureCount() const {
-  return input_render_failures_.load(std::memory_order_acquire);
+AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
+  return {input_render_failures_.load(std::memory_order_acquire)};
+}
+
+void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept {
+  input_render_failures_.store(count, std::memory_order_release);
+}
+
+void CoreAudioDriver::incrementInputRenderFailuresForTesting() noexcept {
+  recordInputRenderFailure();
+}
+
+void CoreAudioDriver::recordInputRenderFailure() noexcept {
+  uint64_t failures = input_render_failures_.load(std::memory_order_relaxed);
+  while (failures != std::numeric_limits<uint64_t>::max() &&
+         !input_render_failures_.compare_exchange_weak(
+             failures, failures + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+  }
 }
 
 AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
@@ -184,12 +192,15 @@ AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
   caps.max_input_channels = config_.num_inputs;
   caps.native_sample_rates.push_back(config_.sample_rate);
   caps.native_buffer_sizes.push_back(config_.buffer_size);
-  const std::string endpoint = config_.device_id.empty() ? "coreaudio:default" : config_.device_id;
+  const std::string input_endpoint =
+      config_.input_device_id.empty() ? "coreaudio:default-input" : config_.input_device_id;
+  const std::string output_endpoint =
+      config_.output_device_id.empty() ? "coreaudio:default-output" : config_.output_device_id;
   for (uint16_t channel = 0; channel < config_.num_inputs; ++channel) {
-    caps.input_channel_ids.push_back(endpoint + ":input:" + std::to_string(channel));
+    caps.input_channel_ids.push_back(input_endpoint + ":input:" + std::to_string(channel));
   }
   for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
-    caps.output_channel_ids.push_back(endpoint + ":output:" + std::to_string(channel));
+    caps.output_channel_ids.push_back(output_endpoint + ":output:" + std::to_string(channel));
   }
   caps.supports_exclusive_mode = false;
   caps.supports_shared_mode = true;
@@ -279,7 +290,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     OSStatus render_status = AudioUnitRender(driver->audio_unit_, ioActionFlags, inTimeStamp,
                                              /*inputBus=*/1, frames_to_process, inputABL);
     if (render_status != noErr) {
-      driver->input_render_failures_.fetch_add(1, std::memory_order_relaxed);
+      driver->recordInputRenderFailure();
     }
   }
 
@@ -374,24 +385,6 @@ std::vector<AudioDeviceID> CoreAudioDriver::enumerateDevices() {
   return devices;
 }
 
-AudioDeviceID CoreAudioDriver::findDevice(const std::string& device_name) {
-  // If no device name specified, use default output device
-  if (device_name.empty()) {
-    return getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice);
-  }
-
-  // Search for device by name
-  auto devices = enumerateDevices();
-  for (AudioDeviceID deviceID : devices) {
-    std::string name = getDeviceName(deviceID);
-    if (name == device_name) {
-      return deviceID;
-    }
-  }
-
-  return 0; // Not found
-}
-
 AudioDeviceID CoreAudioDriver::getDefaultDevice(AudioObjectPropertySelector selector) {
   AudioObjectPropertyAddress propertyAddress = {selector, kAudioObjectPropertyScopeGlobal,
                                                 kAudioObjectPropertyElementMain};
@@ -473,43 +466,95 @@ UInt32 getStreamLatency(AudioDeviceID device_id, AudioObjectPropertyScope scope)
 
 } // namespace
 
-AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
-  AudioDeviceID outputID = getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice);
-  if (outputID == 0) {
+AudioDeviceID CoreAudioDriver::findDeviceByUID(const std::string& device_uid) {
+  if (device_uid.empty()) {
     return 0;
   }
-  output_device_id_ = outputID;
 
-  AudioDeviceID inputID = getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice);
-  if (inputID == 0 || inputID == outputID) {
-    // No distinct default input (or none available). Either the device
-    // already handles both directions (common on audio interfaces) or
-    // capture will simply fail later -- nothing to bridge here.
-    input_device_id_ = outputID;
+  CFStringRef requested =
+      CFStringCreateWithCString(kCFAllocatorDefault, device_uid.c_str(), kCFStringEncodingUTF8);
+  if (!requested) {
+    return 0;
+  }
+
+  AudioDeviceID matched = 0;
+  for (const AudioDeviceID candidate : enumerateDevices()) {
+    CFStringRef candidateUID = copyDeviceUID(candidate);
+    if (candidateUID && CFStringCompare(candidateUID, requested, 0) == kCFCompareEqualTo) {
+      matched = candidate;
+    }
+    if (candidateUID) {
+      CFRelease(candidateUID);
+    }
+    if (matched != 0) {
+      break;
+    }
+  }
+  CFRelease(requested);
+  return matched;
+}
+
+bool CoreAudioDriver::supportsDirection(AudioDeviceID device_id,
+                                        AudioObjectPropertyScope scope) const {
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
+      size < sizeof(AudioBufferList)) {
+    return false;
+  }
+
+  std::vector<uint8_t> storage(size);
+  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
+    return false;
+  }
+  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+    if (buffers->mBuffers[index].mNumberChannels != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
+  const AudioDeviceID outputID = config_.output_device_id.empty()
+                                     ? getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+                                     : findDeviceByUID(config_.output_device_id);
+  if (outputID == 0 || !supportsDirection(outputID, kAudioObjectPropertyScopeOutput)) {
+    return 0;
+  }
+
+  if (config_.num_inputs == 0) {
+    if (!config_.input_device_id.empty()) {
+      return 0;
+    }
+    input_device_id_ = 0;
+    output_device_id_ = outputID;
     return outputID;
   }
 
-  // Default input and output are genuinely separate HAL devices -- e.g. a
-  // MacBook's built-in microphone and built-in speakers are distinct
-  // AudioDeviceIDs despite sharing a chassis. A single AUHAL unit's
-  // kAudioOutputUnitProperty_CurrentDevice can only address one device, so
-  // capturing bus 1 against an output-only device deterministically fails
-  // AudioUnitRender with kAudioUnitErr_NoConnection while bus 0 (playback)
-  // keeps working. Bridge the two with a private, non-stacked Aggregate Device
-  // so one AUHAL unit can drive playback through the output sub-device and
-  // capture through the input sub-device.
-  AudioDeviceID aggregateID = createAggregateDevice(inputID, outputID);
-  if (aggregateID != 0) {
-    input_device_id_ = inputID;
-    aggregate_device_id_ = aggregateID;
-    return aggregateID;
+  const AudioDeviceID inputID = config_.input_device_id.empty()
+                                    ? getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice)
+                                    : findDeviceByUID(config_.input_device_id);
+  if (inputID == 0 || !supportsDirection(inputID, kAudioObjectPropertyScopeInput)) {
+    return 0;
   }
 
-  // Aggregation failed (permissions, unsupported hardware, etc.). Fall back to
-  // the output device alone. Capture will fail as before, so report only the
-  // route actually opened rather than claiming the unavailable input's delay.
-  input_device_id_ = outputID;
-  return outputID;
+  input_device_id_ = inputID;
+  output_device_id_ = outputID;
+  if (inputID == outputID) {
+    return outputID;
+  }
+
+  const AudioDeviceID aggregateID = createAggregateDevice(inputID, outputID);
+  if (aggregateID == 0) {
+    input_device_id_ = 0;
+    output_device_id_ = 0;
+    return 0;
+  }
+  aggregate_device_id_ = aggregateID;
+  return aggregateID;
 }
 
 AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_id,
@@ -597,29 +642,6 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
   CFRelease(outputUID);
 
   return (status == noErr) ? aggregateID : 0;
-}
-
-std::string CoreAudioDriver::getDeviceName(AudioDeviceID device_id) {
-  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyDeviceNameCFString,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-
-  CFStringRef cfName = nullptr;
-  UInt32 dataSize = sizeof(CFStringRef);
-
-  OSStatus status =
-      AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &cfName);
-
-  if (status != noErr || !cfName) {
-    return "";
-  }
-
-  // Convert CFString to std::string
-  char buffer[256];
-  Boolean success = CFStringGetCString(cfName, buffer, sizeof(buffer), kCFStringEncodingUTF8);
-  CFRelease(cfName);
-
-  return success ? std::string(buffer) : "";
 }
 
 uint32_t CoreAudioDriver::queryDeviceLatency() const {

@@ -9,6 +9,9 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -178,6 +181,32 @@ TEST_F(CoreAudioDriverTest, InitialState) {
   EXPECT_EQ(m_driver->getDriverName(), "CoreAudio");
 }
 
+TEST_F(CoreAudioDriverTest, TelemetrySaturatesAndIsVisibleThroughFactoryInterface) {
+  auto* driver = static_cast<CoreAudioDriver*>(m_driver.get());
+  ASSERT_NE(driver, nullptr);
+
+  driver->setInputRenderFailuresForTesting(std::numeric_limits<uint64_t>::max() - 1);
+  driver->incrementInputRenderFailuresForTesting();
+  EXPECT_EQ(m_driver->getTelemetry().input_render_failures, std::numeric_limits<uint64_t>::max());
+
+  driver->incrementInputRenderFailuresForTesting();
+  EXPECT_EQ(m_driver->getTelemetry().input_render_failures, std::numeric_limits<uint64_t>::max());
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = "orpheus.invalid.coreaudio.device.uid";
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+  EXPECT_EQ(m_driver->getTelemetry().input_render_failures, std::numeric_limits<uint64_t>::max())
+      << "A failed initialize must preserve telemetry from the last successful session";
+
+  config.output_device_id.clear();
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getTelemetry().input_render_failures, 0u);
+}
+
 TEST_F(CoreAudioDriverTest, InitializeWithValidConfig) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
@@ -217,10 +246,31 @@ TEST_F(CoreAudioDriverTest, InitializeWithDefaultDevice) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
-  config.device_name = ""; // Empty = default device
 
   auto error = m_driver->initialize(config);
   EXPECT_EQ(error, SessionGraphError::OK);
+}
+
+TEST_F(CoreAudioDriverTest, RejectsUnknownExplicitOutputUIDWithoutDefaultFallback) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = "orpheus.invalid.coreaudio.device.uid";
+
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+}
+
+TEST_F(CoreAudioDriverTest, RejectsUnknownExplicitInputUIDWithoutDefaultFallback) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.num_outputs = 2;
+  config.input_device_id = "orpheus.invalid.coreaudio.device.uid";
+
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
 }
 
 // ============================================================================
@@ -585,6 +635,7 @@ TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+
   config.num_inputs = 1;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -622,32 +673,275 @@ TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
 namespace {
 
 AudioDeviceID getDefaultDeviceForTest(AudioObjectPropertySelector selector) {
-  AudioObjectPropertyAddress addr = {selector, kAudioObjectPropertyScopeGlobal,
-                                     kAudioObjectPropertyElementMain};
-  AudioDeviceID deviceID = 0;
-  UInt32 size = sizeof(AudioDeviceID);
-  AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, &deviceID);
-  return deviceID;
+  AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  AudioDeviceID device_id = 0;
+  UInt32 size = sizeof(device_id);
+  return AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size,
+                                    &device_id) == noErr
+             ? device_id
+             : 0;
+}
+
+std::vector<AudioDeviceID> getDevicesForTest() {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices,
+                                        kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0, nullptr, &size) !=
+          noErr ||
+      size == 0) {
+    return {};
+  }
+
+  std::vector<AudioDeviceID> devices(size / sizeof(AudioDeviceID));
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size,
+                                 devices.data()) != noErr) {
+    return {};
+  }
+  return devices;
+}
+
+bool supportsDirectionForTest(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
+      size < sizeof(AudioBufferList)) {
+    return false;
+  }
+
+  std::vector<uint8_t> storage(size);
+  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
+    return false;
+  }
+  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+    if (buffers->mBuffers[index].mNumberChannels != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string getDeviceUIDForTest(AudioDeviceID device_id) {
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyDeviceUID,
+                                        kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  CFStringRef uid = nullptr;
+  UInt32 size = sizeof(uid);
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &uid) != noErr || !uid) {
+    return {};
+  }
+
+  const CFIndex capacity =
+      CFStringGetMaximumSizeForEncoding(CFStringGetLength(uid), kCFStringEncodingUTF8) + 1;
+  std::vector<char> storage(static_cast<size_t>(capacity));
+  const bool converted = CFStringGetCString(uid, storage.data(), capacity, kCFStringEncodingUTF8);
+  CFRelease(uid);
+  return converted ? std::string(storage.data()) : std::string{};
+}
+bool hasDeviceUIDForTest(const std::string& requested_uid) {
+  for (const AudioDeviceID device_id : getDevicesForTest()) {
+    if (getDeviceUIDForTest(device_id) == requested_uid) {
+      return true;
+    }
+  }
+  return false;
+}
+bool waitForDeviceUIDToDisappear(const std::string& requested_uid) {
+  constexpr auto timeout = std::chrono::seconds(2);
+  constexpr auto interval = std::chrono::milliseconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (!hasDeviceUIDForTest(requested_uid)) {
+      return true;
+    }
+    std::this_thread::sleep_for(interval);
+  }
+  return !hasDeviceUIDForTest(requested_uid);
+}
+
+std::string aggregateUIDForTest(const IAudioDriver* driver) {
+  std::ostringstream uid;
+  uid << "com.orpheus.sdk.aggregate." << static_cast<const void*>(driver);
+  return uid.str();
+}
+
+struct EndpointPair {
+  AudioDeviceID input_id{0};
+  AudioDeviceID output_id{0};
+  std::string input_uid;
+  std::string output_uid;
+
+  bool isValid() const {
+    return input_id != 0 && output_id != 0 && !input_uid.empty() && !output_uid.empty();
+  }
+};
+
+EndpointPair getDistinctDefaultEndpointsForTest() {
+  EndpointPair endpoints;
+  endpoints.input_id = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultInputDevice);
+  endpoints.output_id = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultOutputDevice);
+  if (endpoints.input_id == endpoints.output_id) {
+    return {};
+  }
+  endpoints.input_uid = getDeviceUIDForTest(endpoints.input_id);
+  endpoints.output_uid = getDeviceUIDForTest(endpoints.output_id);
+  return endpoints;
+}
+
+EndpointPair getSameDeviceEndpointsForTest() {
+  for (const AudioDeviceID device_id : getDevicesForTest()) {
+    if (supportsDirectionForTest(device_id, kAudioObjectPropertyScopeInput) &&
+        supportsDirectionForTest(device_id, kAudioObjectPropertyScopeOutput)) {
+      const std::string uid = getDeviceUIDForTest(device_id);
+      if (!uid.empty()) {
+        return {device_id, device_id, uid, uid};
+      }
+    }
+  }
+  return {};
+}
+
+::testing::AssertionResult liveCaptureWithoutFailures(IAudioDriver& driver) {
+  InputCaptureCallback capture;
+  const SessionGraphError start_result = driver.start(&capture);
+  if (start_result != SessionGraphError::OK) {
+    return ::testing::AssertionFailure()
+           << "Driver start failed with error " << static_cast<int>(start_result);
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  const SessionGraphError stop_result = driver.stop();
+  if (stop_result != SessionGraphError::OK) {
+    return ::testing::AssertionFailure()
+           << "Driver stop failed with error " << static_cast<int>(stop_result);
+  }
+  if (capture.getCallCount() <= 0) {
+    return ::testing::AssertionFailure() << "Audio callback never fired";
+  }
+  if (!capture.sawInputBuffer()) {
+    return ::testing::AssertionFailure() << "Callback received no input buffer";
+  }
+  if (driver.getTelemetry().input_render_failures != 0) {
+    return ::testing::AssertionFailure()
+           << "Capture render failures: " << driver.getTelemetry().input_render_failures;
+  }
+  return ::testing::AssertionSuccess();
 }
 
 } // namespace
 
-// Regression test for the "default input and default output are different HAL
-// devices" bug (e.g. a Mac's built-in microphone vs. built-in speakers): the
-// driver used to resolve only the default *output* device and reuse it for
-// both AUHAL scopes, so AudioUnitRender on the capture bus deterministically
-// failed with kAudioUnitErr_NoConnection on every single callback -- 100%
-// capture failure, but init/start both reported success and the host-visible
-// input buffer was still non-null (pre-zeroed), so InputBufferReachesCallback
-// above could not (and still cannot, by itself) catch it. This test uses the
-// getInputRenderFailureCount() diagnostic added alongside the fix specifically
-// because that gap existed.
+// Explicit persistent UIDs must select the same physical endpoints as the
+// directional defaults. Reinitializing this driver exercises deterministic
+// aggregate-UID reuse after cleanup of the first private aggregate.
+TEST_F(CoreAudioDriverTest, ExplicitDistinctEndpointsCaptureAndReinitializeCleanly) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
+  }
+
+  const std::string aggregate_uid = aggregateUIDForTest(m_driver.get());
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.input_device_id = endpoints.input_uid;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
+  EXPECT_TRUE(hasDeviceUIDForTest(aggregate_uid));
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK)
+      << "Reusing the driver-owned aggregate UID failed after cleanup";
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
+  EXPECT_TRUE(hasDeviceUIDForTest(aggregate_uid));
+  m_driver.reset();
+  EXPECT_TRUE(waitForDeviceUIDToDisappear(aggregate_uid))
+      << "Driver destruction left its private aggregate registered";
+}
+
+TEST_F(CoreAudioDriverTest, DirectionalDefaultsWorkWithExplicitOppositeEndpoint) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.input_device_id = endpoints.input_uid;
+  config.num_outputs = 2;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
+
+  config.input_device_id.clear();
+  config.output_device_id = endpoints.output_uid;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
+}
+
+TEST_F(CoreAudioDriverTest, ExplicitSameDeviceDuplexCapturesWhenAvailable) {
+  const EndpointPair endpoints = getSameDeviceEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "No CoreAudio device on this host supports both input and output";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.input_device_id = endpoints.input_uid;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
+}
+TEST_F(CoreAudioDriverTest, RejectsDirectionIncompatibleExplicitUIDs) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
+  }
+
+  bool exercised_incompatible_uid = false;
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_outputs = 2;
+
+  if (!supportsDirectionForTest(endpoints.input_id, kAudioObjectPropertyScopeOutput)) {
+    exercised_incompatible_uid = true;
+    config.num_inputs = 0;
+    config.output_device_id = endpoints.input_uid;
+    EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+  }
+
+  if (!supportsDirectionForTest(endpoints.output_id, kAudioObjectPropertyScopeInput)) {
+    exercised_incompatible_uid = true;
+    config.num_inputs = 1;
+    config.input_device_id = endpoints.output_uid;
+    config.output_device_id = endpoints.output_uid;
+    EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+  }
+
+  if (!exercised_incompatible_uid) {
+    GTEST_SKIP() << "Both default endpoints support both directions";
+  }
+}
+
+// Regression test for the default input/output bridge. The driver previously
+// reused the output device for both AUHAL scopes, causing every capture render
+// to fail when the system defaults were distinct devices.
 TEST_F(CoreAudioDriverTest, CrossDeviceCaptureHasNoRenderFailures) {
-  AudioDeviceID defaultOutput = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultOutputDevice);
-  AudioDeviceID defaultInput = getDefaultDeviceForTest(kAudioHardwarePropertyDefaultInputDevice);
-  if (defaultOutput == 0 || defaultInput == 0 || defaultOutput == defaultInput) {
-    GTEST_SKIP() << "Default input and output resolve to the same (or an unavailable) device on "
-                    "this machine -- nothing to regress-test for the cross-device bridge.";
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Default input and output resolve to the same or unavailable device";
   }
 
   AudioDriverConfig config;
@@ -657,19 +951,7 @@ TEST_F(CoreAudioDriverTest, CrossDeviceCaptureHasNoRenderFailures) {
   config.num_inputs = 1;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
-
-  auto* driver = static_cast<CoreAudioDriver*>(m_driver.get());
-  InputCaptureCallback capture;
-  ASSERT_EQ(m_driver->start(&capture), SessionGraphError::OK);
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  m_driver->stop();
-
-  ASSERT_GT(capture.getCallCount(), 0) << "Audio callback never fired";
-  EXPECT_EQ(driver->getInputRenderFailureCount(), 0u)
-      << "AudioUnitRender failed on the capture bus -- default input (" << defaultInput
-      << ") and default output (" << defaultOutput
-      << ") are different HAL devices and were not bridged into one addressable device.";
+  ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));
 }
 
 #endif // ORPHEUS_ENABLE_COREAUDIO

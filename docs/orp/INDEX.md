@@ -8,6 +8,8 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP155 ORP154 Implementation Handoff]]
+- [[ORP154 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP150 Atomic Clip-Group Choke Admission]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
@@ -70,6 +72,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP150 Atomic Clip-Group Choke Admission]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
+- [[ORP154 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
+- [[ORP155 ORP154 Implementation Handoff]]
 
 ## Archived Documents
 
