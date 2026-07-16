@@ -395,9 +395,16 @@ public:
   /// @return True if effectively muted
   virtual bool isGroupMuted(RoutingGroupIndex group_index) const = 0;
 
-  /// Get channel meter
+  /// Get one channel's isolated effective contribution meter.
+  ///
+  /// The reading is taken after channel gain smoothing, pan, mute, and
+  /// effective channel-solo logic, but before unrelated channels are summed
+  /// and before group or master processing. Stereo peak is the maximum lane
+  /// peak; RMS is the square root of the mean power across both lanes. A null,
+  /// unrouted, or effectively muted channel publishes silence in the current
+  /// processRouting() call. clip_count remains cumulative until reset.
   /// @param channel_index Channel index [0, num_channels)
-  /// @return Audio meter (peak, RMS, clipping)
+  /// @return Isolated channel meter (peak, RMS, clipping)
   virtual AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const = 0;
 
   /// Get group meter
