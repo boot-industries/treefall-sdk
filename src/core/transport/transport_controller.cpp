@@ -529,6 +529,10 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const float clipGainTarget = muted ? 0.0f : clip.gainLinear.load(std::memory_order_acquire);
     const size_t numFileChannels = clip.numChannels;
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+    const bool panMonoToStereo =
+        numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
+        clip.routingGroup < m_config.numGroups &&
+        m_groupOutputWidths[clip.routingGroup].load(std::memory_order_relaxed) >= 2;
     float* const clipReadBuffer = m_clipReadBuffers[voiceIndex].data();
     const size_t clipReadBufferSize = m_clipReadBuffers[voiceIndex].size();
 
@@ -725,12 +729,13 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
         const size_t destinationFrame = outputFrame + frame;
         if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
-          if (numFileChannels == 1 && m_config.maxSourceChannels > 1) {
+          if (panMonoToStereo) {
             m_clipChannelBuffers[laneBase][destinationFrame] = sourceFrame[0] * gain * panLeft;
             m_clipChannelBuffers[laneBase + 1][destinationFrame] = sourceFrame[0] * gain * panRight;
           } else {
             for (size_t channel = 0; channel < numFileChannels; ++channel) {
-              const float panGain = channel == 0 ? panLeft : (channel == 1 ? panRight : 1.0f);
+              const float panGain =
+                  channel == 0 && numFileChannels > 1 ? panLeft : (channel == 1 ? panRight : 1.0f);
               m_clipChannelBuffers[laneBase + channel][destinationFrame] =
                   sourceFrame[channel] * gain * panGain;
             }
@@ -2087,6 +2092,9 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
       return SessionGraphError::ClipNotRegistered;
     }
     fileDurationSamples = it->second.metadata.duration_samples;
+    currentTrimIn = it->second.trimInSamples;
+    currentTrimOut =
+        it->second.trimOutSamples == 0 ? fileDurationSamples : it->second.trimOutSamples;
   }
 
   // Get current trim points (or use defaults). ORP127 G1: read from the
@@ -2103,8 +2111,10 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
   }
 
   if (!foundActiveClip) {
-    currentTrimIn = 0;
-    currentTrimOut = fileDurationSamples;
+    // Preserve the registered trim window for stopped clips. This legacy
+    // convenience method also configures the operator-stop fade, so accepting
+    // a full-file fade here would violate that window at the next start.
+    currentTrimOut = currentTrimOut == 0 ? fileDurationSamples : currentTrimOut;
   }
 
   // Validate fade durations
