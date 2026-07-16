@@ -9,12 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-16
+
+Patch release for host-correct route-latency placement and isolated per-channel
+routing meters. Public C and C++ interfaces remain source-compatible.
+
 ### Fixed
 
 - CoreAudio round-trip latency now queries the active physical input/output
   routes live, including device and stream latency, safety offsets, actual I/O
   buffer depth, and AudioUnit processing latency. Private aggregate endpoints no
   longer hide high-latency consumer outputs such as Bluetooth headsets.
+- `IRoutingMatrix::getChannelMeter(i)` now reports channel \(i\)'s isolated
+  effective contribution after gain, pan, mute, and channel-solo logic instead
+  of the shared group accumulator. Null, unrouted, and effectively muted
+  channels publish silence in the current processing call.
+- Channel-meter stereo reduction is defined as maximum lane peak and RMS over
+  the mean power of both lanes. Group and master meters retain their summed-stage
+  behavior.
+
+### Verification
+
+- All 149 configured SDK tests pass.
+- All 39 routing-matrix tests pass, including source-order, distinct gain/pan,
+  mute, solo, null-input, and group/master stage regressions.
+- All changed C++ ranges pass `clang-format --dry-run --Werror`. The
+  repository-wide formatting audit still reports pre-existing drift in
+  unrelated files.
 
 ## [0.5.2] - 2026-07-16
 
