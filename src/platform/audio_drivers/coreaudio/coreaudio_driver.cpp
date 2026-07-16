@@ -163,6 +163,7 @@ std::string CoreAudioDriver::getDriverName() const {
 }
 
 uint32_t CoreAudioDriver::getLatencySamples() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   // Query the physical routes, not the private aggregate wrapper. Consumer
   // outputs (Bluetooth/AirPods in particular) report their transport delay on
   // the output sub-device, and that report can change while a route is active.
