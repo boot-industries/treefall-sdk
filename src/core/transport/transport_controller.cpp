@@ -1988,6 +1988,13 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry
   // decode/resample/file I/O happens here (or on the stream worker) - the
   // audio thread only ever memcpy-reads the published source.
   if (entry.source) {
+    if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source)) {
+      // Keep refires and starts after a prior stop gap-free. The streaming
+      // ring reserves one page outside its steady-state worker window so this
+      // bounded control-thread prime cannot displace pages an active voice is
+      // still reading.
+      streaming->prefill(entry.trimInSamples, 1);
+    }
     return SessionGraphError::OK;
   }
 

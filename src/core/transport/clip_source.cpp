@@ -105,7 +105,7 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
   m_demand.store(pos, std::memory_order_relaxed);
   const int64_t windowBase = alignDown(pos) - static_cast<int64_t>(kPageFrames);
   const int64_t windowEnd =
-      alignDown(pos) + static_cast<int64_t>(kNumPages - 1) * static_cast<int64_t>(kPageFrames);
+      alignDown(pos) + static_cast<int64_t>(kWindowPages - 1) * static_cast<int64_t>(kPageFrames);
   for (auto& page : m_pages) {
     const int64_t start = page.start.load(std::memory_order_acquire);
     if (start >= 0 && (start < windowBase || start >= windowEnd)) {
@@ -131,7 +131,16 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
 }
 
 bool StreamingClipSource::fillPage(int64_t alignedStart) {
-  // Find a FREE page (worker-owned).
+  // Worker service and control-thread refire priming may run concurrently.
+  // Serialize both page ownership selection and reader access so they cannot
+  // claim the same FREE page or publish duplicate copies of one page.
+  std::lock_guard<std::mutex> lock(m_readerMutex);
+  for (auto& page : m_pages) {
+    if (page.start.load(std::memory_order_acquire) == alignedStart) {
+      return true;
+    }
+  }
+
   Page* target = nullptr;
   for (auto& page : m_pages) {
     if (page.start.load(std::memory_order_acquire) == -1) {
@@ -140,7 +149,7 @@ bool StreamingClipSource::fillPage(int64_t alignedStart) {
     }
   }
   if (target == nullptr) {
-    return false; // nothing FREE yet — audio thread will retire on its next read
+    return false;
   }
 
   const int64_t framesLeft = m_lengthFrames - alignedStart;
@@ -150,21 +159,17 @@ bool StreamingClipSource::fillPage(int64_t alignedStart) {
     return false;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(m_readerMutex);
-    if (!m_reader || m_reader->seek(alignedStart) != SessionGraphError::OK) {
-      return false;
-    }
-    auto result = m_reader->readSamples(target->data.data(), want);
-    if (!result.isOk()) {
-      return false;
-    }
-    // Zero-pad a short tail (EOF) so the whole page is defined.
-    const size_t got = result.value;
-    if (got < kPageFrames) {
-      std::fill(target->data.begin() + static_cast<ptrdiff_t>(got * m_numChannels),
-                target->data.end(), 0.0f);
-    }
+  if (!m_reader || m_reader->seek(alignedStart) != SessionGraphError::OK) {
+    return false;
+  }
+  auto result = m_reader->readSamples(target->data.data(), want);
+  if (!result.isOk()) {
+    return false;
+  }
+  const size_t got = result.value;
+  if (got < kPageFrames) {
+    std::fill(target->data.begin() + static_cast<ptrdiff_t>(got * m_numChannels),
+              target->data.end(), 0.0f);
   }
 
   target->start.store(alignedStart, std::memory_order_release);
@@ -178,9 +183,9 @@ void StreamingClipSource::prefill(int64_t pos, size_t max_pages) {
   // the behind page — so a max_pages-capped prime always makes the position
   // under the cursor playable, and reverse runway comes after lookahead. The
   // candidate set matches the retirement window in read() exactly.
-  int64_t wanted[kNumPages];
+  int64_t wanted[kWindowPages];
   size_t num_wanted = 0;
-  for (size_t i = 0; i + 1 < kNumPages; ++i) {
+  for (size_t i = 0; i + 1 < kWindowPages; ++i) {
     wanted[num_wanted++] = base + static_cast<int64_t>(i) * static_cast<int64_t>(kPageFrames);
   }
   wanted[num_wanted++] = base - static_cast<int64_t>(kPageFrames);
