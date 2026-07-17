@@ -140,17 +140,20 @@ class ClipRestartCallbackTest : public ::testing::Test {
 protected:
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t,
+                       TransportPosition position) override {
       startedHandle = handle;
       startedPosition = position;
     }
 
-    void onClipStopped(ClipHandle handle, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, uint32_t,
+                       TransportPosition position) override {
       stoppedHandle = handle;
       stoppedPosition = position;
     }
 
-    void onClipLooped(ClipHandle handle, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t,
+                      TransportPosition position) override {
       loopedHandle = handle;
       loopedPosition = position;
     }

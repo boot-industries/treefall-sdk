@@ -66,9 +66,9 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
 
 class CapacityCallback final : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle, TransportPosition) override {}
-  void onClipStopped(ClipHandle, TransportPosition) override {}
-  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onClipStarted(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipStopped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {}
   void onActiveClipLimitReached(ClipHandle handle, TransportPosition) override {
     refusedHandle = handle;
