@@ -6,6 +6,26 @@
 *No recent activity*
 </claude-mem-context>
 
+# ORP154 Resume Checkpoint (2026-07-16)
+
+- PR #221 delivers the FTR041 sequencer trigger voice primitive and received a
+  PASS review verdict.
+- `include/orpheus/trigger_voice.h` exposes standalone `ITriggerVoice`,
+  `TriggerVoice`, and `VoicePolicy` contracts without changing an existing
+  virtual interface or the stable C ABI.
+- The implementation owns interleaved PCM, supports retrigger-cut or bounded
+  oldest-first polyphony, honors sample-accurate offsets and linear pitch
+  ratios, and uses a fixed 64-event queue with allocation-free, lock-free,
+  I/O-free `trigger()` and `render()`.
+- Eight trigger contracts, the installed `Orpheus::audio_utils` consumer,
+  realtime audit, add-subdirectory consumer, and the full 151-test configured
+  suite passed.
+- Durable implementation and FourTrack handoff:
+  `docs/orp/ORP154 Sequencer Trigger Voice Primitive.md`.
+- FourTrack's downstream baseline is `1d1399e`. Seq scheduling, persistence,
+  sample import, Click/Seq lifecycle, and reader-shell adoption remain in the
+  FourTrack repository rather than the SDK.
+
 # ORP141 Resume Checkpoint (2026-07-14)
 
 - PR #206 merged to `main` as `f5d703cd`. The R4 implementation checkpoint is
