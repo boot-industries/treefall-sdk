@@ -4,11 +4,13 @@
 #include <orpheus/export.h>
 #include <orpheus/time_domain.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <orpheus/errors.h>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace orpheus {
@@ -43,6 +45,12 @@ constexpr RoutingGroupIndex UNASSIGNED_GROUP = UINT16_MAX;
 /// buffer size) can size their render blocks against it. Offline hosts
 /// (bounce/export) may pass blocks of any size and let chunking handle it.
 constexpr uint32_t kRoutingSliceFrames = 2048;
+
+/// Fixed public capacity for coherent group-control snapshots.
+constexpr size_t kRoutingControlMaxGroups = 32;
+
+/// Schema version for RoutingControlSnapshot.
+constexpr uint32_t kRoutingControlSnapshotSchemaVersion = 1;
 
 // ============================================================================
 // Routing Configuration Types
@@ -109,14 +117,14 @@ enum class DownmixPolicy : uint8_t {
 
 /// Channel strip configuration (like a console channel)
 struct ChannelConfig {
-  std::string name;               ///< Human-readable channel name
-  RoutingGroupIndex group_index;  ///< Assigned group, or UNASSIGNED_GROUP
+  std::string name;                  ///< Human-readable channel name
+  RoutingGroupIndex group_index;     ///< Assigned group, or UNASSIGNED_GROUP
   RoutingOutputIndex output_channel; ///< Discrete destination within the group bus
-  float gain_db;       ///< Channel gain in dB (-inf to +12 dB)
-  float pan;           ///< Pan position (-1.0 = hard left, 0.0 = center, +1.0 = hard right)
-  bool mute;           ///< Mute flag
-  bool solo;           ///< Solo flag
-  uint32_t color;      ///< UI color hint (RGBA)
+  float gain_db;                     ///< Channel gain in dB (-inf to +12 dB)
+  float pan;      ///< Pan position (-1.0 = hard left, 0.0 = center, +1.0 = hard right)
+  bool mute;      ///< Mute flag
+  bool solo;      ///< Solo flag
+  uint32_t color; ///< UI color hint (RGBA)
 
   /// Default constructor
   ChannelConfig()
@@ -126,19 +134,48 @@ struct ChannelConfig {
 
 /// Group (bus) configuration (like a console subgroup)
 struct GroupConfig {
-  std::string name;   ///< Group name (e.g., "Drums", "Music", "SFX", "Dialogue")
-  float gain_db;      ///< Group gain in dB (-inf to +12 dB)
-  bool mute;          ///< Mute flag
-  bool solo;          ///< Solo flag (groups can be solo'd too)
+  std::string name;                ///< Group name (e.g., "Drums", "Music", "SFX", "Dialogue")
+  float gain_db;                   ///< Group gain in dB (-inf to +12 dB)
+  bool mute;                       ///< Mute flag
+  bool solo;                       ///< Solo flag (groups can be solo'd too)
   RoutingOutputIndex output_start; ///< First physical output for this logical bus
   uint16_t output_width;           ///< Number of routed channels in this bus
   uint32_t color;                  ///< UI color hint (RGBA)
 
   /// Default constructor
   GroupConfig()
-      : name(""), gain_db(0.0f), mute(false), solo(false), output_start(0),
-        output_width(2), color(0xFFFFFFFF) {}
+      : name(""), gain_db(0.0f), mute(false), solo(false), output_start(0), output_width(2),
+        color(0xFFFFFFFF) {}
 };
+
+/// One logical group's configured and effective control state.
+struct RoutingGroupControlState {
+  float gain_db{0.0f};
+  RoutingOutputIndex output_start{0};
+  uint16_t output_width{0};
+  bool configured_mute{false};
+  bool configured_solo{false};
+  bool effective_mute{false};
+  uint8_t reserved{0};
+};
+
+/// Fixed-capacity coherent view of every configured logical group.
+///
+/// revision changes after every accepted group-control mutation. configured_mute
+/// remains the operator-authored flag; effective_mute additionally reflects
+/// group-solo logic.
+struct RoutingControlSnapshot {
+  uint32_t schema_version{kRoutingControlSnapshotSchemaVersion};
+  RoutingGroupIndex group_count{0};
+  uint16_t reserved{0};
+  uint64_t revision{0};
+  std::array<RoutingGroupControlState, kRoutingControlMaxGroups> groups{};
+};
+
+static_assert(std::is_trivially_copyable_v<RoutingGroupControlState>);
+static_assert(std::is_standard_layout_v<RoutingGroupControlState>);
+static_assert(std::is_trivially_copyable_v<RoutingControlSnapshot>);
+static_assert(std::is_standard_layout_v<RoutingControlSnapshot>);
 
 /// Routing matrix configuration (complete topology)
 struct RoutingConfig {
@@ -358,10 +395,17 @@ public:
                                            const GroupConfig& config) = 0;
 
   /// Atomically route a logical group bus to a contiguous physical output range.
-  virtual SessionGraphError
-  setGroupOutputRoute(RoutingGroupIndex group_index,
-                      RoutingOutputIndex output_start,
-                      uint16_t output_width) = 0;
+  virtual SessionGraphError setGroupOutputRoute(RoutingGroupIndex group_index,
+                                                RoutingOutputIndex output_start,
+                                                uint16_t output_width) = 0;
+
+  /// Validate and apply all configured group controls as one transaction.
+  ///
+  /// group_count must exactly match the matrix configuration. Validation
+  /// completes before live state changes; any rejection preserves the prior
+  /// routing state and revision. Accepted controls become visible together at
+  /// one render boundary. Call from the host's single control thread.
+  virtual SessionGraphError applyGroupControlSnapshot(const RoutingControlSnapshot& snapshot) = 0;
 
   // ========================================================================
   // Master Output Configuration (UI Thread, Lock-Free)
@@ -394,6 +438,13 @@ public:
   /// @param group_index Group index [0, num_groups)
   /// @return True if effectively muted
   virtual bool isGroupMuted(RoutingGroupIndex group_index) const = 0;
+
+  /// Read one coherent fixed-capacity group-control state value.
+  ///
+  /// Call from a host control thread; it remains safe while rendering runs
+  /// concurrently. This query does not allocate and never exposes a partially
+  /// applied applyGroupControlSnapshot() transaction.
+  virtual RoutingControlSnapshot getRoutingControlSnapshot() const noexcept = 0;
 
   /// Get one channel's isolated effective contribution meter.
   ///

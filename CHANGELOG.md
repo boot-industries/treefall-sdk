@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-16
+
+Minor pre-1.0 release adding a coherent public routing-control contract.
+Custom `IRoutingMatrix` implementations must implement the two new snapshot
+methods.
+
+### Added
+
+- `RoutingControlSnapshot` and `RoutingGroupControlState` expose fixed-capacity,
+  schema-versioned, allocation-free configured gain, mute, solo, output route,
+  effective mute, and monotonic revision state.
+- `IRoutingMatrix::getRoutingControlSnapshot()` returns one coherent public
+  control value without allocating or capturing a scene.
+- `IRoutingMatrix::applyGroupControlSnapshot()` validates every configured group
+  before mutation, rejects without changing state or revision, and publishes
+  accepted batches to rendering at one buffer boundary.
+
+### Changed
+
+- Group gain targets now enter the smoother at the render boundary rather than
+  during a concurrent control-thread write.
+- Routing preset load and reset apply group controls through the validated batch
+  contract.
+
+### Verification
+
+- All 150 configured SDK tests pass.
+- The installed `Orpheus::routing` and transitively linked
+  `Orpheus::transport` package consumers compile and exercise snapshot
+  write/readback and rejection rollback through public headers.
+- All routing-matrix tests pass under ThreadSanitizer, including concurrent
+  render, transaction publication, and coherent query coverage.
+
 ## [0.5.3] - 2026-07-16
 
 Patch release for host-correct route-latency placement and isolated per-channel

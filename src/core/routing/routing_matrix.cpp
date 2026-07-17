@@ -77,6 +77,7 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     meter.reset();
   }
 
+  m_group_control_sequence.store(0, std::memory_order_release);
   m_initialized.store(true, std::memory_order_release);
 
   return SessionGraphError::OK;
@@ -250,24 +251,23 @@ SessionGraphError RoutingMatrix::setGroupGain(RoutingGroupIndex group_index, flo
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
+  if (!std::isfinite(gain_db)) {
+    return SessionGraphError::InvalidParameter;
+  }
 
-  // Clamp to valid range
   gain_db = std::clamp(gain_db, -100.0f, 12.0f);
+  beginGroupControlWrite();
+  auto& group = m_groups[group_index];
+  group.configured_gain_db.store(gain_db, std::memory_order_relaxed);
+  group.config.gain_db = gain_db;
+  endGroupControlWrite();
 
-  // Convert to linear and set target (lock-free)
-  float gain_linear = dbToLinear(gain_db);
-  m_groups[group_index].gain_smoother->setTarget(gain_linear);
-  m_groups[group_index].config.gain_db = gain_db;
-
-  // Notify callback
   if (m_callback) {
     m_callback->onGroupGainChanged(group_index, gain_db);
   }
-
   return SessionGraphError::OK;
 }
 
@@ -275,15 +275,14 @@ SessionGraphError RoutingMatrix::setGroupMute(RoutingGroupIndex group_index, boo
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Atomic update (lock-free)
-  m_groups[group_index].mute.store(mute, std::memory_order_release);
+  beginGroupControlWrite();
+  m_groups[group_index].mute.store(mute, std::memory_order_relaxed);
   m_groups[group_index].config.mute = mute;
-
+  endGroupControlWrite();
   return SessionGraphError::OK;
 }
 
@@ -291,18 +290,18 @@ SessionGraphError RoutingMatrix::setGroupSolo(RoutingGroupIndex group_index, boo
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Atomic update (lock-free)
-  m_groups[group_index].solo.store(solo, std::memory_order_release);
+  beginGroupControlWrite();
+  m_groups[group_index].solo.store(solo, std::memory_order_relaxed);
   m_groups[group_index].config.solo = solo;
-
-  // Update global solo state
-  updateSoloState();
-
+  updateSoloState(false);
+  endGroupControlWrite();
+  if (m_callback) {
+    m_callback->onSoloStateChanged(m_solo_active.load(std::memory_order_acquire));
+  }
   return SessionGraphError::OK;
 }
 
@@ -311,52 +310,47 @@ SessionGraphError RoutingMatrix::configureGroup(RoutingGroupIndex group_index,
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
-  const auto activeConfig =
-      m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
-  if (config.output_width == 0 ||
-      static_cast<uint32_t>(config.output_start) + config.output_width >
-          activeConfig.num_outputs) {
-    return SessionGraphError::InvalidParameter;
+
+  auto snapshot = getRoutingControlSnapshot();
+  auto& state = snapshot.groups[group_index];
+  state.gain_db = config.gain_db;
+  state.configured_mute = config.mute;
+  state.configured_solo = config.solo;
+  state.output_start = config.output_start;
+  state.output_width = config.output_width;
+  const auto result = applyGroupControlSnapshot(snapshot);
+  if (result == SessionGraphError::OK) {
+    m_groups[group_index].config.name = config.name;
+    m_groups[group_index].config.color = config.color;
   }
-
-  // Batch update all parameters
-  setGroupGain(group_index, config.gain_db);
-  setGroupMute(group_index, config.mute);
-  setGroupSolo(group_index, config.solo);
-
-  m_groups[group_index].config.name = config.name;
-  setGroupOutputRoute(group_index, config.output_start, config.output_width);
-  m_groups[group_index].config.color = config.color;
-
-  return SessionGraphError::OK;
+  return result;
 }
 
-SessionGraphError RoutingMatrix::setGroupOutputRoute(
-    RoutingGroupIndex group_index, RoutingOutputIndex output_start,
-    uint16_t output_width) {
+SessionGraphError RoutingMatrix::setGroupOutputRoute(RoutingGroupIndex group_index,
+                                                     RoutingOutputIndex output_start,
+                                                     uint16_t output_width) {
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
-  const auto& config =
-      m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
   if (output_width == 0 ||
-      static_cast<uint32_t>(output_start) + output_width >
-          config.num_outputs) {
+      static_cast<uint32_t>(output_start) + output_width > config.num_outputs) {
     return SessionGraphError::InvalidParameter;
   }
 
+  beginGroupControlWrite();
   auto& group = m_groups[group_index];
-  group.output_start.store(output_start, std::memory_order_release);
-  group.output_width.store(output_width, std::memory_order_release);
+  group.output_start.store(output_start, std::memory_order_relaxed);
+  group.output_width.store(output_width, std::memory_order_relaxed);
   group.config.output_start = output_start;
   group.config.output_width = output_width;
+  endGroupControlWrite();
   return SessionGraphError::OK;
 }
 
@@ -416,20 +410,147 @@ bool RoutingMatrix::isChannelMuted(RoutingChannelIndex channel_index) const {
 }
 
 bool RoutingMatrix::isGroupMuted(RoutingGroupIndex group_index) const {
-  if (group_index >= m_groups.size()) {
+  const auto snapshot = getRoutingControlSnapshot();
+  if (group_index >= snapshot.group_count) {
     return true;
   }
+  return snapshot.groups[group_index].effective_mute;
+}
 
-  bool is_muted = m_groups[group_index].mute.load(std::memory_order_acquire);
-  bool is_solo = m_groups[group_index].solo.load(std::memory_order_acquire);
-  bool solo_active = m_group_solo_active.load(std::memory_order_acquire);
-
-  // If solo is active and this group is not solo'd, it's effectively muted
-  if (solo_active && !is_solo) {
-    return true;
+RoutingControlSnapshot RoutingMatrix::getRoutingControlSnapshot() const noexcept {
+  RoutingControlSnapshot snapshot;
+  if (!m_initialized.load(std::memory_order_acquire)) {
+    return snapshot;
   }
 
-  return is_muted;
+  for (;;) {
+    const uint64_t before = m_group_control_sequence.load(std::memory_order_acquire);
+    if ((before & 1u) != 0u) {
+      continue;
+    }
+
+    snapshot.group_count =
+        static_cast<RoutingGroupIndex>(std::min<size_t>(m_groups.size(), kRoutingControlMaxGroups));
+    const bool groupSoloActive = m_group_solo_active.load(std::memory_order_relaxed);
+    for (RoutingGroupIndex index = 0; index < snapshot.group_count; ++index) {
+      const auto& group = m_groups[index];
+      auto& state = snapshot.groups[index];
+      state.gain_db = group.configured_gain_db.load(std::memory_order_relaxed);
+      state.output_start = group.output_start.load(std::memory_order_relaxed);
+      state.output_width = group.output_width.load(std::memory_order_relaxed);
+      state.configured_mute = group.mute.load(std::memory_order_relaxed);
+      state.configured_solo = group.solo.load(std::memory_order_relaxed);
+      state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
+    }
+
+    const uint64_t after = m_group_control_sequence.load(std::memory_order_acquire);
+    if (before == after) {
+      snapshot.revision = after / 2u;
+      return snapshot;
+    }
+  }
+}
+
+bool RoutingMatrix::validateGroupControlSnapshot(
+    const RoutingControlSnapshot& snapshot) const noexcept {
+  if (snapshot.schema_version != kRoutingControlSnapshotSchemaVersion ||
+      snapshot.group_count != m_groups.size()) {
+    return false;
+  }
+  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  for (RoutingGroupIndex index = 0; index < snapshot.group_count; ++index) {
+    const auto& state = snapshot.groups[index];
+    if (!std::isfinite(state.gain_db) || state.gain_db < -100.0f || state.gain_db > 12.0f ||
+        state.output_width == 0 ||
+        static_cast<uint32_t>(state.output_start) + state.output_width > config.num_outputs) {
+      return false;
+    }
+  }
+  return true;
+}
+
+SessionGraphError RoutingMatrix::applyGroupControlSnapshot(const RoutingControlSnapshot& snapshot) {
+  if (!m_initialized.load(std::memory_order_acquire)) {
+    return SessionGraphError::NotInitialized;
+  }
+  if (!validateGroupControlSnapshot(snapshot)) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  beginGroupControlWrite();
+  for (RoutingGroupIndex index = 0; index < snapshot.group_count; ++index) {
+    const auto& state = snapshot.groups[index];
+    auto& group = m_groups[index];
+    group.configured_gain_db.store(state.gain_db, std::memory_order_relaxed);
+    group.mute.store(state.configured_mute, std::memory_order_relaxed);
+    group.solo.store(state.configured_solo, std::memory_order_relaxed);
+    group.output_start.store(state.output_start, std::memory_order_relaxed);
+    group.output_width.store(state.output_width, std::memory_order_relaxed);
+    group.config.gain_db = state.gain_db;
+    group.config.mute = state.configured_mute;
+    group.config.solo = state.configured_solo;
+    group.config.output_start = state.output_start;
+    group.config.output_width = state.output_width;
+  }
+  updateSoloState(false);
+  endGroupControlWrite();
+
+  if (m_callback) {
+    for (RoutingGroupIndex index = 0; index < snapshot.group_count; ++index) {
+      m_callback->onGroupGainChanged(index, snapshot.groups[index].gain_db);
+    }
+    m_callback->onSoloStateChanged(m_solo_active.load(std::memory_order_acquire));
+  }
+  return SessionGraphError::OK;
+}
+
+void RoutingMatrix::beginGroupControlWrite() noexcept {
+  bool expected = false;
+  while (!m_group_control_publication_in_progress.compare_exchange_weak(
+      expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    expected = false;
+  }
+  while (m_group_control_render_reading.load(std::memory_order_acquire)) {
+  }
+  m_group_control_sequence.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void RoutingMatrix::endGroupControlWrite() noexcept {
+  m_group_control_sequence.fetch_add(1, std::memory_order_release);
+  m_group_control_publication_in_progress.store(false, std::memory_order_release);
+}
+
+void RoutingMatrix::refreshRenderGroupControls() noexcept {
+  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  m_group_control_render_reading.store(true, std::memory_order_release);
+  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
+    m_group_control_render_reading.store(false, std::memory_order_release);
+    return;
+  }
+
+  bool groupSoloActive = false;
+  for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
+    const auto& group = m_groups[index];
+    auto& state = m_render_group_controls[index];
+    const float gainDb = group.configured_gain_db.load(std::memory_order_relaxed);
+    if (gainDb != state.gain_db) {
+      state.gain_db = gainDb;
+      group.gain_smoother->setTarget(dbToLinear(gainDb));
+    }
+    state.output_start = group.output_start.load(std::memory_order_relaxed);
+    state.output_width = group.output_width.load(std::memory_order_relaxed);
+    state.configured_mute = group.mute.load(std::memory_order_relaxed);
+    state.configured_solo = group.solo.load(std::memory_order_relaxed);
+    groupSoloActive = groupSoloActive || state.configured_solo;
+  }
+  for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
+    auto& state = m_render_group_controls[index];
+    state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
+  }
+  m_group_control_render_reading.store(false, std::memory_order_release);
 }
 
 AudioMeter RoutingMatrix::getChannelMeter(RoutingChannelIndex channel_index) const {
@@ -502,9 +623,17 @@ RoutingSnapshot RoutingMatrix::saveSnapshot(const std::string& name,
     snapshot.channels.push_back(channel.config);
   }
 
-  // Save group states
-  for (const auto& group : m_groups) {
-    snapshot.groups.push_back(group.config);
+  // Save group controls from one coherent transaction boundary.
+  const auto controls = getRoutingControlSnapshot();
+  for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
+    auto config = m_groups[index].config;
+    const auto& state = controls.groups[index];
+    config.gain_db = state.gain_db;
+    config.mute = state.configured_mute;
+    config.solo = state.configured_solo;
+    config.output_start = state.output_start;
+    config.output_width = state.output_width;
+    snapshot.groups.push_back(std::move(config));
   }
 
   // Save master state
@@ -527,14 +656,28 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Load channel states
-  for (size_t i = 0; i < snapshot.channels.size(); ++i) {
-    configureChannel(static_cast<RoutingChannelIndex>(i), snapshot.channels[i]);
+  auto controls = getRoutingControlSnapshot();
+  for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
+    const auto& group = snapshot.groups[index];
+    auto& state = controls.groups[index];
+    state.gain_db = group.gain_db;
+    state.configured_mute = group.mute;
+    state.configured_solo = group.solo;
+    state.output_start = group.output_start;
+    state.output_width = group.output_width;
+  }
+  const auto groupResult = applyGroupControlSnapshot(controls);
+  if (groupResult != SessionGraphError::OK) {
+    return groupResult;
+  }
+  for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
+    m_groups[index].config.name = snapshot.groups[index].name;
+    m_groups[index].config.color = snapshot.groups[index].color;
   }
 
-  // Load group states
-  for (size_t i = 0; i < snapshot.groups.size(); ++i) {
-    configureGroup(static_cast<RoutingGroupIndex>(i), snapshot.groups[i]);
+  // Load channel states after the group transaction has validated.
+  for (size_t i = 0; i < snapshot.channels.size(); ++i) {
+    configureChannel(static_cast<RoutingChannelIndex>(i), snapshot.channels[i]);
   }
 
   // Load master state
@@ -555,10 +698,20 @@ SessionGraphError RoutingMatrix::reset() {
     configureChannel(static_cast<RoutingChannelIndex>(i), default_config);
   }
 
-  // Reset all groups to default
-  for (size_t i = 0; i < m_groups.size(); ++i) {
-    GroupConfig default_config;
-    configureGroup(static_cast<RoutingGroupIndex>(i), default_config);
+  // Reset all groups in one validated transaction.
+  auto controls = getRoutingControlSnapshot();
+  const auto& routingConfig = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
+    auto& state = controls.groups[index];
+    state.gain_db = 0.0f;
+    state.configured_mute = false;
+    state.configured_solo = false;
+    state.output_start = 0;
+    state.output_width = routingConfig.num_outputs;
+  }
+  const auto groupResult = applyGroupControlSnapshot(controls);
+  if (groupResult != SessionGraphError::OK) {
+    return groupResult;
   }
 
   // Reset master
@@ -591,6 +744,7 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   //
   // Get active config (lock-free read) to know the channel/output counts for
   // pointer offsetting.
+  refreshRenderGroupControls();
   {
     int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
     const RoutingConfig& cfg = m_config_buffers[cfg_idx];
@@ -730,13 +884,12 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   for (RoutingGroupIndex group_index = 0; group_index < config.num_groups; ++group_index) {
     auto& group = m_groups[group_index];
     auto& group_buffer = m_group_buffers[group_index];
-    const bool muted = isGroupMuted(group_index);
+    const auto& controls = m_render_group_controls[group_index];
+    const bool muted = controls.effective_mute;
     const float headroom = getHeadroomCompensation(group_index);
 
-    const RoutingOutputIndex outputStart =
-        group.output_start.load(std::memory_order_acquire);
-    const uint16_t outputWidth =
-        group.output_width.load(std::memory_order_acquire);
+    const RoutingOutputIndex outputStart = controls.output_start;
+    const uint16_t outputWidth = controls.output_width;
 
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
       const float group_gain = group.gain_smoother->process();
@@ -762,8 +915,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     }
 
     if (config.enable_metering) {
-      const float* right =
-          config.num_outputs > 1 ? group_buffer.channels[1].data() : nullptr;
+      const float* right = config.num_outputs > 1 ? group_buffer.channels[1].data() : nullptr;
       processStereoMetering(group_buffer.channels[0].data(), right, num_frames,
                             group.true_peak_meters, group.peak_level, group.rms_level);
       for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
@@ -787,9 +939,8 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   }
 
   if (config.enable_metering) {
-    processStereoMetering(master_output[0],
-                          config.num_outputs > 1 ? master_output[1] : nullptr, num_frames,
-                          m_master_true_peak_meters, m_master_peak, m_master_rms);
+    processStereoMetering(master_output[0], config.num_outputs > 1 ? master_output[1] : nullptr,
+                          num_frames, m_master_true_peak_meters, m_master_peak, m_master_rms);
     for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
       if (detectClipping(master_output[output], num_frames)) {
         m_master_clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -856,8 +1007,7 @@ void RoutingMatrix::initializeChannels() {
     // Default config
     channel.config.name = "Channel " + std::to_string(i + 1);
     channel.config.group_index = 0;
-    channel.config.output_channel =
-        static_cast<RoutingOutputIndex>(i % config.num_outputs);
+    channel.config.output_channel = static_cast<RoutingOutputIndex>(i % config.num_outputs);
     channel.config.gain_db = 0.0f;
     channel.config.pan = 0.0f;
     channel.config.mute = false;
@@ -885,6 +1035,7 @@ void RoutingMatrix::initializeGroups() {
 
     group.mute.store(false, std::memory_order_release);
     group.solo.store(false, std::memory_order_release);
+    group.configured_gain_db.store(0.0f, std::memory_order_release);
 
     group.peak_level.store(0.0f, std::memory_order_release);
     group.rms_level.store(0.0f, std::memory_order_release);
@@ -901,11 +1052,19 @@ void RoutingMatrix::initializeGroups() {
     group.config.output_width = config.num_outputs;
     group.config.color = 0xFFFFFFFF;
 
+    auto& renderState = m_render_group_controls[i];
+    renderState.gain_db = 0.0f;
+    renderState.output_start = 0;
+    renderState.output_width = config.num_outputs;
+    renderState.configured_mute = false;
+    renderState.configured_solo = false;
+    renderState.effective_mute = false;
+
     m_groups.push_back(std::move(group));
   }
 }
 
-void RoutingMatrix::updateSoloState() {
+void RoutingMatrix::updateSoloState(bool notifyCallback) {
   bool any_channel_solo = false;
   for (const auto& channel : m_channels) {
     if (channel.solo.load(std::memory_order_acquire)) {
@@ -927,8 +1086,9 @@ void RoutingMatrix::updateSoloState() {
   const bool any_solo = any_channel_solo || any_group_solo;
   m_solo_active.store(any_solo, std::memory_order_release);
 
-  // Notify callback
-  if (m_callback) {
+  // Notify callback after state publication unless a surrounding transaction
+  // owns the notification boundary.
+  if (notifyCallback && m_callback) {
     m_callback->onSoloStateChanged(any_solo);
   }
 }
