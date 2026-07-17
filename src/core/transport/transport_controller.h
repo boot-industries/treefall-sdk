@@ -423,12 +423,14 @@ private:
                              uint16_t numChannels) noexcept;
 
   /// ORP127 G5: Fire a voice honoring the context's VoiceMode (audio thread).
+  /// Returns the accepted nonzero voice identity, including for an in-place
+  /// restart, or zero when the start is rejected.
   /// - Polyphonic: always allocate a new voice (historical behavior).
   /// - MonoWithFadeOverlap: restart a live (non-stopping) voice in place; if
   ///   only fading tails exist, add a fresh voice alongside them.
   /// - MonoStrict: restart in place with no fade tail; if a voice is fading,
   ///   cut it and start fresh (single voice, sample-accurate replace).
-  bool startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
+  uint32_t startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
 
   /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
   /// restart (used by the mono voice modes). Applies the broadcast-safe restart

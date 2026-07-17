@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guarded realtime allocation behavior.
 - The installed `Orpheus::audio_utils` consumer compiles and runs the public
   trigger voice contract.
+## [0.6.1] - 2026-07-16
+
+Patch release exposing durable per-voice callback identity.
+
+### Changed
+
+- `ITransportCallback::onClipStarted()`, `onClipStopped()`, and
+  `onClipLooped()` now include the nonzero SDK voice identity carried by the
+  realtime event ring. Every retired voice publishes its own stop event;
+  handle-level consumers reconcile presentation state through `getClipState()`.
 
 ## [0.6.0] - 2026-07-16
 
