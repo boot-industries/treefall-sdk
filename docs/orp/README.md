@@ -28,8 +28,9 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   ABI facades, migration tooling). Directional.
 - **ORP137** — Completion record: what landed, the on-record reconciliation of
   the cross-repo audit gate, downstream follow-up sprints (FourTrack /
-  Clip Composer / FreqFinder), and ORP135 bet-dependency status. Next free
-  doc number: ORP138.
+  Clip Composer / FreqFinder), and ORP135 bet-dependency status. ORP154 adds
+  the FourTrack-triggered one-shot voice primitive. Next free doc number:
+  ORP155.
 - **ORP136** — Verification & CI framework spanning all sprints (realtime gates,
   determinism hashes, TSAN, fuzzing, benchmark budgets, downstream conformance).
 

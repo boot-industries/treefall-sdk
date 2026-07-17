@@ -69,13 +69,11 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
 
 class HandleTransitionCallback : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle handle, uint32_t voiceId,
-                     TransportPosition) override {
+  void onClipStarted(ClipHandle handle, uint32_t voiceId, TransportPosition) override {
     started.push_back(handle);
     startedVoiceIds.push_back(voiceId);
   }
-  void onClipStopped(ClipHandle handle, uint32_t voiceId,
-                     TransportPosition) override {
+  void onClipStopped(ClipHandle handle, uint32_t voiceId, TransportPosition) override {
     stopped.push_back(handle);
     stoppedVoiceIds.push_back(voiceId);
   }
@@ -301,17 +299,13 @@ TEST_F(VoiceModeTest, StopAllTailCompletionCannotEvictRefiredSiblingVoice) {
   EXPECT_EQ(m_transport->getActiveVoiceCount(refired), 1u);
   EXPECT_EQ(m_transport->getClipState(refired), PlaybackState::Playing);
   ASSERT_EQ(callback.startedVoiceIds.size(), 3u);
-  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), first),
-            1);
-  EXPECT_EQ(
-      std::count(callback.stopped.begin(), callback.stopped.end(), refired), 1);
-  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(),
-                       callback.stoppedVoiceIds.end(),
+  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), first), 1);
+  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), refired), 1);
+  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(), callback.stoppedVoiceIds.end(),
                        callback.startedVoiceIds[1]),
             1)
       << "The retired fade tail must publish its own voice identity";
-  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(),
-                       callback.stoppedVoiceIds.end(),
+  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(), callback.stoppedVoiceIds.end(),
                        callback.startedVoiceIds[2]),
             0)
       << "The fresh sibling voice must remain live";

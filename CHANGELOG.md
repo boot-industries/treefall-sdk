@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ITriggerVoice`, `TriggerVoice`, and `VoicePolicy` provide an independently
+  owned one-shot sample, retrigger-cut or bounded oldest-first polyphony,
+  sample-accurate in-buffer event offsets, and linear pitch-ratio playback.
+- `TriggerVoice` queues up to 64 trigger events per render call and performs no
+  allocation, deallocation, locking, or I/O in `trigger()` or `render()`.
+
+### Verification
+
+- `trigger_voice_test` covers owned interleaved PCM, offsets, retriggering,
+  oldest-first stealing, pitch interpolation, a 480,000-frame sample, and
+  guarded realtime allocation behavior.
+- The installed `Orpheus::audio_utils` consumer compiles and runs the public
+  trigger voice contract.
 ## [0.6.1] - 2026-07-16
 
 Patch release exposing durable per-voice callback identity.

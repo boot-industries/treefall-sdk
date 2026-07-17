@@ -30,7 +30,8 @@ class MultiClipStressTest : public ::testing::Test {
 protected:
   void SetUp() override {
     // Create transport controller (no SessionGraph for now)
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
     // Create dummy audio driver
     m_driver = createDummyAudioDriver();
@@ -69,18 +70,15 @@ protected:
   // Test transport callback
   class TestTransportCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, uint32_t,
-                       TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
       m_clipsStarted.fetch_add(1, std::memory_order_relaxed);
     }
 
-    void onClipStopped(ClipHandle handle, uint32_t,
-                       TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
       m_clipsStopped.fetch_add(1, std::memory_order_relaxed);
     }
 
-    void onClipLooped(ClipHandle handle, uint32_t,
-                      TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
       // Not used in stress tests
     }
 

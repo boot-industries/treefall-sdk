@@ -32,6 +32,7 @@
 | **[ORP135 – LATER Sprint](orp/ORP135%20LATER%20Sprint%20-%20Platform%20Leadership%20Bets.md)** | Speculative 2026+ platform bets |
 | **[ORP136 – Verification & CI](orp/ORP136%20Verification%20and%20CI%20Framework.md)** | Cross-cutting verification framework |
 | **[ORP150 – Atomic Clip-Group Choke Admission](orp/ORP150%20Atomic%20Clip-Group%20Choke%20Admission.md)** | Public one-command start/choke contract, failure atomicity, and package handoff |
+| **[ORP154 – Sequencer Trigger Voice Primitive](orp/ORP154%20Sequencer%20Trigger%20Voice%20Primitive.md)** | Public RT-safe one-shot voice contract and FourTrack Seq handoff |
 
 **📂 [ORP Directory Index](orp/README.md)** – Guide to all implementation plans
 (ORP001–ORP136), including the completed ORP125/126/127 transport sprints and the

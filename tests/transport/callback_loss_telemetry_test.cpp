@@ -57,16 +57,13 @@ std::string writeSilentWav(const std::filesystem::path& path) {
 
 class CountingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle, uint32_t,
-                     orpheus::TransportPosition) override {
+  void onClipStarted(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
     ++count;
   }
-  void onClipStopped(orpheus::ClipHandle, uint32_t,
-                     orpheus::TransportPosition) override {
+  void onClipStopped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
     ++count;
   }
-  void onClipLooped(orpheus::ClipHandle, uint32_t,
-                    orpheus::TransportPosition) override {
+  void onClipLooped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
     ++count;
   }
   void onClipRestarted(orpheus::ClipHandle, orpheus::TransportPosition) override {
