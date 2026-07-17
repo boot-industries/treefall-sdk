@@ -5,7 +5,7 @@
 **Document type:** Downstream adoption handoff  
 **Owning implementation team:** Clip Composer  
 **Issuing repository:** Orpheus SDK  
-**Status:** SDK prerequisite delivered in `v0.6.0`; downstream adoption active
+**Status:** SDK prerequisite and Clip Composer clean cutover delivered
 **Date:** 2026-07-16  
 **Related SDK direction:** [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
 **SDK release:** `v0.6.0`
@@ -114,6 +114,24 @@ The SDK prerequisite is complete only when all of the following are true:
   publication, rejection rollback, preset recall, and concurrent render/query
   behavior. The concurrent contract passes under ThreadSanitizer.
 
+### 3.2 Repository-wide CI baseline
+
+The merged `main` run
+[`29562306450`](https://github.com/chrislyons/orpheus-sdk/actions/runs/29562306450)
+is red for repository-wide baseline defects outside ORP153:
+
+- C++ lint reports existing clang-format violations across unrelated audio
+  driver, scene, and channel-format files.
+- Windows Debug and Release fail in `src/core/session/json_io.cpp` because the
+  Windows `max` macro collides with `std::numeric_limits<...>::max()`.
+- Ubuntu Release fails the ShmUI no-OpenGL consumer while compiling the shared
+  UI package.
+
+The ORP153 routing/package changes were verified separately before merge:
+the routing and package targets passed locally, and the PR's macOS jobs passed.
+These baseline failures remain documented rather than being folded into the
+routing or Clip Composer adoption scope.
+
 ---
 
 ## 4. Clip Composer implementation handoff
@@ -217,6 +235,20 @@ The SDK delivery claims above are verified in the Orpheus repository. Clip
 Composer source, pin, build, and runtime results remain downstream work until
 the application completes this handoff.
 
+### 7.1 Downstream completion evidence
+
+Clip Composer adopted SDK commit `2017741b40132c4bc27872e30b7b08019c1006a3`.
+`AudioEngine` now reads one SDK `RoutingControlSnapshot`, applies group profiles
+with `applyGroupControlSnapshot()`, rehydrates routing across transport
+replacement, and keeps only group labels and device topology as app-owned
+presentation state. The three routing shadow arrays and their rollback paths
+are removed.
+
+Focused routing, device-swap, scene-recall, external-mutation, configured versus
+effective mute, atomic rollback, and playback behavior tests pass. The Clip
+Composer full Debug suite passes with the CPU benchmark skipped by its existing
+configuration.
+
 ---
 
 ## 8. Non-goals
@@ -232,7 +264,7 @@ the application completes this handoff.
 
 ## 9. Dispatch state
 
-**Pass to:** Clip Composer team.  
+**Pass to:** Complete.
 **Start condition:** satisfied by Orpheus SDK `v0.6.0`.
-**Current action:** advance the Clip Composer pin and complete the clean
-application cutover in §4.
+**Current action:** none; the downstream clean cutover and verification are
+recorded in Clip Composer OCC169 and `PROGRESS.md`.
