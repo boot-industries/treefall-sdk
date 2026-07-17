@@ -4,7 +4,7 @@ This index catalogs public entry points exposed by the Orpheus SDK workspace. Up
 notable APIs are added.
 
 **Last Updated:** 2026-07-16 (isolated channel-meter contract)
-**SDK Version:** 0.5.3 — the authoritative version is `project(orpheus VERSION ...)`
+**SDK Version:** 0.6.0 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
 labels.)
@@ -35,7 +35,7 @@ labels.)
 
 | Header                             | Primary Interface        | Description                                                     | Added               |
 | ---------------------------------- | ------------------------ | --------------------------------------------------------------- | ------------------- |
-| `include/orpheus/routing_matrix.h` | `IRoutingMatrix`         | Professional N×M routing (64 channels → 16 groups → 32 outputs) | ORP109 (unreleased) |
+| `include/orpheus/routing_matrix.h` | `IRoutingMatrix`         | N×M routing plus coherent group-control snapshots               | ORP109, ORP153       |
 | `include/orpheus/clip_routing.h`   | `IClipRoutingMatrix`     | Simplified clip-based routing (4 Clip Groups for OCC)           | ORP109 (unreleased) |
 | `include/orpheus/clip_routing.h`   | Multi-channel extensions | Output bus assignment for 8-32 channel interfaces               | ORP109 (unreleased) |
 
@@ -89,7 +89,7 @@ labels.)
 
 **Routing:**
 
-- `ChannelConfig`, `GroupConfig`, `RoutingConfig`, `AudioMeter`, `RoutingSnapshot`, `SoloMode`, `MeteringMode`
+- `ChannelConfig`, `GroupConfig`, `RoutingConfig`, `AudioMeter`, `RoutingSnapshot`, `RoutingControlSnapshot`, `RoutingGroupControlState`, `SoloMode`, `MeteringMode`
 
 **Device Management:**
 
