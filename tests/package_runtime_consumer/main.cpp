@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
 #include <cstddef>
@@ -28,7 +29,8 @@ int main() {
   constexpr orpheus::ClipHandle kHandle = 17;
   constexpr size_t kFrames = 64;
 
-  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+  auto transport = orpheus::createTransportController(
+      nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
   if (!transport) {
     return 1;
   }
@@ -39,8 +41,27 @@ int main() {
     return 2;
   }
 
-  std::vector<std::vector<float>> storage(
-      config.outputChannels, std::vector<float>(kFrames, 1.0f));
+  auto* routing = transport->getRoutingMatrix();
+  if (routing == nullptr) {
+    return 7;
+  }
+  const auto initialRouting = routing->getRoutingControlSnapshot();
+  if (initialRouting.group_count != config.numGroups) {
+    return 8;
+  }
+  auto desiredRouting = initialRouting;
+  desiredRouting.groups[0].gain_db = -4.0f;
+  desiredRouting.groups[0].configured_mute = true;
+  if (routing->applyGroupControlSnapshot(desiredRouting) != orpheus::SessionGraphError::OK) {
+    return 9;
+  }
+  const auto appliedRouting = routing->getRoutingControlSnapshot();
+  if (appliedRouting.revision != initialRouting.revision + 1 ||
+      appliedRouting.groups[0].gain_db != -4.0f || !appliedRouting.groups[0].configured_mute) {
+    return 10;
+  }
+
+  std::vector<std::vector<float>> storage(config.outputChannels, std::vector<float>(kFrames, 1.0f));
   std::vector<float*> outputs;
   outputs.reserve(config.outputChannels);
   for (auto& channel : storage) {

@@ -14,6 +14,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
+- [[ORP153 Clip Composer Routing State Snapshot Adoption Handoff]]
 
 - [[ORP131 Clip Composer Subdirectory Archival]]
 - [[ORP130 CoreAudio Input Capture]]
@@ -116,6 +117,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP149 Aurora Control-Plane Opportunities for Game Audio and IoT]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
+- [[ORP153 Clip Composer Routing State Snapshot Adoption Handoff]]
 
 ## Archived Documents
 

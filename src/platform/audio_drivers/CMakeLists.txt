@@ -31,6 +31,7 @@ target_include_directories(orpheus_audio_driver_manager
 target_link_libraries(orpheus_audio_driver_manager
     PUBLIC
         orpheus_session  # For SessionGraphError
+        orpheus_audio_io  # For the cross-platform dummy driver factory
 )
 
 # Link platform-specific frameworks

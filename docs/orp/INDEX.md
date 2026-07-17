@@ -11,6 +11,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP150 Atomic Clip-Group Choke Admission]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
+- [[ORP153 Clip Composer Routing State Snapshot Adoption Handoff]]
 - [[ORP126 Codex Integration Audit and Checkpoint]]
 - [[ORP125 Architecture Refactor Sprint - Completion Report]]
 - [[ORP124 Architecture Cross-Reference Matrix]]
@@ -70,6 +71,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP150 Atomic Clip-Group Choke Admission]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]
 - [[ORP152 Clip Playback Controls]]
+- [[ORP153 Clip Composer Routing State Snapshot Adoption Handoff]]
 
 ## Archived Documents
 
