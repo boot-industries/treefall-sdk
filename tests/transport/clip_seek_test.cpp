@@ -231,15 +231,18 @@ class ClipSeekCallbackTest : public ::testing::Test {
 protected:
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t,
+                       TransportPosition position) override {
       startedHandle = handle;
     }
 
-    void onClipStopped(ClipHandle handle, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, uint32_t,
+                       TransportPosition position) override {
       stoppedHandle = handle;
     }
 
-    void onClipLooped(ClipHandle handle, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t,
+                      TransportPosition position) override {
       loopedHandle = handle;
     }
 

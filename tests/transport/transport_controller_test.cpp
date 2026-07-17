@@ -40,17 +40,20 @@ public:
   int underrunCount = 0;
   ClipHandle lastHandle = 0;
 
-  void onClipStarted(ClipHandle handle, TransportPosition position) override {
+  void onClipStarted(ClipHandle handle, uint32_t,
+                     TransportPosition position) override {
     ++startCount;
     lastHandle = handle;
   }
 
-  void onClipStopped(ClipHandle handle, TransportPosition position) override {
+  void onClipStopped(ClipHandle handle, uint32_t,
+                     TransportPosition position) override {
     ++stopCount;
     lastHandle = handle;
   }
 
-  void onClipLooped(ClipHandle handle, TransportPosition position) override {
+  void onClipLooped(ClipHandle handle, uint32_t,
+                    TransportPosition position) override {
     ++loopCount;
     lastHandle = handle;
   }

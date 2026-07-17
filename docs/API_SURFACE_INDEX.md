@@ -185,6 +185,18 @@ saturation could admit only a prefix. `SessionGraphError::OK` means the atomic
 command entered the ring; a later voice-pool refusal is reported through
 `ITransportCallback::onActiveClipLimitReached` and leaves peers untouched.
 
+### Durable Voice-Aware Callbacks
+
+Hosts that persist one row per accepted playout receive a `voiceId` in
+`onClipStarted()`, `onClipStopped()`, and `onClipLooped()`. The value is the
+fixed-capacity SDK voice instance identity and is nonzero for accepted starts.
+An in-place `MonoStrict` or `MonoWithFadeOverlap` refire retains the existing
+identity; a newly allocated overlap voice receives a distinct identity.
+Every retired voice emits `onClipStopped()`, including an old fade tail when a
+fresh sibling remains live. Durable hosts close the row matching `voiceId`;
+handle-level UI state must reconcile through `getClipState(handle)` rather than
+interpreting every retirement as an aggregate Stopped transition.
+
 ### Callback Loss Detection and Reconciliation (ORP151)
 
 ```cpp

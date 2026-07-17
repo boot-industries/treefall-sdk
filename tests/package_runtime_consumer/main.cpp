@@ -9,17 +9,22 @@ namespace {
 
 class RecordingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle handle, orpheus::TransportPosition) override {
+  void onClipStarted(orpheus::ClipHandle handle, uint32_t voiceId,
+                     orpheus::TransportPosition) override {
     ++started;
     lastHandle = handle;
+    lastVoiceId = voiceId;
   }
 
-  void onClipStopped(orpheus::ClipHandle, orpheus::TransportPosition) override {}
-  void onClipLooped(orpheus::ClipHandle, orpheus::TransportPosition) override {}
+  void onClipStopped(orpheus::ClipHandle, uint32_t,
+                     orpheus::TransportPosition) override {}
+  void onClipLooped(orpheus::ClipHandle, uint32_t,
+                    orpheus::TransportPosition) override {}
   void onBufferUnderrun(orpheus::TransportPosition) override {}
 
   int started = 0;
   orpheus::ClipHandle lastHandle = 0;
+  uint32_t lastVoiceId = 0;
 };
 
 } // namespace
@@ -80,7 +85,8 @@ int main() {
   }
 
   transport->processCallbacks();
-  if (callback.started != 1 || callback.lastHandle != kHandle) {
+  if (callback.started != 1 || callback.lastHandle != kHandle ||
+      callback.lastVoiceId == 0) {
     return 5;
   }
 

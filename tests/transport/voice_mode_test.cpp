@@ -9,8 +9,8 @@
 //   MonoStrict          — fire while playing restarts from zero, no fade tail;
 //                         a single voice at all times.
 
-#include <algorithm>
 #include "../../src/core/transport/transport_controller.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -69,14 +69,21 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
 
 class HandleTransitionCallback : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle handle, TransportPosition) override {
+  void onClipStarted(ClipHandle handle, uint32_t voiceId,
+                     TransportPosition) override {
     started.push_back(handle);
+    startedVoiceIds.push_back(voiceId);
   }
-  void onClipStopped(ClipHandle handle, TransportPosition) override {
+  void onClipStopped(ClipHandle handle, uint32_t voiceId,
+                     TransportPosition) override {
     stopped.push_back(handle);
+    stoppedVoiceIds.push_back(voiceId);
   }
-  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {}
+
+  std::vector<uint32_t> startedVoiceIds;
+  std::vector<uint32_t> stoppedVoiceIds;
 
   std::vector<ClipHandle> started;
   std::vector<ClipHandle> stopped;
@@ -87,7 +94,8 @@ public:
 class VoiceModeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_dir = std::filesystem::temp_directory_path() / "orp127_voicemode";
     std::filesystem::create_directories(m_dir);
     m_path = writeSineWav(m_dir / "vm.wav", 440.0f, 2.0f);
@@ -152,6 +160,36 @@ TEST_F(VoiceModeTest, PolyphonicLayersVoices) {
 
   EXPECT_EQ(m_transport->getActiveVoiceCount(h), 3u)
       << "Polyphonic mode should layer three simultaneous voices";
+}
+
+TEST_F(VoiceModeTest, VoiceAwareCallbacksPublishAcceptedSdkIdentity) {
+  constexpr ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap),
+            SessionGraphError::OK);
+
+  HandleTransitionCallback callback;
+  m_transport->setCallback(&callback);
+
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  pump();
+  m_transport->processCallbacks();
+  ASSERT_EQ(callback.startedVoiceIds.size(), 1u);
+  const uint32_t initialVoiceId = callback.startedVoiceIds.front();
+  EXPECT_NE(initialVoiceId, 0u);
+
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  pump();
+  m_transport->processCallbacks();
+  ASSERT_EQ(callback.startedVoiceIds.size(), 2u);
+  EXPECT_EQ(callback.startedVoiceIds.back(), initialVoiceId)
+      << "an in-place refire must retain the SDK voice identity";
+
+  ASSERT_EQ(m_transport->stopClip(handle), SessionGraphError::OK);
+  pump(4);
+  m_transport->processCallbacks();
+  ASSERT_EQ(callback.stoppedVoiceIds.size(), 1u);
+  EXPECT_EQ(callback.stoppedVoiceIds.front(), initialVoiceId);
 }
 
 // ---- MonoWithFadeOverlap ---------------------------------------------------
@@ -236,8 +274,7 @@ TEST_F(VoiceModeTest, StopAllTailCompletionCannotEvictRefiredSiblingVoice) {
   constexpr ClipHandle refired = 2;
   for (const auto handle : {first, refired}) {
     ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
-    ASSERT_EQ(m_transport->updateClipFades(
-                  handle, 0.0, 0.1, FadeCurve::Linear, FadeCurve::Linear),
+    ASSERT_EQ(m_transport->updateClipFades(handle, 0.0, 0.1, FadeCurve::Linear, FadeCurve::Linear),
               SessionGraphError::OK);
     ASSERT_EQ(m_transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap),
               SessionGraphError::OK);
@@ -263,16 +300,27 @@ TEST_F(VoiceModeTest, StopAllTailCompletionCannotEvictRefiredSiblingVoice) {
   EXPECT_EQ(m_transport->getActiveVoiceCount(first), 0u);
   EXPECT_EQ(m_transport->getActiveVoiceCount(refired), 1u);
   EXPECT_EQ(m_transport->getClipState(refired), PlaybackState::Playing);
-  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), first), 1);
-  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), refired), 0)
-      << "A handle-level stop must not be emitted while the fresh voice remains live";
+  ASSERT_EQ(callback.startedVoiceIds.size(), 3u);
+  EXPECT_EQ(std::count(callback.stopped.begin(), callback.stopped.end(), first),
+            1);
+  EXPECT_EQ(
+      std::count(callback.stopped.begin(), callback.stopped.end(), refired), 1);
+  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(),
+                       callback.stoppedVoiceIds.end(),
+                       callback.startedVoiceIds[1]),
+            1)
+      << "The retired fade tail must publish its own voice identity";
+  EXPECT_EQ(std::count(callback.stoppedVoiceIds.begin(),
+                       callback.stoppedVoiceIds.end(),
+                       callback.startedVoiceIds[2]),
+            0)
+      << "The fresh sibling voice must remain live";
 }
 
 TEST_F(VoiceModeTest, StopAllNearLoopBoundaryCompletesFadeInsteadOfLoopingForever) {
   constexpr ClipHandle handle = 1;
   ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
-  ASSERT_EQ(m_transport->updateClipFades(
-                handle, 0.0, 0.5, FadeCurve::Linear, FadeCurve::Linear),
+  ASSERT_EQ(m_transport->updateClipFades(handle, 0.0, 0.5, FadeCurve::Linear, FadeCurve::Linear),
             SessionGraphError::OK);
   ASSERT_EQ(m_transport->setClipLoopMode(handle, true), SessionGraphError::OK);
 
