@@ -26,6 +26,9 @@ set(ORPHEUS_AUDIO_UTILS_SOURCES)
 # ORP127 G6: host-neutral, dependency-free sample-rate conversion. Always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES polyphase_resampler.cpp)
 
+# FTR041: host-neutral, real-time-safe one-shot voice pool. Always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES trigger_voice.cpp)
+
 # ORP128/FTR018 §1: base-interface default (readSamplesEndingAt). Host-neutral,
 # dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader.cpp)

@@ -16,10 +16,8 @@ public:
     lastVoiceId = voiceId;
   }
 
-  void onClipStopped(orpheus::ClipHandle, uint32_t,
-                     orpheus::TransportPosition) override {}
-  void onClipLooped(orpheus::ClipHandle, uint32_t,
-                    orpheus::TransportPosition) override {}
+  void onClipStopped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {}
+  void onClipLooped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {}
   void onBufferUnderrun(orpheus::TransportPosition) override {}
 
   int started = 0;
@@ -85,8 +83,7 @@ int main() {
   }
 
   transport->processCallbacks();
-  if (callback.started != 1 || callback.lastHandle != kHandle ||
-      callback.lastVoiceId == 0) {
+  if (callback.started != 1 || callback.lastHandle != kHandle || callback.lastVoiceId == 0) {
     return 5;
   }
 

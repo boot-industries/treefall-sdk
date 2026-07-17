@@ -263,22 +263,19 @@ public:
   /// @param handle The clip that started
   /// @param voiceId Nonzero SDK voice instance identity
   /// @param position Current transport position
-  virtual void onClipStarted(ClipHandle handle, uint32_t voiceId,
-                             TransportPosition position) = 0;
+  virtual void onClipStarted(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
 
   /// Called when a clip stops playing
   /// @param handle The clip that stopped
   /// @param voiceId SDK identity of the retired voice
   /// @param position Current transport position
-  virtual void onClipStopped(ClipHandle handle, uint32_t voiceId,
-                             TransportPosition position) = 0;
+  virtual void onClipStopped(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
 
   /// Called when a clip loops back to start
   /// @param handle The clip that looped
   /// @param voiceId SDK identity of the looping voice
   /// @param position Current transport position
-  virtual void onClipLooped(ClipHandle handle, uint32_t voiceId,
-                            TransportPosition position) = 0;
+  virtual void onClipLooped(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
 
   /// Called when a clip restarts playback from its IN point
   /// @param handle The clip that restarted

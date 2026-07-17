@@ -53,9 +53,9 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 
 - `Orpheus::diagnostics` exposes `performance_monitor.h` and `loudness_meter.h`. Use
   `createStandalonePerformanceMonitor()` when no `SessionGraph` is involved.
-- `Orpheus::audio_utils` exposes `audio_file_reader.h`,
-  `audio_file_reader_extended.h`, and `channel_format.h` for file I/O and format
-  conversion helpers.
+- `Orpheus::audio_utils` exposes file I/O and format-conversion helpers plus
+  `trigger_voice.h`, the allocation-free one-shot voice utility used by
+  host-owned sequencers and generated tracks.
 
 ## Reliability and Adoption Completion
 

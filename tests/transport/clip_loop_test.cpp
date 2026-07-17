@@ -13,7 +13,8 @@ using namespace orpheus;
 class ClipLoopTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
     // Create test audio file (short clip for faster loop testing)
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_loop.wav").string();
@@ -163,16 +164,13 @@ TEST_F(ClipLoopTest, OnClipLoopedCallbackFires) {
   // Callback test fixture
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, uint32_t,
-                       TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
       startedHandle = handle;
     }
 
-    void onClipStopped(ClipHandle /*handle*/, uint32_t,
-                       TransportPosition /*position*/) override {}
+    void onClipStopped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
 
-    void onClipLooped(ClipHandle handle, uint32_t,
-                      TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
       loopedHandle = handle;
       loopedPosition = position;
       loopCount++;
@@ -400,12 +398,9 @@ TEST_F(ClipLoopTest, MultipleLoopsExecuteCorrectly) {
   // Callback to count loops
   class LoopCountCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle /*handle*/, uint32_t,
-                       TransportPosition /*position*/) override {}
-    void onClipStopped(ClipHandle /*handle*/, uint32_t,
-                       TransportPosition /*position*/) override {}
-    void onClipLooped(ClipHandle /*handle*/, uint32_t,
-                      TransportPosition /*position*/) override {
+    void onClipStarted(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
+    void onClipStopped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
+    void onClipLooped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {
       loopCount++;
     }
     void onBufferUnderrun(TransportPosition /*position*/) override {}

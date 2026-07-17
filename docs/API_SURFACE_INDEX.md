@@ -3,7 +3,7 @@
 This index catalogs public entry points exposed by the Orpheus SDK workspace. Update this document whenever new packages or
 notable APIs are added.
 
-**Last Updated:** 2026-07-16 (isolated channel-meter contract)
+**Last Updated:** 2026-07-16 (sequencer trigger voice primitive)
 **SDK Version:** 0.6.0 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
@@ -30,6 +30,7 @@ labels.)
 | `include/orpheus/audio_input.h`                | `IAudioInputStream`        | Lock-free capture ring + input-stream contract          | ORP134 G7           |
 | `include/orpheus/audio_analysis.h`             | `orpheus::analysis`        | FFT/STFT, LUFS/RMS/peak, spectral features, onsets      | ORP134 G6           |
 | `include/orpheus/audio_graph.h`                | `GraphDescription`         | Graph-neutral routing vocabulary + soundboard facade    | ORP134 G3           |
+| `include/orpheus/trigger_voice.h`               | `ITriggerVoice`, `TriggerVoice` | RT-safe owned one-shot sample, bounded polyphony, sample-accurate trigger offsets, and pitch-ratio playback | ORP154 (unreleased) |
 
 ### Routing & Mixing (ORP109)
 
@@ -150,6 +151,7 @@ the tree** — nothing under `packages/` is JavaScript today. See
 - [ORP110 Implementation Reports](orp/ORP110A%20App-Level%20Integration%20Report.md) – Complete feature documentation (see also ORP110B)
 - [ORP150 Atomic Clip-Group Choke Admission](orp/ORP150%20Atomic%20Clip-Group%20Choke%20Admission.md) – One-command metadata-group start/choke semantics and failure atomicity
 - [ORP151 Callback Loss Telemetry and Active Voice Reconciliation](orp/ORP151%20Callback%20Loss%20Telemetry%20and%20Active%20Voice%20Reconciliation.md) – Counter lifetime, snapshot semantics, realtime publication, and installed-host reconciliation
+- [ORP154 Sequencer Trigger Voice Primitive](orp/ORP154%20Sequencer%20Trigger%20Voice%20Primitive.md) – Owned PCM, bounded voice policy, in-buffer scheduling, pitch interpolation, and realtime guarantees
 
 ---
 

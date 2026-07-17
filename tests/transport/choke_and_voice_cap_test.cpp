@@ -84,7 +84,8 @@ public:
 class ChokeAndVoiceCapTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_dir = std::filesystem::temp_directory_path() / "orp127_choke";
     std::filesystem::create_directories(m_dir);
   }
