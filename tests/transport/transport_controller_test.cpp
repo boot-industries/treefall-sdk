@@ -19,7 +19,8 @@ class TransportControllerTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_sessionGraph = std::make_unique<MockSessionGraph>();
-    m_transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = createTransportController(
+        m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   }
 
   void TearDown() override {
@@ -40,17 +41,17 @@ public:
   int underrunCount = 0;
   ClipHandle lastHandle = 0;
 
-  void onClipStarted(ClipHandle handle, TransportPosition position) override {
+  void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
     ++startCount;
     lastHandle = handle;
   }
 
-  void onClipStopped(ClipHandle handle, TransportPosition position) override {
+  void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
     ++stopCount;
     lastHandle = handle;
   }
 
-  void onClipLooped(ClipHandle handle, TransportPosition position) override {
+  void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
     ++loopCount;
     lastHandle = handle;
   }
@@ -136,7 +137,8 @@ void advanceOneSecond(ITransportController& transport, uint32_t sampleRate) {
 // tempo, not a hardcoded 120 BPM.
 TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
   m_sessionGraph->set_tempo(90.0);
-  auto transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+  auto transport = createTransportController(
+      m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   advanceOneSecond(*transport, 48000);
 
@@ -150,7 +152,8 @@ TEST_F(TransportControllerTest, BeatsFollowSessionTempoAtConstruction) {
 // FTR027 §1: a set_tempo() change after construction reaches beats on the
 // next processCallbacks() pump.
 TEST_F(TransportControllerTest, BeatsTrackLiveTempoChange) {
-  auto transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+  auto transport = createTransportController(
+      m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
 
   advanceOneSecond(*transport, 48000);
 
