@@ -6,7 +6,7 @@
 
 Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
 
-**Current version:** 0.5.3 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
+**Current version:** 0.6.0 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
 value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 `tools/version_contract.py` synchronizes public claims and CI rejects drift.
 
