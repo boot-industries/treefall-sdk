@@ -14,7 +14,8 @@ using namespace orpheus;
 class ClipSeekTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_seek.wav").string();
     createTestAudioFile();
   }
@@ -231,15 +232,15 @@ class ClipSeekCallbackTest : public ::testing::Test {
 protected:
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
       startedHandle = handle;
     }
 
-    void onClipStopped(ClipHandle handle, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
       stoppedHandle = handle;
     }
 
-    void onClipLooped(ClipHandle handle, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
       loopedHandle = handle;
     }
 
@@ -264,7 +265,8 @@ protected:
   void SetUp() override {
     m_session = std::make_unique<core::SessionGraph>();
     m_session->set_tempo(90.0);
-    m_transport = std::make_unique<TransportController>(m_session.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        m_session.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_transport->processCallbacks();
     m_callback = std::make_unique<TestCallback>();
     m_transport->setCallback(m_callback.get());

@@ -419,7 +419,8 @@ private:
 
 ```cpp
 // Manual loop via onClipStopped callback (causes gap)
-void onClipStopped(ClipHandle handle, TransportPosition position) override {
+void onClipStopped(ClipHandle handle, uint32_t voiceId,
+                   TransportPosition position) override {
     if (isMusicBed(handle)) {
         m_transport->startClip(handle); // 10-20ms gap between iterations
     }

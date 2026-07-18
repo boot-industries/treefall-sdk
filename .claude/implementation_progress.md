@@ -1,25 +1,33 @@
 # ORP068 Implementation Progress
 
-> **Note (2026-07-09):** This is a historical work-log. The Clip Composer app was
-> extracted to its own repo (`~/dev/clip-composer`, GitHub `chrislyons/clip-composer`)
-> on 2026-07-09 and consumes this SDK as a submodule — see `docs/orp/ORP131`. Any
-> `apps/clip-composer/...` paths below reflect the SDK-subdir layout at the time the
-> entry was written; the current sources live in the standalone repo under `Source/`.
+> **Note (2026-07-16):** This is a historical ORP068 work log. Current SDK
+> contracts and delivery evidence live in the numbered ORP documents and
+> `.claude/CLAUDE.md`. The Clip Composer app was extracted to
+> `~/dev/clip-composer` and consumes this SDK as a submodule; historical
+> `apps/clip-composer/...` paths below refer to the former in-tree layout.
 
-## Current State (2026-04-04)
+## Current State (2026-07-16)
 
-- **C++ SDK:** v1.0.0-rc.1 — all ORP068 phases complete, 270+ tests passing, sanitizer-clean
-- **OCC App:** v0.2.1 — operator modes (Playout/Edit/Routing/Preferences), audition paths, session recovery in place (OCC146)
-- **Security:** Supply chain hardening complete — SHA-pinned Actions, dep-audit CI, Husky dep-guard, bot detection (see recent commits)
-- **Lightweight targets:** `Orpheus::diagnostics`, `Orpheus::audio_utils` exported for thin consumers
-- **Branch:** `feat/nr-suite-integration-targets` — doc checkpoint sprint underway
-- **Next:** Merge to main; resume OCC feature work from OCC147
+- **C++ SDK:** 0.6.1 pre-1.0 SDK with stable C ABI 1.0.
+- **Verification:** The `main`-synchronized ORP155 merge result builds and
+  passes 151/151 configured CTest contracts.
+- **FourTrack contracts:** ORP154 supplies the allocation-free trigger voice;
+  ORP155 supplies directional CoreAudio endpoints, isolated routing meters, and
+  public capture-failure telemetry; ORP156 records implementation and delivery.
+- **Lightweight targets:** `Orpheus::diagnostics` and `Orpheus::audio_utils`
+  remain exported for thin consumers.
+- **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
+  WASAPI is not release-supported without hosted Windows package/ABI evidence
+  and a real-device acceptance record.
+- **Branch:** `feat/orp154-fourtrack-contracts`, synchronized with `main` for
+  PR #218.
+- **Next:** Merge PR #218; downstream apps may then adopt a released SDK pin.
 
 ---
 
-**Last Updated:** 2026-02-27 (Session: Audio Device Selection Fix)
-**Current Phase:** Phase 6 ✅ Complete | SDK v1.0.0-rc.1 Released
-**Overall Progress:** C++ SDK Production-Ready | Architecture Refactor Phases 0-6 ✅ All Complete | Multi-App Validated | Audio output confirmed working
+**Last Updated:** 2026-07-16 (ORP155/ORP156 delivery)
+**Current Phase:** ORP155 implementation complete; PR #218 merge-qualified
+**Overall Progress:** Full configured suite green | Public contracts documented | Windows evidence deferred
 
 ---
 

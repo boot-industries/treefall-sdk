@@ -6,7 +6,7 @@
 
 Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
 
-**Current version:** 0.5.3 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
+**Current version:** 0.6.1 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
 value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 `tools/version_contract.py` synchronizes public claims and CI rejects drift.
 
@@ -53,9 +53,9 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 
 - `Orpheus::diagnostics` exposes `performance_monitor.h` and `loudness_meter.h`. Use
   `createStandalonePerformanceMonitor()` when no `SessionGraph` is involved.
-- `Orpheus::audio_utils` exposes `audio_file_reader.h`,
-  `audio_file_reader_extended.h`, and `channel_format.h` for file I/O and format
-  conversion helpers.
+- `Orpheus::audio_utils` exposes file I/O and format-conversion helpers plus
+  `trigger_voice.h`, the allocation-free one-shot voice utility used by
+  host-owned sequencers and generated tracks.
 
 ## Reliability and Adoption Completion
 
@@ -92,6 +92,29 @@ while (telemetry->tryRead(snapshot)) {
 The SDK telemetry bridge is fixed-capacity and presentation-neutral. FFTs,
 histories, smoothing, analyzer selection, musical policy, and UI view models
 remain application state.
+
+Audio I/O selection is direction-specific. CoreAudio identifiers are persistent
+HAL DeviceUID values; an empty field alone requests that direction's current
+system default:
+
+```cpp
+orpheus::AudioDriverConfig audio;
+audio.input_device_id = selectedInputUID;
+audio.output_device_id = selectedOutputUID;
+audio.num_inputs = 2;
+audio.num_outputs = 2;
+
+auto driver = orpheus::createCoreAudioDriver();
+if (driver->initialize(audio) == orpheus::SessionGraphError::OK) {
+  const auto io = driver->getTelemetry();
+  // io.input_render_failures distinguishes capture failure from real silence.
+}
+```
+
+Distinct CoreAudio endpoints use a driver-owned private aggregate. Unknown or
+direction-incompatible UIDs fail with `InvalidParameter`; they never fall back
+to another device. `getTelemetry()` is available through `IAudioDriver`, so
+factory consumers do not downcast to platform implementations.
 
 Child-app teams should use
 [`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
@@ -236,7 +259,8 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - **Audio file reader** – WAV/AIFF/FLAC via libsndfile
 - **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and Linux device backends are not yet release-supported
 - **Dummy driver** – Testing and offline rendering
-- **Device selection** – Runtime device enumeration and hot-swap (ORP109)
+- **Device selection** – Direction-specific stable input/output IDs; persistent CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
+- **Capture diagnostics** – Factory-visible saturating input-render failure telemetry (ORP155)
 - **Waveform processing** – Fast downsampling for UI rendering (ORP109)
 
 ### Routing & Mixing
@@ -504,8 +528,9 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 **Portastudio-style multitrack recorder for macOS/iOS**
 
 - **Repo:** `chrislyons/fourtrack` (local: `~/dev/fourtrack`) — consumes this
-  SDK as a git submodule; exercises the SDK's host-neutrality (routing matrix,
-  readers, CoreAudio input capture).
+  SDK as a git submodule; exercises the SDK's host-neutral routing matrix,
+  readers, CoreAudio directional input capture, capture telemetry, and
+  allocation-free trigger voice.
 
 ### Orpheus Wave Finder (in-tree)
 

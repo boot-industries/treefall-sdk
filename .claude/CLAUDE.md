@@ -6,6 +6,48 @@
 *No recent activity*
 </claude-mem-context>
 
+# ORP155/ORP156 Delivery Checkpoint (2026-07-16)
+
+- PR #218 delivers the FourTrack recorder adoption contracts.
+- `AudioDriverConfig` now uses direction-specific `input_device_id` and
+  `output_device_id`; no `device_id` compatibility alias remains.
+- CoreAudio resolves persistent DeviceUIDs independently, validates endpoint
+  direction, owns private aggregate lifecycle, and exposes saturating capture
+  failures through factory-visible `IAudioDriver::getTelemetry()`.
+- Routing channel meters retain isolated post-gain/pan contributions while
+  group and master meters retain accumulated-stage readings.
+- Physical-hardware coverage exercised distinct explicit endpoints,
+  same-device duplex, each directional default, incompatible and unknown UIDs,
+  aggregate reuse/destruction, and successful capture with zero failures.
+- After synchronization with current `main`, the complete configured tree built
+  and passed 151/151 CTest contracts. Windows-only WASAPI changes remain without
+  local Windows compile or execution evidence.
+- `main` already owned ORP154 for the trigger voice primitive, so the FourTrack
+  endpoint contract and handoff are ORP155 and ORP156 respectively.
+- Durable records:
+  - `docs/orp/ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md`
+  - `docs/orp/ORP156 ORP155 Implementation Handoff.md`
+
+# ORP154 Resume Checkpoint (2026-07-16)
+
+- PR #221 delivers the FTR041 sequencer trigger voice primitive and received a
+  PASS review verdict.
+- `include/orpheus/trigger_voice.h` exposes standalone `ITriggerVoice`,
+  `TriggerVoice`, and `VoicePolicy` contracts without changing an existing
+  virtual interface or the stable C ABI.
+- The implementation owns interleaved PCM, supports retrigger-cut or bounded
+  oldest-first polyphony, honors sample-accurate offsets and linear pitch
+  ratios, and uses a fixed 64-event queue with allocation-free, lock-free,
+  I/O-free `trigger()` and `render()`.
+- Eight trigger contracts, the installed `Orpheus::audio_utils` consumer,
+  realtime audit, add-subdirectory consumer, and the full 151-test configured
+  suite passed.
+- Durable implementation and FourTrack handoff:
+  `docs/orp/ORP154 Sequencer Trigger Voice Primitive.md`.
+- FourTrack's downstream baseline is `1d1399e`. Seq scheduling, persistence,
+  sample import, Click/Seq lifecycle, and reader-shell adoption remain in the
+  FourTrack repository rather than the SDK.
+
 # ORP141 Resume Checkpoint (2026-07-14)
 
 - PR #206 merged to `main` as `f5d703cd`. The R4 implementation checkpoint is

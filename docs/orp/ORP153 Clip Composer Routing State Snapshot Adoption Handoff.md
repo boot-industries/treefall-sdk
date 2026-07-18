@@ -5,25 +5,26 @@
 **Document type:** Downstream adoption handoff  
 **Owning implementation team:** Clip Composer  
 **Issuing repository:** Orpheus SDK  
-**Status:** Dependency-blocked; schedule after the SDK routing-state contract ships  
+**Status:** SDK prerequisite and Clip Composer clean cutover delivered
 **Date:** 2026-07-16  
 **Related SDK direction:** [[ORP147 SDK Customer-Fit Gap Register and Incremental Build Guide]]
+**SDK release:** `v0.6.0`
 
 ---
 
 ## 1. Purpose
 
 This document hands one child-application task to the Clip Composer team: remove
-its shadow copy of SDK routing gain, mute, and solo state after Orpheus publishes
-a coherent routing-state query contract.
+its shadow copy of SDK routing gain, mute, and solo state by adopting the
+coherent routing-state contract shipped in Orpheus SDK `v0.6.0`.
 
 This is downstream adoption work. Orpheus owns the prerequisite public API,
 realtime publication model, package fixture, and SDK contract tests. Clip
 Composer owns its SDK pin, app-side migration, UI projection, and application
 verification.
 
-Do not begin the migration against the current SDK API. `IRoutingMatrix` does
-not yet provide the required coherent configured-state query.
+The prerequisite is now available through installed public headers. Clip
+Composer can perform the clean cutover in §4.
 
 ---
 
@@ -62,10 +63,9 @@ future SDK control path can leave the application projection stale.
 
 ## 3. SDK prerequisite
 
-The Orpheus team must ship and package a public routing-state contract before
-this handoff becomes actionable. The final SDK symbol names are intentionally
-not prescribed here, but the contract must provide one coherent control-thread
-value containing, for every configured group:
+Orpheus SDK `v0.6.0` ships the public routing-state contract required by this
+handoff. `IRoutingMatrix::getRoutingControlSnapshot()` returns one coherent,
+fixed-capacity control-thread value containing, for every configured group:
 
 - group index or stable group identity;
 - configured gain in decibels;
@@ -94,6 +94,43 @@ The SDK prerequisite is complete only when all of the following are true:
 - an SDK test proves coherent gain/mute/solo readback after mutation and
   rollback; and
 - the SDK release or candidate version containing the contract is identified.
+
+### 3.1 Delivered SDK contract
+
+- `RoutingControlSnapshot` is a fixed-capacity, standard-layout,
+  trivially-copyable public value with schema, group count, and monotonic
+  revision.
+- Each `RoutingGroupControlState` distinguishes configured mute from effective
+  solo-derived mute and carries configured gain, solo, and output route.
+- `IRoutingMatrix::applyGroupControlSnapshot()` validates the entire group set
+  before mutation. Rejection preserves every prior field and the revision.
+- Accepted batches publish to the render thread at one buffer boundary. The
+  render thread copies a bounded value without waiting, allocation, locking, or
+  I/O and retains the prior complete value if control publication overlaps its
+  boundary.
+- Installed `Orpheus::routing` and `Orpheus::transport` package fixtures compile,
+  write, and read the contract through public interfaces.
+- Routing unit coverage proves configured/effective projection, coherent batch
+  publication, rejection rollback, preset recall, and concurrent render/query
+  behavior. The concurrent contract passes under ThreadSanitizer.
+
+### 3.2 Repository-wide CI baseline
+
+The merged `main` run
+[`29562306450`](https://github.com/chrislyons/orpheus-sdk/actions/runs/29562306450)
+is red for repository-wide baseline defects outside ORP153:
+
+- C++ lint reports existing clang-format violations across unrelated audio
+  driver, scene, and channel-format files.
+- Windows Debug and Release fail in `src/core/session/json_io.cpp` because the
+  Windows `max` macro collides with `std::numeric_limits<...>::max()`.
+- Ubuntu Release fails the ShmUI no-OpenGL consumer while compiling the shared
+  UI package.
+
+The ORP153 routing/package changes were verified separately before merge:
+the routing and package targets passed locally, and the PR's macOS jobs passed.
+These baseline failures remain documented rather than being folded into the
+routing or Clip Composer adoption scope.
 
 ---
 
@@ -194,8 +231,23 @@ The handoff is complete when:
   smoke checks pass; and
 - the child-app change records its tested SDK revision.
 
-No Clip Composer source change, SDK-pin change, build result, or runtime result
-is claimed by this document.
+The SDK delivery claims above are verified in the Orpheus repository. Clip
+Composer source, pin, build, and runtime results remain downstream work until
+the application completes this handoff.
+
+### 7.1 Downstream completion evidence
+
+Clip Composer adopted SDK commit `2017741b40132c4bc27872e30b7b08019c1006a3`.
+`AudioEngine` now reads one SDK `RoutingControlSnapshot`, applies group profiles
+with `applyGroupControlSnapshot()`, rehydrates routing across transport
+replacement, and keeps only group labels and device topology as app-owned
+presentation state. The three routing shadow arrays and their rollback paths
+are removed.
+
+Focused routing, device-swap, scene-recall, external-mutation, configured versus
+effective mute, atomic rollback, and playback behavior tests pass. The Clip
+Composer full Debug suite passes with the CPU benchmark skipped by its existing
+configuration.
 
 ---
 
@@ -205,15 +257,14 @@ is claimed by this document.
 - Moving group names, Cue/PFL policy, or device UI into the SDK.
 - Adding a general plugin or DSP graph.
 - Changing the application's audio-thread ownership model.
-- Prescribing the final SDK C++ symbol names before the Orpheus routing contract
-  is reviewed.
+- Extending the contract beyond the reviewed fixed-capacity group-control
+  surface.
 
 ---
 
 ## 9. Dispatch state
 
-**Pass to:** Clip Composer team.  
-**Start condition:** Orpheus publishes the prerequisite coherent routing-state
-and rollback-safe batch contract.  
-**Current action:** retain this handoff in the Clip Composer backlog; do not
-implement against the current SDK surface.
+**Pass to:** Complete.
+**Start condition:** satisfied by Orpheus SDK `v0.6.0`.
+**Current action:** none; the downstream clean cutover and verification are
+recorded in Clip Composer OCC169 and `PROGRESS.md`.

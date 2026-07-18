@@ -103,7 +103,8 @@ protected:
   void SetUp() override {
     m_tempDir = std::filesystem::temp_directory_path() / "orp136_rt_harness";
     std::filesystem::create_directories(m_tempDir);
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_left.assign(kBufferFrames, 0.0f);
     m_right.assign(kBufferFrames, 0.0f);
     m_buffers[0] = m_left.data();
@@ -277,9 +278,9 @@ namespace {
 class UnderrunCountingCallback : public ITransportCallback {
 public:
   std::atomic<int> underruns{0};
-  void onClipStarted(ClipHandle, TransportPosition) override {}
-  void onClipStopped(ClipHandle, TransportPosition) override {}
-  void onClipLooped(ClipHandle, TransportPosition) override {}
+  void onClipStarted(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipStopped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {
     underruns.fetch_add(1, std::memory_order_relaxed);
   }
@@ -326,6 +327,38 @@ TEST_F(RealtimeHarnessTest, StreamingSourcePlaysPrefilledWindowWithoutUnderrun) 
   EXPECT_EQ(buffersWithSignal, kBuffers) << "silent buffers inside the prefilled window";
   EXPECT_EQ(RtGuardState::allocViolations(), 0u) << "streaming read path allocated";
 
+  m_transport->setCallback(nullptr);
+}
+
+TEST_F(RealtimeHarnessTest, StreamingGroupChokeRefirePrimesTrimInWithoutUnderrun) {
+  m_transport->setPreparedSourceMaxFrames(48000);
+
+  UnderrunCountingCallback callback;
+  m_transport->setCallback(&callback);
+
+  const std::string path = writeSineWav(m_tempDir, "stream_group_refire.wav", 220.0f, 10.0f);
+  ASSERT_EQ(m_transport->registerClipAudio(1, path), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipVoiceMode(1, VoiceMode::MonoWithFadeOverlap),
+            SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(1), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(1), SessionGraphError::OK);
+  guardedCallback();
+
+  // Move beyond the first page while staying inside the initial resident
+  // window. The audio thread retires page zero, reproducing a long clip whose
+  // streaming cache has advanced away from its trim-in point.
+  constexpr int64_t advancedPosition = 2 * static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  ASSERT_EQ(m_transport->seekClip(1, advancedPosition), SessionGraphError::OK);
+  guardedCallback();
+  m_transport->processCallbacks();
+  ASSERT_EQ(callback.underruns.load(), 0);
+
+  ASSERT_EQ(m_transport->startClipWithGroupChoke(1), SessionGraphError::OK);
+  guardedCallback();
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(callback.underruns.load(), 0) << "group-choke refire missed the trim-in streaming page";
+  EXPECT_TRUE(bufferHasSignal(m_left));
   m_transport->setCallback(nullptr);
 }
 

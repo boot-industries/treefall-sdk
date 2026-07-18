@@ -3,8 +3,8 @@
 This index catalogs public entry points exposed by the Orpheus SDK workspace. Update this document whenever new packages or
 notable APIs are added.
 
-**Last Updated:** 2026-07-16 (isolated channel-meter contract)
-**SDK Version:** 0.5.3 — the authoritative version is `project(orpheus VERSION ...)`
+**Last Updated:** 2026-07-16 (sequencer trigger voice primitive)
+**SDK Version:** 0.6.1 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
 labels.)
@@ -30,12 +30,13 @@ labels.)
 | `include/orpheus/audio_input.h`                | `IAudioInputStream`        | Lock-free capture ring + input-stream contract          | ORP134 G7           |
 | `include/orpheus/audio_analysis.h`             | `orpheus::analysis`        | FFT/STFT, LUFS/RMS/peak, spectral features, onsets      | ORP134 G6           |
 | `include/orpheus/audio_graph.h`                | `GraphDescription`         | Graph-neutral routing vocabulary + soundboard facade    | ORP134 G3           |
+| `include/orpheus/trigger_voice.h`               | `ITriggerVoice`, `TriggerVoice` | RT-safe owned one-shot sample, bounded polyphony, sample-accurate trigger offsets, and pitch-ratio playback | ORP154 (unreleased) |
 
 ### Routing & Mixing (ORP109)
 
 | Header                             | Primary Interface        | Description                                                     | Added               |
 | ---------------------------------- | ------------------------ | --------------------------------------------------------------- | ------------------- |
-| `include/orpheus/routing_matrix.h` | `IRoutingMatrix`         | Professional N×M routing (64 channels → 16 groups → 32 outputs) | ORP109 (unreleased) |
+| `include/orpheus/routing_matrix.h` | `IRoutingMatrix`         | N×M routing plus coherent group-control snapshots               | ORP109, ORP153       |
 | `include/orpheus/clip_routing.h`   | `IClipRoutingMatrix`     | Simplified clip-based routing (4 Clip Groups for OCC)           | ORP109 (unreleased) |
 | `include/orpheus/clip_routing.h`   | Multi-channel extensions | Output bus assignment for 8-32 channel interfaces               | ORP109 (unreleased) |
 
@@ -89,7 +90,7 @@ labels.)
 
 **Routing:**
 
-- `ChannelConfig`, `GroupConfig`, `RoutingConfig`, `AudioMeter`, `RoutingSnapshot`, `SoloMode`, `MeteringMode`
+- `ChannelConfig`, `GroupConfig`, `RoutingConfig`, `AudioMeter`, `RoutingSnapshot`, `RoutingControlSnapshot`, `RoutingGroupControlState`, `SoloMode`, `MeteringMode`
 
 **Device Management:**
 
@@ -150,6 +151,7 @@ the tree** — nothing under `packages/` is JavaScript today. See
 - [ORP110 Implementation Reports](orp/ORP110A%20App-Level%20Integration%20Report.md) – Complete feature documentation (see also ORP110B)
 - [ORP150 Atomic Clip-Group Choke Admission](orp/ORP150%20Atomic%20Clip-Group%20Choke%20Admission.md) – One-command metadata-group start/choke semantics and failure atomicity
 - [ORP151 Callback Loss Telemetry and Active Voice Reconciliation](orp/ORP151%20Callback%20Loss%20Telemetry%20and%20Active%20Voice%20Reconciliation.md) – Counter lifetime, snapshot semantics, realtime publication, and installed-host reconciliation
+- [ORP154 Sequencer Trigger Voice Primitive](orp/ORP154%20Sequencer%20Trigger%20Voice%20Primitive.md) – Owned PCM, bounded voice policy, in-buffer scheduling, pitch interpolation, and realtime guarantees
 
 ---
 
@@ -184,6 +186,18 @@ Do not replace this operation with multiple `stopClip()` calls: queue
 saturation could admit only a prefix. `SessionGraphError::OK` means the atomic
 command entered the ring; a later voice-pool refusal is reported through
 `ITransportCallback::onActiveClipLimitReached` and leaves peers untouched.
+
+### Durable Voice-Aware Callbacks
+
+Hosts that persist one row per accepted playout receive a `voiceId` in
+`onClipStarted()`, `onClipStopped()`, and `onClipLooped()`. The value is the
+fixed-capacity SDK voice instance identity and is nonzero for accepted starts.
+An in-place `MonoStrict` or `MonoWithFadeOverlap` refire retains the existing
+identity; a newly allocated overlap voice receives a distinct identity.
+Every retired voice emits `onClipStopped()`, including an old fade tail when a
+fresh sibling remains live. Durable hosts close the row matching `voiceId`;
+handle-level UI state must reconcile through `getClipState(handle)` rather than
+interpreting every retirement as an aggregate Stopped transition.
 
 ### Callback Loss Detection and Reconciliation (ORP151)
 

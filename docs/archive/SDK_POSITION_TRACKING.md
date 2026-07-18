@@ -314,7 +314,8 @@ void WaveformDisplay::mouseDown(const MouseEvent& e) {
 ```cpp
 class ClipButton {
 private:
-  void onClipLooped(ClipHandle handle, TransportPosition position) {
+void onClipLooped(ClipHandle handle, uint32_t voiceId,
+                  TransportPosition position) {
     if (handle == m_handle) {
       // Flash button to indicate loop event
       setBackgroundColor(Colors::yellow);
