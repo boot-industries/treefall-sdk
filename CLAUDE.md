@@ -60,26 +60,38 @@ ctest --test-dir build --output-on-failure       # Test
 
 ---
 
-## UX Package: shmui
+## UX Package: ShmUI-JUCE
 
-**Status:** Planned | **Repo:** `~/dev/shmui`
+**Status:** Active in-tree package | **Location:** `packages/shmui-juce`
 
-JUCE components (AudioAnalyzer, WaveformVisualizer, BarVisualizer, OrbVisualizer, MatrixDisplay) for application-level UI. Thread-safe audio/UI communication. NOT for core SDK.
-
-Integration: `packages/shmui-juce/` (planned).
-
----
-
-## CI/CD (All Phases Complete)
-
-Matrix builds (ubuntu/windows/macos x Debug/Release). Sanitizers on Debug. Supply chain hardening: SHA-pinned Actions, `dep-audit.yml` (npm/PyPI age+download checks, bot detection), Husky dep-guard, `ignore-scripts` enforced.
+JUCE components provide application-level waveform, metering, transport, and
+visualization UI. UI histories and view models remain outside core. The pinned
+JUCE 8.0.4 non-OpenGL `add_subdirectory` consumer is a configured package gate;
+OpenGL remains opt-in.
 
 ---
 
-## ORP068 Status
+## CI/CD
 
-**Progress:** All phases complete. C++ SDK v1.0.0-rc.1 released.
-**History:** `.claude/implementation_progress.md` + `docs/orp/ORP068 Implementation Plan (v2.0).md`
+Workflow definitions cover Linux, macOS, and Windows builds plus sanitizer and
+supply-chain checks. Repository GitHub Actions are currently disabled; local
+configured build/CTest, installed-package, realtime-audit, and hardware evidence
+remain required before support claims.
+
+---
+
+## Current SDK Status
+
+**Version:** 0.6.1 pre-1.0 SDK with stable C ABI 1.0.
+**Historical milestone:** ORP068 phases are complete; the durable work log is
+`.claude/implementation_progress.md`.
+
+Current FourTrack-facing contracts:
+
+- ORP154: standalone allocation-free trigger voice.
+- ORP155: directional CoreAudio endpoints, isolated routing meters, and public
+  capture-failure telemetry.
+- ORP156: ORP155 implementation and verification handoff.
 
 ---
 

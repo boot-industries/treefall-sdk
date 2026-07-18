@@ -26,6 +26,15 @@ The ORP141 completion and child-team handoff is recorded in
 `docs/orp/ORP142 Downstream Consumer Adoption Notes.md` remains the non-binding
 adoption guide.
 
+Current FourTrack-facing SDK contracts are:
+
+- `docs/orp/ORP154 Sequencer Trigger Voice Primitive.md` for the standalone
+  one-shot voice utility;
+- `docs/orp/ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md`
+  for directional endpoints, isolated routing meters, and capture telemetry;
+- `docs/orp/ORP156 ORP155 Implementation Handoff.md` for verification and
+  delivery evidence.
+
 ## Sources of truth
 
 - Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.

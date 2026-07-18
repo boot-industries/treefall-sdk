@@ -15,14 +15,24 @@ namespace orpheus {
 
 class IPerformanceMonitor;
 
-/// Audio driver configuration
+/// Audio driver configuration.
+///
+/// Backend endpoint identifiers are stable backend IDs. CoreAudio consumes
+/// `kAudioDevicePropertyDeviceUID` values; an empty direction selects that
+/// direction's current system default.
 struct AudioDriverConfig {
   uint32_t sample_rate = 48000; ///< Sample rate in Hz
   uint16_t buffer_size = 512;   ///< Buffer size in frames
   uint16_t num_inputs = 2;      ///< Number of input channels
-  std::string device_id;        ///< Stable backend device ID (empty = default)
+  std::string input_device_id;  ///< Stable input endpoint ID (empty = default)
   uint16_t num_outputs = 2;     ///< Number of output channels
-  std::string device_name;      ///< Device name (empty = default device)
+  std::string output_device_id; ///< Stable output endpoint ID (empty = default)
+  std::string device_name;      ///< Optional host-visible display name
+};
+
+/// Factory-visible backend I/O diagnostics.
+struct AudioIoTelemetry {
+  uint64_t input_render_failures = 0; ///< Cumulative failed capture renders
 };
 
 /// Audio backend family.
@@ -84,7 +94,6 @@ struct AudioProcessBlock {
   bool discontinuity = false;
 };
 
-
 /// Audio driver callback interface
 /// Called on the audio thread - must be lock-free
 class IAudioCallback {
@@ -133,9 +142,15 @@ public:
   /// Get driver name (e.g., "Dummy", "CoreAudio", "WASAPI")
   virtual std::string getDriverName() const = 0;
 
-  /// Get current device latency in samples
+  /// Get current device latency in samples.
   /// @return Total round-trip latency (input + output)
   virtual uint32_t getLatencySamples() const = 0;
+
+  /// Get lock-free backend I/O diagnostics. The default remains zero for
+  /// drivers that do not expose backend failures.
+  virtual AudioIoTelemetry getTelemetry() const noexcept {
+    return {};
+  }
 
   /// Get runtime backend/device capabilities.
   ///

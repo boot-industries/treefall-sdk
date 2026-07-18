@@ -532,8 +532,17 @@ TEST_F(RoutingMatrixTest, ChannelMetersPublishCurrentSilenceForMuteSoloAndNullIn
   EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).rms_db, -100.0f);
   EXPECT_GT(matrix->getGroupMeter(0).peak_db, -100.0f);
   EXPECT_GT(matrix->getMasterMeter().peak_db, -100.0f);
-
   ASSERT_EQ(matrix->setChannelMute(1, false), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelMute(0, true), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(0).peak_db, -100.0f);
+  EXPECT_FLOAT_EQ(matrix->getChannelMeter(0).rms_db, -100.0f);
+  EXPECT_GT(matrix->getChannelMeter(1).peak_db, -100.0f);
+  EXPECT_GT(matrix->getGroupMeter(0).peak_db, -100.0f);
+  EXPECT_GT(matrix->getMasterMeter().peak_db, -100.0f);
+
+  ASSERT_EQ(matrix->setChannelMute(0, false), SessionGraphError::OK);
+
   ASSERT_EQ(matrix->setChannelSolo(0, true), SessionGraphError::OK);
   ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
   EXPECT_FLOAT_EQ(matrix->getChannelMeter(1).peak_db, -100.0f);
