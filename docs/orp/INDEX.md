@@ -8,10 +8,10 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP157 Bounded Per-Clip DSP and Output Telemetry]]
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP154 Sequencer Trigger Voice Primitive]]
-- [[ORP155 Bounded Per-Clip DSP and Output Telemetry]]
 - [[ORP153 Clip Composer Routing State Snapshot Adoption Handoff]]
 - [[ORP152 Clip Playback Controls]]
 - [[ORP151 Callback Loss Telemetry and Active Voice Reconciliation]]

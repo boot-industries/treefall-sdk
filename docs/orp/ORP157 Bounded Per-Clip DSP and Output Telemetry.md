@@ -1,4 +1,4 @@
-# ORP155 - Bounded Per-Clip DSP and Output Telemetry
+# ORP157 - Bounded Per-Clip DSP and Output Telemetry
 
 **Status:** implemented and release-qualified  
 **Created:** 2026-07-18  
