@@ -57,7 +57,7 @@ physical-output meter telemetry.
   allocation contracts pass.
 - Routing output-meter tests pass with isolated per-lane assertions.
 - All 152 configured SDK tests pass, including the installed exact-version
-  package and runtime consumers documented in ORP155.
+  package and runtime consumers documented in ORP157.
 
 ## [0.6.1] - 2026-07-16
 

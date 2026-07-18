@@ -20,7 +20,7 @@ labels.)
 | `include/orpheus/transport_controller.h`       | `ITransportController`     | Multi-clip transport with gain/loop/seek/restart        | v1.0.0-rc.1         |
 | `include/orpheus/transport_controller.h`       | Cue point extensions       | In-clip markers with seek-to-cue operations             | ORP109 (unreleased) |
 | `include/orpheus/transport_controller.h`       | Callback telemetry / active snapshot | Cumulative ring-loss detection and fixed-capacity voice reconciliation | ORP151 (`0.5.1`) |
-| `include/orpheus/clip_dsp.h`                   | `ClipDspProgram`, `ClipDspProcessor` | Validated fixed-order, fixed-capacity per-clip realtime processing | ORP155 (`0.6.2`) |
+| `include/orpheus/clip_dsp.h`                   | `ClipDspProgram`, `ClipDspProcessor` | Validated fixed-order, fixed-capacity per-clip realtime processing | ORP157 (`0.6.2`) |
 | `include/orpheus/session_graph.h`              | `SessionGraph`             | In-memory session representation (tracks, clips, tempo) | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader.h`          | `IAudioFileReader`         | Audio file decoding (WAV/AIFF/FLAC via libsndfile)      | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader_extended.h` | `IAudioFileReaderExtended` | Waveform pre-processing for UI rendering                | ORP109 (unreleased) |
