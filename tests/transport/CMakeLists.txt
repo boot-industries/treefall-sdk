@@ -25,6 +25,17 @@ add_test(
     COMMAND transport_controller_test
 )
 
+add_executable(clip_dsp_test
+    clip_dsp_test.cpp
+)
+target_link_libraries(clip_dsp_test
+    PRIVATE
+        orpheus_transport
+        GTest::gtest
+        GTest::gtest_main
+)
+add_test(NAME clip_dsp_test COMMAND clip_dsp_test)
+
 # ORP133 G3: debug-build single-producer contract assertion (death test)
 add_executable(command_producer_assert_test
     command_producer_assert_test.cpp

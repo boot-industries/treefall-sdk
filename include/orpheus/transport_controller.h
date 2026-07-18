@@ -2,6 +2,7 @@
 #pragma once
 
 #include <orpheus/channel_format.h>
+#include <orpheus/clip_dsp.h>
 #include <orpheus/errors.h>
 #include <orpheus/export.h>
 #include <orpheus/realtime_telemetry.h>
@@ -219,6 +220,7 @@ struct ClipMetadata {
                                          Speaker::None, Speaker::None};
   uint32_t segmentCount = 0; ///< Valid entries in segments; zero uses trim IN/OUT
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
+  ClipDspProgram dsp;
 };
 /// Session-level default metadata for new clips.
 ///

@@ -301,6 +301,10 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
       context->loopEnabled = entry.loopEnabled;
       context->segmentCount = entry.segmentCount;
       context->segments = entry.segments;
+      if (context->dspProcessor.prepare(entry.dsp, m_sampleRate, entry.metadata.num_channels) !=
+          ClipDspValidationError::OK) {
+        return SessionGraphError::InvalidParameter;
+      }
       context->routingGroup = entry.routingGroup;
       context->voiceMode = entry.voiceMode;
       return SessionGraphError::OK;
@@ -335,6 +339,7 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
     context->loopEnabled = false;
     context->routingGroup = 0;
     context->voiceMode = VoiceMode::Polyphonic;
+    context->dspProcessor.prepare({}, m_sampleRate, context->numChannels);
     return SessionGraphError::OK;
   } catch (const std::bad_alloc&) {
     context.reset();
@@ -726,6 +731,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                          : clipReadBuffer[secondInputFrame * numFileChannels + channel]);
           sourceFrame[channel] = first + (second - first) * fraction;
         }
+        clip.dspProcessor.processFrame(sourceFrame.data(), numFileChannels);
 
         const size_t destinationFrame = outputFrame + frame;
         if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
@@ -882,6 +888,11 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         std::min<size_t>(routingConfig.num_groups, kRealtimeTelemetryMaxGroups));
     for (uint8_t group = 0; group < snapshot.group_count; ++group) {
       snapshot.group_meters[group] = m_routingMatrix->getGroupMeter(group);
+    }
+    snapshot.output_count = static_cast<uint8_t>(
+        std::min<size_t>(routingConfig.num_outputs, kRealtimeTelemetryMaxOutputs));
+    for (uint8_t output = 0; output < snapshot.output_count; ++output) {
+      snapshot.output_meters[output] = m_routingMatrix->getOutputMeter(output);
     }
     snapshot.master_meter = m_routingMatrix->getMasterMeter();
 
@@ -1176,6 +1187,7 @@ void TransportController::processCommands() {
             clip.playDelayFramesRemaining = cmd.data.metadata.playDelayFrames;
           }
           clip.routingGroup = cmd.data.metadata.routingGroup;
+          clip.dspProcessor = cmd.dspProcessor;
           configureVoiceRouting(i, clip.routingGroup, clip.numChannels);
         }
       }
@@ -1525,6 +1537,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
   clip.routingGroup = context->routingGroup;
+  clip.dspProcessor = context->dspProcessor;
   configureVoiceRouting(voiceIndex, clip.routingGroup, clip.numChannels);
   clip.fadeOutGain = 1.0f;
   clip.isStopping = false;
@@ -1620,6 +1633,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
         dest.voiceMode = src.voiceMode;                 // ORP127 G5
         dest.routingGroup = src.routingGroup;
+        dest.dspProcessor = src.dspProcessor;
         configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
       configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
@@ -2382,6 +2396,10 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
                            fileChannels)) {
     return SessionGraphError::InvalidParameter;
   }
+  ClipDspProcessor preparedDsp;
+  if (preparedDsp.prepare(metadata.dsp, m_sampleRate, fileChannels) != ClipDspValidationError::OK) {
+    return SessionGraphError::InvalidParameter;
+  }
 
   // All validation passed - apply changes atomically
   // Calculate fade sample counts
@@ -2424,6 +2442,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.routingGroup = metadata.routingGroup;
   cmd.data.metadata.segmentCount = metadata.segmentCount;
   cmd.data.metadata.segments = metadata.segments;
+  cmd.dspProcessor = preparedDsp;
 
   // Queue admission precedes the persistent commit. A full ring therefore
   // cannot publish metadata that active voices did not receive, which is
@@ -2461,6 +2480,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     it->second.speakerPatch = metadata.speakerPatch;
     it->second.segmentCount = metadata.segmentCount;
     it->second.segments = metadata.segments;
+    it->second.dsp = metadata.dsp;
   }
 
   return SessionGraphError::OK;
@@ -2501,6 +2521,7 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
   metadata.sourceLayout = it->second.sourceLayout;
   metadata.speakerPatchSize = it->second.speakerPatchSize;
   metadata.speakerPatch = it->second.speakerPatch;
+  metadata.dsp = it->second.dsp;
 
   // If trim OUT is not set (0), use file duration
   if (metadata.trimOutSamples == 0) {

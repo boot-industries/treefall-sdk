@@ -48,6 +48,8 @@ constexpr uint32_t kRoutingSliceFrames = 2048;
 
 /// Fixed public capacity for coherent group-control snapshots.
 constexpr size_t kRoutingControlMaxGroups = 32;
+/// Maximum physical output lanes exposed by routing and telemetry.
+constexpr size_t kRoutingMaxOutputs = 32;
 
 /// Schema version for RoutingControlSnapshot.
 constexpr uint32_t kRoutingControlSnapshotSchemaVersion = 1;
@@ -462,6 +464,9 @@ public:
   /// @param group_index Group index [0, num_groups)
   /// @return Audio meter
   virtual AudioMeter getGroupMeter(RoutingGroupIndex group_index) const = 0;
+  /// Get one physical output lane's post-master, post-protection meter.
+  /// Invalid or unconfigured output indices return silence.
+  virtual AudioMeter getOutputMeter(RoutingOutputIndex output_index) const = 0;
 
   /// Get master meter
   /// @return Audio meter

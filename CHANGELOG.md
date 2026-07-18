@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-18
+
+Patch release adding bounded per-clip DSP, one-shot trigger voices, and
+physical-output meter telemetry.
+
 ### Added
 
 - `ITriggerVoice`, `TriggerVoice`, and `VoicePolicy` provide an independently
@@ -18,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allocation, deallocation, locking, or I/O in `trigger()` or `render()`.
 - `AudioIoTelemetry` and `IAudioDriver::getTelemetry()` expose host-neutral,
   factory-visible capture-render failure diagnostics.
+- `ClipDspProgram` and `ClipDspProcessor` provide a validated, fixed-capacity
+  gate → four-band EQ → compressor → stereo-width → limiter chain.
+- Transport clip metadata carries the DSP program into each durable voice;
+  default programs remain transparent and live updates replace prepared state
+  at one audio-thread command boundary.
 
 ### Changed
 
@@ -30,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resets only after successful initialization.
 - Routing channel meters report isolated post-gain/pan contributions while
   group and master meters retain accumulated-stage readings.
+- Realtime telemetry schema 2 publishes a fixed-capacity meter for every
+  configured physical output lane.
 
 ### Verification
 
@@ -41,8 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CoreAudio endpoint lifecycle coverage exercised explicit distinct endpoints,
   same-device duplex, each directional default, unknown and incompatible UIDs,
   aggregate reuse/destruction, and successful capture with zero failures.
-- The `main`-synchronized merge result built successfully and passed 151/151
-  configured CTest contracts.
+- Clip DSP unit, live transport-update, fixed-state, and guarded realtime
+  allocation contracts pass.
+- Routing output-meter tests pass with isolated per-lane assertions.
+- All 152 configured SDK tests pass, including the installed exact-version
+  package and runtime consumers documented in ORP155.
 
 ## [0.6.1] - 2026-07-16
 
