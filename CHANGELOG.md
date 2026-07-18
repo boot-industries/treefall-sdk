@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sample-accurate in-buffer event offsets, and linear pitch-ratio playback.
 - `TriggerVoice` queues up to 64 trigger events per render call and performs no
   allocation, deallocation, locking, or I/O in `trigger()` or `render()`.
+- `AudioIoTelemetry` and `IAudioDriver::getTelemetry()` expose host-neutral,
+  factory-visible capture-render failure diagnostics.
+
+### Changed
+
+- `AudioDriverConfig::device_id` is replaced by direction-specific
+  `input_device_id` and `output_device_id` fields without a compatibility alias.
+- CoreAudio resolves persistent DeviceUIDs independently, validates endpoint
+  direction, and owns private aggregate creation and destruction for distinct
+  duplex endpoints.
+- CoreAudio capture-render failure accounting saturates at `UINT64_MAX` and
+  resets only after successful initialization.
+- Routing channel meters report isolated post-gain/pan contributions while
+  group and master meters retain accumulated-stage readings.
 
 ### Verification
 
@@ -24,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guarded realtime allocation behavior.
 - The installed `Orpheus::audio_utils` consumer compiles and runs the public
   trigger voice contract.
+- CoreAudio endpoint lifecycle coverage exercised explicit distinct endpoints,
+  same-device duplex, each directional default, unknown and incompatible UIDs,
+  aggregate reuse/destruction, and successful capture with zero failures.
+- The `main`-synchronized merge result built successfully and passed 151/151
+  configured CTest contracts.
+
 ## [0.6.1] - 2026-07-16
 
 Patch release exposing durable per-voice callback identity.

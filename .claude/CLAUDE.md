@@ -8,7 +8,8 @@
 
 # ORP155/ORP156 Delivery Checkpoint (2026-07-16)
 
-- PR #218 delivers the FourTrack recorder adoption contracts.
+- PR #218 merged the FourTrack recorder adoption contracts into `main` as
+  `1b579f0f`.
 - `AudioDriverConfig` now uses direction-specific `input_device_id` and
   `output_device_id`; no `device_id` compatibility alias remains.
 - CoreAudio resolves persistent DeviceUIDs independently, validates endpoint
