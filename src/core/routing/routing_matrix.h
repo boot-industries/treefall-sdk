@@ -152,6 +152,7 @@ public:
   AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const override;
   AudioMeter getGroupMeter(RoutingGroupIndex group_index) const override;
   AudioMeter getMasterMeter() const override;
+  AudioMeter getOutputMeter(RoutingOutputIndex output_index) const override;
   RoutingControlSnapshot getRoutingControlSnapshot() const noexcept override;
 
   // Snapshots
@@ -216,6 +217,10 @@ private:
   std::atomic<float> m_master_rms;
   std::atomic<uint32_t> m_master_clip_count;
   std::array<TruePeakMeter, 2> m_master_true_peak_meters;
+  std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_peak{};
+  std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_rms{};
+  std::array<std::atomic<uint32_t>, kRoutingMaxOutputs> m_output_clip_count{};
+  std::array<TruePeakMeter, kRoutingMaxOutputs> m_output_true_peak_meters{};
 
   // Solo domains are independent: a group solo must not mute every source
   // channel before group summing, and a channel solo must not mute every

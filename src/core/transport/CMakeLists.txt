@@ -2,6 +2,7 @@
 
 add_library(orpheus_transport STATIC
     clip_source.cpp # ORP134 G1: prepared/streaming realtime clip sources
+    clip_dsp.cpp
     transport_controller.cpp
 )
 

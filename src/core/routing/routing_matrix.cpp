@@ -76,6 +76,12 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   for (auto& meter : m_master_true_peak_meters) {
     meter.reset();
   }
+  for (size_t output = 0; output < kRoutingMaxOutputs; ++output) {
+    m_output_peak[output].store(0.0f, std::memory_order_release);
+    m_output_rms[output].store(0.0f, std::memory_order_release);
+    m_output_clip_count[output].store(0, std::memory_order_release);
+    m_output_true_peak_meters[output].reset();
+  }
 
   m_group_control_sequence.store(0, std::memory_order_release);
   m_initialized.store(true, std::memory_order_release);
@@ -591,6 +597,22 @@ AudioMeter RoutingMatrix::getGroupMeter(RoutingGroupIndex group_index) const {
   return meter;
 }
 
+AudioMeter RoutingMatrix::getOutputMeter(RoutingOutputIndex output_index) const {
+  AudioMeter meter;
+  const auto config = getConfig();
+  if (output_index >= config.num_outputs || output_index >= kRoutingMaxOutputs)
+    return meter;
+
+  const float peak = m_output_peak[output_index].load(std::memory_order_acquire);
+  const float rms = m_output_rms[output_index].load(std::memory_order_acquire);
+  const uint32_t clip_count = m_output_clip_count[output_index].load(std::memory_order_acquire);
+  meter.peak_db = linearToDb(peak);
+  meter.rms_db = linearToDb(rms);
+  meter.clipping = clip_count > 0;
+  meter.clip_count = clip_count;
+  return meter;
+}
+
 AudioMeter RoutingMatrix::getMasterMeter() const {
   AudioMeter meter;
 
@@ -966,6 +988,27 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         master_output[output][frame] = sample;
       }
     }
+  }
+
+  for (RoutingOutputIndex output = 0; output < kRoutingMaxOutputs; ++output) {
+    if (!config.enable_metering || output >= config.num_outputs) {
+      m_output_peak[output].store(0.0f, std::memory_order_release);
+      m_output_rms[output].store(0.0f, std::memory_order_release);
+      continue;
+    }
+
+    float peak = 0.0f;
+    double sumSquares = 0.0;
+    for (uint32_t frame = 0; frame < num_frames; ++frame) {
+      const float sample = master_output[output][frame];
+      peak = std::max(peak, m_output_true_peak_meters[output].process(sample));
+      sumSquares += static_cast<double>(sample) * sample;
+    }
+    const float rms = std::sqrt(static_cast<float>(sumSquares / num_frames));
+    m_output_peak[output].store(peak, std::memory_order_release);
+    m_output_rms[output].store(rms, std::memory_order_release);
+    if (detectClipping(master_output[output], num_frames))
+      m_output_clip_count[output].fetch_add(1, std::memory_order_relaxed);
   }
 
   return SessionGraphError::OK;
