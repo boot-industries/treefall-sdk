@@ -3,7 +3,7 @@
 # ORP156 — ORP155 Implementation Handoff
 
 **Document type:** Engineering handoff
-**Status:** Completed; pull request open and unmerged
+**Status:** Completed; pull request merged
 **Branch:** `feat/orp154-fourtrack-contracts`
 **Base:** `main` at `1ab644c6`
 **Date:** 2026-07-16
@@ -136,7 +136,7 @@ compile or execution evidence.
 - Branch: `feat/orp154-fourtrack-contracts`
 - Pull request: [#218](https://github.com/chrislyons/orpheus-sdk/pull/218)
 - Target: `main`
-- Merge state at handoff completion: open; not merged
+- Merge: `1b579f0f` into `main`
 
 During merge preparation, `main` already contained
 `ORP154 Sequencer Trigger Voice Primitive`. To preserve unique document IDs,

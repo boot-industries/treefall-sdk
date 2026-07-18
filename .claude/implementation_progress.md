@@ -19,14 +19,14 @@
 - **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
   WASAPI is not release-supported without hosted Windows package/ABI evidence
   and a real-device acceptance record.
-- **Branch:** `feat/orp154-fourtrack-contracts`, synchronized with `main` for
-  PR #218.
-- **Next:** Merge PR #218; downstream apps may then adopt a released SDK pin.
+- **Delivery:** PR #218 merged to `main` as `1b579f0f`.
+- **Next:** Downstream apps may adopt these contracts after an SDK release/pin
+  update; Windows release evidence remains deferred.
 
 ---
 
 **Last Updated:** 2026-07-16 (ORP155/ORP156 delivery)
-**Current Phase:** ORP155 implementation complete; PR #218 merge-qualified
+**Current Phase:** ORP155 implementation merged through PR #218
 **Overall Progress:** Full configured suite green | Public contracts documented | Windows evidence deferred
 
 ---
