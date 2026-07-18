@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# ORP155 — ORP154 Implementation Handoff
+# ORP156 — ORP155 Implementation Handoff
 
 **Document type:** Engineering handoff
 **Status:** Completed; pull request open and unmerged
@@ -12,13 +12,13 @@
 
 ## Objective
 
-Finish every contract in [[ORP154 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]], verify the resulting SDK behavior, commit the branch, push it, and open a pull request to `main`. Do not merge the pull request.
+Finish every contract in [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]], verify the resulting SDK behavior, commit the branch, push it, and open a pull request to `main`. Do not merge the pull request.
 
 ## Worktree received from the prior session
 
 The branch has one staged new document and eight unstaged implementation/test files:
 
-- `docs/orp/ORP154 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md` — restored from local branch `docs/orp154-fourtrack-handoff`; still marked **Proposed** and must become a truthful implementation record after verification.
+- `docs/orp/ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md` — restored from local branch `docs/orp154-fourtrack-handoff`; still marked **Proposed** and must become a truthful implementation record after verification.
 - `include/orpheus/audio_driver.h`
 - `src/core/audio_io/dummy_audio_driver.cpp`
 - `src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp`
@@ -28,19 +28,19 @@ The branch has one staged new document and eight unstaged implementation/test fi
 - `tests/audio_io/coreaudio_driver_test.cpp`
 - `tests/audio_io/dummy_driver_test.cpp`
 
-`git diff --check` passed at the last inspection. Do not discard the staged ORP154 document or the uncommitted contract work.
+`git diff --check` passed at the last inspection. Do not discard the staged ORP155 document or the uncommitted contract work.
 
 ## Contract status
 
 ### Isolated routing channel meters
 
-The checked-out routing implementation already appears to meet ORP154 §2:
+The checked-out routing implementation already appears to meet ORP155 §2:
 
 - `RoutingMatrix::initialize()` preallocates `m_channel_meter_buffer`.
 - `RoutingMatrix::processRoutingBlock()` fills this scratch with each channel's own post-gain/pan contribution before group accumulation.
 - Existing coverage includes `ChannelMetersReportIsolatedEffectiveContributions`, `ChannelMetersPublishCurrentSilenceForMuteSoloAndNullInput`, and `GroupAndMasterMetersRetainSummedStageReadings`.
 
-Do not duplicate the implementation. Confirm the tests cover the required combined gain/pan/order/mute and group/master-sum contract. Strengthen a test only if an observable ORP154 requirement is missing.
+Do not duplicate the implementation. Confirm the tests cover the required combined gain/pan/order/mute and group/master-sum contract. Strengthen a test only if an observable ORP155 requirement is missing.
 
 ### Direction-specific duplex endpoint IDs
 
@@ -138,12 +138,20 @@ compile or execution evidence.
 - Target: `main`
 - Merge state at handoff completion: open; not merged
 
+During merge preparation, `main` already contained
+`ORP154 Sequencer Trigger Voice Primitive`. To preserve unique document IDs,
+the FourTrack contract and its handoff were renumbered from ORP154/ORP155 to
+ORP155/ORP156 before merging.
+
+The synchronized merge result built successfully and passed 151/151 configured
+CTest tests before PR merge.
+
 ## Documentation and delivery
 
 After verification:
 
-1. Update ORP154 from **Proposed** to a truthful implementation record with the exact changed contracts, tests, verification outputs, and hardware-dependent skips.
-2. Add ORP154 and this handoff document to `docs/orp/INDEX.md` and `docs/orp/ORP.md` following existing index conventions.
+1. Update ORP155 from **Proposed** to a truthful implementation record with the exact changed contracts, tests, verification outputs, and hardware-dependent skips.
+2. Add ORP155 and this handoff document to `docs/orp/INDEX.md` and `docs/orp/ORP.md` following existing index conventions.
 3. Re-check public-header consumers for stale `device_id` usage and concrete-driver telemetry downcasts.
 4. Commit using the repository convention, including `Co-Authored-By: Claude <noreply@anthropic.com>`.
 5. Push `feat/orp154-fourtrack-contracts` and open a PR targeting `main`; do not merge it.

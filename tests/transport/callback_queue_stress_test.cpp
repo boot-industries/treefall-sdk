@@ -26,15 +26,15 @@ public:
   std::atomic<int> seekCount{0};
   std::atomic<int> underrunCount{0};
 
-  void onClipStarted(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+  void onClipStarted(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {
     startCount.fetch_add(1, std::memory_order_relaxed);
   }
 
-  void onClipStopped(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+  void onClipStopped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {
     stopCount.fetch_add(1, std::memory_order_relaxed);
   }
 
-  void onClipLooped(ClipHandle /*handle*/, TransportPosition /*position*/) override {
+  void onClipLooped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {
     loopCount.fetch_add(1, std::memory_order_relaxed);
   }
 
@@ -62,7 +62,8 @@ protected:
   static constexpr size_t BUFFER_SIZE = 512;
 
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(SAMPLE_RATE)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(SAMPLE_RATE)});
     m_callback = std::make_unique<CountingCallback>();
     m_transport->setCallback(m_callback.get());
   }
@@ -404,13 +405,13 @@ public:
 
   std::vector<Entry> entries;
 
-  void onClipStarted(ClipHandle handle, TransportPosition /*position*/) override {
+  void onClipStarted(ClipHandle handle, uint32_t, TransportPosition /*position*/) override {
     entries.push_back({Kind::Started, handle});
   }
-  void onClipStopped(ClipHandle handle, TransportPosition /*position*/) override {
+  void onClipStopped(ClipHandle handle, uint32_t, TransportPosition /*position*/) override {
     entries.push_back({Kind::Stopped, handle});
   }
-  void onClipLooped(ClipHandle handle, TransportPosition /*position*/) override {
+  void onClipLooped(ClipHandle handle, uint32_t, TransportPosition /*position*/) override {
     entries.push_back({Kind::Looped, handle});
   }
   void onClipRestarted(ClipHandle handle, TransportPosition /*position*/) override {

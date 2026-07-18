@@ -2,10 +2,12 @@
 #include "../../include/orpheus/routing_matrix.h"
 
 #include <array>
+#include <atomic>
 
 #include <cmath>
 #include <gtest/gtest.h>
 #include <memory>
+#include <thread>
 #include <vector>
 
 using namespace orpheus;
@@ -1143,6 +1145,198 @@ TEST_F(RoutingMatrixTest, ProcessRoutingLargeBlockMatchesChunkedEquivalent) {
     EXPECT_NEAR(outA[0][i], outB[0][i], 1e-6f) << "left mismatch @ " << i;
     EXPECT_NEAR(outA[1][i], outB[1][i], 1e-6f) << "right mismatch @ " << i;
   }
+}
+
+// ============================================================================
+// Coherent group-control contract
+// ============================================================================
+
+TEST_F(RoutingMatrixTest, GroupControlSnapshotReportsConfiguredAndEffectiveState) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  const auto initial = matrix->getRoutingControlSnapshot();
+  ASSERT_EQ(initial.schema_version, kRoutingControlSnapshotSchemaVersion);
+  ASSERT_EQ(initial.group_count, 2);
+  EXPECT_EQ(initial.revision, 0u);
+
+  ASSERT_EQ(matrix->setGroupGain(0, -6.0f), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupMute(0, true), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupSolo(1, true), SessionGraphError::OK);
+
+  const auto snapshot = matrix->getRoutingControlSnapshot();
+  EXPECT_EQ(snapshot.revision, 3u);
+  EXPECT_FLOAT_EQ(snapshot.groups[0].gain_db, -6.0f);
+  EXPECT_TRUE(snapshot.groups[0].configured_mute);
+  EXPECT_FALSE(snapshot.groups[0].configured_solo);
+  EXPECT_TRUE(snapshot.groups[0].effective_mute);
+  EXPECT_FALSE(snapshot.groups[1].configured_mute);
+  EXPECT_TRUE(snapshot.groups[1].configured_solo);
+  EXPECT_FALSE(snapshot.groups[1].effective_mute);
+}
+
+TEST_F(RoutingMatrixTest, GroupControlTransactionRejectsInvalidStateWithoutMutation) {
+  config.num_outputs = 4;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  const auto before = matrix->getRoutingControlSnapshot();
+
+  auto invalid = before;
+  invalid.groups[0].gain_db = -9.0f;
+  invalid.groups[0].configured_mute = true;
+  invalid.groups[1].output_start = 3;
+  invalid.groups[1].output_width = 2;
+  EXPECT_EQ(matrix->applyGroupControlSnapshot(invalid), SessionGraphError::InvalidParameter);
+
+  const auto after = matrix->getRoutingControlSnapshot();
+  EXPECT_EQ(after.revision, before.revision);
+  EXPECT_FLOAT_EQ(after.groups[0].gain_db, before.groups[0].gain_db);
+  EXPECT_EQ(after.groups[0].configured_mute, before.groups[0].configured_mute);
+  EXPECT_EQ(after.groups[1].output_start, before.groups[1].output_start);
+  EXPECT_EQ(after.groups[1].output_width, before.groups[1].output_width);
+}
+
+TEST_F(RoutingMatrixTest, GroupControlTransactionPublishesOneCoherentRevision) {
+  config.num_outputs = 4;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  auto desired = matrix->getRoutingControlSnapshot();
+  desired.groups[0].gain_db = -3.0f;
+  desired.groups[0].configured_mute = true;
+  desired.groups[0].output_start = 0;
+  desired.groups[0].output_width = 2;
+  desired.groups[1].gain_db = 4.0f;
+  desired.groups[1].configured_solo = true;
+  desired.groups[1].output_start = 2;
+  desired.groups[1].output_width = 2;
+
+  ASSERT_EQ(matrix->applyGroupControlSnapshot(desired), SessionGraphError::OK);
+  const auto applied = matrix->getRoutingControlSnapshot();
+  EXPECT_EQ(applied.revision, desired.revision + 1u);
+  EXPECT_FLOAT_EQ(applied.groups[0].gain_db, -3.0f);
+  EXPECT_TRUE(applied.groups[0].configured_mute);
+  EXPECT_EQ(applied.groups[0].output_width, 2);
+  EXPECT_FLOAT_EQ(applied.groups[1].gain_db, 4.0f);
+  EXPECT_TRUE(applied.groups[1].configured_solo);
+  EXPECT_EQ(applied.groups[1].output_start, 2);
+}
+
+TEST_F(RoutingMatrixTest, AcceptedGroupTransactionTakesEffectAtNextRenderBoundary) {
+  config.num_channels = 2;
+  config.num_groups = 2;
+  config.num_outputs = 4;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.enable_metering = false;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  ChannelConfig channel0;
+  channel0.group_index = 0;
+  channel0.output_channel = 0;
+  ChannelConfig channel1;
+  channel1.group_index = 1;
+  channel1.output_channel = 0;
+  ASSERT_EQ(matrix->configureChannel(0, channel0), SessionGraphError::OK);
+  ASSERT_EQ(matrix->configureChannel(1, channel1), SessionGraphError::OK);
+
+  auto profile = matrix->getRoutingControlSnapshot();
+  profile.groups[0].output_start = 1;
+  profile.groups[0].output_width = 1;
+  profile.groups[1].configured_mute = true;
+  profile.groups[1].output_start = 3;
+  profile.groups[1].output_width = 1;
+  ASSERT_EQ(matrix->applyGroupControlSnapshot(profile), SessionGraphError::OK);
+
+  std::vector<float> source0(BUFFER_SIZE, 0.25f);
+  std::vector<float> source1(BUFFER_SIZE, 0.5f);
+  const float* inputs[2] = {source0.data(), source1.data()};
+  std::vector<std::vector<float>> outputs(config.num_outputs,
+                                          std::vector<float>(BUFFER_SIZE, -999.0f));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  EXPECT_FLOAT_EQ(outputs[0].front(), 0.0f);
+  EXPECT_NEAR(outputs[1].front(), 0.25f, TOLERANCE);
+  EXPECT_FLOAT_EQ(outputs[2].front(), 0.0f);
+  EXPECT_FLOAT_EQ(outputs[3].front(), 0.0f);
+}
+
+TEST_F(RoutingMatrixTest, RoutingPresetRecallPublishesSavedGroupControls) {
+  config.num_outputs = 4;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  auto expected = matrix->getRoutingControlSnapshot();
+  expected.groups[0].gain_db = -12.0f;
+  expected.groups[0].configured_mute = true;
+  expected.groups[0].output_width = 1;
+  expected.groups[1].gain_db = 3.0f;
+  expected.groups[1].output_start = 2;
+  expected.groups[1].output_width = 2;
+  ASSERT_EQ(matrix->applyGroupControlSnapshot(expected), SessionGraphError::OK);
+  const auto preset = matrix->saveSnapshot("routing");
+
+  auto changed = matrix->getRoutingControlSnapshot();
+  changed.groups[0].gain_db = 0.0f;
+  changed.groups[0].configured_mute = false;
+  changed.groups[0].output_width = 4;
+  changed.groups[1].gain_db = 0.0f;
+  changed.groups[1].output_start = 0;
+  changed.groups[1].output_width = 4;
+  ASSERT_EQ(matrix->applyGroupControlSnapshot(changed), SessionGraphError::OK);
+  ASSERT_EQ(matrix->loadSnapshot(preset), SessionGraphError::OK);
+
+  const auto recalled = matrix->getRoutingControlSnapshot();
+  EXPECT_FLOAT_EQ(recalled.groups[0].gain_db, -12.0f);
+  EXPECT_TRUE(recalled.groups[0].configured_mute);
+  EXPECT_EQ(recalled.groups[0].output_width, 1);
+  EXPECT_FLOAT_EQ(recalled.groups[1].gain_db, 3.0f);
+  EXPECT_EQ(recalled.groups[1].output_start, 2);
+  EXPECT_EQ(recalled.groups[1].output_width, 2);
+}
+
+TEST_F(RoutingMatrixTest, ConcurrentRenderAndQueryObserveOnlyCompleteTransactions) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  auto stateA = matrix->getRoutingControlSnapshot();
+  stateA.groups[0].gain_db = -8.0f;
+  stateA.groups[0].configured_mute = true;
+  stateA.groups[1].gain_db = 2.0f;
+  stateA.groups[1].configured_solo = false;
+  auto stateB = stateA;
+  stateB.groups[0].gain_db = 5.0f;
+  stateB.groups[0].configured_mute = false;
+  stateB.groups[1].gain_db = -4.0f;
+  stateB.groups[1].configured_solo = true;
+  ASSERT_EQ(matrix->applyGroupControlSnapshot(stateA), SessionGraphError::OK);
+
+  std::atomic<bool> writerDone{false};
+  std::atomic<bool> failed{false};
+  std::thread writer([&] {
+    for (int iteration = 0; iteration < 2000; ++iteration) {
+      const auto& state = (iteration & 1) == 0 ? stateB : stateA;
+      if (matrix->applyGroupControlSnapshot(state) != SessionGraphError::OK) {
+        failed.store(true, std::memory_order_release);
+      }
+    }
+    writerDone.store(true, std::memory_order_release);
+  });
+
+  auto inputs = createTestInputs(config.num_channels, BUFFER_SIZE);
+  auto inputPointers = toPointerArray(inputs);
+  std::vector<std::vector<float>> outputs(config.num_outputs, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  do {
+    if (matrix->processRouting(reinterpret_cast<const float* const*>(inputPointers.data()),
+                               outputPointers.data(), BUFFER_SIZE) != SessionGraphError::OK) {
+      failed.store(true, std::memory_order_release);
+    }
+    const auto observed = matrix->getRoutingControlSnapshot();
+    const bool isA = observed.groups[0].gain_db == -8.0f && observed.groups[0].configured_mute &&
+                     observed.groups[1].gain_db == 2.0f && !observed.groups[1].configured_solo;
+    const bool isB = observed.groups[0].gain_db == 5.0f && !observed.groups[0].configured_mute &&
+                     observed.groups[1].gain_db == -4.0f && observed.groups[1].configured_solo;
+    if (!isA && !isB) {
+      failed.store(true, std::memory_order_release);
+    }
+  } while (!writerDone.load(std::memory_order_acquire));
+
+  writer.join();
+  EXPECT_FALSE(failed.load(std::memory_order_acquire));
 }
 
 // ============================================================================

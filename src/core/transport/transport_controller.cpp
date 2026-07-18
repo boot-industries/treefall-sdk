@@ -813,17 +813,15 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         const uint32_t stoppedVoiceId = clip.voiceId;
         removeActiveVoice(stoppedVoiceId);
 
-        // Callbacks are handle-level state transitions. A fading tail ending
-        // must not report the clip stopped while a newly fired voice for the
-        // same handle is still live.
-        if (countActiveVoices(stoppedHandle) == 0) {
-          TransportEvent event{};
-          event.type = TransportEventType::ClipStopped;
-          event.handle = stoppedHandle;
-          event.voiceId = stoppedVoiceId;
-          event.position = getCurrentPosition();
-          postTransportEvent(event);
-        }
+        // Publish every retired voice. Hosts that present handle-level state
+        // can reconcile against getClipState(); durable consumers need the
+        // voice identity even when a freshly fired sibling remains live.
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStopped;
+        event.handle = stoppedHandle;
+        event.voiceId = stoppedVoiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
         continue;
       }
 
@@ -900,22 +898,28 @@ void TransportController::processCommands() {
 
     switch (cmd.type) {
     case TransportCommand::Type::Start: {
-      if (cmd.startContext && startVoiceWithMode(cmd.startContext)) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStarted;
-        event.handle = cmd.handle;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+      if (cmd.startContext) {
+        const uint32_t voiceId = startVoiceWithMode(cmd.startContext);
+        if (voiceId != 0) {
+          TransportEvent event{};
+          event.type = TransportEventType::ClipStarted;
+          event.handle = cmd.handle;
+          event.voiceId = voiceId;
+          event.position = getCurrentPosition();
+          postTransportEvent(event);
+        }
       }
     } break;
 
     case TransportCommand::Type::StartWithGroupChoke: {
       // Admission is deliberately first. A voice-pool refusal may publish the
       // existing typed rejection event, but it cannot mutate any peer.
-      if (cmd.startContext && startVoiceWithMode(cmd.startContext)) {
+      const uint32_t voiceId = cmd.startContext ? startVoiceWithMode(cmd.startContext) : 0;
+      if (voiceId != 0) {
         TransportEvent event{};
         event.type = TransportEventType::ClipStarted;
         event.handle = cmd.handle;
+        event.voiceId = voiceId;
         event.position = getCurrentPosition();
         postTransportEvent(event);
 
@@ -948,24 +952,16 @@ void TransportController::processCommands() {
       break;
 
     case TransportCommand::Type::Panic:
-      // Emit one handle-level stop transition even if a handle currently has
-      // both a fading tail and a freshly fired voice.
+      // Publish every retired voice so durable hosts can close the matching
+      // playout row. Handle-level consumers reconcile after the active set is
+      // cleared below.
       for (size_t i = 0; i < m_activeClipCount; ++i) {
-        bool firstVoiceForHandle = true;
-        for (size_t earlier = 0; earlier < i; ++earlier) {
-          if (m_activeClips[earlier].handle == m_activeClips[i].handle) {
-            firstVoiceForHandle = false;
-            break;
-          }
-        }
-        if (firstVoiceForHandle) {
-          TransportEvent event{};
-          event.type = TransportEventType::ClipStopped;
-          event.handle = m_activeClips[i].handle;
-          event.voiceId = m_activeClips[i].voiceId;
-          event.position = getCurrentPosition();
-          postTransportEvent(event);
-        }
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStopped;
+        event.handle = m_activeClips[i].handle;
+        event.voiceId = m_activeClips[i].voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
         m_activeClips[i].source.reset();
       }
       m_activeClipCount = 0;
@@ -1292,16 +1288,23 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
 }
 
-bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
+uint32_t
+TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
   if (!context)
-    return false;
+    return 0;
+
+  const auto addVoice = [this, &context]() -> uint32_t {
+    if (!addActiveClip(context))
+      return 0;
+    return m_activeClips[m_activeClipCount - 1].voiceId;
+  };
 
   const ClipHandle handle = context->handle;
   const VoiceMode mode = context->voiceMode;
 
   switch (mode) {
   case VoiceMode::Polyphonic:
-    return addActiveClip(context);
+    return addVoice();
 
   case VoiceMode::MonoStrict: {
     ActiveClip* primary = nullptr;
@@ -1310,7 +1313,7 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
         primary = &m_activeClips[i];
     }
     if (!primary)
-      return addActiveClip(context);
+      return addVoice();
 
     for (size_t i = m_activeClipCount; i-- > 0;) {
       if (m_activeClips[i].handle == handle && &m_activeClips[i] != primary) {
@@ -1327,7 +1330,7 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
       }
     }
     if (!primary)
-      return addActiveClip(context);
+      return addVoice();
 
     resetSegmentCursor(*primary);
     const int64_t startPosition = playbackWindowStart(*primary);
@@ -1343,7 +1346,7 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
     primary->isRestarting = false;
     primary->restartFadeFramesRemaining = 0;
     primary->voiceMode = mode;
-    return true;
+    return primary->voiceId;
   }
 
   case VoiceMode::MonoWithFadeOverlap: {
@@ -1355,15 +1358,15 @@ bool TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackC
       }
     }
     if (!live)
-      return addActiveClip(context);
+      return addVoice();
 
     restartVoiceInPlace(*live);
     live->voiceMode = mode;
-    return true;
+    return live->voiceId;
   }
   }
 
-  return addActiveClip(context);
+  return addVoice();
 }
 
 void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
@@ -1820,13 +1823,13 @@ void TransportController::processCallbacks() {
     if (m_callback) {
       switch (event.type) {
       case TransportEventType::ClipStarted:
-        m_callback->onClipStarted(event.handle, event.position);
+        m_callback->onClipStarted(event.handle, event.voiceId, event.position);
         break;
       case TransportEventType::ClipStopped:
-        m_callback->onClipStopped(event.handle, event.position);
+        m_callback->onClipStopped(event.handle, event.voiceId, event.position);
         break;
       case TransportEventType::ClipLooped:
-        m_callback->onClipLooped(event.handle, event.position);
+        m_callback->onClipLooped(event.handle, event.voiceId, event.position);
         break;
       case TransportEventType::ClipRestarted:
         m_callback->onClipRestarted(event.handle, event.position);
@@ -1988,6 +1991,13 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(AudioFileEntry
   // decode/resample/file I/O happens here (or on the stream worker) - the
   // audio thread only ever memcpy-reads the published source.
   if (entry.source) {
+    if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source)) {
+      // Keep refires and starts after a prior stop gap-free. The streaming
+      // ring reserves one page outside its steady-state worker window so this
+      // bounded control-thread prime cannot displace pages an active voice is
+      // still reading.
+      streaming->prefill(entry.trimInSamples, 1);
+    }
     return SessionGraphError::OK;
   }
 

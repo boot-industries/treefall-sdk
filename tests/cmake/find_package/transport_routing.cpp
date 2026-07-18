@@ -15,6 +15,11 @@ static_assert(std::is_standard_layout_v<orpheus::TransportCallbackTelemetry>);
 static_assert(std::is_trivially_copyable_v<orpheus::ActiveVoiceSnapshot>);
 static_assert(std::is_standard_layout_v<orpheus::ActiveVoiceSnapshot>);
 static_assert(orpheus::kActiveVoiceSnapshotCapacity == 32);
+static_assert(std::is_trivially_copyable_v<orpheus::RoutingGroupControlState>);
+static_assert(std::is_standard_layout_v<orpheus::RoutingGroupControlState>);
+static_assert(std::is_trivially_copyable_v<orpheus::RoutingControlSnapshot>);
+static_assert(std::is_standard_layout_v<orpheus::RoutingControlSnapshot>);
+static_assert(orpheus::kRoutingControlMaxGroups == 32);
 
 namespace {
 
@@ -73,6 +78,31 @@ int main() {
   if (routing->processRouting(inputs, outputs, frames) != orpheus::SessionGraphError::OK ||
       left[2048] < 0.3f || right.back() < 0.3f) {
     return 2;
+  }
+
+  const auto initialRouting = routing->getRoutingControlSnapshot();
+  if (initialRouting.schema_version != orpheus::kRoutingControlSnapshotSchemaVersion ||
+      initialRouting.group_count != 1) {
+    return 7;
+  }
+  auto desiredRouting = initialRouting;
+  desiredRouting.groups[0].gain_db = -6.0f;
+  desiredRouting.groups[0].configured_mute = true;
+  if (routing->applyGroupControlSnapshot(desiredRouting) != orpheus::SessionGraphError::OK) {
+    return 8;
+  }
+  const auto appliedRouting = routing->getRoutingControlSnapshot();
+  if (appliedRouting.revision != initialRouting.revision + 1 ||
+      appliedRouting.groups[0].gain_db != -6.0f || !appliedRouting.groups[0].configured_mute ||
+      !appliedRouting.groups[0].effective_mute) {
+    return 9;
+  }
+  auto invalidRouting = appliedRouting;
+  invalidRouting.groups[0].output_width = 3;
+  if (routing->applyGroupControlSnapshot(invalidRouting) !=
+          orpheus::SessionGraphError::InvalidParameter ||
+      routing->getRoutingControlSnapshot().revision != appliedRouting.revision) {
+    return 10;
   }
 
   orpheus::TransportConfig transportConfig;

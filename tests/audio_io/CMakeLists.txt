@@ -20,6 +20,25 @@ target_include_directories(polyphase_resampler_test
 
 add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
 
+# FTR041: sample-accurate, bounded trigger voice contract and RT allocation gate.
+add_executable(trigger_voice_test
+    trigger_voice_test.cpp
+)
+
+target_link_libraries(trigger_voice_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+
+target_include_directories(trigger_voice_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+add_test(NAME trigger_voice_test COMMAND trigger_voice_test)
+
 # ORP128/FTR018 §2: scrub resampler unit test. Standalone — links only
 # orpheus_audio_utils (no libsndfile, no JUCE, host-neutral).
 add_executable(scrub_resampler_test

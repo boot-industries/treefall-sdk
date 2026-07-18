@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.22)
 
-project(orpheus VERSION 0.5.3 LANGUAGES CXX)
+project(orpheus VERSION 0.6.1 LANGUAGES CXX)
 
 set(ORPHEUS_ABI_MAJOR 1)
 set(ORPHEUS_ABI_MINOR 0)

@@ -13,7 +13,8 @@ using namespace orpheus;
 class OutPointEnforcementTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_out_point.wav").string();
     createTestAudioFile();
   }
@@ -198,18 +199,18 @@ class OutPointCallbackTest : public ::testing::Test {
 protected:
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
       startedHandle = handle;
       startedCount++;
     }
 
-    void onClipStopped(ClipHandle handle, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
       stoppedHandle = handle;
       stoppedPosition = position;
       stoppedCount++;
     }
 
-    void onClipLooped(ClipHandle handle, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
       loopedHandle = handle;
       loopedCount++;
     }
@@ -228,7 +229,8 @@ protected:
   };
 
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_callback = std::make_unique<TestCallback>();
     m_transport->setCallback(m_callback.get());
     m_testFilePath =

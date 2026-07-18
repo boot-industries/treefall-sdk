@@ -112,7 +112,8 @@ private:
 class StreamingClipSource : public IClipSource {
 public:
   static constexpr size_t kPageFrames = 65536; ///< frames per page (~1.4s @ 48k)
-  static constexpr size_t kNumPages = 4;       ///< 1 behind + demand page + 2 ahead (≈5.5s @ 48k)
+  static constexpr size_t kWindowPages = 4;    ///< 1 behind + demand + 2 ahead (≈5.5s @ 48k)
+  static constexpr size_t kNumPages = kWindowPages + 1; ///< reserved restart/refire page
 
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
   /// from worker/control threads (guarded by an internal mutex).
@@ -135,11 +136,12 @@ public:
 
   /// Fill up to `max_pages` non-resident pages of the window around `pos`
   /// synchronously — the demand page first, then the forward pages, then the
-  /// behind page. CONTROL/WORKER THREAD. Called by prepareClipAudio so
-  /// playback from the trim-in point starts without an initial underrun.
+  /// behind page. CONTROL/WORKER THREAD. One page is reserved outside the
+  /// steady-state worker window so a control-thread start/refire can prime its
+  /// first audible page before the realtime command resets the voice cursor.
   /// Hosts with latency-bounded transitions can pass max_pages = 1 to prime
   /// only the audible page and leave the rest to the worker.
-  void prefill(int64_t pos, size_t max_pages = kNumPages);
+  void prefill(int64_t pos, size_t max_pages = kWindowPages);
 
   /// One worker pass: refill FREE pages inside the current demand window.
   /// WORKER THREAD ONLY.

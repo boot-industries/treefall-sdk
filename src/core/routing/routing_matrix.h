@@ -57,6 +57,7 @@ struct GroupState {
   std::unique_ptr<GainSmoother> gain_smoother; ///< Gain smoothing
   std::atomic<bool> mute;
   std::atomic<bool> solo;
+  std::atomic<float> configured_gain_db;
   std::atomic<RoutingOutputIndex> output_start;
   std::atomic<uint16_t> output_width;
 
@@ -72,15 +73,15 @@ struct GroupState {
   // Move constructor (needed for std::vector with atomics)
   GroupState(GroupState&& other) noexcept
       : gain_smoother(std::move(other.gain_smoother)), mute(other.mute.load()),
-        solo(other.solo.load()), output_start(other.output_start.load()),
-        output_width(other.output_width.load()), peak_level(other.peak_level.load()),
-        rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
-        true_peak_meters(std::move(other.true_peak_meters)),
+        solo(other.solo.load()), configured_gain_db(other.configured_gain_db.load()),
+        output_start(other.output_start.load()), output_width(other.output_width.load()),
+        peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
+        clip_count(other.clip_count.load()), true_peak_meters(std::move(other.true_peak_meters)),
         config(std::move(other.config)) {}
 
   // Default constructor
   GroupState()
-      : gain_smoother(nullptr), mute(false), solo(false), output_start(0),
+      : gain_smoother(nullptr), mute(false), solo(false), configured_gain_db(0.0f), output_start(0),
         output_width(2), peak_level(0.0f), rms_level(0.0f), clip_count(0) {}
 
   // Deleted copy constructor (atomics are not copyable)
@@ -135,9 +136,10 @@ public:
   SessionGraphError configureGroup(RoutingGroupIndex group_index,
                                    const GroupConfig& config) override;
 
-  SessionGraphError setGroupOutputRoute(
-      RoutingGroupIndex group_index, RoutingOutputIndex output_start,
-      uint16_t output_width) override;
+  SessionGraphError setGroupOutputRoute(RoutingGroupIndex group_index,
+                                        RoutingOutputIndex output_start,
+                                        uint16_t output_width) override;
+  SessionGraphError applyGroupControlSnapshot(const RoutingControlSnapshot& snapshot) override;
 
   // Master configuration
   SessionGraphError setMasterGain(float gain_db) override;
@@ -150,6 +152,7 @@ public:
   AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const override;
   AudioMeter getGroupMeter(RoutingGroupIndex group_index) const override;
   AudioMeter getMasterMeter() const override;
+  RoutingControlSnapshot getRoutingControlSnapshot() const noexcept override;
 
   // Snapshots
   RoutingSnapshot saveSnapshot(const std::string& name,
@@ -158,8 +161,8 @@ public:
   SessionGraphError reset() override;
 
   // Audio processing
-  SessionGraphError processRouting(const float* const* channel_inputs,
-                                   float* const* master_output, uint32_t num_frames) override;
+  SessionGraphError processRouting(const float* const* channel_inputs, float* const* master_output,
+                                   uint32_t num_frames) override;
   uint32_t maxBlockFrames() const override;
 
 private:
@@ -176,8 +179,12 @@ private:
   void cleanupChannels();
   void cleanupGroups();
 
-  void updateSoloState();
+  void updateSoloState(bool notifyCallback = true);
   void updatePanLaw(RoutingChannelIndex channel_index, float pan);
+  void beginGroupControlWrite() noexcept;
+  void endGroupControlWrite() noexcept;
+  bool validateGroupControlSnapshot(const RoutingControlSnapshot& snapshot) const noexcept;
+  void refreshRenderGroupControls() noexcept;
 
   float dbToLinear(float db) const;
   float linearToDb(float linear) const;
@@ -217,6 +224,15 @@ private:
   std::atomic<bool> m_group_solo_active{false};
   std::atomic<bool> m_solo_active{false};
   std::atomic<uint64_t> m_snapshot_revision{0};
+  /// Seqlock for fixed-capacity coherent group-control publication. The host's
+  /// control thread is the sole writer; readers may run concurrently.
+  std::atomic<uint64_t> m_group_control_sequence{0};
+  /// Control writers defer until the audio thread finishes its bounded snapshot
+  /// copy. The audio thread never waits; it renders the prior complete value
+  /// when publication is in progress.
+  std::atomic<bool> m_group_control_publication_in_progress{false};
+  std::atomic<bool> m_group_control_render_reading{false};
+  std::array<RoutingGroupControlState, kRoutingControlMaxGroups> m_render_group_controls{};
 
   // Callback
   IRoutingCallback* m_callback;
