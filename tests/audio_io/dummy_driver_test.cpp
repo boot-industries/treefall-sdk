@@ -243,6 +243,10 @@ TEST_F(DummyDriverTest, GetLatency) {
   EXPECT_EQ(m_driver->getLatencySamples(), config.buffer_size);
 }
 
+TEST_F(DummyDriverTest, TelemetryDefaultsToZero) {
+  EXPECT_EQ(m_driver->getTelemetry().input_render_failures, 0u);
+}
+
 TEST_F(DummyDriverTest, CannotStartTwice) {
   AudioDriverConfig config;
   config.sample_rate = 48000;

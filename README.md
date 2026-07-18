@@ -93,6 +93,29 @@ The SDK telemetry bridge is fixed-capacity and presentation-neutral. FFTs,
 histories, smoothing, analyzer selection, musical policy, and UI view models
 remain application state.
 
+Audio I/O selection is direction-specific. CoreAudio identifiers are persistent
+HAL DeviceUID values; an empty field alone requests that direction's current
+system default:
+
+```cpp
+orpheus::AudioDriverConfig audio;
+audio.input_device_id = selectedInputUID;
+audio.output_device_id = selectedOutputUID;
+audio.num_inputs = 2;
+audio.num_outputs = 2;
+
+auto driver = orpheus::createCoreAudioDriver();
+if (driver->initialize(audio) == orpheus::SessionGraphError::OK) {
+  const auto io = driver->getTelemetry();
+  // io.input_render_failures distinguishes capture failure from real silence.
+}
+```
+
+Distinct CoreAudio endpoints use a driver-owned private aggregate. Unknown or
+direction-incompatible UIDs fail with `InvalidParameter`; they never fall back
+to another device. `getTelemetry()` is available through `IAudioDriver`, so
+factory consumers do not downcast to platform implementations.
+
 Child-app teams should use
 [`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
 for Clip Composer, FreqFinder, FourTrack, and ShmUI adoption checklists. No child
@@ -236,7 +259,8 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - **Audio file reader** – WAV/AIFF/FLAC via libsndfile
 - **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and Linux device backends are not yet release-supported
 - **Dummy driver** – Testing and offline rendering
-- **Device selection** – Runtime device enumeration and hot-swap (ORP109)
+- **Device selection** – Direction-specific stable input/output IDs; persistent CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
+- **Capture diagnostics** – Factory-visible saturating input-render failure telemetry (ORP155)
 - **Waveform processing** – Fast downsampling for UI rendering (ORP109)
 
 ### Routing & Mixing
@@ -504,8 +528,9 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 **Portastudio-style multitrack recorder for macOS/iOS**
 
 - **Repo:** `chrislyons/fourtrack` (local: `~/dev/fourtrack`) — consumes this
-  SDK as a git submodule; exercises the SDK's host-neutrality (routing matrix,
-  readers, CoreAudio input capture).
+  SDK as a git submodule; exercises the SDK's host-neutral routing matrix,
+  readers, CoreAudio directional input capture, capture telemetry, and
+  allocation-free trigger voice.
 
 ### Orpheus Wave Finder (in-tree)
 

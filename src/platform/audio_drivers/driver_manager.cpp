@@ -226,7 +226,8 @@ SessionGraphError AudioDriverManager::setActiveDevice(const std::string& deviceI
   config.buffer_size = static_cast<uint16_t>(bufferSize);
   config.num_inputs = 0;  // Output only for now
   config.num_outputs = 2; // Stereo output
-  config.device_id = (deviceId == "dummy") ? "" : deviceId;
+  config.input_device_id = "";
+  config.output_device_id = (deviceId == "dummy") ? "" : deviceId;
   config.device_name = (deviceId == "dummy") ? "" : deviceInfo->name;
 
   SessionGraphError initResult = newDriver->initialize(config);
@@ -351,6 +352,23 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
       continue;
     }
 
+    AudioObjectPropertyAddress uidAddress = {kAudioDevicePropertyDeviceUID,
+                                             kAudioObjectPropertyScopeGlobal,
+                                             kAudioObjectPropertyElementMain};
+    CFStringRef cfUID = nullptr;
+    UInt32 uidSize = sizeof(CFStringRef);
+    status = AudioObjectGetPropertyData(deviceID, &uidAddress, 0, nullptr, &uidSize, &cfUID);
+    char uidBuffer[1024];
+    const Boolean hasUID =
+        status == noErr && cfUID != nullptr &&
+        CFStringGetCString(cfUID, uidBuffer, sizeof(uidBuffer), kCFStringEncodingUTF8);
+    if (cfUID) {
+      CFRelease(cfUID);
+    }
+    if (!hasUID) {
+      continue;
+    }
+
     // Check if device has output channels
     AudioObjectPropertyAddress streamConfigAddress = {kAudioDevicePropertyStreamConfiguration,
                                                       kAudioDevicePropertyScopeOutput,
@@ -408,9 +426,10 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
       supportedSampleRates = {44100, 48000, 96000};
     }
 
-    // Build device info
+    // CoreAudio endpoint IDs are persistent HAL UIDs, never session-scoped
+    // AudioDeviceID values or mutable display names.
     AudioDeviceInfo deviceInfo;
-    deviceInfo.deviceId = "coreaudio:" + std::to_string(deviceID);
+    deviceInfo.deviceId = uidBuffer;
     deviceInfo.name = std::string(nameBuffer);
     deviceInfo.driverType = "CoreAudio";
     deviceInfo.minChannels = 2; // Stereo minimum
@@ -573,11 +592,8 @@ AudioDriverManager::createDriverForDevice(const std::string& deviceId) {
   }
 
 #ifdef __APPLE__
-  if (deviceId.rfind("coreaudio:", 0) == 0) {
-    // Extract device ID from string (e.g., "coreaudio:123" -> 123)
-    // For now, use the default CoreAudio driver with device_name set
-    return createCoreAudioDriver();
-  }
+  // CoreAudio device identifiers are bare persistent DeviceUID values.
+  return createCoreAudioDriver();
 #endif
 
 #if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)

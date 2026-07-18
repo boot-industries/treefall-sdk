@@ -2,9 +2,9 @@
 
 # ORP154 — Sequencer Trigger Voice Primitive
 
-**Document type:** Public audio-utility contract and downstream handoff  
-**Version target:** Unreleased  
-**Status:** Implemented and verified  
+**Document type:** Public audio-utility contract and downstream handoff
+**Version target:** Unreleased
+**Status:** Implemented and verified
 **Date:** 2026-07-16
 **Downstream baseline:** FourTrack `1d1399e`
 

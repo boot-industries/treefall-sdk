@@ -39,6 +39,7 @@ public:
   const AudioDriverConfig& getConfig() const override;
   std::string getDriverName() const override;
   uint32_t getLatencySamples() const override;
+  AudioIoTelemetry getTelemetry() const noexcept override;
   AudioDriverCapabilities getCapabilities() const override;
 
   /// Set performance monitor for audio metrics tracking
@@ -46,14 +47,9 @@ public:
   /// @note Thread-safe: Can be called before or after start()
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
-  /// Count of AudioUnitRender calls on the capture bus that returned a
-  /// non-noErr status since the last initialize(). A structural regression
-  /// guard: input_buffers_ are always non-null once allocated (pre-zeroed),
-  /// so a null-buffer check alone cannot distinguish "captured real silence"
-  /// from "AudioUnitRender has failed on every single block" (e.g. capturing
-  /// against a device with no input channels -- see
-  /// resolveInputOutputDevice()). Thread-safe; read from any thread.
-  uint64_t getInputRenderFailureCount() const;
+  /// Test-only helpers for deterministic backend failure accounting.
+  void setInputRenderFailuresForTesting(uint64_t count) noexcept;
+  void incrementInputRenderFailuresForTesting() noexcept;
 
 private:
   /// Audio Unit render callback (invoked on audio thread)
@@ -61,29 +57,24 @@ private:
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
+  void recordInputRenderFailure() noexcept;
+
   /// Enumerate available audio devices
   /// @return Vector of device IDs
   std::vector<AudioDeviceID> enumerateDevices();
 
-  /// Find device by name or get default device
-  /// @param device_name Device name (empty = default device)
-  /// @return Device ID or 0 if not found
-  AudioDeviceID findDevice(const std::string& device_name);
+  /// Find a device by its persistent CoreAudio DeviceUID.
+  /// @return Device ID or 0 if the UID is unknown
+  AudioDeviceID findDeviceByUID(const std::string& device_uid);
 
   /// Get the system default device for a given selector (e.g.
   /// kAudioHardwarePropertyDefaultOutputDevice / ...DefaultInputDevice).
   /// @return Device ID or 0 on failure
   AudioDeviceID getDefaultDevice(AudioObjectPropertySelector selector);
 
-  /// Resolve the device to open when the host requests capture
-  /// (config_.num_inputs > 0) and no device name was specified. The default
-  /// input and default output devices are frequently *different* HAL
-  /// AudioDeviceIDs (e.g. a MacBook's built-in microphone and built-in
-  /// speakers) even though a single AUHAL unit can only address one
-  /// kAudioOutputUnitProperty_CurrentDevice. When they differ, bridges the
-  /// two with a private CoreAudio Aggregate Device so bus 0 (playback) and
-  /// bus 1 (capture) each reach real hardware; falls back to the default
-  /// output device alone if aggregation fails.
+  /// Resolve the configured physical input/output endpoints. Empty directional
+  /// IDs select the corresponding system defaults; separate endpoints require
+  /// a private aggregate. Resolution never falls back to a different endpoint.
   /// @return Device ID (possibly an aggregate) or 0 on failure
   AudioDeviceID resolveInputOutputDevice();
 
@@ -94,10 +85,8 @@ private:
   AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
                                       AudioDeviceID output_device_id);
 
-  /// Get device name from device ID
-  /// @param device_id Device ID
-  /// @return Device name or empty string on failure
-  std::string getDeviceName(AudioDeviceID device_id);
+  /// Check whether a device supports the requested direction.
+  bool supportsDirection(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
 
   /// Query the complete capture-to-playback latency of the active physical
   /// routes, including device latency, safety offsets, actual I/O buffer

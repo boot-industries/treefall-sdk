@@ -124,13 +124,15 @@ AudioDriverCapabilities DummyAudioDriver::getCapabilities() const {
   caps.max_input_channels = m_config.num_inputs;
   caps.native_sample_rates.push_back(m_config.sample_rate);
   caps.native_buffer_sizes.push_back(m_config.buffer_size);
-  const std::string endpoint =
-      m_config.device_id.empty() ? "dummy:default" : m_config.device_id;
+  const std::string input_endpoint =
+      m_config.input_device_id.empty() ? "dummy:default" : m_config.input_device_id;
+  const std::string output_endpoint =
+      m_config.output_device_id.empty() ? "dummy:default" : m_config.output_device_id;
   for (uint16_t channel = 0; channel < m_config.num_inputs; ++channel) {
-    caps.input_channel_ids.push_back(endpoint + ":input:" + std::to_string(channel));
+    caps.input_channel_ids.push_back(input_endpoint + ":input:" + std::to_string(channel));
   }
   for (uint16_t channel = 0; channel < m_config.num_outputs; ++channel) {
-    caps.output_channel_ids.push_back(endpoint + ":output:" + std::to_string(channel));
+    caps.output_channel_ids.push_back(output_endpoint + ":output:" + std::to_string(channel));
   }
   caps.supports_exclusive_mode = false;
   caps.supports_shared_mode = true;
