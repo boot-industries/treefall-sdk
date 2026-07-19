@@ -261,6 +261,11 @@ if(ORPHEUS_ENABLE_SHMUI_JUCE AND TARGET orpheus_shmui_juce)
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin)
+  install(DIRECTORY packages/shmui-juce/
+    DESTINATION include/orpheus/shmui-juce
+    FILES_MATCHING
+      PATTERN "*.h"
+      PATTERN "*.hpp")
   if(TARGET orpheus_shmui_juce_gl)
     install(TARGETS orpheus_shmui_juce_gl
       EXPORT OrpheusSDKTargets
@@ -328,9 +333,13 @@ install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKConfigVersion.cmake
   DESTINATION ${INSTALL_CONFIGDIR})
 
-export(EXPORT OrpheusSDKTargets
-  FILE ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKTargets.cmake
-  NAMESPACE Orpheus::)
+# A build-tree export cannot preserve the local JUCE module targets used by the
+# optional package. The installed export carries their install-interface names.
+if(NOT (ORPHEUS_ENABLE_SHMUI_JUCE AND TARGET orpheus_shmui_juce))
+  export(EXPORT OrpheusSDKTargets
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/OrpheusSDKTargets.cmake
+    NAMESPACE Orpheus::)
+endif()
 
 set(CPACK_PACKAGE_NAME "orpheus-sdk")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})

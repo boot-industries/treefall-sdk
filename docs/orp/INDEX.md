@@ -8,6 +8,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
@@ -80,6 +81,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
+- [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 
 ## Archived Documents
 
@@ -114,4 +116,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-16
+**Last Generated:** 2026-07-19
