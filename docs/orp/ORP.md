@@ -3,6 +3,7 @@
 Project documentation index for orpheus-sdk.
 
 ## Recent Documents
+- [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP141 Reliability and Adoption Sprint Plan]]
 - [[ORP142 Downstream Consumer Adoption Notes]]
@@ -125,6 +126,8 @@ Project documentation index for orpheus-sdk.
 - [[ORP154 Sequencer Trigger Voice Primitive]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP156 ORP155 Implementation Handoff]]
+- [[ORP157 Suite Coherence and Package Consumer Mission]]
+- [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 
 ## Archived Documents
 
@@ -142,4 +145,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-16
+**Last Generated:** 2026-07-19
