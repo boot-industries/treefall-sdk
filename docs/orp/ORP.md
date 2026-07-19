@@ -3,6 +3,7 @@
 Project documentation index for orpheus-sdk.
 
 ## Recent Documents
+- [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP141 Reliability and Adoption Sprint Plan]]
 - [[ORP142 Downstream Consumer Adoption Notes]]
 - [[ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff]]
