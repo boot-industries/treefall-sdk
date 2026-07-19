@@ -8,6 +8,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP154 Sequencer Trigger Voice Primitive]]
@@ -78,6 +79,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP154 Sequencer Trigger Voice Primitive]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP156 ORP155 Implementation Handoff]]
+- [[ORP157 Suite Coherence and Package Consumer Mission]]
 
 ## Archived Documents
 
