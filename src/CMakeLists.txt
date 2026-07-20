@@ -93,6 +93,7 @@ endforeach()
 # — the standalone link check (verify_diagnostics_standalone) requires it, and
 # MSVC's strict archive resolution fails to link without it (LNK2019).
 add_library(orpheus_diagnostics STATIC
+  core/common/diagnostics_archive_anchor.cpp
   $<TARGET_OBJECTS:orpheus_diagnostics_objects>
   $<TARGET_OBJECTS:orpheus_core_runtime>
   $<TARGET_OBJECTS:orpheus_channel_format_objects>
