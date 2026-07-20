@@ -8,6 +8,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP159 Suite Synchronization and Integration Gate]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP157 Bounded Per-Clip DSP and Output Telemetry]]
@@ -84,6 +85,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP157 Bounded Per-Clip DSP and Output Telemetry]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
+- [[ORP159 Suite Synchronization and Integration Gate]]
 
 ## Archived Documents
 
@@ -118,4 +120,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-19
+**Last Generated:** 2026-07-20
