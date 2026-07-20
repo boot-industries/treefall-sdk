@@ -12,7 +12,7 @@ The suite’s completed, verified work is now on each repository’s remote `mai
 
 | Repository | Remote `main` | Delivered state | Evidence recorded during this synchronization |
 |---|---|---|---|
-| `orpheus-sdk` | `efa31ca4` | v0.6.2 bounded per-clip DSP/output telemetry; installed ShmUI-JUCE consumer qualification | Installed package fixture: 3/3 tests passed after a clean CMake configure/build. |
+| `orpheus-sdk` | `a8e917f4` | v0.6.2 bounded per-clip DSP/output telemetry; installed ShmUI-JUCE consumer qualification; this synchronization record | Installed package fixture: 3/3 tests passed after a clean CMake configure/build. |
 | `shmui` | `b7d7e12` | Semantic meter presentations, generated Swift/JUCE token contract, Console/Lab recipes | Token check, Swift-token test, registry build, and registry validation passed. |
 | `clip-composer` | `c1fabcb` | Persisted session-owned show playlist, controller/window, and dispatch/recovery contracts | Debug build and CTest suite passed, including playlist contract coverage. |
 | `freqfinder` | `be0321e` | Shmui Lab meter adoption and installed-SDK package configuration correction | Standalone build and `FreqFinderTests` passed. |
@@ -27,6 +27,8 @@ The suite’s completed, verified work is now on each repository’s remote `mai
 
 This is a build-artifact/linkage gate, not a justification to bypass review or merge the feature branch. Resolve the Xcode archive/target-type mismatch, run the native launch smoke, then review and merge the branch.
 
+`feat/ftr038-strip-roles-bounce` also remains published and intentionally untouched: it is 11 commits ahead of and 25 commits behind `fourtrack` `main`. Its unique strip/bounce history needs separate review; it is neither safe to delete nor a candidate for blind fast-forward integration.
+
 ## Repository topology and workstation synchronization
 
 - Merged handoff branches for SDK, Shmui, Clip Composer, and FreqFinder were deleted remotely after their fast-forward integration.
@@ -36,4 +38,4 @@ This is a build-artifact/linkage gate, not a justification to bypass review or m
 
 ## Next action
 
-Fix the FourTrack Xcode `liborpheus_diagnostics.a` linkage contract, run the native app smoke, and present `feat/ftr036-sequencer-core` for review before any merge to `main`.
+Fix the FourTrack Xcode `liborpheus_diagnostics.a` linkage contract, run the native app smoke, and present `feat/ftr036-sequencer-core` for review before any merge to `main`. Independently review the divergent `feat/ftr038-strip-roles-bounce` history before merging or deleting it.
