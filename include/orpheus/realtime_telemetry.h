@@ -15,12 +15,14 @@
 namespace orpheus {
 
 /// Stable schema version for RealtimeTelemetrySnapshot.
-inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 1;
+inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 2;
 
 /// Default cadence: retain one snapshot after every eight audio callbacks.
 inline constexpr uint32_t kRealtimeTelemetryDefaultDecimationBlocks = 8;
 /// Maximum routing groups carried by one telemetry snapshot.
 inline constexpr size_t kRealtimeTelemetryMaxGroups = 16;
+/// Maximum physical output lanes carried by one telemetry snapshot.
+inline constexpr size_t kRealtimeTelemetryMaxOutputs = kRoutingMaxOutputs;
 
 /// Number of snapshots retained by RealtimeTelemetry before new captures drop.
 inline constexpr size_t kRealtimeTelemetryCapacity = 64;
@@ -38,6 +40,8 @@ struct RealtimeTelemetrySnapshot {
   uint32_t active_voice_count{0};
   uint8_t group_count{0};
   std::array<AudioMeter, kRealtimeTelemetryMaxGroups> group_meters{};
+  uint8_t output_count{0};
+  std::array<AudioMeter, kRealtimeTelemetryMaxOutputs> output_meters{};
   AudioMeter master_meter{};
 };
 

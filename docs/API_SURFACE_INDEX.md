@@ -4,7 +4,7 @@ This index catalogs public entry points exposed by the Orpheus SDK workspace. Up
 notable APIs are added.
 
 **Last Updated:** 2026-07-16 (sequencer trigger voice primitive)
-**SDK Version:** 0.6.1 — the authoritative version is `project(orpheus VERSION ...)`
+**SDK Version:** 0.6.2 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
 labels.)
@@ -20,6 +20,7 @@ labels.)
 | `include/orpheus/transport_controller.h`       | `ITransportController`     | Multi-clip transport with gain/loop/seek/restart        | v1.0.0-rc.1         |
 | `include/orpheus/transport_controller.h`       | Cue point extensions       | In-clip markers with seek-to-cue operations             | ORP109 (unreleased) |
 | `include/orpheus/transport_controller.h`       | Callback telemetry / active snapshot | Cumulative ring-loss detection and fixed-capacity voice reconciliation | ORP151 (`0.5.1`) |
+| `include/orpheus/clip_dsp.h`                   | `ClipDspProgram`, `ClipDspProcessor` | Validated fixed-order, fixed-capacity per-clip realtime processing | ORP157 (`0.6.2`) |
 | `include/orpheus/session_graph.h`              | `SessionGraph`             | In-memory session representation (tracks, clips, tempo) | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader.h`          | `IAudioFileReader`         | Audio file decoding (WAV/AIFF/FLAC via libsndfile)      | v0.1.0-alpha        |
 | `include/orpheus/audio_file_reader_extended.h` | `IAudioFileReaderExtended` | Waveform pre-processing for UI rendering                | ORP109 (unreleased) |
@@ -30,7 +31,7 @@ labels.)
 | `include/orpheus/audio_input.h`                | `IAudioInputStream`        | Lock-free capture ring + input-stream contract          | ORP134 G7           |
 | `include/orpheus/audio_analysis.h`             | `orpheus::analysis`        | FFT/STFT, LUFS/RMS/peak, spectral features, onsets      | ORP134 G6           |
 | `include/orpheus/audio_graph.h`                | `GraphDescription`         | Graph-neutral routing vocabulary + soundboard facade    | ORP134 G3           |
-| `include/orpheus/trigger_voice.h`               | `ITriggerVoice`, `TriggerVoice` | RT-safe owned one-shot sample, bounded polyphony, sample-accurate trigger offsets, and pitch-ratio playback | ORP154 (unreleased) |
+| `include/orpheus/trigger_voice.h`               | `ITriggerVoice`, `TriggerVoice` | RT-safe owned one-shot sample, bounded polyphony, sample-accurate trigger offsets, and pitch-ratio playback | ORP154 (`0.6.2`) |
 
 ### Routing & Mixing (ORP109)
 

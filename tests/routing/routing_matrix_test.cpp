@@ -460,6 +460,28 @@ TEST_F(RoutingMatrixTest, StereoMetersIncludeRightOnlySignal) {
   EXPECT_GT(groupMeter.rms_db, -10.0f);
 }
 
+TEST_F(RoutingMatrixTest, OutputMetersReportEachPhysicalLane) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelPan(0, 1.0f), SessionGraphError::OK);
+
+  std::array<float, BUFFER_SIZE> input{};
+  input.fill(0.5f);
+  std::array<float, BUFFER_SIZE> left{};
+  std::array<float, BUFFER_SIZE> right{};
+  const float* inputs[] = {input.data()};
+  float* outputs[] = {left.data(), right.data()};
+
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  EXPECT_FLOAT_EQ(matrix->getOutputMeter(0).peak_db, -100.0f);
+  EXPECT_GT(matrix->getOutputMeter(1).peak_db, -7.0f);
+  EXPECT_GT(matrix->getOutputMeter(1).rms_db, -7.0f);
+  EXPECT_FLOAT_EQ(matrix->getOutputMeter(2).peak_db, -100.0f);
+}
+
 TEST_F(RoutingMatrixTest, ChannelMetersReportIsolatedEffectiveContributions) {
   config.num_channels = 2;
   config.num_groups = 1;

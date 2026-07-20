@@ -234,6 +234,19 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
     std::string path = writeSineWav(m_tempDir, "debt_" + std::to_string(i) + ".wav",
                                     220.0f + 55.0f * static_cast<float>(i), 4.0f);
     ASSERT_EQ(m_transport->registerClipAudio(handle, path), SessionGraphError::OK);
+    auto metadata = m_transport->getClipMetadata(handle);
+    ASSERT_TRUE(metadata.has_value());
+    metadata->dsp.gate.enabled = true;
+    metadata->dsp.gate.thresholdDb = -80.0f;
+    for (size_t band = 0; band < metadata->dsp.eq.size(); ++band) {
+      metadata->dsp.eq[band].enabled = true;
+      metadata->dsp.eq[band].frequencyHz = 120.0f * static_cast<float>(band + 1);
+      metadata->dsp.eq[band].gainDb = static_cast<float>(band) - 1.5f;
+    }
+    metadata->dsp.compressor.enabled = true;
+    metadata->dsp.width.enabled = true;
+    metadata->dsp.limiter.enabled = true;
+    ASSERT_EQ(m_transport->updateClipMetadata(handle, *metadata), SessionGraphError::OK);
     ASSERT_EQ(m_transport->prepareClipAudio(handle), SessionGraphError::OK);
     ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
   }
