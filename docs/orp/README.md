@@ -33,7 +33,8 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
 - **ORP155** — Stable directional CoreAudio endpoints, isolated routing meters,
   and factory-visible capture-failure telemetry.
 - **ORP156** — ORP155 implementation, verification, and PR delivery handoff.
-  Next free document number: ORP157.
+- **ORP157** — Bounded per-clip DSP and physical-output telemetry.
+  Next free document number: ORP158.
 - **ORP136** — Verification & CI framework spanning all sprints (realtime gates,
   determinism hashes, TSAN, fuzzing, benchmark budgets, downstream conformance).
 

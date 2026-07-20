@@ -51,6 +51,7 @@ struct ClipPlaybackContext {
   bool loopEnabled;
   uint32_t segmentCount{0};
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
+  ClipDspProcessor dspProcessor;
   uint16_t numChannels;
   RoutingGroupIndex routingGroup{0};
   VoiceMode voiceMode; // ORP127 G5: voice policy captured at fire time
@@ -87,6 +88,7 @@ struct TransportCommand {
   // Context for Start command (carries reader + metadata safely)
   // This is separate from the union to ensure proper shared_ptr management
   std::shared_ptr<ClipPlaybackContext> startContext;
+  ClipDspProcessor dspProcessor;
 
   union {
     struct {
@@ -195,6 +197,7 @@ struct ActiveClip {
   uint32_t segmentIndex{0};
   uint32_t segmentRepeatsRemaining{0};
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
+  ClipDspProcessor dspProcessor;
 
   float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
   bool isStopping;         // true if fade-out in progress
@@ -624,6 +627,7 @@ private:
         Speaker::None, Speaker::None, Speaker::None, Speaker::None};
     uint32_t segmentCount = 0;
     std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
+    ClipDspProgram dsp;
 
     // ORP134 G1: the realtime playback source built by prepareClipAudio()
     // (or lazily by startClip). The reader above remains the background

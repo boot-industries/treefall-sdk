@@ -47,6 +47,9 @@ target_link_libraries(orpheus_find_package_analysis PRIVATE Orpheus::audio_utils
 
 add_orpheus_fixture(orpheus_find_package_trigger_voice trigger_voice.cpp)
 target_link_libraries(orpheus_find_package_trigger_voice PRIVATE Orpheus::audio_utils)
+add_orpheus_fixture(orpheus_find_package_clip_dsp clip_dsp.cpp)
+target_link_libraries(orpheus_find_package_clip_dsp PRIVATE Orpheus::transport)
+
 
 add_orpheus_fixture(orpheus_find_package_media_integrity media_integrity.cpp)
 target_link_libraries(orpheus_find_package_media_integrity PRIVATE Orpheus::audio_utils)

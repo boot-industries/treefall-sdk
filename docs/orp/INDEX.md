@@ -10,6 +10,7 @@ Project documentation index for orpheus-sdk.
 
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
+- [[ORP157 Bounded Per-Clip DSP and Output Telemetry]]
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP154 Sequencer Trigger Voice Primitive]]
@@ -54,7 +55,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP109 SDK Feature Roadmap for Clip Composer Integration]]
 - [[ORP110A App-Level Integration Report]]
 - [[ORP110B Performance Monitor API Completion Report]]
-- [[ORP111 SDK Transport Enhancement Request - Clip Composer Edit Dialog Support]]
+- [[ORP111 SDK Transport Enhancement - Clip Composer Edit Dialog Support]]
 - [[ORP112 SDK Transport Features Verification - ORP111 Complete]]
 - [[ORP113 Documentation Alignment Audit - ORP and OCC Planning vs Execution Analysis]]
 - [[ORP114 Critical Gain Staging Bug Investigation and Fix]]
@@ -80,6 +81,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP154 Sequencer Trigger Voice Primitive]]
 - [[ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts]]
 - [[ORP156 ORP155 Implementation Handoff]]
+- [[ORP157 Bounded Per-Clip DSP and Output Telemetry]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 
@@ -94,7 +96,7 @@ Project documentation index for orpheus-sdk.
 - [[archive/ORP069 OCC Enhancements]]
 - [[archive/ORP070B Progress Tracker]]
 - [[archive/ORP070 OCC MVP Sprint]]
-- [[archive/ORP071 Shmui Enhancements for OCC Ecosystem]]
+- [[archive/ORP071 Shmui Enhancements]]
 - [[archive/ORP072 AES67 Network Audio Driver]]
 - [[archive/ORP073]]
 - [[archive/ORP074]]

@@ -408,4 +408,45 @@ TEST_F(ClipAudioControlsTest, SessionDefaultsNormalizeClipControlBounds) {
   EXPECT_DOUBLE_EQ(secondMetadata->playDelaySeconds, 99.9);
 }
 
+TEST_F(ClipAudioControlsTest, DspProgramRoundTripsAndInvalidUpdateIsAtomic) {
+  auto value = metadata();
+  value.dsp.eq[0].enabled = true;
+  value.dsp.eq[0].frequencyHz = 2500.0f;
+  value.dsp.eq[0].gainDb = 4.5f;
+  value.dsp.compressor.enabled = true;
+  value.dsp.compressor.ratio = 3.0f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  EXPECT_EQ(metadata().dsp, value.dsp);
+
+  auto invalid = value;
+  invalid.dsp.width.amount = 2.5f;
+  EXPECT_EQ(transport->updateClipMetadata(handle, invalid), SessionGraphError::InvalidParameter);
+  EXPECT_EQ(metadata().dsp, value.dsp);
+}
+
+TEST_F(ClipAudioControlsTest, PerVoiceDspRunsBeforeClipGainAndPan) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+  EXPECT_NE(left.front(), right.front());
+
+  value.dsp.width.enabled = true;
+  value.dsp.width.amount = 0.0f;
+  value.dsp.limiter.enabled = true;
+  value.dsp.limiter.ceilingDb = -12.0411998f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  render(left, right);
+
+  for (size_t frame = 0; frame < left.size(); ++frame) {
+    EXPECT_NEAR(left[frame], right[frame], 1.0e-6f);
+    EXPECT_LT(std::abs(left[frame]), 0.251f);
+  }
+}
+
 } // namespace
