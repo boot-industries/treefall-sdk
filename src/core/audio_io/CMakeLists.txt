@@ -37,6 +37,9 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader.cpp)
 # dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES scrub_resampler.cpp)
 
+# ORP160/FTR063: prepared premium tape-varispeed processor. Always built.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES tape_varispeed.cpp)
+
 # ORP134 G7: lock-free input ring + capture-stream contract. Host-neutral,
 # dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_input.cpp)
