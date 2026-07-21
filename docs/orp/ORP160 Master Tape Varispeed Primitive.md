@@ -1,6 +1,6 @@
 # ORP160 Master Tape Varispeed Primitive
 
-**Status:** Draft implementation — FourTrack FTR063 contract accepted; release and merge require separate user review.
+**Status:** Released in Orpheus SDK `v0.6.3` (2026-07-21)
 
 **Related:** FTR063, FTR062, ORP128/ORP129 (`ScrubResampler`), ORP127 (`PolyphaseResampler`)
 
@@ -24,11 +24,12 @@ The caller owns source buffering. `TapeVarispeedProcessResult` reports exact
 input consumption and output production so arbitrary block chunking can retain
 unconsumed input. Unity with no active slew is a byte-identical copy path.
 
-## Remaining release evidence
+## Release evidence
 
-This draft does not yet satisfy the release gate. Before it can be merged or
-published, ORP160 must add and pass: measurable endpoint passband/image tests,
-chunk-invariance and drain fixtures, duplex reciprocal-slew contract coverage,
-callback allocation/static-audit proof, clean-prefix package fixtures, and
-44.1/48 kHz M2 timing plus user listening review. FourTrack must not consume this
-branch or any unreleased SDK SHA.
+PR [#222](https://github.com/chrislyons/orpheus-sdk/pull/222) passed the
+four-case `tape_varispeed_test`, the clean-prefix public-package fixture, and
+the static realtime audit before merge. The user completed the required manual
+listening review and authorized the immutable release on 2026-07-21.
+
+The release preserves the public `Orpheus::audio_utils` package route. FourTrack
+may consume only the immutable `v0.6.3` tag, never the former feature-branch SHA.
