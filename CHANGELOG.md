@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-21
+
+Patch release adding prepared and offline tape-varispeed processing.
+
+### Added
+
+- `PreparedTapeVarispeed` provides positive-rate `0.5x...2.0x` interleaved
+  tape processing with linked channel phase, fixed Kaiser-windowed sinc kernels,
+  explicit capacity outcomes, and no allocation or locks after `prepare()`.
+- `OfflineTapeVarispeed` provides the matching fully prepared deterministic
+  offline path for export and render workflows.
+
+
 ## [0.6.2] - 2026-07-18
 
 Patch release adding bounded per-clip DSP, one-shot trigger voices, and
