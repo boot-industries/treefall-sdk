@@ -59,6 +59,14 @@ target_include_directories(scrub_resampler_test
 
 add_test(NAME scrub_resampler_test COMMAND scrub_resampler_test)
 
+# ORP160/FTR063: prepared/offline Master tape-varispeed contract.
+add_executable(tape_varispeed_test
+    tape_varispeed_test.cpp
+)
+target_link_libraries(tape_varispeed_test PRIVATE orpheus_audio_utils GTest::gtest GTest::gtest_main)
+target_include_directories(tape_varispeed_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME tape_varispeed_test COMMAND tape_varispeed_test)
+
 # ORP134 G7: lock-free input ring + capture-stream contract. Links audio_io
 # so the capture->disk pairing test can use the reader/writer when available.
 add_executable(audio_input_test
