@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-07-22
+
+Patch release aligning the governed ShmUI-JUCE import provenance contract.
+
+### Changed
+
+- Updated the recorded ShmUI source revision after repairing the authoritative
+  import generator to match the SDK's canonical path-NUL-content hash and JSON
+  serialization contract.
+
 ## [0.6.4] - 2026-07-22
 
 Patch release refreshing the governed ShmUI-JUCE package import.
