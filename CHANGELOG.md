@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-22
+
+Patch release refreshing the governed ShmUI-JUCE package import.
+
+### Changed
+
+- Synchronized the flattened `packages/shmui-juce` source tree to ShmUI token
+  contract 0.3.0, including Console themes, transport/text controls, and meter
+  presentation APIs.
+- Removed the stale nested package source copy so CMake compiles the governed
+  imported files recorded by `shmui-juce-import.json`.
+
 ## [0.6.3] - 2026-07-21
 
 Patch release adding prepared and offline tape-varispeed processing.
