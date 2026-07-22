@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-07-22
+
+Patch release preserving ShmUI text-button component identity.
+
+### Fixed
+
+- `shmui::TextButton` now initializes its JUCE component name from the
+  constructor label, retaining stable action lookup and accessibility identity
+  when the visible label is changed later.
+
 ## [0.6.5] - 2026-07-22
 
 Patch release aligning the governed ShmUI-JUCE import provenance contract.
