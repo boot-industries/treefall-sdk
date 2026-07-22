@@ -44,6 +44,14 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES tape_varispeed.cpp)
 # dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_input.cpp)
 
+# ORP162/FTR052: fixed-storage live PCM fan-out, prepared streaming SRC, and
+# source-clock to destination-clock bridge. Host-neutral and dependency-free.
+list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES
+    live_audio.cpp
+    streaming_sample_rate_converter.cpp
+    clocked_output_bridge.cpp
+)
+
 # ORP134 G6: offline analysis facade (FFT/STFT + wrappers over LoudnessMeter
 # and buffer statistics). Host-neutral, dependency-free — always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_analysis.cpp)

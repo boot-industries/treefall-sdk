@@ -5,7 +5,9 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <dispatch/dispatch.h>
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -41,6 +43,9 @@ public:
   uint32_t getLatencySamples() const override;
   AudioIoTelemetry getTelemetry() const noexcept override;
   AudioDriverCapabilities getCapabilities() const override;
+  AudioDriverRuntimeInfo getRuntimeInfo() const override;
+  bool pollEvent(AudioDriverEvent& event) noexcept override;
+  uint64_t droppedEventCount() const noexcept override;
 
   /// Set performance monitor for audio metrics tracking
   /// @param monitor Performance monitor instance (can be nullptr to disable)
@@ -50,6 +55,9 @@ public:
   /// Test-only helpers for deterministic backend failure accounting.
   void setInputRenderFailuresForTesting(uint64_t count) noexcept;
   void incrementInputRenderFailuresForTesting() noexcept;
+  void publishEventForTesting(const AudioDriverEvent& event) noexcept;
+  OSStatus renderForTesting(const AudioTimeStamp* timestamp, UInt32 frames,
+                            AudioBufferList* output, IAudioCallback& callback) noexcept;
 
 private:
   /// Audio Unit render callback (invoked on audio thread)
@@ -58,6 +66,30 @@ private:
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
   void recordInputRenderFailure() noexcept;
+  struct EventSlot {
+    std::atomic<uint64_t> sequence{0};
+    AudioDriverEvent event{};
+  };
+
+  struct ListenerRegistration {
+    CoreAudioDriver* driver{nullptr};
+    AudioObjectID object{kAudioObjectUnknown};
+    AudioObjectPropertyAddress address{};
+    AudioDriverEventType event_type{AudioDriverEventType::BackendRestarted};
+    std::atomic<bool> active{false};
+  };
+
+  static OSStatus propertyListener(AudioObjectID object, UInt32 address_count,
+                                   const AudioObjectPropertyAddress* addresses,
+                                   void* context);
+  static void processListener(void* context);
+  void enqueueEvent(const AudioDriverEvent& event) noexcept;
+  void resetEventQueue() noexcept;
+  bool queryMaximumCallbackFrames(AudioDeviceID device, uint32_t& frames) const noexcept;
+  bool registerPropertyListeners();
+  void removePropertyListeners();
+  void addListener(AudioObjectID object, AudioObjectPropertySelector selector,
+                   AudioObjectPropertyScope scope, AudioDriverEventType type, bool& success);
 
   /// Enumerate available audio devices
   /// @return Vector of device IDs
@@ -118,6 +150,20 @@ private:
   AudioDeviceID output_device_id_{0};
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
+  uint32_t maximum_callback_frames_{0};
+  std::string selected_input_device_uid_;
+  std::string selected_output_device_uid_;
+  std::atomic<bool> force_next_discontinuity_{true};
+  std::atomic<uint64_t> oversize_callbacks_{0};
+
+  static constexpr uint64_t kEventCapacity = 64;
+  std::array<EventSlot, kEventCapacity> event_slots_{};
+  std::atomic<uint64_t> event_enqueue_position_{0};
+  std::atomic<uint64_t> event_dequeue_position_{0};
+  std::atomic<uint64_t> dropped_events_{0};
+  dispatch_queue_t listener_queue_{nullptr};
+  std::array<ListenerRegistration, 8> listeners_{};
+  size_t listener_count_{0};
 
   // Callback
   IAudioCallback* callback_{nullptr};

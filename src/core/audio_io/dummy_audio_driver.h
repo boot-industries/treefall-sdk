@@ -3,6 +3,7 @@
 
 #include <orpheus/audio_driver.h>
 
+#include <array>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -26,6 +27,13 @@ public:
   std::string getDriverName() const override;
   uint32_t getLatencySamples() const override;
   AudioDriverCapabilities getCapabilities() const override;
+  AudioDriverRuntimeInfo getRuntimeInfo() const override;
+  bool pollEvent(AudioDriverEvent& event) noexcept override;
+  uint64_t droppedEventCount() const noexcept override;
+
+  /// Deterministic test hook. Invokes one complete prepared callback, or emits
+  /// CapacityExceeded without invoking the host when frames exceed capacity.
+  void renderOnceForTesting(uint32_t frames, IAudioCallback& callback) noexcept;
 
 private:
   void audioThreadMain();
@@ -42,6 +50,16 @@ private:
   std::vector<std::vector<float>> m_output_buffer_storage;
   std::vector<const float*> m_input_ptrs;
   std::vector<float*> m_output_ptrs;
+
+  static constexpr uint64_t kEventCapacity = 64;
+  std::array<AudioDriverEvent, kEventCapacity> m_events{};
+  std::atomic<uint64_t> m_event_write{0};
+  std::atomic<uint64_t> m_event_read{0};
+  std::atomic<uint64_t> m_dropped_events{0};
+  std::atomic<uint64_t> m_sample_position{0};
+  std::atomic<bool> m_next_discontinuity{true};
+
+  void pushEvent(const AudioDriverEvent& event) noexcept;
 
   mutable std::mutex m_mutex;
 };

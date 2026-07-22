@@ -5,6 +5,7 @@
 
 #include "coreaudio/coreaudio_driver.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -35,6 +36,7 @@ public:
     m_last_num_channels = num_channels;
     m_last_num_frames = num_frames;
     m_total_frames.fetch_add(num_frames, std::memory_order_relaxed);
+    m_last_discontinuity.store(block.discontinuity, std::memory_order_relaxed);
 
     // Record timing for drift measurement
     auto now = std::chrono::steady_clock::now();
@@ -79,6 +81,9 @@ public:
   uint64_t getTotalFrames() const {
     return m_total_frames.load(std::memory_order_relaxed);
   }
+  bool lastDiscontinuity() const {
+    return m_last_discontinuity.load(std::memory_order_relaxed);
+  }
 
   // Calculate actual sample rate based on timing
   double getMeasuredSampleRate() const {
@@ -96,6 +101,7 @@ private:
   std::atomic<int> m_call_count{0};
   std::atomic<uint64_t> m_total_frames{0};
   std::atomic<uint32_t> m_active_clip_count{0};
+  std::atomic<bool> m_last_discontinuity{false};
   size_t m_last_num_channels{0};
   size_t m_last_num_frames{0};
   std::chrono::steady_clock::time_point m_start_time{};
@@ -192,7 +198,7 @@ TEST_F(CoreAudioDriverTest, TelemetrySaturatesAndIsVisibleThroughFactoryInterfac
   driver->incrementInputRenderFailuresForTesting();
   EXPECT_EQ(m_driver->getTelemetry().input_render_failures, std::numeric_limits<uint64_t>::max());
 
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 0;
@@ -208,7 +214,7 @@ TEST_F(CoreAudioDriverTest, TelemetrySaturatesAndIsVisibleThroughFactoryInterfac
 }
 
 TEST_F(CoreAudioDriverTest, InitializeWithValidConfig) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -221,8 +227,92 @@ TEST_F(CoreAudioDriverTest, InitializeWithValidConfig) {
   EXPECT_EQ(m_driver->getConfig().num_outputs, 2u);
 }
 
+TEST_F(CoreAudioDriverTest, ReportsActualEndpointUidAndNegotiatedMaximumFrames) {
+  AudioDriverConfig config{.num_inputs = 0};
+  config.sample_rate = 48000;
+  config.buffer_size = 64;
+  config.num_inputs = 0;
+  config.num_outputs = 1;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  const auto info = m_driver->getRuntimeInfo();
+  EXPECT_TRUE(info.selected_input_device_id.empty());
+  EXPECT_FALSE(info.selected_output_device_id.empty());
+  EXPECT_EQ(info.negotiated_sample_rate, 48000u);
+  EXPECT_GE(info.maximum_callback_frames, 64u);
+  EXPECT_EQ(info.input_channels, 0u);
+  EXPECT_EQ(info.output_channels, 1u);
+  EXPECT_TRUE(info.supports_runtime_events);
+}
+
+TEST_F(CoreAudioDriverTest, DeliversWholeBlocksThroughCapacityAndSilencesOversize) {
+  AudioDriverConfig config{.num_inputs = 0};
+  config.sample_rate = 48000;
+  config.buffer_size = 64;
+  config.num_inputs = 0;
+  config.num_outputs = 1;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  auto* concrete = static_cast<CoreAudioDriver*>(m_driver.get());
+  const uint32_t maximum = m_driver->getRuntimeInfo().maximum_callback_frames;
+  ASSERT_GT(maximum, 0u);
+  ASSERT_LT(maximum, std::numeric_limits<uint32_t>::max());
+
+  std::vector<float> output(maximum, 1.0f);
+  AudioBufferList buffers{};
+  buffers.mNumberBuffers = 1;
+  buffers.mBuffers[0].mNumberChannels = 1;
+  buffers.mBuffers[0].mDataByteSize = maximum * sizeof(float);
+  buffers.mBuffers[0].mData = output.data();
+  AudioTimeStamp timestamp{};
+  timestamp.mFlags = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid;
+  timestamp.mSampleTime = 0;
+  timestamp.mHostTime = AudioGetCurrentHostTime();
+
+  ASSERT_EQ(concrete->renderForTesting(&timestamp, maximum, &buffers, *m_callback), noErr);
+  EXPECT_EQ(m_callback->getCallCount(), 1);
+  EXPECT_EQ(m_callback->getLastNumFrames(), maximum);
+
+  std::fill(output.begin(), output.end(), 1.0f);
+  timestamp.mSampleTime = maximum;
+  ASSERT_EQ(concrete->renderForTesting(&timestamp, maximum + 1, &buffers, *m_callback), noErr);
+  EXPECT_EQ(m_callback->getCallCount(), 1);
+  EXPECT_TRUE(std::all_of(output.begin(), output.end(),
+                          [](float sample) { return sample == 0.0f; }));
+
+  uint32_t capacity_events = 0;
+  AudioDriverEvent event;
+  while (m_driver->pollEvent(event)) {
+    if (event.type == AudioDriverEventType::CapacityExceeded) {
+      ++capacity_events;
+      EXPECT_EQ(event.maximum_frames, maximum + 1);
+    }
+  }
+  EXPECT_EQ(capacity_events, 1u);
+
+  timestamp.mSampleTime = maximum;
+  ASSERT_EQ(concrete->renderForTesting(&timestamp, maximum, &buffers, *m_callback), noErr);
+  EXPECT_EQ(m_callback->getCallCount(), 2);
+  EXPECT_TRUE(m_callback->lastDiscontinuity());
+}
+
+TEST_F(CoreAudioDriverTest, CapacityListenerEventsPollInOrderAndDropNewestWhenFull) {
+  auto* concrete = static_cast<CoreAudioDriver*>(m_driver.get());
+  for (uint32_t index = 0; index < 65; ++index) {
+    concrete->publishEventForTesting(
+        {AudioDriverEventType::BufferCapacityChanged, 48000, index + 1, index,
+         SessionGraphError::OK});
+  }
+  EXPECT_EQ(m_driver->droppedEventCount(), 1u);
+  AudioDriverEvent event;
+  for (uint32_t index = 0; index < 64; ++index) {
+    ASSERT_TRUE(m_driver->pollEvent(event));
+    EXPECT_EQ(event.type, AudioDriverEventType::BufferCapacityChanged);
+    EXPECT_EQ(event.maximum_frames, index + 1);
+  }
+  EXPECT_FALSE(m_driver->pollEvent(event));
+}
+
 TEST_F(CoreAudioDriverTest, InitializeWithInvalidSampleRate) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 0; // Invalid
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -232,7 +322,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithInvalidSampleRate) {
 }
 
 TEST_F(CoreAudioDriverTest, InitializeWithInvalidBufferSize) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 0; // Invalid
   config.num_outputs = 2;
@@ -242,7 +332,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithInvalidBufferSize) {
 }
 
 TEST_F(CoreAudioDriverTest, InitializeWithDefaultDevice) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -252,7 +342,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithDefaultDevice) {
 }
 
 TEST_F(CoreAudioDriverTest, RejectsUnknownExplicitOutputUIDWithoutDefaultFallback) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 0;
@@ -263,7 +353,7 @@ TEST_F(CoreAudioDriverTest, RejectsUnknownExplicitOutputUIDWithoutDefaultFallbac
 }
 
 TEST_F(CoreAudioDriverTest, RejectsUnknownExplicitInputUIDWithoutDefaultFallback) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
@@ -283,7 +373,7 @@ TEST_F(CoreAudioDriverTest, StartWithoutInitialize) {
 }
 
 TEST_F(CoreAudioDriverTest, StartWithNullCallback) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -295,7 +385,7 @@ TEST_F(CoreAudioDriverTest, StartWithNullCallback) {
 }
 
 TEST_F(CoreAudioDriverTest, StartAndStop) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -317,7 +407,7 @@ TEST_F(CoreAudioDriverTest, StopWhenNotRunning) {
 }
 
 TEST_F(CoreAudioDriverTest, CannotStartTwice) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -337,7 +427,7 @@ TEST_F(CoreAudioDriverTest, CannotStartTwice) {
 // ============================================================================
 
 TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -359,7 +449,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
 }
 
 TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -376,7 +466,7 @@ TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
 }
 
 TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -403,7 +493,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {
 // ============================================================================
 
 TEST_F(CoreAudioDriverTest, GetLatency) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -419,13 +509,15 @@ TEST_F(CoreAudioDriverTest, GetLatency) {
 }
 
 TEST_F(CoreAudioDriverTest, RoundTripLatencyIsDetectedForActiveRoute) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
   config.num_outputs = 2;
 
-  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  if (m_driver->initialize(config) != SessionGraphError::OK) {
+    GTEST_SKIP() << "No default CoreAudio input route is available";
+  }
 
   const uint32_t first = m_driver->getLatencySamples();
   const uint32_t second = m_driver->getLatencySamples();
@@ -440,7 +532,7 @@ TEST_F(CoreAudioDriverTest, RoundTripLatencyIsDetectedForActiveRoute) {
 // ============================================================================
 
 TEST_F(CoreAudioDriverTest, StereoConfiguration) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2; // Stereo
@@ -456,7 +548,7 @@ TEST_F(CoreAudioDriverTest, StereoConfiguration) {
 }
 
 TEST_F(CoreAudioDriverTest, QuadConfiguration) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 4; // Quad
@@ -473,7 +565,7 @@ TEST_F(CoreAudioDriverTest, QuadConfiguration) {
 }
 
 TEST_F(CoreAudioDriverTest, SurroundConfiguration) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 6; // 5.1 surround
@@ -494,7 +586,7 @@ TEST_F(CoreAudioDriverTest, SurroundConfiguration) {
 // ============================================================================
 
 TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -540,7 +632,7 @@ TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
 // ============================================================================
 
 TEST_F(CoreAudioDriverTest, ConcurrentInitialize) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -557,7 +649,7 @@ TEST_F(CoreAudioDriverTest, ConcurrentInitialize) {
 }
 
 TEST_F(CoreAudioDriverTest, RapidStartStop) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -586,7 +678,7 @@ TEST_F(CoreAudioDriverTest, RapidStartStop) {
 // 3. Filter for allocations in CoreAudioDriver::renderCallback
 // 4. Verify zero allocations during callback execution
 TEST_F(CoreAudioDriverTest, DISABLED_ManualZeroAllocationsCheck) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -616,14 +708,16 @@ TEST_F(CoreAudioDriverTest, DISABLED_ManualZeroAllocationsCheck) {
 // regression on any host or loopback device that has real input.
 
 TEST_F(CoreAudioDriverTest, InitializeWithInputEnabled) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
   config.num_inputs = 1; // Request capture
 
   auto error = m_driver->initialize(config);
-  ASSERT_EQ(error, SessionGraphError::OK);
+  if (error != SessionGraphError::OK) {
+    GTEST_SKIP() << "No default CoreAudio input route is available";
+  }
 
   auto caps = m_driver->getCapabilities();
   EXPECT_TRUE(caps.supports_input);
@@ -631,14 +725,16 @@ TEST_F(CoreAudioDriverTest, InitializeWithInputEnabled) {
 }
 
 TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
 
   config.num_inputs = 1;
 
-  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  if (m_driver->initialize(config) != SessionGraphError::OK) {
+    GTEST_SKIP() << "No default CoreAudio input route is available";
+  }
 
   InputCaptureCallback capture;
   ASSERT_EQ(m_driver->start(&capture), SessionGraphError::OK);
@@ -843,7 +939,7 @@ TEST_F(CoreAudioDriverTest, ExplicitDistinctEndpointsCaptureAndReinitializeClean
   }
 
   const std::string aggregate_uid = aggregateUIDForTest(m_driver.get());
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
@@ -870,7 +966,7 @@ TEST_F(CoreAudioDriverTest, DirectionalDefaultsWorkWithExplicitOppositeEndpoint)
     GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
   }
 
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
@@ -892,7 +988,7 @@ TEST_F(CoreAudioDriverTest, ExplicitSameDeviceDuplexCapturesWhenAvailable) {
     GTEST_SKIP() << "No CoreAudio device on this host supports both input and output";
   }
 
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
@@ -910,7 +1006,7 @@ TEST_F(CoreAudioDriverTest, RejectsDirectionIncompatibleExplicitUIDs) {
   }
 
   bool exercised_incompatible_uid = false;
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
@@ -944,7 +1040,7 @@ TEST_F(CoreAudioDriverTest, CrossDeviceCaptureHasNoRenderFailures) {
     GTEST_SKIP() << "Default input and output resolve to the same or unavailable device";
   }
 
-  AudioDriverConfig config;
+  AudioDriverConfig config{.num_inputs = 0};
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;

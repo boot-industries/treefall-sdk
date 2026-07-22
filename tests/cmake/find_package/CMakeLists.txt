@@ -36,7 +36,8 @@ function(add_orpheus_fixture target source)
 endfunction()
 
 add_orpheus_fixture(orpheus_find_package_core main.cpp)
-target_link_libraries(orpheus_find_package_core PRIVATE Orpheus::core)
+target_link_libraries(orpheus_find_package_core
+  PRIVATE Orpheus::core Orpheus::audio_utils)
 
 add_orpheus_fixture(orpheus_find_package_diagnostics
   ${CMAKE_CURRENT_LIST_DIR}/../../verify_diagnostics_standalone.cpp)

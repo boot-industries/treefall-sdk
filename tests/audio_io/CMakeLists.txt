@@ -20,6 +20,32 @@ target_include_directories(polyphase_resampler_test
 
 add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
 
+# ORP162/FTR052: source-neutral fixed-slot live PCM fan-out.
+add_executable(live_audio_fanout_test live_audio_fanout_test.cpp)
+target_link_libraries(live_audio_fanout_test
+    PRIVATE orpheus_audio_utils GTest::gtest GTest::gtest_main)
+target_include_directories(live_audio_fanout_test
+    PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+add_test(NAME live_audio_fanout_test COMMAND live_audio_fanout_test)
+
+# ORP162/FTR052: prepared allocation-free streaming sample-rate conversion.
+add_executable(streaming_sample_rate_converter_test
+    streaming_sample_rate_converter_test.cpp)
+target_link_libraries(streaming_sample_rate_converter_test
+    PRIVATE orpheus_audio_utils GTest::gtest GTest::gtest_main)
+target_include_directories(streaming_sample_rate_converter_test
+    PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+add_test(NAME streaming_sample_rate_converter_test
+    COMMAND streaming_sample_rate_converter_test)
+
+# ORP162/FTR052: adaptive source-clock to destination-clock PCM bridge.
+add_executable(clocked_output_bridge_test clocked_output_bridge_test.cpp)
+target_link_libraries(clocked_output_bridge_test
+    PRIVATE orpheus_audio_utils GTest::gtest GTest::gtest_main)
+target_include_directories(clocked_output_bridge_test
+    PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+add_test(NAME clocked_output_bridge_test COMMAND clocked_output_bridge_test)
+
 # FTR041: sample-accurate, bounded trigger voice contract and RT allocation gate.
 add_executable(trigger_voice_test
     trigger_voice_test.cpp

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 #include <orpheus/audio_driver.h>
+#include "audio_io/dummy_audio_driver.h"
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +19,8 @@ public:
     m_call_count.fetch_add(1, std::memory_order_relaxed);
     m_last_num_channels.store(num_channels, std::memory_order_relaxed);
     m_last_num_frames.store(num_frames, std::memory_order_relaxed);
+    m_last_discontinuity.store(block.discontinuity, std::memory_order_relaxed);
+    m_last_sample_position.store(block.device_sample_position, std::memory_order_relaxed);
 
     // Fill output with a simple pattern for verification
     for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -61,6 +64,12 @@ public:
   bool isChannelPatternVerified() const {
     return m_channel_pattern_verified.load(std::memory_order_relaxed);
   }
+  bool lastDiscontinuity() const {
+    return m_last_discontinuity.load(std::memory_order_relaxed);
+  }
+  uint64_t lastSamplePosition() const {
+    return m_last_sample_position.load(std::memory_order_relaxed);
+  }
 
 private:
   std::atomic<int> m_call_count{0};
@@ -68,6 +77,8 @@ private:
   std::atomic<size_t> m_last_num_frames{0};
   std::atomic<bool> m_distinct_output_channels{false};
   std::atomic<bool> m_channel_pattern_verified{false};
+  std::atomic<bool> m_last_discontinuity{false};
+  std::atomic<uint64_t> m_last_sample_position{0};
 };
 
 // Test fixture
@@ -126,6 +137,77 @@ TEST_F(DummyDriverTest, ReportsCapabilities) {
   EXPECT_TRUE(caps.supports_input);
   EXPECT_TRUE(caps.supports_multichannel_output);
   EXPECT_FALSE(caps.reports_hardware_latency);
+}
+
+TEST_F(DummyDriverTest, ReportsDeterministicRuntimeInfoAndNoHardwareEvents) {
+  AudioDriverConfig config;
+  config.sample_rate = 96000;
+  config.buffer_size = 128;
+  config.num_inputs = 1;
+  config.num_outputs = 2;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  const auto info = m_driver->getRuntimeInfo();
+  EXPECT_EQ(info.selected_input_device_id, "dummy:default");
+  EXPECT_EQ(info.selected_output_device_id, "dummy:default");
+  EXPECT_EQ(info.negotiated_sample_rate, 96000u);
+  EXPECT_EQ(info.maximum_callback_frames, 128u);
+  EXPECT_EQ(info.input_channels, 1u);
+  EXPECT_EQ(info.output_channels, 2u);
+  EXPECT_EQ(info.latency_samples, 128u);
+  EXPECT_FALSE(info.supports_runtime_events);
+  AudioDriverEvent event;
+  EXPECT_FALSE(m_driver->pollEvent(event));
+  EXPECT_EQ(m_driver->droppedEventCount(), 0u);
+}
+
+TEST_F(DummyDriverTest, DeliversCompleteVariableBlocksAndNeverTruncatesOversize) {
+  AudioDriverConfig config;
+  config.buffer_size = 16;
+  config.num_inputs = 1;
+  config.num_outputs = 2;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  auto* concrete = dynamic_cast<DummyAudioDriver*>(m_driver.get());
+  ASSERT_NE(concrete, nullptr);
+
+  concrete->renderOnceForTesting(7, *m_callback);
+  EXPECT_EQ(m_callback->getCallCount(), 1);
+  EXPECT_EQ(m_callback->getLastNumFrames(), 7u);
+  EXPECT_TRUE(m_callback->lastDiscontinuity());
+  EXPECT_EQ(m_callback->lastSamplePosition(), 0u);
+
+  concrete->renderOnceForTesting(17, *m_callback);
+  EXPECT_EQ(m_callback->getCallCount(), 1);
+  AudioDriverEvent event;
+  ASSERT_TRUE(m_driver->pollEvent(event));
+  EXPECT_EQ(event.type, AudioDriverEventType::CapacityExceeded);
+  EXPECT_EQ(event.maximum_frames, 17u);
+  EXPECT_FALSE(m_driver->pollEvent(event));
+
+  concrete->renderOnceForTesting(5, *m_callback);
+  EXPECT_EQ(m_callback->getCallCount(), 2);
+  EXPECT_EQ(m_callback->getLastNumFrames(), 5u);
+  EXPECT_EQ(m_callback->lastSamplePosition(), 7u);
+  EXPECT_TRUE(m_callback->lastDiscontinuity());
+}
+
+TEST_F(DummyDriverTest, FullCapacityEventQueueDropsNewestAndCountsIt) {
+  AudioDriverConfig config;
+  config.buffer_size = 8;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  auto* concrete = dynamic_cast<DummyAudioDriver*>(m_driver.get());
+  ASSERT_NE(concrete, nullptr);
+  for (uint32_t index = 0; index < 65; ++index) {
+    concrete->renderOnceForTesting(9 + index, *m_callback);
+  }
+  EXPECT_EQ(m_callback->getCallCount(), 0);
+  EXPECT_EQ(m_driver->droppedEventCount(), 1u);
+  AudioDriverEvent event;
+  uint32_t count = 0;
+  while (m_driver->pollEvent(event)) {
+    EXPECT_EQ(event.type, AudioDriverEventType::CapacityExceeded);
+    ++count;
+  }
+  EXPECT_EQ(count, 64u);
 }
 
 TEST_F(DummyDriverTest, InitializeRejectsInvalidConfig) {

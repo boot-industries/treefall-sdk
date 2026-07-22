@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace orpheus {
@@ -33,6 +34,41 @@ struct AudioDriverConfig {
 /// Factory-visible backend I/O diagnostics.
 struct AudioIoTelemetry {
   uint64_t input_render_failures = 0; ///< Cumulative failed capture renders
+};
+
+/// Runtime lifecycle and capacity events. Events contain scalar snapshots only
+/// and are polled by one host control thread.
+enum class AudioDriverEventType : uint8_t {
+  DeviceRemoved,
+  DefaultRouteChanged,
+  FormatChanged,
+  BufferCapacityChanged,
+  InterruptionBegan,
+  InterruptionEnded,
+  BackendRestarted,
+  BackendUnderrun,
+  CapacityExceeded,
+};
+
+struct AudioDriverEvent {
+  AudioDriverEventType type{AudioDriverEventType::BackendRestarted};
+  uint32_t sample_rate{0};
+  uint32_t maximum_frames{0};
+  uint64_t host_time_nanoseconds{0};
+  SessionGraphError error{SessionGraphError::OK};
+};
+
+static_assert(std::is_trivially_copyable_v<AudioDriverEvent>);
+
+struct AudioDriverRuntimeInfo {
+  std::string selected_input_device_id{};
+  std::string selected_output_device_id{};
+  uint32_t negotiated_sample_rate{0};
+  uint32_t maximum_callback_frames{0};
+  uint16_t input_channels{0};
+  uint16_t output_channels{0};
+  uint32_t latency_samples{0};
+  bool supports_runtime_events{false};
 };
 
 /// Audio backend family.
@@ -150,6 +186,28 @@ public:
   /// drivers that do not expose backend failures.
   virtual AudioIoTelemetry getTelemetry() const noexcept {
     return {};
+  }
+
+  /// Negotiated endpoint and callback-capacity snapshot. The conservative
+  /// default reports configured values and no runtime event support.
+  virtual AudioDriverRuntimeInfo getRuntimeInfo() const {
+    AudioDriverRuntimeInfo info;
+    info.negotiated_sample_rate = getConfig().sample_rate;
+    info.maximum_callback_frames = getConfig().buffer_size;
+    info.input_channels = getConfig().num_inputs;
+    info.output_channels = getConfig().num_outputs;
+    info.latency_samples = getLatencySamples();
+    return info;
+  }
+
+  /// One control-thread consumer polls fixed-size runtime events.
+  virtual bool pollEvent(AudioDriverEvent& event) noexcept {
+    (void)event;
+    return false;
+  }
+
+  virtual uint64_t droppedEventCount() const noexcept {
+    return 0;
   }
 
   /// Get runtime backend/device capabilities.

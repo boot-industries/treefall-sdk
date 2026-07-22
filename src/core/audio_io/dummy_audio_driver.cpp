@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "dummy_audio_driver.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -35,6 +36,11 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
   m_output_buffer_storage.clear();
   m_input_ptrs.clear();
   m_output_ptrs.clear();
+  m_event_write.store(0, std::memory_order_relaxed);
+  m_event_read.store(0, std::memory_order_relaxed);
+  m_dropped_events.store(0, std::memory_order_relaxed);
+  m_sample_position.store(0, std::memory_order_relaxed);
+  m_next_discontinuity.store(true, std::memory_order_relaxed);
 
   for (size_t i = 0; i < m_config.num_inputs; ++i) {
     m_input_buffer_storage.emplace_back(m_config.buffer_size, 0.0f);
@@ -143,6 +149,82 @@ AudioDriverCapabilities DummyAudioDriver::getCapabilities() const {
   return caps;
 }
 
+AudioDriverRuntimeInfo DummyAudioDriver::getRuntimeInfo() const {
+  AudioDriverRuntimeInfo info;
+  if (m_config.num_inputs > 0) {
+    info.selected_input_device_id =
+        m_config.input_device_id.empty() ? "dummy:default" : m_config.input_device_id;
+  }
+  if (m_config.num_outputs > 0) {
+    info.selected_output_device_id =
+        m_config.output_device_id.empty() ? "dummy:default" : m_config.output_device_id;
+  }
+  info.negotiated_sample_rate = m_config.sample_rate;
+  info.maximum_callback_frames = m_config.buffer_size;
+  info.input_channels = m_config.num_inputs;
+  info.output_channels = m_config.num_outputs;
+  info.latency_samples = getLatencySamples();
+  info.supports_runtime_events = false;
+  return info;
+}
+
+void DummyAudioDriver::pushEvent(const AudioDriverEvent& event) noexcept {
+  const uint64_t write = m_event_write.load(std::memory_order_relaxed);
+  const uint64_t read = m_event_read.load(std::memory_order_acquire);
+  if (write - read >= kEventCapacity) {
+    m_dropped_events.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  m_events[write % kEventCapacity] = event;
+  m_event_write.store(write + 1, std::memory_order_release);
+}
+
+bool DummyAudioDriver::pollEvent(AudioDriverEvent& event) noexcept {
+  const uint64_t read = m_event_read.load(std::memory_order_relaxed);
+  const uint64_t write = m_event_write.load(std::memory_order_acquire);
+  if (read == write) {
+    return false;
+  }
+  event = m_events[read % kEventCapacity];
+  m_event_read.store(read + 1, std::memory_order_release);
+  return true;
+}
+
+uint64_t DummyAudioDriver::droppedEventCount() const noexcept {
+  return m_dropped_events.load(std::memory_order_relaxed);
+}
+
+void DummyAudioDriver::renderOnceForTesting(uint32_t frames, IAudioCallback& callback) noexcept {
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  const uint64_t host_time =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+  if (frames == 0 || frames > m_config.buffer_size) {
+    if (frames > m_config.buffer_size) {
+      pushEvent({AudioDriverEventType::CapacityExceeded, m_config.sample_rate, frames, host_time,
+                 SessionGraphError::InvalidParameter});
+      m_next_discontinuity.store(true, std::memory_order_release);
+    }
+    return;
+  }
+  for (auto& buffer : m_input_buffer_storage) {
+    std::fill_n(buffer.data(), frames, 0.0f);
+  }
+  for (auto& buffer : m_output_buffer_storage) {
+    std::fill_n(buffer.data(), frames, 0.0f);
+  }
+  AudioProcessBlock block;
+  block.input_buffers = m_config.num_inputs > 0 ? m_input_ptrs.data() : nullptr;
+  block.output_buffers = m_config.num_outputs > 0 ? m_output_ptrs.data() : nullptr;
+  block.num_input_channels = m_config.num_inputs;
+  block.num_output_channels = m_config.num_outputs;
+  block.num_frames = frames;
+  block.device_sample_position = m_sample_position.load(std::memory_order_relaxed);
+  block.host_time_nanoseconds = host_time;
+  block.discontinuity = m_next_discontinuity.exchange(false, std::memory_order_acq_rel);
+  callback.processAudio(block);
+  m_sample_position.fetch_add(frames, std::memory_order_relaxed);
+}
+
 void DummyAudioDriver::audioThreadMain() {
   // Calculate sleep time to simulate real-time audio processing
   // Sleep for slightly less than buffer duration to avoid drift
@@ -152,36 +234,9 @@ void DummyAudioDriver::audioThreadMain() {
       static_cast<int64_t>(buffer_duration_sec * 1e6 * 0.95) // 95% to account for jitter
   );
 
-  uint64_t stream_position = 0;
-  bool discontinuity = true;
-
   while (!m_should_stop.load(std::memory_order_acquire)) {
-    // Clear input buffers (simulate silence from input device)
-    for (auto& buffer : m_input_buffer_storage) {
-      std::memset(buffer.data(), 0, buffer.size() * sizeof(float));
-    }
-
-    // Clear output buffers
-    for (auto& buffer : m_output_buffer_storage) {
-      std::memset(buffer.data(), 0, buffer.size() * sizeof(float));
-    }
-
-    // Call audio callback (with safety check for shutdown race)
     if (m_callback && m_running.load(std::memory_order_acquire)) {
-      const auto now = std::chrono::steady_clock::now().time_since_epoch();
-      AudioProcessBlock block;
-      block.input_buffers = m_config.num_inputs > 0 ? m_input_ptrs.data() : nullptr;
-      block.output_buffers = m_output_ptrs.data();
-      block.num_input_channels = m_config.num_inputs;
-      block.num_output_channels = m_config.num_outputs;
-      block.num_frames = m_config.buffer_size;
-      block.device_sample_position = stream_position;
-      block.host_time_nanoseconds =
-          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
-      block.discontinuity = discontinuity;
-      m_callback->processAudio(block);
-      stream_position += m_config.buffer_size;
-      discontinuity = false;
+      renderOnceForTesting(m_config.buffer_size, *m_callback);
     }
 
     // Sleep to simulate real-time constraints

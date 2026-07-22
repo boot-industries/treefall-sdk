@@ -131,6 +131,24 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             True,
         ),
         ScanTarget(
+            "Live audio fan-out publish",
+            root / "src/core/audio_io/live_audio.cpp",
+            r"void\s+publish\s*\(\s*const\s+LiveAudioBlockView&",
+            True,
+        ),
+        ScanTarget(
+            "Clocked output bridge pump",
+            root / "src/core/audio_io/clocked_output_bridge.cpp",
+            r"void\s+pumpSource\s*\(",
+            True,
+        ),
+        ScanTarget(
+            "Clocked output bridge render",
+            root / "src/core/audio_io/clocked_output_bridge.cpp",
+            r"void\s+render\s*\(\s*float\*\s+const\*",
+            True,
+        ),
+        ScanTarget(
             "Transport render path",
             root / "src/core/transport/transport_controller.cpp",
             r"void\s+TransportController::processAudio\s*\(",
