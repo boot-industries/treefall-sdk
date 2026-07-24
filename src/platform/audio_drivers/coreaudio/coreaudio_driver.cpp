@@ -441,6 +441,31 @@ UInt32 getUInt32Property(AudioDeviceID device_id, AudioObjectPropertySelector se
                                                                                              : 0;
 }
 
+UInt32 getChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
+  if (device_id == 0) {
+    return 0;
+  }
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
+      size < sizeof(AudioBufferList)) {
+    return 0;
+  }
+
+  std::vector<uint8_t> storage(size);
+  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
+    return 0;
+  }
+
+  UInt32 channels = 0;
+  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+    channels += buffers->mBuffers[index].mNumberChannels;
+  }
+  return channels;
+}
+
 UInt32 getStreamLatency(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
   AudioObjectPropertyAddress streams_address = {kAudioDevicePropertyStreams, scope,
                                                 kAudioObjectPropertyElementMain};
@@ -496,28 +521,11 @@ AudioDeviceID CoreAudioDriver::findDeviceByUID(const std::string& device_uid) {
 
 bool CoreAudioDriver::supportsDirection(AudioDeviceID device_id,
                                         AudioObjectPropertyScope scope) const {
-  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
-                                        kAudioObjectPropertyElementMain};
-  UInt32 size = 0;
-  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
-      size < sizeof(AudioBufferList)) {
-    return false;
-  }
-
-  std::vector<uint8_t> storage(size);
-  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
-  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
-    return false;
-  }
-  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
-    if (buffers->mBuffers[index].mNumberChannels != 0) {
-      return true;
-    }
-  }
-  return false;
+  return getChannelCount(device_id, scope) > 0;
 }
 
 AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
+  input_channel_offset_ = 0;
   const AudioDeviceID outputID = config_.output_device_id.empty()
                                      ? getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
                                      : findDeviceByUID(config_.output_device_id);
@@ -544,9 +552,15 @@ AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
   input_device_id_ = inputID;
   output_device_id_ = outputID;
   if (inputID == outputID) {
+    input_channel_offset_ = 0;
     return outputID;
   }
 
+  // Aggregate input channels retain sub-device order. A duplex playback
+  // endpoint contributes its capture channels before the dedicated input
+  // endpoint, so map past them rather than silently metering/recording the
+  // playback device's first (often disconnected) input.
+  input_channel_offset_ = getChannelCount(outputID, kAudioObjectPropertyScopeInput);
   const AudioDeviceID aggregateID = createAggregateDevice(inputID, outputID);
   if (aggregateID == 0) {
     input_device_id_ = 0;
@@ -782,6 +796,17 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
     if (status != noErr) {
       return SessionGraphError::InternalError;
     }
+    std::vector<SInt32> inputChannelMap(config_.num_inputs);
+    for (uint32_t channel = 0; channel < config_.num_inputs; ++channel) {
+      inputChannelMap[channel] =
+          static_cast<SInt32>(input_channel_offset_ + channel);
+    }
+    status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_ChannelMap,
+                                  kAudioUnitScope_Output, 1, inputChannelMap.data(),
+                                  static_cast<UInt32>(inputChannelMap.size() * sizeof(SInt32)));
+    if (status != noErr) {
+      return SessionGraphError::InternalError;
+    }
   }
 
   // Set buffer size (if supported)
@@ -827,6 +852,7 @@ void CoreAudioDriver::cleanupAudioUnit() {
   device_id_ = 0;
   input_device_id_ = 0;
   output_device_id_ = 0;
+  input_channel_offset_ = 0;
 }
 
 // Factory function
