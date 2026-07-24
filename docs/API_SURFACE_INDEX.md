@@ -4,7 +4,7 @@ This index catalogs public entry points exposed by the Orpheus SDK workspace. Up
 notable APIs are added.
 
 **Last Updated:** 2026-07-16 (sequencer trigger voice primitive)
-**SDK Version:** 0.6.3 — the authoritative version is `project(orpheus VERSION ...)`
+**SDK Version:** 0.6.6 — the authoritative version is `project(orpheus VERSION ...)`
 in the repo-root `CMakeLists.txt`. ("Added" tags below cite the historical
 release names in `CHANGELOG.md`, including the pre-renumbering `v1.0.0-rc.*`
 labels.)
