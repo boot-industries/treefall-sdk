@@ -34,10 +34,14 @@ Current FourTrack-facing SDK contracts are:
   for directional endpoints, isolated routing meters, and capture telemetry;
 - `docs/orp/ORP156 ORP155 Implementation Handoff.md` for verification and
   delivery evidence.
+- `docs/orp/ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff.md`
+  for the AUHAL capture-map correction, SDK 0.6.7 release, and child-app pins.
 
 ## Sources of truth
 
 - Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.
+- Current release: SDK 0.6.7 with stable C ABI 1.0 and governed ShmUI-JUCE
+  design-token contract 0.3.0.
 - Platform/backend support: `docs/SUPPORT_MATRIX.md`.
 - Installed target manifest: generated package metadata and the clean-prefix
   fixture under `tests/cmake/find_package/`.

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-07-24
+
+Patch release correcting capture-channel selection for distinct CoreAudio input
+and output endpoints.
+
+### Fixed
+
+- CoreAudio now maps AUHAL capture channels to the explicitly resolved input
+  sub-device when a private aggregate also contains input lanes from the output
+  endpoint.
+- Initialization rejects requested capture channel counts that exceed the
+  resolved input endpoint instead of surfacing an opaque AudioUnit setup error.
+
+### Packaging
+
+- Preserved the governed ShmUI-JUCE 0.3.0 token package and stable text-button
+  identity contracts from SDK 0.6.6 in the mainline release history.
+
 ## [0.6.6] - 2026-07-22
 
 Patch release preserving ShmUI text-button component identity.
