@@ -116,6 +116,10 @@ private:
   // private aggregate used to bridge separate default input/output devices.
   AudioDeviceID input_device_id_{0};
   AudioDeviceID output_device_id_{0};
+  // Capture channel 0 in a private aggregate may belong to the playback
+  // sub-device when that endpoint is duplex. This offset selects the first
+  // channel of the explicitly resolved input sub-device instead.
+  uint32_t input_channel_offset_{0};
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
 
