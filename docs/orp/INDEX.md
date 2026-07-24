@@ -8,6 +8,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP161 FourTrack Live Output Handoff Assessment]]
 - [[ORP160 Master Tape Varispeed Primitive]]
 - [[ORP159 Suite Synchronization and Integration Gate]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
@@ -88,6 +89,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP159 Suite Synchronization and Integration Gate]]
 - [[ORP160 Master Tape Varispeed Primitive]]
+- [[ORP161 FourTrack Live Output Handoff Assessment]]
 
 ## Archived Documents
 

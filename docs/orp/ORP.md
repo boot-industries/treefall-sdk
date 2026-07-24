@@ -3,6 +3,7 @@
 Project documentation index for orpheus-sdk.
 
 ## Recent Documents
+- [[ORP161 FourTrack Live Output Handoff Assessment]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP141 Reliability and Adoption Sprint Plan]]
@@ -128,6 +129,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP156 ORP155 Implementation Handoff]]
 - [[ORP157 Suite Coherence and Package Consumer Mission]]
 - [[ORP158 Installed ShmUI-JUCE Package Qualification]]
+- [[ORP161 FourTrack Live Output Handoff Assessment]]
 
 ## Archived Documents
 

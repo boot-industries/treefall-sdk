@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-07-22
+
+Patch release preserving ShmUI text-button component identity.
+
+### Fixed
+
+- `shmui::TextButton` now initializes its JUCE component name from the
+  constructor label, retaining stable action lookup and accessibility identity
+  when the visible label is changed later.
+
+## [0.6.5] - 2026-07-22
+
+Patch release aligning the governed ShmUI-JUCE import provenance contract.
+
+### Changed
+
+- Updated the recorded ShmUI source revision after repairing the authoritative
+  import generator to match the SDK's canonical path-NUL-content hash and JSON
+  serialization contract.
+
+## [0.6.4] - 2026-07-22
+
+Patch release refreshing the governed ShmUI-JUCE package import.
+
+### Changed
+
+- Synchronized the flattened `packages/shmui-juce` source tree to ShmUI token
+  contract 0.3.0, including Console themes, transport/text controls, and meter
+  presentation APIs.
+- Removed the stale nested package source copy so CMake compiles the governed
+  imported files recorded by `shmui-juce-import.json`.
+
 ## [0.6.3] - 2026-07-21
 
 Patch release adding prepared and offline tape-varispeed processing.
