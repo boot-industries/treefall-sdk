@@ -23,7 +23,7 @@ cd orpheus-sdk
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j8
 
-# Run tests (270+ unit tests, core suite ~2 seconds)
+# Run the configured contracts
 ctest --test-dir build --output-on-failure
 ```
 
@@ -35,11 +35,12 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Integrate SDK:** See [`docs/orp/_process/archive/GETTING_STARTED.md`](docs/orp/_process/archive/GETTING_STARTED.md)
-- **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
-- **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
-- **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
-- **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
+- **Review public APIs:** See the installed headers under [`include/orpheus`](include/orpheus).
+- **Review package changes:** See [`CHANGELOG.md`](CHANGELOG.md).
+- **Build examples:** See [`examples/README.md`](examples/README.md).
+
+Detailed working records under `docs/` are intentionally local-only and are
+not part of the public repository.
 
 ## Lightweight Integration Targets
 

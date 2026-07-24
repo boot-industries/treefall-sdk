@@ -16,8 +16,8 @@
   mainline.
 - **Verification:** The CoreAudio driver target builds; FourTrack's 225-contract
   suite and physical MacBook microphone capture provide downstream acceptance.
-- **Delivery:** ORP162 records the 0.6.7 release and FourTrack/Clip Composer pin
-  handoff.
+- **Delivery:** PR #224 merged to `main` as `a97d795d`; released tag `v0.6.7`
+  and both FourTrack and Clip Composer now pin that exact commit.
 - **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
   WASAPI is not release-supported without hosted Windows package/ABI evidence
   and a real-device acceptance record.
@@ -25,8 +25,8 @@
 ---
 
 **Last Updated:** 2026-07-24 (ORP162 CoreAudio mapping and pin handoff)
-**Current Phase:** SDK 0.6.7 downstream adoption
-**Overall Progress:** CoreAudio fix reviewed | ShmUI lineage preserved | Child pins updating
+**Current Phase:** SDK 0.6.7 delivered and pinned downstream
+**Overall Progress:** CoreAudio fix merged | ShmUI lineage preserved | Child pins complete
 
 ---
 

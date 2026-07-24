@@ -21,34 +21,26 @@ realtime safety, installed-package usability, and truthful capability reporting.
 - Model downstream requirements with SDK-owned fixtures. Do not add app-specific
   policy to core to make a fixture pass.
 
-The ORP141 completion and child-team handoff is recorded in
-`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`.
-`docs/orp/ORP142 Downstream Consumer Adoption Notes.md` remains the non-binding
-adoption guide.
+Current downstream-facing SDK 0.6.7 contracts include the standalone trigger
+voice, prepared tape varispeed, direction-specific CoreAudio endpoints,
+isolated routing meters, public capture-failure telemetry, and AUHAL capture
+channel mapping for distinct input/output aggregates. FourTrack and Clip
+Composer pin the released `v0.6.7` tag.
 
-Current FourTrack-facing SDK contracts are:
-
-- `docs/orp/ORP154 Sequencer Trigger Voice Primitive.md` for the standalone
-  one-shot voice utility;
-- `docs/orp/ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md`
-  for directional endpoints, isolated routing meters, and capture telemetry;
-- `docs/orp/ORP156 ORP155 Implementation Handoff.md` for verification and
-  delivery evidence.
-- `docs/orp/ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff.md`
-  for the AUHAL capture-map correction, SDK 0.6.7 release, and child-app pins.
+Detailed ORP working records under `docs/` are intentionally local-only and
+gitignored in the public SDK repository. Public claims must remain grounded in
+tracked source, headers, tests, release metadata, and `CHANGELOG.md`.
 
 ## Sources of truth
 
 - Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.
 - Current release: SDK 0.6.7 with stable C ABI 1.0 and governed ShmUI-JUCE
   design-token contract 0.3.0.
-- Platform/backend support: `docs/SUPPORT_MATRIX.md`.
+- Public capability history: `CHANGELOG.md`.
 - Installed target manifest: generated package metadata and the clean-prefix
   fixture under `tests/cmake/find_package/`.
-- Realtime constraints: `docs/REALTIME_AUDIT.md` and
-  `tools/realtime_audit.py`.
 - Public API: installed headers under `include/orpheus/`.
-- Sprint completion and explicit deferrals: ORP143.
+- Realtime constraints: `tools/realtime_audit.py` and its configured gate.
 
 Never promote a planned or merely compiled backend to supported status without
 the evidence required by the support matrix. In particular, the merged WASAPI
