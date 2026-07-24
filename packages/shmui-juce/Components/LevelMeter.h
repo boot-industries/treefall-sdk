@@ -59,14 +59,14 @@ struct LevelEvent {
  * @brief Style configuration for LevelMeter.
  */
 struct LevelMeterStyle {
-  // Colors — derived from the Orpheus --meter-* / --wave-bg token contract
-  // (see DesignTokens.h). Overridable per-instance via setStyle().
-  juce::Colour backgroundColor = tokens::wave::bg();
-  juce::Colour meterColorLow = tokens::meter::green();
-  juce::Colour meterColorMid = tokens::meter::yellow();
-  juce::Colour meterColorHigh = tokens::meter::red();
-  juce::Colour peakHoldColor = juce::Colours::white;
-  juce::Colour clipColor = tokens::meter::red();
+  // Canonical Lab presentation roles; product-owned layout and scale policy
+  // remain configurable below.
+  juce::Colour backgroundColor = tokens::meter::surfaceLab();
+  juce::Colour meterColorLow = tokens::meter::safe();
+  juce::Colour meterColorMid = tokens::meter::caution();
+  juce::Colour meterColorHigh = tokens::meter::warning();
+  juce::Colour peakHoldColor = tokens::meter::peakLab();
+  juce::Colour clipColor = tokens::meter::clip();
   juce::Colour textColor = tokens::lab::text().withAlpha(0.5f);
   juce::Colour tickColor = tokens::lab::text().withAlpha(0.25f);
 
@@ -84,6 +84,17 @@ struct LevelMeterStyle {
   bool showScale = true;
   bool showTicks = true;
   float peakHoldWidth = 2.0f;
+  [[nodiscard]] static LevelMeterStyle
+  fromPresentation(const tokens::meter::Presentation& presentation) {
+    LevelMeterStyle style;
+    style.backgroundColor = presentation.background;
+    style.meterColorLow = presentation.stops[0].color;
+    style.meterColorMid = presentation.stops[1].color;
+    style.meterColorHigh = presentation.stops[2].color;
+    style.peakHoldColor = presentation.peak;
+    style.clipColor = presentation.clip;
+    return style;
+  }
 };
 
 //==============================================================================

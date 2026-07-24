@@ -1,33 +1,32 @@
 # ORP068 Implementation Progress
 
-> **Note (2026-07-16):** This is a historical ORP068 work log. Current SDK
+> **Note (2026-07-24):** This is a historical ORP068 work log. Current SDK
 > contracts and delivery evidence live in the numbered ORP documents and
 > `.claude/CLAUDE.md`. The Clip Composer app was extracted to
 > `~/dev/clip-composer` and consumes this SDK as a submodule; historical
 > `apps/clip-composer/...` paths below refer to the former in-tree layout.
 
-## Current State (2026-07-16)
+## Current State (2026-07-24)
 
-- **C++ SDK:** 0.6.1 pre-1.0 SDK with stable C ABI 1.0.
-- **Verification:** The `main`-synchronized ORP155 merge result builds and
-  passes 151/151 configured CTest contracts.
-- **FourTrack contracts:** ORP154 supplies the allocation-free trigger voice;
-  ORP155 supplies directional CoreAudio endpoints, isolated routing meters, and
-  public capture-failure telemetry; ORP156 records implementation and delivery.
-- **Lightweight targets:** `Orpheus::diagnostics` and `Orpheus::audio_utils`
-  remain exported for thin consumers.
+- **C++ SDK:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0.
+- **CoreAudio:** Distinct input/output aggregates map AUHAL capture to the
+  resolved input sub-device and reject unsupported requested channel counts.
+- **ShmUI-JUCE:** The governed design-token contract remains 0.3.0; the 0.6.4
+  import provenance and 0.6.6 text-button identity fixes are preserved on
+  mainline.
+- **Verification:** The CoreAudio driver target builds; FourTrack's 225-contract
+  suite and physical MacBook microphone capture provide downstream acceptance.
+- **Delivery:** ORP162 records the 0.6.7 release and FourTrack/Clip Composer pin
+  handoff.
 - **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
   WASAPI is not release-supported without hosted Windows package/ABI evidence
   and a real-device acceptance record.
-- **Delivery:** PR #218 merged to `main` as `1b579f0f`.
-- **Next:** Downstream apps may adopt these contracts after an SDK release/pin
-  update; Windows release evidence remains deferred.
 
 ---
 
-**Last Updated:** 2026-07-16 (ORP155/ORP156 delivery)
-**Current Phase:** ORP155 implementation merged through PR #218
-**Overall Progress:** Full configured suite green | Public contracts documented | Windows evidence deferred
+**Last Updated:** 2026-07-24 (ORP162 CoreAudio mapping and pin handoff)
+**Current Phase:** SDK 0.6.7 downstream adoption
+**Overall Progress:** CoreAudio fix reviewed | ShmUI lineage preserved | Child pins updating
 
 ---
 
