@@ -545,7 +545,8 @@ AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
   const AudioDeviceID inputID = config_.input_device_id.empty()
                                     ? getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice)
                                     : findDeviceByUID(config_.input_device_id);
-  if (inputID == 0 || !supportsDirection(inputID, kAudioObjectPropertyScopeInput)) {
+  const UInt32 inputChannelCount = getChannelCount(inputID, kAudioObjectPropertyScopeInput);
+  if (inputID == 0 || inputChannelCount < config_.num_inputs) {
     return 0;
   }
 
