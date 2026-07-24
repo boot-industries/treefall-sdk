@@ -20,11 +20,6 @@ VERSION_TARGETS: tuple[tuple[pathlib.Path, re.Pattern[str], str], ...] = (
         r"\g<1>{version}",
     ),
     (
-        ROOT / "docs/API_SURFACE_INDEX.md",
-        re.compile(r"(?m)^(\*\*SDK Version:\*\* )\d+\.\d+\.\d+"),
-        r"\g<1>{version}",
-    ),
-    (
         ROOT / "examples/README.md",
         re.compile(r"(?m)^(\*\*SDK Version:\*\* ).+$"),
         r"\g<1>{version}",
