@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "orpheus/abi.h"
 
+#include <array>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -177,6 +182,69 @@ TEST(AbiTimelineTest, RejectsNonFiniteValuesWithoutChangingValidTimeline) {
   EXPECT_EQ(clipgrid->set_clip_start(session, clip, 2.0), ORPHEUS_STATUS_OK);
 
   session_api->destroy(session);
+}
+
+TEST(AbiRenderClickTest, StreamsBoundedPcmAndRejectsImpossiblePlansBeforeFileCreation) {
+  const auto* render = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  ASSERT_NE(render, nullptr);
+
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "orpheus-abi-render-click";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path output = root / "valid.wav";
+  const std::string output_string = output.string();
+  const orpheus_render_click_spec valid{120.0, 1u, 8000u, 1u, 0.25, 1000.0, 0.01};
+  ASSERT_EQ(render->render_click(&valid, output_string.c_str()), ORPHEUS_STATUS_OK);
+
+  std::array<char, 44> header{};
+  std::ifstream stream(output, std::ios::binary);
+  ASSERT_TRUE(stream);
+  stream.read(header.data(), static_cast<std::streamsize>(header.size()));
+  ASSERT_EQ(stream.gcount(), static_cast<std::streamsize>(header.size()));
+  const auto read_u16 = [&header](std::size_t offset) {
+    std::uint16_t value = 0;
+    std::memcpy(&value, header.data() + offset, sizeof(value));
+    return value;
+  };
+  const auto read_u32 = [&header](std::size_t offset) {
+    std::uint32_t value = 0;
+    std::memcpy(&value, header.data() + offset, sizeof(value));
+    return value;
+  };
+  EXPECT_EQ(std::string(header.data(), 4), "RIFF");
+  EXPECT_EQ(std::string(header.data() + 8, 4), "WAVE");
+  EXPECT_EQ(std::string(header.data() + 12, 4), "fmt ");
+  EXPECT_EQ(std::string(header.data() + 36, 4), "data");
+  EXPECT_EQ(read_u16(20), 1u);
+  EXPECT_EQ(read_u16(22), 1u);
+  EXPECT_EQ(read_u32(24), 8000u);
+  EXPECT_EQ(read_u16(34), 16u);
+  EXPECT_EQ(read_u32(40), 32000u);
+
+  const fs::path excessive_channels = root / "excessive-channels.wav";
+  const fs::path infinite_duration = root / "infinite-duration.wav";
+  const fs::path excessive_bars = root / "excessive-bars.wav";
+  const std::string excessive_channels_string = excessive_channels.string();
+  const std::string infinite_duration_string = infinite_duration.string();
+  const std::string excessive_bars_string = excessive_bars.string();
+  auto invalid_channels = valid;
+  invalid_channels.channels = std::numeric_limits<std::uint32_t>::max();
+  EXPECT_EQ(render->render_click(&invalid_channels, excessive_channels_string.c_str()),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  auto invalid_duration = valid;
+  invalid_duration.click_duration_seconds = std::numeric_limits<double>::infinity();
+  EXPECT_EQ(render->render_click(&invalid_duration, infinite_duration_string.c_str()),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  auto invalid_bars = valid;
+  invalid_bars.bars = 8389u;
+  EXPECT_EQ(render->render_click(&invalid_bars, excessive_bars_string.c_str()),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  EXPECT_FALSE(fs::exists(excessive_channels));
+  EXPECT_FALSE(fs::exists(infinite_duration));
+  EXPECT_FALSE(fs::exists(excessive_bars));
+
+  fs::remove_all(root);
 }
 
 } // namespace orpheus::tests

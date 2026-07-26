@@ -8,13 +8,14 @@
 #include "session/json_io.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 using orpheus::abi_internal::GuardAbiCall;
 
@@ -22,6 +23,10 @@ namespace {
 
 using orpheus::kBeatsPerBar;
 constexpr int kClickBitsPerSample = 16;
+constexpr std::uint32_t kMaximumClickSampleRate = 192000;
+constexpr std::uint32_t kMaximumClickChannels = 8;
+constexpr std::uint64_t kMaximumClickPayloadBytes = 268435456;
+constexpr std::size_t kRenderChunkFrames = 4096;
 
 struct RenderClickParams {
   double tempo_bpm;
@@ -33,7 +38,42 @@ struct RenderClickParams {
   double duration_seconds;
 };
 
-RenderClickParams NormalizeRenderSpec(const orpheus_render_click_spec& spec) {
+struct RenderClickPlan {
+  RenderClickParams params;
+  std::uint64_t samples_per_beat;
+  std::uint64_t click_samples;
+  std::uint64_t total_frames;
+  std::uint64_t interleaved_samples;
+  std::uint64_t data_bytes;
+};
+
+void RequireFinite(double value, const char* name) {
+  if (!std::isfinite(value)) {
+    throw std::invalid_argument(std::string(name) + " must be finite");
+  }
+}
+
+std::uint64_t CheckedMultiply(std::uint64_t lhs, std::uint64_t rhs, const char* name) {
+  if (lhs != 0 && rhs > std::numeric_limits<std::uint64_t>::max() / lhs) {
+    throw std::invalid_argument(std::string(name) + " overflows");
+  }
+  return lhs * rhs;
+}
+
+std::uint64_t RoundedFrameCount(double value, const char* name) {
+  if (!std::isfinite(value) || value > static_cast<double>(std::numeric_limits<long long>::max())) {
+    throw std::invalid_argument(std::string(name) + " is out of range");
+  }
+  const long long rounded = std::llround(value);
+  return rounded > 0 ? static_cast<std::uint64_t>(rounded) : 1u;
+}
+
+RenderClickPlan BuildRenderPlan(const orpheus_render_click_spec& spec) {
+  RequireFinite(spec.tempo_bpm, "Click tempo");
+  RequireFinite(spec.gain, "Click gain");
+  RequireFinite(spec.click_frequency_hz, "Click frequency");
+  RequireFinite(spec.click_duration_seconds, "Click duration");
+
   RenderClickParams params{};
   params.tempo_bpm = spec.tempo_bpm > 0.0 ? spec.tempo_bpm : 120.0;
   params.bars = spec.bars > 0u ? spec.bars : 4u;
@@ -42,43 +82,34 @@ RenderClickParams NormalizeRenderSpec(const orpheus_render_click_spec& spec) {
   params.gain = (spec.gain > 0.0 && spec.gain <= 1.0) ? spec.gain : 0.25;
   params.frequency_hz = spec.click_frequency_hz > 0.0 ? spec.click_frequency_hz : 1000.0;
   params.duration_seconds = spec.click_duration_seconds > 0.0 ? spec.click_duration_seconds : 0.05;
-  return params;
-}
 
-std::vector<int16_t> GenerateClickSamples(const RenderClickParams& params) {
-  const std::uint64_t total_beats = static_cast<std::uint64_t>(params.bars) * kBeatsPerBar;
+  if (params.sample_rate > kMaximumClickSampleRate || params.channels > kMaximumClickChannels) {
+    throw std::invalid_argument("Click render format exceeds resource limits");
+  }
+
   const double samples_per_beat_f =
       orpheus::samplesPerBeat(params.tempo_bpm, static_cast<double>(params.sample_rate));
-  std::uint64_t samples_per_beat = static_cast<std::uint64_t>(std::llround(samples_per_beat_f));
-  samples_per_beat = std::max<std::uint64_t>(1, samples_per_beat);
-
+  const std::uint64_t samples_per_beat =
+      RoundedFrameCount(samples_per_beat_f, "Click samples per beat");
   const double click_samples_f = params.duration_seconds * static_cast<double>(params.sample_rate);
-  std::uint64_t click_samples = static_cast<std::uint64_t>(std::llround(click_samples_f));
-  click_samples = std::max<std::uint64_t>(1, click_samples);
-
-  const std::uint64_t total_samples = samples_per_beat * total_beats;
-  std::vector<int16_t> buffer(total_samples * params.channels, 0);
+  const std::uint64_t click_samples = RoundedFrameCount(click_samples_f, "Click duration frames");
+  const std::uint64_t total_beats =
+      CheckedMultiply(static_cast<std::uint64_t>(params.bars), kBeatsPerBar, "Click beat count");
+  const std::uint64_t total_frames =
+      CheckedMultiply(samples_per_beat, total_beats, "Click frame count");
+  const std::uint64_t interleaved_samples =
+      CheckedMultiply(total_frames, params.channels, "Click sample count");
+  const std::uint64_t data_bytes =
+      CheckedMultiply(interleaved_samples, sizeof(std::int16_t), "Click payload size");
+  if (data_bytes > kMaximumClickPayloadBytes) {
+    throw std::invalid_argument("Click payload exceeds 256 MiB limit");
+  }
 
   const double phase_increment =
       2.0 * std::numbers::pi * params.frequency_hz / static_cast<double>(params.sample_rate);
+  RequireFinite(phase_increment, "Click phase increment");
 
-  for (std::uint64_t beat = 0; beat < total_beats; ++beat) {
-    const std::uint64_t offset = beat * samples_per_beat;
-    const double accent = (beat % kBeatsPerBar == 0) ? 1.0 : 0.75;
-    for (std::uint64_t i = 0; i < click_samples && (offset + i) < total_samples; ++i) {
-      const double envelope = 0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(i) /
-                                                    static_cast<double>(click_samples)));
-      const double sample_value =
-          std::sin(phase_increment * static_cast<double>(i)) * envelope * params.gain * accent;
-      const double clamped = std::clamp(sample_value, -1.0, 1.0);
-      const int16_t pcm = static_cast<int16_t>(std::lrint(clamped * 32767.0));
-      for (std::uint32_t channel = 0; channel < params.channels; ++channel) {
-        buffer[(offset + i) * params.channels + channel] = pcm;
-      }
-    }
-  }
-
-  return buffer;
+  return {params, samples_per_beat, click_samples, total_frames, interleaved_samples, data_bytes};
 }
 
 orpheus_status RenderClick(const orpheus_render_click_spec* spec, const char* out_path) {
@@ -86,12 +117,45 @@ orpheus_status RenderClick(const orpheus_render_click_spec* spec, const char* ou
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    const RenderClickParams params = NormalizeRenderSpec(*spec);
-    const std::vector<int16_t> samples = GenerateClickSamples(params);
-    orpheus::core::render::WriteWaveFile(
-        std::filesystem::path(out_path), params.sample_rate,
-        static_cast<std::uint16_t>(params.channels), kClickBitsPerSample,
-        reinterpret_cast<const std::uint8_t*>(samples.data()), samples.size() * sizeof(int16_t));
+    const RenderClickPlan plan = BuildRenderPlan(*spec);
+    const double phase_increment = 2.0 * std::numbers::pi * plan.params.frequency_hz /
+                                   static_cast<double>(plan.params.sample_rate);
+    std::array<std::int16_t, kRenderChunkFrames * kMaximumClickChannels> buffer{};
+    orpheus::core::render::WavStreamWriter writer(
+        std::filesystem::path(out_path), plan.params.sample_rate,
+        static_cast<std::uint16_t>(plan.params.channels), kClickBitsPerSample, plan.data_bytes);
+
+    for (std::uint64_t frame_offset = 0; frame_offset < plan.total_frames;) {
+      const std::uint64_t frame_count =
+          std::min<std::uint64_t>(kRenderChunkFrames, plan.total_frames - frame_offset);
+      const std::size_t sample_count = static_cast<std::size_t>(frame_count * plan.params.channels);
+      std::fill_n(buffer.begin(), sample_count, std::int16_t{0});
+
+      for (std::uint64_t frame = 0; frame < frame_count; ++frame) {
+        const std::uint64_t absolute_frame = frame_offset + frame;
+        const std::uint64_t beat = absolute_frame / plan.samples_per_beat;
+        const std::uint64_t click_frame = absolute_frame % plan.samples_per_beat;
+        if (click_frame >= plan.click_samples) {
+          continue;
+        }
+        const double accent = (beat % kBeatsPerBar == 0) ? 1.0 : 0.75;
+        const double envelope =
+            0.5 * (1.0 - std::cos(std::numbers::pi * static_cast<double>(click_frame) /
+                                  static_cast<double>(plan.click_samples)));
+        const double sample_value = std::sin(phase_increment * static_cast<double>(click_frame)) *
+                                    envelope * plan.params.gain * accent;
+        const double clamped = std::clamp(sample_value, -1.0, 1.0);
+        const std::int16_t pcm = static_cast<std::int16_t>(std::lrint(clamped * 32767.0));
+        for (std::uint32_t channel = 0; channel < plan.params.channels; ++channel) {
+          buffer[static_cast<std::size_t>(frame * plan.params.channels + channel)] = pcm;
+        }
+      }
+
+      writer.write(reinterpret_cast<const std::uint8_t*>(buffer.data()),
+                   sample_count * sizeof(std::int16_t));
+      frame_offset += frame_count;
+    }
+    writer.close();
     return ORPHEUS_STATUS_OK;
   });
 }
