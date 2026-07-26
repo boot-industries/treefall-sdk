@@ -14,6 +14,13 @@ namespace {
 constexpr double kMinimumLengthBeats = 1e-6;
 constexpr double kClipOrderingTolerance = 1e-9;
 
+double RequireFinite(double value, const char* name) {
+  if (!std::isfinite(value)) {
+    throw std::invalid_argument(std::string(name) + " must be finite");
+  }
+  return value;
+}
+
 TimeRange RangeFromBeats(double start_beats, double length_beats, double tempo_bpm,
                          std::uint32_t sample_rate) {
   const TimePoint start = TimePoint::fromBeats(start_beats, tempo_bpm, sample_rate);
@@ -28,17 +35,18 @@ double BeatsFromTime(TimePoint point, double tempo_bpm, std::uint32_t sample_rat
 
 Clip::Clip(ClipId id, std::string name, double start_beats, double length_beats,
            std::uint32_t scene_index)
-    : id_(id), name_(std::move(name)), start_beats_(start_beats),
-      length_beats_(std::max(length_beats, kMinimumLengthBeats)), scene_index_(scene_index) {}
+    : id_(id), name_(std::move(name)), start_beats_(RequireFinite(start_beats, "Clip start")),
+      length_beats_(std::max(RequireFinite(length_beats, "Clip length"), kMinimumLengthBeats)),
+      scene_index_(scene_index) {}
 
 Clip::~Clip() = default;
 
 void Clip::set_start(double start_beats) {
-  start_beats_ = start_beats;
+  start_beats_ = RequireFinite(start_beats, "Clip start");
 }
 
 void Clip::set_length(double length_beats) {
-  length_beats_ = std::max(length_beats, kMinimumLengthBeats);
+  length_beats_ = std::max(RequireFinite(length_beats, "Clip length"), kMinimumLengthBeats);
 }
 
 void Clip::set_scene_index(std::uint32_t scene_index) {
@@ -529,6 +537,8 @@ TransportState SessionGraph::transport_state() const {
 }
 
 void SessionGraph::set_session_range(double start_beats, double end_beats) {
+  RequireFinite(start_beats, "Session start");
+  RequireFinite(end_beats, "Session end");
   if (end_beats < start_beats) {
     throw std::invalid_argument("Session end must not precede start");
   }
@@ -644,8 +654,15 @@ void SessionGraph::commit_clip_grid() {
 
 double SessionGraph::QuantizePosition(double position_beats, const QuantizationWindow& quantization,
                                       double minimum_beats) {
+  RequireFinite(position_beats, "Quantization position");
+  RequireFinite(quantization.grid_beats, "Quantization grid");
+  RequireFinite(quantization.tolerance_beats, "Quantization tolerance");
+  RequireFinite(minimum_beats, "Quantization minimum");
   if (quantization.grid_beats <= 0.0) {
     throw std::invalid_argument("Quantization grid must be positive");
+  }
+  if (quantization.tolerance_beats < 0.0) {
+    throw std::invalid_argument("Quantization tolerance must be non-negative");
   }
   const double grid = quantization.grid_beats;
   const double normalized = position_beats / grid;
@@ -716,6 +733,7 @@ void SessionGraph::update_session_range_from_commits() {
 }
 
 void SessionGraph::commit_arrangement(double fallback_scene_length_beats) {
+  RequireFinite(fallback_scene_length_beats, "Arrangement fallback length");
   committed_clips_.clear();
 
   std::vector<SceneTimelineEntry> resolved_timeline = scene_timeline_;
