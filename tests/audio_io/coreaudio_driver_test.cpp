@@ -364,28 +364,6 @@ TEST_F(CoreAudioDriverTest, CannotStartTwice) {
   m_driver->stop();
 }
 
-TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
-  AudioDriverConfig config;
-  config.sample_rate = 48000;
-  config.buffer_size = 512;
-  config.num_outputs = 2;
-
-  BlockingCallback callback;
-  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
-  ASSERT_EQ(m_driver->start(&callback), SessionGraphError::OK);
-  if (!callback.waitForEntry(std::chrono::seconds(2))) {
-    callback.release();
-    ADD_FAILURE() << "CoreAudio did not invoke the blocking callback";
-    return;
-  }
-
-  auto stop_future = std::async(std::launch::async, [this] { return m_driver->stop(); });
-  EXPECT_EQ(stop_future.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
-
-  callback.release();
-  EXPECT_EQ(stop_future.get(), SessionGraphError::OK);
-}
-
 // ============================================================================
 // Callback Tests
 // ============================================================================
@@ -886,6 +864,36 @@ EndpointPair getSameDeviceEndpointsForTest() {
 }
 
 } // namespace
+
+TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output endpoints with persistent UIDs are unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.input_device_id = endpoints.input_uid;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  BlockingCallback callback;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->start(&callback), SessionGraphError::OK);
+  if (!callback.waitForEntry(std::chrono::seconds(2))) {
+    callback.release();
+    ADD_FAILURE() << "CoreAudio did not invoke the blocking callback";
+    return;
+  }
+
+  auto stop_future = std::async(std::launch::async, [this] { return m_driver->stop(); });
+  EXPECT_EQ(stop_future.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
+
+  callback.release();
+  EXPECT_EQ(stop_future.get(), SessionGraphError::OK);
+}
 
 // Explicit persistent UIDs must select the same physical endpoints as the
 // directional defaults. Reinitializing this driver exercises deterministic
