@@ -49,15 +49,17 @@ Orpheus is organized into distinct layers, each with clear responsibilities:
 
 ```mermaid
 graph TD
-    A[External apps: Clip Composer, FourTrack, FreqFinder] --> B[Adapters: REAPER, minhost]
-    A --> C[Shared app packages: occ-app-platform, shmui-juce]
-    B --> D[Core SDK: Transport, Session, Audio I/O]
+    A[External apps: Clip Composer, FourTrack, FreqFinder] --> C[Public app infrastructure: occ-app-platform]
+    A --> S[Private app UI artifacts: Shmui]
+    A --> D[Core SDK: Transport, Session, Audio I/O]
+    B[Host adapters: REAPER, minhost] --> D
     C --> D
-    D --> E[Platform: CoreAudio, WASAPI, ALSA, libsndfile]
+    D --> E[Platform: CoreAudio, WASAPI, libsndfile]
 
     style A fill:#4a9eff
     style B fill:#ffa94a
     style C fill:#9eff4a
+    style S fill:#76548f
     style D fill:#ff4a9e
     style E fill:#4aff9e
 ```
@@ -66,11 +68,10 @@ graph TD
 
 - **Core SDK** (`src/`, `include/`) – Minimal, deterministic primitives. No UI, no network, no host assumptions.
 - **Adapters** (`adapters/`) – Optional, platform-specific integrations. Thin wrappers around core SDK.
-- **Shared app packages** (`packages/`) – Active C++/JUCE building blocks for
-  downstream applications: `occ-app-platform` (session recovery, preferences,
-  health telemetry) and `shmui-juce` (JUCE UI components). Not part of the
-  core SDK libraries. (The former TypeScript driver layer is archived — see
-  `docs/orp/_process/archive/DECISION_PACKAGES.md`.)
+- **Shared app infrastructure** (`packages/`) – Host-neutral C++ helpers for
+  downstream applications: `occ-app-platform` supplies session recovery,
+  preferences, and health telemetry. Private UI packages such as Shmui remain
+  in their own repositories and outside public SDK source/package exports.
 - **In-tree apps** (`apps/`) – `wave-finder` (app-platform smoke-test shell)
   and `juce-demo-host` (JUCE demo host). Production applications — Clip
   Composer, FourTrack, FreqFinder — live in their own repositories and consume
@@ -179,11 +180,10 @@ Additive public surfaces from the hardening program (details: `docs/orp/ORP137`)
 
 ---
 
-## Shared App Packages (`packages/`)
+## Shared App Infrastructure (`packages/`)
 
-The `packages/` directory contains **active C++/JUCE building blocks** shared
-by downstream applications (they are consumed through each app repo's SDK
-submodule):
+The `packages/` directory contains host-neutral C++ infrastructure shared by
+downstream applications through their independently pinned SDK dependency.
 
 ### `occ-app-platform`
 
@@ -191,20 +191,20 @@ Application-platform helpers extracted from Clip Composer for reuse: session
 recovery/autosave scaffolding, preferences persistence, and realtime health
 telemetry surfaces. Exercised in-tree by the `apps/wave-finder` smoke shell.
 
-### `shmui-juce`
+### Private UI boundary
 
-JUCE UI component library (waveform displays, meters, transport widgets,
-audio/UI thread-safe communication helpers) for application-level UI. NOT part
-of the core SDK libraries — the core stays UI-free.
+Shmui JUCE components are an independent private application dependency. They
+are not part of this repository, the SDK CMake target graph, installed headers,
+or release archives. Applications vendor and pin Shmui separately.
 
 ### Archived TypeScript driver layer
 
 The former JavaScript/TypeScript driver packages (`@orpheus/engine-service`,
 `@orpheus/engine-native`, `@orpheus/engine-wasm`, `@orpheus/client`) and the
 JSON contract system built for them (ORP068 Phases 1-2) were **archived** when
-the project refocused on the C++ SDK. They are not in the tree. See
-[`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
-for the rationale and `docs/orp/` history (ORP068) for the original design.
+the project refocused on the C++ SDK. They are not in the tree. Historical
+decision records remain in Git history; retained delivery records are indexed
+in [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
 
 ---
 
@@ -752,12 +752,14 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 ### Getting Started
 
 - [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
-- [docs/INDEX.md](docs/INDEX.md) – Documentation index (live + historical)
+- [docs/orp/INDEX.md](docs/orp/INDEX.md) – retained delivery-record index
 
-### Implementation Plans
+### Implementation Records
 
-- [ORP132 – Master Sprint Index](docs/orp/ORP132%20SDK%20Hardening%20and%20Platform%20Roadmap%20-%20Master%20Sprint%20Index.md) – Current hardening program (ORP133–ORP136)
-- [ORP068 - SDK Integration Plan v2.0](<docs/orp/ORP068%20Implementation%20Plan%20(v2.0).md>) – Historical driver architecture (Phases 0-4)
+- [ORP163](docs/orp/ORP163%20Public%20SDK%20and%20Private%20Shmui%20Package%20Boundary.md)
+  – current public SDK/private UI boundary.
+- Historical ORP068 and ORP132–ORP143 records remain in Git history but are not
+  present in this trimmed checkout.
 
 ### Application Documentation
 
@@ -765,7 +767,7 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 
 ### Developer Tools
 
-- [AGENTS.md](docs/archive/AGENTS.md) – Coding assistant guidelines (archived)
+- [AGENTS.md](AGENTS.md) – Coding assistant guidelines
 - [CLAUDE.md](CLAUDE.md) – Claude Code development guide
 
 ---

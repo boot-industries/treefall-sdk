@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-26
+
+Minor release establishing a clean public SDK/private UI package boundary.
+
+### Changed
+
+- Removed the private Shmui JUCE source, build option, CMake aliases, install
+  rules, package metadata, and public CI fixtures from Orpheus SDK.
+- Downstream applications now pin Shmui independently and link `Shmui::juce`.
+- Installed-package coverage rejects private Shmui targets while continuing to
+  require and exercise `Orpheus::audio_driver_manager`.
+
+### Migration
+
+Consumers of the former optional `Orpheus::shmui_juce[_gl]` targets must vendor
+the private Shmui artifact and link `Shmui::juce[_gl]`. Host-neutral SDK target
+names and stable C ABI `1.0` are unchanged.
+
 ## [0.6.7] - 2026-07-24
 
 Patch release correcting capture-channel selection for distinct CoreAudio input

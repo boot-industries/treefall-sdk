@@ -35,11 +35,11 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Integrate SDK:** See [`docs/orp/_process/archive/GETTING_STARTED.md`](docs/orp/_process/archive/GETTING_STARTED.md)
-- **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
-- **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
-- **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
-- **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
+- **Integrate SDK:** See [Getting Started](#getting-started)
+- **Review API changes:** See [`CHANGELOG.md`](CHANGELOG.md)
+- **Review current delivery records:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md)
+- **Review the public/private package boundary:** See
+  [`ORP163`](docs/orp/ORP163%20Public%20SDK%20and%20Private%20Shmui%20Package%20Boundary.md)
 
 ## Lightweight Integration Targets
 
@@ -59,8 +59,8 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 
 ## Reliability and Adoption Completion
 
-ORP141 is implemented on `main`. The durable delivery and child-team handoff is
-[`ORP143`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md).
+ORP141 is implemented on `main`. The current retained delivery records are
+indexed in [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
 The final implementation verification passed 143/143 configured CTest contracts,
 the installed `find_package` consumer, and the strict in-repository realtime
 audit.
@@ -116,14 +116,13 @@ direction-incompatible UIDs fail with `InvalidParameter`; they never fall back
 to another device. `getTelemetry()` is available through `IAudioDriver`, so
 factory consumers do not downcast to platform implementations.
 
-Child-app teams should use
-[`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
-for Clip Composer, FreqFinder, FourTrack, and ShmUI adoption checklists. No child
-application was migrated by the SDK sprint.
+Child-app teams should follow
+[`ORP163`](docs/orp/ORP163%20Public%20SDK%20and%20Private%20Shmui%20Package%20Boundary.md)
+for the current SDK/Shmui contribution and consumption boundary.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
-artifact remain required; see [`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md).
+artifact remain required; see [Supported Platforms](#supported-platforms).
 
 ---
 
@@ -222,12 +221,12 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 ```
 
 **Features:** 7 new APIs, 23 new data structures, 165+ new tests
-**Documentation:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for complete guide
+**Documentation:** See [`CHANGELOG.md`](CHANGELOG.md) for API and migration notes
 
 ---
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
-**Migration:** [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for upgrade guide
+**Migration:** [`CHANGELOG.md`](CHANGELOG.md) records versioned API changes
 
 ---
 
@@ -299,7 +298,7 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 ├── cmake/              # CMake helper modules and compiler policies
 ├── docs/               # Architecture, roadmaps, API reference, ORP documents
 ├── include/            # Public C++ headers (install these with your app)
-├── packages/           # Shared C++/JUCE app packages (occ-app-platform, shmui-juce)
+├── packages/           # Host-neutral C++ app infrastructure
 ├── src/                # Core library implementation (C++20)
 │   ├── core/           # Transport, routing, audio I/O, session
 │   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
@@ -312,13 +311,12 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - `packages/occ-app-platform` — **active** C++ application-platform helpers
   (session recovery, preferences, health telemetry) consumed by the external
   Clip Composer repo through its SDK submodule.
-- `packages/shmui-juce` — **active** JUCE UI component library (waveform,
-  meters, transport widgets) consumed by downstream JUCE apps; not part of the
-  core SDK libraries.
+- Shmui JUCE UI is a separate private application dependency. It is not
+  present in this public checkout or exported by `OrpheusSDK`.
 - The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
-  `@orpheus/shmui`) are **archived** — see
-  [`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
-  for the rationale (C++ SDK focus).
+  `@orpheus/shmui`) are **archived**; see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#archived-typescript-driver-layer) for the
+  rationale.
 
 ## Supported Platforms
 
@@ -326,9 +324,8 @@ The host-neutral core, Dummy driver, installed package, and conformance fixtures
 are required on macOS, Windows, and Linux. Device backend support is narrower:
 CoreAudio is supported on macOS; WASAPI is not yet a supported release backend;
 and ALSA, JACK, and PipeWire are not implemented. Exact compiler, architecture,
-backend, and unavailable-capability status lives in
-[`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md). Planned backends are not
-shipped capabilities.
+backend, and unavailable-capability status is summarized in this section.
+Planned backends are not shipped capabilities.
 
 ## Getting Started
 
@@ -375,8 +372,8 @@ configuration:
   ```
 
 - **Host integrations** – toggle adapters via CMake cache entries. See
-  [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md)
-  for the full list of flags and host requirements.
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#adapters-adapters) for the current
+  adapter boundary.
 
 ### Running Tests
 
@@ -572,13 +569,13 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 
 ### Reference Documentation
 
-- [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md) – adapter catalog, build flags, and
-  host-specific notes.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md#adapters-adapters) – adapter boundary,
+  build flags, and host-specific notes.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
 - [Clip Composer repo](https://github.com/chrislyons/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
-- [`docs/archive/AGENTS.md`](docs/archive/AGENTS.md) – coding assistant guidelines for AI tools
+- [`AGENTS.md`](AGENTS.md) – coding assistant guidelines for AI tools
 - [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
 ## Contributing

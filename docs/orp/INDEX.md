@@ -8,6 +8,7 @@ Project documentation index for orpheus-sdk.
 
 ## Recent Documents
 
+- [[ORP163 Public SDK and Private Shmui Package Boundary]]
 - [[ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff]]
 - [[ORP161 FourTrack Live Output Handoff Assessment]]
 - [[ORP160 Master Tape Varispeed Primitive]]
@@ -125,4 +126,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-21
+**Last Generated:** 2026-07-26

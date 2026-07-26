@@ -60,14 +60,12 @@ ctest --test-dir build --output-on-failure       # Test
 
 ---
 
-## UX Package: ShmUI-JUCE
+## Public SDK / Private UI Boundary
 
-**Status:** Active in-tree package | **Location:** `packages/shmui-juce`
-
-JUCE components provide application-level waveform, metering, transport, and
-visualization UI. UI histories and view models remain outside core. The pinned
-JUCE 8.0.4 non-OpenGL `add_subdirectory` consumer is a configured package gate;
-OpenGL remains opt-in.
+The SDK owns host-neutral audio, transport, routing, diagnostics, and platform
+drivers. It does not contain or export Shmui. Private applications pin Shmui as
+an independent application-owned artifact and link the `Shmui::*` namespace.
+See `docs/orp/ORP163 Public SDK and Private Shmui Package Boundary.md`.
 
 ---
 
@@ -82,7 +80,7 @@ remain required before support claims.
 
 ## Current SDK Status
 
-**Version:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0; ShmUI-JUCE token contract 0.3.0.
+**Version:** 0.7.0 pre-1.0 SDK with stable C ABI 1.0.
 **Historical milestone:** ORP068 phases are complete; the durable work log is
 `.claude/implementation_progress.md`.
 
@@ -93,6 +91,7 @@ Current FourTrack-facing contracts:
   capture-failure telemetry.
 - ORP156: ORP155 implementation and verification handoff.
 - ORP162: CoreAudio aggregate capture-channel mapping and downstream 0.6.7 pin handoff.
+- ORP163: public SDK/private Shmui package boundary and 0.7.0 migration.
 
 ---
 

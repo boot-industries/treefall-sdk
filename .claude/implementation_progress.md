@@ -1,32 +1,34 @@
 # ORP068 Implementation Progress
 
-> **Note (2026-07-24):** This is a historical ORP068 work log. Current SDK
+> **Note (2026-07-26):** This is a historical ORP068 work log. Current SDK
 > contracts and delivery evidence live in the numbered ORP documents and
 > `.claude/CLAUDE.md`. The Clip Composer app was extracted to
 > `~/dev/clip-composer` and consumes this SDK as a submodule; historical
 > `apps/clip-composer/...` paths below refer to the former in-tree layout.
 
-## Current State (2026-07-24)
+## Current State (2026-07-26)
 
-- **C++ SDK:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0.
-- **CoreAudio:** Distinct input/output aggregates map AUHAL capture to the
-  resolved input sub-device and reject unsupported requested channel counts.
-- **ShmUI-JUCE:** The governed design-token contract remains 0.3.0; the 0.6.4
-  import provenance and 0.6.6 text-button identity fixes are preserved on
-  mainline.
-- **Verification:** The CoreAudio driver target builds; FourTrack's 225-contract
-  suite and physical MacBook microphone capture provide downstream acceptance.
-- **Delivery:** ORP162 records the 0.6.7 release and FourTrack/Clip Composer pin
-  handoff.
+- **C++ SDK:** 0.7.0 pre-1.0 SDK with stable C ABI 1.0.
+- **Public boundary:** Host-neutral audio, transport, routing, diagnostics, and
+  platform-driver contracts remain in Orpheus SDK.
+- **Private UI:** Shmui source, targets, package metadata, and CI fixtures were
+  removed from the public SDK. Private apps pin deterministic Shmui artifacts.
+- **Package evidence:** All 156 configured CTest contracts passed. A clean
+  Release install exported the public target manifest, required the public audio
+  driver manager, rejected former private Shmui targets, and contained no Shmui
+  references under `include`, `lib`, or `share`.
+- **Downstream adoption:** Clip Composer and FreqFinder consume independent
+  public SDK/private Shmui inputs; FourTrack's light-mode WIP was left untouched.
+- **Delivery:** ORP163 records the 0.7.0 boundary and migration contract.
 - **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
   WASAPI is not release-supported without hosted Windows package/ABI evidence
   and a real-device acceptance record.
 
 ---
 
-**Last Updated:** 2026-07-24 (ORP162 CoreAudio mapping and pin handoff)
-**Current Phase:** SDK 0.6.7 downstream adoption
-**Overall Progress:** CoreAudio fix reviewed | ShmUI lineage preserved | Child pins updating
+**Last Updated:** 2026-07-26 (ORP163 public SDK/private Shmui boundary)
+**Current Phase:** SDK 0.7.0 downstream adoption
+**Overall Progress:** Public package clean | Clip Composer migrated | FreqFinder migrated
 
 ---
 

@@ -36,12 +36,14 @@ Current FourTrack-facing SDK contracts are:
   delivery evidence.
 - `docs/orp/ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff.md`
   for the AUHAL capture-map correction, SDK 0.6.7 release, and child-app pins.
+- `docs/orp/ORP163 Public SDK and Private Shmui Package Boundary.md` for the
+  0.7.0 removal of the private Shmui implementation and downstream migration.
 
 ## Sources of truth
 
 - Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.
-- Current release: SDK 0.6.7 with stable C ABI 1.0 and governed ShmUI-JUCE
-  design-token contract 0.3.0.
+- Current release: SDK 0.7.0 with stable C ABI 1.0. Shmui is a separate private
+  application dependency and is not part of the SDK package.
 - Platform/backend support: `docs/SUPPORT_MATRIX.md`.
 - Installed target manifest: generated package metadata and the clean-prefix
   fixture under `tests/cmake/find_package/`.
@@ -116,9 +118,8 @@ Documented installed targets include:
 - `Orpheus::routing`
 - `Orpheus::transport`
 
-`packages/shmui-juce` is an `add_subdirectory` package with
-`Orpheus::shmui_juce`; OpenGL is opt-in through
-`SHMUI_JUCE_ENABLE_OPENGL` and `Orpheus::shmui_juce_gl`.
+Private UI implementations and targets, including Shmui, must not be added to
+this public repository or its source/install/package exports.
 
 ## Realtime rules
 
