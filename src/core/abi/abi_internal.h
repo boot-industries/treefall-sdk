@@ -29,6 +29,28 @@ inline orpheus::core::Clip* ToClip(orpheus_clip_handle handle) {
   return reinterpret_cast<orpheus::core::Clip*>(handle);
 }
 
+inline bool SessionOwnsTrack(const orpheus::core::SessionGraph& session,
+                             const orpheus::core::Track* candidate) noexcept {
+  for (const auto& track : session.tracks()) {
+    if (track.get() == candidate) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool SessionOwnsClip(const orpheus::core::SessionGraph& session,
+                            const orpheus::core::Clip* candidate) noexcept {
+  for (const auto& track : session.tracks()) {
+    for (const auto& clip : track->clips()) {
+      if (clip.get() == candidate) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 template <typename Fn> orpheus_status GuardAbiCall(Fn&& fn) {
   try {
     return fn();

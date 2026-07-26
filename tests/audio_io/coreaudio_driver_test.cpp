@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -150,6 +151,37 @@ private:
   std::atomic<int> m_call_count{0};
   std::atomic<bool> m_saw_input_buffer{false};
   std::atomic<float> m_input_peak{0.0f};
+};
+
+class BlockingCallback : public IAudioCallback {
+public:
+  void processAudio(const AudioProcessBlock&) noexcept override {
+    entered_.store(true, std::memory_order_release);
+    entered_.notify_all();
+    while (!released_.load(std::memory_order_acquire)) {
+      released_.wait(false, std::memory_order_acquire);
+    }
+  }
+
+  bool waitForEntry(std::chrono::milliseconds timeout) const {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!entered_.load(std::memory_order_acquire)) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+  }
+
+  void release() noexcept {
+    released_.store(true, std::memory_order_release);
+    released_.notify_all();
+  }
+
+private:
+  std::atomic<bool> entered_{false};
+  std::atomic<bool> released_{false};
 };
 
 // Test fixture
@@ -832,6 +864,36 @@ EndpointPair getSameDeviceEndpointsForTest() {
 }
 
 } // namespace
+
+TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output endpoints with persistent UIDs are unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 1;
+  config.input_device_id = endpoints.input_uid;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  BlockingCallback callback;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->start(&callback), SessionGraphError::OK);
+  if (!callback.waitForEntry(std::chrono::seconds(2))) {
+    callback.release();
+    ADD_FAILURE() << "CoreAudio did not invoke the blocking callback";
+    return;
+  }
+
+  auto stop_future = std::async(std::launch::async, [this] { return m_driver->stop(); });
+  EXPECT_EQ(stop_future.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
+
+  callback.release();
+  EXPECT_EQ(stop_future.get(), SessionGraphError::OK);
+}
 
 // Explicit persistent UIDs must select the same physical endpoints as the
 // directional defaults. Reinitializing this driver exercises deterministic

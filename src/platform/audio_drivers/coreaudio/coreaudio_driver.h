@@ -57,6 +57,13 @@ private:
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
+  bool tryEnterCallback() noexcept;
+  void leaveCallback() noexcept;
+  uint64_t closeCallbackAdmission() noexcept;
+
+  static constexpr uint64_t kCallbackAccepting = uint64_t{1} << 63;
+  static constexpr uint64_t kCallbackCountMask = ~kCallbackAccepting;
+
   void recordInputRenderFailure() noexcept;
 
   /// Enumerate available audio devices
@@ -123,12 +130,16 @@ private:
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
 
-  // Callback
+  // Non-owning host callback. It is only read while callback_admission_ holds
+  // an admitted callback, which stop() drains before clearing this pointer.
   IAudioCallback* callback_{nullptr};
+
+  // High bit admits new callbacks; low 63 bits count admitted callbacks.
+  // Closing admission is a lifetime barrier for callback_ and AudioUnit state.
+  std::atomic<uint64_t> callback_admission_{0};
 
   // Performance monitoring (optional, only read by diagnostics callback builds)
   std::atomic<IPerformanceMonitor*> performance_monitor_{nullptr};
-  std::atomic<uint32_t> callbacks_in_flight_{0};
   int64_t expected_stream_sample_{0};
   bool stream_timeline_initialized_{false};
 
