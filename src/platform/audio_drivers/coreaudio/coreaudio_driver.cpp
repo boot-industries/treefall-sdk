@@ -5,12 +5,10 @@
 
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <sstream>
-#include <thread>
 
 namespace orpheus {
 
@@ -105,14 +103,18 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   }
 
   callback_ = callback;
+  callback_admission_.store(kCallbackAccepting, std::memory_order_release);
+  is_running_.store(true, std::memory_order_release);
 
   // Start AudioUnit
   OSStatus status = AudioOutputUnitStart(audio_unit_);
   if (status != noErr) {
+    is_running_.store(false, std::memory_order_release);
+    closeCallbackAdmission();
+    callback_ = nullptr;
     return SessionGraphError::InternalError;
   }
 
-  is_running_.store(true, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -124,17 +126,15 @@ SessionGraphError CoreAudioDriver::stop() {
   }
 
   is_running_.store(false, std::memory_order_release);
+  uint64_t admission = closeCallbackAdmission();
 
   if (audio_unit_) {
-    // AudioOutputUnitStop() is not documented as a synchronous render-callback
-    // drain. Track callbacks we can observe and wait only until they exit.
     AudioOutputUnitStop(audio_unit_);
+  }
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
-    while (callbacks_in_flight_.load(std::memory_order_acquire) != 0 &&
-           std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::yield();
-    }
+  while ((admission & kCallbackCountMask) != 0) {
+    callback_admission_.wait(admission, std::memory_order_acquire);
+    admission = callback_admission_.load(std::memory_order_acquire);
   }
 
   callback_ = nullptr;
@@ -172,6 +172,29 @@ void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept 
 
 void CoreAudioDriver::incrementInputRenderFailuresForTesting() noexcept {
   recordInputRenderFailure();
+}
+
+bool CoreAudioDriver::tryEnterCallback() noexcept {
+  uint64_t admission = callback_admission_.load(std::memory_order_acquire);
+  while ((admission & kCallbackAccepting) != 0) {
+    if ((admission & kCallbackCountMask) == kCallbackCountMask) {
+      return false;
+    }
+    if (callback_admission_.compare_exchange_weak(
+            admission, admission + 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void CoreAudioDriver::leaveCallback() noexcept {
+  callback_admission_.fetch_sub(1, std::memory_order_acq_rel);
+  callback_admission_.notify_all();
+}
+
+uint64_t CoreAudioDriver::closeCallbackAdmission() noexcept {
+  return callback_admission_.fetch_and(kCallbackCountMask, std::memory_order_acq_rel);
 }
 
 void CoreAudioDriver::recordInputRenderFailure() noexcept {
@@ -224,20 +247,23 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   auto* driver = static_cast<CoreAudioDriver*>(inRefCon);
   assert(driver != nullptr);
 
-  struct CallbackScope {
-    explicit CallbackScope(CoreAudioDriver& d) : driver(d) {
-      driver.callbacks_in_flight_.fetch_add(1, std::memory_order_acq_rel);
-    }
-    ~CallbackScope() {
-      driver.callbacks_in_flight_.fetch_sub(1, std::memory_order_acq_rel);
-    }
-    CoreAudioDriver& driver;
-  } callback_scope(*driver);
-
-  // Zero output buffers first
+  // Zero output buffers before trying admission so a callback that races stop()
+  // always returns silence without reading any driver-owned callback state.
   for (UInt32 i = 0; i < ioData->mNumberBuffers; ++i) {
     std::memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
   }
+
+  if (!driver->tryEnterCallback()) {
+    return noErr;
+  }
+
+  struct CallbackScope {
+    explicit CallbackScope(CoreAudioDriver& d) : driver(d) {}
+    ~CallbackScope() {
+      driver.leaveCallback();
+    }
+    CoreAudioDriver& driver;
+  } callback_scope(*driver);
 
   // Clamp frames to our allocated buffer size
   uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames),
@@ -799,8 +825,7 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
     }
     std::vector<SInt32> inputChannelMap(config_.num_inputs);
     for (uint32_t channel = 0; channel < config_.num_inputs; ++channel) {
-      inputChannelMap[channel] =
-          static_cast<SInt32>(input_channel_offset_ + channel);
+      inputChannelMap[channel] = static_cast<SInt32>(input_channel_offset_ + channel);
     }
     status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_ChannelMap,
                                   kAudioUnitScope_Output, 1, inputChannelMap.data(),

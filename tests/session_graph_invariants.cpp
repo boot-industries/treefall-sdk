@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <stdexcept>
 
 namespace orpheus::core::tests {
@@ -98,6 +99,52 @@ TEST(SessionGraphInvariants, RejectsOverlappingClips) {
 
   EXPECT_THROW(session.set_clip_length(*second, 10.0), std::invalid_argument);
   EXPECT_DOUBLE_EQ(second->length(), 4.0);
+}
+
+TEST(SessionGraphInvariants, RejectsNonFiniteTimelineValuesWithoutMutation) {
+  SessionGraph session;
+  Track* track = session.add_track("Timeline");
+  ASSERT_NE(track, nullptr);
+  Clip* clip = session.add_clip(*track, "clip", 0.0, 1.0, 1);
+  ASSERT_NE(clip, nullptr);
+
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double infinity = std::numeric_limits<double>::infinity();
+  const double original_start = clip->start();
+  const double original_length = clip->length();
+  const std::size_t original_clip_count = track->clips().size();
+
+  EXPECT_THROW(static_cast<void>(session.add_clip(*track, "nan", nan, 1.0)), std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(session.add_clip(*track, "infinity", 2.0, infinity)),
+               std::invalid_argument);
+  EXPECT_THROW(session.set_clip_start(*clip, nan), std::invalid_argument);
+  EXPECT_THROW(session.set_clip_length(*clip, infinity), std::invalid_argument);
+  EXPECT_EQ(track->clips().size(), original_clip_count);
+  EXPECT_DOUBLE_EQ(clip->start(), original_start);
+  EXPECT_DOUBLE_EQ(clip->length(), original_length);
+
+  session.set_session_range(3.0, 8.0);
+  EXPECT_THROW(session.set_session_range(nan, 8.0), std::invalid_argument);
+  EXPECT_THROW(session.set_session_range(3.0, infinity), std::invalid_argument);
+  EXPECT_DOUBLE_EQ(session.session_start_beats(), 3.0);
+  EXPECT_DOUBLE_EQ(session.session_end_beats(), 8.0);
+
+  const QuantizationWindow valid_quantization{1.0, 0.1};
+  session.trigger_scene(1, 0.0, valid_quantization);
+  EXPECT_THROW(session.trigger_scene(2, nan, valid_quantization), std::invalid_argument);
+  EXPECT_THROW(session.trigger_scene(2, 0.0, QuantizationWindow{infinity, 0.1}),
+               std::invalid_argument);
+  EXPECT_THROW(session.trigger_scene(2, 0.0, QuantizationWindow{1.0, nan}), std::invalid_argument);
+  EXPECT_THROW(session.end_scene(1, infinity, valid_quantization), std::invalid_argument);
+  EXPECT_THROW(session.end_scene(1, 1.0, QuantizationWindow{1.0, infinity}), std::invalid_argument);
+  EXPECT_THROW(session.commit_arrangement(nan), std::invalid_argument);
+  EXPECT_THROW(session.commit_arrangement(infinity), std::invalid_argument);
+
+  session.end_scene(1, 1.0, valid_quantization);
+  session.commit_arrangement(1.0);
+  ASSERT_EQ(session.committed_clips().size(), 1u);
+  EXPECT_DOUBLE_EQ(session.committed_clips().front().arranged_start_beats, 0.0);
+  EXPECT_DOUBLE_EQ(session.committed_clips().front().arranged_length_beats, 1.0);
 }
 
 TEST(SessionGraphTransactions, CoalescesStableIdEditsIntoOneRevision) {
