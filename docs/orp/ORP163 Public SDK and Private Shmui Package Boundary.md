@@ -1,8 +1,8 @@
 # ORP163 Public SDK and Private Shmui Package Boundary
 
-**Date:** 2026-07-26  
-**Status:** Implemented  
-**SDK:** 0.7.0  
+**Date:** 2026-07-26
+**Status:** Implemented
+**SDK:** 0.7.0
 **Stable C ABI:** 1.0
 
 ## Decision
