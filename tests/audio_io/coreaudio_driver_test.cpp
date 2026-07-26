@@ -278,6 +278,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithDefaultDevice) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   auto error = m_driver->initialize(config);
   EXPECT_EQ(error, SessionGraphError::OK);
@@ -319,6 +320,7 @@ TEST_F(CoreAudioDriverTest, StartWithNullCallback) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
@@ -331,6 +333,7 @@ TEST_F(CoreAudioDriverTest, StartAndStop) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
@@ -353,6 +356,7 @@ TEST_F(CoreAudioDriverTest, CannotStartTwice) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
@@ -373,6 +377,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
@@ -395,6 +400,7 @@ TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
   auto monitor = createStandalonePerformanceMonitor();
   m_callback->setActiveClipCount(7);
   m_driver->setPerformanceMonitor(monitor.get());
@@ -412,6 +418,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
@@ -439,6 +446,7 @@ TEST_F(CoreAudioDriverTest, GetLatency) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
@@ -476,6 +484,7 @@ TEST_F(CoreAudioDriverTest, StereoConfiguration) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2; // Stereo
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
@@ -530,6 +539,7 @@ TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
@@ -576,6 +586,7 @@ TEST_F(CoreAudioDriverTest, ConcurrentInitialize) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   // Initialize, then try to initialize again while running
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -593,6 +604,7 @@ TEST_F(CoreAudioDriverTest, RapidStartStop) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_outputs = 2;
+  config.num_inputs = 0;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
