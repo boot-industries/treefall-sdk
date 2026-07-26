@@ -6,6 +6,8 @@
 #include <string>
 
 using orpheus::abi_internal::GuardAbiCall;
+using orpheus::abi_internal::SessionOwnsClip;
+using orpheus::abi_internal::SessionOwnsTrack;
 using orpheus::abi_internal::ToClip;
 using orpheus::abi_internal::ToSession;
 using orpheus::abi_internal::ToTrack;
@@ -20,6 +22,9 @@ orpheus_status ClipgridAddClip(orpheus_session_handle session, orpheus_track_han
   return GuardAbiCall([&]() -> orpheus_status {
     auto* session_ptr = ToSession(session);
     auto* track_ptr = ToTrack(track);
+    if (!SessionOwnsTrack(*session_ptr, track_ptr)) {
+      return ORPHEUS_STATUS_NOT_FOUND;
+    }
     const std::string name = desc->name != nullptr ? desc->name : "";
     orpheus::core::Clip* clip = session_ptr->add_clip(*track_ptr, name, desc->start_beats,
                                                       desc->length_beats, desc->scene_index);
@@ -50,6 +55,9 @@ orpheus_status ClipgridSetClipStart(orpheus_session_handle session, orpheus_clip
   return GuardAbiCall([&]() -> orpheus_status {
     auto* session_ptr = ToSession(session);
     auto* clip_ptr = ToClip(clip);
+    if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
+      return ORPHEUS_STATUS_NOT_FOUND;
+    }
     session_ptr->set_clip_start(*clip_ptr, start_beats);
     return ORPHEUS_STATUS_OK;
   });
@@ -63,6 +71,9 @@ orpheus_status ClipgridSetClipLength(orpheus_session_handle session, orpheus_cli
   return GuardAbiCall([&]() -> orpheus_status {
     auto* session_ptr = ToSession(session);
     auto* clip_ptr = ToClip(clip);
+    if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
+      return ORPHEUS_STATUS_NOT_FOUND;
+    }
     session_ptr->set_clip_length(*clip_ptr, length_beats);
     return ORPHEUS_STATUS_OK;
   });
@@ -76,6 +87,9 @@ orpheus_status ClipgridSetClipScene(orpheus_session_handle session, orpheus_clip
   return GuardAbiCall([&]() -> orpheus_status {
     auto* session_ptr = ToSession(session);
     auto* clip_ptr = ToClip(clip);
+    if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
+      return ORPHEUS_STATUS_NOT_FOUND;
+    }
     session_ptr->set_clip_scene(*clip_ptr, scene_index);
     return ORPHEUS_STATUS_OK;
   });
