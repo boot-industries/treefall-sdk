@@ -22,6 +22,12 @@ foreach(required_target
   endif()
 endforeach()
 
+foreach(private_target Orpheus::shmui_juce Orpheus::shmui_juce_gl)
+  if(TARGET ${private_target})
+    message(FATAL_ERROR "Public SDK package exposed private target ${private_target}")
+  endif()
+endforeach()
+
 if(NOT OrpheusSDK_VERSION VERSION_EQUAL ORPHEUS_REQUIRED_VERSION)
   message(FATAL_ERROR
     "Package reports ${OrpheusSDK_VERSION}; expected ${ORPHEUS_REQUIRED_VERSION}")

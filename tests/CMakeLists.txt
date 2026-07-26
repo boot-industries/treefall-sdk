@@ -130,10 +130,6 @@ if(Python3_Interpreter_FOUND)
       ${CMAKE_SOURCE_DIR}/tools/version_contract.py
       --check)
 
-  add_test(NAME shmui_juce_manifest
-    COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_SOURCE_DIR}/tools/shmui_juce_manifest.py
-      --check)
 endif()
 
 # Session tests (including Scene Manager)
@@ -203,35 +199,6 @@ add_test(NAME cmake_add_subdirectory
     -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_add_subdirectory.cmake)
 
-# ORP157: build the optional ShmUI package with its intended JUCE dependency,
-# install it to an isolated prefix, then consume it as FreqFinder does: no SDK
-# or ShmUI source-tree path, non-OpenGL only, and application-provided JUCE.
-set(SHMUI_PACKAGE_PRODUCER_SOURCE_DIR
-  ${CMAKE_SOURCE_DIR}/tests/cmake/shmui_package_producer)
-set(SHMUI_PACKAGE_PRODUCER_BINARY_DIR
-  ${CMAKE_BINARY_DIR}/tests/shmui_package_producer_build)
-set(SHMUI_PACKAGE_CONSUMER_SOURCE_DIR
-  ${CMAKE_SOURCE_DIR}/tests/cmake/shmui_package_consumer)
-set(SHMUI_PACKAGE_CONSUMER_BINARY_DIR
-  ${CMAKE_BINARY_DIR}/tests/shmui_package_consumer_build)
-set(SHMUI_PACKAGE_INSTALL_DIR
-  ${CMAKE_BINARY_DIR}/tests/shmui_package_prefix)
-set(SHMUI_PACKAGE_DEPENDENCY_DIR
-  ${CMAKE_BINARY_DIR}/tests/shmui_package_dependencies)
-
-add_test(NAME cmake_shmui_package_consumer
-  COMMAND ${CMAKE_COMMAND}
-    -Dbuild_type=$<CONFIG>
-    -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
-    -Dproducer_source_dir=${SHMUI_PACKAGE_PRODUCER_SOURCE_DIR}
-    -Dproducer_binary_dir=${SHMUI_PACKAGE_PRODUCER_BINARY_DIR}
-    -Dconsumer_source_dir=${SHMUI_PACKAGE_CONSUMER_SOURCE_DIR}
-    -Dconsumer_binary_dir=${SHMUI_PACKAGE_CONSUMER_BINARY_DIR}
-    -Dinstall_prefix=${SHMUI_PACKAGE_INSTALL_DIR}
-    -Ddependency_dir=${SHMUI_PACKAGE_DEPENDENCY_DIR}
-    -Drequired_version=${PROJECT_VERSION}
-    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_shmui_package.cmake)
-set_tests_properties(cmake_shmui_package_consumer PROPERTIES TIMEOUT 5400)
 
 add_executable(orpheus_abi_link
   abi_link/main.cpp
