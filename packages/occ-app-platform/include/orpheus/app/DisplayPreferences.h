@@ -176,7 +176,7 @@ private:
   // Settings
   Size m_pageTabHeight = Size::Medium;
   Size m_statusBarHeight = Size::Medium;
-  BevelWidth m_bevelWidth = BevelWidth::Percent10;
+  BevelWidth m_bevelWidth = BevelWidth::Percent5;
   Size m_buttonTriggerSize = Size::Medium;
   GridLayout m_gridLayout = GridLayout::Columns8Rows6;
   ButtonTextMode m_buttonTextMode = ButtonTextMode::HotKey;

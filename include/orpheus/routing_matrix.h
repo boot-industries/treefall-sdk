@@ -224,6 +224,13 @@ struct AudioMeter {
   AudioMeter() : peak_db(-100.0f), rms_db(-100.0f), clipping(false), clip_count(0) {}
 };
 
+/// Per-lane logical group meters. A group exposes at most stereo lanes even
+/// when its physical output route is wider.
+struct StereoGroupMeter {
+  std::array<AudioMeter, 2> lanes{};
+  uint8_t channel_count{0};
+};
+
 /// Optional caller-supplied provenance for a routing snapshot. Neither field
 /// participates in deterministic routing identity or render hashes.
 struct RoutingSnapshotContext {
@@ -464,6 +471,8 @@ public:
   /// @param group_index Group index [0, num_groups)
   /// @return Audio meter
   virtual AudioMeter getGroupMeter(RoutingGroupIndex group_index) const = 0;
+  /// Get per-lane group meters for a stereo logical group bus.
+  virtual StereoGroupMeter getGroupStereoMeter(RoutingGroupIndex group_index) const = 0;
   /// Get one physical output lane's post-master, post-protection meter.
   /// Invalid or unconfigured output indices return silence.
   virtual AudioMeter getOutputMeter(RoutingOutputIndex output_index) const = 0;

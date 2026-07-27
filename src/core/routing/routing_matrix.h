@@ -61,12 +61,15 @@ struct GroupState {
   std::atomic<RoutingOutputIndex> output_start;
   std::atomic<uint16_t> output_width;
 
-  // Metering
+  // Aggregate and per-lane group metering.
   std::atomic<float> peak_level;
   std::atomic<float> rms_level;
   std::atomic<uint32_t> clip_count;
   std::array<TruePeakMeter, 2> true_peak_meters;
-
+  std::array<std::atomic<float>, 2> lane_peak_levels;
+  std::array<std::atomic<float>, 2> lane_rms_levels;
+  std::array<std::atomic<uint32_t>, 2> lane_clip_counts;
+  std::array<TruePeakMeter, 2> lane_true_peak_meters;
   // Configuration
   GroupConfig config;
 
@@ -77,12 +80,18 @@ struct GroupState {
         output_start(other.output_start.load()), output_width(other.output_width.load()),
         peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
         clip_count(other.clip_count.load()), true_peak_meters(std::move(other.true_peak_meters)),
+        lane_peak_levels{other.lane_peak_levels[0].load(), other.lane_peak_levels[1].load()},
+        lane_rms_levels{other.lane_rms_levels[0].load(), other.lane_rms_levels[1].load()},
+        lane_clip_counts{other.lane_clip_counts[0].load(), other.lane_clip_counts[1].load()},
+        lane_true_peak_meters(std::move(other.lane_true_peak_meters)),
         config(std::move(other.config)) {}
 
   // Default constructor
   GroupState()
       : gain_smoother(nullptr), mute(false), solo(false), configured_gain_db(0.0f), output_start(0),
-        output_width(2), peak_level(0.0f), rms_level(0.0f), clip_count(0) {}
+        output_width(2), peak_level(0.0f), rms_level(0.0f), clip_count(0),
+        lane_peak_levels{0.0f, 0.0f}, lane_rms_levels{0.0f, 0.0f},
+        lane_clip_counts{0, 0} {}
 
   // Deleted copy constructor (atomics are not copyable)
   GroupState(const GroupState&) = delete;
@@ -151,6 +160,7 @@ public:
   bool isGroupMuted(RoutingGroupIndex group_index) const override;
   AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const override;
   AudioMeter getGroupMeter(RoutingGroupIndex group_index) const override;
+  StereoGroupMeter getGroupStereoMeter(RoutingGroupIndex group_index) const override;
   AudioMeter getMasterMeter() const override;
   AudioMeter getOutputMeter(RoutingOutputIndex output_index) const override;
   RoutingControlSnapshot getRoutingControlSnapshot() const noexcept override;
@@ -199,7 +209,9 @@ private:
                              std::array<TruePeakMeter, 2>& true_peak_meters,
                              std::atomic<float>& peak, std::atomic<float>& rms);
   void publishChannelMeterSilence(ChannelState& channel);
-  bool detectClipping(float* buffer, size_t num_frames);
+  void processMonoMetering(const float* samples, size_t num_frames, TruePeakMeter& true_peak_meter,
+                           std::atomic<float>& peak, std::atomic<float>& rms);
+  bool detectClipping(const float* buffer, size_t num_frames);
 
   // Configuration (lock-free double-buffer pattern)
   RoutingConfig m_config_buffers[2];

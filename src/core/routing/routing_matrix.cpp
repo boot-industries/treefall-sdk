@@ -597,6 +597,25 @@ AudioMeter RoutingMatrix::getGroupMeter(RoutingGroupIndex group_index) const {
   return meter;
 }
 
+StereoGroupMeter RoutingMatrix::getGroupStereoMeter(RoutingGroupIndex group_index) const {
+  StereoGroupMeter meter;
+  if (group_index >= m_groups.size()) {
+    return meter;
+  }
+
+  const auto& group = m_groups[group_index];
+  meter.channel_count =
+      static_cast<uint8_t>(std::min<uint16_t>(2, group.output_width.load(std::memory_order_acquire)));
+  for (uint8_t lane = 0; lane < meter.channel_count; ++lane) {
+    auto& destination = meter.lanes[lane];
+    destination.peak_db = linearToDb(group.lane_peak_levels[lane].load(std::memory_order_acquire));
+    destination.rms_db = linearToDb(group.lane_rms_levels[lane].load(std::memory_order_acquire));
+    destination.clip_count = group.lane_clip_counts[lane].load(std::memory_order_acquire);
+    destination.clipping = destination.clip_count > 0;
+  }
+  return meter;
+}
+
 AudioMeter RoutingMatrix::getOutputMeter(RoutingOutputIndex output_index) const {
   AudioMeter meter;
   const auto config = getConfig();
@@ -940,6 +959,15 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       const float* right = config.num_outputs > 1 ? group_buffer.channels[1].data() : nullptr;
       processStereoMetering(group_buffer.channels[0].data(), right, num_frames,
                             group.true_peak_meters, group.peak_level, group.rms_level);
+      const auto laneCount = std::min<uint16_t>(2, outputWidth);
+      for (uint16_t lane = 0; lane < 2; ++lane) {
+        const float* samples = lane < laneCount ? group_buffer.channels[lane].data() : nullptr;
+        processMonoMetering(samples, num_frames, group.lane_true_peak_meters[lane],
+                            group.lane_peak_levels[lane], group.lane_rms_levels[lane]);
+        if (samples != nullptr && detectClipping(samples, num_frames)) {
+          group.lane_clip_counts[lane].fetch_add(1, std::memory_order_relaxed);
+        }
+      }
       for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
         if (detectClipping(group_buffer.channels[output].data(), num_frames)) {
           group.clip_count.fetch_add(1, std::memory_order_relaxed);
@@ -1082,6 +1110,11 @@ void RoutingMatrix::initializeGroups() {
 
     group.peak_level.store(0.0f, std::memory_order_release);
     group.rms_level.store(0.0f, std::memory_order_release);
+    for (uint16_t lane = 0; lane < 2; ++lane) {
+      group.lane_peak_levels[lane].store(0.0f, std::memory_order_release);
+      group.lane_rms_levels[lane].store(0.0f, std::memory_order_release);
+      group.lane_clip_counts[lane].store(0, std::memory_order_release);
+    }
     group.clip_count.store(0, std::memory_order_release);
 
     // Default config
@@ -1191,6 +1224,36 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
   rms.store(rms_value, std::memory_order_release);
 }
 
+void RoutingMatrix::processMonoMetering(const float* samples, size_t num_frames,
+                                        TruePeakMeter& true_peak_meter, std::atomic<float>& peak,
+                                        std::atomic<float>& rms) {
+  if (num_frames == 0 || samples == nullptr) {
+    peak.store(0.0f, std::memory_order_release);
+    rms.store(0.0f, std::memory_order_release);
+    return;
+  }
+
+  const auto mode =
+      m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)].metering_mode;
+  float peakValue = 0.0f;
+  double sumSquares = 0.0;
+  for (size_t frame = 0; frame < num_frames; ++frame) {
+    const auto sample = samples[frame];
+    peakValue = std::max(peakValue, std::abs(sample));
+    sumSquares += static_cast<double>(sample) * sample;
+  }
+  if (mode == MeteringMode::TruePeak) {
+    peakValue = true_peak_meter.processBuffer(samples, num_frames);
+  } else if (mode == MeteringMode::LUFS) {
+    const auto meanSquare = sumSquares / static_cast<double>(num_frames);
+    const auto lufs = meanSquare > 0.0 ? -0.691 + 10.0 * std::log10(meanSquare) : -100.0;
+    peakValue = static_cast<float>(std::pow(10.0, lufs / 20.0));
+  }
+  peak.store(peakValue, std::memory_order_release);
+  rms.store(static_cast<float>(std::sqrt(sumSquares / static_cast<double>(num_frames))),
+            std::memory_order_release);
+}
+
 void RoutingMatrix::publishChannelMeterSilence(ChannelState& channel) {
   channel.peak_level.store(0.0f, std::memory_order_release);
   channel.rms_level.store(0.0f, std::memory_order_release);
@@ -1199,7 +1262,7 @@ void RoutingMatrix::publishChannelMeterSilence(ChannelState& channel) {
   }
 }
 
-bool RoutingMatrix::detectClipping(float* buffer, size_t num_frames) {
+bool RoutingMatrix::detectClipping(const float* buffer, size_t num_frames) {
   // Clipping threshold: ≥ 1.0 or ≤ -1.0 (0 dBFS)
   constexpr float CLIPPING_THRESHOLD = 1.0f;
 

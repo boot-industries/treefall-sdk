@@ -344,55 +344,68 @@ void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int
   float displayLevel = m_displayLevels[channel];
   float peakHold = m_peakHolds[channel];
   bool clipped = m_clipped[channel];
+  const auto meterBounds = bounds;
 
   // Draw meter track background
   g.setColour(m_style.backgroundColor.brighter(0.1f));
-  g.fillRoundedRectangle(bounds, m_style.cornerRadius);
+  g.fillRoundedRectangle(meterBounds, m_style.cornerRadius);
 
   // Draw level fill with gradient
   juce::Rectangle<float> fillBounds;
 
   if (m_isVertical) {
-    float fillHeight = bounds.getHeight() * displayLevel;
-    fillBounds = bounds.removeFromBottom(fillHeight);
+    float fillHeight = meterBounds.getHeight() * displayLevel;
+    fillBounds = meterBounds.withTop(meterBounds.getBottom() - fillHeight);
   } else {
-    float fillWidth = bounds.getWidth() * displayLevel;
-    fillBounds = bounds.removeFromLeft(fillWidth);
+    float fillWidth = meterBounds.getWidth() * displayLevel;
+    fillBounds = meterBounds.withWidth(fillWidth);
   }
 
-  // Create gradient for level
+  // Paint fixed dB allotments across the complete lane, then clip that paint to
+  // the active portion. Colour therefore describes where the signal is in the
+  // meter, rather than tinting the entire fill from its terminal value.
+  constexpr float kStopEpsilon = 0.0001f;
+  const auto yellowNorm = dbToNormalized(m_style.yellowThreshold);
+  const auto redNorm = dbToNormalized(m_style.redThreshold);
   juce::ColourGradient gradient;
+
   if (m_isVertical) {
-    gradient = juce::ColourGradient::vertical(m_style.meterColorHigh, bounds.getY(),
-                                              m_style.meterColorLow, bounds.getBottom());
+    gradient = juce::ColourGradient::vertical(m_style.clipColor, meterBounds.getY(),
+                                              m_style.meterColorLow, meterBounds.getBottom());
+    gradient.addColour(juce::jmax(0.0f, 1.0f - redNorm - kStopEpsilon),
+                       m_style.clipColor);
+    gradient.addColour(1.0f - redNorm, m_style.meterColorHigh);
+    gradient.addColour(1.0f - yellowNorm, m_style.meterColorMid);
+    gradient.addColour(juce::jmin(1.0f, 1.0f - yellowNorm + kStopEpsilon),
+                       m_style.meterColorLow);
   } else {
-    gradient = juce::ColourGradient::horizontal(m_style.meterColorLow, bounds.getX(),
-                                                m_style.meterColorHigh, bounds.getRight());
+    gradient = juce::ColourGradient::horizontal(m_style.meterColorLow, meterBounds.getX(),
+                                                m_style.clipColor, meterBounds.getRight());
+    gradient.addColour(yellowNorm, m_style.meterColorLow);
+    gradient.addColour(juce::jmin(1.0f, yellowNorm + kStopEpsilon),
+                       m_style.meterColorMid);
+    gradient.addColour(redNorm, m_style.meterColorHigh);
+    gradient.addColour(juce::jmin(1.0f, redNorm + kStopEpsilon), m_style.clipColor);
   }
 
-  // Add color stops
-  float yellowNorm = dbToNormalized(m_style.yellowThreshold);
-  float redNorm = dbToNormalized(m_style.redThreshold);
-
-  gradient.addColour(0.0, m_style.meterColorLow);
-  gradient.addColour(yellowNorm, m_style.meterColorMid);
-  gradient.addColour(redNorm, m_style.meterColorHigh);
-
+  g.saveState();
+  g.reduceClipRegion(fillBounds.toNearestInt());
   g.setGradientFill(gradient);
-  g.fillRoundedRectangle(fillBounds, m_style.cornerRadius);
+  g.fillRoundedRectangle(meterBounds, m_style.cornerRadius);
+  g.restoreState();
 
   // Draw peak hold indicator
   if (m_style.showPeakHold && peakHold > 0.01f) {
     g.setColour(m_style.peakHoldColor);
 
     if (m_isVertical) {
-      float peakY = bounds.getBottom() - bounds.getHeight() * peakHold;
-      g.fillRect(bounds.getX(), peakY - m_style.peakHoldWidth * 0.5f, bounds.getWidth(),
-                 m_style.peakHoldWidth);
+      float peakY = meterBounds.getBottom() - meterBounds.getHeight() * peakHold;
+      g.fillRect(meterBounds.getX(), peakY - m_style.peakHoldWidth * 0.5f,
+                 meterBounds.getWidth(), m_style.peakHoldWidth);
     } else {
-      float peakX = bounds.getX() + bounds.getWidth() * peakHold;
-      g.fillRect(peakX - m_style.peakHoldWidth * 0.5f, bounds.getY(), m_style.peakHoldWidth,
-                 bounds.getHeight());
+      float peakX = meterBounds.getX() + meterBounds.getWidth() * peakHold;
+      g.fillRect(peakX - m_style.peakHoldWidth * 0.5f, meterBounds.getY(),
+                 m_style.peakHoldWidth, meterBounds.getHeight());
     }
   }
 
@@ -401,11 +414,10 @@ void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int
     juce::Rectangle<float> clipBounds;
 
     if (m_isVertical) {
-      clipBounds = bounds.removeFromTop(6.0f);
+      clipBounds = meterBounds.withHeight(6.0f);
     } else {
-      clipBounds = bounds.removeFromRight(6.0f);
+      clipBounds = meterBounds.withTrimmedLeft(meterBounds.getWidth() - 6.0f);
     }
-
     g.setColour(m_style.clipColor);
     g.fillRoundedRectangle(clipBounds, m_style.cornerRadius);
   }

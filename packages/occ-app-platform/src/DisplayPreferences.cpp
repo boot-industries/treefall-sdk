@@ -137,7 +137,7 @@ void DisplayPreferences::load() {
 
   m_pageTabHeight = stringToSize(prefs.getValue("pageTabHeight", "Medium"));
   m_statusBarHeight = stringToSize(prefs.getValue("statusBarHeight", "Medium"));
-  m_bevelWidth = stringToBevelWidth(prefs.getValue("bevelWidth", "Percent10"));
+  m_bevelWidth = stringToBevelWidth(prefs.getValue("bevelWidth", "Percent5"));
   m_buttonTriggerSize = stringToSize(prefs.getValue("buttonTriggerSize", "Medium"));
   m_gridLayout = stringToGridLayout(prefs.getValue("gridLayout", "8x6"));
   m_buttonTextMode = stringToButtonTextMode(prefs.getValue("buttonTextMode", "HotKey"));
@@ -151,7 +151,7 @@ void DisplayPreferences::load() {
 void DisplayPreferences::resetToDefaults() {
   m_pageTabHeight = Size::Medium;
   m_statusBarHeight = Size::Medium;
-  m_bevelWidth = BevelWidth::Percent10;
+  m_bevelWidth = BevelWidth::Percent5;
   m_buttonTriggerSize = Size::Medium;
   m_gridLayout = GridLayout::Columns8Rows6;
   m_buttonTextMode = ButtonTextMode::HotKey;
