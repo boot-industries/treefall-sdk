@@ -90,11 +90,16 @@ private:
                                   void* context) noexcept;
   static AudioObjectPropertyAddress nominalSampleRateAddress() noexcept;
 
+  static constexpr uint64_t kPendingBit = 1;
+  static constexpr uint64_t kStoppedBit = 2;
+  static constexpr uint64_t kGenerationIncrement = 4;
+
   ICoreAudioSampleRatePropertyApi& property_api_;
   const Float64 expected_sample_rate_;
   std::vector<AudioDeviceID> device_ids_;
-  std::atomic<bool> pending_{false};
-  std::atomic<bool> permits_rendering_{false};
+  // A single state word makes closing and reopening the render gate conditional
+  // on the exact listener-generation that poll() serviced.
+  std::atomic<uint64_t> state_{kStoppedBit};
   std::condition_variable pending_changed_;
   std::mutex pending_mutex_;
   size_t registered_count_{0};

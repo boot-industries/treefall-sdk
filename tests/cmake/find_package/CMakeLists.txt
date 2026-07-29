@@ -38,6 +38,9 @@ endfunction()
 add_orpheus_fixture(orpheus_find_package_core main.cpp)
 target_link_libraries(orpheus_find_package_core PRIVATE Orpheus::core)
 
+add_orpheus_fixture(orpheus_find_package_audio_io_telemetry audio_io_telemetry.cpp)
+target_link_libraries(orpheus_find_package_audio_io_telemetry PRIVATE Orpheus::audio_io)
+
 add_orpheus_fixture(orpheus_find_package_diagnostics
   ${CMAKE_CURRENT_LIST_DIR}/../../verify_diagnostics_standalone.cpp)
 target_link_libraries(orpheus_find_package_diagnostics PRIVATE Orpheus::diagnostics)

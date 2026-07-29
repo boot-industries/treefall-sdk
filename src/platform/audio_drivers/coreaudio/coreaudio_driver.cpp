@@ -112,6 +112,12 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
     return SessionGraphError::InvalidParameter;
   }
 
+  // A terminal monitor outcome stops the worker without joining it. Reap that
+  // completed worker before replacing std::thread on a later start().
+  if (sample_rate_monitor_thread_.joinable()) {
+    sample_rate_monitor_thread_.join();
+  }
+
   // Listener registration and the initial rate verification happen before the
   // AU is started. A device that already rejects the requested rate therefore
   // never reaches processAudio() with a mismatched stream format.

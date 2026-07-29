@@ -49,6 +49,7 @@ bool CoreAudioSampleRateMonitor::start() noexcept {
   if (registered_count_ != 0 || device_ids_.empty()) {
     return registered_count_ != 0;
   }
+  state_.store(0, std::memory_order_release);
 
   const AudioObjectPropertyAddress address = nominalSampleRateAddress();
   for (const AudioDeviceID device_id : device_ids_) {
@@ -68,24 +69,37 @@ void CoreAudioSampleRateMonitor::stop() noexcept {
     property_api_.removePropertyListener(device_ids_[registered_count_], &address, &propertyChanged,
                                          this);
   }
-  pending_.store(false, std::memory_order_release);
-  permits_rendering_.store(false, std::memory_order_release);
+  state_.fetch_or(kStoppedBit | kPendingBit, std::memory_order_release);
   pending_changed_.notify_all();
 }
 
 void CoreAudioSampleRateMonitor::requestCheck() noexcept {
-  permits_rendering_.store(false, std::memory_order_release);
-  pending_.store(true, std::memory_order_release);
+  // Publish the next generation and close the gate in one atomic transition.
+  // poll() only opens the gate by clearing the pending bit with a
+  // compare-exchange on this same word, so it cannot acknowledge a notification
+  // that arrived during its queries.
+  uint64_t state = state_.load(std::memory_order_acquire);
+  uint64_t requested_state = 0;
+  do {
+    requested_state = (state + kGenerationIncrement) | kPendingBit;
+  } while (!state_.compare_exchange_weak(state, requested_state, std::memory_order_acq_rel,
+                                         std::memory_order_acquire));
   pending_changed_.notify_one();
 }
 
 void CoreAudioSampleRateMonitor::waitForChange() noexcept {
   std::unique_lock<std::mutex> lock(pending_mutex_);
-  pending_changed_.wait(lock, [this] { return pending_.load(std::memory_order_acquire); });
+  pending_changed_.wait(lock, [this] {
+    return (state_.load(std::memory_order_acquire) & kPendingBit) != 0;
+  });
 }
 
 CoreAudioSampleRatePollResult CoreAudioSampleRateMonitor::poll() noexcept {
-  if (!pending_.load(std::memory_order_acquire)) {
+  uint64_t serviced_state = state_.load(std::memory_order_acquire);
+  if ((serviced_state & kPendingBit) == 0) {
+    return CoreAudioSampleRatePollResult::NoChange;
+  }
+  if ((serviced_state & kStoppedBit) != 0) {
     return CoreAudioSampleRatePollResult::NoChange;
   }
 
@@ -120,18 +134,25 @@ CoreAudioSampleRatePollResult CoreAudioSampleRateMonitor::poll() noexcept {
     restored = true;
   }
 
-  pending_.store(false, std::memory_order_release);
-  permits_rendering_.store(true, std::memory_order_release);
+  // A listener notification mutates the generation before setting pending.
+  // Failing this CAS leaves the gate closed for the next control-thread poll.
+  if (!state_.compare_exchange_strong(serviced_state, serviced_state & ~kPendingBit,
+                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
+    return CoreAudioSampleRatePollResult::NoChange;
+  }
   return restored ? CoreAudioSampleRatePollResult::RateRestored
                   : CoreAudioSampleRatePollResult::NoChange;
 }
 
+
 bool CoreAudioSampleRateMonitor::permitsRendering() const noexcept {
-  return permits_rendering_.load(std::memory_order_acquire);
+  const uint64_t state = state_.load(std::memory_order_acquire);
+  return (state & (kPendingBit | kStoppedBit)) == 0;
 }
 
 bool CoreAudioSampleRateMonitor::isPending() const noexcept {
-  return pending_.load(std::memory_order_acquire);
+  const uint64_t state = state_.load(std::memory_order_acquire);
+  return (state & (kPendingBit | kStoppedBit)) == kPendingBit;
 }
 
 OSStatus CoreAudioSampleRateMonitor::propertyChanged(AudioObjectID, UInt32,
