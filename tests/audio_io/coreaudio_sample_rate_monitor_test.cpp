@@ -3,6 +3,7 @@
 
 #include "coreaudio/coreaudio_sample_rate_monitor.h"
 
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -31,6 +32,10 @@ public:
     queries_fail_ = true;
   }
 
+
+  void notifyDuringNextPropertyRead(AudioObjectID device_id) {
+    on_next_property_read_ = [this, device_id] { notifyRateChange(device_id); };
+  }
   void notifyRateChange(AudioObjectID device_id) {
     const AudioObjectPropertyAddress address = {kAudioDevicePropertyNominalSampleRate,
                                                 kAudioObjectPropertyScopeGlobal,
@@ -76,6 +81,10 @@ public:
       return kAudioHardwareUnspecifiedError;
     }
     *static_cast<Float64*>(data) = rates_[device_id];
+    if (on_next_property_read_) {
+      std::function<void()> callback = std::move(on_next_property_read_);
+      callback();
+    }
     return noErr;
   }
 
@@ -94,6 +103,7 @@ private:
   bool accepts_rate_changes_{true};
   bool queries_fail_{false};
   size_t callback_deliveries_{0};
+  std::function<void()> on_next_property_read_;
 };
 
 TEST(CoreAudioSampleRateMonitorTest, RegistersEachUniqueRouteAndCleansUpListeners) {
@@ -134,6 +144,27 @@ TEST(CoreAudioSampleRateMonitorTest, ReassertsChangedRateBeforeRenderingResumes)
 
   monitor.requestCheck();
   EXPECT_EQ(monitor.poll(), CoreAudioSampleRatePollResult::NoChange);
+}
+
+TEST(CoreAudioSampleRateMonitorTest, RetainsNotificationArrivingDuringFinalPropertyRead) {
+  FakeCoreAudioSampleRatePropertyApi api;
+  api.setRate(11, 48000.0);
+  CoreAudioSampleRateMonitor monitor(api, 48000, {11});
+
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioSampleRatePollResult::NoChange);
+  ASSERT_TRUE(monitor.permitsRendering());
+
+  api.notifyDuringNextPropertyRead(11);
+  monitor.requestCheck();
+  EXPECT_EQ(monitor.poll(), CoreAudioSampleRatePollResult::NoChange);
+  EXPECT_TRUE(monitor.isPending());
+  EXPECT_FALSE(monitor.permitsRendering());
+
+  EXPECT_EQ(monitor.poll(), CoreAudioSampleRatePollResult::NoChange);
+  EXPECT_FALSE(monitor.isPending());
+  EXPECT_TRUE(monitor.permitsRendering());
 }
 
 TEST(CoreAudioSampleRateMonitorTest, RefusedReassertionKeepsRenderingBlocked) {
