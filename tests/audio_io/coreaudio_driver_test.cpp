@@ -343,6 +343,23 @@ TEST_F(CoreAudioDriverTest, StartAndStop) {
   EXPECT_FALSE(m_driver->isRunning());
 }
 
+TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteStartsWithRuntimeRateMonitor) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+
+  const AudioDriverRuntimeOutcome outcome = m_driver->getTelemetry().runtime_outcome;
+  EXPECT_TRUE(outcome == AudioDriverRuntimeOutcome::Healthy ||
+              outcome == AudioDriverRuntimeOutcome::SampleRateRestored);
+
+  EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
+
 TEST_F(CoreAudioDriverTest, StopWhenNotRunning) {
   auto error = m_driver->stop();
   EXPECT_EQ(error, SessionGraphError::OK);

@@ -58,6 +58,7 @@ message(STATUS "Orpheus: Audio Driver Manager enabled")
 if(ORPHEUS_ENABLE_COREAUDIO)
     add_library(orpheus_audio_driver_coreaudio STATIC
         coreaudio/coreaudio_driver.cpp
+        coreaudio/coreaudio_sample_rate_monitor.cpp
     )
 
     target_include_directories(orpheus_audio_driver_coreaudio

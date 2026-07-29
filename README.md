@@ -110,6 +110,13 @@ auto driver = orpheus::createCoreAudioDriver();
 if (driver->initialize(audio) == orpheus::SessionGraphError::OK) {
   const auto io = driver->getTelemetry();
   // io.input_render_failures distinguishes capture failure from real silence.
+  // A runtime nominal-rate change is never rendered silently. CoreAudio first
+  // reasserts audio.sample_rate; a terminal outcome has stopped the driver and
+  // requires an explicit initialize() with the host's chosen configuration.
+  if (io.runtime_outcome ==
+      orpheus::AudioDriverRuntimeOutcome::SampleRateReinitializationRequired) {
+    // Reconfigure the host deliberately; endpoint IDs remain unchanged.
+  }
 }
 ```
 
@@ -117,6 +124,13 @@ Distinct CoreAudio endpoints use a driver-owned private aggregate. Unknown or
 direction-incompatible UIDs fail with `InvalidParameter`; they never fall back
 to another device. `getTelemetry()` is available through `IAudioDriver`, so
 factory consumers do not downcast to platform implementations.
+
+During an active CoreAudio route, the driver listens to the aggregate wrapper
+and each physical input/output endpoint's nominal sample rate. A notification
+closes the render gate, then a control worker reasserts the configured rate. If
+the device refuses or cannot be queried, rendering stops and
+`runtime_outcome` reports the exact terminal condition; the driver never
+silently substitutes another endpoint or rate.
 
 Child-app teams should use
 [`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
@@ -262,7 +276,7 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 - **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and Linux device backends are not yet release-supported
 - **Dummy driver** – Testing and offline rendering
 - **Device selection** – Direction-specific stable input/output IDs; persistent CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
-- **Capture diagnostics** – Factory-visible saturating input-render failure telemetry (ORP155)
+- **Capture and rate diagnostics** – Factory-visible saturating input-render failure telemetry plus runtime nominal-rate recovery/reinitialization outcomes (ORP155, ORP128)
 - **Waveform processing** – Fast downsampling for UI rendering (ORP109)
 
 ### Routing & Mixing
