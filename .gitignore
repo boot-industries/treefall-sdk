@@ -94,5 +94,5 @@ docs/api/
 .claude/CLAUDE.local.md
 .claude/scratch/
 
-# Keep documentation local-only
-/docs/
+# Keep ORP working records local-only; do not ignore other documentation.
+/docs/orp/
