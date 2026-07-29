@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "coreaudio_sample_rate_monitor.h"
+
 #include <orpheus/audio_driver.h>
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace orpheus {
@@ -110,6 +114,18 @@ private:
   /// Cleanup AudioUnit resources
   void cleanupAudioUnit();
 
+  /// Creates the runtime monitor after route resolution has identified the
+  /// aggregate wrapper and each physical endpoint.
+  void createSampleRateMonitor();
+  /// Starts listeners and the control worker. mutex_ must be held.
+  bool startSampleRateMonitorLocked();
+  /// Removes listeners, wakes the control worker, and joins it.
+  void stopSampleRateMonitor();
+  /// Services listener notifications outside the audio callback.
+  void sampleRateMonitorLoop();
+  /// Stops the AudioUnit and drains admitted callbacks. mutex_ must be held.
+  void stopRenderingLocked();
+
   // Configuration
   AudioDriverConfig config_;
 
@@ -129,6 +145,18 @@ private:
   uint32_t input_channel_offset_{0};
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
+  std::atomic<AudioDriverRuntimeOutcome> runtime_outcome_{AudioDriverRuntimeOutcome::Healthy};
+
+  // Listener registration belongs to the active route. The property callback
+  // only signals this monitor; a control worker performs all HAL queries and
+  // rate changes outside the audio callback.
+  CoreAudioSampleRatePropertyApi sample_rate_property_api_;
+  std::unique_ptr<CoreAudioSampleRateMonitor> sample_rate_monitor_;
+  std::atomic<bool> sample_rate_monitor_active_{false};
+  // Serializes listener registration/removal and control-thread polling; never
+  // acquired by the CoreAudio render callback or property-listener callback.
+  std::mutex sample_rate_monitor_mutex_;
+  std::thread sample_rate_monitor_thread_;
 
   // Non-owning host callback. It is only read while callback_admission_ holds
   // an admitted callback, which stop() drains before clearing this pointer.
