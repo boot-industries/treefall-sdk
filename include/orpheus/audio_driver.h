@@ -30,9 +30,22 @@ struct AudioDriverConfig {
   std::string device_name;      ///< Optional host-visible display name
 };
 
-/// Factory-visible backend I/O diagnostics.
+/// Outcome of a backend runtime condition that can invalidate active audio I/O.
+/// A terminal outcome means the driver has stopped rendering and requires an
+/// explicit initialize() call with a host-selected configuration.
+enum class AudioDriverRuntimeOutcome : uint8_t {
+  Healthy,
+  SampleRateRestored,
+  SampleRateReinitializationRequired,
+  SampleRateListenerFailure,
+  SampleRateQueryFailure,
+};
+
+/// Factory-visible backend I/O diagnostics. Runtime outcomes are safe to poll
+/// from a control thread and never invoke the host's realtime callback.
 struct AudioIoTelemetry {
   uint64_t input_render_failures = 0; ///< Cumulative failed capture renders
+  AudioDriverRuntimeOutcome runtime_outcome = AudioDriverRuntimeOutcome::Healthy;
 };
 
 /// Audio backend family.

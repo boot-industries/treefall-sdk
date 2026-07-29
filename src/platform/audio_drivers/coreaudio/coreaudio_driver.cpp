@@ -15,15 +15,23 @@ namespace orpheus {
 CoreAudioDriver::CoreAudioDriver() = default;
 
 CoreAudioDriver::~CoreAudioDriver() {
-  if (is_running_.load(std::memory_order_acquire)) {
-    stop();
-  }
+  stop();
   cleanupAudioUnit();
 }
 
 SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (is_running_.load(std::memory_order_acquire)) {
+      return SessionGraphError::NotReady;
+    }
+  }
 
+  // A previous terminal runtime outcome leaves a joined-but-still-owned
+  // monitor. Tear it down before replacing the route.
+  stopSampleRateMonitor();
+
+  std::lock_guard<std::mutex> lock(mutex_);
   if (is_running_.load(std::memory_order_acquire)) {
     return SessionGraphError::NotReady;
   }
@@ -55,6 +63,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     cleanupAudioUnit();
     return result;
   }
+  createSampleRateMonitor();
 
   // Pre-allocate audio buffers (no allocations in audio callback)
   uint32_t num_outputs = config_.num_outputs;
@@ -84,6 +93,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   }
 
   input_render_failures_.store(0, std::memory_order_release);
+  runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -102,16 +112,36 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
     return SessionGraphError::InvalidParameter;
   }
 
+  // Listener registration and the initial rate verification happen before the
+  // AU is started. A device that already rejects the requested rate therefore
+  // never reaches processAudio() with a mismatched stream format.
+  if (!startSampleRateMonitorLocked()) {
+    return SessionGraphError::InternalError;
+  }
+
   callback_ = callback;
   callback_admission_.store(kCallbackAccepting, std::memory_order_release);
   is_running_.store(true, std::memory_order_release);
 
-  // Start AudioUnit
   OSStatus status = AudioOutputUnitStart(audio_unit_);
   if (status != noErr) {
     is_running_.store(false, std::memory_order_release);
     closeCallbackAdmission();
     callback_ = nullptr;
+    sample_rate_monitor_->stop();
+    return SessionGraphError::InternalError;
+  }
+
+  sample_rate_monitor_active_.store(true, std::memory_order_release);
+  try {
+    sample_rate_monitor_thread_ = std::thread(&CoreAudioDriver::sampleRateMonitorLoop, this);
+  } catch (...) {
+    sample_rate_monitor_active_.store(false, std::memory_order_release);
+    AudioOutputUnitStop(audio_unit_);
+    closeCallbackAdmission();
+    callback_ = nullptr;
+    is_running_.store(false, std::memory_order_release);
+    sample_rate_monitor_->stop();
     return SessionGraphError::InternalError;
   }
 
@@ -119,26 +149,11 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
 }
 
 SessionGraphError CoreAudioDriver::stop() {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  if (!is_running_.load(std::memory_order_acquire)) {
-    return SessionGraphError::OK; // Already stopped
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopRenderingLocked();
   }
-
-  is_running_.store(false, std::memory_order_release);
-  uint64_t admission = closeCallbackAdmission();
-
-  if (audio_unit_) {
-    AudioOutputUnitStop(audio_unit_);
-  }
-
-  while ((admission & kCallbackCountMask) != 0) {
-    callback_admission_.wait(admission, std::memory_order_acquire);
-    admission = callback_admission_.load(std::memory_order_acquire);
-  }
-
-  callback_ = nullptr;
-
+  stopSampleRateMonitor();
   return SessionGraphError::OK;
 }
 
@@ -163,7 +178,8 @@ uint32_t CoreAudioDriver::getLatencySamples() const {
 }
 
 AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
-  return {input_render_failures_.load(std::memory_order_acquire)};
+  return {input_render_failures_.load(std::memory_order_acquire),
+          runtime_outcome_.load(std::memory_order_acquire)};
 }
 
 void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept {
@@ -286,6 +302,13 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   // This prevents use-after-free if callback is invoked during/after stop()
   if (!driver->is_running_.load(std::memory_order_acquire)) {
     return noErr; // Driver is stopping, output silence
+  }
+
+  // A nominal-rate notification closes this gate before the control worker
+  // touches CoreAudio. Never hand a host processAudio() a block whose AU
+  // format may no longer match the hardware clock.
+  if (!driver->sample_rate_monitor_ || !driver->sample_rate_monitor_->permitsRendering()) {
+    return noErr;
   }
 
   IAudioCallback* callback = driver->callback_;
@@ -863,7 +886,133 @@ SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
   return SessionGraphError::OK;
 }
 
+void CoreAudioDriver::createSampleRateMonitor() {
+  std::vector<AudioDeviceID> monitored_devices;
+  monitored_devices.reserve(3);
+  monitored_devices.push_back(device_id_);
+  monitored_devices.push_back(output_device_id_);
+  if (config_.num_inputs > 0) {
+    monitored_devices.push_back(input_device_id_);
+  }
+  sample_rate_monitor_ = std::make_unique<CoreAudioSampleRateMonitor>(
+      sample_rate_property_api_, config_.sample_rate, std::move(monitored_devices));
+}
+
+bool CoreAudioDriver::startSampleRateMonitorLocked() {
+  std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
+  if (!sample_rate_monitor_ || !sample_rate_monitor_->start()) {
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateListenerFailure,
+                           std::memory_order_release);
+    return false;
+  }
+
+  sample_rate_monitor_->requestCheck();
+  const CoreAudioSampleRatePollResult result = sample_rate_monitor_->poll();
+  switch (result) {
+  case CoreAudioSampleRatePollResult::NoChange:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+    return true;
+  case CoreAudioSampleRatePollResult::RateRestored:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateRestored,
+                           std::memory_order_release);
+    return true;
+  case CoreAudioSampleRatePollResult::ReinitializationRequired:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateReinitializationRequired,
+                           std::memory_order_release);
+    break;
+  case CoreAudioSampleRatePollResult::QueryFailed:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateQueryFailure,
+                           std::memory_order_release);
+    break;
+  }
+
+  sample_rate_monitor_->stop();
+  return false;
+}
+
+void CoreAudioDriver::stopSampleRateMonitor() {
+  sample_rate_monitor_active_.store(false, std::memory_order_release);
+  {
+    std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
+    if (sample_rate_monitor_) {
+      sample_rate_monitor_->stop();
+      sample_rate_monitor_->requestCheck();
+    }
+  }
+  if (sample_rate_monitor_thread_.joinable()) {
+    sample_rate_monitor_thread_.join();
+  }
+}
+
+void CoreAudioDriver::sampleRateMonitorLoop() {
+  while (sample_rate_monitor_active_.load(std::memory_order_acquire)) {
+    sample_rate_monitor_->waitForChange();
+    if (!sample_rate_monitor_active_.load(std::memory_order_acquire)) {
+      break;
+    }
+
+    CoreAudioSampleRatePollResult result;
+    {
+      std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
+      if (!sample_rate_monitor_active_.load(std::memory_order_acquire)) {
+        break;
+      }
+      result = sample_rate_monitor_->poll();
+      if (result == CoreAudioSampleRatePollResult::ReinitializationRequired ||
+          result == CoreAudioSampleRatePollResult::QueryFailed) {
+        sample_rate_monitor_->stop();
+      }
+    }
+
+    switch (result) {
+    case CoreAudioSampleRatePollResult::NoChange:
+      runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+      continue;
+    case CoreAudioSampleRatePollResult::RateRestored:
+      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateRestored,
+                             std::memory_order_release);
+      continue;
+    case CoreAudioSampleRatePollResult::ReinitializationRequired:
+      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateReinitializationRequired,
+                             std::memory_order_release);
+      break;
+    case CoreAudioSampleRatePollResult::QueryFailed:
+      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateQueryFailure,
+                             std::memory_order_release);
+      break;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopRenderingLocked();
+    }
+    sample_rate_monitor_active_.store(false, std::memory_order_release);
+  }
+}
+
+void CoreAudioDriver::stopRenderingLocked() {
+  if (!is_running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  is_running_.store(false, std::memory_order_release);
+  uint64_t admission = closeCallbackAdmission();
+
+  if (audio_unit_) {
+    AudioOutputUnitStop(audio_unit_);
+  }
+
+  while ((admission & kCallbackCountMask) != 0) {
+    callback_admission_.wait(admission, std::memory_order_acquire);
+    admission = callback_admission_.load(std::memory_order_acquire);
+  }
+
+  callback_ = nullptr;
+}
+
 void CoreAudioDriver::cleanupAudioUnit() {
+  // Callers stop and join the control worker before destroying the route.
+  sample_rate_monitor_.reset();
   if (audio_unit_) {
     AudioUnitUninitialize(audio_unit_);
     AudioComponentInstanceDispose(audio_unit_);
