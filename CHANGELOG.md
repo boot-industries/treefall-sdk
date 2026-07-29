@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CoreAudio now monitors active aggregate and physical route sample rates after
+  start. It gates rendering during verification, reasserts the configured rate
+  off the render thread, and stops with a factory-visible terminal outcome when
+  recovery or querying fails.
+
 ## [0.6.7] - 2026-07-24
 
 Patch release correcting capture-channel selection for distinct CoreAudio input

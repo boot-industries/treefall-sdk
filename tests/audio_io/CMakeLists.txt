@@ -274,6 +274,7 @@ add_test(NAME dummy_driver_test COMMAND dummy_driver_test)
 if(ORPHEUS_ENABLE_COREAUDIO)
     add_executable(coreaudio_driver_test
         coreaudio_driver_test.cpp
+        coreaudio_sample_rate_monitor_test.cpp
     )
 
     target_link_libraries(coreaudio_driver_test
