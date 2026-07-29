@@ -4,7 +4,7 @@
 
 **Date:** 2026-07-28  
 **Branch:** `feat/orp128-coreaudio-rate-resilience`  
-**Status:** Sprint 1 implementation and focused verification complete; commit and remote delivery pending.
+**Status:** Sprint 1 implementation and focused verification complete. Committed as `3b0df2e8` and pushed to `origin/feat/orp128-coreaudio-rate-resilience`.
 
 ### Delivered
 
