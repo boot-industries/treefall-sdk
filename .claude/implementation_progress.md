@@ -6,27 +6,29 @@
 > `~/dev/clip-composer` and consumes this SDK as a submodule; historical
 > `apps/clip-composer/...` paths below refer to the former in-tree layout.
 
-## Current State (2026-07-24)
+## Current State (2026-07-28)
 
-- **C++ SDK:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0.
-- **CoreAudio:** Distinct input/output aggregates map AUHAL capture to the
-  resolved input sub-device and reject unsupported requested channel counts.
-- **ShmUI-JUCE:** The governed design-token contract remains 0.3.0; the 0.6.4
-  import provenance and 0.6.6 text-button identity fixes are preserved on
-  mainline.
-- **Verification:** The CoreAudio driver target builds; FourTrack's 225-contract
-  suite and physical MacBook microphone capture provide downstream acceptance.
-- **Delivery:** ORP162 records the 0.6.7 release and FourTrack/Clip Composer pin
-  handoff.
-- **Platform evidence:** CoreAudio contracts passed on physical macOS hardware.
-  WASAPI is not release-supported without hosted Windows package/ABI evidence
-  and a real-device acceptance record.
+- **C++ SDK:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0; clean on `main` at
+  `2819ca0e` and aligned with `origin/main`.
+- **Suite baseline:** Orpheus SDK, Shmui, Clip Composer, FreqFinder, and
+  FourTrack are clean on `main`, with zero divergence from their respective
+  `origin/main` refs.
+- **Applications:** Clip Composer, FreqFinder, and FourTrack have verified
+  launch paths; SDK and Shmui remain libraries without launch scripts.
+- **Icons:** Clip Composer PR #23, FreqFinder PR #23, and FourTrack PR #37 are
+  merged. Generated macOS bundles copied their declared ICNS resources.
+- **FourTrack:** `build-launch.sh` uses a dedicated Ninja build directory for
+  the SwiftUI app, then delegates to launch-only `relaunch.sh`.
+- **Operator UI:** FourTrack Settings no longer exposes internal `FTR###`
+  planning identifiers.
+- **Checkpoint record:** ORP166 is the current suite synchronization, launch,
+  icon, and verification record.
 
 ---
 
-**Last Updated:** 2026-07-24 (ORP162 CoreAudio mapping and pin handoff)
-**Current Phase:** SDK 0.6.7 downstream adoption
-**Overall Progress:** CoreAudio fix reviewed | ShmUI lineage preserved | Child pins updating
+**Last Updated:** 2026-07-28 (ORP166 suite application launch and icon checkpoint)
+**Current Phase:** Synchronized application-suite review baseline
+**Overall Progress:** All repositories clean | Application icons merged | Native launch paths verified
 
 ---
 

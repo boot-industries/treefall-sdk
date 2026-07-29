@@ -7,6 +7,10 @@ Project documentation index for orpheus-sdk.
 - [[README]]
 
 ## Recent Documents
+- [[ORP166 Orpheus Suite Application Launch and Icon Checkpoint]] — synchronized
+  Cloudkicker suite baseline; merged application icons; verified Clip Composer,
+  FreqFinder, and FourTrack launch paths (2026-07-28)
+
 
 - [[ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff]]
 - [[ORP161 FourTrack Live Output Handoff Assessment]]

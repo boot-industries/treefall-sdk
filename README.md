@@ -40,6 +40,8 @@ ctest --test-dir build --output-on-failure
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 - **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
 - **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
+- **Review suite application checkpoint:** See [`ORP166`](docs/orp/ORP166%20Orpheus%20Suite%20Application%20Launch%20and%20Icon%20Checkpoint.md) for synchronized repository state, application launch paths, and icon verification.
+
 
 ## Lightweight Integration Targets
 
