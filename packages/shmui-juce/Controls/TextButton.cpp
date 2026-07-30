@@ -14,12 +14,9 @@
 namespace shmui {
 
 //==============================================================================
-TextButton::TextButton(const juce::String& text) : m_text(text) {
-  setName(text);
-}
+TextButton::TextButton(const juce::String& text) : m_text(text) {}
 
 TextButton::TextButton(const juce::String& text, ButtonStyle style) : m_text(text) {
-  setName(text);
   setStyle(style);
 }
 
