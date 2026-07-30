@@ -3,8 +3,8 @@
   "source": {
     "repository": "shmui",
     "path": "juce/Source",
-    "revision": "4614e3f588174ce012e3ed5997bea1caeea4ddda",
-    "content_sha256": "71263715639965b051cd8e0cfd4b7d941e25e139d82e063437a8cf79ee6be5ef",
+    "revision": "ad1cdfa4cee1602125a25805d83a6ef2e42f4577",
+    "content_sha256": "1bcf2a25f36d59b1b8630dd3151a217d391f955bdde3a07fcfa506d22e0b8c4c",
     "content_hash_algorithm": "sha256-path-nul-content-v1"
   },
   "design_token_contract_version": "0.3.0",
@@ -40,12 +40,8 @@
       ]
     },
     "Orpheus::shmui_juce_gl": {
-      "components": [
-        "OrbVisualizer"
-      ],
-      "required_juce_modules": [
-        "juce_opengl"
-      ],
+      "components": ["OrbVisualizer"],
+      "required_juce_modules": ["juce_opengl"],
       "feature_flag": "SHMUI_JUCE_ENABLE_OPENGL",
       "default_enabled": false
     }
