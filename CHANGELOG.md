@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- CoreAudio now monitors active aggregate and physical route sample rates after
-  start. It gates rendering during verification, reasserts the configured rate
-  off the render thread, and stops with a factory-visible terminal outcome when
-  recovery or querying fails.
+- Synchronized `packages/shmui-juce` to ShmUI `0375ebf47329786924c61359c2aa4d9372456985`
+  and token contract 0.5.0. The package now exposes six orthogonal Console
+  mode/flavor material, illumination, display, physical-control, meter, and
+  waveform recipes.
+- Added message-thread default-theme notifications with safe listener lifetime,
+  registration-order delivery, deferred additions, removal-safe iteration, and
+  coalesced reentrant updates. Existing dark Console helpers retain their behavior;
+  `ShmuiTheme::forProfile` selects explicit mode and flavor.
 
 ## [0.6.7] - 2026-07-24
 
