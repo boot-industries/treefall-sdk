@@ -35,8 +35,7 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Integrate SDK:** See [`docs/orp/_process/archive/GETTING_STARTED.md`](docs/orp/_process/archive/GETTING_STARTED.md)
-- **Migrate from v0.x:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md)
+- **Review current records:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 - **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
 - **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
@@ -139,7 +138,7 @@ application was migrated by the SDK sprint.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
-artifact remain required; see [`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md).
+artifact remain required; see the [support posture in `AGENTS.md`](AGENTS.md#sources-of-truth).
 
 ---
 
@@ -238,12 +237,12 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 ```
 
 **Features:** 7 new APIs, 23 new data structures, 165+ new tests
-**Documentation:** See [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for complete guide
+**Documentation:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md) for current and historical contract records.
 
 ---
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
-**Migration:** [`docs/MIGRATION_v0_to_v1.md`](docs/MIGRATION_v0_to_v1.md) for upgrade guide
+**Current contracts:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md); release notes remain in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -341,10 +340,10 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 The host-neutral core, Dummy driver, installed package, and conformance fixtures
 are required on macOS, Windows, and Linux. Device backend support is narrower:
 CoreAudio is supported on macOS; WASAPI is not yet a supported release backend;
-and ALSA, JACK, and PipeWire are not implemented. Exact compiler, architecture,
-backend, and unavailable-capability status lives in
-[`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md). Planned backends are not
-shipped capabilities.
+and ALSA, JACK, and PipeWire are not implemented. For exact compiler,
+architecture, backend, and unavailable-capability status, see
+[the support posture in `AGENTS.md`](AGENTS.md#sources-of-truth).
+Planned backends are not shipped capabilities.
 
 ## Getting Started
 
@@ -594,7 +593,7 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
 - [Clip Composer repo](https://github.com/chrislyons/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
-- [`docs/archive/AGENTS.md`](docs/archive/AGENTS.md) – coding assistant guidelines for AI tools
+- [`AGENTS.md`](AGENTS.md) – coding assistant and repository workflow guidelines
 - [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
 ## Contributing

@@ -752,7 +752,7 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 ### Getting Started
 
 - [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
-- [docs/INDEX.md](docs/INDEX.md) – Documentation index (live + historical)
+- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current and historical documentation index
 
 ### Implementation Plans
 
@@ -765,7 +765,7 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 
 ### Developer Tools
 
-- [AGENTS.md](docs/archive/AGENTS.md) – Coding assistant guidelines (archived)
+- [AGENTS.md](AGENTS.md) – coding assistant and repository workflow guidelines
 - [CLAUDE.md](CLAUDE.md) – Claude Code development guide
 
 ---

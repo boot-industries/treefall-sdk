@@ -2,9 +2,9 @@
 
 ## ORP128 — CoreAudio runtime sample-rate resilience
 
-**Date:** 2026-07-28  
-**Branch:** `feat/orp128-coreaudio-rate-resilience`  
-**Status:** Sprint 1 implementation and focused verification complete. Committed as `3b0df2e8` and pushed to `origin/feat/orp128-coreaudio-rate-resilience`.
+**Date:** 2026-07-28; mainline reconciliation 2026-08-01
+**Branch:** `feat/orp128-coreaudio-rate-resilience` (historical delivery branch)
+**Status:** Implemented and merged as [PR #228](https://github.com/chrislyons/orpheus-sdk/pull/228) at `b7533e57b15bc37f581e4118f560b5e34bc60667`.
 
 ### Delivered
 
@@ -32,9 +32,13 @@
 
 ### Configured-suite observation
 
-- The three failing commands were `docs_path_audit` (eight missing document
-  links), `cmake_shmui_package_consumer` (unexported JUCE dependencies), and
-  `coreaudio_driver_test`.
+- At the ORP128 focused checkpoint, `docs_path_audit`,
+  `cmake_shmui_package_consumer`, and `coreaudio_driver_test` did not pass.
+- The eight missing documentation paths are corrected in this current record.
+  [PR #229](https://github.com/chrislyons/orpheus-sdk/pull/229), merged at
+  `30abdedeb5134976ad35382a159c168bb3178e54`, aligned all six installed
+  ShmUI package-consumer profiles with the generated v0.5.0 token contract;
+  its Release `cmake_shmui_package_consumer` CTest command exited successfully.
 - On this host, 12 legacy CoreAudio cases that rely on the default
   two-input-channel configuration return `InvalidParameter`; the same run
   passed the focused output, directional, aggregate, and capture contracts
