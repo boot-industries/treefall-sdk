@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Synchronized `packages/shmui-juce` to ShmUI `0375ebf47329786924c61359c2aa4d9372456985`
+- Synchronized `packages/shmui-juce` to ShmUI `6129e3cb73f32922e588aa647bbafb87fccdc324`
   and token contract 0.5.0. The package now exposes six orthogonal Console
   mode/flavor material, illumination, display, physical-control, meter, and
   waveform recipes.
