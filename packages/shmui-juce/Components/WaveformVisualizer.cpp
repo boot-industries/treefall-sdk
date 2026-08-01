@@ -19,6 +19,12 @@ namespace shmui {
 
 WaveformVisualizer::WaveformVisualizer() {
   setOpaque(false);
+  style = WaveformStyle::fromTheme(defaultTheme());
+  addDefaultThemeListener(this);
+}
+
+WaveformVisualizer::~WaveformVisualizer() {
+  removeDefaultThemeListener(this);
 }
 
 void WaveformVisualizer::setData(const std::vector<float>& data) {
@@ -28,11 +34,27 @@ void WaveformVisualizer::setData(const std::vector<float>& data) {
 
 void WaveformVisualizer::setStyle(const WaveformStyle& newStyle) {
   style = newStyle;
+  usesDefaultThemeStyle_ = false;
+  repaint();
+}
+
+void WaveformVisualizer::useDefaultThemeStyle() {
+  usesDefaultThemeStyle_ = true;
+  style = WaveformStyle::fromTheme(defaultTheme());
+  repaint();
+}
+
+void WaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
+  if (!usesDefaultThemeStyle_)
+    return;
+
+  style = WaveformStyle::fromTheme(defaultTheme());
   repaint();
 }
 
 void WaveformVisualizer::setBarColour(const juce::Colour& colour) {
   style.barColour = colour;
+  usesDefaultThemeStyle_ = false;
   repaint();
 }
 
@@ -385,15 +407,18 @@ void AudioScrubberVisualizer::handleScrub(float x) {
 // LiveWaveformVisualizer
 
 LiveWaveformVisualizer::LiveWaveformVisualizer() {
+  style = WaveformStyle::fromTheme(defaultTheme());
   // Live waveform defaults
   style.barWidth = 3.0f;
   style.barGap = 1.0f;
   style.barRadius = 1.0f;
 
   setOpaque(false);
+  addDefaultThemeListener(this);
 }
 
 LiveWaveformVisualizer::~LiveWaveformVisualizer() {
+  removeDefaultThemeListener(this);
   stopTimer();
 }
 
@@ -433,7 +458,24 @@ void LiveWaveformVisualizer::setSensitivity(float sens) {
 
 void LiveWaveformVisualizer::setStyle(const WaveformStyle& newStyle) {
   style = newStyle;
+  usesDefaultThemeStyle_ = false;
   repaint();
+}
+
+void LiveWaveformVisualizer::useDefaultThemeStyle() {
+  usesDefaultThemeStyle_ = true;
+  style = WaveformStyle::fromTheme(defaultTheme());
+  style.barWidth = 3.0f;
+  style.barGap = 1.0f;
+  style.barRadius = 1.0f;
+  repaint();
+}
+
+void LiveWaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
+  if (!usesDefaultThemeStyle_)
+    return;
+
+  useDefaultThemeStyle();
 }
 
 void LiveWaveformVisualizer::clearHistory() {

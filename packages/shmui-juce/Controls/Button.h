@@ -38,12 +38,13 @@ namespace shmui {
  *
  * Subclasses: IconButton, TextButton, ToggleButton, ClipButton, etc.
  */
-class Button : public juce::Component, public juce::SettableTooltipClient {
+class Button : public juce::Component, public juce::SettableTooltipClient, public ThemeListener {
 public:
   //==============================================================================
   Button();
   ~Button() override;
 
+  void defaultThemeChanged(const ShmuiTheme&) override;
   //==============================================================================
   /// @name Style & Appearance
   /// @{

@@ -28,11 +28,14 @@ LevelMeter::LevelMeter(int numChannels)
     m_clipped[i] = false;
   }
 
+  m_style = LevelMeterStyle::fromTheme(defaultTheme());
   setBallistics(MeterBallistics::Peak);
+  addDefaultThemeListener(this);
   startTimerHz(60);
 }
 
 LevelMeter::~LevelMeter() {
+  removeDefaultThemeListener(this);
   stopTimer();
 }
 
@@ -115,6 +118,21 @@ void LevelMeter::setDBRange(float minDB, float maxDB) {
 
 void LevelMeter::setStyle(const LevelMeterStyle& style) {
   m_style = style;
+  m_usesDefaultThemeStyle = false;
+  repaint();
+}
+
+void LevelMeter::useDefaultThemeStyle() {
+  m_usesDefaultThemeStyle = true;
+  m_style = LevelMeterStyle::fromTheme(defaultTheme());
+  repaint();
+}
+
+void LevelMeter::defaultThemeChanged(const ShmuiTheme&) {
+  if (!m_usesDefaultThemeStyle)
+    return;
+
+  m_style = LevelMeterStyle::fromTheme(defaultTheme());
   repaint();
 }
 

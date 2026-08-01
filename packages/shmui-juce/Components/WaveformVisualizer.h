@@ -14,6 +14,7 @@
 
 #include "../Audio/AudioAnalyzer.h"
 #include "../Utils/Interpolation.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <vector>
 
@@ -35,6 +36,12 @@ struct WaveformStyle {
   float alphaMin = 0.3f;                         ///< Minimum alpha (for low values)
   float alphaMax = 1.0f;                         ///< Maximum alpha (for high values)
   float heightScale = 0.8f;                      ///< Maximum height as fraction of container
+
+  [[nodiscard]] static WaveformStyle fromTheme(const ShmuiTheme& theme) {
+    WaveformStyle style;
+    style.barColour = theme.wave.line;
+    return style;
+  }
 };
 
 //==============================================================================
@@ -45,10 +52,10 @@ struct WaveformStyle {
  * Displays a fixed waveform visualization from a provided data array.
  * Port of the Waveform component from waveform.tsx.
  */
-class WaveformVisualizer : public juce::Component {
+class WaveformVisualizer : public juce::Component, public ThemeListener {
 public:
   WaveformVisualizer();
-  ~WaveformVisualizer() override = default;
+  ~WaveformVisualizer() override;
 
   //==============================================================================
   // Data
@@ -82,6 +89,12 @@ public:
     return style;
   }
 
+  void useDefaultThemeStyle();
+  [[nodiscard]] bool usesDefaultThemeStyle() const {
+    return usesDefaultThemeStyle_;
+  }
+  void defaultThemeChanged(const ShmuiTheme&) override;
+
   /**
    * @brief Set bar colour.
    */
@@ -112,6 +125,7 @@ protected:
 
   std::vector<float> waveformData;
   WaveformStyle style;
+  bool usesDefaultThemeStyle_ = true;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformVisualizer)
 };
@@ -121,8 +135,8 @@ protected:
 /**
  * @brief Scrolling waveform with automatic animation.
  *
- * Displays bars that scroll across the display, creating a dynamic visualization.
- * Port of the ScrollingWaveform component from waveform.tsx.
+ * Displays bars that scroll across the display, creating a dynamic
+ * visualization. Port of the ScrollingWaveform component from waveform.tsx.
  */
 class ScrollingWaveformVisualizer : public WaveformVisualizer, public juce::Timer {
 public:
@@ -289,7 +303,7 @@ private:
  * Displays real-time audio input as a scrolling waveform with history.
  * Port of the LiveMicrophoneWaveform component from waveform.tsx.
  */
-class LiveWaveformVisualizer : public juce::Component, public juce::Timer {
+class LiveWaveformVisualizer : public juce::Component, public juce::Timer, public ThemeListener {
 public:
   LiveWaveformVisualizer();
   ~LiveWaveformVisualizer() override;
@@ -337,6 +351,12 @@ public:
    */
   void setStyle(const WaveformStyle& newStyle);
 
+  void useDefaultThemeStyle();
+  [[nodiscard]] bool usesDefaultThemeStyle() const {
+    return usesDefaultThemeStyle_;
+  }
+  void defaultThemeChanged(const ShmuiTheme&) override;
+
   //==============================================================================
   // History Access
 
@@ -364,6 +384,7 @@ private:
   AudioAnalyzer* audioAnalyzer = nullptr;
   std::vector<float> history;
   WaveformStyle style;
+  bool usesDefaultThemeStyle_ = true;
 
   bool active = false;
   int historySize = 150;

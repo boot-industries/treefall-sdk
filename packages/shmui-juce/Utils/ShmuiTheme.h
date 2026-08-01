@@ -8,24 +8,6 @@
 
     Components are custom-painted (they do not route through juce::LookAndFeel),
     so the theme is a plain value struct rather than a LookAndFeel subclass.
-    Each component's *Style struct defaults its colours from defaultTheme(), so
-    a component with no per-instance overrides renders with Orpheus tokens
-    (Lab flavor by default) instead of stock shadcn hex.
-
-    Flavors mirror the design-system semantic aliases:
-      - Lab           (:root default — Freqfinder deep-slate)
-      - Console       ([data-flavor="console"]     — Clip Composer petrol)
-      - ConsoleWarm   ([data-flavor="console-warm"] — tan-grey)
-      - ConsoleCool   ([data-flavor="console-cool"] — slate-grey)
-
-    Usage:
-      // App startup (message thread), pick a flavor once:
-      shmui::setDefaultTheme(shmui::ShmuiTheme::console());
-
-      // Or inject a bespoke palette that flows into shmui widgets:
-      shmui::ShmuiTheme t = shmui::ShmuiTheme::lab();
-      t.accent = myBrandColour;
-      shmui::setDefaultTheme(t);
 
   ==============================================================================
 */
@@ -45,73 +27,90 @@ enum class ThemeFlavor {
   ConsoleCool  ///< [data-flavor="console-cool"] — slate-grey rack
 };
 
+/** Selects the color mode independently from a Console flavor. */
+enum class AppearanceMode { Light, Dark };
+
 //==============================================================================
 /**
- * @brief Overridable semantic token surface.
- *
- * Carries the design-system semantic roles (`--bg`, `--fg`, `--accent`, …) for
- * a chosen flavor, plus the shared metering/waveform scales that visualizers
- * read. All values resolve to concrete colours from tokens.h so consumers never
- * touch raw hex.
+ * Overridable semantic token surface. Legacy flavor factories retain their
+ * dark behavior; forProfile() exposes the full mode × flavor matrix.
  */
 struct ShmuiTheme {
-  //==============================================================================
-  // Surfaces (--bg / --bg-panel / --bg-card / --bg-raise / --bg-inset)
   juce::Colour bg;
   juce::Colour bgPanel;
   juce::Colour bgCard;
   juce::Colour bgRaise;
   juce::Colour bgInset;
 
-  // Foreground + stroke (--fg / --fg-muted / --stroke)
   juce::Colour fg;
   juce::Colour fgMuted;
   juce::Colour stroke;
 
-  // Semantic accents (--accent / --danger / --warning / --info)
   juce::Colour accent;
   juce::Colour danger;
   juce::Colour warning;
   juce::Colour info;
 
-  // Shared metering scale (--meter-*)
   struct Meter {
     juce::Colour green;
     juce::Colour yellow;
     juce::Colour orange;
     juce::Colour red;
+    juce::Colour surface;
+    juce::Colour text;
+    juce::Colour tick;
+    juce::Colour peak;
   } meter;
 
-  // Shared waveform scale (--wave-*)
   struct Wave {
     juce::Colour trimIn;
     juce::Colour trimOut;
     juce::Colour playhead;
     juce::Colour line;
     juce::Colour bg;
+    juce::Colour background;
+    juce::Colour grid;
+    juce::Colour marker;
+    juce::Colour selection;
   } wave;
 
-  //==============================================================================
-  /** Shared metering + waveform scales (identical across all flavors). */
+  using Material = tokens::console::MaterialRecipe;
+  using Illumination = tokens::console::IlluminationRecipe;
+  using Display = tokens::console::DisplayPresentation;
+  using PhysicalControl = tokens::console::PhysicalControlRecipe;
+
+  Material material;
+  Illumination illumination;
+  Display display;
+  PhysicalControl physicalControl;
+
   static Meter sharedMeter() {
-    return {tokens::meter::green(), tokens::meter::yellow(), tokens::meter::orange(),
-            tokens::meter::red()};
+    return {tokens::meter::green(), tokens::meter::yellow(),     tokens::meter::orange(),
+            tokens::meter::red(),   tokens::meter::surfaceLab(), tokens::lab::text(),
+            tokens::lab::stroke(),  tokens::meter::peakLab()};
   }
 
   static Wave sharedWave() {
-    return {tokens::wave::trimIn(), tokens::wave::trimOut(), tokens::wave::playhead(),
-            tokens::wave::line(), tokens::wave::bg()};
+    const auto background = tokens::wave::bg();
+    return {tokens::wave::trimIn(),
+            tokens::wave::trimOut(),
+            tokens::wave::playhead(),
+            tokens::wave::line(),
+            background,
+            background,
+            tokens::lab::stroke(),
+            tokens::wave::playhead(),
+            tokens::lab::tone()};
   }
 
-  //==============================================================================
-  /** Lab flavor — :root default (Freqfinder). */
+  /** Lab flavor remains the existing dark-first default. */
   static ShmuiTheme lab() {
     ShmuiTheme t;
     t.bg = tokens::lab::surface0();
     t.bgPanel = tokens::lab::surface1();
     t.bgCard = tokens::lab::surface2();
     t.bgRaise = tokens::lab::surface3();
-    t.bgInset = tokens::lab::surface0(); // --bg-inset = --lab-surface-0
+    t.bgInset = tokens::lab::surface0();
     t.fg = tokens::lab::text();
     t.fgMuted = tokens::lab::muted();
     t.stroke = tokens::lab::stroke();
@@ -121,95 +120,111 @@ struct ShmuiTheme {
     t.info = tokens::lab::undertoneEven();
     t.meter = sharedMeter();
     t.wave = sharedWave();
+
+    // Lab has no physical Console profile. Keep the semantic member surface
+    // total by supplying the canonical Console dark recipe as a safe default.
+    const auto fallback = tokens::console::forProfile(tokens::console::Flavor::Console,
+                                                      tokens::console::AppearanceMode::Dark);
+    t.material = fallback.material;
+    t.illumination = fallback.illumination;
+    t.display = fallback.display;
+    t.physicalControl = fallback.physicalControl;
     return t;
   }
 
-  /** Console flavor — [data-flavor="console"] (Clip Composer). */
-  static ShmuiTheme console() {
-    ShmuiTheme t;
-    t.bg = tokens::console::bg0();
-    t.bgPanel = tokens::console::bg1();
-    t.bgCard = tokens::console::bg2();
-    t.bgRaise = tokens::console::bg3();
-    t.bgInset = tokens::console::bgInset();
-    t.fg = tokens::console::text();
-    t.fgMuted = tokens::console::textMuted();
-    t.stroke = tokens::console::border();
-    t.accent = tokens::console::blue();
-    t.danger = tokens::console::coral();
-    t.warning = tokens::console::amber();
-    t.info = tokens::console::blue();
-    t.meter = sharedMeter();
-    t.wave = sharedWave();
-    return t;
-  }
-
-  /** Warm console flavor — [data-flavor="console-warm"]. */
-  static ShmuiTheme consoleWarm() {
-    ShmuiTheme t;
-    t.bg = tokens::console::warm0();
-    t.bgPanel = tokens::console::warm1();
-    t.bgCard = tokens::console::warm2();
-    t.bgRaise = tokens::console::warm3();
-    t.bgInset = tokens::console::warmInset();
-    t.fg = tokens::console::text();
-    t.fgMuted = tokens::console::textMuted();
-    t.stroke = tokens::console::warmBorder();
-    t.accent = tokens::console::amber();
-    t.danger = tokens::console::coral();
-    t.warning = tokens::console::amberGlow();
-    t.info = tokens::console::blue();
-    t.meter = sharedMeter();
-    t.wave = sharedWave();
-    return t;
-  }
-
-  /** Cool console flavor — [data-flavor="console-cool"]. */
-  static ShmuiTheme consoleCool() {
-    ShmuiTheme t;
-    t.bg = tokens::console::cool0();
-    t.bgPanel = tokens::console::cool1();
-    t.bgCard = tokens::console::cool2();
-    t.bgRaise = tokens::console::cool3();
-    t.bgInset = tokens::console::coolInset();
-    t.fg = tokens::console::text();
-    t.fgMuted = tokens::console::textMuted();
-    t.stroke = tokens::console::coolBorder();
-    t.accent = tokens::console::blue();
-    t.danger = tokens::console::coral();
-    t.warning = tokens::console::amber();
-    t.info = tokens::console::blue();
-    t.meter = sharedMeter();
-    t.wave = sharedWave();
-    return t;
-  }
-
-  /** Build a theme for the given flavor. */
-  static ShmuiTheme forFlavor(ThemeFlavor flavor) {
-    switch (flavor) {
-    case ThemeFlavor::Console:
-      return console();
-    case ThemeFlavor::ConsoleWarm:
-      return consoleWarm();
-    case ThemeFlavor::ConsoleCool:
-      return consoleCool();
-    case ThemeFlavor::Lab:
-    default:
+  static ShmuiTheme forProfile(ThemeFlavor flavor, AppearanceMode mode) {
+    if (flavor == ThemeFlavor::Lab)
       return lab();
+
+    auto profileFlavor = tokens::console::Flavor::Console;
+    switch (flavor) {
+    case ThemeFlavor::ConsoleWarm:
+      profileFlavor = tokens::console::Flavor::ConsoleWarm;
+      break;
+    case ThemeFlavor::ConsoleCool:
+      profileFlavor = tokens::console::Flavor::ConsoleCool;
+      break;
+    case ThemeFlavor::Console:
+    case ThemeFlavor::Lab:
+      break;
     }
+
+    const auto profile = tokens::console::forProfile(
+        profileFlavor, mode == AppearanceMode::Light ? tokens::console::AppearanceMode::Light
+                                                     : tokens::console::AppearanceMode::Dark);
+
+    ShmuiTheme t;
+    t.bg = profile.material.chassis;
+    t.bgPanel = profile.material.panel;
+    t.bgCard = profile.material.raised;
+    t.bgRaise = profile.material.well;
+    t.bgInset = profile.material.inset;
+    t.fg = profile.text;
+    t.fgMuted = profile.textMuted;
+    t.stroke = profile.material.seam;
+    t.accent = tokens::console::blue();
+    t.danger = profile.illumination.fault.core;
+    t.warning = profile.illumination.attention.core;
+    t.info = tokens::console::blue();
+    t.meter = {tokens::meter::safe(), tokens::meter::caution(), tokens::meter::warning(),
+               tokens::meter::clip(), profile.meter.surface,    profile.meter.text,
+               profile.meter.tick,    profile.meter.peak};
+    t.wave = {tokens::wave::trimIn(), tokens::wave::trimOut(),     tokens::wave::playhead(),
+              profile.waveform.line,  profile.waveform.background, profile.waveform.background,
+              profile.waveform.grid,  profile.waveform.marker,     profile.waveform.selection};
+    t.material = profile.material;
+    t.illumination = profile.illumination;
+    t.display = profile.display;
+    t.physicalControl = profile.physicalControl;
+    return t;
   }
+
+  /** Existing startup factory; deliberately remains the dark Console profile.
+   */
+  static ShmuiTheme console() {
+    return forProfile(ThemeFlavor::Console, AppearanceMode::Dark);
+  }
+
+  /** Existing startup factory; deliberately remains the dark warm profile. */
+  static ShmuiTheme consoleWarm() {
+    return forProfile(ThemeFlavor::ConsoleWarm, AppearanceMode::Dark);
+  }
+
+  /** Existing startup factory; deliberately remains the dark cool profile. */
+  static ShmuiTheme consoleCool() {
+    return forProfile(ThemeFlavor::ConsoleCool, AppearanceMode::Dark);
+  }
+
+  /** Existing startup factory; deliberately retains dark behavior. */
+  static ShmuiTheme forFlavor(ThemeFlavor flavor) {
+    return forProfile(flavor, AppearanceMode::Dark);
+  }
+};
+
+class ThemeListener;
+
+/** Message-thread-only, non-owning registration. Null and duplicate adds are
+ * no-ops. */
+void addDefaultThemeListener(ThemeListener* listener);
+/** Message-thread-only, non-owning removal. Null and missing removes are
+ * no-ops. */
+void removeDefaultThemeListener(ThemeListener* listener);
+
+/**
+ * Receives a completed default-theme change. Destruction unregisters the
+ * object; concrete default-following components also unregister at destructor
+ * entry.
+ */
+class ThemeListener {
+public:
+  virtual ~ThemeListener();
+  virtual void defaultThemeChanged(const ShmuiTheme&) = 0;
 };
 
 //==============================================================================
 /**
- * @brief The process-wide default theme (message-thread only).
- *
- * Components read this when they have no per-instance override, so the whole
- * library is on-brand out of the box. Defaults to the Lab flavor. Apps may call
- * setDefaultTheme() once at startup to switch flavors or inject a custom palette.
- *
- * Not thread-safe by design — call from the JUCE message thread, consistent with
- * the visualization components' threading model.
+ * The process-wide default theme. All access and listener registration is on
+ * the JUCE message thread; no audio-thread state or lock is involved.
  */
 const ShmuiTheme& defaultTheme();
 void setDefaultTheme(const ShmuiTheme& theme);

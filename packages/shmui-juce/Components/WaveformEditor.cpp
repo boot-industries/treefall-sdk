@@ -18,9 +18,13 @@ namespace shmui {
 //==============================================================================
 WaveformEditor::WaveformEditor() {
   setMouseCursor(juce::MouseCursor::NormalCursor);
+  m_style = WaveformEditorStyle::fromTheme(defaultTheme());
+  addDefaultThemeListener(this);
 }
 
-WaveformEditor::~WaveformEditor() {}
+WaveformEditor::~WaveformEditor() {
+  removeDefaultThemeListener(this);
+}
 
 //==============================================================================
 void WaveformEditor::setAudioFile(const juce::File& audioFile) {
@@ -151,6 +155,21 @@ void WaveformEditor::zoomToSelection() {
 //==============================================================================
 void WaveformEditor::setStyle(const WaveformEditorStyle& style) {
   m_style = style;
+  m_usesDefaultThemeStyle = false;
+  repaint();
+}
+
+void WaveformEditor::useDefaultThemeStyle() {
+  m_usesDefaultThemeStyle = true;
+  m_style = WaveformEditorStyle::fromTheme(defaultTheme());
+  repaint();
+}
+
+void WaveformEditor::defaultThemeChanged(const ShmuiTheme&) {
+  if (!m_usesDefaultThemeStyle)
+    return;
+
+  m_style = WaveformEditorStyle::fromTheme(defaultTheme());
   repaint();
 }
 
