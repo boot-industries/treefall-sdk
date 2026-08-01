@@ -33,9 +33,16 @@ private:
 Button::Button() : m_animTimer(std::make_unique<AnimationTimer>(*this)) {
   setWantsKeyboardFocus(true);
   setMouseCursor(juce::MouseCursor::PointingHandCursor);
+  addDefaultThemeListener(this);
 }
 
-Button::~Button() = default;
+Button::~Button() {
+  removeDefaultThemeListener(this);
+}
+
+void Button::defaultThemeChanged(const ShmuiTheme&) {
+  repaint();
+}
 
 //==============================================================================
 void Button::setStyle(ButtonStyle style) {

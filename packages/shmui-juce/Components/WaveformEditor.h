@@ -25,6 +25,7 @@
 #include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include "../Utils/RepaintThrottle.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <map>
 #include <vector>
@@ -35,8 +36,9 @@ namespace shmui {
 /**
  * @brief Style configuration for WaveformEditor.
  *
- * Defaults derive from the Orpheus --wave-* token contract (see DesignTokens.h).
- * Every field remains overridable via setStyle() for per-instance theming.
+ * Defaults derive from the Orpheus --wave-* token contract (see
+ * DesignTokens.h). Every field remains overridable via setStyle() for
+ * per-instance theming.
  */
 struct WaveformEditorStyle {
   // Waveform colors (--wave-line / --wave-bg)
@@ -64,6 +66,18 @@ struct WaveformEditorStyle {
   juce::Colour timeTextColor = tokens::lab::text().withAlpha(0.5f);
   bool showGrid = true;
   bool showTimeScale = true;
+
+  [[nodiscard]] static WaveformEditorStyle fromTheme(const ShmuiTheme& theme) {
+    WaveformEditorStyle style;
+    style.waveformColor = theme.wave.line;
+    style.waveformFillColor = theme.wave.line.withAlpha(0.25f);
+    style.backgroundColor = theme.wave.background;
+    style.playheadColor = theme.wave.marker;
+    style.selectionColor = theme.wave.selection.withAlpha(0.25f);
+    style.gridColor = theme.wave.grid;
+    style.timeTextColor = theme.meter.text;
+    return style;
+  }
 };
 
 //==============================================================================
@@ -131,7 +145,7 @@ struct WaveformData {
  *
  * Thread-safe: Waveform data generation can happen on a background thread.
  */
-class WaveformEditor : public juce::Component {
+class WaveformEditor : public juce::Component, public ThemeListener {
 public:
   //==============================================================================
   WaveformEditor();
@@ -396,6 +410,13 @@ public:
     return m_style;
   }
 
+  /** Resume following the process-wide default theme. */
+  void useDefaultThemeStyle();
+  [[nodiscard]] bool usesDefaultThemeStyle() const {
+    return m_usesDefaultThemeStyle;
+  }
+  void defaultThemeChanged(const ShmuiTheme&) override;
+
   /// @}
 
   //==============================================================================
@@ -454,6 +475,7 @@ private:
   //==============================================================================
   WaveformData m_waveformData;
   WaveformEditorStyle m_style;
+  bool m_usesDefaultThemeStyle = true;
 
   // Trim points
   int64_t m_trimInSamples = 0;

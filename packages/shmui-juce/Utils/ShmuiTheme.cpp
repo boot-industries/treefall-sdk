@@ -4,32 +4,97 @@
     ShmuiTheme.cpp
     Created: shmui JUCE Design System
 
-    Process-wide default theme singleton. Message-thread only.
+    Process-wide default theme singleton and message-thread listener delivery.
 
   ==============================================================================
 */
 
 #include "ShmuiTheme.h"
 
-namespace shmui {
+#include <algorithm>
+#include <optional>
+#include <vector>
 
-//==============================================================================
+namespace shmui {
 namespace {
-// Lazily-initialised to the Lab flavor on first access. Function-local static
-// so there is no static-initialisation-order dependency on tokens.h.
-ShmuiTheme& mutableDefaultTheme() {
-  static ShmuiTheme theme = ShmuiTheme::lab();
-  return theme;
+struct DefaultThemeState {
+  ShmuiTheme theme = ShmuiTheme::lab();
+  std::vector<ThemeListener*> listeners;
+  std::optional<ShmuiTheme> pendingTheme;
+  bool notifying = false;
+};
+
+DefaultThemeState& defaultThemeState() {
+  static DefaultThemeState state;
+  return state;
+}
+
+void assertMessageThread() {
+  if (auto* manager = juce::MessageManager::getInstanceWithoutCreating())
+    jassert(manager->isThisTheMessageThread());
+}
+
+bool isRegistered(const DefaultThemeState& state, const ThemeListener* listener) {
+  return std::find(state.listeners.begin(), state.listeners.end(), listener) !=
+         state.listeners.end();
 }
 } // namespace
 
-//==============================================================================
 const ShmuiTheme& defaultTheme() {
-  return mutableDefaultTheme();
+  return defaultThemeState().theme;
+}
+
+void addDefaultThemeListener(ThemeListener* listener) {
+  assertMessageThread();
+  if (listener == nullptr)
+    return;
+
+  auto& state = defaultThemeState();
+  if (!isRegistered(state, listener))
+    state.listeners.push_back(listener);
+}
+
+void removeDefaultThemeListener(ThemeListener* listener) {
+  assertMessageThread();
+  if (listener == nullptr)
+    return;
+
+  auto& state = defaultThemeState();
+  const auto position = std::find(state.listeners.begin(), state.listeners.end(), listener);
+  if (position != state.listeners.end())
+    state.listeners.erase(position);
+}
+
+ThemeListener::~ThemeListener() {
+  removeDefaultThemeListener(this);
 }
 
 void setDefaultTheme(const ShmuiTheme& theme) {
-  mutableDefaultTheme() = theme;
+  assertMessageThread();
+  auto& state = defaultThemeState();
+  if (state.notifying) {
+    state.pendingTheme = theme;
+    return;
+  }
+
+  state.theme = theme;
+  state.notifying = true;
+  for (;;) {
+    // Registration order is observable. The snapshot isolates iteration from
+    // callbacks that remove, destroy, or add listeners.
+    const auto snapshot = state.listeners;
+    for (auto* listener : snapshot) {
+      if (isRegistered(state, listener))
+        listener->defaultThemeChanged(state.theme);
+    }
+
+    if (!state.pendingTheme.has_value())
+      break;
+
+    state.theme = *state.pendingTheme;
+    state.pendingTheme.reset();
+  }
+  state.notifying = false;
 }
 
 } // namespace shmui

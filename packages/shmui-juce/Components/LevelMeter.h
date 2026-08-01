@@ -22,6 +22,7 @@
 
 #include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <array>
 #include <cstdint>
@@ -95,6 +96,19 @@ struct LevelMeterStyle {
     style.clipColor = presentation.clip;
     return style;
   }
+
+  [[nodiscard]] static LevelMeterStyle fromTheme(const ShmuiTheme& theme) {
+    LevelMeterStyle style;
+    style.backgroundColor = theme.meter.surface;
+    style.meterColorLow = theme.meter.green;
+    style.meterColorMid = theme.meter.yellow;
+    style.meterColorHigh = theme.meter.orange;
+    style.peakHoldColor = theme.meter.peak;
+    style.clipColor = theme.meter.red;
+    style.textColor = theme.meter.text;
+    style.tickColor = theme.meter.tick;
+    return style;
+  }
 };
 
 //==============================================================================
@@ -109,7 +123,7 @@ struct LevelMeterStyle {
  * Supports mono, stereo, or multi-channel operation.
  * Thread-safe level updates via atomic values.
  */
-class LevelMeter : public juce::Component, private juce::Timer {
+class LevelMeter : public juce::Component, private juce::Timer, public ThemeListener {
 public:
   //==============================================================================
   /** Create a level meter (mono by default). */
@@ -240,6 +254,13 @@ public:
     return m_style;
   }
 
+  /** Resume following the process-wide default theme. */
+  void useDefaultThemeStyle();
+  [[nodiscard]] bool usesDefaultThemeStyle() const {
+    return m_usesDefaultThemeStyle;
+  }
+  void defaultThemeChanged(const ShmuiTheme&) override;
+
   /// @}
 
   //==============================================================================
@@ -340,6 +361,7 @@ private:
   bool m_isVertical = true;
   MeterBallistics m_ballistics = MeterBallistics::Peak;
   LevelMeterStyle m_style;
+  bool m_usesDefaultThemeStyle = true;
 
   // dB range
   float m_minDB = -60.0f;
