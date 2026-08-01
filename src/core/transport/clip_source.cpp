@@ -2,6 +2,8 @@
 #include <orpheus/clip_source.h>
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <chrono>
 #include <cstring>
 
@@ -87,21 +89,32 @@ bool StreamingClipSource::copyFromResidentPage(int64_t pos, float* dest, size_t 
   return false;
 }
 
+void StreamingClipSource::releaseReadyPin(Page& page) noexcept {
+  uint32_t observed = page.guard.load(std::memory_order_acquire);
+  while (true) {
+    assert(observed > 0 && observed < kClaimed);
+    if (observed == 0 || observed >= kClaimed) {
+      return;
+    }
+    if (page.guard.compare_exchange_weak(observed, observed - 1, std::memory_order_acq_rel,
+                                         std::memory_order_acquire)) {
+      return;
+    }
+  }
+}
+
 bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& framesRead) {
   framesRead = 0;
   if (pos < 0 || pos >= m_lengthFrames) {
     return true; // valid read of zero frames
   }
   const int64_t available = m_lengthFrames - pos;
-  size_t toCopy = static_cast<size_t>(std::min<int64_t>(static_cast<int64_t>(frames), available));
+  const size_t toCopy =
+      static_cast<size_t>(std::min<int64_t>(static_cast<int64_t>(frames), available));
 
-  // Publish the demand position and retire every READY page outside the
-  // demand window — one page BEHIND the demand page (reverse/scrub runway,
-  // FTR025 T3b) through two pages ahead. Retirement here — on the audio
-  // thread, the pages' owner — is what hands FREE pages back to the worker
-  // after seeks/loops; without it the ring would pin stale pages forever.
-  // (Release store; the worker acquires before writing.) The window must
-  // match what prefill()/service() fill, or the two sides would thrash.
+  // Publish the demand position and retire every unpinned READY page outside
+  // the demand window. Pinned command pages stay immutable until the command
+  // drain's end-of-block release path hands their guard back to zero.
   m_demand.store(pos, std::memory_order_relaxed);
   const int64_t windowBase = alignDown(pos) - static_cast<int64_t>(kPageFrames);
   const int64_t windowEnd =
@@ -109,7 +122,12 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
   for (auto& page : m_pages) {
     const int64_t start = page.start.load(std::memory_order_acquire);
     if (start >= 0 && (start < windowBase || start >= windowEnd)) {
-      page.start.store(-1, std::memory_order_release);
+      uint32_t expected = 0;
+      if (page.guard.compare_exchange_strong(expected, kClaimed, std::memory_order_acq_rel,
+                                             std::memory_order_acquire)) {
+        page.start.store(-1, std::memory_order_release);
+        page.guard.store(0, std::memory_order_release);
+      }
     }
   }
 
@@ -121,7 +139,7 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
     const size_t subFrames = static_cast<size_t>(
         std::min<int64_t>(static_cast<int64_t>(toCopy - copied), pageEnd - subPos));
     if (!copyFromResidentPage(subPos, dest + copied * m_numChannels, subFrames)) {
-      return false; // miss → caller emits silence + BufferUnderrun
+      return false; // genuine unprimed/failed cache miss
     }
     copied += subFrames;
   }
@@ -130,70 +148,318 @@ bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& 
   return true;
 }
 
-bool StreamingClipSource::fillPage(int64_t alignedStart) {
-  // Worker service and control-thread refire priming may run concurrently.
-  // Serialize both page ownership selection and reader access so they cannot
-  // claim the same FREE page or publish duplicate copies of one page.
+SessionGraphError StreamingClipSource::decodePage(Page& page, int64_t alignedStart) {
+  if (!m_reader || !m_reader->isOpen()) {
+    return SessionGraphError::NotReady;
+  }
+  if (alignedStart < 0 || alignedStart >= m_lengthFrames) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  const size_t want = static_cast<size_t>(
+      std::min<int64_t>(static_cast<int64_t>(kPageFrames), m_lengthFrames - alignedStart));
+  if (want == 0) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  const SessionGraphError seekResult = m_reader->seek(alignedStart);
+  if (seekResult != SessionGraphError::OK) {
+    return seekResult;
+  }
+  const auto readResult = m_reader->readSamples(page.data.data(), want);
+  if (!readResult.isOk()) {
+    return readResult.error;
+  }
+  if (readResult.value != want) {
+    return SessionGraphError::InternalError;
+  }
+
+  if (want < kPageFrames) {
+    std::fill(page.data.begin() + static_cast<ptrdiff_t>(want * m_numChannels), page.data.end(),
+              0.0f);
+  }
+  return SessionGraphError::OK;
+}
+
+SessionGraphError StreamingClipSource::fillPage(int64_t alignedStart) {
   std::lock_guard<std::mutex> lock(m_readerMutex);
+  if (alignedStart < 0 || alignedStart >= m_lengthFrames) {
+    return SessionGraphError::InvalidParameter;
+  }
+
   for (auto& page : m_pages) {
     if (page.start.load(std::memory_order_acquire) == alignedStart) {
-      return true;
+      return SessionGraphError::OK;
     }
   }
 
   Page* target = nullptr;
-  for (auto& page : m_pages) {
-    if (page.start.load(std::memory_order_acquire) == -1) {
+  for (size_t index = 0; index < kWindowPages; ++index) {
+    Page& page = m_pages[index];
+    if (page.start.load(std::memory_order_acquire) != -1) {
+      continue;
+    }
+    uint32_t expected = 0;
+    if (page.guard.compare_exchange_strong(expected, kClaimed, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
       target = &page;
       break;
     }
   }
   if (target == nullptr) {
-    return false;
+    return SessionGraphError::NotReady;
   }
 
-  const int64_t framesLeft = m_lengthFrames - alignedStart;
-  const size_t want = static_cast<size_t>(
-      std::min<int64_t>(static_cast<int64_t>(kPageFrames), std::max<int64_t>(0, framesLeft)));
-  if (want == 0) {
-    return false;
+  const SessionGraphError result = decodePage(*target, alignedStart);
+  if (result == SessionGraphError::OK) {
+    target->start.store(alignedStart, std::memory_order_release);
   }
-
-  if (!m_reader || m_reader->seek(alignedStart) != SessionGraphError::OK) {
-    return false;
-  }
-  auto result = m_reader->readSamples(target->data.data(), want);
-  if (!result.isOk()) {
-    return false;
-  }
-  const size_t got = result.value;
-  if (got < kPageFrames) {
-    std::fill(target->data.begin() + static_cast<ptrdiff_t>(got * m_numChannels),
-              target->data.end(), 0.0f);
-  }
-
-  target->start.store(alignedStart, std::memory_order_release);
-  return true;
+  target->guard.store(0, std::memory_order_release);
+  return result;
 }
 
-void StreamingClipSource::prefill(int64_t pos, size_t max_pages) {
+SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frames,
+                                                       PrimeReservation& reservation) {
+  std::lock_guard<std::mutex> lock(m_readerMutex);
+  if (m_lengthFrames <= 0 || frames == 0) {
+    return SessionGraphError::OK;
+  }
+
+  const int64_t rangeStart = std::clamp<int64_t>(pos, 0, m_lengthFrames);
+  if (rangeStart == m_lengthFrames) {
+    return SessionGraphError::OK;
+  }
+  const int64_t available = m_lengthFrames - rangeStart;
+  const int64_t rangeFrames =
+      frames > static_cast<size_t>(available) ? available : static_cast<int64_t>(frames);
+  const int64_t firstPage = alignDown(rangeStart);
+  const int64_t lastPage = alignDown(rangeStart + rangeFrames - 1);
+  const size_t pageCount =
+      static_cast<size_t>((lastPage - firstPage) / static_cast<int64_t>(kPageFrames) + 1);
+  if (pageCount > kCommandPrimePages) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  std::array<int64_t, kCommandPrimePages> requestedPages{};
+  for (size_t index = 0; index < pageCount; ++index) {
+    requestedPages[index] =
+        firstPage + static_cast<int64_t>(index * static_cast<size_t>(kPageFrames));
+  }
+
+  struct ClaimedPage {
+    Page* page{nullptr};
+    int64_t start{-1};
+  };
+  std::array<ClaimedPage, kCommandPrimePages> claimedPages{};
+  size_t claimedCount = 0;
+  const uint8_t originalMask = reservation.pageMask;
+  uint8_t readyPinMask = 0;
+  uint8_t claimedMask = 0;
+
+  const auto reservationSize = [](uint8_t mask) noexcept {
+    size_t count = 0;
+    for (size_t index = 0; index < kNumPages; ++index) {
+      count += (mask & static_cast<uint8_t>(uint8_t{1} << index)) != 0 ? 1u : 0u;
+    }
+    return count;
+  };
+
+  const auto rollback = [&]() noexcept {
+    for (size_t index = 0; index < claimedCount; ++index) {
+      claimedPages[index].page->guard.store(0, std::memory_order_release);
+    }
+    for (size_t index = 0; index < kNumPages; ++index) {
+      const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << index);
+      if ((readyPinMask & bit) != 0) {
+        releaseReadyPin(m_pages[index]);
+      }
+    }
+  };
+
+  for (size_t requestIndex = 0; requestIndex < pageCount; ++requestIndex) {
+    const int64_t requestedStart = requestedPages[requestIndex];
+    bool satisfied = false;
+    bool exhaustedByContention = true;
+    for (size_t scan = 0; scan < kNumPages; ++scan) {
+      bool retry = false;
+      bool foundReady = false;
+      for (size_t pageIndex = 0; pageIndex < kNumPages; ++pageIndex) {
+        Page& page = m_pages[pageIndex];
+        const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << pageIndex);
+        if (page.start.load(std::memory_order_acquire) != requestedStart) {
+          continue;
+        }
+        foundReady = true;
+        if ((originalMask & bit) != 0) {
+          satisfied = true;
+          break;
+        }
+
+        if (reservationSize(static_cast<uint8_t>(originalMask | readyPinMask | claimedMask)) >=
+            kCommandPrimePages) {
+          rollback();
+          return SessionGraphError::NotReady;
+        }
+
+        uint32_t expected = page.guard.load(std::memory_order_acquire);
+        if (expected >= kClaimed - 1) {
+          retry = true;
+          break;
+        }
+        if (!page.guard.compare_exchange_strong(expected, expected + 1, std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+          retry = true;
+          break;
+        }
+        if (page.start.load(std::memory_order_acquire) == requestedStart) {
+          readyPinMask |= bit;
+          satisfied = true;
+          break;
+        }
+
+        // The audio thread retired the page between the initial load and the
+        // pin CAS. Undo only this acquired pin, then restart the fixed scan.
+        releaseReadyPin(page);
+        retry = true;
+        break;
+      }
+      if (satisfied) {
+        break;
+      }
+      if (!foundReady) {
+        exhaustedByContention = false;
+        break;
+      }
+      if (!retry) {
+        exhaustedByContention = false;
+        break;
+      }
+    }
+    if (satisfied) {
+      continue;
+    }
+    if (exhaustedByContention) {
+      rollback();
+      return SessionGraphError::NotReady;
+    }
+
+    if (reservationSize(static_cast<uint8_t>(originalMask | readyPinMask | claimedMask)) >=
+        kCommandPrimePages) {
+      rollback();
+      return SessionGraphError::NotReady;
+    }
+
+    Page* target = nullptr;
+    for (size_t scan = 0; scan < kNumPages && target == nullptr; ++scan) {
+      bool observedContention = false;
+      for (size_t pageIndex = kWindowPages; pageIndex < kNumPages; ++pageIndex) {
+        const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << pageIndex);
+        if ((claimedMask & bit) != 0) {
+          continue;
+        }
+        Page& page = m_pages[pageIndex];
+        if (page.start.load(std::memory_order_acquire) != -1) {
+          continue;
+        }
+        uint32_t expected = 0;
+        if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                               std::memory_order_acquire)) {
+          target = &page;
+          claimedMask |= bit;
+          claimedPages[claimedCount++] = {target, requestedStart};
+          break;
+        }
+        observedContention = true;
+      }
+      if (!observedContention) {
+        break;
+      }
+    }
+    if (target == nullptr) {
+      rollback();
+      return SessionGraphError::NotReady;
+    }
+  }
+
+  for (size_t index = 0; index < claimedCount; ++index) {
+    const SessionGraphError result =
+        decodePage(*claimedPages[index].page, claimedPages[index].start);
+    if (result != SessionGraphError::OK) {
+      rollback();
+      return result;
+    }
+  }
+  for (size_t index = 0; index < claimedCount; ++index) {
+    claimedPages[index].page->start.store(claimedPages[index].start, std::memory_order_release);
+  }
+
+  reservation.pageMask = static_cast<uint8_t>(originalMask | readyPinMask | claimedMask);
+  if (originalMask == 0 && reservation.pageMask != 0) {
+    m_pendingCommandPrimes.fetch_add(1, std::memory_order_release);
+  }
+  return SessionGraphError::OK;
+}
+
+void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noexcept {
+  if (reservation.pageMask == 0) {
+    return;
+  }
+  for (size_t index = 0; index < kNumPages; ++index) {
+    const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << index);
+    if ((reservation.pageMask & bit) == 0) {
+      continue;
+    }
+    const uint32_t observed = m_pages[index].guard.load(std::memory_order_acquire);
+    assert(observed > 0 && observed < kClaimed);
+    if (observed == 0 || observed >= kClaimed) {
+      continue;
+    }
+    const uint32_t previous = m_pages[index].guard.fetch_sub(1, std::memory_order_acq_rel);
+    assert(previous > 0 && previous < kClaimed);
+  }
+  const uint32_t pending = m_pendingCommandPrimes.load(std::memory_order_acquire);
+  assert(pending > 0);
+  if (pending != 0) {
+    m_pendingCommandPrimes.fetch_sub(1, std::memory_order_release);
+  }
+}
+
+SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
+                                                PrimeReservation* commandReservation) {
+  if (m_lengthFrames <= 0 || pos >= m_lengthFrames) {
+    return SessionGraphError::OK;
+  }
+  if (max_pages == 0) {
+    return SessionGraphError::NotReady;
+  }
   const int64_t base = alignDown(std::max<int64_t>(0, pos));
 
-  // Fill order: the audible (demand) page first, then the forward pages, then
-  // the behind page — so a max_pages-capped prime always makes the position
-  // under the cursor playable, and reverse runway comes after lookahead. The
-  // candidate set matches the retirement window in read() exactly.
-  int64_t wanted[kWindowPages];
-  size_t num_wanted = 0;
-  for (size_t i = 0; i + 1 < kWindowPages; ++i) {
-    wanted[num_wanted++] = base + static_cast<int64_t>(i) * static_cast<int64_t>(kPageFrames);
-  }
-  wanted[num_wanted++] = base - static_cast<int64_t>(kPageFrames);
-
+  // A command publisher must pin the page the first render will consume. This
+  // path deliberately uses the transactional command-prime lease rather than
+  // allowing a full steady window to turn preparation into NotReady.
   size_t filled = 0;
-  for (size_t i = 0; i < num_wanted && filled < max_pages; ++i) {
-    const int64_t start = wanted[i];
+  if (commandReservation != nullptr) {
+    const SessionGraphError result = primeForCommand(base, 1, *commandReservation);
+    if (result != SessionGraphError::OK) {
+      return result;
+    }
+    filled = 1;
+  }
+
+  // Fill order: audible demand, forward look-ahead, then reverse runway.
+  std::array<int64_t, kWindowPages> wanted{};
+  size_t wantedCount = 0;
+  for (size_t index = 0; index + 1 < kWindowPages; ++index) {
+    wanted[wantedCount++] = base + static_cast<int64_t>(index * static_cast<size_t>(kPageFrames));
+  }
+  wanted[wantedCount++] = base - static_cast<int64_t>(kPageFrames);
+
+  for (size_t index = 0; index < wantedCount && filled < max_pages; ++index) {
+    const int64_t start = wanted[index];
     if (start < 0 || start >= m_lengthFrames) {
+      continue;
+    }
+    if (commandReservation != nullptr && index == 0) {
       continue;
     }
     bool resident = false;
@@ -203,14 +469,24 @@ void StreamingClipSource::prefill(int64_t pos, size_t max_pages) {
         break;
       }
     }
-    if (!resident && fillPage(start)) {
-      ++filled;
+    if (resident) {
+      continue;
     }
+
+    const SessionGraphError result = fillPage(start);
+    if (result != SessionGraphError::OK) {
+      if (index == 0 && commandReservation == nullptr) {
+        return result;
+      }
+      continue; // look-ahead is deliberately best effort
+    }
+    ++filled;
   }
+  return SessionGraphError::OK;
 }
 
 void StreamingClipSource::service() {
-  prefill(m_demand.load(std::memory_order_relaxed));
+  (void)prefill(m_demand.load(std::memory_order_relaxed));
 }
 
 // ============================================================================

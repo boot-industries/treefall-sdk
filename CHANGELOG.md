@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Registered streaming `startClip` and `startClipWithGroupChoke` preparation now
+  pins their trim-IN first-render page with command-prime capacity when the
+  four-page steady window is exhausted. The fixed lease survives command
+  consumption and the first render, then releases atomically; steady worker
+  servicing remains restricted to its own capacity.
+- `ITransportController::seekClip` now primes the renderer's effective
+  first-read position for non-segment seeks below trim-IN, rather than the
+  discarded pre-trim target. Looping and non-looping first accepted renders now
+  use trim-IN directly without avoidable silence or `BufferUnderrun`.
+- `ITransportController::seekClip` synchronously primes and pins the
+  reader-validated first-render page set for registered streaming sources before
+  publishing its existing FIFO command, including trim-IN for looping targets
+  that reach or are already at/past trim-OUT. Rejected preparation, fixed-prime
+  capacity, or full-ring seeks are failure-atomic: no cursor mutation,
+  `ClipSeeked`, or synthetic `BufferUnderrun`.
+- Streaming page ownership separates four steady worker pages from four bounded
+  command-prime pages; unread registered-source Start/Seek commands and pending
+  render-block page leases protect source lifetime through unregistration and
+  controller teardown. Resampled reader failures propagate rather than becoming
+  EOF silence.
+
 ### Changed
 
 - Synchronized `packages/shmui-juce` to ShmUI `0375ebf47329786924c61359c2aa4d9372456985`

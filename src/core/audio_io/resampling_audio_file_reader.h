@@ -38,7 +38,8 @@ public:
 private:
   void rebuildResampler();
   // Fill m_outBuffer with at least `frames` target-rate frames (or until EOF).
-  void produceUntil(size_t frames);
+  // Wrapped-reader failures are returned unchanged and never converted to EOF.
+  SessionGraphError produceUntil(size_t frames);
 
   std::shared_ptr<IAudioFileReader> m_inner;
   uint32_t m_targetRate;

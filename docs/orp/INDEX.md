@@ -7,6 +7,10 @@ Project documentation index for orpheus-sdk.
 - [[README]]
 
 ## Recent Documents
+- [[ORP168 Streaming Seek Priming and Underrun Classification]] — corrected
+  streaming Start/refire command-prime leasing and effective pre-trim-IN seek
+  priming; rendered realtime regression evidence (2026-08-01)
+
 - [[ORP166 Orpheus Suite Application Launch and Icon Checkpoint]] — synchronized
   Cloudkicker suite baseline; merged application icons; verified Clip Composer,
   FreqFinder, and FourTrack launch paths (2026-07-28)
@@ -95,6 +99,7 @@ Project documentation index for orpheus-sdk.
 - [[ORP159 Suite Synchronization and Integration Gate]]
 - [[ORP160 Master Tape Varispeed Primitive]]
 - [[ORP161 FourTrack Live Output Handoff Assessment]]
+- [[ORP168 Streaming Seek Priming and Underrun Classification]]
 
 ## Archived Documents
 
@@ -129,4 +134,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-07-21
+**Last Generated:** 2026-08-01

@@ -62,7 +62,7 @@ Result<AudioFileMetadata> ResamplingAudioFileReader::open(const std::string& fil
   return out;
 }
 
-void ResamplingAudioFileReader::produceUntil(size_t frames) {
+SessionGraphError ResamplingAudioFileReader::produceUntil(size_t frames) {
   const uint16_t ch = m_numChannels;
   // Frames already available (unread) in m_outBuffer.
   auto availableFrames = [&]() { return (m_outBuffer.size() / ch) - m_outReadFrame; };
@@ -72,11 +72,14 @@ void ResamplingAudioFileReader::produceUntil(size_t frames) {
     // Read a block from the inner (source-rate) reader.
     m_inScratch.resize(kInputBlockFrames * ch);
     auto rd = m_inner->readSamples(m_inScratch.data(), kInputBlockFrames);
-    size_t inFrames = rd.isOk() ? rd.value : 0;
+    if (!rd.isOk()) {
+      return rd.error;
+    }
+    const size_t inFrames = rd.value;
     if (inFrames == 0) {
       m_sourceEof = true;
-      // Feed one block of silence so the FIR history flushes the last real
-      // samples out to the output before we report EOF.
+      // A successful zero-frame read is the sole EOF signal. Feed one silence
+      // block so the FIR history flushes its final real samples.
       std::vector<float> tail(kInputBlockFrames * ch, 0.0f);
       m_resampler->process(tail.data(), kInputBlockFrames, converted);
       if (!converted.empty()) {
@@ -95,6 +98,7 @@ void ResamplingAudioFileReader::produceUntil(size_t frames) {
     m_outBuffer.clear();
     m_outReadFrame = 0;
   }
+  return SessionGraphError::OK;
 }
 
 Result<size_t> ResamplingAudioFileReader::readSamples(float* buffer, size_t num_samples) {
@@ -106,7 +110,12 @@ Result<size_t> ResamplingAudioFileReader::readSamples(float* buffer, size_t num_
   }
   const uint16_t ch = m_numChannels;
 
-  produceUntil(num_samples);
+  const SessionGraphError produceResult = produceUntil(num_samples);
+  if (produceResult != SessionGraphError::OK) {
+    out.value = 0;
+    out.error = produceResult;
+    return out;
+  }
 
   size_t availableFrames = (m_outBuffer.size() / ch) - m_outReadFrame;
   size_t give = std::min(num_samples, availableFrames);
@@ -139,11 +148,15 @@ SessionGraphError ResamplingAudioFileReader::seek(int64_t sample_position) {
                    static_cast<double>(m_targetRate)));
   sourcePos = std::clamp<int64_t>(sourcePos, 0, m_sourceDurationSamples);
 
-  SessionGraphError err = m_inner->seek(sourcePos);
-  // Reset the streaming converter to a clean phase at the new position.
+  const SessionGraphError err = m_inner->seek(sourcePos);
+  if (err != SessionGraphError::OK) {
+    return err;
+  }
+  // Reset the streaming converter only after the wrapped reader accepted the
+  // seek, so a failed seek leaves its prior phase, buffers, and position intact.
   rebuildResampler();
   m_targetPos = clampedTarget;
-  return err;
+  return SessionGraphError::OK;
 }
 
 void ResamplingAudioFileReader::close() {
