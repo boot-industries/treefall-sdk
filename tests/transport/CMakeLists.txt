@@ -779,6 +779,38 @@ if(TARGET orpheus_audio_io)
         COMMAND realtime_harness_test
     )
 
+    # ORP168: rendered streaming seek priming and failure-atomic page leases.
+    add_executable(streaming_seek_test
+        streaming_seek_test.cpp
+    )
+
+    target_link_libraries(streaming_seek_test
+        PRIVATE
+            orpheus_transport
+            orpheus_audio_io
+            orpheus_session
+            GTest::gtest
+    )
+
+    if(SNDFILE_FOUND)
+        target_link_libraries(streaming_seek_test PRIVATE ${SNDFILE_LIBRARIES})
+        if(SNDFILE_LIBRARY_DIRS)
+            target_link_directories(streaming_seek_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
+        endif()
+    endif()
+
+    target_include_directories(streaming_seek_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    add_test(
+        NAME streaming_seek_test
+        COMMAND streaming_seek_test
+    )
+
     # ORP136 §2.3: golden render-hash determinism gate (block-size invariance
     # + run-to-run reproducibility). Parity oracle for the ORP134 G1 migration.
     add_executable(transport_render_hash_test

@@ -375,7 +375,7 @@ TEST_F(RealtimeHarnessTest, StreamingGroupChokeRefirePrimesTrimInWithoutUnderrun
   m_transport->setCallback(nullptr);
 }
 
-TEST_F(RealtimeHarnessTest, StreamingSeekBeyondWindowUnderrunsSilentlyThenRecovers) {
+TEST_F(RealtimeHarnessTest, StreamingSeekBeyondWindowIsPrimedBeforeFirstRender) {
   m_transport->setPreparedSourceMaxFrames(48000);
 
   UnderrunCountingCallback callback;
@@ -387,38 +387,17 @@ TEST_F(RealtimeHarnessTest, StreamingSeekBeyondWindowUnderrunsSilentlyThenRecove
   ASSERT_EQ(m_transport->startClip(1), SessionGraphError::OK);
   guardedCallback(); // materialize the voice
 
-  // Jump far beyond the resident window: the ring holds ~[0, 5.46s); seek 8s.
+  // Jump far beyond the resident worker window. Accepted seeks synchronously
+  // pin their first-render pages before this command reaches processAudio().
   ASSERT_EQ(m_transport->seekClip(1, 8 * 48000), SessionGraphError::OK);
-
-  // The seek lands at the next callback; the target page is normally not
-  // resident yet, so the clip renders SILENCE + reports BufferUnderrun — and
-  // never blocks. Under heavy instrumentation (TSan) the 10ms worker poll can
-  // win the race and refill before this buffer renders; both outcomes honor
-  // the contract, so the strict miss assertions apply only when the miss
-  // actually happened. (The miss path itself is covered deterministically by
-  // StreamingClipSourceMissIsNonBlockingAndRecovers below.)
+  RtGuardState::reset();
   guardedCallback();
-  const bool firstPostSeekSilent = !bufferHasSignal(m_left);
   m_transport->processCallbacks();
-  if (firstPostSeekSilent) {
-    EXPECT_GT(callback.underruns.load(), 0)
-        << "silent post-seek buffer must report a BufferUnderrun";
-  } else {
-    std::cout << "  - worker refilled before the first post-seek buffer "
-                 "(instrumentation slowdown); miss path covered by the unit test\n";
-  }
 
-  // Give the stream worker wall time to refill at the new position, then
-  // playback must recover with real audio.
-  bool recovered = false;
-  for (int attempt = 0; attempt < 200 && !recovered; ++attempt) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    guardedCallback();
-    recovered = bufferHasSignal(m_left);
-  }
-  m_transport->processCallbacks();
-  EXPECT_TRUE(recovered) << "stream worker never refilled after the seek";
-
+  EXPECT_TRUE(bufferHasSignal(m_left)) << "accepted seek rendered a silent first block";
+  EXPECT_EQ(callback.underruns.load(), 0) << "primed seek synthesized BufferUnderrun";
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
   m_transport->setCallback(nullptr);
 }
 
@@ -434,7 +413,7 @@ TEST_F(RealtimeHarnessTest, StreamingClipSourceMissIsNonBlockingAndRecovers) {
   auto source = std::make_shared<StreamingClipSource>(
       std::shared_ptr<IAudioFileReader>(std::move(reader)), opened.value.num_channels,
       opened.value.duration_samples);
-  source->prefill(0);
+  ASSERT_EQ(source->prefill(0), SessionGraphError::OK);
 
   std::vector<float> buffer(kBufferFrames * opened.value.num_channels, 0.0f);
   size_t framesRead = 0;
@@ -475,7 +454,7 @@ TEST_F(RealtimeHarnessTest, StreamingSourceServesDescendingReadsAcrossPageBounda
 
   // Start deep in the file (inside page 3, ~4.3s) and walk backward to 0.
   const int64_t start = 3 * static_cast<int64_t>(StreamingClipSource::kPageFrames) + 1000;
-  source->prefill(start);
+  ASSERT_EQ(source->prefill(start), SessionGraphError::OK);
 
   std::vector<float> buffer(kBufferFrames * channels, 0.0f);
   int64_t pos = start;

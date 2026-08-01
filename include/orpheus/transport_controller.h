@@ -340,16 +340,20 @@ class ITransportController {
 public:
   virtual ~ITransportController() = default;
 
-  /// Start playback of a specific clip
+  /// Start playback of a specific clip.
   ///
-  /// This function is thread-safe and can be called from the UI thread.
-  /// The clip will begin playing on the next audio buffer callback.
+  /// The one control thread resolves registered-source preparation
+  /// synchronously before publishing the next-render-boundary command. A
+  /// registered streaming source whose trim-IN page cannot be prepared returns
+  /// that error; it never falls back to the source-less historical default.
+  /// The audio thread consumes only prepared PCM and remains allocation-, lock-,
+  /// and I/O-free.
   ///
   /// @param handle The clip to start (must be a valid handle from SessionGraph)
-  /// @return SessionGraphError::OK on success, or error code on failure
+  /// @return SessionGraphError::OK on success, or preparation/queue error
   ///
-  /// @note If the clip is already playing, this function has no effect
-  /// @note Playback will honor trim points and fade-in settings from clip metadata
+  /// @note If the clip is already playing, this function follows its configured
+  ///       VoiceMode. Playback honors trim points and fade-in settings.
   virtual SessionGraphError startClip(ClipHandle handle) = 0;
 
   /// Stop playback of a specific clip
@@ -493,7 +497,9 @@ public:
   ///
   /// Opens the file, reads metadata, applies session defaults, and stores the
   /// reader for future playback. This is a non-realtime preparation call and
-  /// must not be invoked from the audio callback.
+  /// must not be invoked from the audio callback. An existing registration is
+  /// never replaced in place: it returns SessionGraphError::NotReady until the
+  /// caller stops/drains, unregisters, and performs a clean re-registration.
   ///
   /// @param handle Clip handle
   /// @param file_path Path to an audio file
@@ -513,21 +519,18 @@ public:
   /// Release a clip previously registered via registerClipAudio() (OCC155 Ask #4).
   ///
   /// The inverse of registerClipAudio(): drops the reader and prepared/streaming
-  /// source held for the handle, freeing that memory. Over a long broadcast day
-  /// (many clear/reload cycles) this prevents unbounded reader retention.
-  ///
-  /// Active-voice contract: the caller MUST stop the clip first (stopClip() then
-  /// let its fade complete, or panic()). If any voice for the handle is still
-  /// active, this is a no-op and returns SessionGraphError::NotReady — the
-  /// registry entry is left intact so an in-flight voice never loses the source
-  /// it is reading. Calling on an unregistered handle is a no-op that returns
-  /// SessionGraphError::OK (idempotent release).
+  /// source held for the handle. Active voices, unread registered-source Start
+  /// or Seek commands, and pending streaming command-page primes return
+  /// SessionGraphError::NotReady. The registry entry remains intact until those
+  /// lifetimes have drained, so replacement registration cannot race a raw
+  /// command source pointer. Calling on an unregistered handle is an idempotent
+  /// SessionGraphError::OK.
   ///
   /// This is a non-realtime call and must not be invoked from the audio callback.
   ///
   /// @param handle Clip handle to release
   /// @return SessionGraphError::OK on success (or unregistered handle),
-  ///         InvalidHandle if handle == 0, NotReady if voices are still active
+  ///         InvalidHandle if handle == 0, NotReady while ownership remains
   virtual SessionGraphError unregisterClipAudio(ClipHandle handle) = 0;
 
   /// Update trim points for a registered clip
@@ -801,35 +804,24 @@ public:
   /// @see startClip(), stopClip(), getClipPosition()
   virtual SessionGraphError restartClip(ClipHandle handle) = 0;
 
-  /// Seek clip to arbitrary position (sample-accurate, gap-free)
+  /// Seek every active voice for a clip to an arbitrary file position.
   ///
-  /// Unlike restartClip(), this method allows seeking to any position within
-  /// the audio file, not just the IN point. The position is clamped to [0, fileLength].
+  /// This is a one-control-thread operation. The position is clamped to
+  /// [0, fileLength], and one FIFO command applies it to every active voice at
+  /// the next valid render boundary. For a registered streaming source the
+  /// control thread synchronously validates and pins the complete first-render
+  /// working set before publishing that command; page copies, command
+  /// application, callbacks, and genuine unexpected-miss underrun reporting
+  /// remain bounded and real-time safe on the render thread.
+  ///
+  /// Failure is atomic: InternalError means the command ring was full; NotReady
+  /// means no active voice or unavailable command-prime capacity; reader/cache
+  /// preparation errors propagate. In every failure case no command, cursor
+  /// change, ClipSeeked callback, or synthetic BufferUnderrun is produced.
   ///
   /// @param handle Clip handle
   /// @param position Target position in samples (0-based file offset)
-  /// @return SessionGraphError::OK on success, error code otherwise
-  ///
-  /// @note Thread-safe: Can be called from UI thread
-  /// @note Real-time safe: Seek happens in audio thread (no allocations, no blocking)
-  /// @note Sample accuracy: Position update is sample-accurate (±0 samples)
-  /// @note Use cases: Waveform scrubbing, cue point navigation, timeline jumping
-  ///
-  /// @code
-  /// // Waveform click-to-jog (SpotOn/Pyramix UX):
-  /// void WaveformDisplay::mouseDown(const MouseEvent& e) {
-  ///   int64_t clickPosition = pixelToSample(e.x);
-  ///   if (m_previewPlayer->isPlaying()) {
-  ///     m_audioEngine->seekClip(m_handle, clickPosition);  // Seamless seek
-  ///   } else {
-  ///     // Start from clicked position
-  ///     m_metadata.trimInSamples = clickPosition;
-  ///     m_audioEngine->updateClipMetadata(m_handle, m_metadata);
-  ///     m_audioEngine->startClip(m_handle);
-  ///     m_metadata.trimInSamples = originalIn;  // Restore
-  ///   }
-  /// }
-  /// @endcode
+  /// @return SessionGraphError::OK on acceptance, error code otherwise
   ///
   /// @see restartClip(), startClip(), getClipPosition()
   virtual SessionGraphError seekClip(ClipHandle handle, int64_t position) = 0;
@@ -963,19 +955,16 @@ public:
 
   /// Atomically start a clip and choke active peers in its registered group.
   ///
-  /// The firing clip and peer choke are admitted as one bounded SPSC command.
-  /// If the command ring is full, the clip is unregistered/unavailable, or the
-  /// realtime voice pool later refuses the start, no peer voice is changed.
+  /// The firing clip's registered source is fully prepared before peer mutation
+  /// or command publication. A preparation failure is returned directly; it
+  /// never falls back to a source-less default. The firing clip and peer choke
+  /// are then admitted as one bounded SPSC command. If the command ring is
+  /// full, the clip is unregistered/unavailable, or the realtime voice pool
+  /// later refuses the start, no peer voice is changed.
+  ///
   /// After successful voice admission, every active voice with a different
   /// handle and the same ClipMetadata::routingGroup begins its normal configured
   /// stop fade. Other groups and the firing handle are untouched.
-  ///
-  /// The firing handle retains its configured VoiceMode, including
-  /// MonoWithFadeOverlap refire behavior. Start-event processing precedes peer
-  /// mutation, so surviving callbacks retain Start-before-peer-Stop order.
-  /// Publication is not guaranteed when the bounded callback ring overflows;
-  /// hosts detect that history gap through ORP151 callback-loss telemetry and
-  /// must not infer a complete lifecycle from surviving callbacks.
   ///
   /// Control thread only; this method shares the single-producer contract of
   /// startClip() and the other control-mutating methods. The default preserves
