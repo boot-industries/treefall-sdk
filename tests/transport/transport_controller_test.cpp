@@ -274,3 +274,63 @@ TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
 // - Callback invocation
 // - Command queue overflow handling
 // - Integration with actual audio processing
+
+
+TEST_F(TransportControllerTest, MalformedRenderShapeIsNoTouch) {
+  const TransportConfig config = m_transport->getRenderConfig();
+  const float sentinel = 17.25f;
+  const size_t storageFrames = config.maxBlockFrames + 1;
+  std::vector<std::vector<float>> storage(
+      config.outputChannels, std::vector<float>(storageFrames, sentinel));
+  std::vector<float*> outputs;
+  outputs.reserve(config.outputChannels);
+  for (auto& channel : storage) {
+    outputs.push_back(channel.data());
+  }
+
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  const auto positionBefore = m_transport->getCurrentPosition();
+
+  m_transport->processAudio(nullptr, config.outputChannels, config.maxBlockFrames);
+  m_transport->processAudio(outputs.data(), config.outputChannels - 1, config.maxBlockFrames);
+  m_transport->processAudio(outputs.data(), config.outputChannels, config.maxBlockFrames + 1);
+  std::vector<float*> nullLane = outputs;
+  nullLane[0] = nullptr;
+  m_transport->processAudio(nullLane.data(), config.outputChannels, config.maxBlockFrames);
+
+  for (const auto& channel : storage) {
+    for (float sample : channel) {
+      EXPECT_FLOAT_EQ(sample, sentinel);
+    }
+  }
+  EXPECT_EQ(m_transport->getCurrentPosition().samples, positionBefore.samples);
+  EXPECT_EQ(telemetry->pendingSnapshotCount(), 0u);
+}
+
+TEST_F(TransportControllerTest, ZeroFrameProcessesBoundedControlState) {
+  const TransportConfig config = m_transport->getRenderConfig();
+  std::vector<std::vector<float>> storage(
+      config.outputChannels, std::vector<float>(config.maxBlockFrames, 9.0f));
+  std::vector<float*> outputs;
+  outputs.reserve(config.outputChannels);
+  for (auto& channel : storage) {
+    outputs.push_back(channel.data());
+  }
+
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  ASSERT_EQ(m_transport->startClip(42), SessionGraphError::OK);
+  m_transport->processAudio(outputs.data(), config.outputChannels, 0);
+
+  EXPECT_EQ(m_transport->getCurrentPosition().samples, 0);
+  EXPECT_EQ(telemetry->pendingSnapshotCount(), 1u);
+  RealtimeTelemetrySnapshot snapshot;
+  ASSERT_TRUE(telemetry->tryRead(snapshot));
+  EXPECT_EQ(snapshot.sequence, 1u);
+  for (const auto& channel : storage) {
+    for (float sample : channel) {
+      EXPECT_FLOAT_EQ(sample, 9.0f);
+    }
+  }
+}

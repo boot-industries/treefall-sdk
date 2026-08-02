@@ -13,6 +13,16 @@ option(ORPHEUS_ENABLE_COREAUDIO "Build CoreAudio driver (macOS)" ${APPLE})
 option(ORPHEUS_ENABLE_WASAPI "Build WASAPI driver (Windows)" ${WIN32})
 option(ORPHEUS_ENABLE_ASIO "Build ASIO driver (Windows, requires ASIO SDK)" OFF)
 
+if(ORPHEUS_ENABLE_COREAUDIO AND NOT APPLE)
+    message(FATAL_ERROR "ORPHEUS_ENABLE_COREAUDIO requires an Apple platform")
+endif()
+if(ORPHEUS_ENABLE_WASAPI AND NOT WIN32)
+    message(FATAL_ERROR "ORPHEUS_ENABLE_WASAPI requires Windows")
+endif()
+if(ORPHEUS_ENABLE_ASIO AND NOT WIN32)
+    message(FATAL_ERROR "ORPHEUS_ENABLE_ASIO requires Windows")
+endif()
+
 # Note: Dummy driver is built in core/audio_io alongside audio file reader
 
 # Audio Driver Manager (platform-agnostic device enumeration and management)
@@ -35,7 +45,7 @@ target_link_libraries(orpheus_audio_driver_manager
 )
 
 # Link platform-specific frameworks
-if(APPLE)
+if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
     target_link_libraries(orpheus_audio_driver_manager
         PUBLIC
             "-framework CoreAudio"
@@ -46,6 +56,15 @@ endif()
 target_compile_features(orpheus_audio_driver_manager PUBLIC cxx_std_20)
 set_target_properties(orpheus_audio_driver_manager PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
+    target_compile_definitions(orpheus_audio_driver_manager
+        PRIVATE ORPHEUS_ENABLE_COREAUDIO)
+endif()
+if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
+    target_compile_definitions(orpheus_audio_driver_manager
+        PRIVATE ORPHEUS_ENABLE_WASAPI)
+endif()
+
 add_library(Orpheus::audio_driver_manager ALIAS orpheus_audio_driver_manager)
 add_library(Orpheus::orpheus_audio_driver_manager ALIAS orpheus_audio_driver_manager)
 
@@ -55,7 +74,7 @@ orpheus_enable_sanitizers(orpheus_audio_driver_manager)
 message(STATUS "Orpheus: Audio Driver Manager enabled")
 
 # CoreAudio driver (macOS)
-if(ORPHEUS_ENABLE_COREAUDIO)
+if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
     add_library(orpheus_audio_driver_coreaudio STATIC
         coreaudio/coreaudio_driver.cpp
         coreaudio/coreaudio_sample_rate_monitor.cpp
@@ -101,9 +120,10 @@ endif()
 
 
 # WASAPI driver (Windows)
-if(ORPHEUS_ENABLE_WASAPI)
+if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
     add_library(orpheus_audio_driver_wasapi STATIC
         wasapi/wasapi_driver.cpp
+        wasapi/wasapi_driver.h
     )
 
     target_include_directories(orpheus_audio_driver_wasapi
@@ -112,6 +132,7 @@ if(ORPHEUS_ENABLE_WASAPI)
             $<INSTALL_INTERFACE:include>
         PRIVATE
             ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
+            ${ORPHEUS_ROOT_SOURCE_DIR}/src/platform/audio_drivers/wasapi
     )
 
     target_link_libraries(orpheus_audio_driver_wasapi
@@ -138,7 +159,7 @@ if(ORPHEUS_ENABLE_WASAPI)
 endif()
 
 # ASIO driver (Windows, optional)
-if(ORPHEUS_ENABLE_ASIO)
+if(WIN32 AND ORPHEUS_ENABLE_ASIO)
     if(NOT DEFINED ASIO_SDK_PATH)
         message(FATAL_ERROR "ASIO_SDK_PATH must be set when ORPHEUS_ENABLE_ASIO=ON")
     endif()

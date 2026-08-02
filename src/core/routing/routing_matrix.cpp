@@ -757,20 +757,28 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
     return SessionGraphError::NotInitialized;
   }
 
+  // Validate every caller-owned output lane before any control refresh,
+  // metering publication, or scratch-buffer mutation. Null input lanes remain
+  // valid and represent silence as documented by the public contract.
+  const int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
+  const RoutingConfig& cfg = m_config_buffers[cfg_idx];
+  if (master_output == nullptr) {
+    return SessionGraphError::InvalidParameter;
+  }
+  for (RoutingOutputIndex out = 0; out < cfg.num_outputs; ++out) {
+    if (master_output[out] == nullptr) {
+      return SessionGraphError::InvalidParameter;
+    }
+  }
+
   // FTR028: Accept arbitrarily large blocks by chunking over slices of at most
   // MAX_BUFFER_SIZE frames. This is allocation-free and lock-free — we only
   // offset into the caller-supplied planar buffers and reuse the pre-allocated
   // scratch inside processRoutingBlock. Offline hosts (bounce/export) can pass
   // any block size and it "just works"; the previous private ceiling no longer
   // silently rejects large blocks.
-  //
-  // Get active config (lock-free read) to know the channel/output counts for
-  // pointer offsetting.
   refreshRenderGroupControls();
   {
-    int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
-    const RoutingConfig& cfg = m_config_buffers[cfg_idx];
-
     // Fixed stack scratch at the validated realtime maxima.
     const float* input_slice_ptrs[256];
     float* output_slice_ptrs[32];

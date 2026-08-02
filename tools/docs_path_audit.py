@@ -34,7 +34,7 @@ LINK_CHECKED_DOCS = [
     "ROADMAP.md",
     "CLAUDE.md",
 ]
-LINK_CHECKED_GLOBS = ["docs/*.md"]
+LINK_CHECKED_GLOBS = ["docs/**/*.md"]
 
 # Documents scanned for forbidden patterns (superset of the above).
 PATTERN_CHECKED_EXTRA = ["CHANGELOG.md"]
@@ -49,6 +49,12 @@ HISTORICAL_DOCS = {
     "docs/MIGRATION_v0_to_v1.md",
 }
 
+AUTHORITY_DOCS = {
+    "docs/REALTIME_AUDIT.md",
+    "docs/SUPPORT_MATRIX.md",
+}
+EXCLUDED_CMAKE_COMPONENTS = {".git", "_deps", "CMakeFiles"}
+HISTORICAL_DOC_PREFIXES = ("docs/orp/", "docs/archive/", "docs/api/archive/", "docs/tmp/")
 # Handles both [t](path) and the angle-bracket form [t](<path with (parens)>).
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\((<[^>]*>|[^)\s]+)\)")
 EXTRACTED_APP_RE = re.compile(r"apps/clip-composer")
@@ -74,12 +80,34 @@ class Violation:
     detail: str
 
 
+def _is_excluded_cmake_path(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root)
+    return any(
+        component in EXCLUDED_CMAKE_COMPONENTS or component.startswith("build")
+        for component in relative.parts
+    )
+
+
+def repo_cmake_files(root: Path) -> list[Path]:
+    """Return source CMake files without generated/build authority."""
+    files = {
+        path
+        for path in root.rglob("CMakeLists.txt")
+        if not _is_excluded_cmake_path(path, root)
+    }
+    files.update(
+        path
+        for path in root.rglob("*.cmake")
+        if not _is_excluded_cmake_path(path, root)
+    )
+    return sorted(files)
+
+
 def repo_cmake_tokens(root: Path) -> set[str]:
     """All ORPHEUS_*/ORP_* identifiers defined or handled by the build."""
     tokens: set[str] = set(CMAKE_TOKEN_ALLOWLIST)
-    for cmake in [root / "CMakeLists.txt", *root.glob("cmake/*.cmake")]:
-        if cmake.exists():
-            tokens.update(CMAKE_DEFINED_RE.findall(cmake.read_text(encoding="utf-8")))
+    for cmake in repo_cmake_files(root):
+        tokens.update(CMAKE_DEFINED_RE.findall(cmake.read_text(encoding="utf-8")))
     return tokens
 
 
@@ -91,7 +119,12 @@ def iter_docs(root: Path) -> list[Path]:
             docs.append(path)
     for pattern in LINK_CHECKED_GLOBS:
         docs.extend(sorted(root.glob(pattern)))
-    return [doc for doc in docs if str(doc.relative_to(root)) not in HISTORICAL_DOCS]
+    return [
+        doc
+        for doc in docs
+        if str(doc.relative_to(root)) not in HISTORICAL_DOCS
+        and not str(doc.relative_to(root)).startswith(HISTORICAL_DOC_PREFIXES)
+    ]
 
 
 def check_links(doc: Path, root: Path) -> list[Violation]:
@@ -153,6 +186,55 @@ def check_patterns(doc: Path, valid_tokens: set[str]) -> list[Violation]:
     return violations
 
 
+def check_authority_documents(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for relative in sorted(AUTHORITY_DOCS):
+        path = root / relative
+        if not path.exists():
+            violations.append(
+                Violation(
+                    root,
+                    0,
+                    "missing-authority",
+                    f"required source-of-truth document does not exist: {relative}",
+                )
+            )
+    return violations
+
+
+def check_installed_header_contract(root: Path) -> list[Violation]:
+    """Reject the contradictory any-thread getDeviceInfo() promise."""
+    path = root / "include/orpheus/audio_driver_manager.h"
+    if not path.exists():
+        return [Violation(root, 0, "missing-header", "public manager header does not exist")]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    start = text.find("Get detailed information about specific device")
+    end = text.find("Set active audio device", start)
+    segment = text[start:end if end != -1 else None]
+    violations: list[Violation] = []
+    if re.search(r"thread-safe.*any thread", segment, re.IGNORECASE | re.DOTALL):
+        line = text[:start].count("\n") + 1 if start >= 0 else 1
+        violations.append(
+            Violation(
+                path,
+                line,
+                "contradictory-thread-contract",
+                "getDeviceInfo() must not claim thread-safe any-thread access",
+            )
+        )
+    if "UI thread" not in segment and "control thread" not in segment:
+        line = text[:start].count("\n") + 1 if start >= 0 else 1
+        violations.append(
+            Violation(
+                path,
+                line,
+                "missing-thread-contract",
+                "getDeviceInfo() must be classified as control/UI-thread-only",
+            )
+        )
+    return violations
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -160,7 +242,8 @@ def main() -> int:
     root = args.root.resolve()
 
     valid_tokens = repo_cmake_tokens(root)
-    violations: list[Violation] = []
+    violations: list[Violation] = check_authority_documents(root)
+    violations.extend(check_installed_header_contract(root))
 
     docs = iter_docs(root)
     for doc in docs:

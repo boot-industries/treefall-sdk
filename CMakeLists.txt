@@ -23,6 +23,8 @@ configure_file(
 set(ORPHEUS_ROOT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(ORP_WITH_TESTS "Build Orpheus tests" ON)
+option(ORPHEUS_ENABLE_EXTENDED_TESTS
+  "Build package, hardware, and stress tests in addition to the fast suite" ON)
 option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
 option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)
@@ -37,7 +39,7 @@ option(ORP_BUILD_ABI_DYNAMIC "Build shared core libs for abi_link test" ON)
 # M2: Real-time infrastructure options
 option(ORPHEUS_ENABLE_REALTIME "Build real-time playback engine (M2)" ON)
 option(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING
-  "Collect bounded device-callback timing diagnostics" ON)
+  "Collect bounded device-callback timing diagnostics" OFF)
 
 if(DEFINED ORPHEUS_BUILD_SHARED)
   set(ORP_BUILD_SHARED_CORE ${ORPHEUS_BUILD_SHARED} CACHE BOOL "" FORCE)
@@ -228,13 +230,6 @@ if(ORPHEUS_ENABLE_REALTIME)
       RUNTIME DESTINATION bin)
   endif()
 
-  if(TARGET orpheus_audio_driver_asio)
-    install(TARGETS orpheus_audio_driver_asio
-      EXPORT OrpheusSDKTargets
-      ARCHIVE DESTINATION lib
-      LIBRARY DESTINATION lib
-      RUNTIME DESTINATION bin)
-  endif()
 endif()
 
 install(TARGETS orpheus_core

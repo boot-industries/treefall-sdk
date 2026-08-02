@@ -39,6 +39,7 @@ enum class AudioDriverRuntimeOutcome : uint8_t {
   SampleRateReinitializationRequired,
   SampleRateListenerFailure,
   SampleRateQueryFailure,
+  BackendFailure,
 };
 
 /// Factory-visible backend I/O diagnostics. Runtime outcomes are safe to poll

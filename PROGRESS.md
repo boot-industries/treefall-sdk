@@ -49,3 +49,45 @@
 No controllable macOS device was available locally to record a live nominal
 48 kHz → 44.1 kHz transition or rejected reassertion. The deterministic fake
 covers both paths; no hardware recovery/refusal support claim is made.
+
+## Realtime boundary remediation — 2026-08-02
+
+**Branch:** `realtime-boundary-remediation-20260802`  
+**Base:** `1854a6eb8be69469dcd2110aae4042fcb5fc1503`  
+**Status:** In progress; authority documents restored and policy reconciled.
+
+The remediation follows the audited nine-phase order in
+`docs/tmp/realtime-boundary-audit-plan.md`. CoreAudio remains the only shipped
+production device backend; WASAPI is unpromoted source/fake-test code; ASIO is
+source-only; Linux exposes Dummy only; callback timing defaults OFF.
+
+
+### Remediation evidence
+
+- The deterministic fast suite passed 61/61 CTest cases with the capped
+  four-job build/test configuration. `tools/realtime_audit.py --fail-known-debt`,
+  `tools/docs_path_audit.py --root .`, and `git diff --check` passed.
+- The extended unsanitized package/platform gates passed: provider matrix,
+  invalid/non-native backend rejection, native backend disable, find-package,
+  runtime consumer, previous-minor rejection, add-subdirectory, and the ShmUI
+  package consumer. The disabled ABI-link entry remained disabled.
+- The extended stress set passed 5/5 when run serially to avoid wall-clock
+  contention: queue stress, voice-state liveness, realtime harness, streaming
+  seek, and multiclip stress. Running the realtime harness concurrently with
+  four stress processes can exceed its intentionally strict unsanitized timing
+  budget; the serial evidence is the valid measurement.
+- UBSan-only Debug passed 61/61 CTest cases. ASan evidence is unavailable on
+  this AppleClang 17/macOS host: a minimal `-fsanitize=address,undefined`
+  probe hangs in AddressSanitizer initialization before `main`. A genuine
+  TSan voice-state build succeeds, but its executable exits 139 before emitting
+  runtime diagnostics; no TSan claim is made.
+- The deterministic CoreAudio selection/monitor/capture subset passed 13/13.
+  The full physical CoreAudio target passed 25 tests, skipped one unavailable
+  same-device-duplex case, and rejected 12 legacy default-device cases because
+  this workstation has no default route matching their two-input request. No
+  complete physical-hardware pass is claimed.
+- Windows hosted CI, WASAPI hardware, and Linux production-device evidence
+  remain unavailable. The support matrix continues to keep WASAPI unpromoted,
+  ASIO source-only, and Linux Dummy-only.
+
+**Status:** Implementation complete; evidence limitations are recorded above.

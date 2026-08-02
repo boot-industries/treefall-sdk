@@ -224,6 +224,31 @@ TEST_F(AtomicGroupChokeTest, QueueFullRejectionNeverChangesPeersAndIsRepeatable)
   }
 }
 
+TEST_F(AtomicGroupChokeTest, StopOthersModeUsesOneAtomicQueueAdmission) {
+  registerClip(1, 0);
+  registerClip(2, 1);
+  registerClip(3, 0);
+  drainSetupCommands();
+
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(2), SessionGraphError::OK);
+  render();
+  transport->processCallbacks();
+  callback.events.clear();
+
+  ASSERT_EQ(transport->setClipStopOthersMode(3, true), SessionGraphError::OK);
+  for (size_t command = 0; command < 254; ++command) {
+    ASSERT_EQ(transport->stopClip(1000 + command), SessionGraphError::OK);
+  }
+  // One slot remains: the single StartWithStopOthers admission must fit.
+  EXPECT_EQ(transport->startClip(3), SessionGraphError::OK);
+
+  render();
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopping);
+  EXPECT_EQ(transport->getClipState(2), PlaybackState::Stopping);
+  EXPECT_EQ(transport->getClipState(3), PlaybackState::Playing);
+}
+
 TEST_F(AtomicGroupChokeTest, MetadataQueueRejectionKeepsPersistentAndActiveGroupsAligned) {
   registerClip(1, 0);
   registerClip(2, 1);

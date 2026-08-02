@@ -10,11 +10,11 @@
 #include <sstream>
 #include <utility>
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
 #include <CoreAudio/CoreAudio.h>
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -38,7 +38,7 @@ bool isBufferSizeSupported(const std::vector<uint32_t>& supported, uint32_t size
   return std::find(supported.begin(), supported.end(), size) != supported.end();
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
 std::string wideToUtf8(const wchar_t* value) {
   if (value == nullptr || *value == L'\0') {
     return {};
@@ -71,10 +71,12 @@ void appendUnique(std::vector<uint32_t>& values, uint32_t value) {
 
 } // anonymous namespace
 
-/// Audio driver manager implementation
 class AudioDriverManager : public IAudioDriverManager {
 public:
+  using DriverFactory = std::function<std::unique_ptr<IAudioDriver>(const std::string&)>;
+
   AudioDriverManager();
+  explicit AudioDriverManager(DriverFactory factory);
   ~AudioDriverManager() override;
 
   // IAudioDriverManager interface
@@ -101,11 +103,10 @@ private:
   /// Get dummy driver device info (always available)
   AudioDeviceInfo getDummyDeviceInfo();
 
-  /// Create driver instance for device ID
+  /// Create driver instance for device ID (default factory implementation).
   std::unique_ptr<IAudioDriver> createDriverForDevice(const std::string& deviceId);
-
-  // State
   std::unique_ptr<IAudioDriver> m_activeDriver;
+  DriverFactory m_driverFactory;
   std::string m_currentDeviceId;
   uint32_t m_currentSampleRate{48000};
   uint32_t m_currentBufferSize{512};
@@ -117,7 +118,13 @@ private:
   mutable std::mutex m_mutex;
 };
 
-AudioDriverManager::AudioDriverManager() = default;
+AudioDriverManager::AudioDriverManager()
+    : m_driverFactory([this](const std::string& deviceId) {
+        return createDriverForDevice(deviceId);
+      }) {}
+
+AudioDriverManager::AudioDriverManager(DriverFactory factory)
+    : m_driverFactory(std::move(factory)) {}
 
 AudioDriverManager::~AudioDriverManager() {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -132,11 +139,11 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateDevices() {
   // Dummy driver is always first (for testing)
   devices.push_back(getDummyDeviceInfo());
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
   // Enumerate CoreAudio devices (macOS)
   auto coreAudioDevices = enumerateCoreAudioDevices();
   devices.insert(devices.end(), coreAudioDevices.begin(), coreAudioDevices.end());
-#elif defined(_WIN32)
+#elif defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
   // Enumerate Windows devices (WASAPI/ASIO) - stub for Phase 1
   auto windowsDevices = enumerateWindowsDevices();
   devices.insert(devices.end(), windowsDevices.begin(), windowsDevices.end());
@@ -155,7 +162,7 @@ std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::stri
     return getDummyDeviceInfo();
   }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
   // Check CoreAudio devices
   auto devices = enumerateCoreAudioDevices();
   for (const auto& device : devices) {
@@ -163,7 +170,7 @@ std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::stri
       return device;
     }
   }
-#elif defined(_WIN32)
+#elif defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
   // Check Windows devices (stub)
   auto devices = enumerateWindowsDevices();
   for (const auto& device : devices) {
@@ -186,66 +193,72 @@ std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::stri
 
 SessionGraphError AudioDriverManager::setActiveDevice(const std::string& deviceId,
                                                       uint32_t sampleRate, uint32_t bufferSize) {
-  std::lock_guard<std::mutex> lock(m_mutex);
+  std::function<void()> notification;
+  std::unique_ptr<IAudioDriver> candidate;
+  std::string candidateDeviceId;
 
-  // Validate device exists
-  auto deviceInfo = getDeviceInfo(deviceId);
-  if (!deviceInfo.has_value()) {
-    return SessionGraphError::InvalidParameter;
-  }
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
 
-  // Validate sample rate
-  if (!isSampleRateSupported(deviceInfo->supportedSampleRates, sampleRate)) {
-    return SessionGraphError::InvalidParameter;
-  }
+    const auto deviceInfo = getDeviceInfo(deviceId);
+    if (!deviceInfo.has_value() ||
+        !isSampleRateSupported(deviceInfo->supportedSampleRates, sampleRate) ||
+        !isBufferSizeSupported(deviceInfo->supportedBufferSizes, bufferSize)) {
+      return SessionGraphError::InvalidParameter;
+    }
 
-  // Validate buffer size
-  if (!isBufferSizeSupported(deviceInfo->supportedBufferSizes, bufferSize)) {
-    return SessionGraphError::InvalidParameter;
-  }
+    try {
+      // Copy all potentially-throwing commit inputs before stopping the old
+      // driver. Failure here leaves the current ownership and configuration
+      // untouched.
+      candidateDeviceId = deviceId;
+      notification = m_deviceChangeCallback;
 
-  // Step 1-2: Stop current driver (if any) - this fades out clips
-  if (m_activeDriver) {
-    SessionGraphError stopResult = m_activeDriver->stop();
-    if (stopResult != SessionGraphError::OK) {
-      return stopResult;
+      AudioDriverConfig config;
+      config.sample_rate = sampleRate;
+      config.buffer_size = static_cast<uint16_t>(bufferSize);
+      config.num_inputs = 0;  // Output only for now
+      config.num_outputs = 2; // Stereo output
+      config.input_device_id = "";
+      config.output_device_id = (deviceId == "dummy") ? "" : deviceId;
+      config.device_name = (deviceId == "dummy") ? "" : deviceInfo->name;
+
+      // Candidate creation and initialization happen while the old driver is
+      // still owned and running.
+      if (!m_driverFactory) {
+        return SessionGraphError::InternalError;
+      }
+      candidate = m_driverFactory(deviceId);
+      if (!candidate) {
+        return SessionGraphError::InternalError;
+      }
+      const SessionGraphError initResult = candidate->initialize(config);
+      if (initResult != SessionGraphError::OK) {
+        return initResult;
+      }
+
+      if (m_activeDriver) {
+        const SessionGraphError stopResult = m_activeDriver->stop();
+        if (stopResult != SessionGraphError::OK) {
+          return stopResult;
+        }
+      }
+
+      // Commit is non-throwing after the candidate has passed initialization
+      // and the old driver has stopped.
+      m_activeDriver = std::move(candidate);
+      m_currentDeviceId.swap(candidateDeviceId);
+      m_currentSampleRate = m_activeDriver->getConfig().sample_rate;
+      m_currentBufferSize = m_activeDriver->getConfig().buffer_size;
+    } catch (...) {
+      return SessionGraphError::InternalError;
     }
   }
 
-  // Step 3: Close current driver
-  m_activeDriver.reset();
-
-  // Step 4: Create and initialize new driver
-  auto newDriver = createDriverForDevice(deviceId);
-  if (!newDriver) {
-    return SessionGraphError::InternalError;
+  // Never call host code while the manager mutex is held.
+  if (notification) {
+    notification();
   }
-
-  AudioDriverConfig config;
-  config.sample_rate = sampleRate;
-  config.buffer_size = static_cast<uint16_t>(bufferSize);
-  config.num_inputs = 0;  // Output only for now
-  config.num_outputs = 2; // Stereo output
-  config.input_device_id = "";
-  config.output_device_id = (deviceId == "dummy") ? "" : deviceId;
-  config.device_name = (deviceId == "dummy") ? "" : deviceInfo->name;
-
-  SessionGraphError initResult = newDriver->initialize(config);
-  if (initResult != SessionGraphError::OK) {
-    return initResult;
-  }
-
-  // Step 5: Store new driver (audio callback restart happens in RealTimeEngine)
-  m_activeDriver = std::move(newDriver);
-  m_currentDeviceId = deviceId;
-  m_currentSampleRate = m_activeDriver->getConfig().sample_rate;
-  m_currentBufferSize = m_activeDriver->getConfig().buffer_size;
-
-  // Step 6: Notify via callback
-  if (m_deviceChangeCallback) {
-    m_deviceChangeCallback();
-  }
-
   return SessionGraphError::OK;
 }
 
@@ -290,7 +303,7 @@ AudioDeviceInfo AudioDriverManager::getDummyDeviceInfo() {
   return info;
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
   std::vector<AudioDeviceInfo> devices;
 
@@ -445,7 +458,7 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
 }
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
   std::vector<AudioDeviceInfo> devices;
   const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -591,8 +604,9 @@ AudioDriverManager::createDriverForDevice(const std::string& deviceId) {
     return createDummyAudioDriver();
   }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
   // CoreAudio device identifiers are bare persistent DeviceUID values.
+
   return createCoreAudioDriver();
 #endif
 
@@ -605,6 +619,14 @@ AudioDriverManager::createDriverForDevice(const std::string& deviceId) {
   // Unsupported device type
   return nullptr;
 }
+namespace detail {
+
+std::unique_ptr<IAudioDriverManager> createAudioDriverManagerForTesting(
+    std::function<std::unique_ptr<IAudioDriver>(const std::string&)> factory) {
+  return std::make_unique<AudioDriverManager>(std::move(factory));
+}
+
+} // namespace detail
 
 // Factory function
 std::unique_ptr<IAudioDriverManager> createAudioDriverManager() {
