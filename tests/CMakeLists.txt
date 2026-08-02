@@ -134,6 +134,17 @@ if(Python3_Interpreter_FOUND)
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_SOURCE_DIR}/tools/shmui_juce_manifest.py
       --check)
+  add_test(NAME suite_manifest
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/suite.py
+      validate
+      --json)
+  add_test(NAME suite_affected
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tools/suite.py
+      affected
+      shmui
+      --json)
 endif()
 
 # Session tests (including Scene Manager)

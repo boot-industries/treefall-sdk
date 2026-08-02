@@ -1,0 +1,52 @@
+name: Suite coherence
+
+on:
+  pull_request:
+    paths:
+      - "suite/**"
+      - "tools/suite.py"
+      - "tests/CMakeLists.txt"
+      - ".github/workflows/suite-coherence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    name: Validate suite contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out SDK
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Validate Python
+        run: python3 -m py_compile tools/suite.py
+      - name: Validate manifest and schema inputs
+        run: python3 tools/suite.py validate --json
+      - name: Exercise downstream impact calculation
+        run: python3 tools/suite.py affected shmui --json
+
+  operator-contract:
+    name: Check read-only operator contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out SDK
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Confirm safe defaults are dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/suite.py sync --snapshot workspace-20260801 --json > /tmp/suite-sync.json
+          python3 tools/suite.py rollback workspace-20260801 --json > /tmp/suite-rollback.json
+          python3 - <<'PY'
+          import json
+          for name in ("/tmp/suite-sync.json", "/tmp/suite-rollback.json"):
+              value = json.load(open(name, encoding="utf-8"))
+              assert value["applied"] == [], (name, value)
+          PY

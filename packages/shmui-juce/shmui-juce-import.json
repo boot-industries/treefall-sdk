@@ -3,7 +3,7 @@
   "source": {
     "repository": "shmui",
     "path": "juce/Source",
-    "revision": "6129e3cb73f32922e588aa647bbafb87fccdc324",
+    "revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
     "content_sha256": "193a9e6c769df3f9b3f75dd0f1d5bce06ff574f2f7561a408e98a17b735b672d",
     "content_hash_algorithm": "sha256-path-nul-content-v1"
   },
