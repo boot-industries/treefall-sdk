@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chrislyons/orpheus-sdk/suite/orpheus-suite.schema.json",
+  "title": "Orpheus Suite Manifest",
+  "description": "Versioned source, dependency, provenance, verification, and release contract for the Orpheus Suite.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "suite_id",
+    "suite_version",
+    "release_channel",
+    "workspace",
+    "channels",
+    "repositories",
+    "dependencies",
+    "release_policy",
+    "snapshots"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "schema_version": { "const": 1 },
+    "suite_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+    "suite_version": { "$ref": "#/$defs/semver" },
+    "release_channel": { "enum": ["development", "candidate", "stable"] },
+    "manifest_revision": { "type": "string", "minLength": 1 },
+    "workspace": {
+      "type": "object",
+      "required": ["root_environment", "default_root", "paths_are_relative", "require_clean_worktrees_for_apply"],
+      "additionalProperties": false,
+      "properties": {
+        "root_environment": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "default_root": { "type": "string", "minLength": 1 },
+        "paths_are_relative": { "const": true },
+        "require_clean_worktrees_for_apply": { "const": true }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "required": ["development", "candidate", "stable"],
+      "additionalProperties": false,
+      "properties": {
+        "development": { "$ref": "#/$defs/channel" },
+        "candidate": { "$ref": "#/$defs/channel" },
+        "stable": { "$ref": "#/$defs/channel" }
+      }
+    },
+    "update_policy": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string", "minLength": 1 } },
+    "coordination": {
+      "type": "object",
+      "required": ["system_of_record", "change_id_format", "branch_prefix", "pr_title_prefix", "merge_order", "pr_grouping", "credentials", "loop_prevention"],
+      "additionalProperties": false,
+      "properties": {
+        "system_of_record": { "type": "string", "minLength": 1 },
+        "change_id_format": { "type": "string", "minLength": 1 },
+        "branch_prefix": { "type": "string", "minLength": 1 },
+        "pr_title_prefix": { "type": "string", "minLength": 1 },
+        "merge_order": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "pr_grouping": { "type": "string", "minLength": 1 },
+        "credentials": { "type": "string", "minLength": 1 },
+        "loop_prevention": { "type": "string", "minLength": 1 }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/repository" }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "release_policy": {
+      "type": "object",
+      "required": ["order", "candidate", "stable", "rollback"],
+      "additionalProperties": false,
+      "properties": {
+        "order": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "candidate": { "$ref": "#/$defs/releaseGate" },
+        "stable": { "$ref": "#/$defs/releaseGate" },
+        "rollback": {
+          "type": "object",
+          "required": ["unit", "behavior", "failure"],
+          "additionalProperties": false,
+          "properties": {
+            "unit": { "type": "string", "minLength": 1 },
+            "behavior": { "type": "string", "minLength": 1 },
+            "failure": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "snapshots": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/snapshot" }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "channel": {
+      "type": "object",
+      "required": ["mode", "branch", "snapshot_id"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["floating", "pinned"] },
+        "branch": { "type": "string", "minLength": 1 },
+        "snapshot_id": { "type": ["string", "null"] }
+      }
+    },
+    "remote": {
+      "type": "object",
+      "required": ["fetch_url", "push_url", "push_remote"],
+      "additionalProperties": false,
+      "properties": {
+        "fetch_url": { "type": "string", "format": "uri" },
+        "push_url": { "type": ["string", "null"] },
+        "push_remote": { "type": ["string", "null"] }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "path", "hash_type", "expected_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+        "path": { "type": "string", "minLength": 1 },
+        "hash_type": { "enum": ["sha256-file-v1", "sha256-path-nul-content-v1"] },
+        "exclude_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "expected_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "source_repository": { "type": "string", "minLength": 1 },
+        "source_revision": { "$ref": "#/$defs/commit" },
+        "current_source_revision": { "$ref": "#/$defs/commit" },
+        "source_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "freshness_check": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dependencyPin": {
+      "type": "object",
+      "required": ["dependency", "kind", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "dependency": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "config": { "type": "string", "minLength": 1 },
+        "workspace_path": { "type": "string", "minLength": 1 },
+        "configured_path": { "type": "string", "minLength": 1 },
+        "revision": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["id", "path", "remote", "default_branch", "role", "source_of_truth", "verification"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+        "path": { "type": "string", "minLength": 1 },
+        "remote": { "$ref": "#/$defs/remote" },
+        "default_branch": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "source_of_truth": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "compatibility": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+        "generated_artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+        "dependency_pins": { "type": "array", "items": { "$ref": "#/$defs/dependencyPin" } },
+        "external_pins": { "type": "array", "items": { "type": "object", "required": ["name", "kind", "path", "remote", "revision"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "remote": { "type": "string", "format": "uri" }, "revision": { "$ref": "#/$defs/commit" } } } },
+        "verification": { "type": "array", "items": { "$ref": "#/$defs/check" } }
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["id", "cwd", "command", "tier", "platforms", "required_for"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string", "minLength": 1 },
+        "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "tier": { "enum": ["quick", "full"] },
+        "platforms": { "type": "array", "items": { "enum": ["macos", "linux", "windows"] }, "minItems": 1 },
+        "required_for": { "type": "array", "items": { "enum": ["candidate", "stable"] }, "minItems": 1 }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["from", "to", "kind", "required", "compatibility"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "compatibility": { "type": "string", "minLength": 1 },
+        "pin_policy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "releaseGate": {
+      "type": "object",
+      "required": ["requires", "publishes"],
+      "additionalProperties": false,
+      "properties": {
+        "requires": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "publishes": { "type": "string", "minLength": 1 }
+      }
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["id", "suite_version", "channel", "state", "immutable", "observed_at", "repositories", "verification", "human_acceptance"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+        "suite_version": { "$ref": "#/$defs/semver" },
+        "channel": { "enum": ["development", "candidate", "stable"] },
+        "state": { "enum": ["observed", "candidate", "stable", "rolled-back"] },
+        "immutable": { "const": true },
+        "observed_at": { "type": "string", "format": "date" },
+        "repositories": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/snapshotRepository" } },
+        "verification": { "type": "object", "required": ["status", "evidence"], "additionalProperties": false, "properties": { "status": { "enum": ["inventory-only", "passed", "failed", "blocked"] }, "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } } } },
+        "human_acceptance": { "type": "object", "required": ["status", "records"], "additionalProperties": false, "properties": { "status": { "enum": ["pending", "passed", "failed"] }, "records": { "type": "array", "items": { "type": "object", "required": ["kind", "status", "evidence"], "additionalProperties": false, "properties": { "kind": { "type": "string", "minLength": 1 }, "status": { "enum": ["pending", "passed", "failed"] }, "evidence": { "type": "string", "minLength": 1 } } } } } }
+      }
+    },
+    "snapshotRepository": {
+      "type": "object",
+      "required": ["commit", "branch", "tag"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": { "$ref": "#/$defs/commit" },
+        "branch": { "type": "string", "minLength": 1 },
+        "tag": { "type": ["string", "null"] },
+        "dependency_pins": { "type": "object", "additionalProperties": { "$ref": "#/$defs/commit" } }
+      }
+    }
+  }
+}
