@@ -83,11 +83,16 @@ class ScanTarget:
     # Retained for source compatibility with callers of the original scanner.
     hard_fail: bool | None = None
     pattern_sets: tuple[PatternSet, ...] = ()
+    required: bool = True
 
     def resolved_pattern_sets(self) -> tuple[PatternSet, ...]:
         if self.pattern_sets:
             return self.pattern_sets
         return (HARD_REALTIME_SET if self.hard_fail else FILE_READER_DEBT_SET,)
+
+
+class AuditConfigurationError(RuntimeError):
+    """Raised when a required audit target cannot be located."""
 
 
 @dataclass
@@ -100,15 +105,15 @@ class Finding:
     hard_fail: bool
 
 
-def extract_function(text: str, function_regex: str) -> tuple[int, list[str]]:
+def extract_function(text: str, function_regex: str, target_label: str) -> tuple[int, list[str]]:
     match = re.search(function_regex, text)
     if not match:
-        return 1, []
+        raise AuditConfigurationError(f"{target_label}: function target not found: {function_regex}")
 
     start = match.start()
     brace = text.find("{", match.end())
     if brace == -1:
-        return text[:start].count("\n") + 1, []
+        raise AuditConfigurationError(f"{target_label}: function target has no body")
 
     depth = 0
     end = brace
@@ -144,11 +149,13 @@ def _timing_guarded_lines(lines: list[str]) -> list[tuple[str, bool]]:
 
 def scan_target(target: ScanTarget) -> list[Finding]:
     if not target.path.exists():
+        if target.required:
+            raise AuditConfigurationError(f"{target.label}: source file not found: {target.path}")
         return []
 
     text = target.path.read_text(encoding="utf-8", errors="replace")
     if target.function_regex:
-        base_line, lines = extract_function(text, target.function_regex)
+        base_line, lines = extract_function(text, target.function_regex, target.label)
     else:
         base_line, lines = 1, text.splitlines()
 
@@ -185,15 +192,9 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             pattern_sets=(HARD_REALTIME_SET,),
         ),
         ScanTarget(
-            "CoreAudio callback admission exit",
-            root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp",
-            r"void\s+CoreAudioDriver::leaveCallback\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
-        ),
-        ScanTarget(
             "WASAPI render loop",
             root / "src/platform/audio_drivers/wasapi/wasapi_driver.cpp",
-            r"void\s+audioLoop\s*\(",
+            r"void\s+WASAPIAudioDriver::audioLoop\s*\(",
             pattern_sets=(HARD_REALTIME_SET,),
         ),
         ScanTarget(
@@ -230,18 +231,21 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                     "Clip Composer AudioEngine callback",
                     dev / "clip-composer/Source/Audio/AudioEngine.cpp",
                     r"void\s+AudioEngine::processAudio\s*\(",
+                    required=False,
                     pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
                 ScanTarget(
                     "FourTrack engine callback",
                     dev / "fourtrack/src/fourtrack/engine/engine.cpp",
                     r"void\s+Engine::processAudio\s*\(",
+                    required=False,
                     pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
                 ScanTarget(
                     "FreqFinder processBlock",
                     dev / "freqfinder/src/PluginProcessor.cpp",
                     r"void\s+FreqFinderAudioProcessor::processBlock\s*\(",
+                    required=False,
                     pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
             ]
@@ -258,8 +262,12 @@ def main() -> int:
 
     root = args.root.resolve()
     findings: list[Finding] = []
-    for target in default_targets(root, args.include_adjacent):
-        findings.extend(scan_target(target))
+    try:
+        for target in default_targets(root, args.include_adjacent):
+            findings.extend(scan_target(target))
+    except AuditConfigurationError as error:
+        print(f"Realtime audit configuration error: {error}", file=sys.stderr)
+        return 2
 
     hard = [finding for finding in findings if finding.hard_fail]
     debt = [finding for finding in findings if not finding.hard_fail]

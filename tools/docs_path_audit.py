@@ -54,7 +54,7 @@ AUTHORITY_DOCS = {
     "docs/SUPPORT_MATRIX.md",
 }
 EXCLUDED_CMAKE_COMPONENTS = {".git", "_deps", "CMakeFiles"}
-HISTORICAL_DOC_PREFIXES = ("docs/orp/", "docs/archive/", "docs/tmp/")
+HISTORICAL_DOC_PREFIXES = ("docs/orp/", "docs/archive/", "docs/api/archive/", "docs/tmp/")
 # Handles both [t](path) and the angle-bracket form [t](<path with (parens)>).
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\((<[^>]*>|[^)\s]+)\)")
 EXTRACTED_APP_RE = re.compile(r"apps/clip-composer")

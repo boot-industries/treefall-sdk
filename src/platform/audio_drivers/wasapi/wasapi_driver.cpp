@@ -21,9 +21,9 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
-#include <system_error>
 
 namespace orpheus {
 namespace {
@@ -81,7 +81,9 @@ detail::WASAPIRenderStatus statusFromHRESULT(HRESULT result) noexcept {
 
 class WASAPIComRenderRuntime final : public detail::IWASAPIRenderRuntime {
 public:
-  ~WASAPIComRenderRuntime() override { cleanup(); }
+  ~WASAPIComRenderRuntime() override {
+    cleanup();
+  }
 
   SessionGraphError initialize(const AudioDriverConfig& requested,
                                detail::WASAPIResolvedFormat& resolved) override {
@@ -94,9 +96,9 @@ public:
       return SessionGraphError::InternalError;
     }
 
-    HRESULT result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                                      __uuidof(IMMDeviceEnumerator),
-                                      reinterpret_cast<void**>(&enumerator_));
+    HRESULT result =
+        CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                         __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&enumerator_));
     if (FAILED(result)) {
       cleanup();
       return SessionGraphError::InternalError;
@@ -111,7 +113,7 @@ public:
     if (FAILED(result) || device_ == nullptr) {
       cleanup();
       return requested.output_device_id.empty() ? SessionGraphError::NotReady
-                                                 : SessionGraphError::InvalidParameter;
+                                                : SessionGraphError::InvalidParameter;
     }
 
     result = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
@@ -133,6 +135,7 @@ public:
     std::memcpy(requested_bytes.data(), mix_format, mix_bytes);
     auto* requested_format = reinterpret_cast<WAVEFORMATEX*>(requested_bytes.data());
     requested_format->nChannels = requested.num_outputs;
+    requested_format->nSamplesPerSec = requested.sample_rate;
     const uint32_t bytes_per_sample = requested_format->wBitsPerSample / 8u;
     if (bytes_per_sample == 0 ||
         static_cast<uint32_t>(requested_format->nChannels) * bytes_per_sample >
@@ -141,10 +144,10 @@ public:
       cleanup();
       return SessionGraphError::InvalidParameter;
     }
-    requested_format->nBlockAlign = static_cast<uint16_t>(requested_format->nChannels *
-                                                            bytes_per_sample);
-    requested_format->nAvgBytesPerSec = requested_format->nSamplesPerSec *
-                                        requested_format->nBlockAlign;
+    requested_format->nBlockAlign =
+        static_cast<uint16_t>(requested_format->nChannels * bytes_per_sample);
+    requested_format->nAvgBytesPerSec =
+        requested_format->nSamplesPerSec * requested_format->nBlockAlign;
 
     WAVEFORMATEX* closest = nullptr;
     const HRESULT support =
@@ -181,8 +184,7 @@ public:
     const REFERENCE_TIME requested_duration = static_cast<REFERENCE_TIME>(
         (10'000'000ULL * requested.buffer_size) / selected_format->nSamplesPerSec);
     result = client_->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                 AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
-                                     AUDCLNT_STREAMFLAGS_NOPERSIST,
+                                 AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
                                  requested_duration, 0, selected_format, nullptr);
     if (FAILED(result) || FAILED(client_->GetBufferSize(&buffer_frames_)) || buffer_frames_ == 0 ||
         FAILED(client_->GetService(__uuidof(IAudioRenderClient),
@@ -295,8 +297,12 @@ public:
     }
   }
 
-  uint32_t bufferFrames() const noexcept override { return buffer_frames_; }
-  bool float32() const noexcept override { return format_ != nullptr && isFloatFormat(format_); }
+  uint32_t bufferFrames() const noexcept override {
+    return buffer_frames_;
+  }
+  bool float32() const noexcept override {
+    return format_ != nullptr && isFloatFormat(format_);
+  }
 
   uint32_t latencySamples(uint32_t sample_rate) const noexcept override {
     if (client_ == nullptr || sample_rate == 0) {
@@ -341,9 +347,7 @@ WASAPIAudioDriver::WASAPIAudioDriver(std::unique_ptr<detail::IWASAPIRenderRuntim
     runtime_ = detail::createWASAPIRenderRuntime();
   }
   if (!worker_launcher_) {
-    worker_launcher_ = [](std::function<void()> worker) {
-      return std::thread(std::move(worker));
-    };
+    worker_launcher_ = [](std::function<void()> worker) { return std::thread(std::move(worker)); };
   }
 }
 
@@ -482,11 +486,17 @@ SessionGraphError WASAPIAudioDriver::stop() {
   return SessionGraphError::OK;
 }
 
-bool WASAPIAudioDriver::isRunning() const { return running_.load(std::memory_order_acquire); }
+bool WASAPIAudioDriver::isRunning() const {
+  return running_.load(std::memory_order_acquire);
+}
 
-const AudioDriverConfig& WASAPIAudioDriver::getConfig() const { return config_; }
+const AudioDriverConfig& WASAPIAudioDriver::getConfig() const {
+  return config_;
+}
 
-std::string WASAPIAudioDriver::getDriverName() const { return "WASAPI"; }
+std::string WASAPIAudioDriver::getDriverName() const {
+  return "WASAPI";
+}
 
 uint32_t WASAPIAudioDriver::getLatencySamples() const {
   return runtime_->latencySamples(config_.sample_rate);
@@ -524,7 +534,9 @@ void WASAPIAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
   performance_monitor_target_.replaceAndDrain(monitor);
 }
 
-void WASAPIAudioDriver::clearCallback() noexcept { callback_target_.replaceAndDrain(nullptr); }
+void WASAPIAudioDriver::clearCallback() noexcept {
+  callback_target_.replaceAndDrain(nullptr);
+}
 
 void WASAPIAudioDriver::markTerminalFailure() noexcept {
   running_.store(false, std::memory_order_release);
@@ -583,8 +595,8 @@ void WASAPIAudioDriver::audioLoop() noexcept {
     uint32_t active_clips = 0;
 #if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
     auto monitor_lease = performance_monitor_target_.tryAcquire();
-    const auto callback_start = monitor_lease ? std::chrono::steady_clock::now()
-                                               : std::chrono::steady_clock::time_point{};
+    const auto callback_start =
+        monitor_lease ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 #endif
     {
       auto callback_lease = callback_target_.tryAcquire();
@@ -631,8 +643,7 @@ void WASAPIAudioDriver::audioLoop() noexcept {
     if (auto* monitor = monitor_lease.get()) {
       const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::steady_clock::now() - callback_start);
-      const uint64_t budget =
-          (static_cast<uint64_t>(frames) * 1'000'000ULL) / config_.sample_rate;
+      const uint64_t budget = (static_cast<uint64_t>(frames) * 1'000'000ULL) / config_.sample_rate;
       monitor->recordAudioCallback(static_cast<uint64_t>(elapsed.count()), budget, active_clips,
                                    config_.sample_rate, frames);
     }
