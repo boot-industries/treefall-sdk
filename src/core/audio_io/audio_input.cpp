@@ -1,19 +1,43 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/audio_input.h>
 
+#include "../common/realtime_counter.h"
+#include "../common/spsc_observation.h"
+
 #include <algorithm>
 #include <cstring>
-
+#include <limits>
+#include <stdexcept>
+#include <vector>
 namespace orpheus {
-
 namespace {
 
 size_t roundUpPowerOfTwo(size_t value) {
+  if (value <= 1) {
+    return 1;
+  }
+  constexpr size_t highestPowerOfTwo = size_t{1} << (std::numeric_limits<size_t>::digits - 1);
+  if (value > highestPowerOfTwo) {
+    throw std::length_error("AudioInputRing capacity cannot be rounded to a power of two");
+  }
   size_t result = 1;
   while (result < value) {
     result <<= 1;
   }
   return result;
+}
+
+size_t checkedElementCount(size_t frames, uint16_t channels) {
+  if (frames > std::numeric_limits<size_t>::max() / static_cast<size_t>(channels)) {
+    throw std::length_error("AudioInputRing element count overflows size_t");
+  }
+  const size_t elements = frames * static_cast<size_t>(channels);
+  const size_t maxElements = std::vector<float>{}.max_size();
+  if (elements > maxElements ||
+      elements > std::numeric_limits<size_t>::max() / sizeof(float)) {
+    throw std::length_error("AudioInputRing allocation exceeds vector capacity");
+  }
+  return elements;
 }
 
 } // namespace
@@ -23,9 +47,12 @@ size_t roundUpPowerOfTwo(size_t value) {
 // ============================================================================
 
 AudioInputRing::AudioInputRing(uint16_t numChannels, size_t capacityFrames)
-    : m_numChannels(numChannels == 0 ? 1 : numChannels),
+    : m_numChannels(numChannels),
       m_capacityFrames(roundUpPowerOfTwo(std::max<size_t>(2, capacityFrames))) {
-  m_data.assign(m_capacityFrames * m_numChannels, 0.0f);
+  if (numChannels == 0) {
+    throw std::invalid_argument("AudioInputRing requires at least one channel");
+  }
+  m_data.assign(checkedElementCount(m_capacityFrames, m_numChannels), 0.0f);
 }
 
 size_t AudioInputRing::write(const float* interleaved, size_t frames) {
@@ -41,7 +68,7 @@ size_t AudioInputRing::write(const float* interleaved, size_t frames) {
   if (frames > freeFrames) {
     // All-or-nothing: dropping the whole buffer keeps frames contiguous and
     // never blocks the audio thread.
-    m_overflows.fetch_add(1, std::memory_order_relaxed);
+    detail::publishSaturatingIncrement(m_overflows);
     return 0;
   }
 
@@ -87,7 +114,7 @@ size_t AudioInputRing::read(float* dest, size_t maxFrames) {
 }
 
 size_t AudioInputRing::framesAvailable() const {
-  return m_writeIndex.load(std::memory_order_acquire) - m_readIndex.load(std::memory_order_acquire);
+  return detail::observeBoundedPending(m_readIndex, m_writeIndex, m_capacityFrames);
 }
 
 // ============================================================================

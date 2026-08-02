@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "coreaudio_driver.h"
-
+#include "../../../core/common/realtime_counter.h"
 #include <orpheus/performance_monitor.h>
 
 #include <algorithm>
@@ -44,10 +44,12 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   // Clean up any existing AudioUnit
   cleanupAudioUnit();
 
-  // Store configuration
   config_ = config;
   expected_stream_sample_ = 0;
   stream_timeline_initialized_ = false;
+  input_storage_.clear();
+  input_buffers_.clear();
+  input_abl_storage_.clear();
 
   // Resolve both requested directions before creating the AudioUnit. A
   // non-empty directional ID is a persistent HAL DeviceUID; resolution errors
@@ -125,15 +127,16 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
     return SessionGraphError::InternalError;
   }
 
-  callback_ = callback;
-  callback_admission_.store(kCallbackAccepting, std::memory_order_release);
+  callback_target_.replaceAndDrain(callback);
+  // Every successful start opens a new callback-admission epoch.
+  expected_stream_sample_ = 0;
+  stream_timeline_initialized_ = false;
   is_running_.store(true, std::memory_order_release);
 
   OSStatus status = AudioOutputUnitStart(audio_unit_);
   if (status != noErr) {
     is_running_.store(false, std::memory_order_release);
-    closeCallbackAdmission();
-    callback_ = nullptr;
+    callback_target_.replaceAndDrain(nullptr);
     sample_rate_monitor_->stop();
     return SessionGraphError::InternalError;
   }
@@ -144,8 +147,7 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   } catch (...) {
     sample_rate_monitor_active_.store(false, std::memory_order_release);
     AudioOutputUnitStop(audio_unit_);
-    closeCallbackAdmission();
-    callback_ = nullptr;
+    callback_target_.replaceAndDrain(nullptr);
     is_running_.store(false, std::memory_order_release);
     sample_rate_monitor_->stop();
     return SessionGraphError::InternalError;
@@ -196,35 +198,9 @@ void CoreAudioDriver::incrementInputRenderFailuresForTesting() noexcept {
   recordInputRenderFailure();
 }
 
-bool CoreAudioDriver::tryEnterCallback() noexcept {
-  uint64_t admission = callback_admission_.load(std::memory_order_acquire);
-  while ((admission & kCallbackAccepting) != 0) {
-    if ((admission & kCallbackCountMask) == kCallbackCountMask) {
-      return false;
-    }
-    if (callback_admission_.compare_exchange_weak(
-            admission, admission + 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void CoreAudioDriver::leaveCallback() noexcept {
-  callback_admission_.fetch_sub(1, std::memory_order_acq_rel);
-  callback_admission_.notify_all();
-}
-
-uint64_t CoreAudioDriver::closeCallbackAdmission() noexcept {
-  return callback_admission_.fetch_and(kCallbackCountMask, std::memory_order_acq_rel);
-}
 
 void CoreAudioDriver::recordInputRenderFailure() noexcept {
-  uint64_t failures = input_render_failures_.load(std::memory_order_relaxed);
-  while (failures != std::numeric_limits<uint64_t>::max() &&
-         !input_render_failures_.compare_exchange_weak(
-             failures, failures + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-  }
+  detail::publishSaturatingIncrement(input_render_failures_);
 }
 
 AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
@@ -257,7 +233,7 @@ AudioDriverCapabilities CoreAudioDriver::getCapabilities() const {
 }
 
 void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
-  performance_monitor_.store(monitor, std::memory_order_release);
+  performance_monitor_target_.replaceAndDrain(monitor);
 }
 
 // Static audio callback
@@ -275,17 +251,10 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     std::memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
   }
 
-  if (!driver->tryEnterCallback()) {
+  auto callback_lease = driver->callback_target_.tryAcquire();
+  if (!callback_lease) {
     return noErr;
   }
-
-  struct CallbackScope {
-    explicit CallbackScope(CoreAudioDriver& d) : driver(d) {}
-    ~CallbackScope() {
-      driver.leaveCallback();
-    }
-    CoreAudioDriver& driver;
-  } callback_scope(*driver);
 
   // Clamp frames to our allocated buffer size
   uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames),
@@ -317,10 +286,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     return noErr;
   }
 
-  IAudioCallback* callback = driver->callback_;
-  if (!callback) {
-    return noErr; // No callback set, output silence
-  }
+  IAudioCallback* callback = callback_lease.get();
 
   // Pull captured input (bus 1) into our planar input_buffers_ before invoking
   // the host callback. A HAL output render callback fires for the *output* bus
@@ -381,22 +347,21 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   block.discontinuity = discontinuity;
 
 #if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
-  const UInt64 callback_start = AudioGetCurrentHostTime();
+  auto monitor_lease = driver->performance_monitor_target_.tryAcquire();
+  const UInt64 callback_start =
+      monitor_lease ? AudioGetCurrentHostTime() : UInt64{0};
 #endif
   callback->processAudio(block);
   driver->expected_stream_sample_ = stream_time + frames_to_process;
   driver->stream_timeline_initialized_ = true;
 #if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
-  const UInt64 callback_end = AudioGetCurrentHostTime();
-
-  if (auto* monitor = driver->performance_monitor_.load(std::memory_order_acquire)) {
+  if (auto* monitor = monitor_lease.get()) {
+    const UInt64 callback_end = AudioGetCurrentHostTime();
     const UInt64 duration_ns = AudioConvertHostTimeToNanos(callback_end - callback_start);
-    uint64_t callback_duration_us = static_cast<uint64_t>(duration_ns / 1000u);
-    uint64_t buffer_duration_us =
+    const uint64_t callback_duration_us = static_cast<uint64_t>(duration_ns / 1000u);
+    const uint64_t buffer_duration_us =
         (static_cast<uint64_t>(frames_to_process) * 1'000'000ull) / driver->config_.sample_rate;
-
     const uint32_t active_clips = callback->activeClipCount();
-
     monitor->recordAudioCallback(callback_duration_us, buffer_duration_us, active_clips,
                                  driver->config_.sample_rate, frames_to_process);
   }
@@ -997,23 +962,11 @@ void CoreAudioDriver::sampleRateMonitorLoop() {
 }
 
 void CoreAudioDriver::stopRenderingLocked() {
-  if (!is_running_.load(std::memory_order_acquire)) {
-    return;
-  }
-
   is_running_.store(false, std::memory_order_release);
-  uint64_t admission = closeCallbackAdmission();
-
   if (audio_unit_) {
     AudioOutputUnitStop(audio_unit_);
   }
-
-  while ((admission & kCallbackCountMask) != 0) {
-    callback_admission_.wait(admission, std::memory_order_acquire);
-    admission = callback_admission_.load(std::memory_order_acquire);
-  }
-
-  callback_ = nullptr;
+  callback_target_.replaceAndDrain(nullptr);
 }
 
 void CoreAudioDriver::cleanupAudioUnit() {

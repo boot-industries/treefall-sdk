@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <map>
+#include <utility>
 #include <vector>
 
 #ifdef ORPHEUS_ENABLE_COREAUDIO
@@ -82,7 +83,7 @@ public:
     }
     *static_cast<Float64*>(data) = rates_[device_id];
     if (on_next_property_read_) {
-      std::function<void()> callback = std::move(on_next_property_read_);
+      std::function<void()> callback = std::exchange(on_next_property_read_, {});
       callback();
     }
     return noErr;

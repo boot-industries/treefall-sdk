@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ORP134 G7: lock-free input ring + capture-stream contract tests.
+#include "../../src/core/common/spsc_observation.h"
 //
 // Covers single-threaded ring semantics (wrap, all-or-nothing overflow,
 // partial drains), a threaded producer/consumer stress with sequence
@@ -15,7 +15,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -32,6 +34,31 @@ TEST(AudioInputRingTest, CapacityRoundsUpToPowerOfTwo) {
   EXPECT_EQ(ring.framesAvailable(), 0u);
 }
 
+TEST(AudioInputRingTest, RejectsZeroChannels) {
+  EXPECT_THROW(AudioInputRing(0, 256), std::invalid_argument);
+}
+
+TEST(AudioInputRingTest, RejectsUnrepresentableCapacity) {
+  EXPECT_THROW(AudioInputRing(1, std::numeric_limits<size_t>::max()), std::length_error);
+}
+
+
+TEST(AudioInputRingTest, ConcurrentAvailabilityObservationNeverUnderflows) {
+  std::atomic<size_t> read{0};
+  std::atomic<size_t> write{1};
+  bool advanced = false;
+  const size_t pending = detail::observeBoundedPending(
+      read, write, 8,
+      [&]() noexcept {
+        if (!advanced) {
+          read.store(2, std::memory_order_release);
+          write.store(2, std::memory_order_release);
+          advanced = true;
+        }
+      });
+  EXPECT_EQ(pending, 2u);
+  EXPECT_LE(pending, 8u);
+}
 TEST(AudioInputRingTest, WriteReadRoundTrip) {
   AudioInputRing ring(2, 256);
   std::vector<float> input(64 * 2);

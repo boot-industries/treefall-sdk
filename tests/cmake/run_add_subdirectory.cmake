@@ -33,7 +33,7 @@ if(configure_result)
 endif()
 
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${binary_dir}"
+  COMMAND "${CMAKE_COMMAND}" --build "${binary_dir}" --parallel
   RESULT_VARIABLE build_result)
 if(build_result)
   message(FATAL_ERROR "Build failed with code ${build_result}")

@@ -112,19 +112,6 @@ add_test(
 
 # Integration tests (requires orpheus_audio_io)
 if(TARGET orpheus_audio_io)
-    # Find libsndfile (needed because orpheus_audio_io is static)
-    find_package(PkgConfig)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(SNDFILE sndfile)
-    endif()
-
-    if(NOT SNDFILE_FOUND)
-        find_library(SNDFILE_LIBRARIES NAMES sndfile libsndfile)
-        find_path(SNDFILE_INCLUDE_DIRS NAMES sndfile.h)
-        if(SNDFILE_LIBRARIES AND SNDFILE_INCLUDE_DIRS)
-            set(SNDFILE_FOUND TRUE)
-        endif()
-    endif()
 
     add_executable(transport_integration_test
         integration_test.cpp
@@ -139,13 +126,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found (needed because orpheus_audio_io is static)
-    if(SNDFILE_FOUND)
-        target_link_libraries(transport_integration_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(transport_integration_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(transport_integration_test
         PRIVATE
@@ -171,12 +151,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    if(SNDFILE_FOUND)
-        target_link_libraries(multichannel_transport_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(multichannel_transport_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(multichannel_transport_test
         PRIVATE
@@ -189,6 +163,7 @@ if(TARGET orpheus_audio_io)
         COMMAND multichannel_transport_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # Multi-clip stress test
     add_executable(multi_clip_stress_test
         multi_clip_stress_test.cpp
@@ -203,13 +178,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found (needed because orpheus_audio_io is static)
-    if(SNDFILE_FOUND)
-        target_link_libraries(multi_clip_stress_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(multi_clip_stress_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(multi_clip_stress_test
         PRIVATE
@@ -221,6 +189,7 @@ if(TARGET orpheus_audio_io)
         NAME multi_clip_stress_test
         COMMAND multi_clip_stress_test
     )
+    endif()
 
     # Clip gain tests (ORP099 Task 1.1)
     add_executable(clip_gain_test
@@ -235,14 +204,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    # Link libsndfile if found (needed because orpheus_audio_io is static)
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_gain_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_gain_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(clip_gain_test
         PRIVATE
@@ -268,14 +229,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_controls_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_controls_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(clip_controls_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -300,14 +253,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_loop_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_loop_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(clip_loop_test
         PRIVATE
@@ -334,14 +279,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_metadata_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_metadata_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(clip_metadata_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -366,14 +303,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_restart_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_restart_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
 
     target_include_directories(clip_restart_test
         PRIVATE
@@ -400,14 +329,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_seek_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_seek_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(clip_seek_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -433,14 +354,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_cue_points_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_cue_points_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(clip_cue_points_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -453,6 +366,7 @@ if(TARGET orpheus_audio_io)
         COMMAND clip_cue_points_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP121 Q-07: Callback queue stress tests
     add_executable(callback_queue_stress_test
         callback_queue_stress_test.cpp
@@ -467,14 +381,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found
-    if(SNDFILE_FOUND)
-        target_link_libraries(callback_queue_stress_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(callback_queue_stress_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(callback_queue_stress_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -485,6 +391,7 @@ if(TARGET orpheus_audio_io)
         NAME callback_queue_stress_test
         COMMAND callback_queue_stress_test
     )
+    endif()
 
     # ORP151: public callback-loss telemetry and coherent reconciliation snapshot.
     add_executable(callback_loss_telemetry_test
@@ -499,14 +406,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(callback_loss_telemetry_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(callback_loss_telemetry_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(callback_loss_telemetry_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -518,6 +417,7 @@ if(TARGET orpheus_audio_io)
         COMMAND callback_loss_telemetry_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP127 T2: ThreadSanitizer stress harness for per-voice state.
     # Builds/runs under normal Debug too (liveness check); TSan is the verdict.
     add_executable(voice_state_tsan_test
@@ -533,14 +433,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest_main
     )
 
-    # Link libsndfile if found (needed because orpheus_audio_io is static)
-    if(SNDFILE_FOUND)
-        target_link_libraries(voice_state_tsan_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(voice_state_tsan_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(voice_state_tsan_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -551,6 +443,7 @@ if(TARGET orpheus_audio_io)
         NAME voice_state_tsan_test
         COMMAND voice_state_tsan_test
     )
+    endif()
 
     # ORP127 T4: per-sample stop fade envelope measurement (G2)
     add_executable(stop_fade_envelope_test
@@ -565,14 +458,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(stop_fade_envelope_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(stop_fade_envelope_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(stop_fade_envelope_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -597,14 +482,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(clip_gain_smoothing_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(clip_gain_smoothing_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(clip_gain_smoothing_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -629,14 +506,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(voice_mode_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(voice_mode_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(voice_mode_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -661,14 +530,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(choke_and_voice_cap_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(choke_and_voice_cap_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(choke_and_voice_cap_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -693,14 +554,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(atomic_group_choke_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(atomic_group_choke_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(atomic_group_choke_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -726,14 +579,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(occ155_api_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(occ155_api_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(occ155_api_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -745,6 +590,7 @@ if(TARGET orpheus_audio_io)
         COMMAND occ155_api_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP136 §2.2: runtime realtime-safety harness (alloc hooks + /proc/self/io).
     # Gates ORP134 G1: proves at runtime whether the audio thread allocates or
     # performs file I/O — not just that forbidden tokens are absent statically.
@@ -759,14 +605,6 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(realtime_harness_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(realtime_harness_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(realtime_harness_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -791,14 +629,6 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(streaming_seek_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(streaming_seek_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(streaming_seek_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -810,6 +640,7 @@ if(TARGET orpheus_audio_io)
         NAME streaming_seek_test
         COMMAND streaming_seek_test
     )
+    endif()
 
     # ORP136 §2.3: golden render-hash determinism gate (block-size invariance
     # + run-to-run reproducibility). Parity oracle for the ORP134 G1 migration.
@@ -824,14 +655,6 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(transport_render_hash_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(transport_render_hash_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(transport_render_hash_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -857,14 +680,6 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
-
-    if(SNDFILE_FOUND)
-        target_link_libraries(sample_rate_conversion_test PRIVATE ${SNDFILE_LIBRARIES})
-        if(SNDFILE_LIBRARY_DIRS)
-            target_link_directories(sample_rate_conversion_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-        endif()
-    endif()
-
     target_include_directories(sample_rate_conversion_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -876,4 +691,14 @@ if(TARGET orpheus_audio_io)
         COMMAND sample_rate_conversion_test
     )
 
+if(ORPHEUS_ENABLE_EXTENDED_TESTS)
+set_tests_properties(
+    multi_clip_stress_test
+    callback_queue_stress_test
+    voice_state_tsan_test
+    realtime_harness_test
+    streaming_seek_test
+    PROPERTIES LABELS "extended;stress"
+)
+endif()
 endif()

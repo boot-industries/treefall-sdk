@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 namespace orpheus {
@@ -50,8 +51,11 @@ public:
   /// @param numChannels Interleaved channel count (>= 1)
   /// @param capacityFrames Ring capacity; rounded UP to a power of two
   ///        (allocation happens here, never on the audio thread)
+  /// @throws std::invalid_argument when numChannels is zero
+  /// @throws std::length_error when power-of-two rounding, element-count,
+  ///         vector-capacity, or byte-count arithmetic is not representable
+  /// @throws std::bad_alloc when a representable allocation cannot be satisfied
   AudioInputRing(uint16_t numChannels, size_t capacityFrames);
-
   uint16_t numChannels() const {
     return m_numChannels;
   }

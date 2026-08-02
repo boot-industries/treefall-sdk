@@ -20,7 +20,9 @@ set(producer_configure_args
   -S "${producer_source_dir}"
   -B "${producer_binary_dir}"
   -DORPHEUS_SOURCE_DIR:PATH=${sdk_source_dir}
-  -DFETCHCONTENT_BASE_DIR:PATH=${dependency_dir})
+  -DFETCHCONTENT_BASE_DIR:PATH=${dependency_dir}
+  -DORP_ENABLE_ASAN=OFF
+  -DORP_ENABLE_UBSAN=OFF)
 
 if(DEFINED build_type AND NOT build_type STREQUAL "")
   list(APPEND producer_configure_args -DCMAKE_BUILD_TYPE=${build_type})

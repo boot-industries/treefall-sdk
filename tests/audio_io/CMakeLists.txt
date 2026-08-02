@@ -20,6 +20,15 @@ target_include_directories(polyphase_resampler_test
 
 add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
 
+add_executable(realtime_borrowed_target_test
+    realtime_borrowed_target_test.cpp
+)
+target_link_libraries(realtime_borrowed_target_test PRIVATE GTest::gtest GTest::gtest_main)
+target_include_directories(realtime_borrowed_target_test
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
+add_test(NAME realtime_borrowed_target_test COMMAND realtime_borrowed_target_test)
+set_tests_properties(realtime_borrowed_target_test PROPERTIES LABELS "fast;unit")
+
 # FTR041: sample-accurate, bounded trigger voice contract and RT allocation gate.
 add_executable(trigger_voice_test
     trigger_voice_test.cpp
@@ -114,19 +123,6 @@ target_link_libraries(media_integrity_test
 target_include_directories(media_integrity_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 add_test(NAME media_integrity_test COMMAND media_integrity_test)
 
-# Find libsndfile (needed because orpheus_audio_io is static)
-find_package(PkgConfig)
-if(PKG_CONFIG_FOUND)
-    pkg_check_modules(SNDFILE sndfile)
-endif()
-
-if(NOT SNDFILE_FOUND)
-    find_library(SNDFILE_LIBRARIES NAMES sndfile libsndfile)
-    find_path(SNDFILE_INCLUDE_DIRS NAMES sndfile.h)
-    if(SNDFILE_LIBRARIES AND SNDFILE_INCLUDE_DIRS)
-        set(SNDFILE_FOUND TRUE)
-    endif()
-endif()
 
 # ORP128/FTR018 §1: backward/windowed read (readSamplesEndingAt). The base-default
 # half (in-memory fake reader) is host-neutral; the libsndfile-override half is
@@ -148,19 +144,14 @@ target_include_directories(reverse_read_test
         ${CMAKE_SOURCE_DIR}/src/core
 )
 
-if(SNDFILE_FOUND)
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
     target_compile_definitions(reverse_read_test PRIVATE ORPHEUS_HAVE_SNDFILE)
-    target_include_directories(reverse_read_test PRIVATE ${SNDFILE_INCLUDE_DIRS})
-    target_link_libraries(reverse_read_test PRIVATE ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(reverse_read_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
 endif()
 
 add_test(NAME reverse_read_test COMMAND reverse_read_test)
 
 # Audio file reader tests (requires libsndfile)
-if(SNDFILE_FOUND)
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
     add_executable(audio_file_reader_test
         audio_file_reader_test.cpp
     )
@@ -171,12 +162,8 @@ if(SNDFILE_FOUND)
             orpheus_session
             GTest::gtest
             GTest::gtest_main
-            ${SNDFILE_LIBRARIES}
     )
 
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(audio_file_reader_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
 
     target_include_directories(audio_file_reader_test
         PRIVATE
@@ -197,12 +184,8 @@ if(SNDFILE_FOUND)
             orpheus_session
             GTest::gtest
             GTest::gtest_main
-            ${SNDFILE_LIBRARIES}
     )
 
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(audio_file_writer_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
 
     target_include_directories(audio_file_writer_test
         PRIVATE
@@ -224,18 +207,13 @@ if(SNDFILE_FOUND)
             orpheus_session
             GTest::gtest
             GTest::gtest_main
-            ${SNDFILE_LIBRARIES}
     )
 
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(waveform_processor_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
 
     target_include_directories(waveform_processor_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src/core
-            ${SNDFILE_INCLUDE_DIRS}
     )
 
     add_test(NAME waveform_processor_test COMMAND waveform_processor_test)
@@ -254,13 +232,6 @@ target_link_libraries(dummy_driver_test
         GTest::gtest_main
 )
 
-# If libsndfile is found, link it (needed because orpheus_audio_io is static)
-if(SNDFILE_FOUND)
-    target_link_libraries(dummy_driver_test PRIVATE ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(dummy_driver_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
-endif()
 
 target_include_directories(dummy_driver_test
     PRIVATE
@@ -271,7 +242,7 @@ target_include_directories(dummy_driver_test
 add_test(NAME dummy_driver_test COMMAND dummy_driver_test)
 
 # CoreAudio driver tests (macOS only)
-if(ORPHEUS_ENABLE_COREAUDIO)
+if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     add_executable(coreaudio_driver_test
         coreaudio_driver_test.cpp
         coreaudio_sample_rate_monitor_test.cpp
@@ -294,6 +265,7 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     )
 
     add_test(NAME coreaudio_driver_test COMMAND coreaudio_driver_test)
+    set_tests_properties(coreaudio_driver_test PROPERTIES LABELS "extended;hardware")
 endif()
 
 if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
@@ -301,8 +273,11 @@ if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
     target_link_libraries(wasapi_driver_test
         PRIVATE orpheus_audio_driver_wasapi orpheus_audio_driver_manager
                 GTest::gtest GTest::gtest_main)
-    target_include_directories(wasapi_driver_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_include_directories(wasapi_driver_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/platform/audio_drivers/wasapi)
     add_test(NAME wasapi_driver_test COMMAND wasapi_driver_test)
+    set_tests_properties(wasapi_driver_test PROPERTIES LABELS "extended;hardware")
 endif()
 
 # Audio Driver Manager tests
@@ -327,13 +302,6 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     )
 endif()
 
-# If libsndfile is found, link it (needed because orpheus_audio_io is static)
-if(SNDFILE_FOUND)
-    target_link_libraries(driver_manager_test PRIVATE ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(driver_manager_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
-endif()
 
 target_include_directories(driver_manager_test
     PRIVATE
@@ -365,13 +333,6 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     )
 endif()
 
-# If libsndfile is found, link it (needed because orpheus_audio_io is static)
-if(SNDFILE_FOUND)
-    target_link_libraries(device_hot_swap_test PRIVATE ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(device_hot_swap_test PRIVATE ${SNDFILE_LIBRARY_DIRS})
-    endif()
-endif()
 
 target_include_directories(device_hot_swap_test
     PRIVATE

@@ -34,10 +34,9 @@ struct AudioDeviceInfo {
 /// and hot-swap capabilities for the Orpheus SDK.
 ///
 /// Thread Safety:
-/// - enumerateDevices(), getDeviceInfo(), setActiveDevice(): UI thread only
-/// - getCurrentDevice(), getCurrentSampleRate(), getCurrentBufferSize(): Thread-safe
-/// - setDeviceChangeCallback(): UI thread only
-///
+/// - enumerateDevices(), getDeviceInfo(), setActiveDevice(): control/UI thread only
+/// - getCurrentDevice(), getCurrentSampleRate(), getCurrentBufferSize(): thread-safe
+/// - setDeviceChangeCallback(): control/UI thread only
 /// Platform Support:
 /// - macOS: CoreAudio device enumeration
 /// - Windows: WASAPI shared-mode device enumeration and playback
@@ -61,25 +60,21 @@ public:
   ///
   /// @param deviceId Device identifier from enumerateDevices()
   /// @return Device info, or std::nullopt if device not found
-  /// @note This is thread-safe and can be called from any thread
+  /// @note Control thread/UI thread only; device enumeration may query hardware.
   virtual std::optional<AudioDeviceInfo> getDeviceInfo(const std::string& deviceId) = 0;
 
-  /// Set active audio device (hot-swap)
+  /// Set active audio device (transactional hot-swap)
   ///
-  /// This method performs a graceful device switch:
-  /// 1. Fade out all clips (10ms)
-  /// 2. Stop audio callback
-  /// 3. Close current driver
-  /// 4. Open new driver with specified settings
-  /// 5. Restart audio callback
-  /// 6. Notify via callback
+  /// A candidate is created and initialized before the current driver is
+  /// stopped. Candidate or stop failure preserves the current driver and
+  /// configuration. On success ownership/configuration commit atomically, then
+  /// the change callback is invoked after the manager lock is released.
   ///
   /// @param deviceId Device identifier
   /// @param sampleRate Desired sample rate (must be in supportedSampleRates)
   /// @param bufferSize Desired buffer size (must be in supportedBufferSizes)
   /// @return SessionGraphError::OK on success
-  /// @note This stops playback, switches device, restarts audio thread
-  /// @warning May cause brief audio dropout (~100ms)
+  /// @warning May cause brief audio dropout (~100ms) after a successful switch.
   virtual SessionGraphError setActiveDevice(const std::string& deviceId, uint32_t sampleRate,
                                             uint32_t bufferSize) = 0;
 
@@ -114,12 +109,10 @@ public:
 
   /// Get the currently active audio driver instance
   ///
-  /// This provides direct access to the underlying audio driver for
-  /// integration with RealTimeEngine and other SDK components.
-  ///
-  /// @return Pointer to active driver, or nullptr if no device active
-  /// @note Thread-safe, can be called from any thread
-  /// @warning Driver may change after setActiveDevice() calls
+  /// @return Borrowed pointer to the active driver, or nullptr if no device active
+  /// @note The pointer is thread-safe to obtain but is not a lifetime lease.
+  ///       Synchronize its use with setActiveDevice() and do not retain it
+  ///       across a possible replacement.
   virtual IAudioDriver* getActiveDriver() = 0;
 };
 
