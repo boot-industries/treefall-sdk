@@ -118,6 +118,14 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
             root = Path(directory)
             self.assertFalse(any("adjacent" in target.label.lower() for target in AUDIT.default_targets(root, False)))
             self.assertTrue(any("Clip Composer" in target.label for target in AUDIT.default_targets(root, True)))
+    def test_missing_configured_function_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.cpp"
+            path.write_text("void unrelated() {}\n", encoding="utf-8")
+            target = AUDIT.ScanTarget("missing callback", path, r"void\s+render\s*\(")
+            with self.assertRaises(AUDIT.AuditConfigurationError):
+                AUDIT.scan_target(target)
+
 
 
 if __name__ == "__main__":

@@ -32,7 +32,8 @@ public:
     Lease& operator=(const Lease&) = delete;
 
     Lease(Lease&& other) noexcept
-        : owner_(std::exchange(other.owner_, nullptr)), target_(std::exchange(other.target_, nullptr)) {}
+        : owner_(std::exchange(other.owner_, nullptr)),
+          target_(std::exchange(other.target_, nullptr)) {}
 
     Lease& operator=(Lease&& other) noexcept {
       if (this != &other) {
@@ -43,10 +44,16 @@ public:
       return *this;
     }
 
-    ~Lease() { release(); }
+    ~Lease() {
+      release();
+    }
 
-    [[nodiscard]] explicit operator bool() const noexcept { return target_ != nullptr; }
-    [[nodiscard]] T* get() const noexcept { return target_; }
+    [[nodiscard]] explicit operator bool() const noexcept {
+      return target_ != nullptr;
+    }
+    [[nodiscard]] T* get() const noexcept {
+      return target_;
+    }
 
   private:
     friend class RealtimeBorrowedTarget;
@@ -73,7 +80,9 @@ public:
   RealtimeBorrowedTarget(const RealtimeBorrowedTarget&) = delete;
   RealtimeBorrowedTarget& operator=(const RealtimeBorrowedTarget&) = delete;
 
-  [[nodiscard]] T* get() const noexcept { return target_.load(std::memory_order_acquire); }
+  [[nodiscard]] T* get() const noexcept {
+    return target_.load(std::memory_order_acquire);
+  }
 
   /// Attempt one admission. Contention is an empty lease, never a retry loop.
   [[nodiscard]] Lease tryAcquire() noexcept {
@@ -82,20 +91,23 @@ public:
       return {};
     }
 
-    T* target = target_.load(std::memory_order_acquire);
-    if (target == nullptr) {
+    if (!admission_.compare_exchange_strong(observed, observed + 1, std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
       return {};
     }
 
-    if (!admission_.compare_exchange_strong(observed, observed + 1, std::memory_order_acq_rel,
-                                            std::memory_order_acquire)) {
+    T* target = target_.load(std::memory_order_acquire);
+    if (target == nullptr) {
+      admission_.fetch_sub(1, std::memory_order_release);
       return {};
     }
     return Lease(this, target);
   }
 
   /// Control-thread-only replacement. Return is a lifetime barrier for old target use.
-  void replaceAndDrain(T* replacement) noexcept { replaceAndDrain(replacement, nullptr); }
+  void replaceAndDrain(T* replacement) noexcept {
+    replaceAndDrain(replacement, nullptr);
+  }
 
   /// Test hook runs after admission closes and before the drain completes.
   void replaceAndDrain(T* replacement, void (*after_close)() noexcept) noexcept {
@@ -112,7 +124,9 @@ public:
     admission_.store(replacement != nullptr ? kAccepting : 0, std::memory_order_release);
   }
 
-  ~RealtimeBorrowedTarget() { replaceAndDrain(nullptr); }
+  ~RealtimeBorrowedTarget() {
+    replaceAndDrain(nullptr);
+  }
 
 private:
   std::atomic<T*> target_{nullptr};
