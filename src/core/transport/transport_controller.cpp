@@ -251,6 +251,12 @@ TransportController::~TransportController() {
   // Destruction is externally serialized against processAudio(). Stop and join
   // the worker before releasing any source held only by unread raw commands.
   m_streamWorker.reset();
+  for (size_t index = 0; index < m_activeClipCount; ++index) {
+    releaseActiveSource(m_activeClips[index].sourceLifetime);
+    m_activeClips[index].sourceLifetime = nullptr;
+    m_activeClips[index].source.reset();
+  }
+  m_activeClipCount = 0;
 
   size_t readIndex = m_commandReadIndex.load(std::memory_order_relaxed);
   const size_t writeIndex = m_commandWriteIndex.load(std::memory_order_acquire);
@@ -261,12 +267,14 @@ TransportController::~TransportController() {
       command.seekSource->releaseCommandPrime(command.seekPrime);
     }
     if ((command.type == TransportCommand::Type::Start ||
-         command.type == TransportCommand::Type::StartWithGroupChoke) &&
+         command.type == TransportCommand::Type::StartWithGroupChoke ||
+         command.type == TransportCommand::Type::StartWithStopOthers) &&
         command.startSource && command.startPrime.pageMask != 0) {
       command.startSource->releaseCommandPrime(command.startPrime);
     }
     if ((command.type == TransportCommand::Type::Start ||
          command.type == TransportCommand::Type::StartWithGroupChoke ||
+         command.type == TransportCommand::Type::StartWithStopOthers ||
          command.type == TransportCommand::Type::Seek) &&
         command.sourceLifetime) {
       releaseSourceCommand(command.sourceLifetime);
@@ -362,6 +370,7 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
         context.reset();
         return SessionGraphError::InternalError;
       }
+      context->sourceLifetime = entry.commandLifetime.get();
       retainSourceCommand(entry.commandLifetime.get());
       sourceLifetime = entry.commandLifetime.get();
       return SessionGraphError::OK;
@@ -434,17 +443,9 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
     }
   }
 
-  if (stopOthers) {
-    const SessionGraphError stopResult = stopOtherClips(handle);
-    if (stopResult != SessionGraphError::OK) {
-      releaseStartPrime();
-      releaseSourceCommand(sourceLifetime);
-      return stopResult;
-    }
-  }
-
   TransportCommand cmd{};
-  cmd.type = TransportCommand::Type::Start;
+  cmd.type = stopOthers ? TransportCommand::Type::StartWithStopOthers
+                        : TransportCommand::Type::Start;
   cmd.handle = handle;
   cmd.startContext = context;
   cmd.sourceLifetime = sourceLifetime;
@@ -595,14 +596,12 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                                        size_t numFrames) noexcept {
   if (outputBuffers == nullptr || numChannels != m_config.outputChannels ||
       numFrames > m_config.maxBlockFrames) {
-    if (outputBuffers != nullptr) {
-      for (size_t channel = 0; channel < numChannels; ++channel) {
-        if (outputBuffers[channel] != nullptr) {
-          std::memset(outputBuffers[channel], 0, numFrames * sizeof(float));
-        }
-      }
-    }
     return;
+  }
+  for (size_t channel = 0; channel < m_config.outputChannels; ++channel) {
+    if (outputBuffers[channel] == nullptr) {
+      return;
+    }
   }
 
   processCommands();
@@ -1066,6 +1065,27 @@ void TransportController::processCommands() {
       }
     } break;
 
+    case TransportCommand::Type::StartWithStopOthers: {
+      // Admission is deliberately first. The firing voice and the peer choke
+      // share one queue slot, so a full queue cannot partially mutate peers.
+      const uint32_t voiceId = cmd.startContext ? startVoiceWithMode(cmd.startContext) : 0;
+      settleStartPrime(cmd, voiceId != 0);
+      if (voiceId != 0) {
+        TransportEvent event{};
+        event.type = TransportEventType::ClipStarted;
+        event.handle = cmd.handle;
+        event.voiceId = voiceId;
+        event.position = getCurrentPosition();
+        postTransportEvent(event);
+        for (size_t i = 0; i < m_activeClipCount; ++i) {
+          ActiveClip& peer = m_activeClips[i];
+          if (peer.handle != cmd.handle && !peer.isStopping) {
+            beginOperatorStop(peer);
+          }
+        }
+      }
+    } break;
+
     case TransportCommand::Type::Stop: {
       // Multi-voice: Stop ALL voice instances for this handle
       for (size_t i = 0; i < m_activeClipCount; ++i) {
@@ -1082,22 +1102,20 @@ void TransportController::processCommands() {
       break;
 
     case TransportCommand::Type::Panic:
-      // Publish every retired voice so durable hosts can close the matching
-      // playout row. Handle-level consumers reconcile after the active set is
-      // cleared below.
-      for (size_t i = 0; i < m_activeClipCount; ++i) {
+      // Panic evicts each voice through the same compaction/lifetime path used
+      // by natural completion, operator stops, and same-handle replacement.
+      while (m_activeClipCount != 0) {
+        const ActiveClip& voice = m_activeClips[0];
+        const ClipHandle stoppedHandle = voice.handle;
+        const uint32_t stoppedVoiceId = voice.voiceId;
+        removeActiveVoice(stoppedVoiceId);
         TransportEvent event{};
         event.type = TransportEventType::ClipStopped;
-        event.handle = m_activeClips[i].handle;
-        event.voiceId = m_activeClips[i].voiceId;
+        event.handle = stoppedHandle;
+        event.voiceId = stoppedVoiceId;
         event.position = getCurrentPosition();
         postTransportEvent(event);
-        m_activeClips[i].source.reset();
       }
-      m_activeClipCount = 0;
-      releasePendingStartReservations();
-      releasePendingSeekReservations();
-
       break;
 
     case TransportCommand::Type::StopOthers:
@@ -1350,6 +1368,7 @@ void TransportController::processCommands() {
 
     if ((cmd.type == TransportCommand::Type::Start ||
          cmd.type == TransportCommand::Type::StartWithGroupChoke ||
+         cmd.type == TransportCommand::Type::StartWithStopOthers ||
          cmd.type == TransportCommand::Type::Seek) &&
         cmd.sourceLifetime) {
       releaseSourceCommand(cmd.sourceLifetime);
@@ -1369,6 +1388,19 @@ void TransportController::retainSourceCommand(SourceCommandLifetime* lifetime) n
 void TransportController::releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept {
   if (lifetime) {
     const uint32_t previous = lifetime->unread.fetch_sub(1, std::memory_order_release);
+    assert(previous > 0);
+  }
+}
+
+void TransportController::retainActiveSource(SourceCommandLifetime* lifetime) noexcept {
+  if (lifetime) {
+    lifetime->active_voices.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void TransportController::releaseActiveSource(SourceCommandLifetime* lifetime) noexcept {
+  if (lifetime) {
+    const uint32_t previous = lifetime->active_voices.fetch_sub(1, std::memory_order_release);
     assert(previous > 0);
   }
 }
@@ -1591,22 +1623,21 @@ void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupI
   }
 }
 
-uint32_t TransportController::allocateVoiceId() noexcept {
+uint32_t TransportController::allocateVoiceId(uint32_t ignoredVoiceId) noexcept {
+  uint32_t nextVoiceId = m_nextVoiceId;
   for (size_t attempt = 0; attempt <= MAX_ACTIVE_CLIPS; ++attempt) {
-    uint32_t candidate = m_nextVoiceId;
+    uint32_t candidate = nextVoiceId;
     if (candidate == 0) {
       candidate = 1;
     }
-    m_nextVoiceId = candidate == std::numeric_limits<uint32_t>::max() ? 1 : candidate + 1;
+    nextVoiceId = candidate == std::numeric_limits<uint32_t>::max() ? 1 : candidate + 1;
 
-    bool inUse = false;
-    for (size_t active = 0; active < m_activeClipCount; ++active) {
-      if (m_activeClips[active].voiceId == candidate) {
-        inUse = true;
-        break;
-      }
+    bool inUse = ignoredVoiceId != 0 && candidate == ignoredVoiceId;
+    for (size_t active = 0; !inUse && active < m_activeClipCount; ++active) {
+      inUse = m_activeClips[active].voiceId == candidate;
     }
     if (!inUse) {
+      m_nextVoiceId = nextVoiceId;
       return candidate;
     }
   }
@@ -1635,26 +1666,23 @@ bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, boo
   return false;
 }
 bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
-  if (!context)
+  if (!context) {
     return false;
-
-  ClipHandle handle = context->handle;
-
-  // Multi-voice: Check if we need to remove oldest voice to make room.
-  // ORP127 G7: the cap is now host-configurable (default 8, hard max 32).
-  size_t currentVoiceCount = countActiveVoices(handle);
-  size_t maxVoices = m_maxVoicesPerClip.load(std::memory_order_relaxed);
-  if (currentVoiceCount >= maxVoices) {
-    // At max capacity - remove oldest voice instance for this clip
-    ActiveClip* oldest = findOldestVoice(handle);
-    if (oldest) {
-      const uint32_t oldestVoiceId = oldest->voiceId;
-      // Replacing one voice for a handle is not a handle-level stop.
-      removeActiveVoice(oldestVoiceId);
-    }
   }
 
-  if (m_activeClipCount >= m_config.maxActiveVoices) {
+  const ClipHandle handle = context->handle;
+  const size_t currentVoiceCount = countActiveVoices(handle);
+  const size_t maxVoices = m_maxVoicesPerClip.load(std::memory_order_relaxed);
+  uint32_t replacementVoiceId = 0;
+  if (currentVoiceCount >= maxVoices) {
+    ActiveClip* oldest = findOldestVoice(handle);
+    if (oldest == nullptr) {
+      return false;
+    }
+    replacementVoiceId = oldest->voiceId;
+  }
+
+  if (m_activeClipCount >= m_config.maxActiveVoices && replacementVoiceId == 0) {
     TransportEvent event{};
     event.type = TransportEventType::ActiveClipLimitReached;
     event.handle = handle;
@@ -1663,9 +1691,17 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     return false;
   }
 
-  const uint32_t voiceId = allocateVoiceId();
+  // Preflight every refusal condition before changing the live voice set.
+  const uint32_t voiceId = allocateVoiceId(replacementVoiceId);
   if (voiceId == 0) {
     return false;
+  }
+
+  // The incoming source pin is acquired before same-handle replacement drops
+  // the old pin, so unregister cannot observe a transient zero.
+  retainActiveSource(context->sourceLifetime);
+  if (replacementVoiceId != 0) {
+    removeActiveVoice(replacementVoiceId);
   }
 
   const uint64_t startOrdinal = allocateVoiceStartOrdinal();
@@ -1726,6 +1762,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
   clip.source = context->source; // Store shared_ptr (maintains reference count)
+  clip.sourceLifetime = context->sourceLifetime;
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
@@ -1755,6 +1792,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 void TransportController::removeActiveVoice(uint32_t voiceId) {
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].voiceId == voiceId) {
+      SourceCommandLifetime* removedLifetime = m_activeClips[i].sourceLifetime;
       // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
       // can't be copied)
       if (i < m_activeClipCount - 1) {
@@ -1822,6 +1860,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce;
         dest.source = src.source;
+        dest.sourceLifetime = src.sourceLifetime;
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
         dest.voiceMode = src.voiceMode;                 // ORP127 G5
@@ -1831,7 +1870,9 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
       }
       configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
       m_activeClips[m_activeClipCount - 1].source.reset();
+      m_activeClips[m_activeClipCount - 1].sourceLifetime = nullptr;
       --m_activeClipCount;
+      releaseActiveSource(removedLifetime);
       return;
     }
   }
@@ -2204,7 +2245,8 @@ SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
     return SessionGraphError::OK;
   }
   if (it->second.commandLifetime &&
-      it->second.commandLifetime->unread.load(std::memory_order_acquire) != 0) {
+      (it->second.commandLifetime->unread.load(std::memory_order_acquire) != 0 ||
+       it->second.commandLifetime->active_voices.load(std::memory_order_acquire) != 0)) {
     return SessionGraphError::NotReady;
   }
   if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(it->second.source);

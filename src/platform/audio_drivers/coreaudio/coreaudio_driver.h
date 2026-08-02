@@ -2,7 +2,7 @@
 #pragma once
 
 #include "coreaudio_sample_rate_monitor.h"
-
+#include "../../../core/common/realtime_borrowed_target.h"
 #include <orpheus/audio_driver.h>
 
 #include <AudioToolbox/AudioToolbox.h>
@@ -60,13 +60,6 @@ private:
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
-
-  bool tryEnterCallback() noexcept;
-  void leaveCallback() noexcept;
-  uint64_t closeCallbackAdmission() noexcept;
-
-  static constexpr uint64_t kCallbackAccepting = uint64_t{1} << 63;
-  static constexpr uint64_t kCallbackCountMask = ~kCallbackAccepting;
 
   void recordInputRenderFailure() noexcept;
 
@@ -158,16 +151,13 @@ private:
   std::mutex sample_rate_monitor_mutex_;
   std::thread sample_rate_monitor_thread_;
 
-  // Non-owning host callback. It is only read while callback_admission_ holds
-  // an admitted callback, which stop() drains before clearing this pointer.
-  IAudioCallback* callback_{nullptr};
+  // Non-owning host callback. Control-thread replacement closes admission and
+  // drains every admitted callback before changing the borrowed pointer.
+  detail::RealtimeBorrowedTarget<IAudioCallback> callback_target_;
 
-  // High bit admits new callbacks; low 63 bits count admitted callbacks.
-  // Closing admission is a lifetime barrier for callback_ and AudioUnit state.
-  std::atomic<uint64_t> callback_admission_{0};
-
-  // Performance monitoring (optional, only read by diagnostics callback builds)
-  std::atomic<IPerformanceMonitor*> performance_monitor_{nullptr};
+  // Optional diagnostics monitor. Its lease spans timing, active-count query,
+  // elapsed conversion, and publication.
+  detail::RealtimeBorrowedTarget<IPerformanceMonitor> performance_monitor_target_;
   int64_t expected_stream_sample_{0};
   bool stream_timeline_initialized_{false};
 

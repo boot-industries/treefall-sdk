@@ -1,24 +1,53 @@
 # SPDX-License-Identifier: MIT
 
-# Find libsndfile (optional, for audio file reading)
-find_package(PkgConfig)
-if(PKG_CONFIG_FOUND)
-    pkg_check_modules(SNDFILE sndfile)
+# Select one consumer-resolved libsndfile target. Raw library/include paths
+# must never enter an installed SDK target.
+set(ORPHEUS_SNDFILE_PROVIDER "Auto" CACHE STRING
+    "libsndfile provider: Auto, SndFile, PkgConfig, or None")
+set_property(CACHE ORPHEUS_SNDFILE_PROVIDER PROPERTY STRINGS
+    Auto SndFile PkgConfig None)
+set(_orpheus_sndfile_provider_values Auto SndFile PkgConfig None)
+if(NOT ORPHEUS_SNDFILE_PROVIDER IN_LIST _orpheus_sndfile_provider_values)
+    message(FATAL_ERROR
+        "ORPHEUS_SNDFILE_PROVIDER must be one of Auto, SndFile, PkgConfig, or None")
 endif()
 
-if(NOT SNDFILE_FOUND)
-    # Try find_library as fallback
-    find_library(SNDFILE_LIBRARIES NAMES sndfile libsndfile)
-    find_path(SNDFILE_INCLUDE_DIRS NAMES sndfile.h)
+set(_orpheus_sndfile_target "")
+set(ORPHEUS_SNDFILE_PROVIDER_RESOLVED "None" CACHE INTERNAL
+    "Resolved libsndfile provider" FORCE)
 
-    if(SNDFILE_LIBRARIES AND SNDFILE_INCLUDE_DIRS)
-        set(SNDFILE_FOUND TRUE)
-    else()
-        message(WARNING "libsndfile not found. Audio file reading will not be available.")
-        message(WARNING "Install with: brew install libsndfile (macOS) or vcpkg install libsndfile (Windows)")
-        set(SNDFILE_FOUND FALSE)
+if(NOT ORPHEUS_SNDFILE_PROVIDER STREQUAL "None")
+    if(ORPHEUS_SNDFILE_PROVIDER STREQUAL "Auto" OR
+       ORPHEUS_SNDFILE_PROVIDER STREQUAL "SndFile")
+        find_package(SndFile CONFIG QUIET)
+        if(TARGET SndFile::sndfile)
+            set(_orpheus_sndfile_target SndFile::sndfile)
+            set(ORPHEUS_SNDFILE_PROVIDER_RESOLVED "SndFile" CACHE INTERNAL
+                "Resolved libsndfile provider" FORCE)
+        elseif(ORPHEUS_SNDFILE_PROVIDER STREQUAL "SndFile")
+            message(FATAL_ERROR
+                "ORPHEUS_SNDFILE_PROVIDER=SndFile requires SndFile::sndfile")
+        endif()
+    endif()
+
+    if(NOT _orpheus_sndfile_target AND
+       (ORPHEUS_SNDFILE_PROVIDER STREQUAL "Auto" OR
+        ORPHEUS_SNDFILE_PROVIDER STREQUAL "PkgConfig"))
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(SNDFILE QUIET IMPORTED_TARGET sndfile)
+        endif()
+        if(TARGET PkgConfig::SNDFILE)
+            set(_orpheus_sndfile_target PkgConfig::SNDFILE)
+            set(ORPHEUS_SNDFILE_PROVIDER_RESOLVED "PkgConfig" CACHE INTERNAL
+                "Resolved libsndfile provider" FORCE)
+        elseif(ORPHEUS_SNDFILE_PROVIDER STREQUAL "PkgConfig")
+            message(FATAL_ERROR
+                "ORPHEUS_SNDFILE_PROVIDER=PkgConfig requires PkgConfig::SNDFILE")
+        endif()
     endif()
 endif()
+
 
 # Build audio utilities with available components
 set(ORPHEUS_AUDIO_UTILS_SOURCES)
@@ -51,7 +80,7 @@ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_analysis.cpp)
 # R2: versioned media fingerprints and deterministic resolution.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES media_integrity.cpp)
 
-if(SNDFILE_FOUND)
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_reader_libsndfile.cpp)
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_writer_libsndfile.cpp) # ORP134 G5 / FTR007
     list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES resampling_audio_file_reader.cpp)
@@ -80,12 +109,8 @@ target_include_directories(orpheus_audio_utils
         ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
 )
 
-if(SNDFILE_FOUND)
-    target_include_directories(orpheus_audio_utils PRIVATE ${SNDFILE_INCLUDE_DIRS})
-    target_link_libraries(orpheus_audio_utils PUBLIC ${SNDFILE_LIBRARIES})
-    if(SNDFILE_LIBRARY_DIRS)
-        target_link_directories(orpheus_audio_utils PUBLIC ${SNDFILE_LIBRARY_DIRS})
-    endif()
+if(_orpheus_sndfile_target)
+    target_link_libraries(orpheus_audio_utils PUBLIC ${_orpheus_sndfile_target})
 endif()
 
 if(WIN32)

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/realtime_diagnostics.h>
-
+#include "realtime_counter.h"
 namespace orpheus {
 
 void RealtimeDiagnostics::recordCallback(uint32_t bufferFrames, uint32_t sampleRate,
                                          uint64_t callbackDurationNs) {
-  callback_count_.fetch_add(1, std::memory_order_relaxed);
-  samples_processed_.fetch_add(bufferFrames, std::memory_order_relaxed);
+  detail::publishSaturatingIncrement(callback_count_);
+  detail::publishSaturatingAdd(samples_processed_, bufferFrames);
   last_buffer_frames_.store(bufferFrames, std::memory_order_relaxed);
   last_sample_rate_.store(sampleRate, std::memory_order_relaxed);
 
@@ -20,15 +20,15 @@ void RealtimeDiagnostics::recordCallback(uint32_t bufferFrames, uint32_t sampleR
   const uint64_t halfBudgetNs = bufferDurationNs / 2u;
 
   if (callbackDurationNs > quarterBudgetNs) {
-    callback_over_budget_count_.fetch_add(1, std::memory_order_relaxed);
+    detail::publishSaturatingIncrement(callback_over_budget_count_);
   }
   if (callbackDurationNs > halfBudgetNs) {
-    callback_p99_over_budget_count_.fetch_add(1, std::memory_order_relaxed);
+    detail::publishSaturatingIncrement(callback_p99_over_budget_count_);
   }
 }
 
 void RealtimeDiagnostics::reportUnderrun() {
-  underrun_count_.fetch_add(1, std::memory_order_relaxed);
+  detail::publishSaturatingIncrement(underrun_count_);
 }
 
 void RealtimeDiagnostics::reset() {

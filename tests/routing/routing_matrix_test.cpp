@@ -1369,3 +1369,33 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST_F(RoutingMatrixTest, MalformedOutputShapeIsNoTouch) {
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  std::vector<float> left(BUFFER_SIZE, 13.0f);
+  std::vector<float> right(BUFFER_SIZE, 13.0f);
+  float* outputs[2] = {left.data(), right.data()};
+
+  EXPECT_EQ(matrix->processRouting(nullptr, nullptr, BUFFER_SIZE),
+            SessionGraphError::InvalidParameter);
+  EXPECT_EQ(matrix->processRouting(nullptr, outputs, BUFFER_SIZE),
+            SessionGraphError::OK);
+  for (float sample : left) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
+  }
+  for (float sample : right) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
+  }
+
+  left.assign(BUFFER_SIZE, 13.0f);
+  right.assign(BUFFER_SIZE, 13.0f);
+  float* null_lane[2] = {left.data(), nullptr};
+  EXPECT_EQ(matrix->processRouting(nullptr, null_lane, BUFFER_SIZE),
+            SessionGraphError::InvalidParameter);
+  for (float sample : left) {
+    EXPECT_FLOAT_EQ(sample, 13.0f);
+  }
+  for (float sample : right) {
+    EXPECT_FLOAT_EQ(sample, 13.0f);
+  }
+}
