@@ -271,7 +271,7 @@ target_include_directories(dummy_driver_test
 add_test(NAME dummy_driver_test COMMAND dummy_driver_test)
 
 # CoreAudio driver tests (macOS only)
-if(ORPHEUS_ENABLE_COREAUDIO)
+if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     add_executable(coreaudio_driver_test
         coreaudio_driver_test.cpp
         coreaudio_sample_rate_monitor_test.cpp
@@ -294,6 +294,7 @@ if(ORPHEUS_ENABLE_COREAUDIO)
     )
 
     add_test(NAME coreaudio_driver_test COMMAND coreaudio_driver_test)
+    set_tests_properties(coreaudio_driver_test PROPERTIES LABELS "extended;hardware")
 endif()
 
 if(WIN32 AND ORPHEUS_ENABLE_WASAPI)

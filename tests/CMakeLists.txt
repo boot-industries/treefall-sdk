@@ -74,8 +74,8 @@ if(ORP_BUILD_SHARED_CORE)
   endif()
 endif()
 
-include(GoogleTest)
-gtest_discover_tests(orpheus_tests)
+add_test(NAME orpheus_tests COMMAND orpheus_tests)
+set_tests_properties(orpheus_tests PROPERTIES LABELS "fast;unit")
 
 if(TARGET Orpheus::diagnostics)
   add_executable(verify_diagnostics_standalone
@@ -150,6 +150,7 @@ endif()
 # Session tests (including Scene Manager)
 add_subdirectory(session)
 
+if(ORPHEUS_ENABLE_EXTENDED_TESTS)
 set(FIND_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/find_package)
 set(FIND_PACKAGE_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/find_package_build)
 set(FIND_PACKAGE_INSTALL_DIR ${CMAKE_BINARY_DIR}/tests/find_package_prefix)
@@ -274,6 +275,14 @@ add_test(NAME abi_link COMMAND orpheus_abi_link)
 if(NOT ORP_BUILD_SHARED_CORE)
   set_tests_properties(abi_link PROPERTIES DISABLED ON)
 endif()
+set_tests_properties(
+  cmake_find_package
+  cmake_package_runtime_consumer
+  cmake_package_rejects_previous_minor
+  cmake_add_subdirectory
+  cmake_shmui_package_consumer
+  abi_link
+  PROPERTIES LABELS "extended;package")
 
 # On Linux with GCC + ASan, dlopen-ing sanitized shared libraries from the
 # (unsanitized) abi_link host aborts with "ASan runtime does not come first in
@@ -310,4 +319,6 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_BUILD_TYPE MATCHES 
       ENVIRONMENT "DYLD_INSERT_LIBRARIES=${ASAN_DYLIB_PATH}"
     )
   endif()
+endif()
+
 endif()
