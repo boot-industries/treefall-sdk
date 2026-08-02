@@ -7,6 +7,26 @@
   },
   "configurePresets": [
     {
+      "name": "sdk-fast",
+      "displayName": "SDK Fast",
+      "description": "Capped, unsanitized SDK test loop with extended gates excluded",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-sdk-fast",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORP_WITH_TESTS": "ON",
+        "ORPHEUS_ENABLE_REALTIME": "ON",
+        "ORPHEUS_ENABLE_ADAPTERS": "OFF",
+        "ORPHEUS_ENABLE_ADAPTER_MINHOST": "OFF",
+        "ORPHEUS_ENABLE_APP_WAVE_FINDER": "OFF",
+        "ORPHEUS_ENABLE_EXTENDED_TESTS": "OFF",
+        "ORP_BUILD_ABI_DYNAMIC": "OFF",
+        "ORP_BUILD_SHARED_CORE": "OFF",
+        "ORP_ENABLE_ASAN": "OFF",
+        "ORP_ENABLE_UBSAN": "OFF"
+      }
+    },
+    {
       "name": "sdk-debug",
       "displayName": "SDK Debug",
       "description": "SDK only, debug build with sanitizers",
@@ -108,6 +128,11 @@
       "configurePreset": "all-apps-debug"
     },
     {
+      "name": "sdk-fast",
+      "configurePreset": "sdk-fast",
+      "jobs": 4
+    },
+    {
       "name": "ci-ubuntu",
       "configurePreset": "ci-ubuntu"
     },
@@ -127,6 +152,21 @@
     {
       "name": "ci-ubuntu",
       "configurePreset": "ci-ubuntu",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sdk-fast",
+      "configurePreset": "sdk-fast",
+      "filter": {
+        "exclude": {
+          "label": "stress"
+        }
+      },
+      "execution": {
+        "jobs": 4
+      },
       "output": {
         "outputOnFailure": true
       }

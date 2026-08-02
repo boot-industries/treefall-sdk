@@ -23,6 +23,8 @@ configure_file(
 set(ORPHEUS_ROOT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(ORP_WITH_TESTS "Build Orpheus tests" ON)
+option(ORPHEUS_ENABLE_EXTENDED_TESTS
+  "Build package, hardware, and stress tests in addition to the fast suite" ON)
 option(ORPHEUS_ENABLE_ADAPTERS "Build Orpheus host adapters" ON)
 option(ORPHEUS_ENABLE_ADAPTER_MINHOST "Build the minimal host adapter" ON)
 option(ORPHEUS_ENABLE_ADAPTER_REAPER "Build the REAPER adapter" OFF)

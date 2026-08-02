@@ -189,6 +189,7 @@ if(TARGET orpheus_audio_io)
         COMMAND multichannel_transport_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # Multi-clip stress test
     add_executable(multi_clip_stress_test
         multi_clip_stress_test.cpp
@@ -221,6 +222,7 @@ if(TARGET orpheus_audio_io)
         NAME multi_clip_stress_test
         COMMAND multi_clip_stress_test
     )
+    endif()
 
     # Clip gain tests (ORP099 Task 1.1)
     add_executable(clip_gain_test
@@ -453,6 +455,7 @@ if(TARGET orpheus_audio_io)
         COMMAND clip_cue_points_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP121 Q-07: Callback queue stress tests
     add_executable(callback_queue_stress_test
         callback_queue_stress_test.cpp
@@ -485,6 +488,7 @@ if(TARGET orpheus_audio_io)
         NAME callback_queue_stress_test
         COMMAND callback_queue_stress_test
     )
+    endif()
 
     # ORP151: public callback-loss telemetry and coherent reconciliation snapshot.
     add_executable(callback_loss_telemetry_test
@@ -518,6 +522,7 @@ if(TARGET orpheus_audio_io)
         COMMAND callback_loss_telemetry_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP127 T2: ThreadSanitizer stress harness for per-voice state.
     # Builds/runs under normal Debug too (liveness check); TSan is the verdict.
     add_executable(voice_state_tsan_test
@@ -551,6 +556,7 @@ if(TARGET orpheus_audio_io)
         NAME voice_state_tsan_test
         COMMAND voice_state_tsan_test
     )
+    endif()
 
     # ORP127 T4: per-sample stop fade envelope measurement (G2)
     add_executable(stop_fade_envelope_test
@@ -745,6 +751,7 @@ if(TARGET orpheus_audio_io)
         COMMAND occ155_api_test
     )
 
+    if(ORPHEUS_ENABLE_EXTENDED_TESTS)
     # ORP136 §2.2: runtime realtime-safety harness (alloc hooks + /proc/self/io).
     # Gates ORP134 G1: proves at runtime whether the audio thread allocates or
     # performs file I/O — not just that forbidden tokens are absent statically.
@@ -810,6 +817,7 @@ if(TARGET orpheus_audio_io)
         NAME streaming_seek_test
         COMMAND streaming_seek_test
     )
+    endif()
 
     # ORP136 §2.3: golden render-hash determinism gate (block-size invariance
     # + run-to-run reproducibility). Parity oracle for the ORP134 G1 migration.
@@ -876,4 +884,14 @@ if(TARGET orpheus_audio_io)
         COMMAND sample_rate_conversion_test
     )
 
+if(ORPHEUS_ENABLE_EXTENDED_TESTS)
+set_tests_properties(
+    multi_clip_stress_test
+    callback_queue_stress_test
+    voice_state_tsan_test
+    realtime_harness_test
+    streaming_seek_test
+    PROPERTIES LABELS "extended;stress"
+)
+endif()
 endif()

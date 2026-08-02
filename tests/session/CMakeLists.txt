@@ -29,8 +29,8 @@ target_include_directories(scene_manager_test
 include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(scene_manager_test)
 
-include(GoogleTest)
-gtest_discover_tests(scene_manager_test)
+add_test(NAME scene_manager_test COMMAND scene_manager_test)
+set_tests_properties(scene_manager_test PROPERTIES LABELS "fast;unit")
 
 # ORP134 G2: identity & time-domain primitives (header-only; JSON round-trip)
 add_executable(identity_time_test
