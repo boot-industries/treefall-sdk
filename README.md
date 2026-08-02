@@ -271,12 +271,18 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 
 ### Audio I/O
 
-- **Audio file reader** – WAV/AIFF/FLAC via libsndfile
-- **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and Linux device backends are not yet release-supported
+- **Audio file reader** – WAV/AIFF/FLAC via libsndfile. The
+  `ORPHEUS_SNDFILE_PROVIDER=Auto|SndFile|PkgConfig|None` CMake choice resolves
+  one imported provider target; `None` builds dependency-free stubs and raw
+  producer paths never enter installed exports.
+- **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and
+  Linux device backends are not yet release-supported
 - **Dummy driver** – Testing and offline rendering
-- **Device selection** – Direction-specific stable input/output IDs; persistent CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
-- **Capture and rate diagnostics** – Factory-visible saturating input-render failure telemetry plus runtime nominal-rate recovery/reinitialization outcomes (ORP155, ORP128)
-- **Waveform processing** – Fast downsampling for UI rendering (ORP109)
+- **Device selection** – Direction-specific stable input/output IDs; persistent
+  CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
+- **Capture and rate diagnostics** – Factory-visible saturating input-render
+  failure telemetry plus runtime nominal-rate recovery/reinitialization
+  outcomes (ORP155, ORP128)
 
 ### Routing & Mixing
 
@@ -288,8 +294,11 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 
 - **Performance monitoring** – Real-time CPU/latency/underrun tracking (ORP109)
 - **Real-time metering** – Peak/RMS/TruePeak/LUFS (ORP109)
-- **Callback timing histogram** – Jitter profiling (ORP109)
-- **Bounded realtime telemetry** – Decimated transport/routing/diagnostic snapshots for message-thread consumers
+- **Callback timing histogram** – Opt-in jitter profiling; disabled by default
+  (`ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING=OFF`) and active only with an attached
+  performance monitor
+- **Bounded realtime telemetry** – Decimated transport/routing/diagnostic
+  snapshots for message-thread consumers
 
 ### Workflow Management
 

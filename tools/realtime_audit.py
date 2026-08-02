@@ -2,13 +2,10 @@
 # SPDX-License-Identifier: MIT
 """Static realtime-safety audit for Orpheus callback paths.
 
-The audit is intentionally conservative. It fails on forbidden patterns in
-hardware-driver callbacks and scans the transport render path for file-reader
-patterns. Since the ORP134 G1 streaming migration the in-repo scan runs with
---fail-known-debt in CI (strict gate): the render path must stay free of
-readSamples/seek/decoder calls. Adjacent-repo app debt is still reported (and
-fails under --fail-known-debt --include-adjacent) until the app-side sprints
-land in those repos.
+The audit is intentionally conservative. Every in-repo realtime producer
+receives the hard-fail callback rules. The transport render path additionally
+receives the historical file-reader debt rules so one target can enforce both
+contracts without choosing between them.
 """
 
 from __future__ import annotations
@@ -24,18 +21,43 @@ FORBIDDEN_DRIVER_PATTERNS = {
     "std::chrono": "callback-local timing is opt-in diagnostics only",
     "sleep_for": "audio callbacks must never sleep",
     "std::this_thread::sleep": "audio callbacks must never sleep",
+    "std::this_thread::yield": "audio callbacks must not yield",
+    ".wait(": "audio callbacks must not wait",
+    ".notify_one(": "audio callbacks must not notify waiters",
+    ".notify_all(": "audio callbacks must not notify waiters",
+    "std::condition_variable": "audio callbacks must not use condition variables",
     "std::lock_guard": "audio callbacks must not take locks",
     "std::unique_lock": "audio callbacks must not take locks",
+    "std::scoped_lock": "audio callbacks must not take locks",
     "std::mutex": "audio callbacks must not touch mutexes",
+    "std::shared_mutex": "audio callbacks must not touch mutexes",
     "fopen": "audio callbacks must not perform file I/O",
+    "fread": "audio callbacks must not perform file I/O",
+    "fwrite": "audio callbacks must not perform file I/O",
     "fprintf": "audio callbacks must not log to files/stderr",
+    "printf(": "audio callbacks must not log",
+    "std::cerr": "audio callbacks must not log",
+    "std::cout": "audio callbacks must not log",
+    "std::fstream": "audio callbacks must not perform file I/O",
+    "std::ifstream": "audio callbacks must not perform file I/O",
+    "std::ofstream": "audio callbacks must not perform file I/O",
     "std::function": "audio callbacks must not create/destroy std::function work",
     " new ": "audio callbacks must not allocate",
+    "new (": "audio callbacks must not allocate",
+    " delete ": "audio callbacks must not deallocate",
+    "delete[]": "audio callbacks must not deallocate",
+    "malloc(": "audio callbacks must not allocate",
+    "calloc(": "audio callbacks must not allocate",
+    "realloc(": "audio callbacks must not allocate",
+    "free(": "audio callbacks must not deallocate",
     "make_unique": "audio callbacks must not allocate",
     "make_shared": "audio callbacks must not allocate",
     ".resize(": "audio callbacks must not grow containers",
+    ".reserve(": "audio callbacks must not grow containers",
     ".push_back(": "audio callbacks must not grow containers",
     ".emplace_back(": "audio callbacks must not grow containers",
+    ".insert(": "audio callbacks must not grow containers",
+    ".assign(": "audio callbacks must not grow containers",
 }
 
 KNOWN_DEBT_PATTERNS = {
@@ -46,13 +68,26 @@ KNOWN_DEBT_PATTERNS = {
     "AudioAnalyzer::processBlock": "app-level visualization analysis runs in callback",
 }
 
+# A pattern set is explicit: (patterns, hard-fail). A target may carry more
+# than one set, which is required for transport's hard rules + file-reader debt.
+PatternSet = tuple[tuple[tuple[str, str], ...], bool]
+HARD_REALTIME_SET: PatternSet = (tuple(FORBIDDEN_DRIVER_PATTERNS.items()), True)
+FILE_READER_DEBT_SET: PatternSet = (tuple(KNOWN_DEBT_PATTERNS.items()), False)
+
 
 @dataclass(frozen=True)
 class ScanTarget:
     label: str
     path: Path
     function_regex: str | None
-    hard_fail: bool
+    # Retained for source compatibility with callers of the original scanner.
+    hard_fail: bool | None = None
+    pattern_sets: tuple[PatternSet, ...] = ()
+
+    def resolved_pattern_sets(self) -> tuple[PatternSet, ...]:
+        if self.pattern_sets:
+            return self.pattern_sets
+        return (HARD_REALTIME_SET if self.hard_fail else FILE_READER_DEBT_SET,)
 
 
 @dataclass
@@ -91,6 +126,22 @@ def extract_function(text: str, function_regex: str) -> tuple[int, list[str]]:
     return base_line, text[start:end].splitlines()
 
 
+def _timing_guarded_lines(lines: list[str]) -> list[tuple[str, bool]]:
+    """Mark lines inside the explicit callback-timing preprocessor guard."""
+    guarded = False
+    result: list[tuple[str, bool]] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#if") and "ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING" in stripped:
+            guarded = True
+            result.append((line, True))
+            continue
+        result.append((line, guarded))
+        if guarded and stripped.startswith("#endif"):
+            guarded = False
+    return result
+
+
 def scan_target(target: ScanTarget) -> list[Finding]:
     if not target.path.exists():
         return []
@@ -101,24 +152,27 @@ def scan_target(target: ScanTarget) -> list[Finding]:
     else:
         base_line, lines = 1, text.splitlines()
 
-    patterns = FORBIDDEN_DRIVER_PATTERNS if target.hard_fail else KNOWN_DEBT_PATTERNS
     findings: list[Finding] = []
-    for offset, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("//"):
-            continue
-        for pattern, message in patterns.items():
-            if pattern in line:
-                findings.append(
-                    Finding(
-                        target=target.label,
-                        path=target.path,
-                        line=base_line + offset,
-                        pattern=pattern,
-                        message=message,
-                        hard_fail=target.hard_fail,
+    for pattern_items, hard_fail in target.resolved_pattern_sets():
+        patterns = dict(pattern_items)
+        for offset, (line, timing_guarded) in enumerate(_timing_guarded_lines(lines)):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            for pattern, message in patterns.items():
+                if pattern == "std::chrono" and timing_guarded:
+                    continue
+                if pattern in line:
+                    findings.append(
+                        Finding(
+                            target=target.label,
+                            path=target.path,
+                            line=base_line + offset,
+                            pattern=pattern,
+                            message=message,
+                            hard_fail=hard_fail,
+                        )
                     )
-                )
     return findings
 
 
@@ -128,22 +182,44 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             "CoreAudio render callback",
             root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp",
             r"OSStatus\s+CoreAudioDriver::renderCallback\s*\(",
-            True,
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "CoreAudio callback admission exit",
+            root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp",
+            r"void\s+CoreAudioDriver::leaveCallback\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "WASAPI render loop",
+            root / "src/platform/audio_drivers/wasapi/wasapi_driver.cpp",
+            r"void\s+audioLoop\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
         ),
         ScanTarget(
             "Transport render path",
             root / "src/core/transport/transport_controller.cpp",
             r"void\s+TransportController::processAudio\s*\(",
-            False,
+            pattern_sets=(HARD_REALTIME_SET, FILE_READER_DEBT_SET),
         ),
-        # ORP134 G1 note: the former "libsndfile reader" target is retired.
-        # AudioFileReaderLibsndfile::readSamples of course contains readSamples/
-        # sf_readf_float — that is its job. It was tracked as debt only because
-        # the transport render path used to CALL it from the audio callback;
-        # since the prepared/streaming clip-source migration, readers are
-        # background-only decode APIs (prepareClipAudio / MediaStreamWorker)
-        # and the render-path target above is the strict gate that keeps them
-        # off the callback.
+        ScanTarget(
+            "Routing render path",
+            root / "src/core/routing/routing_matrix.cpp",
+            r"SessionGraphError\s+RoutingMatrix::processRouting\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "Routing block render path",
+            root / "src/core/routing/routing_matrix.cpp",
+            r"SessionGraphError\s+RoutingMatrix::processRoutingBlock\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "Audio input ring write",
+            root / "src/core/audio_io/audio_input.cpp",
+            r"size_t\s+AudioInputRing::write\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
     ]
 
     if include_adjacent:
@@ -154,19 +230,19 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                     "Clip Composer AudioEngine callback",
                     dev / "clip-composer/Source/Audio/AudioEngine.cpp",
                     r"void\s+AudioEngine::processAudio\s*\(",
-                    False,
+                    pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
                 ScanTarget(
                     "FourTrack engine callback",
                     dev / "fourtrack/src/fourtrack/engine/engine.cpp",
                     r"void\s+Engine::processAudio\s*\(",
-                    False,
+                    pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
                 ScanTarget(
                     "FreqFinder processBlock",
                     dev / "freqfinder/src/PluginProcessor.cpp",
                     r"void\s+FreqFinderAudioProcessor::processBlock\s*\(",
-                    False,
+                    pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
             ]
         )
@@ -183,7 +259,7 @@ def main() -> int:
     root = args.root.resolve()
     findings: list[Finding] = []
     for target in default_targets(root, args.include_adjacent):
-      findings.extend(scan_target(target))
+        findings.extend(scan_target(target))
 
     hard = [finding for finding in findings if finding.hard_fail]
     debt = [finding for finding in findings if not finding.hard_fail]

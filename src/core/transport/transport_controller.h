@@ -22,6 +22,13 @@ namespace core {
 class SessionGraph;
 } // namespace core
 
+/// Control-thread-owned token which pins a registered source while a Start or
+/// Seek command still carries a raw source pointer through the SPSC ring.
+struct SourceCommandLifetime {
+  std::atomic<uint32_t> unread{0};
+  std::atomic<uint32_t> active_voices{0};
+};
+
 /// Playback context (thread-safe state transfer from UI to Audio thread)
 /// Contains all immutable state required to start a clip
 struct ClipPlaybackContext {
@@ -29,6 +36,8 @@ struct ClipPlaybackContext {
   // ORP134 G1: the audio thread reads decoded PCM through an IClipSource
   // (prepared memory or streaming pages) — never through an IAudioFileReader.
   std::shared_ptr<IClipSource> source;
+  // Pins the registry entry while the admitted voice remains in the audio set.
+  SourceCommandLifetime* sourceLifetime{nullptr};
 
   // Metadata snapshot at start time
   int64_t trimInSamples;
@@ -57,12 +66,6 @@ struct ClipPlaybackContext {
   VoiceMode voiceMode; // ORP127 G5: voice policy captured at fire time
 };
 
-/// Control-thread-owned token which pins a registered source while a Start or
-/// Seek command still carries a raw source pointer through the SPSC ring.
-struct SourceCommandLifetime {
-  std::atomic<uint32_t> unread{0};
-};
-
 /// Command for audio thread (lock-free queue)
 struct TransportCommand {
   enum class Type : uint8_t {
@@ -85,7 +88,8 @@ struct TransportCommand {
     UpdateMetadata,     // Apply a full metadata batch to active voices
     SetVoiceMode,       // ORP127 G5: change a clip's voice policy (audio-thread state)
     StopOthers,         // ORP127 G7: stop every voice except cmd.handle (choke primitive)
-    StartWithGroupChoke // Atomically admit start, then fade registered same-group peers
+    StartWithGroupChoke, // Atomically admit start, then fade registered same-group peers
+    StartWithStopOthers // Atomically admit start, then fade every other voice
   };
 
   Type type;
@@ -236,8 +240,9 @@ struct ActiveClip {
   // - The source can't be destroyed while the audio thread still reads it
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
   // Reads are position-explicit (source->read(currentSample, ...)), so
-  // multiple voices of one clip no longer contend over a shared file cursor.
   std::shared_ptr<IClipSource> source;
+  // Pins the registry entry while this voice remains in the active set.
+  SourceCommandLifetime* sourceLifetime{nullptr};
 
   // ORP127 G5: per-voice policy (copied from the clip's configured VoiceMode at
   // Start). Governs how a fresh fire interacts with this voice.
@@ -437,8 +442,9 @@ private:
   bool addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
 
   /// Allocate a nonzero ID distinct from every active voice. Audio-thread only;
-  /// bounded by the fixed active-voice capacity.
-  uint32_t allocateVoiceId() noexcept;
+  /// bounded by the fixed active-voice capacity. ignoredVoiceId is reserved
+  /// for same-handle replacement preflight.
+  uint32_t allocateVoiceId(uint32_t ignoredVoiceId = 0) noexcept;
   void configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
                              uint16_t numChannels) noexcept;
 
@@ -688,11 +694,13 @@ private:
   /// first-render page.
   SessionGraphError ensurePreparedSourceLocked(
       AudioFileEntry& entry, StreamingClipSource::PrimeReservation* reservation = nullptr);
-
   void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
+  void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;
+  void releaseActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
+
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;

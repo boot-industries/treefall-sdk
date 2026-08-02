@@ -23,10 +23,12 @@ struct RealtimeDiagnosticsSnapshot {
 /// it can be called from realtime threads. Percentile distribution still belongs
 /// in a non-realtime profiler; these counters enforce budget guardrails without
 /// heap allocation, locks, file I/O, or std::function ownership on the callback.
+/// Exactly one realtime producer may record/report at a time.
 class RealtimeDiagnostics {
 public:
   void recordCallback(uint32_t bufferFrames, uint32_t sampleRate, uint64_t callbackDurationNs = 0);
   void reportUnderrun();
+  /// Reset only after the realtime producer has stopped.
   void reset();
 
   [[nodiscard]] RealtimeDiagnosticsSnapshot snapshot() const;

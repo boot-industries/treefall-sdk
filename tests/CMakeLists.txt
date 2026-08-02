@@ -118,6 +118,11 @@ if(Python3_Interpreter_FOUND)
       --root ${CMAKE_SOURCE_DIR}
       --fail-known-debt)
 
+
+  add_test(NAME realtime_static_audit_unit
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tests/realtime_audit_test.py)
+  set_tests_properties(realtime_static_audit_unit PROPERTIES LABELS "fast;unit")
   # ORP133 G6: docs-path validation (broken internal links, references to the
   # extracted apps/clip-composer subdir, removed CMake options).
   add_test(NAME docs_path_audit
@@ -154,6 +159,39 @@ if(ORPHEUS_ENABLE_EXTENDED_TESTS)
 set(FIND_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/find_package)
 set(FIND_PACKAGE_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/find_package_build)
 set(FIND_PACKAGE_INSTALL_DIR ${CMAKE_BINARY_DIR}/tests/find_package_prefix)
+set(SNDFILE_PROVIDER_MATRIX_BINARY_DIR
+  ${CMAKE_BINARY_DIR}/tests/sndfile_provider_matrix_build)
+add_test(NAME cmake_sndfile_provider_matrix
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
+    -Dbinary_dir=${SNDFILE_PROVIDER_MATRIX_BINARY_DIR}
+    -Dfixture_dir=${CMAKE_SOURCE_DIR}/tests/cmake/sndfile_provider_matrix
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_sndfile_provider_matrix.cmake)
+set_tests_properties(cmake_sndfile_provider_matrix
+  PROPERTIES LABELS "extended;package")
+set(AUDIO_BACKEND_INVALID_BINARY_DIR
+  ${CMAKE_BINARY_DIR}/tests/audio_backend_invalid_build)
+set(AUDIO_BACKEND_NATIVE_BINARY_DIR
+  ${CMAKE_BINARY_DIR}/tests/audio_backend_native_build)
+add_test(NAME cmake_rejects_unsupported_audio_backends
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
+    -Dbinary_dir=${AUDIO_BACKEND_INVALID_BINARY_DIR}
+    -Dfixture_dir=${CMAKE_SOURCE_DIR}/tests/cmake/audio_backend_matrix
+    -DMATRIX_MODE=invalid
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_audio_backend_matrix.cmake)
+set_tests_properties(cmake_rejects_unsupported_audio_backends
+  PROPERTIES LABELS "extended;package")
+
+add_test(NAME cmake_native_backend_disable
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
+    -Dbinary_dir=${AUDIO_BACKEND_NATIVE_BINARY_DIR}
+    -Dfixture_dir=${CMAKE_SOURCE_DIR}/tests/cmake/audio_backend_matrix
+    -DMATRIX_MODE=native
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_audio_backend_matrix.cmake)
+set_tests_properties(cmake_native_backend_disable
+  PROPERTIES LABELS "extended;package")
 
 add_test(NAME cmake_find_package
   COMMAND ${CMAKE_COMMAND}

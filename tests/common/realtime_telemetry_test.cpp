@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
+#include "../../src/core/common/spsc_observation.h"
+#include "../../src/core/common/realtime_counter.h"
 #include <gtest/gtest.h>
 #include <orpheus/realtime_telemetry.h>
 
+#include <atomic>
+#include <limits>
 using namespace orpheus;
 
 TEST(RealtimeTelemetryTest, CapturesAtExactBlockCadence) {
@@ -87,4 +91,31 @@ TEST(RealtimeTelemetryTest, ClampsDecimationAndPublishesUnderrunDiagnostics) {
   ASSERT_TRUE(telemetry.tryRead(output));
   EXPECT_EQ(output.schema_version, kRealtimeTelemetrySchemaVersion);
   EXPECT_EQ(output.diagnostics.underrun_count, 1u);
+}
+
+
+TEST(RealtimeTelemetryTest, ConcurrentPendingObservationNeverUnderflows) {
+  std::atomic<uint64_t> read{0};
+  std::atomic<uint64_t> write{1};
+  bool advanced = false;
+  const size_t pending = detail::observeBoundedPending(
+      read, write, kRealtimeTelemetryCapacity,
+      [&]() noexcept {
+        if (!advanced) {
+          read.store(2, std::memory_order_release);
+          write.store(2, std::memory_order_release);
+          advanced = true;
+        }
+      });
+  EXPECT_EQ(pending, 2u);
+  EXPECT_LE(pending, kRealtimeTelemetryCapacity);
+}
+
+TEST(RealtimeTelemetryTest, RealtimeCountersSaturate) {
+  EXPECT_EQ(detail::saturatingAdd(std::numeric_limits<uint64_t>::max() - 1, 2),
+            std::numeric_limits<uint64_t>::max());
+  std::atomic<uint64_t> counter{std::numeric_limits<uint64_t>::max() - 1};
+  detail::publishSaturatingIncrement(counter);
+  detail::publishSaturatingIncrement(counter);
+  EXPECT_EQ(counter.load(std::memory_order_relaxed), std::numeric_limits<uint64_t>::max());
 }

@@ -13,6 +13,31 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   prewarming must happen before playback via non-realtime preparation APIs.
 - Stop/shutdown must use explicit callback lifetime coordination. Fixed sleeps
   are not acceptable as a resource-safety boundary.
+- Realtime entry points validate pointer arrays, exact configured channel
+  counts, and bounded frame counts before draining commands or writing output.
+  Invalid shapes are no-touch returns; a valid zero-frame block still advances
+  bounded control state.
+- Any-thread pending observations are clamped to queue capacity, and cumulative
+  sequence/drop diagnostics saturate rather than wrap.
+- Registered transport sources remain pinned by unread commands, active voices,
+  and pending streaming page primes. Stop, replacement, panic, natural end, and
+  teardown release each ownership pin exactly once.
+- Borrowed callback targets are admitted with a single strong CAS. Control-side
+  replacement closes admission, drains leases, and only then destroys the old
+  target; callbacks do not wait, allocate, or notify waiters.
+- Callback timing diagnostics are opt-in and default OFF. When enabled, the
+  monitor lease remains held through timestamp conversion and publication.
+
+## Boundary and Lifetime Gates
+
+- `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`
+  cover malformed no-touch boundaries, bounded observations, saturating
+  counters, and checked input-capacity arithmetic.
+- `realtime_borrowed_target_test` covers admission, replacement, and lease
+  draining without a retry loop.
+- The WASAPI fake runtime covers terminal worker outcomes, rollback, stop/join,
+  exact output-channel negotiation, and explicit reinitialization.
+
 
 ## Current Gates
 
@@ -54,11 +79,13 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
 
 ## Platform Matrix
 
-- macOS: CoreAudio is the first low-latency backend and must remain the strictest
-  callback-safety gate.
-- Windows: WASAPI should expose shared/exclusive capability details. ASIO is
-  optional because of external SDK constraints.
-- Linux: ALSA, JACK, and PipeWire should report capabilities separately; do not
-  silently flatten them into one generic Linux backend.
-- iOS: RemoteIO should share the same callback and preparation contracts, with
-  platform-specific capability limits exposed through `AudioDriverCapabilities`.
+- macOS: CoreAudio is the only shipped production device backend and must
+  remain the strictest callback-safety gate.
+- Windows: WASAPI remains source/fake-test capable but unpromoted until package,
+  ABI, and physical-device evidence exists. ASIO is optional source-only
+  integration requiring an external SDK and is excluded from install/export.
+- Linux: Dummy is the only advertised driver. ALSA, JACK, and PipeWire remain
+  distinct future providers rather than one generic Linux backend.
+- iOS: RemoteIO remains a future provider and should share the same callback and
+  preparation contracts, with platform-specific capability limits exposed
+  through `AudioDriverCapabilities`.

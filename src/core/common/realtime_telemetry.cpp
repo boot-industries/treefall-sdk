@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/realtime_telemetry.h>
+#include "realtime_counter.h"
+#include "spsc_observation.h"
 
 #include <algorithm>
 
@@ -27,14 +29,14 @@ void RealtimeTelemetry::reportUnderrunFromRealtime() noexcept {
 }
 
 bool RealtimeTelemetry::publishFromRealtime(RealtimeTelemetrySnapshot snapshot) noexcept {
-  snapshot.schema_version = kRealtimeTelemetrySchemaVersion;
-  snapshot.sequence = next_sequence_++;
+  snapshot.sequence = next_sequence_;
+  next_sequence_ = detail::saturatingIncrement(next_sequence_);
   snapshot.diagnostics = diagnostics_.snapshot();
 
   const uint64_t writeIndex = write_index_.load(std::memory_order_relaxed);
   const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
   if ((writeIndex - readIndex) >= kRealtimeTelemetryCapacity) {
-    dropped_snapshot_count_.fetch_add(1, std::memory_order_relaxed);
+    detail::publishSaturatingIncrement(dropped_snapshot_count_);
     return false;
   }
 
@@ -68,9 +70,7 @@ uint64_t RealtimeTelemetry::droppedSnapshotCount() const noexcept {
 }
 
 size_t RealtimeTelemetry::pendingSnapshotCount() const noexcept {
-  const uint64_t writeIndex = write_index_.load(std::memory_order_acquire);
-  const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
-  return static_cast<size_t>(writeIndex - readIndex);
+  return detail::observeBoundedPending(read_index_, write_index_, kRealtimeTelemetryCapacity);
 }
 
 } // namespace orpheus

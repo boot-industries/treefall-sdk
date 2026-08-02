@@ -1,9 +1,23 @@
 # SPDX-License-Identifier: MIT
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
 if(UNIX AND NOT APPLE)
-  include(CMakeFindDependencyMacro)
   find_dependency(OpenSSL COMPONENTS Crypto)
+endif()
+
+if("@ORPHEUS_SNDFILE_PROVIDER_RESOLVED@" STREQUAL "SndFile")
+  find_dependency(SndFile CONFIG)
+  if(NOT TARGET SndFile::sndfile)
+    message(FATAL_ERROR "OrpheusSDK requires SndFile::sndfile")
+  endif()
+elseif("@ORPHEUS_SNDFILE_PROVIDER_RESOLVED@" STREQUAL "PkgConfig")
+  find_dependency(PkgConfig)
+  pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
+  if(NOT TARGET PkgConfig::SNDFILE)
+    message(FATAL_ERROR "OrpheusSDK requires PkgConfig::SNDFILE")
+  endif()
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/OrpheusSDKTargets.cmake")
