@@ -49,3 +49,14 @@
 No controllable macOS device was available locally to record a live nominal
 48 kHz → 44.1 kHz transition or rejected reassertion. The deterministic fake
 covers both paths; no hardware recovery/refusal support claim is made.
+
+## Realtime boundary remediation — 2026-08-02
+
+**Branch:** `realtime-boundary-remediation-20260802`  
+**Base:** `1854a6eb8be69469dcd2110aae4042fcb5fc1503`  
+**Status:** In progress; authority documents restored and policy reconciled.
+
+The remediation follows the audited nine-phase order in
+`docs/tmp/realtime-boundary-audit-plan.md`. CoreAudio remains the only shipped
+production device backend; WASAPI is unpromoted source/fake-test code; ASIO is
+source-only; Linux exposes Dummy only; callback timing defaults OFF.
