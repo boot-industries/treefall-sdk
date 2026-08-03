@@ -65,51 +65,14 @@
       "source_of_truth": [
         "src/",
         "include/",
-        "packages/",
         "tools/"
       ],
       "compatibility": {
         "api_line": "0.6.x",
-        "stable_c_abi": "1.0",
-        "shmui_juce_contract": "0.5.0"
+        "stable_c_abi": "1.0"
       },
-      "generated_artifacts": [
-        {
-          "id": "sdk-shmui-juce-package",
-          "path": "packages/shmui-juce",
-          "hash_type": "sha256-path-nul-content-v1",
-          "exclude_paths": [
-            "shmui-juce-import.json"
-          ],
-          "expected_sha256": "193a9e6c769df3f9b3f75dd0f1d5bce06ff574f2f7561a408e98a17b735b672d",
-          "source_repository": "shmui",
-          "source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
-          "source_paths": [
-            "juce/Source",
-            "juce/CMakeLists.txt"
-          ],
-          "freshness_check": "python3 tools/shmui_juce_manifest.py --check"
-        }
-      ],
+      "generated_artifacts": [],
       "verification": [
-        {
-          "id": "sdk-shmui-manifest",
-          "cwd": "orpheus-sdk",
-          "command": [
-            "python3",
-            "tools/shmui_juce_manifest.py",
-            "--check"
-          ],
-          "tier": "quick",
-          "platforms": [
-            "macos",
-            "linux"
-          ],
-          "required_for": [
-            "candidate",
-            "stable"
-          ]
-        },
         {
           "id": "sdk-version-contract",
           "cwd": "orpheus-sdk",
@@ -173,11 +136,8 @@
           "path": "apps/www/styles/orpheus-tokens.css",
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
-          "source_repository": "shmui",
-          "source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
-          "source_paths": [
-            "apps/www/styles/orpheus-tokens.css"
-          ]
+          "scope": "private",
+          "label": "canonical-tokens"
         }
       ],
       "verification": [
@@ -278,25 +238,16 @@
           "path": "apps/fourtrack-mac/Generated/Shmui/manifest.json",
           "hash_type": "sha256-file-v1",
           "expected_sha256": "a165e5aad550a9b073b22244cade3f1bbf8a329caadebb179c62b0d8732c9d60",
-          "source_repository": "shmui",
-          "source_revision": "6129e3cb73f32922e588aa647bbafb87fccdc324",
-          "current_source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
-          "source_paths": [
-            "juce/Source",
-            "apps/www/styles/orpheus-tokens.css"
-          ]
+          "scope": "private",
+          "label": "fourtrack-shmui-manifest"
         },
         {
           "id": "fourtrack-shmui-tokens",
           "path": "apps/fourtrack-mac/Generated/Shmui/OrpheusDesignTokens.swift",
           "hash_type": "sha256-file-v1",
           "expected_sha256": "13ddd076cc47e17ff807ab9d2c0c8a7e4656e339af63e3ec01d33fe5bee6da2c",
-          "source_repository": "shmui",
-          "source_revision": "6129e3cb73f32922e588aa647bbafb87fccdc324",
-          "current_source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
-          "source_paths": [
-            "apps/www/styles/orpheus-tokens.css"
-          ]
+          "scope": "private",
+          "label": "fourtrack-shmui-tokens"
         }
       ],
       "verification": [
@@ -539,17 +490,20 @@
         "orpheus-sdk": {
           "commit": "0a9e9c34f435b9862d78ab9994ffb48a9f21e149",
           "branch": "main",
-          "tag": null
+          "tag": "suite-workspace-20260801-orpheus-sdk",
+          "immutable_ref": "refs/tags/suite-workspace-20260801-orpheus-sdk"
         },
         "shmui": {
           "commit": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
           "branch": "main",
-          "tag": null
+          "tag": "suite-workspace-20260801-shmui",
+          "immutable_ref": "refs/tags/suite-workspace-20260801-shmui"
         },
         "fourtrack": {
           "commit": "87c48b4d53ec0b3bccb1d6c03fcbe4a8ea03ba98",
           "branch": "main",
-          "tag": null,
+          "tag": "suite-workspace-20260801-fourtrack",
+          "immutable_ref": "refs/tags/suite-workspace-20260801-fourtrack",
           "dependency_pins": {
             "orpheus-sdk": "8e8f56629a8aee9062635a7f07b5a03952de4408",
             "nlohmann-json": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"
@@ -558,7 +512,8 @@
         "freqfinder": {
           "commit": "2978d1c38c7ade33ca31022a1cec0f7540e29e71",
           "branch": "main",
-          "tag": null,
+          "tag": "suite-workspace-20260801-freqfinder",
+          "immutable_ref": "refs/tags/suite-workspace-20260801-freqfinder",
           "dependency_pins": {
             "orpheus-sdk": "0a9e9c34f435b9862d78ab9994ffb48a9f21e149",
             "shmui": "11ad82bcc500cd187446841b92c5c8ac7c04fef3"
@@ -567,7 +522,8 @@
         "clip-composer": {
           "commit": "3d9d324473b86babd6e5ab82bac349baead47d86",
           "branch": "main",
-          "tag": null,
+          "tag": "suite-workspace-20260801-clip-composer",
+          "immutable_ref": "refs/tags/suite-workspace-20260801-clip-composer",
           "dependency_pins": {
             "orpheus-sdk": "112b49cbee32ef71276c8a451e2d1bd7f6ee7e4c"
           }

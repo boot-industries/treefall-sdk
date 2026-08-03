@@ -4,19 +4,7 @@
   "title": "Orpheus Suite Manifest",
   "description": "Versioned source, dependency, provenance, verification, and release contract for the Orpheus Suite.",
   "type": "object",
-  "required": [
-    "$schema",
-    "schema_version",
-    "suite_id",
-    "suite_version",
-    "release_channel",
-    "workspace",
-    "channels",
-    "repositories",
-    "dependencies",
-    "release_policy",
-    "snapshots"
-  ],
+  "required": ["$schema", "schema_version", "suite_id", "suite_version", "release_channel", "workspace", "channels", "repositories", "dependencies", "release_policy", "snapshots"],
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string", "minLength": 1 },
@@ -56,27 +44,20 @@
         "change_id_format": { "type": "string", "minLength": 1 },
         "branch_prefix": { "type": "string", "minLength": 1 },
         "pr_title_prefix": { "type": "string", "minLength": 1 },
-        "merge_order": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "merge_order": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" }, "minItems": 1, "uniqueItems": true },
         "pr_grouping": { "type": "string", "minLength": 1 },
         "credentials": { "type": "string", "minLength": 1 },
         "loop_prevention": { "type": "string", "minLength": 1 }
       }
     },
-    "repositories": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/repository" }
-    },
-    "dependencies": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/dependency" }
-    },
+    "repositories": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/repository" } },
+    "dependencies": { "type": "array", "items": { "$ref": "#/$defs/dependency" }, "uniqueItems": true },
     "release_policy": {
       "type": "object",
       "required": ["order", "candidate", "stable", "rollback"],
       "additionalProperties": false,
       "properties": {
-        "order": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "order": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" }, "minItems": 1, "uniqueItems": true },
         "candidate": { "$ref": "#/$defs/releaseGate" },
         "stable": { "$ref": "#/$defs/releaseGate" },
         "rollback": {
@@ -91,17 +72,12 @@
         }
       }
     },
-    "snapshots": {
-      "type": "object",
-      "minProperties": 1,
-      "additionalProperties": { "$ref": "#/$defs/snapshot" }
-    }
+    "snapshots": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/snapshot" } }
   },
   "$defs": {
-    "semver": {
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
-    },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$" },
+    "safePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))(?!.*\\\\).+$" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
     "channel": {
       "type": "object",
       "required": ["mode", "branch", "snapshot_id"],
@@ -118,38 +94,68 @@
       "additionalProperties": false,
       "properties": {
         "fetch_url": { "type": "string", "format": "uri" },
-        "push_url": { "type": ["string", "null"] },
-        "push_remote": { "type": ["string", "null"] }
+        "push_url": { "type": ["string", "null"], "format": "uri" },
+        "push_remote": { "type": ["string", "null"], "minLength": 1 }
       }
     },
     "artifact": {
       "type": "object",
-      "required": ["id", "path", "hash_type", "expected_sha256"],
+      "required": ["id", "path", "hash_type", "expected_sha256", "scope"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
-        "path": { "type": "string", "minLength": 1 },
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/safePath" },
         "hash_type": { "enum": ["sha256-file-v1", "sha256-path-nul-content-v1"] },
-        "exclude_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "exclude_paths": { "type": "array", "items": { "$ref": "#/$defs/safePath" }, "uniqueItems": true },
         "expected_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "source_repository": { "type": "string", "minLength": 1 },
+        "scope": { "enum": ["public", "private"] },
+        "label": { "$ref": "#/$defs/safePath" },
+        "provenance_path": { "$ref": "#/$defs/safePath" },
+        "source_repository": { "$ref": "#/$defs/id" },
         "source_revision": { "$ref": "#/$defs/commit" },
         "current_source_revision": { "$ref": "#/$defs/commit" },
-        "source_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "freshness_check": { "type": "string", "minLength": 1 }
-      }
+        "source_paths": { "type": "array", "items": { "$ref": "#/$defs/safePath" }, "uniqueItems": true },
+        "freshness_check": { "type": "string", "minLength": 1 },
+        "hash_algorithm": { "const": "sha256-path-nul-content-v1" },
+        "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/safePath" }, "uniqueItems": true },
+        "file_count": { "type": "integer", "minimum": 0 },
+        "contract_metadata": {}
+      },
+      "allOf": [
+        {
+          "if": { "anyOf": [{ "required": ["source_repository"] }, { "required": ["source_revision"] }, { "required": ["current_source_revision"] }, { "required": ["source_paths"] }, { "required": ["freshness_check"] }] },
+          "then": { "required": ["provenance_path"] }
+        },
+        {
+          "if": { "properties": { "scope": { "const": "private" } } },
+          "then": { "not": { "anyOf": [{ "required": ["source_paths"] }, { "required": ["targets"] }, { "required": ["target_metadata"] }, { "required": ["component_metadata"] }, { "required": ["private_url"] }, { "required": ["source_inventory"] }] } }
+        }
+      ]
     },
     "dependencyPin": {
       "type": "object",
       "required": ["dependency", "kind", "revision"],
       "additionalProperties": false,
       "properties": {
-        "dependency": { "type": "string", "minLength": 1 },
+        "dependency": { "$ref": "#/$defs/id" },
         "kind": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "minLength": 1 },
+        "path": { "$ref": "#/$defs/safePath" },
         "config": { "type": "string", "minLength": 1 },
-        "workspace_path": { "type": "string", "minLength": 1 },
-        "configured_path": { "type": "string", "minLength": 1 },
+        "workspace_path": { "$ref": "#/$defs/safePath" },
+        "configured_path": { "$ref": "#/$defs/safePath" },
+        "revision": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "externalPin": {
+      "type": "object",
+      "required": ["name", "kind", "path", "remote", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "path": { "$ref": "#/$defs/safePath" },
+        "remote": { "type": "string", "format": "uri" },
         "revision": { "$ref": "#/$defs/commit" }
       }
     },
@@ -158,16 +164,16 @@
       "required": ["id", "path", "remote", "default_branch", "role", "source_of_truth", "verification"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
-        "path": { "type": "string", "minLength": 1 },
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/safePath" },
         "remote": { "$ref": "#/$defs/remote" },
         "default_branch": { "type": "string", "minLength": 1 },
         "role": { "type": "string", "minLength": 1 },
-        "source_of_truth": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "source_of_truth": { "type": "array", "items": { "$ref": "#/$defs/safePath" }, "minItems": 1 },
         "compatibility": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
         "generated_artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
         "dependency_pins": { "type": "array", "items": { "$ref": "#/$defs/dependencyPin" } },
-        "external_pins": { "type": "array", "items": { "type": "object", "required": ["name", "kind", "path", "remote", "revision"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "remote": { "type": "string", "format": "uri" }, "revision": { "$ref": "#/$defs/commit" } } } },
+        "external_pins": { "type": "array", "items": { "$ref": "#/$defs/externalPin" } },
         "verification": { "type": "array", "items": { "$ref": "#/$defs/check" } }
       }
     },
@@ -177,11 +183,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "cwd": { "type": "string", "minLength": 1 },
+        "cwd": { "$ref": "#/$defs/safePath" },
         "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
         "tier": { "enum": ["quick", "full"] },
-        "platforms": { "type": "array", "items": { "enum": ["macos", "linux", "windows"] }, "minItems": 1 },
-        "required_for": { "type": "array", "items": { "enum": ["candidate", "stable"] }, "minItems": 1 }
+        "platforms": { "type": "array", "items": { "enum": ["macos", "linux", "windows"] }, "minItems": 1, "uniqueItems": true },
+        "required_for": { "type": "array", "items": { "enum": ["candidate", "stable"] }, "minItems": 1, "uniqueItems": true }
       }
     },
     "dependency": {
@@ -189,8 +195,8 @@
       "required": ["from", "to", "kind", "required", "compatibility"],
       "additionalProperties": false,
       "properties": {
-        "from": { "type": "string", "minLength": 1 },
-        "to": { "type": "string", "minLength": 1 },
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" },
         "kind": { "type": "string", "minLength": 1 },
         "required": { "type": "boolean" },
         "compatibility": { "type": "string", "minLength": 1 },
@@ -206,16 +212,13 @@
         "publishes": { "type": "string", "minLength": 1 }
       }
     },
-    "commit": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "snapshot": {
       "type": "object",
       "required": ["id", "suite_version", "channel", "state", "immutable", "observed_at", "repositories", "verification", "human_acceptance"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+        "id": { "$ref": "#/$defs/id" },
         "suite_version": { "$ref": "#/$defs/semver" },
         "channel": { "enum": ["development", "candidate", "stable"] },
         "state": { "enum": ["observed", "candidate", "stable", "rolled-back"] },
@@ -228,12 +231,13 @@
     },
     "snapshotRepository": {
       "type": "object",
-      "required": ["commit", "branch", "tag"],
+      "required": ["commit", "branch", "tag", "immutable_ref"],
       "additionalProperties": false,
       "properties": {
         "commit": { "$ref": "#/$defs/commit" },
         "branch": { "type": "string", "minLength": 1 },
-        "tag": { "type": ["string", "null"] },
+        "tag": { "type": "string", "minLength": 1 },
+        "immutable_ref": { "type": "string", "pattern": "^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$" },
         "dependency_pins": { "type": "object", "additionalProperties": { "$ref": "#/$defs/commit" } }
       }
     }

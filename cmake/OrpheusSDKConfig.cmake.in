@@ -43,8 +43,6 @@ _orpheus_sdk_alias(Orpheus::routing Orpheus::orpheus_routing)
 _orpheus_sdk_alias(Orpheus::transport Orpheus::orpheus_transport)
 _orpheus_sdk_alias(Orpheus::audio_driver_coreaudio Orpheus::orpheus_audio_driver_coreaudio)
 _orpheus_sdk_alias(Orpheus::audio_driver_wasapi Orpheus::orpheus_audio_driver_wasapi)
-_orpheus_sdk_alias(Orpheus::shmui_juce Orpheus::orpheus_shmui_juce)
-_orpheus_sdk_alias(Orpheus::shmui_juce_gl Orpheus::orpheus_shmui_juce_gl)
 
 check_required_components(OrpheusSDK)
 

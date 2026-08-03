@@ -1,0 +1,12 @@
+{
+  "package": "orpheus-artifact-provenance",
+  "version": "1.0.0",
+  "artifact_url": "https://github.com/chrislyons/orpheus-artifact-provenance/releases/download/v1.0.0/orpheus_artifact_provenance-1.0.0-py3-none-any.whl",
+"sha256": "596b01422555217a51694ba7f4c8e05010e0927abdacfd25fa7d0057cf7faab0",
+"availability": "source-verified; publication-required",
+  "api": [
+    "inventory_tree(root, excluded)",
+    "check_manifest(root, manifest_path, source_root)",
+    "recover_journal(journal_path, action)"
+  ]
+}

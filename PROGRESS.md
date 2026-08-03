@@ -91,3 +91,59 @@ source-only; Linux exposes Dummy only; callback timing defaults OFF.
   ASIO source-only, and Linux Dummy-only.
 
 **Status:** Implementation complete; evidence limitations are recorded above.
+
+## Release-hardening boundary/provenance pass — 2026-08-02
+
+**Status:** Paused at the user's request; implementation remains in progress.
+
+### Changes made before pause
+
+- Replaced `tools/suite.py` with a fail-closed coordinator design:
+  - Draft 2020-12 schema validation hook with structured diagnostics;
+  - canonical URL comparison for HTTPS, SSH, and scp-style Git remotes;
+  - immutable-tag advertisement probes through `git ls-remote`;
+  - shared read-only preflight for status, doctor, verify, sync, update,
+    rollback, coordinate, and release;
+  - artifact content/provenance reporting in `snapshot_status()`;
+  - durable per-operation journals, backup refs, partial envelopes, and
+    explicit `recover --action complete|restore`;
+  - dry-run `planned`/`blocked` outcomes and apply `applied`/`partial` exits;
+  - nested dirty-worktree checks and serial nested-build environment.
+- Added the stdlib-only `orpheus_artifact_provenance` package surface and the
+  pinned suite requirement file. Its descriptor-relative inventory rejects
+  symlinks, traversal, special files, and unsupported no-follow APIs.
+- Extended the suite schema and manifest records with artifact scope and
+  immutable snapshot references. The manifest currently validates successfully
+  under a temporary environment containing `jsonschema==4.23.0`.
+- Began the public/private boundary cutover:
+  - removed SDK ShmUI package install/export/build registration and obsolete
+    SDK mirror/check files;
+  - renamed private ShmUI JUCE targets to `ShmUI::juce` and
+    `ShmUI::juce_gl`;
+  - changed Wave Finder to require explicit `SHMUI_JUCE_SOURCE_DIR`;
+  - changed the private sync wrapper to require an explicit staging
+    destination and reject SDK/package paths.
+
+### Verification observed
+
+- `python3 -m py_compile tools/suite.py
+  orpheus_artifact_provenance/__init__.py
+  orpheus_artifact_provenance/cli.py` passed.
+- `tools/suite.py validate --json` passed with the temporary pinned
+  `jsonschema` environment.
+- Descriptor inventory and symlink-escape smoke checks passed.
+- Real-workspace `status --json` returned `status: blocked` with the expected
+  historical snapshot drift, unadvertised immutable refs, dirty SDK worktree,
+  and fetch-only/missing push capability records. No mutation was attempted.
+- ShmUI was observed on `main...origin/main` with the private target/import
+  changes unstaged; no merge or push was performed in this session.
+
+### Still required after resume
+
+- Finish and verify active SDK/private documentation and CI changes.
+- Add focused suite, provenance, and release-evidence red-team fixtures.
+- Complete installed public-package scans and ABI/profile proof.
+- Exercise isolated mutation failures and both recovery actions.
+- Run qcheck and the configured CTest regression suite.
+- Retain the existing macOS-only evidence boundary; no Windows/WASAPI
+  hardware claim is made.

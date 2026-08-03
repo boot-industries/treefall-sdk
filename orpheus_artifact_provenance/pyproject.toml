@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orpheus-artifact-provenance"
+version = "1.0.0"
+description = "Safe source-aware generated-artifact provenance primitives"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+orpheus-artifact-provenance = "orpheus_artifact_provenance.cli:main"

@@ -45,9 +45,17 @@ if(NOT TARGET occ_app_platform)
   add_subdirectory(${OCC_APP_PLATFORM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/occ-app-platform)
 endif()
 
-set(SHMUI_JUCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/shmui-juce")
-if(NOT TARGET orpheus_shmui_juce)
-  add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
+if(NOT DEFINED SHMUI_JUCE_SOURCE_DIR OR "${SHMUI_JUCE_SOURCE_DIR}" STREQUAL "")
+  message(FATAL_ERROR
+    "SHMUI_JUCE_SOURCE_DIR must point at the private ShmUI JUCE source tree")
+endif()
+if(NOT EXISTS "${SHMUI_JUCE_SOURCE_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "SHMUI_JUCE_SOURCE_DIR does not contain the private ShmUI JUCE contract: "
+    "${SHMUI_JUCE_SOURCE_DIR}")
+endif()
+if(NOT TARGET ShmUI::juce)
+  add_subdirectory(${SHMUI_JUCE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
 endif()
 
 # Create JUCE GUI application
@@ -93,7 +101,7 @@ target_link_libraries(orpheus_wave_finder_app
     juce::juce_audio_utils
     juce::juce_events
     sqlite3
-    orpheus_shmui_juce
+    ShmUI::juce
     occ_app_platform
 )
 

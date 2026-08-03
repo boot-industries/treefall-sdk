@@ -13,9 +13,5 @@
   "platformConditional": [
     {"target": "Orpheus::audio_driver_coreaudio", "platform": "macOS"},
     {"target": "Orpheus::audio_driver_wasapi", "platform": "Windows"}
-  ],
-  "optional": [
-    {"target": "Orpheus::shmui_juce", "requires": ["juce::juce_core", "juce::juce_audio_basics", "juce::juce_audio_formats", "juce::juce_dsp", "juce::juce_gui_basics"], "feature": "ORPHEUS_ENABLE_SHMUI_JUCE"},
-    {"target": "Orpheus::shmui_juce_gl", "requires": ["juce::juce_opengl"], "feature": "SHMUI_JUCE_ENABLE_OPENGL"}
   ]
 }
