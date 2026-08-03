@@ -94,7 +94,8 @@ source-only; Linux exposes Dummy only; callback timing defaults OFF.
 
 ## Release-hardening boundary/provenance pass — 2026-08-02
 
-**Status:** Paused at the user's request; implementation remains in progress.
+**Status:** Paused at the user's request; the checkpoint is committed and
+pushed, while implementation remains in progress.
 
 ### Changes made before pause
 
@@ -135,8 +136,11 @@ source-only; Linux exposes Dummy only; callback timing defaults OFF.
 - Real-workspace `status --json` returned `status: blocked` with the expected
   historical snapshot drift, unadvertised immutable refs, dirty SDK worktree,
   and fetch-only/missing push capability records. No mutation was attempted.
-- ShmUI was observed on `main...origin/main` with the private target/import
-  changes unstaged; no merge or push was performed in this session.
+- SDK branch `audit/release-hardening-2026-08-02` is pushed at
+  `2b9c9daac21338b4d3f600e2b225b7463a5d24d2`.
+- ShmUI private follow-up branch `audit/private-juce-staging-2026-08-02` is
+  pushed at `5f63b3a3bfcfc68581c7d5ccaab0b447a9cd532d2`; the user's existing
+  `audit/audio-ui-boundary-2026-08-02` branch was not rewritten.
 
 ### Still required after resume
 
