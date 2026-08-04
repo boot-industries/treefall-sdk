@@ -704,6 +704,9 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
 bool CoreAudioDriver::resolveChannelMaps(const AudioDriverConfig& config) {
   const auto resolve = [](const std::vector<uint16_t>& requested, uint16_t logical_count,
                           uint32_t physical_count, std::vector<uint16_t>& resolved) {
+    if (logical_count > physical_count) {
+      return false;
+    }
     if (requested.empty()) {
       resolved.resize(logical_count);
       for (uint16_t channel = 0; channel < logical_count; ++channel) {

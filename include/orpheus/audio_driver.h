@@ -205,6 +205,11 @@ public:
   /// Get total measured latency in samples, or zero when unavailable.
   virtual uint32_t getLatencySamples() const = 0;
 
+  /// Get cumulative backend diagnostics. Control-thread only.
+  virtual AudioIoTelemetry getTelemetry() const noexcept {
+    return {};
+  }
+
   /// Get backend capabilities.
   ///
   /// The default is conservative so custom drivers can adopt richer route
@@ -223,19 +228,16 @@ public:
     return caps;
   }
 
-  /// Get the negotiated physical route. Control-thread only.
-  virtual ActiveAudioRoute getActiveRoute() const {
-    return {};
-  }
-
-  /// Get cumulative backend diagnostics. Control-thread only.
-  virtual AudioIoTelemetry getTelemetry() const noexcept {
-    return {};
-  }
-
   /// Set optional realtime performance monitor.
   virtual void setPerformanceMonitor(IPerformanceMonitor* monitor) {
     (void)monitor;
+  }
+
+  /// Get the negotiated physical route. Control-thread only.
+  ///
+  /// Appended to preserve existing IAudioDriver virtual-table slots.
+  virtual ActiveAudioRoute getActiveRoute() const {
+    return {};
   }
 };
 
