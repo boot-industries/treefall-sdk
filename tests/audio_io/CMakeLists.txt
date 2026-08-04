@@ -284,6 +284,7 @@ endif()
 # Audio Driver Manager tests
 add_executable(driver_manager_test
     driver_manager_test.cpp
+    coreaudio_endpoint_catalog_test.cpp
 )
 
 target_link_libraries(driver_manager_test
@@ -308,6 +309,7 @@ target_include_directories(driver_manager_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/core
+        ${CMAKE_SOURCE_DIR}/src/platform/audio_drivers
 )
 
 add_test(NAME driver_manager_test COMMAND driver_manager_test)
