@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "coreaudio_sample_rate_monitor.h"
 #include "../../../core/common/realtime_borrowed_target.h"
+#include "coreaudio_route_monitor.h"
 #include <orpheus/audio_driver.h>
 
 #include <AudioToolbox/AudioToolbox.h>
@@ -11,31 +11,22 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace orpheus {
 
-// Forward declaration
 class IPerformanceMonitor;
 
-/// CoreAudio driver implementation for macOS
-///
-/// Provides low-latency audio I/O using AudioUnit (HAL Output).
-/// Supports device enumeration, configurable sample rate/buffer size,
-/// and latency reporting.
-///
-/// Thread Safety:
-/// - initialize(), start(), stop(): UI thread only
-/// - isRunning(), getConfig(), getDriverName(), getLatencySamples(): Thread-safe
-/// - Audio callback: Real-time audio thread (lock-free)
+/// CoreAudio HAL output driver with stable UID routing and control-thread
+/// route-state monitoring.
 class CoreAudioDriver : public IAudioDriver {
 public:
   CoreAudioDriver();
   ~CoreAudioDriver() override;
 
-  // IAudioDriver interface
   SessionGraphError initialize(const AudioDriverConfig& config) override;
   SessionGraphError start(IAudioCallback* callback) override;
   SessionGraphError stop() override;
@@ -45,136 +36,84 @@ public:
   uint32_t getLatencySamples() const override;
   AudioIoTelemetry getTelemetry() const noexcept override;
   AudioDriverCapabilities getCapabilities() const override;
+  ActiveAudioRoute getActiveRoute() const override;
 
-  /// Set performance monitor for audio metrics tracking
-  /// @param monitor Performance monitor instance (can be nullptr to disable)
-  /// @note Thread-safe: Can be called before or after start()
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
-  /// Test-only helpers for deterministic backend failure accounting.
+  // Test-only helpers for deterministic backend failure accounting.
   void setInputRenderFailuresForTesting(uint64_t count) noexcept;
   void incrementInputRenderFailuresForTesting() noexcept;
 
 private:
-  /// Audio Unit render callback (invoked on audio thread)
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
   void recordInputRenderFailure() noexcept;
 
-  /// Enumerate available audio devices
-  /// @return Vector of device IDs
   std::vector<AudioDeviceID> enumerateDevices();
-
-  /// Find a device by its persistent CoreAudio DeviceUID.
-  /// @return Device ID or 0 if the UID is unknown
   AudioDeviceID findDeviceByUID(const std::string& device_uid);
-
-  /// Get the system default device for a given selector (e.g.
-  /// kAudioHardwarePropertyDefaultOutputDevice / ...DefaultInputDevice).
-  /// @return Device ID or 0 on failure
   AudioDeviceID getDefaultDevice(AudioObjectPropertySelector selector);
-
-  /// Resolve the configured physical input/output endpoints. Empty directional
-  /// IDs select the corresponding system defaults; separate endpoints require
-  /// a private aggregate. Resolution never falls back to a different endpoint.
-  /// @return Device ID (possibly an aggregate) or 0 on failure
   AudioDeviceID resolveInputOutputDevice();
-
-  /// Create a private, non-stacked Aggregate Device combining a capture
-  /// sub-device and a playback sub-device so one AUHAL unit can drive both.
-  /// Torn down in cleanupAudioUnit() via AudioHardwareDestroyAggregateDevice.
-  /// @return Aggregate device ID, or 0 on failure
   AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
                                       AudioDeviceID output_device_id);
-
-  /// Check whether a device supports the requested direction.
   bool supportsDirection(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
+  uint32_t getChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
+  std::optional<std::string> getDeviceUID(AudioDeviceID device_id) const;
 
-  /// Query the complete capture-to-playback latency of the active physical
-  /// routes, including device latency, safety offsets, actual I/O buffer
-  /// depth, and AudioUnit processing latency. Queried live so a consumer
-  /// route's reported delay is refreshed for every host take.
-  /// @return Round-trip latency in samples, or 0 when it cannot be detected
-  uint32_t queryDeviceLatency() const;
-
-  /// Set up AudioUnit with configuration
-  /// @param device_id Device to use
-  /// @return SessionGraphError::OK on success
+  bool resolveChannelMaps(const AudioDriverConfig& config);
   SessionGraphError setupAudioUnit(AudioDeviceID device_id);
+  std::vector<AudioStreamID> enumerateStreams(AudioDeviceID device_id,
+                                              AudioObjectPropertyScope scope) const;
+  std::optional<AudioStreamBasicDescription>
+  getStreamFormat(AudioStreamID stream_id, AudioObjectPropertySelector selector) const;
+  bool createRouteMonitor();
+  bool startRouteMonitorLocked();
+  void stopRouteMonitor();
+  void routeMonitorLoop();
+  void publishRoutePollResult(CoreAudioRoutePollResult result);
+  void refreshActiveRouteLocked();
 
-  /// Cleanup AudioUnit resources
+  AudioRouteLatency queryLatencyBreakdown() const;
+  uint32_t queryDeviceLatency() const;
   void cleanupAudioUnit();
-
-  /// Creates the runtime monitor after route resolution has identified the
-  /// aggregate wrapper and each physical endpoint.
-  void createSampleRateMonitor();
-  /// Starts listeners and the control worker. mutex_ must be held.
-  bool startSampleRateMonitorLocked();
-  /// Removes listeners, wakes the control worker, and joins it.
-  void stopSampleRateMonitor();
-  /// Services listener notifications outside the audio callback.
-  void sampleRateMonitorLoop();
-  /// Stops the AudioUnit and drains admitted callbacks. mutex_ must be held.
   void stopRenderingLocked();
 
-  // Configuration
   AudioDriverConfig config_;
-
-  // CoreAudio state
   AudioUnit audio_unit_{nullptr};
   AudioDeviceID device_id_{0};
-  // Set only when resolveInputOutputDevice() had to bridge separate default
-  // input/output devices; torn down in cleanupAudioUnit().
   AudioDeviceID aggregate_device_id_{0};
-  // Physical endpoints behind device_id_. These differ when device_id_ is the
-  // private aggregate used to bridge separate default input/output devices.
   AudioDeviceID input_device_id_{0};
   AudioDeviceID output_device_id_{0};
-  // Capture channel 0 in a private aggregate may belong to the playback
-  // sub-device when that endpoint is duplex. This offset selects the first
-  // channel of the explicitly resolved input sub-device instead.
   uint32_t input_channel_offset_{0};
+  uint32_t available_input_channels_{0};
+  uint32_t available_output_channels_{0};
+  std::vector<uint16_t> input_channel_map_;
+  std::vector<uint16_t> output_channel_map_;
+
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
   std::atomic<AudioDriverRuntimeOutcome> runtime_outcome_{AudioDriverRuntimeOutcome::Healthy};
+  std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
 
-  // Listener registration belongs to the active route. The property callback
-  // only signals this monitor; a control worker performs all HAL queries and
-  // rate changes outside the audio callback.
-  CoreAudioSampleRatePropertyApi sample_rate_property_api_;
-  std::unique_ptr<CoreAudioSampleRateMonitor> sample_rate_monitor_;
-  std::atomic<bool> sample_rate_monitor_active_{false};
-  // Serializes listener registration/removal and control-thread polling; never
-  // acquired by the CoreAudio render callback or property-listener callback.
-  std::mutex sample_rate_monitor_mutex_;
-  std::thread sample_rate_monitor_thread_;
+  CoreAudioSampleRatePropertyApi route_property_api_;
+  std::unique_ptr<CoreAudioRouteMonitor> route_monitor_;
+  std::atomic<bool> route_monitor_active_{false};
+  std::mutex route_monitor_mutex_;
+  std::thread route_monitor_thread_;
 
-  // Non-owning host callback. Control-thread replacement closes admission and
-  // drains every admitted callback before changing the borrowed pointer.
   detail::RealtimeBorrowedTarget<IAudioCallback> callback_target_;
-
-  // Optional diagnostics monitor. Its lease spans timing, active-count query,
-  // elapsed conversion, and publication.
   detail::RealtimeBorrowedTarget<IPerformanceMonitor> performance_monitor_target_;
   int64_t expected_stream_sample_{0};
   bool stream_timeline_initialized_{false};
 
-  // Audio thread buffers (allocated once in initialize)
   std::vector<float*> input_buffers_;
   std::vector<float*> output_buffers_;
-  std::vector<float> input_storage_;  // Backing storage for input buffers
-  std::vector<float> output_storage_; // Backing storage for output buffers
-
-  // Pre-allocated AudioBufferList used to pull captured input in the render
-  // callback via AudioUnitRender (bus 1). Sized in initialize() when
-  // num_inputs > 0 so the audio thread never allocates. Backed by raw bytes
-  // because AudioBufferList has a trailing flexible array of mNumberBuffers
-  // AudioBuffer entries; its mData pointers alias input_storage_ (planar).
+  std::vector<float> input_storage_;
+  std::vector<float> output_storage_;
   std::vector<uint8_t> input_abl_storage_;
 
-  // Thread safety
+  ActiveAudioRoute active_route_;
   mutable std::mutex mutex_;
 };
 

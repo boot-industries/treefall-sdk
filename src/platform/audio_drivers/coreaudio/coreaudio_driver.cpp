@@ -12,14 +12,140 @@
 
 namespace orpheus {
 
+namespace {
+
+std::optional<UInt32> getOptionalUInt32Property(AudioDeviceID device_id,
+                                                AudioObjectPropertySelector selector,
+                                                AudioObjectPropertyScope scope);
+std::optional<Float64> getOptionalFloat64Property(AudioDeviceID device_id,
+                                                  AudioObjectPropertySelector selector,
+                                                  AudioObjectPropertyScope scope);
+std::optional<UInt32> getOptionalStreamLatency(AudioDeviceID device_id,
+                                               AudioObjectPropertyScope scope);
+
+CFStringRef copyDeviceUID(AudioDeviceID device_id) {
+  AudioObjectPropertyAddress property_address = {kAudioDevicePropertyDeviceUID,
+                                                 kAudioObjectPropertyScopeGlobal,
+                                                 kAudioObjectPropertyElementMain};
+  CFStringRef uid = nullptr;
+  UInt32 data_size = sizeof(CFStringRef);
+  const OSStatus status =
+      AudioObjectGetPropertyData(device_id, &property_address, 0, nullptr, &data_size, &uid);
+  return status == noErr ? uid : nullptr;
+}
+
+UInt32 getClockDomain(AudioDeviceID device_id) {
+  AudioObjectPropertyAddress property_address = {kAudioDevicePropertyClockDomain,
+                                                 kAudioObjectPropertyScopeGlobal,
+                                                 kAudioObjectPropertyElementMain};
+  UInt32 domain = 0;
+  UInt32 data_size = sizeof(domain);
+  AudioObjectGetPropertyData(device_id, &property_address, 0, nullptr, &data_size, &domain);
+  return domain;
+}
+
+UInt32 getUInt32Property(AudioDeviceID device_id, AudioObjectPropertySelector selector,
+                         AudioObjectPropertyScope scope) {
+  if (device_id == 0) {
+    return 0;
+  }
+  AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
+  UInt32 value = 0;
+  UInt32 size = sizeof(value);
+  return AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) == noErr ? value
+                                                                                             : 0;
+}
+
+std::optional<UInt32> getOptionalUInt32Property(AudioDeviceID device_id,
+                                                AudioObjectPropertySelector selector,
+                                                AudioObjectPropertyScope scope) {
+  if (device_id == 0) {
+    return std::nullopt;
+  }
+  AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
+  UInt32 value = 0;
+  UInt32 size = sizeof(value);
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+      size != sizeof(value)) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+std::optional<Float64> getOptionalFloat64Property(AudioDeviceID device_id,
+                                                  AudioObjectPropertySelector selector,
+                                                  AudioObjectPropertyScope scope) {
+  if (device_id == 0) {
+    return std::nullopt;
+  }
+  AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
+  Float64 value = 0.0;
+  UInt32 size = sizeof(value);
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+      size != sizeof(value)) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+std::optional<UInt32> getOptionalStreamLatency(AudioDeviceID device_id,
+                                               AudioObjectPropertyScope scope) {
+  AudioObjectPropertyAddress streams_address = {kAudioDevicePropertyStreams, scope,
+                                                kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &streams_address, 0, nullptr, &size) != noErr ||
+      size == 0) {
+    return std::nullopt;
+  }
+
+  std::vector<AudioStreamID> streams(size / sizeof(AudioStreamID));
+  if (streams.empty() || AudioObjectGetPropertyData(device_id, &streams_address, 0, nullptr, &size,
+                                                    streams.data()) != noErr) {
+    return std::nullopt;
+  }
+
+  UInt32 latency = 0;
+  bool observed = false;
+  for (const AudioStreamID stream : streams) {
+    AudioObjectPropertyAddress address = {kAudioStreamPropertyLatency,
+                                          kAudioObjectPropertyScopeGlobal,
+                                          kAudioObjectPropertyElementMain};
+    UInt32 stream_latency = 0;
+    UInt32 data_size = sizeof(stream_latency);
+    if (AudioObjectGetPropertyData(stream, &address, 0, nullptr, &data_size, &stream_latency) ==
+            noErr &&
+        data_size == sizeof(stream_latency)) {
+      latency = std::max(latency, stream_latency);
+      observed = true;
+    }
+  }
+  return observed ? std::optional<UInt32>(latency) : std::nullopt;
+}
+
+bool addLatencyTerm(const std::optional<UInt32>& term, uint32_t& total) {
+  if (!term.has_value()) {
+    return false;
+  }
+  const uint64_t sum = static_cast<uint64_t>(total) + *term;
+  total = static_cast<uint32_t>(std::min<uint64_t>(sum, std::numeric_limits<uint32_t>::max()));
+  return true;
+}
+
+} // namespace
+
 CoreAudioDriver::CoreAudioDriver() = default;
 
 CoreAudioDriver::~CoreAudioDriver() {
   stop();
+  stopRouteMonitor();
   cleanupAudioUnit();
 }
 
 SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
+  if (config.sample_rate == 0 || config.buffer_size == 0 || config.num_outputs == 0) {
+    return SessionGraphError::InvalidParameter;
+  }
+
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (is_running_.load(std::memory_order_acquire)) {
@@ -27,132 +153,149 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     }
   }
 
-  // A previous terminal runtime outcome leaves a joined-but-still-owned
-  // monitor. Tear it down before replacing the route.
-  stopSampleRateMonitor();
+  stopRouteMonitor();
 
   std::lock_guard<std::mutex> lock(mutex_);
   if (is_running_.load(std::memory_order_acquire)) {
     return SessionGraphError::NotReady;
   }
 
-  // Validate configuration
-  if (config.sample_rate == 0 || config.buffer_size == 0 || config.num_outputs == 0) {
-    return SessionGraphError::InvalidParameter;
-  }
-
-  // Clean up any existing AudioUnit
   cleanupAudioUnit();
-
   config_ = config;
+  input_channel_map_.clear();
+  output_channel_map_.clear();
+  active_route_ = {};
   expected_stream_sample_ = 0;
   stream_timeline_initialized_ = false;
-  input_storage_.clear();
-  input_buffers_.clear();
-  input_abl_storage_.clear();
+  runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+  route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
 
-  // Resolve both requested directions before creating the AudioUnit. A
-  // non-empty directional ID is a persistent HAL DeviceUID; resolution errors
-  // are terminal and must never silently select a default endpoint.
   device_id_ = resolveInputOutputDevice();
-  if (device_id_ == 0) {
+  if (device_id_ == 0 || !resolveChannelMaps(config)) {
+    route_outcome_.store(device_id_ == 0 ? AudioRouteRuntimeOutcome::RouteUnavailable
+                                         : AudioRouteRuntimeOutcome::ReinitializationRequired,
+                         std::memory_order_release);
+    cleanupAudioUnit();
     return SessionGraphError::InvalidParameter;
   }
 
-  // Set up AudioUnit
-  SessionGraphError result = setupAudioUnit(device_id_);
-  if (result != SessionGraphError::OK) {
-    cleanupAudioUnit();
-    return result;
-  }
-  createSampleRateMonitor();
-
-  // Pre-allocate audio buffers (no allocations in audio callback)
-  uint32_t num_outputs = config_.num_outputs;
-  uint32_t buffer_size = config_.buffer_size;
-
-  output_storage_.resize(num_outputs * buffer_size);
-  output_buffers_.resize(num_outputs);
-  for (uint32_t ch = 0; ch < num_outputs; ++ch) {
-    output_buffers_[ch] = &output_storage_[ch * buffer_size];
-  }
-
-  // Input buffers (if needed)
-  if (config_.num_inputs > 0) {
-    input_storage_.resize(config_.num_inputs * buffer_size);
+  try {
+    input_storage_.assign(static_cast<size_t>(config_.num_inputs) * config_.buffer_size, 0.0f);
+    output_storage_.assign(static_cast<size_t>(config_.num_outputs) * config_.buffer_size, 0.0f);
     input_buffers_.resize(config_.num_inputs);
-    for (uint32_t ch = 0; ch < config_.num_inputs; ++ch) {
-      input_buffers_[ch] = &input_storage_[ch * buffer_size];
+    output_buffers_.resize(config_.num_outputs);
+    for (uint16_t channel = 0; channel < config_.num_inputs; ++channel) {
+      input_buffers_[channel] =
+          input_storage_.data() + static_cast<size_t>(channel) * config_.buffer_size;
     }
+    for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
+      output_buffers_[channel] =
+          output_storage_.data() + static_cast<size_t>(channel) * config_.buffer_size;
+    }
+    if (config_.num_inputs > 0) {
+      const size_t buffer_list_size =
+          sizeof(AudioBufferList) +
+          static_cast<size_t>(config_.num_inputs - 1) * sizeof(AudioBuffer);
+      input_abl_storage_.resize(buffer_list_size);
+    }
+  } catch (...) {
+    cleanupAudioUnit();
+    return SessionGraphError::InternalError;
+  }
 
-    // Pre-allocate the AudioBufferList used to pull captured input in the
-    // render callback. One AudioBuffer per input channel (planar), so its
-    // trailing flexible array holds num_inputs entries. Allocated here, never
-    // on the audio thread.
-    const size_t abl_bytes =
-        sizeof(AudioBufferList) + (config_.num_inputs - 1) * sizeof(AudioBuffer);
-    input_abl_storage_.assign(abl_bytes, 0);
+  const SessionGraphError setup_result = setupAudioUnit(device_id_);
+  if (setup_result != SessionGraphError::OK) {
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    cleanupAudioUnit();
+    return setup_result;
+  }
+
+  if (!createRouteMonitor()) {
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    cleanupAudioUnit();
+    return SessionGraphError::InternalError;
+  }
+
+  refreshActiveRouteLocked();
+  if (active_route_.output_device_id.empty() || active_route_.actual_sample_rate == 0 ||
+      active_route_.actual_buffer_frames == 0 ||
+      (config_.num_inputs > 0 && active_route_.input_device_id.empty())) {
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    cleanupAudioUnit();
+    active_route_ = {};
+    return SessionGraphError::InternalError;
+  }
+
+  if (active_route_.actual_sample_rate != config_.sample_rate ||
+      active_route_.actual_buffer_frames != config_.buffer_size) {
+    route_outcome_.store(AudioRouteRuntimeOutcome::ReinitializationRequired,
+                         std::memory_order_release);
+    cleanupAudioUnit();
+    active_route_ = {};
+    return SessionGraphError::InvalidParameter;
   }
 
   input_render_failures_.store(0, std::memory_order_release);
   runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+  route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
 SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  if (!audio_unit_) {
+  if (!audio_unit_ || !route_monitor_) {
     return SessionGraphError::NotReady;
   }
-
   if (is_running_.load(std::memory_order_acquire)) {
     return SessionGraphError::NotReady;
   }
-
   if (!callback) {
     return SessionGraphError::InvalidParameter;
   }
-
-  // A terminal monitor outcome stops the worker without joining it. Reap that
-  // completed worker before replacing std::thread on a later start().
-  if (sample_rate_monitor_thread_.joinable()) {
-    sample_rate_monitor_thread_.join();
+  if (route_outcome_.load(std::memory_order_acquire) != AudioRouteRuntimeOutcome::Healthy) {
+    return SessionGraphError::NotReady;
   }
 
-  // Listener registration and the initial rate verification happen before the
-  // AU is started. A device that already rejects the requested rate therefore
-  // never reaches processAudio() with a mismatched stream format.
-  if (!startSampleRateMonitorLocked()) {
+  if (route_monitor_thread_.joinable()) {
+    route_monitor_thread_.join();
+  }
+
+  if (!startRouteMonitorLocked()) {
+    route_monitor_->stop();
     return SessionGraphError::InternalError;
   }
 
   callback_target_.replaceAndDrain(callback);
-  // Every successful start opens a new callback-admission epoch.
   expected_stream_sample_ = 0;
   stream_timeline_initialized_ = false;
   is_running_.store(true, std::memory_order_release);
 
-  OSStatus status = AudioOutputUnitStart(audio_unit_);
+  const OSStatus status = AudioOutputUnitStart(audio_unit_);
   if (status != noErr) {
     is_running_.store(false, std::memory_order_release);
     callback_target_.replaceAndDrain(nullptr);
-    sample_rate_monitor_->stop();
+    route_monitor_->stop();
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
     return SessionGraphError::InternalError;
   }
 
-  sample_rate_monitor_active_.store(true, std::memory_order_release);
+  route_monitor_active_.store(true, std::memory_order_release);
   try {
-    sample_rate_monitor_thread_ = std::thread(&CoreAudioDriver::sampleRateMonitorLoop, this);
+    route_monitor_thread_ = std::thread(&CoreAudioDriver::routeMonitorLoop, this);
   } catch (...) {
-    sample_rate_monitor_active_.store(false, std::memory_order_release);
+    route_monitor_active_.store(false, std::memory_order_release);
     AudioOutputUnitStop(audio_unit_);
     callback_target_.replaceAndDrain(nullptr);
     is_running_.store(false, std::memory_order_release);
-    sample_rate_monitor_->stop();
+    route_monitor_->stop();
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
     return SessionGraphError::InternalError;
   }
 
+  route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -161,7 +304,7 @@ SessionGraphError CoreAudioDriver::stop() {
     std::lock_guard<std::mutex> lock(mutex_);
     stopRenderingLocked();
   }
-  stopSampleRateMonitor();
+  stopRouteMonitor();
   return SessionGraphError::OK;
 }
 
@@ -179,15 +322,18 @@ std::string CoreAudioDriver::getDriverName() const {
 
 uint32_t CoreAudioDriver::getLatencySamples() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  // Query the physical routes, not the private aggregate wrapper. Consumer
-  // outputs (Bluetooth/AirPods in particular) report their transport delay on
-  // the output sub-device, and that report can change while a route is active.
   return queryDeviceLatency();
 }
 
 AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
   return {input_render_failures_.load(std::memory_order_acquire),
-          runtime_outcome_.load(std::memory_order_acquire)};
+          runtime_outcome_.load(std::memory_order_acquire),
+          route_outcome_.load(std::memory_order_acquire)};
+}
+
+ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return active_route_;
 }
 
 void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept {
@@ -197,7 +343,6 @@ void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept 
 void CoreAudioDriver::incrementInputRenderFailuresForTesting() noexcept {
   recordInputRenderFailure();
 }
-
 
 void CoreAudioDriver::recordInputRenderFailure() noexcept {
   detail::publishSaturatingIncrement(input_render_failures_);
@@ -236,7 +381,6 @@ void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
   performance_monitor_target_.replaceAndDrain(monitor);
 }
 
-// Static audio callback
 OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                          const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                          UInt32 inNumberFrames, AudioBufferList* ioData) {
@@ -245,8 +389,6 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   auto* driver = static_cast<CoreAudioDriver*>(inRefCon);
   assert(driver != nullptr);
 
-  // Zero output buffers before trying admission so a callback that races stop()
-  // always returns silence without reading any driver-owned callback state.
   for (UInt32 i = 0; i < ioData->mNumberBuffers; ++i) {
     std::memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
   }
@@ -256,67 +398,42 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     return noErr;
   }
 
-  // Clamp frames to our allocated buffer size
-  uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames),
-                                        static_cast<uint32_t>(driver->config_.buffer_size));
-  uint32_t num_channels = driver->config_.num_outputs;
-
-  // Zero our output buffers before callback
-  for (uint32_t ch = 0; ch < num_channels; ++ch) {
-    std::memset(driver->output_buffers_[ch], 0, frames_to_process * sizeof(float));
+  const uint32_t frames_to_process = std::min(static_cast<uint32_t>(inNumberFrames),
+                                              static_cast<uint32_t>(driver->config_.buffer_size));
+  const uint32_t num_output_channels = driver->config_.num_outputs;
+  for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
+    std::memset(driver->output_buffers_[channel], 0, frames_to_process * sizeof(float));
   }
 
-  // Zero our input buffers before capture so a failed/absent AudioUnitRender
-  // hands the host silence rather than stale samples.
   const uint32_t num_input_channels = driver->config_.num_inputs;
-  for (uint32_t ch = 0; ch < num_input_channels; ++ch) {
-    std::memset(driver->input_buffers_[ch], 0, frames_to_process * sizeof(float));
+  for (uint32_t channel = 0; channel < num_input_channels; ++channel) {
+    std::memset(driver->input_buffers_[channel], 0, frames_to_process * sizeof(float));
   }
 
-  // CRITICAL: Check if we're still running before invoking callback
-  // This prevents use-after-free if callback is invoked during/after stop()
   if (!driver->is_running_.load(std::memory_order_acquire)) {
-    return noErr; // Driver is stopping, output silence
+    return noErr;
   }
-
-  // A nominal-rate notification closes this gate before the control worker
-  // touches CoreAudio. Never hand a host processAudio() a block whose AU
-  // format may no longer match the hardware clock.
-  if (!driver->sample_rate_monitor_ || !driver->sample_rate_monitor_->permitsRendering()) {
+  if (!driver->route_monitor_ || !driver->route_monitor_->permitsRendering()) {
     return noErr;
   }
 
   IAudioCallback* callback = callback_lease.get();
-
-  // Pull captured input (bus 1) into our planar input_buffers_ before invoking
-  // the host callback. A HAL output render callback fires for the *output* bus
-  // and must explicitly render the input bus; captured samples never arrive in
-  // ioData. RT-safe: the AudioBufferList and its backing storage are
-  // pre-allocated in initialize(); no allocation, lock, or I/O on this path.
   if (num_input_channels > 0 && !driver->input_abl_storage_.empty()) {
-    auto* inputABL = reinterpret_cast<AudioBufferList*>(driver->input_abl_storage_.data());
-    inputABL->mNumberBuffers = num_input_channels;
-    for (uint32_t ch = 0; ch < num_input_channels; ++ch) {
-      inputABL->mBuffers[ch].mNumberChannels = 1; // planar: one channel per buffer
-      inputABL->mBuffers[ch].mDataByteSize = frames_to_process * sizeof(float);
-      inputABL->mBuffers[ch].mData = driver->input_buffers_[ch];
+    auto* input_abl = reinterpret_cast<AudioBufferList*>(driver->input_abl_storage_.data());
+    input_abl->mNumberBuffers = num_input_channels;
+    for (uint32_t channel = 0; channel < num_input_channels; ++channel) {
+      input_abl->mBuffers[channel].mNumberChannels = 1;
+      input_abl->mBuffers[channel].mDataByteSize = frames_to_process * sizeof(float);
+      input_abl->mBuffers[channel].mData = driver->input_buffers_[channel];
     }
 
-    // inputBus = 1. On failure the pre-zeroed buffers stand in as silence, so
-    // we never propagate a hard error up the audio graph for a transient
-    // miss -- but a persistent failure (e.g. capturing against a device with
-    // no input channels) is exactly what left this class of bug invisible;
-    // count it (lock-free, RT-safe) so a host or test can tell "always
-    // silent" apart from "never actually captured."
-    OSStatus render_status = AudioUnitRender(driver->audio_unit_, ioActionFlags, inTimeStamp,
-                                             /*inputBus=*/1, frames_to_process, inputABL);
+    const OSStatus render_status = AudioUnitRender(driver->audio_unit_, ioActionFlags, inTimeStamp,
+                                                   /*inputBus=*/1, frames_to_process, input_abl);
     if (render_status != noErr) {
       driver->recordInputRenderFailure();
     }
   }
 
-  // Invoke user callback (lock-free). Timing is opt-in for diagnostics builds;
-  // production callbacks should not pay for callback-duration instrumentation.
   const float** input_ptrs = driver->input_buffers_.empty()
                                  ? nullptr
                                  : const_cast<const float**>(driver->input_buffers_.data());
@@ -338,7 +455,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   block.input_buffers = input_ptrs;
   block.output_buffers = output_ptrs;
   block.num_input_channels = static_cast<uint16_t>(num_input_channels);
-  block.num_output_channels = static_cast<uint16_t>(num_channels);
+  block.num_output_channels = static_cast<uint16_t>(num_output_channels);
   block.num_frames = frames_to_process;
   block.device_sample_position =
       device_position_available ? static_cast<uint64_t>(reported_sample_time) : 0;
@@ -346,18 +463,14 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
       host_time_valid ? AudioConvertHostTimeToNanos(inTimeStamp->mHostTime) : 0;
   block.discontinuity = discontinuity;
 
-#if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
   auto monitor_lease = driver->performance_monitor_target_.tryAcquire();
-  const UInt64 callback_start =
-      monitor_lease ? AudioGetCurrentHostTime() : UInt64{0};
-#endif
+  const UInt64 callback_start = monitor_lease ? AudioGetCurrentHostTime() : UInt64{0};
   callback->processAudio(block);
   driver->expected_stream_sample_ = stream_time + frames_to_process;
   driver->stream_timeline_initialized_ = true;
-#if defined(ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING)
   if (auto* monitor = monitor_lease.get()) {
     const UInt64 callback_end = AudioGetCurrentHostTime();
-    const UInt64 duration_ns = AudioConvertHostTimeToNanos(callback_end - callback_start);
+    const uint64_t duration_ns = AudioConvertHostTimeToNanos(callback_end - callback_start);
     const uint64_t callback_duration_us = static_cast<uint64_t>(duration_ns / 1000u);
     const uint64_t buffer_duration_us =
         (static_cast<uint64_t>(frames_to_process) * 1'000'000ull) / driver->config_.sample_rate;
@@ -365,13 +478,11 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     monitor->recordAudioCallback(callback_duration_us, buffer_duration_us, active_clips,
                                  driver->config_.sample_rate, frames_to_process);
   }
-#endif
 
-  // Copy planar output buffers to CoreAudio non-interleaved buffers
-  for (uint32_t ch = 0; ch < num_channels && ch < ioData->mNumberBuffers; ++ch) {
-    float* src = driver->output_buffers_[ch];
-    auto* dst = static_cast<float*>(ioData->mBuffers[ch].mData);
-    std::memcpy(dst, src, frames_to_process * sizeof(float));
+  for (uint32_t channel = 0; channel < num_output_channels && channel < ioData->mNumberBuffers;
+       ++channel) {
+    std::memcpy(ioData->mBuffers[channel].mData, driver->output_buffers_[channel],
+                frames_to_process * sizeof(float));
   }
 
   return noErr;
@@ -379,137 +490,33 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
 
 std::vector<AudioDeviceID> CoreAudioDriver::enumerateDevices() {
   std::vector<AudioDeviceID> devices;
-
-  AudioObjectPropertyAddress propertyAddress = {kAudioHardwarePropertyDevices,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-
-  UInt32 dataSize = 0;
-  OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0,
-                                                   nullptr, &dataSize);
-
-  if (status != noErr || dataSize == 0) {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices,
+                                        kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 data_size = 0;
+  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0, nullptr, &data_size) !=
+          noErr ||
+      data_size == 0) {
     return devices;
   }
 
-  UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
-  devices.resize(deviceCount);
-
-  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, nullptr,
-                                      &dataSize, devices.data());
-
-  if (status != noErr) {
+  devices.resize(data_size / sizeof(AudioDeviceID));
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &data_size,
+                                 devices.data()) != noErr) {
     devices.clear();
   }
-
   return devices;
 }
 
 AudioDeviceID CoreAudioDriver::getDefaultDevice(AudioObjectPropertySelector selector) {
-  AudioObjectPropertyAddress propertyAddress = {selector, kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-
-  AudioDeviceID deviceID = 0;
-  UInt32 dataSize = sizeof(AudioDeviceID);
-
-  OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0,
-                                               nullptr, &dataSize, &deviceID);
-
-  return (status == noErr && deviceID != kAudioObjectUnknown) ? deviceID : 0;
-}
-
-namespace {
-
-/// Copy a device's persistent UID string (caller releases). Used to describe
-/// sub-devices to AudioHardwareCreateAggregateDevice, which identifies them
-/// by UID rather than the (session-scoped) AudioDeviceID.
-CFStringRef copyDeviceUID(AudioDeviceID device_id) {
-  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyDeviceUID,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-  CFStringRef uid = nullptr;
-  UInt32 dataSize = sizeof(CFStringRef);
-  OSStatus status =
-      AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &uid);
-  return (status == noErr) ? uid : nullptr;
-}
-
-/// Query a device's clock domain. Devices sharing a non-zero domain are
-/// synchronized to the same underlying hardware clock (e.g. a MacBook's
-/// built-in microphone and built-in speakers both run off the machine's
-/// single audio clock) -- 0 or a mismatch means the OS cannot prove they
-/// share a clock and drift compensation is genuinely needed to bridge them.
-UInt32 getClockDomain(AudioDeviceID device_id) {
-  AudioObjectPropertyAddress propertyAddress = {kAudioDevicePropertyClockDomain,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-  UInt32 domain = 0;
-  UInt32 dataSize = sizeof(UInt32);
-  AudioObjectGetPropertyData(device_id, &propertyAddress, 0, nullptr, &dataSize, &domain);
-  return domain;
-}
-
-UInt32 getUInt32Property(AudioDeviceID device_id, AudioObjectPropertySelector selector,
-                         AudioObjectPropertyScope scope) {
-  if (device_id == 0) {
-    return 0;
-  }
-  AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
-  UInt32 value = 0;
-  UInt32 size = sizeof(value);
-  return AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) == noErr ? value
-                                                                                             : 0;
-}
-
-UInt32 getChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
-  if (device_id == 0) {
-    return 0;
-  }
-  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+  AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
                                         kAudioObjectPropertyElementMain};
-  UInt32 size = 0;
-  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
-      size < sizeof(AudioBufferList)) {
-    return 0;
-  }
-
-  std::vector<uint8_t> storage(size);
-  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
-  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
-    return 0;
-  }
-
-  UInt32 channels = 0;
-  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
-    channels += buffers->mBuffers[index].mNumberChannels;
-  }
-  return channels;
+  AudioDeviceID device_id = 0;
+  UInt32 data_size = sizeof(device_id);
+  const OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr,
+                                                     &data_size, &device_id);
+  return status == noErr && device_id != kAudioObjectUnknown ? device_id : 0;
 }
-
-UInt32 getStreamLatency(AudioDeviceID device_id, AudioObjectPropertyScope scope) {
-  AudioObjectPropertyAddress streams_address = {kAudioDevicePropertyStreams, scope,
-                                                kAudioObjectPropertyElementMain};
-  UInt32 size = 0;
-  if (AudioObjectGetPropertyDataSize(device_id, &streams_address, 0, nullptr, &size) != noErr ||
-      size == 0) {
-    return 0;
-  }
-
-  std::vector<AudioStreamID> streams(size / sizeof(AudioStreamID));
-  if (AudioObjectGetPropertyData(device_id, &streams_address, 0, nullptr, &size, streams.data()) !=
-      noErr) {
-    return 0;
-  }
-
-  UInt32 latency = 0;
-  for (AudioStreamID stream : streams) {
-    latency = std::max(latency, getUInt32Property(stream, kAudioStreamPropertyLatency,
-                                                  kAudioObjectPropertyScopeGlobal));
-  }
-  return latency;
-}
-
-} // namespace
 
 AudioDeviceID CoreAudioDriver::findDeviceByUID(const std::string& device_uid) {
   if (device_uid.empty()) {
@@ -524,12 +531,12 @@ AudioDeviceID CoreAudioDriver::findDeviceByUID(const std::string& device_uid) {
 
   AudioDeviceID matched = 0;
   for (const AudioDeviceID candidate : enumerateDevices()) {
-    CFStringRef candidateUID = copyDeviceUID(candidate);
-    if (candidateUID && CFStringCompare(candidateUID, requested, 0) == kCFCompareEqualTo) {
+    CFStringRef candidate_uid = copyDeviceUID(candidate);
+    if (candidate_uid && CFStringCompare(candidate_uid, requested, 0) == kCFCompareEqualTo) {
       matched = candidate;
     }
-    if (candidateUID) {
-      CFRelease(candidateUID);
+    if (candidate_uid) {
+      CFRelease(candidate_uid);
     }
     if (matched != 0) {
       break;
@@ -544,12 +551,42 @@ bool CoreAudioDriver::supportsDirection(AudioDeviceID device_id,
   return getChannelCount(device_id, scope) > 0;
 }
 
+uint32_t CoreAudioDriver::getChannelCount(AudioDeviceID device_id,
+                                          AudioObjectPropertyScope scope) const {
+  if (device_id == 0) {
+    return 0;
+  }
+
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 data_size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &data_size) != noErr ||
+      data_size < sizeof(AudioBufferList)) {
+    return 0;
+  }
+
+  std::vector<uint8_t> storage(data_size);
+  auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &data_size, buffers) != noErr) {
+    return 0;
+  }
+
+  uint32_t channels = 0;
+  for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+    channels += buffers->mBuffers[index].mNumberChannels;
+  }
+  return channels;
+}
+
 AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
   input_channel_offset_ = 0;
-  const AudioDeviceID outputID = config_.output_device_id.empty()
-                                     ? getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
-                                     : findDeviceByUID(config_.output_device_id);
-  if (outputID == 0 || !supportsDirection(outputID, kAudioObjectPropertyScopeOutput)) {
+  available_input_channels_ = 0;
+  available_output_channels_ = 0;
+
+  const AudioDeviceID output_id = config_.output_device_id.empty()
+                                      ? getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+                                      : findDeviceByUID(config_.output_device_id);
+  if (output_id == 0 || !supportsDirection(output_id, kAudioObjectPropertyScopeOutput)) {
     return 0;
   }
 
@@ -558,420 +595,573 @@ AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
       return 0;
     }
     input_device_id_ = 0;
-    output_device_id_ = outputID;
-    return outputID;
+    output_device_id_ = output_id;
+    available_output_channels_ = getChannelCount(output_id, kAudioObjectPropertyScopeOutput);
+    return output_id;
   }
 
-  const AudioDeviceID inputID = config_.input_device_id.empty()
-                                    ? getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice)
-                                    : findDeviceByUID(config_.input_device_id);
-  const UInt32 inputChannelCount = getChannelCount(inputID, kAudioObjectPropertyScopeInput);
-  if (inputID == 0 || inputChannelCount < config_.num_inputs) {
+  const AudioDeviceID input_id = config_.input_device_id.empty()
+                                     ? getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice)
+                                     : findDeviceByUID(config_.input_device_id);
+  if (input_id == 0 || !supportsDirection(input_id, kAudioObjectPropertyScopeInput)) {
     return 0;
   }
 
-  input_device_id_ = inputID;
-  output_device_id_ = outputID;
-  if (inputID == outputID) {
-    input_channel_offset_ = 0;
-    return outputID;
+  input_device_id_ = input_id;
+  output_device_id_ = output_id;
+  available_input_channels_ = getChannelCount(input_id, kAudioObjectPropertyScopeInput);
+  available_output_channels_ = getChannelCount(output_id, kAudioObjectPropertyScopeOutput);
+
+  if (input_id == output_id) {
+    return output_id;
   }
 
-  // Aggregate input channels retain sub-device order. A duplex playback
-  // endpoint contributes its capture channels before the dedicated input
-  // endpoint, so map past them rather than silently metering/recording the
-  // playback device's first (often disconnected) input.
-  input_channel_offset_ = getChannelCount(outputID, kAudioObjectPropertyScopeInput);
-  const AudioDeviceID aggregateID = createAggregateDevice(inputID, outputID);
-  if (aggregateID == 0) {
+  input_channel_offset_ = getChannelCount(output_id, kAudioObjectPropertyScopeInput);
+  const AudioDeviceID aggregate_id = createAggregateDevice(input_id, output_id);
+  if (aggregate_id == 0) {
     input_device_id_ = 0;
     output_device_id_ = 0;
+    available_input_channels_ = 0;
+    available_output_channels_ = 0;
     return 0;
   }
-  aggregate_device_id_ = aggregateID;
-  return aggregateID;
+  aggregate_device_id_ = aggregate_id;
+  return aggregate_id;
 }
 
 AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_id,
                                                      AudioDeviceID output_device_id) {
-  CFStringRef inputUID = copyDeviceUID(input_device_id);
-  CFStringRef outputUID = copyDeviceUID(output_device_id);
-  if (!inputUID || !outputUID) {
-    if (inputUID)
-      CFRelease(inputUID);
-    if (outputUID)
-      CFRelease(outputUID);
+  CFStringRef input_uid = copyDeviceUID(input_device_id);
+  CFStringRef output_uid = copyDeviceUID(output_device_id);
+  if (!input_uid || !output_uid) {
+    if (input_uid)
+      CFRelease(input_uid);
+    if (output_uid)
+      CFRelease(output_uid);
     return 0;
   }
 
-  // Drift compensation resamples a non-master sub-device to track the
-  // master's clock -- necessary (and worth its latency cost) when the two
-  // devices run off genuinely independent hardware clocks, but pure
-  // overhead when they don't. Built-in devices on the same Mac (e.g. the
-  // microphone and speakers here) commonly share one hardware clock domain,
-  // in which case forcing compensation on adds real, otherwise-avoidable
-  // capture latency for no correctness benefit. Query it and only enable
-  // compensation on the (non-master) input sub-device when the domains
-  // actually differ.
-  const UInt32 inputClockDomain = getClockDomain(input_device_id);
-  const UInt32 outputClockDomain = getClockDomain(output_device_id);
-  const bool sameClockDomain = inputClockDomain != 0 && inputClockDomain == outputClockDomain;
-  const int driftCompensation = sameClockDomain ? 0 : 1;
+  const UInt32 input_clock_domain = getClockDomain(input_device_id);
+  const UInt32 output_clock_domain = getClockDomain(output_device_id);
+  const bool same_clock_domain =
+      input_clock_domain != 0 && input_clock_domain == output_clock_domain;
+  const int drift_compensation = same_clock_domain ? 0 : 1;
 
-  CFMutableDictionaryRef inputSubDevice = CFDictionaryCreateMutable(
+  CFMutableDictionaryRef input_sub_device = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-  CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceUIDKey), inputUID);
-  CFNumberRef driftCompensationValue =
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &driftCompensation);
-  CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceDriftCompensationKey),
-                       driftCompensationValue);
-  if (!sameClockDomain) {
-    const int maxQuality = kAudioSubDeviceDriftCompensationMaxQuality;
-    CFNumberRef qualityValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxQuality);
-    CFDictionarySetValue(inputSubDevice, CFSTR(kAudioSubDeviceDriftCompensationQualityKey),
-                         qualityValue);
-    CFRelease(qualityValue);
+  CFDictionarySetValue(input_sub_device, CFSTR(kAudioSubDeviceUIDKey), input_uid);
+  CFNumberRef drift_value =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &drift_compensation);
+  CFDictionarySetValue(input_sub_device, CFSTR(kAudioSubDeviceDriftCompensationKey), drift_value);
+  if (!same_clock_domain) {
+    const int max_quality = kAudioSubDeviceDriftCompensationMaxQuality;
+    CFNumberRef quality_value = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &max_quality);
+    CFDictionarySetValue(input_sub_device, CFSTR(kAudioSubDeviceDriftCompensationQualityKey),
+                         quality_value);
+    CFRelease(quality_value);
   }
-  CFRelease(driftCompensationValue);
+  CFRelease(drift_value);
 
-  // The master (clock source) sub-device is never compensated against
-  // itself.
-  CFMutableDictionaryRef outputSubDevice = CFDictionaryCreateMutable(
+  CFMutableDictionaryRef output_sub_device = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-  CFDictionarySetValue(outputSubDevice, CFSTR(kAudioSubDeviceUIDKey), outputUID);
+  CFDictionarySetValue(output_sub_device, CFSTR(kAudioSubDeviceUIDKey), output_uid);
 
-  CFMutableArrayRef subDeviceList =
+  CFMutableArrayRef sub_device_list =
       CFArrayCreateMutable(kCFAllocatorDefault, 2, &kCFTypeArrayCallBacks);
-  CFArrayAppendValue(subDeviceList, outputSubDevice);
-  CFArrayAppendValue(subDeviceList, inputSubDevice);
+  CFArrayAppendValue(sub_device_list, output_sub_device);
+  CFArrayAppendValue(sub_device_list, input_sub_device);
 
-  // Unique per driver instance so two overlapping CoreAudioDriver instances
-  // (unusual, but not forbidden by this class) never collide on UID.
-  std::ostringstream uidStream;
-  uidStream << "com.orpheus.sdk.aggregate." << static_cast<const void*>(this);
-  CFStringRef aggregateUID = CFStringCreateWithCString(kCFAllocatorDefault, uidStream.str().c_str(),
-                                                       kCFStringEncodingUTF8);
+  std::ostringstream uid_stream;
+  uid_stream << "com.orpheus.sdk.aggregate." << static_cast<const void*>(this);
+  CFStringRef aggregate_uid = CFStringCreateWithCString(
+      kCFAllocatorDefault, uid_stream.str().c_str(), kCFStringEncodingUTF8);
 
-  CFMutableDictionaryRef aggregateDict = CFDictionaryCreateMutable(
+  CFMutableDictionaryRef aggregate_dict = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-  // Private + non-stacked: never listed in System Settings -> Sound, and
-  // exists only for this driver instance's lifetime (destroyed in
-  // cleanupAudioUnit() via AudioHardwareDestroyAggregateDevice).
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceNameKey),
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceNameKey),
                        CFSTR("Orpheus SDK I/O Bridge"));
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceUIDKey), aggregateUID);
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceSubDeviceListKey), subDeviceList);
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceMasterSubDeviceKey), outputUID);
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceIsPrivateKey), kCFBooleanTrue);
-  CFDictionarySetValue(aggregateDict, CFSTR(kAudioAggregateDeviceIsStackedKey), kCFBooleanFalse);
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceUIDKey), aggregate_uid);
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceSubDeviceListKey),
+                       sub_device_list);
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceMasterSubDeviceKey), output_uid);
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceIsPrivateKey), kCFBooleanTrue);
+  CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceIsStackedKey), kCFBooleanFalse);
 
-  AudioDeviceID aggregateID = kAudioObjectUnknown;
-  OSStatus status = AudioHardwareCreateAggregateDevice(aggregateDict, &aggregateID);
+  AudioDeviceID aggregate_id = kAudioObjectUnknown;
+  const OSStatus status = AudioHardwareCreateAggregateDevice(aggregate_dict, &aggregate_id);
 
-  CFRelease(inputSubDevice);
-  CFRelease(outputSubDevice);
-  CFRelease(subDeviceList);
-  CFRelease(aggregateDict);
-  CFRelease(aggregateUID);
-  CFRelease(inputUID);
-  CFRelease(outputUID);
+  CFRelease(input_sub_device);
+  CFRelease(output_sub_device);
+  CFRelease(sub_device_list);
+  CFRelease(aggregate_dict);
+  CFRelease(aggregate_uid);
+  CFRelease(input_uid);
+  CFRelease(output_uid);
 
-  return (status == noErr) ? aggregateID : 0;
+  return status == noErr ? aggregate_id : 0;
 }
 
-uint32_t CoreAudioDriver::queryDeviceLatency() const {
-  uint64_t latency = 0;
+bool CoreAudioDriver::resolveChannelMaps(const AudioDriverConfig& config) {
+  const auto resolve = [](const std::vector<uint16_t>& requested, uint16_t logical_count,
+                          uint32_t physical_count, std::vector<uint16_t>& resolved) {
+    if (requested.empty()) {
+      resolved.resize(logical_count);
+      for (uint16_t channel = 0; channel < logical_count; ++channel) {
+        resolved[channel] = channel;
+      }
+      return true;
+    }
+    if (requested.size() != logical_count) {
+      return false;
+    }
 
-  const auto add_route = [&](AudioDeviceID device_id, AudioObjectPropertyScope scope) {
-    latency += getUInt32Property(device_id, kAudioDevicePropertyLatency, scope);
-    latency += getUInt32Property(device_id, kAudioDevicePropertySafetyOffset, scope);
-    latency += getStreamLatency(device_id, scope);
+    resolved.clear();
+    resolved.reserve(requested.size());
+    for (const uint16_t channel : requested) {
+      if (channel >= physical_count ||
+          std::find(resolved.begin(), resolved.end(), channel) != resolved.end()) {
+        return false;
+      }
+      resolved.push_back(channel);
+    }
+    return true;
   };
 
-  if (config_.num_inputs > 0) {
-    add_route(input_device_id_, kAudioObjectPropertyScopeInput);
-  }
-  if (config_.num_outputs > 0) {
-    add_route(output_device_id_, kAudioObjectPropertyScopeOutput);
-  }
-
-  // CoreAudio's round-trip formula counts the active I/O buffer once. The
-  // requested size is only advisory, so an unavailable readback means latency
-  // is undetected — never substitute an estimate.
-  const UInt32 buffer_frames = getUInt32Property(device_id_, kAudioDevicePropertyBufferFrameSize,
-                                                 kAudioObjectPropertyScopeGlobal);
-  if (buffer_frames == 0) {
-    return 0;
-  }
-  latency += buffer_frames;
-
-  // Includes converters and aggregate-device drift compensation not represented
-  // by the physical endpoint properties.
-  if (audio_unit_ != nullptr) {
-    Float64 seconds = 0.0;
-    UInt32 size = sizeof(seconds);
-    if (AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
-                             &seconds, &size) == noErr &&
-        seconds > 0.0) {
-      latency +=
-          static_cast<uint64_t>(std::llround(seconds * static_cast<Float64>(config_.sample_rate)));
-    }
-  }
-
-  return static_cast<uint32_t>(std::min<uint64_t>(latency, std::numeric_limits<uint32_t>::max()));
+  return resolve(config.channel_map.input_channels, config.num_inputs, available_input_channels_,
+                 input_channel_map_) &&
+         resolve(config.channel_map.output_channels, config.num_outputs, available_output_channels_,
+                 output_channel_map_);
 }
 
-SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
-  // Create AudioComponentDescription for HAL Output
-  AudioComponentDescription desc = {};
-  desc.componentType = kAudioUnitType_Output;
-  desc.componentSubType = kAudioUnitSubType_HALOutput;
-  desc.componentManufacturer = kAudioUnitManufacturer_Apple;
-  desc.componentFlags = 0;
-  desc.componentFlagsMask = 0;
-
-  // Find AudioComponent
-  AudioComponent component = AudioComponentFindNext(nullptr, &desc);
-  if (!component) {
-    return SessionGraphError::InternalError;
+std::vector<AudioStreamID> CoreAudioDriver::enumerateStreams(AudioDeviceID device_id,
+                                                             AudioObjectPropertyScope scope) const {
+  std::vector<AudioStreamID> streams;
+  if (device_id == 0) {
+    return streams;
   }
-
-  // Create AudioUnit instance
-  OSStatus status = AudioComponentInstanceNew(component, &audio_unit_);
-  if (status != noErr || !audio_unit_) {
-    return SessionGraphError::InternalError;
+  AudioObjectPropertyAddress address = {kAudioDevicePropertyStreams, scope,
+                                        kAudioObjectPropertyElementMain};
+  UInt32 data_size = 0;
+  if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &data_size) != noErr ||
+      data_size == 0) {
+    return streams;
   }
-
-  // Enable input IO (bus 1) only when the host asked for capture. Pure-playback
-  // hosts (num_inputs == 0) keep the historical output-only behavior. Bus 1 is
-  // the AudioUnit's input element; kAudioUnitSubType_HALOutput supports both
-  // capture (bus 1) and playback (bus 0) on a single unit.
-  UInt32 enableIO = config_.num_inputs > 0 ? 1 : 0;
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
-                                kAudioUnitScope_Input, 1, &enableIO, sizeof(enableIO));
-
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
+  streams.resize(data_size / sizeof(AudioStreamID));
+  if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &data_size, streams.data()) !=
+      noErr) {
+    streams.clear();
   }
-
-  // Enable output
-  enableIO = 1;
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
-                                kAudioUnitScope_Output, 0, &enableIO, sizeof(enableIO));
-
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
-  }
-
-  // Set current device
-  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_CurrentDevice,
-                                kAudioUnitScope_Global, 0, &device_id, sizeof(AudioDeviceID));
-
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
-  }
-
-  // CRITICAL FIX: Set the DEVICE's nominal sample rate to match our requested rate
-  // This must be done BEFORE setting the AudioUnit's stream format
-  Float64 requestedSampleRate = static_cast<Float64>(config_.sample_rate);
-  AudioObjectPropertyAddress deviceSRAddr = {kAudioDevicePropertyNominalSampleRate,
-                                             kAudioObjectPropertyScopeGlobal,
-                                             kAudioObjectPropertyElementMain};
-  status = AudioObjectSetPropertyData(device_id, &deviceSRAddr, 0, nullptr, sizeof(Float64),
-                                      &requestedSampleRate);
-  if (status != noErr) {
-    // Don't fail completely, but this will cause playback speed issues.
-  }
-
-  // Set stream format (planar float32)
-  AudioStreamBasicDescription streamFormat = {};
-  streamFormat.mSampleRate = config_.sample_rate;
-  streamFormat.mFormatID = kAudioFormatLinearPCM;
-  streamFormat.mFormatFlags =
-      kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
-  streamFormat.mBytesPerPacket = sizeof(float);
-  streamFormat.mFramesPerPacket = 1;
-  streamFormat.mBytesPerFrame = sizeof(float);
-  streamFormat.mChannelsPerFrame = config_.num_outputs;
-  streamFormat.mBitsPerChannel = 32;
-
-  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
-                                0, &streamFormat, sizeof(streamFormat));
-
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
-  }
-
-  // Set the input stream format when capture is enabled. This is the format the
-  // AudioUnit delivers to our AudioUnitRender pull on bus 1, so it goes on
-  // kAudioUnitScope_Output, element 1 (the output side of the input element).
-  // Mirror the output ASBD (planar float32) but with the input channel count so
-  // AudioUnitRender fills our planar input_buffers_ directly, no deinterleave.
-  if (config_.num_inputs > 0) {
-    AudioStreamBasicDescription inputFormat = streamFormat;
-    inputFormat.mChannelsPerFrame = config_.num_inputs;
-
-    status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat,
-                                  kAudioUnitScope_Output, 1, &inputFormat, sizeof(inputFormat));
-
-    if (status != noErr) {
-      return SessionGraphError::InternalError;
-    }
-    std::vector<SInt32> inputChannelMap(config_.num_inputs);
-    for (uint32_t channel = 0; channel < config_.num_inputs; ++channel) {
-      inputChannelMap[channel] = static_cast<SInt32>(input_channel_offset_ + channel);
-    }
-    status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_ChannelMap,
-                                  kAudioUnitScope_Output, 1, inputChannelMap.data(),
-                                  static_cast<UInt32>(inputChannelMap.size() * sizeof(SInt32)));
-    if (status != noErr) {
-      return SessionGraphError::InternalError;
-    }
-  }
-
-  // Set buffer size (if supported)
-  UInt32 bufferFrames = config_.buffer_size;
-  status = AudioUnitSetProperty(audio_unit_, kAudioDevicePropertyBufferFrameSize,
-                                kAudioUnitScope_Global, 0, &bufferFrames, sizeof(bufferFrames));
-
-  // Note: Buffer size setting may fail on some devices, but continue anyway
-
-  // Set render callback
-  AURenderCallbackStruct callbackStruct = {};
-  callbackStruct.inputProc = &CoreAudioDriver::renderCallback;
-  callbackStruct.inputProcRefCon = this;
-
-  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_SetRenderCallback,
-                                kAudioUnitScope_Input, 0, &callbackStruct, sizeof(callbackStruct));
-
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
-  }
-
-  // Initialize AudioUnit
-  status = AudioUnitInitialize(audio_unit_);
-  if (status != noErr) {
-    return SessionGraphError::InternalError;
-  }
-
-  return SessionGraphError::OK;
+  return streams;
 }
 
-void CoreAudioDriver::createSampleRateMonitor() {
-  std::vector<AudioDeviceID> monitored_devices;
-  monitored_devices.reserve(3);
-  monitored_devices.push_back(device_id_);
-  monitored_devices.push_back(output_device_id_);
-  if (config_.num_inputs > 0) {
-    monitored_devices.push_back(input_device_id_);
+std::optional<AudioStreamBasicDescription>
+CoreAudioDriver::getStreamFormat(AudioStreamID stream_id,
+                                 AudioObjectPropertySelector selector) const {
+  if (stream_id == 0) {
+    return std::nullopt;
   }
-  sample_rate_monitor_ = std::make_unique<CoreAudioSampleRateMonitor>(
-      sample_rate_property_api_, config_.sample_rate, std::move(monitored_devices));
+  AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  AudioStreamBasicDescription format{};
+  UInt32 data_size = sizeof(format);
+  if (AudioObjectGetPropertyData(stream_id, &address, 0, nullptr, &data_size, &format) != noErr ||
+      data_size != sizeof(format)) {
+    return std::nullopt;
+  }
+  return format;
 }
 
-bool CoreAudioDriver::startSampleRateMonitorLocked() {
-  std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
-  if (!sample_rate_monitor_ || !sample_rate_monitor_->start()) {
-    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateListenerFailure,
-                           std::memory_order_release);
+bool CoreAudioDriver::createRouteMonitor() {
+  std::vector<AudioDeviceID> device_ids;
+  device_ids.reserve(3);
+  device_ids.push_back(device_id_);
+  device_ids.push_back(output_device_id_);
+  if (config_.num_inputs > 0) {
+    device_ids.push_back(input_device_id_);
+  }
+
+  std::vector<CoreAudioRouteStream> streams;
+  const auto append_streams = [&](AudioDeviceID device_id, AudioObjectPropertyScope scope) {
+    for (const AudioStreamID stream_id : enumerateStreams(device_id, scope)) {
+      const auto virtual_format = getStreamFormat(stream_id, kAudioStreamPropertyVirtualFormat);
+      const auto physical_format = getStreamFormat(stream_id, kAudioStreamPropertyPhysicalFormat);
+      if (!virtual_format.has_value() || !physical_format.has_value()) {
+        return false;
+      }
+      const auto existing = std::find_if(streams.begin(), streams.end(),
+                                         [stream_id](const CoreAudioRouteStream& stream) {
+                                           return stream.stream_id == stream_id;
+                                         });
+      if (existing == streams.end()) {
+        streams.push_back({stream_id, *virtual_format, *physical_format});
+      }
+    }
+    return true;
+  };
+
+  if (!append_streams(output_device_id_, kAudioObjectPropertyScopeOutput) ||
+      (config_.num_inputs > 0 &&
+       !append_streams(input_device_id_, kAudioObjectPropertyScopeInput)) ||
+      streams.empty()) {
     return false;
   }
 
-  sample_rate_monitor_->requestCheck();
-  const CoreAudioSampleRatePollResult result = sample_rate_monitor_->poll();
-  switch (result) {
-  case CoreAudioSampleRatePollResult::NoChange:
-    runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
-    return true;
-  case CoreAudioSampleRatePollResult::RateRestored:
-    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateRestored,
+  try {
+    route_monitor_ = std::make_unique<CoreAudioRouteMonitor>(
+        route_property_api_, config_.sample_rate, config_.buffer_size, std::move(device_ids),
+        std::move(streams));
+  } catch (...) {
+    route_monitor_.reset();
+    return false;
+  }
+  return true;
+}
+
+bool CoreAudioDriver::startRouteMonitorLocked() {
+  std::lock_guard<std::mutex> monitor_lock(route_monitor_mutex_);
+  if (!route_monitor_ || !route_monitor_->start()) {
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateListenerFailure,
                            std::memory_order_release);
-    return true;
-  case CoreAudioSampleRatePollResult::ReinitializationRequired:
-    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateReinitializationRequired,
-                           std::memory_order_release);
-    break;
-  case CoreAudioSampleRatePollResult::QueryFailed:
-    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateQueryFailure,
-                           std::memory_order_release);
-    break;
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    return false;
   }
 
-  sample_rate_monitor_->stop();
+  route_monitor_->requestCheck();
+  const CoreAudioRoutePollResult result = route_monitor_->poll();
+  publishRoutePollResult(result);
+  if (result == CoreAudioRoutePollResult::NoChange ||
+      result == CoreAudioRoutePollResult::RateRestored) {
+    refreshActiveRouteLocked();
+    return true;
+  }
+
+  route_monitor_->stop();
   return false;
 }
 
-void CoreAudioDriver::stopSampleRateMonitor() {
-  sample_rate_monitor_active_.store(false, std::memory_order_release);
+void CoreAudioDriver::stopRouteMonitor() {
+  route_monitor_active_.store(false, std::memory_order_release);
   {
-    std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
-    if (sample_rate_monitor_) {
-      sample_rate_monitor_->stop();
-      sample_rate_monitor_->requestCheck();
+    std::lock_guard<std::mutex> monitor_lock(route_monitor_mutex_);
+    if (route_monitor_) {
+      route_monitor_->stop();
     }
   }
-  if (sample_rate_monitor_thread_.joinable()) {
-    sample_rate_monitor_thread_.join();
+  if (route_monitor_thread_.joinable()) {
+    route_monitor_thread_.join();
   }
 }
 
-void CoreAudioDriver::sampleRateMonitorLoop() {
-  while (sample_rate_monitor_active_.load(std::memory_order_acquire)) {
-    sample_rate_monitor_->waitForChange();
-    if (!sample_rate_monitor_active_.load(std::memory_order_acquire)) {
+void CoreAudioDriver::routeMonitorLoop() {
+  while (route_monitor_active_.load(std::memory_order_acquire)) {
+    route_monitor_->waitForChange();
+    if (!route_monitor_active_.load(std::memory_order_acquire)) {
       break;
     }
 
-    CoreAudioSampleRatePollResult result;
+    CoreAudioRoutePollResult result = CoreAudioRoutePollResult::BackendFailure;
     {
-      std::lock_guard<std::mutex> monitor_lock(sample_rate_monitor_mutex_);
-      if (!sample_rate_monitor_active_.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> monitor_lock(route_monitor_mutex_);
+      if (!route_monitor_active_.load(std::memory_order_acquire)) {
         break;
       }
-      result = sample_rate_monitor_->poll();
-      if (result == CoreAudioSampleRatePollResult::ReinitializationRequired ||
-          result == CoreAudioSampleRatePollResult::QueryFailed) {
-        sample_rate_monitor_->stop();
+      result = route_monitor_->poll();
+      if (result != CoreAudioRoutePollResult::NoChange &&
+          result != CoreAudioRoutePollResult::RateRestored) {
+        route_monitor_->stop();
       }
     }
 
-    switch (result) {
-    case CoreAudioSampleRatePollResult::NoChange:
-      runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+    publishRoutePollResult(result);
+    if (result == CoreAudioRoutePollResult::NoChange ||
+        result == CoreAudioRoutePollResult::RateRestored) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (is_running_.load(std::memory_order_acquire)) {
+        refreshActiveRouteLocked();
+      }
       continue;
-    case CoreAudioSampleRatePollResult::RateRestored:
-      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateRestored,
-                             std::memory_order_release);
-      continue;
-    case CoreAudioSampleRatePollResult::ReinitializationRequired:
-      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateReinitializationRequired,
-                             std::memory_order_release);
-      break;
-    case CoreAudioSampleRatePollResult::QueryFailed:
-      runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateQueryFailure,
-                             std::memory_order_release);
-      break;
     }
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
       stopRenderingLocked();
     }
-    sample_rate_monitor_active_.store(false, std::memory_order_release);
+    route_monitor_active_.store(false, std::memory_order_release);
+    break;
   }
 }
 
-void CoreAudioDriver::stopRenderingLocked() {
-  is_running_.store(false, std::memory_order_release);
-  if (audio_unit_) {
-    AudioOutputUnitStop(audio_unit_);
+void CoreAudioDriver::publishRoutePollResult(CoreAudioRoutePollResult result) {
+  switch (result) {
+  case CoreAudioRoutePollResult::NoChange:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::RateRestored:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateRestored,
+                           std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::RouteUnavailable:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::FormatChanged:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::FormatChanged, std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::ReinitializationRequired:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::SampleRateReinitializationRequired,
+                           std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::ReinitializationRequired,
+                         std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::BackendFailure:
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+    break;
   }
-  callback_target_.replaceAndDrain(nullptr);
+}
+
+void CoreAudioDriver::refreshActiveRouteLocked() {
+  active_route_.input_device_id = getDeviceUID(input_device_id_).value_or("");
+  active_route_.output_device_id = getDeviceUID(output_device_id_).value_or("");
+  active_route_.input_channels = input_channel_map_;
+  active_route_.output_channels = output_channel_map_;
+  active_route_.available_input_channels = static_cast<uint16_t>(
+      std::min<uint32_t>(available_input_channels_, std::numeric_limits<uint16_t>::max()));
+  active_route_.available_output_channels = static_cast<uint16_t>(
+      std::min<uint32_t>(available_output_channels_, std::numeric_limits<uint16_t>::max()));
+  active_route_.requested_sample_rate = config_.sample_rate;
+  active_route_.actual_sample_rate = 0;
+  active_route_.actual_buffer_frames = 0;
+
+  const auto actual_rate = getOptionalFloat64Property(
+      device_id_, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal);
+  if (actual_rate.has_value() && *actual_rate > 0.0) {
+    active_route_.actual_sample_rate = static_cast<uint32_t>(*actual_rate);
+  }
+  active_route_.actual_buffer_frames =
+      getOptionalUInt32Property(device_id_, kAudioDevicePropertyBufferFrameSize,
+                                kAudioObjectPropertyScopeGlobal)
+          .value_or(0);
+  active_route_.latency = queryLatencyBreakdown();
+  active_route_.input_alive = config_.num_inputs > 0 &&
+                              getUInt32Property(input_device_id_, kAudioDevicePropertyDeviceIsAlive,
+                                                kAudioObjectPropertyScopeGlobal) != 0;
+  active_route_.output_alive =
+      getUInt32Property(output_device_id_, kAudioDevicePropertyDeviceIsAlive,
+                        kAudioObjectPropertyScopeGlobal) != 0;
+}
+
+AudioRouteLatency CoreAudioDriver::queryLatencyBreakdown() const {
+  AudioRouteLatency latency;
+  uint32_t capture_frames = 0;
+  uint32_t playback_frames = 0;
+  uint32_t processing_frames = 0;
+
+  const auto input_device_latency = getOptionalUInt32Property(
+      input_device_id_, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeInput);
+  const auto input_safety_offset = getOptionalUInt32Property(
+      input_device_id_, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeInput);
+  const auto input_stream_latency =
+      getOptionalStreamLatency(input_device_id_, kAudioObjectPropertyScopeInput);
+  const auto output_device_latency = getOptionalUInt32Property(
+      output_device_id_, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput);
+  const auto output_safety_offset = getOptionalUInt32Property(
+      output_device_id_, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput);
+  const auto output_stream_latency =
+      getOptionalStreamLatency(output_device_id_, kAudioObjectPropertyScopeOutput);
+  const auto callback_buffer_frames = getOptionalUInt32Property(
+      device_id_, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal);
+
+  std::optional<uint32_t> audio_unit_latency;
+  if (audio_unit_ != nullptr) {
+    Float64 seconds = 0.0;
+    UInt32 size = sizeof(seconds);
+    if (AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
+                             &seconds, &size) == noErr &&
+        size == sizeof(seconds) && seconds >= 0.0) {
+      const uint32_t rate = active_route_.actual_sample_rate != 0 ? active_route_.actual_sample_rate
+                                                                  : config_.sample_rate;
+      const uint64_t frames = static_cast<uint64_t>(std::llround(seconds * rate));
+      audio_unit_latency =
+          static_cast<uint32_t>(std::min<uint64_t>(frames, std::numeric_limits<uint32_t>::max()));
+    }
+  }
+
+  bool input_complete = config_.num_inputs == 0;
+  if (config_.num_inputs > 0) {
+    input_complete = addLatencyTerm(input_device_latency, capture_frames) &&
+                     addLatencyTerm(input_safety_offset, capture_frames) &&
+                     addLatencyTerm(input_stream_latency, capture_frames);
+  }
+  const bool output_complete = addLatencyTerm(output_device_latency, playback_frames) &&
+                               addLatencyTerm(output_safety_offset, playback_frames) &&
+                               addLatencyTerm(output_stream_latency, playback_frames);
+  const bool processing_complete = addLatencyTerm(callback_buffer_frames, processing_frames) &&
+                                   addLatencyTerm(audio_unit_latency, processing_frames);
+
+  latency.capture_frames = capture_frames;
+  latency.playback_frames = playback_frames;
+  latency.processing_frames = processing_frames;
+  latency.complete = input_complete && output_complete && processing_complete;
+  return latency;
+}
+
+uint32_t CoreAudioDriver::queryDeviceLatency() const {
+  const AudioRouteLatency latency = queryLatencyBreakdown();
+  if (!latency.complete) {
+    return 0;
+  }
+  const uint64_t total = static_cast<uint64_t>(latency.capture_frames) + latency.playback_frames +
+                         latency.processing_frames;
+  return static_cast<uint32_t>(std::min<uint64_t>(total, std::numeric_limits<uint32_t>::max()));
+}
+
+std::optional<std::string> CoreAudioDriver::getDeviceUID(AudioDeviceID device_id) const {
+  if (device_id == 0) {
+    return std::nullopt;
+  }
+  CFStringRef uid = copyDeviceUID(device_id);
+  if (uid == nullptr) {
+    return std::nullopt;
+  }
+  char buffer[1024] = {};
+  const Boolean converted = CFStringGetCString(uid, buffer, sizeof(buffer), kCFStringEncodingUTF8);
+  CFRelease(uid);
+  if (!converted) {
+    return std::nullopt;
+  }
+  return std::string(buffer);
+}
+
+SessionGraphError CoreAudioDriver::setupAudioUnit(AudioDeviceID device_id) {
+  AudioComponentDescription description = {};
+  description.componentType = kAudioUnitType_Output;
+  description.componentSubType = kAudioUnitSubType_HALOutput;
+  description.componentManufacturer = kAudioUnitManufacturer_Apple;
+
+  AudioComponent component = AudioComponentFindNext(nullptr, &description);
+  if (!component) {
+    return SessionGraphError::InternalError;
+  }
+
+  OSStatus status = AudioComponentInstanceNew(component, &audio_unit_);
+  if (status != noErr || !audio_unit_) {
+    return SessionGraphError::InternalError;
+  }
+
+  UInt32 enable_input = config_.num_inputs > 0 ? 1 : 0;
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
+                                kAudioUnitScope_Input, 1, &enable_input, sizeof(enable_input));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  UInt32 enable_output = 1;
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_EnableIO,
+                                kAudioUnitScope_Output, 0, &enable_output, sizeof(enable_output));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_CurrentDevice,
+                                kAudioUnitScope_Global, 0, &device_id, sizeof(device_id));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  Float64 requested_sample_rate = static_cast<Float64>(config_.sample_rate);
+  AudioObjectPropertyAddress sample_rate_address = {kAudioDevicePropertyNominalSampleRate,
+                                                    kAudioObjectPropertyScopeGlobal,
+                                                    kAudioObjectPropertyElementMain};
+  status = AudioObjectSetPropertyData(device_id, &sample_rate_address, 0, nullptr,
+                                      sizeof(requested_sample_rate), &requested_sample_rate);
+  if (status != noErr) {
+    const auto observed_rate = getOptionalFloat64Property(
+        device_id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal);
+    if (!observed_rate.has_value() || *observed_rate != requested_sample_rate) {
+      return SessionGraphError::InternalError;
+    }
+  }
+
+  AudioStreamBasicDescription output_format = {};
+  output_format.mSampleRate = config_.sample_rate;
+  output_format.mFormatID = kAudioFormatLinearPCM;
+  output_format.mFormatFlags =
+      kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
+  output_format.mBytesPerPacket = sizeof(float);
+  output_format.mFramesPerPacket = 1;
+  output_format.mBytesPerFrame = sizeof(float);
+  output_format.mChannelsPerFrame = config_.num_outputs;
+  output_format.mBitsPerChannel = 32;
+
+  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
+                                0, &output_format, sizeof(output_format));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  std::vector<SInt32> output_channel_map;
+  output_channel_map.reserve(output_channel_map_.size());
+  for (const uint16_t channel : output_channel_map_) {
+    output_channel_map.push_back(static_cast<SInt32>(channel));
+  }
+  status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_ChannelMap,
+                                kAudioUnitScope_Input, 0, output_channel_map.data(),
+                                static_cast<UInt32>(output_channel_map.size() * sizeof(SInt32)));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  if (config_.num_inputs > 0) {
+    AudioStreamBasicDescription input_format = output_format;
+    input_format.mChannelsPerFrame = config_.num_inputs;
+    status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output, 1, &input_format, sizeof(input_format));
+    if (status != noErr) {
+      return SessionGraphError::InternalError;
+    }
+
+    std::vector<SInt32> input_channel_map;
+    input_channel_map.reserve(input_channel_map_.size());
+    for (const uint16_t channel : input_channel_map_) {
+      input_channel_map.push_back(static_cast<SInt32>(input_channel_offset_ + channel));
+    }
+    status = AudioUnitSetProperty(audio_unit_, kAudioOutputUnitProperty_ChannelMap,
+                                  kAudioUnitScope_Output, 1, input_channel_map.data(),
+                                  static_cast<UInt32>(input_channel_map.size() * sizeof(SInt32)));
+    if (status != noErr) {
+      return SessionGraphError::InternalError;
+    }
+  }
+
+  UInt32 buffer_frames = config_.buffer_size;
+  status = AudioUnitSetProperty(audio_unit_, kAudioDevicePropertyBufferFrameSize,
+                                kAudioUnitScope_Global, 0, &buffer_frames, sizeof(buffer_frames));
+  if (status != noErr) {
+    const auto observed_buffer = getOptionalUInt32Property(
+        device_id, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal);
+    if (!observed_buffer.has_value() || *observed_buffer != config_.buffer_size) {
+      return SessionGraphError::InternalError;
+    }
+  }
+
+  AURenderCallbackStruct callback = {};
+  callback.inputProc = &CoreAudioDriver::renderCallback;
+  callback.inputProcRefCon = this;
+  status = AudioUnitSetProperty(audio_unit_, kAudioUnitProperty_SetRenderCallback,
+                                kAudioUnitScope_Input, 0, &callback, sizeof(callback));
+  if (status != noErr) {
+    return SessionGraphError::InternalError;
+  }
+
+  status = AudioUnitInitialize(audio_unit_);
+  return status == noErr ? SessionGraphError::OK : SessionGraphError::InternalError;
 }
 
 void CoreAudioDriver::cleanupAudioUnit() {
-  // Callers stop and join the control worker before destroying the route.
-  sample_rate_monitor_.reset();
   if (audio_unit_) {
     AudioUnitUninitialize(audio_unit_);
     AudioComponentInstanceDispose(audio_unit_);
@@ -987,10 +1177,27 @@ void CoreAudioDriver::cleanupAudioUnit() {
   input_device_id_ = 0;
   output_device_id_ = 0;
   input_channel_offset_ = 0;
+  available_input_channels_ = 0;
+  available_output_channels_ = 0;
+  input_channel_map_.clear();
+  output_channel_map_.clear();
+  route_monitor_.reset();
+  input_buffers_.clear();
+  output_buffers_.clear();
+  input_storage_.clear();
+  output_storage_.clear();
+  input_abl_storage_.clear();
 }
 
-// Factory function
-std::unique_ptr<IAudioDriver> createCoreAudioDriver() {
+void CoreAudioDriver::stopRenderingLocked() {
+  is_running_.store(false, std::memory_order_release);
+  if (audio_unit_) {
+    AudioOutputUnitStop(audio_unit_);
+  }
+  callback_target_.replaceAndDrain(nullptr);
+}
+
+ORPHEUS_API std::unique_ptr<IAudioDriver> createCoreAudioDriver() {
   return std::make_unique<CoreAudioDriver>();
 }
 

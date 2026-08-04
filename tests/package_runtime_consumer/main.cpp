@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
+#include <orpheus/audio_driver.h>
+#include <orpheus/audio_driver_manager.h>
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -31,6 +34,42 @@ int main() {
   constexpr uint32_t kSampleRate = 48000;
   constexpr orpheus::ClipHandle kHandle = 17;
   constexpr size_t kFrames = 64;
+
+  auto outputDriver = orpheus::createDummyAudioDriver();
+  if (!outputDriver) {
+    return 11;
+  }
+  orpheus::AudioDriverConfig outputConfig;
+  outputConfig.sample_rate = kSampleRate;
+  outputConfig.buffer_size = 128;
+  outputConfig.num_inputs = 0;
+  outputConfig.num_outputs = 2;
+  outputConfig.output_device_id = "dummy";
+  outputConfig.channel_map.output_channels = {1, 0};
+  if (outputDriver->initialize(outputConfig) != orpheus::SessionGraphError::OK) {
+    return 12;
+  }
+  if (outputDriver->getConfig().channel_map.output_channels !=
+      outputConfig.channel_map.output_channels) {
+    return 13;
+  }
+  const auto activeRoute = outputDriver->getActiveRoute();
+  if (!activeRoute.input_device_id.empty() || !activeRoute.output_device_id.empty() ||
+      activeRoute.input_alive || activeRoute.output_alive || !activeRoute.input_channels.empty() ||
+      !activeRoute.output_channels.empty() || activeRoute.latency.complete) {
+    return 14;
+  }
+
+  auto manager = orpheus::createAudioDriverManager();
+  if (!manager) {
+    return 15;
+  }
+  const auto devices = manager->enumerateDevices();
+  const auto dummy = std::find_if(devices.begin(), devices.end(),
+                                  [](const auto& device) { return device.deviceId == "dummy"; });
+  if (dummy == devices.end() || dummy->maxChannels != 2) {
+    return 16;
+  }
 
   auto transport = orpheus::createTransportController(
       nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});

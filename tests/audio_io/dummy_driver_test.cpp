@@ -128,6 +128,26 @@ TEST_F(DummyDriverTest, ReportsCapabilities) {
   EXPECT_FALSE(caps.reports_hardware_latency);
 }
 
+TEST_F(DummyDriverTest, RetainsRequestedChannelMapWithoutFabricatingPhysicalRoute) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 128;
+  config.num_outputs = 3;
+  config.channel_map.output_channels = {2, 0, 1};
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getConfig().channel_map.output_channels, config.channel_map.output_channels);
+
+  const auto active_route = m_driver->getActiveRoute();
+  EXPECT_TRUE(active_route.input_device_id.empty());
+  EXPECT_TRUE(active_route.output_device_id.empty());
+  EXPECT_TRUE(active_route.input_channels.empty());
+  EXPECT_TRUE(active_route.output_channels.empty());
+  EXPECT_FALSE(active_route.input_alive);
+  EXPECT_FALSE(active_route.output_alive);
+  EXPECT_FALSE(active_route.latency.complete);
+}
+
 TEST_F(DummyDriverTest, InitializeRejectsInvalidConfig) {
   AudioDriverConfig config;
   config.sample_rate = 0; // Invalid

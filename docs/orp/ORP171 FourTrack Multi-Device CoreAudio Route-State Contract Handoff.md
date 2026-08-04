@@ -2,8 +2,8 @@
 
 # ORP171 — FourTrack Multi-Device CoreAudio Route-State Contract Handoff
 
-**Document type:** SDK public-contract handoff
-**Status:** Proposed; upstream implementation and release pending
+**Document type:** SDK public-contract implementation handoff
+**Status:** Implemented on SDK branch; release and downstream adoption pending
 **Date:** 2026-08-04
 **Consumer:** FourTrack / EightTrack, FTR074
 **Current FourTrack SDK pin:** `b452cbfa2b1d11a36bc3f5d69a15e2dea9a80099`
@@ -20,10 +20,11 @@ timing, and endpoint-runtime outcomes. FourTrack must not open CoreAudio devices
 downcast a factory-created driver, infer a route from display names, or infer
 capture health from silent samples.
 
-This document is an SDK handoff, not an implementation record. It does not claim
-that the proposed route-state contract is implemented or released. FourTrack must
-not consume a dirty SDK worktree revision. The required upstream issue/PR URL and
-released SDK revision are intentionally still unassigned.
+This document now records the SDK implementation and verification boundary. The
+route-state contract is implemented on the SDK feature branch, but the branch
+must be committed and released before FourTrack consumes it. FourTrack must not
+consume a dirty SDK worktree revision. The required upstream issue/PR URL and
+released SDK revision remain unassigned until delivery.
 
 The existing directional endpoint-ID contract from ORP155 is already the correct
 foundation and must be retained. The remaining work is a new, versioned contract
@@ -221,6 +222,38 @@ No CoreAudio property query, device discovery, allocation, lock, or I/O may ente
 the render callback. `getActiveRoute()` and telemetry remain control-thread
 reads.
 
+## 4.4 Implemented SDK record
+
+The SDK implementation keeps the ORP155 directional UID contract and adds the
+canonical route-state types from §3:
+
+- `AudioDriverConfig::channel_map` validates each direction after independent
+  endpoint resolution. Empty maps become consecutive physical channels;
+  non-empty maps require the logical channel count, unique in-range values, and
+  are applied to the AUHAL output and capture scopes before start.
+- `ActiveAudioRoute` reports the two physical DeviceUIDs, resolved maps,
+  available directional channel counts, requested and actual rate/buffer facts,
+  alive state, and a split `AudioRouteLatency`.
+- CoreAudio uses a private aggregate only for distinct duplex endpoints, keeps
+  the physical UIDs in the active snapshot, applies the ORP162 capture offset,
+  and destroys the aggregate on reinitialize, cleanup, and destruction.
+- `CoreAudioRouteMonitor` registers alive, nominal-rate, buffer-size, virtual
+  format, and physical format listeners. Property callbacks publish only a
+  bounded pending generation. A control worker performs HAL reads, closes
+  render admission before unsafe state reaches `processAudio`, restores a
+  nominal rate only when verified, and publishes the route outcome otherwise.
+- CoreAudio latency assigns input device/safety/stream terms to capture, output
+  device/safety/stream terms to playback, and callback-buffer/AudioUnit terms to
+  processing. Missing mandatory terms leave `complete == false`; no estimate is
+  derived from wall time or buffer size.
+- Dummy and other non-CoreAudio drivers retain the default empty physical route
+  rather than fabricating endpoint identity, maps, liveness, or hardware timing.
+  `IAudioDriverManager` remains unchanged.
+
+The render callback uses only preallocated buffers and atomics/borrowed targets.
+HAL queries, listener lifecycle, route recovery, allocations, and route-state
+publication remain on control paths.
+
 ## 5. FourTrack consumption after release
 
 After the SDK contract is merged and released, FourTrack will:
@@ -242,8 +275,9 @@ persist output preferences inside the `.trk` bundle.
 
 ## 6. SDK verification contract
 
-The upstream implementation is not ready for FourTrack consumption until these
-contracts have deterministic coverage:
+The implementation has deterministic coverage for the route-state contract on
+the SDK branch. The release gate remains the immutable commit, package, and
+downstream pin described in §7.
 
 ### Endpoint and map resolution
 
@@ -278,16 +312,34 @@ and add-subdirectory consumer checks on the SDK branch. FourTrack then updates
 only to the released immutable revision and runs its deterministic mock-driver
 route tests before any hardware acceptance.
 
+### Observed SDK branch verification
+
+On 2026-08-04, the configured `build-sdk-fast` tree built successfully with
+`cmake --build build-sdk-fast --parallel 8`. Focused executables reported:
+
+- `coreaudio_driver_test`: 47 passed, including 7 injected route-monitor tests;
+- `dummy_driver_test`: 15 passed; and
+- `driver_manager_test`: 20 passed.
+
+The complete `ctest --test-dir build-sdk-fast --output-on-failure` run passed
+all 75 enabled tests out of 76 registered tests. `abi_link` remained the
+repository's intentional disabled test. The run included realtime/static,
+documentation, version, installed-package, and add-subdirectory checks. The
+Windows-only WASAPI implementation was not compiled or executed on this
+macOS host. FourTrack must still update only to a released immutable SDK
+revision and run its own mock-driver and hardware gates.
+
 ## 7. Release and handoff checklist
 
-The SDK handoff is complete only when the following values are recorded here and
-in the FourTrack FTR074 report:
+The SDK route-state implementation and macOS verification are complete in the
+immutable commit recorded below. Downstream adoption remains gated on the
+remote PR, released SDK revision, and FourTrack's follow-up checks.
 
 | Item | Required value | Current value |
 |---|---|---|
 | Upstream issue/PR | URL and target branch | Not assigned |
-| SDK implementation branch | branch name | `feature/orp-output-endpoint-contract` is a dirty worktree; not consumable |
-| SDK contract commit | immutable commit | Not available |
+| SDK implementation branch | branch name | `feature/orp-output-endpoint-contract` |
+| SDK contract commit | immutable commit | `8f519259` |
 | Released SDK revision | tag/package revision | Not available |
 | FourTrack pin | immutable gitlink | `b452cbfa2b1d11a36bc3f5d69a15e2dea9a80099` |
 | FourTrack adoption | route activation/status path | Blocked pending release |

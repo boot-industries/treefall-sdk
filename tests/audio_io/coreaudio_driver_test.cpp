@@ -5,6 +5,7 @@
 
 #include "coreaudio/coreaudio_driver.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -881,6 +882,62 @@ EndpointPair getSameDeviceEndpointsForTest() {
 }
 
 } // namespace
+TEST_F(CoreAudioDriverTest, RejectsInvalidDirectionalChannelMaps) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "A readable default output UID is unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  config.channel_map.output_channels = {0};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+
+  config.channel_map.output_channels = {0, 0};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+
+  config.channel_map.output_channels = {std::numeric_limits<uint16_t>::max(), 1};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+}
+
+TEST_F(CoreAudioDriverTest, ExplicitOutputUidAndMapAreReflectedInActiveRoute) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+  config.channel_map.output_channels = {1, 0};
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  const ActiveAudioRoute active_route = m_driver->getActiveRoute();
+  EXPECT_EQ(active_route.output_device_id, endpoints.output_uid);
+  EXPECT_TRUE(active_route.input_device_id.empty());
+  EXPECT_EQ(active_route.output_channels, config.channel_map.output_channels);
+  EXPECT_GE(active_route.available_output_channels, 2u);
+  EXPECT_EQ(active_route.requested_sample_rate, config.sample_rate);
+  EXPECT_EQ(active_route.actual_sample_rate, config.sample_rate);
+  EXPECT_EQ(active_route.actual_buffer_frames, config.buffer_size);
+  if (active_route.latency.complete) {
+    EXPECT_EQ(active_route.latency.capture_frames + active_route.latency.playback_frames +
+                  active_route.latency.processing_frames,
+              m_driver->getLatencySamples());
+  }
+
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
 
 TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
   const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
