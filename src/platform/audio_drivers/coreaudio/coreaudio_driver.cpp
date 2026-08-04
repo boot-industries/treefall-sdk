@@ -241,6 +241,31 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   return SessionGraphError::OK;
 }
 
+SessionGraphError CoreAudioDriver::initializeAudioOutput(
+    const AudioOutputRouteRequest& request) {
+  if (request.output_channel_map.empty() || request.requested_sample_rate == 0 ||
+      request.requested_buffer_size == 0 || request.requested_buffer_size > 0xffffu ||
+      request.output_channel_map.size() > 0xffffu) {
+    return SessionGraphError::InvalidParameter;
+  }
+  for (size_t index = 0; index < request.output_channel_map.size(); ++index) {
+    for (size_t previous = 0; previous < index; ++previous) {
+      if (request.output_channel_map[index] == request.output_channel_map[previous]) {
+        return SessionGraphError::InvalidParameter;
+      }
+    }
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = request.requested_sample_rate;
+  config.buffer_size = static_cast<uint16_t>(request.requested_buffer_size);
+  config.num_inputs = 0;
+  config.num_outputs = static_cast<uint16_t>(request.output_channel_map.size());
+  config.output_device_id = request.output_device_id;
+  config.channel_map.output_channels = request.output_channel_map;
+  return initialize(config);
+}
+
 SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -336,6 +361,43 @@ ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
   return active_route_;
 }
 
+
+AudioIoRouteState CoreAudioDriver::getAudioIoRouteState() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  AudioIoRouteState state;
+  const AudioRouteRuntimeOutcome route_outcome =
+      route_outcome_.load(std::memory_order_acquire);
+  if (is_running_.load(std::memory_order_acquire) &&
+      route_outcome == AudioRouteRuntimeOutcome::Healthy) {
+    state.state = AudioRouteState::Running;
+  } else if (route_outcome == AudioRouteRuntimeOutcome::RouteUnavailable) {
+    state.state = config_.num_inputs > 0 ? AudioRouteState::InputUnavailable
+                                         : AudioRouteState::OutputUnavailable;
+    state.detail = "The selected CoreAudio endpoint is unavailable.";
+  } else if (route_outcome == AudioRouteRuntimeOutcome::FormatChanged ||
+             route_outcome == AudioRouteRuntimeOutcome::ReinitializationRequired) {
+    state.state = AudioRouteState::ReconfigurationRequired;
+    state.detail = "The active CoreAudio format or route changed; reinitialize explicitly.";
+  } else if (route_outcome == AudioRouteRuntimeOutcome::BackendFailure) {
+    state.state = AudioRouteState::Failed;
+    state.detail = "CoreAudio reported a terminal route failure.";
+  } else {
+    state.state = AudioRouteState::Inactive;
+  }
+
+  state.selected_input_device_id = config_.input_device_id;
+  state.selected_output_device_id = config_.output_device_id;
+  state.active_input_device_id = active_route_.input_device_id;
+  state.active_output_device_id = active_route_.output_device_id;
+  state.active_input_channel_map = active_route_.input_channels;
+  state.active_output_channel_map = active_route_.output_channels;
+  state.requested_sample_rate = active_route_.requested_sample_rate;
+  state.actual_sample_rate = active_route_.actual_sample_rate;
+  state.requested_buffer_size = config_.buffer_size;
+  state.actual_buffer_size = active_route_.actual_buffer_frames;
+  state.latency = queryDetailedLatencyBreakdown();
+  return state;
+}
 void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept {
   input_render_failures_.store(count, std::memory_order_release);
 }
@@ -1008,6 +1070,53 @@ AudioRouteLatency CoreAudioDriver::queryLatencyBreakdown() const {
   latency.capture_frames = capture_frames;
   latency.playback_frames = playback_frames;
   latency.processing_frames = processing_frames;
+  latency.complete = input_complete && output_complete && processing_complete;
+  return latency;
+}
+
+AudioLatencyBreakdown CoreAudioDriver::queryDetailedLatencyBreakdown() const {
+  AudioLatencyBreakdown latency;
+  if (config_.num_inputs > 0) {
+    latency.input_device_frames = getOptionalUInt32Property(
+        input_device_id_, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeInput);
+    latency.input_safety_offset_frames = getOptionalUInt32Property(
+        input_device_id_, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeInput);
+    latency.input_stream_frames =
+        getOptionalStreamLatency(input_device_id_, kAudioObjectPropertyScopeInput);
+  }
+  latency.output_device_frames = getOptionalUInt32Property(
+      output_device_id_, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput);
+  latency.output_safety_offset_frames = getOptionalUInt32Property(
+      output_device_id_, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput);
+  latency.output_stream_frames =
+      getOptionalStreamLatency(output_device_id_, kAudioObjectPropertyScopeOutput);
+  latency.callback_buffer_frames = getOptionalUInt32Property(
+      device_id_, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal);
+
+  if (audio_unit_ != nullptr) {
+    Float64 seconds = 0.0;
+    UInt32 size = sizeof(seconds);
+    if (AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
+                             &seconds, &size) == noErr &&
+        size == sizeof(seconds) && seconds >= 0.0) {
+      const uint32_t rate = active_route_.actual_sample_rate != 0
+                                ? active_route_.actual_sample_rate
+                                : config_.sample_rate;
+      const uint64_t frames = static_cast<uint64_t>(std::llround(seconds * rate));
+      latency.aggregate_or_audio_unit_frames =
+          static_cast<uint32_t>(std::min<uint64_t>(frames, std::numeric_limits<uint32_t>::max()));
+    }
+  }
+
+  const bool input_complete =
+      config_.num_inputs == 0 ||
+      (latency.input_device_frames.has_value() && latency.input_safety_offset_frames.has_value() &&
+       latency.input_stream_frames.has_value());
+  const bool output_complete = latency.output_device_frames.has_value() &&
+                               latency.output_safety_offset_frames.has_value() &&
+                               latency.output_stream_frames.has_value();
+  const bool processing_complete = latency.callback_buffer_frames.has_value() &&
+                                   latency.aggregate_or_audio_unit_frames.has_value();
   latency.complete = input_complete && output_complete && processing_complete;
   return latency;
 }

@@ -37,6 +37,24 @@ TEST_F(AudioDriverManagerTest, EnumerateDevices_IncludesDummyDriver) {
   EXPECT_FALSE(devices[0].isDefaultDevice) << "Dummy driver should not be default";
 }
 
+TEST_F(AudioDriverManagerTest, EndpointCapabilitiesExposeStableDirectionalChannels) {
+  const auto endpoints = manager->enumerateEndpointCapabilities();
+  ASSERT_FALSE(endpoints.empty());
+  ASSERT_EQ(endpoints.front().device_id, "dummy");
+  EXPECT_EQ(endpoints.front().availability, AudioEndpointAvailability::Available);
+  EXPECT_FALSE(endpoints.front().supports_input);
+  EXPECT_TRUE(endpoints.front().supports_output);
+  ASSERT_EQ(endpoints.front().output_channels.size(), 32u);
+  EXPECT_EQ(endpoints.front().output_channels[2].stable_id, "dummy:output:2");
+  EXPECT_EQ(endpoints.front().output_channels[2].device_index, 2u);
+  EXPECT_EQ(endpoints.front().output_channels[2].display_name, "Dummy Output 3");
+
+  const auto dummy = manager->getEndpointCapabilities("dummy");
+  ASSERT_TRUE(dummy.has_value());
+  EXPECT_EQ(dummy->output_channels.size(), 32u);
+  EXPECT_FALSE(manager->getEndpointCapabilities("missing-endpoint").has_value());
+}
+
 /// Test: Device enumeration returns valid device info
 TEST_F(AudioDriverManagerTest, EnumerateDevices_ValidDeviceInfo) {
   auto devices = manager->enumerateDevices();

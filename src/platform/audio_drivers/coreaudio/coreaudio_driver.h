@@ -37,6 +37,8 @@ public:
   AudioIoTelemetry getTelemetry() const noexcept override;
   AudioDriverCapabilities getCapabilities() const override;
   ActiveAudioRoute getActiveRoute() const override;
+  SessionGraphError initializeAudioOutput(const AudioOutputRouteRequest& request) override;
+  AudioIoRouteState getAudioIoRouteState() const override;
 
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
@@ -75,6 +77,7 @@ private:
   void refreshActiveRouteLocked();
 
   AudioRouteLatency queryLatencyBreakdown() const;
+  AudioLatencyBreakdown queryDetailedLatencyBreakdown() const;
   uint32_t queryDeviceLatency() const;
   void cleanupAudioUnit();
   void stopRenderingLocked();

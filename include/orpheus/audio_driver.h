@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <string>
+#include <optional>
 #include <vector>
 
 namespace orpheus {
@@ -80,6 +80,60 @@ struct ActiveAudioRoute {
   bool output_alive = false;
 };
 
+/// Playback route lifecycle as observed by a backend.
+enum class AudioRouteState : uint8_t {
+  Inactive,
+  Starting,
+  Running,
+  DegradedDuplex,
+  ReconfigurationRequired,
+  InputUnavailable,
+  OutputUnavailable,
+  PermissionDenied,
+  Failed,
+};
+
+/// Direction-specific latency terms. Missing terms remain unknown; callers
+/// must not substitute requested buffer sizes or estimates for them.
+struct AudioLatencyBreakdown {
+  std::optional<uint32_t> input_device_frames;
+  std::optional<uint32_t> input_safety_offset_frames;
+  std::optional<uint32_t> input_stream_frames;
+  std::optional<uint32_t> input_converter_frames;
+  std::optional<uint32_t> output_device_frames;
+  std::optional<uint32_t> output_safety_offset_frames;
+  std::optional<uint32_t> output_stream_frames;
+  std::optional<uint32_t> output_converter_frames;
+  std::optional<uint32_t> callback_buffer_frames;
+  std::optional<uint32_t> aggregate_or_audio_unit_frames;
+  bool complete = false;
+};
+
+/// Strict output-only route request. Empty output_device_id follows the
+/// backend's current default output; non-empty IDs are never defaulted.
+struct AudioOutputRouteRequest {
+  std::string output_device_id;
+  std::vector<uint16_t> output_channel_map;
+  uint32_t requested_sample_rate = 48000;
+  uint32_t requested_buffer_size = 512;
+};
+
+/// Control-thread snapshot of selected and active I/O route state.
+struct AudioIoRouteState {
+  AudioRouteState state = AudioRouteState::Inactive;
+  std::string selected_input_device_id;
+  std::string selected_output_device_id;
+  std::string active_input_device_id;
+  std::string active_output_device_id;
+  std::vector<uint16_t> active_input_channel_map;
+  std::vector<uint16_t> active_output_channel_map;
+  uint32_t requested_sample_rate = 0;
+  uint32_t actual_sample_rate = 0;
+  uint32_t requested_buffer_size = 0;
+  uint32_t actual_buffer_size = 0;
+  AudioLatencyBreakdown latency;
+  std::string detail;
+};
 /// Outcome of a backend runtime condition that can invalidate active audio I/O.
 /// A terminal outcome means the driver has stopped rendering and requires an
 /// explicit initialize() call with a host-selected configuration.
@@ -184,7 +238,6 @@ class IAudioDriver {
 public:
   virtual ~IAudioDriver() = default;
 
-  /// Initialize the audio driver.
   virtual SessionGraphError initialize(const AudioDriverConfig& config) = 0;
 
   /// Start audio processing. Callback must not be nullptr.
@@ -239,8 +292,20 @@ public:
   virtual ActiveAudioRoute getActiveRoute() const {
     return {};
   }
-};
 
+  /// Initialize a strict playback-only output route with a physical map.
+  /// Appended after the existing route contract to preserve all established
+  /// virtual-table slots. Drivers without this capability return NotSupported.
+  virtual SessionGraphError initializeAudioOutput(const AudioOutputRouteRequest& request) {
+    (void)request;
+    return SessionGraphError::NotSupported;
+  }
+
+  /// Get selected/active route state on the control thread.
+  virtual AudioIoRouteState getAudioIoRouteState() const {
+    return {};
+  }
+};
 /// Factory function for dummy audio driver (for testing).
 ORPHEUS_API std::unique_ptr<IAudioDriver> createDummyAudioDriver();
 
