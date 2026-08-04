@@ -5,6 +5,7 @@
 
 #include "coreaudio/coreaudio_driver.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -277,6 +278,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithDefaultDevice) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   auto error = m_driver->initialize(config);
@@ -318,6 +320,7 @@ TEST_F(CoreAudioDriverTest, StartWithNullCallback) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -330,6 +333,7 @@ TEST_F(CoreAudioDriverTest, StartAndStop) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -360,6 +364,21 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteStartsWithRuntimeRateMonitor) {
   EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
 }
 
+TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteSupports256FrameBuffers) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 256;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(m_driver->getActiveRoute().actual_buffer_frames, 256u);
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(m_callback->getLastNumFrames(), 256u);
+  EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
+
 TEST_F(CoreAudioDriverTest, StopWhenNotRunning) {
   auto error = m_driver->stop();
   EXPECT_EQ(error, SessionGraphError::OK);
@@ -369,6 +388,7 @@ TEST_F(CoreAudioDriverTest, CannotStartTwice) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -389,6 +409,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -411,6 +432,7 @@ TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
   auto monitor = createStandalonePerformanceMonitor();
   m_callback->setActiveClipCount(7);
@@ -428,6 +450,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -455,6 +478,7 @@ TEST_F(CoreAudioDriverTest, GetLatency) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -492,6 +516,7 @@ TEST_F(CoreAudioDriverTest, StereoConfiguration) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2; // Stereo
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -546,6 +571,7 @@ TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -592,6 +618,7 @@ TEST_F(CoreAudioDriverTest, ConcurrentInitialize) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   // Initialize, then try to initialize again while running
@@ -609,6 +636,7 @@ TEST_F(CoreAudioDriverTest, RapidStartStop) {
   AudioDriverConfig config;
   config.sample_rate = 48000;
   config.buffer_size = 512;
+  config.num_inputs = 0;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -881,6 +909,78 @@ EndpointPair getSameDeviceEndpointsForTest() {
 }
 
 } // namespace
+TEST_F(CoreAudioDriverTest, RejectsInvalidDirectionalChannelMaps) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "A readable default output UID is unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+
+  config.channel_map.output_channels = {0};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+
+  config.channel_map.output_channels = {0, 0};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+
+  config.channel_map.output_channels = {std::numeric_limits<uint16_t>::max(), 1};
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+}
+
+TEST_F(CoreAudioDriverTest, RejectsImplicitMapBeyondPhysicalChannels) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "A readable default output UID is unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = std::numeric_limits<uint16_t>::max();
+  config.output_device_id = endpoints.output_uid;
+
+  EXPECT_EQ(m_driver->initialize(config), SessionGraphError::InvalidParameter);
+}
+
+TEST_F(CoreAudioDriverTest, ExplicitOutputUidAndMapAreReflectedInActiveRoute) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default input/output devices with readable UIDs are unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = endpoints.output_uid;
+  config.channel_map.output_channels = {1, 0};
+
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  const ActiveAudioRoute active_route = m_driver->getActiveRoute();
+  EXPECT_EQ(active_route.output_device_id, endpoints.output_uid);
+  EXPECT_TRUE(active_route.input_device_id.empty());
+  EXPECT_EQ(active_route.output_channels, config.channel_map.output_channels);
+  EXPECT_GE(active_route.available_output_channels, 2u);
+  EXPECT_EQ(active_route.requested_sample_rate, config.sample_rate);
+  EXPECT_EQ(active_route.actual_sample_rate, config.sample_rate);
+  EXPECT_EQ(active_route.actual_buffer_frames, config.buffer_size);
+  if (active_route.latency.complete) {
+    EXPECT_EQ(active_route.latency.capture_frames + active_route.latency.playback_frames +
+                  active_route.latency.processing_frames,
+              m_driver->getLatencySamples());
+  }
+
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
 
 TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
   const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();

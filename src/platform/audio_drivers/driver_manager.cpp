@@ -28,12 +28,10 @@ namespace orpheus {
 
 namespace {
 
-/// Helper function to check if sample rate is supported
 bool isSampleRateSupported(const std::vector<uint32_t>& supported, uint32_t rate) {
   return std::find(supported.begin(), supported.end(), rate) != supported.end();
 }
 
-/// Helper function to check if buffer size is supported
 bool isBufferSizeSupported(const std::vector<uint32_t>& supported, uint32_t size) {
   return std::find(supported.begin(), supported.end(), size) != supported.end();
 }
@@ -79,7 +77,6 @@ public:
   explicit AudioDriverManager(DriverFactory factory);
   ~AudioDriverManager() override;
 
-  // IAudioDriverManager interface
   std::vector<AudioDeviceInfo> enumerateDevices() override;
   std::optional<AudioDeviceInfo> getDeviceInfo(const std::string& deviceId) override;
   SessionGraphError setActiveDevice(const std::string& deviceId, uint32_t sampleRate,
@@ -91,37 +88,24 @@ public:
   IAudioDriver* getActiveDriver() override;
 
 private:
-  /// Enumerate CoreAudio devices (macOS)
   std::vector<AudioDeviceInfo> enumerateCoreAudioDevices();
-
-  /// Enumerate Windows devices (WASAPI/ASIO) - stub for Phase 1
   std::vector<AudioDeviceInfo> enumerateWindowsDevices();
-
-  /// Enumerate Linux devices (ALSA) - stub for Phase 1
   std::vector<AudioDeviceInfo> enumerateLinuxDevices();
-
-  /// Get dummy driver device info (always available)
   AudioDeviceInfo getDummyDeviceInfo();
-
-  /// Create driver instance for device ID (default factory implementation).
   std::unique_ptr<IAudioDriver> createDriverForDevice(const std::string& deviceId);
+
   std::unique_ptr<IAudioDriver> m_activeDriver;
   DriverFactory m_driverFactory;
   std::string m_currentDeviceId;
   uint32_t m_currentSampleRate{48000};
   uint32_t m_currentBufferSize{512};
-
-  // Callback
   std::function<void()> m_deviceChangeCallback;
-
-  // Thread safety
   mutable std::mutex m_mutex;
 };
 
 AudioDriverManager::AudioDriverManager()
-    : m_driverFactory([this](const std::string& deviceId) {
-        return createDriverForDevice(deviceId);
-      }) {}
+    : m_driverFactory(
+          [this](const std::string& deviceId) { return createDriverForDevice(deviceId); }) {}
 
 AudioDriverManager::AudioDriverManager(DriverFactory factory)
     : m_driverFactory(std::move(factory)) {}
@@ -135,54 +119,42 @@ AudioDriverManager::~AudioDriverManager() {
 
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateDevices() {
   std::vector<AudioDeviceInfo> devices;
-
-  // Dummy driver is always first (for testing)
   devices.push_back(getDummyDeviceInfo());
 
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
-  // Enumerate CoreAudio devices (macOS)
-  auto coreAudioDevices = enumerateCoreAudioDevices();
-  devices.insert(devices.end(), coreAudioDevices.begin(), coreAudioDevices.end());
+  auto core_audio_devices = enumerateCoreAudioDevices();
+  devices.insert(devices.end(), core_audio_devices.begin(), core_audio_devices.end());
 #elif defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
-  // Enumerate Windows devices (WASAPI/ASIO) - stub for Phase 1
-  auto windowsDevices = enumerateWindowsDevices();
-  devices.insert(devices.end(), windowsDevices.begin(), windowsDevices.end());
+  auto windows_devices = enumerateWindowsDevices();
+  devices.insert(devices.end(), windows_devices.begin(), windows_devices.end());
 #elif defined(__linux__)
-  // Enumerate Linux devices (ALSA) - stub for Phase 1
-  auto linuxDevices = enumerateLinuxDevices();
-  devices.insert(devices.end(), linuxDevices.begin(), linuxDevices.end());
+  auto linux_devices = enumerateLinuxDevices();
+  devices.insert(devices.end(), linux_devices.begin(), linux_devices.end());
 #endif
 
   return devices;
 }
 
-std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::string& deviceId) {
-  // Check if dummy driver
-  if (deviceId == "dummy") {
+std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::string& device_id) {
+  if (device_id == "dummy") {
     return getDummyDeviceInfo();
   }
 
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
-  // Check CoreAudio devices
-  auto devices = enumerateCoreAudioDevices();
-  for (const auto& device : devices) {
-    if (device.deviceId == deviceId) {
+  for (const auto& device : enumerateCoreAudioDevices()) {
+    if (device.deviceId == device_id) {
       return device;
     }
   }
 #elif defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
-  // Check Windows devices (stub)
-  auto devices = enumerateWindowsDevices();
-  for (const auto& device : devices) {
-    if (device.deviceId == deviceId) {
+  for (const auto& device : enumerateWindowsDevices()) {
+    if (device.deviceId == device_id) {
       return device;
     }
   }
 #elif defined(__linux__)
-  // Check Linux devices (stub)
-  auto devices = enumerateLinuxDevices();
-  for (const auto& device : devices) {
-    if (device.deviceId == deviceId) {
+  for (const auto& device : enumerateLinuxDevices()) {
+    if (device.deviceId == device_id) {
       return device;
     }
   }
@@ -191,63 +163,55 @@ std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::stri
   return std::nullopt;
 }
 
-SessionGraphError AudioDriverManager::setActiveDevice(const std::string& deviceId,
-                                                      uint32_t sampleRate, uint32_t bufferSize) {
+SessionGraphError AudioDriverManager::setActiveDevice(const std::string& device_id,
+                                                      uint32_t sample_rate, uint32_t buffer_size) {
   std::function<void()> notification;
   std::unique_ptr<IAudioDriver> candidate;
-  std::string candidateDeviceId;
+  std::string candidate_device_id;
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    const auto deviceInfo = getDeviceInfo(deviceId);
-    if (!deviceInfo.has_value() ||
-        !isSampleRateSupported(deviceInfo->supportedSampleRates, sampleRate) ||
-        !isBufferSizeSupported(deviceInfo->supportedBufferSizes, bufferSize)) {
+    const auto device_info = getDeviceInfo(device_id);
+    if (!device_info.has_value() ||
+        !isSampleRateSupported(device_info->supportedSampleRates, sample_rate) ||
+        !isBufferSizeSupported(device_info->supportedBufferSizes, buffer_size)) {
       return SessionGraphError::InvalidParameter;
     }
 
     try {
-      // Copy all potentially-throwing commit inputs before stopping the old
-      // driver. Failure here leaves the current ownership and configuration
-      // untouched.
-      candidateDeviceId = deviceId;
+      candidate_device_id = device_id;
       notification = m_deviceChangeCallback;
 
       AudioDriverConfig config;
-      config.sample_rate = sampleRate;
-      config.buffer_size = static_cast<uint16_t>(bufferSize);
-      config.num_inputs = 0;  // Output only for now
-      config.num_outputs = 2; // Stereo output
+      config.sample_rate = sample_rate;
+      config.buffer_size = static_cast<uint16_t>(buffer_size);
+      config.num_inputs = 0;
+      config.num_outputs = 2;
       config.input_device_id = "";
-      config.output_device_id = (deviceId == "dummy") ? "" : deviceId;
-      config.device_name = (deviceId == "dummy") ? "" : deviceInfo->name;
+      config.output_device_id = (device_id == "dummy") ? "" : device_id;
+      config.device_name = (device_id == "dummy") ? "" : device_info->name;
 
-      // Candidate creation and initialization happen while the old driver is
-      // still owned and running.
       if (!m_driverFactory) {
         return SessionGraphError::InternalError;
       }
-      candidate = m_driverFactory(deviceId);
+      candidate = m_driverFactory(device_id);
       if (!candidate) {
         return SessionGraphError::InternalError;
       }
-      const SessionGraphError initResult = candidate->initialize(config);
-      if (initResult != SessionGraphError::OK) {
-        return initResult;
+      const SessionGraphError init_result = candidate->initialize(config);
+      if (init_result != SessionGraphError::OK) {
+        return init_result;
       }
 
       if (m_activeDriver) {
-        const SessionGraphError stopResult = m_activeDriver->stop();
-        if (stopResult != SessionGraphError::OK) {
-          return stopResult;
+        const SessionGraphError stop_result = m_activeDriver->stop();
+        if (stop_result != SessionGraphError::OK) {
+          return stop_result;
         }
       }
 
-      // Commit is non-throwing after the candidate has passed initialization
-      // and the old driver has stopped.
       m_activeDriver = std::move(candidate);
-      m_currentDeviceId.swap(candidateDeviceId);
+      m_currentDeviceId.swap(candidate_device_id);
       m_currentSampleRate = m_activeDriver->getConfig().sample_rate;
       m_currentBufferSize = m_activeDriver->getConfig().buffer_size;
     } catch (...) {
@@ -255,7 +219,6 @@ SessionGraphError AudioDriverManager::setActiveDevice(const std::string& deviceI
     }
   }
 
-  // Never call host code while the manager mutex is held.
   if (notification) {
     notification();
   }
@@ -306,152 +269,129 @@ AudioDeviceInfo AudioDriverManager::getDummyDeviceInfo() {
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
   std::vector<AudioDeviceInfo> devices;
-
-  // Query all audio devices
-  AudioObjectPropertyAddress propertyAddress = {kAudioHardwarePropertyDevices,
-                                                kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-
-  UInt32 dataSize = 0;
-  OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0,
-                                                   nullptr, &dataSize);
-
-  if (status != noErr || dataSize == 0) {
+  AudioObjectPropertyAddress property_address = {kAudioHardwarePropertyDevices,
+                                                 kAudioObjectPropertyScopeGlobal,
+                                                 kAudioObjectPropertyElementMain};
+  UInt32 data_size = 0;
+  OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &property_address, 0,
+                                                   nullptr, &data_size);
+  if (status != noErr || data_size == 0) {
     return devices;
   }
 
-  UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
-  std::vector<AudioDeviceID> deviceIDs(deviceCount);
-
-  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, nullptr,
-                                      &dataSize, deviceIDs.data());
-
+  const UInt32 device_count = data_size / sizeof(AudioDeviceID);
+  std::vector<AudioDeviceID> device_ids(device_count);
+  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &property_address, 0, nullptr,
+                                      &data_size, device_ids.data());
   if (status != noErr) {
     return devices;
   }
 
-  // Get default output device ID
-  AudioObjectPropertyAddress defaultDeviceAddress = {kAudioHardwarePropertyDefaultOutputDevice,
-                                                     kAudioObjectPropertyScopeGlobal,
-                                                     kAudioObjectPropertyElementMain};
+  AudioObjectPropertyAddress default_device_address = {kAudioHardwarePropertyDefaultOutputDevice,
+                                                       kAudioObjectPropertyScopeGlobal,
+                                                       kAudioObjectPropertyElementMain};
+  AudioDeviceID default_device_id = 0;
+  UInt32 default_device_size = sizeof(AudioDeviceID);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_device_address, 0, nullptr,
+                             &default_device_size, &default_device_id);
 
-  AudioDeviceID defaultDeviceID = 0;
-  UInt32 defaultDeviceSize = sizeof(AudioDeviceID);
-  AudioObjectGetPropertyData(kAudioObjectSystemObject, &defaultDeviceAddress, 0, nullptr,
-                             &defaultDeviceSize, &defaultDeviceID);
+  for (AudioDeviceID device_id : device_ids) {
+    AudioObjectPropertyAddress name_address = {kAudioDevicePropertyDeviceNameCFString,
+                                               kAudioObjectPropertyScopeGlobal,
+                                               kAudioObjectPropertyElementMain};
+    CFStringRef cf_name = nullptr;
+    UInt32 name_size = sizeof(CFStringRef);
+    status = AudioObjectGetPropertyData(device_id, &name_address, 0, nullptr, &name_size, &cf_name);
+    if (status != noErr || !cf_name) {
+      continue;
+    }
 
-  // Enumerate each device
-  for (AudioDeviceID deviceID : deviceIDs) {
-    // Get device name
-    AudioObjectPropertyAddress nameAddress = {kAudioDevicePropertyDeviceNameCFString,
+    char name_buffer[256];
+    const Boolean name_success =
+        CFStringGetCString(cf_name, name_buffer, sizeof(name_buffer), kCFStringEncodingUTF8);
+    CFRelease(cf_name);
+    if (!name_success) {
+      continue;
+    }
+
+    AudioObjectPropertyAddress uid_address = {kAudioDevicePropertyDeviceUID,
                                               kAudioObjectPropertyScopeGlobal,
                                               kAudioObjectPropertyElementMain};
-
-    CFStringRef cfName = nullptr;
-    UInt32 nameSize = sizeof(CFStringRef);
-    status = AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nullptr, &nameSize, &cfName);
-
-    if (status != noErr || !cfName) {
+    CFStringRef cf_uid = nullptr;
+    UInt32 uid_size = sizeof(CFStringRef);
+    status = AudioObjectGetPropertyData(device_id, &uid_address, 0, nullptr, &uid_size, &cf_uid);
+    char uid_buffer[1024];
+    const Boolean has_uid =
+        status == noErr && cf_uid != nullptr &&
+        CFStringGetCString(cf_uid, uid_buffer, sizeof(uid_buffer), kCFStringEncodingUTF8);
+    if (cf_uid) {
+      CFRelease(cf_uid);
+    }
+    if (!has_uid) {
       continue;
     }
 
-    // Convert CFString to std::string
-    char nameBuffer[256];
-    Boolean success =
-        CFStringGetCString(cfName, nameBuffer, sizeof(nameBuffer), kCFStringEncodingUTF8);
-    CFRelease(cfName);
-
-    if (!success) {
+    AudioObjectPropertyAddress stream_config_address = {kAudioDevicePropertyStreamConfiguration,
+                                                        kAudioObjectPropertyScopeOutput,
+                                                        kAudioObjectPropertyElementMain};
+    UInt32 stream_config_size = 0;
+    status = AudioObjectGetPropertyDataSize(device_id, &stream_config_address, 0, nullptr,
+                                            &stream_config_size);
+    if (status != noErr || stream_config_size < sizeof(AudioBufferList)) {
       continue;
     }
-
-    AudioObjectPropertyAddress uidAddress = {kAudioDevicePropertyDeviceUID,
-                                             kAudioObjectPropertyScopeGlobal,
-                                             kAudioObjectPropertyElementMain};
-    CFStringRef cfUID = nullptr;
-    UInt32 uidSize = sizeof(CFStringRef);
-    status = AudioObjectGetPropertyData(deviceID, &uidAddress, 0, nullptr, &uidSize, &cfUID);
-    char uidBuffer[1024];
-    const Boolean hasUID =
-        status == noErr && cfUID != nullptr &&
-        CFStringGetCString(cfUID, uidBuffer, sizeof(uidBuffer), kCFStringEncodingUTF8);
-    if (cfUID) {
-      CFRelease(cfUID);
-    }
-    if (!hasUID) {
-      continue;
-    }
-
-    // Check if device has output channels
-    AudioObjectPropertyAddress streamConfigAddress = {kAudioDevicePropertyStreamConfiguration,
-                                                      kAudioDevicePropertyScopeOutput,
-                                                      kAudioObjectPropertyElementMain};
-
-    AudioBufferList bufferList;
-    UInt32 bufferListSize = sizeof(bufferList);
-    status = AudioObjectGetPropertyData(deviceID, &streamConfigAddress, 0, nullptr, &bufferListSize,
-                                        &bufferList);
-
-    uint32_t totalChannels = 0;
+    std::vector<uint8_t> stream_config_storage(stream_config_size);
+    auto* buffer_list = reinterpret_cast<AudioBufferList*>(stream_config_storage.data());
+    status = AudioObjectGetPropertyData(device_id, &stream_config_address, 0, nullptr,
+                                        &stream_config_size, buffer_list);
+    uint32_t total_channels = 0;
     if (status == noErr) {
-      for (UInt32 i = 0; i < bufferList.mNumberBuffers; ++i) {
-        totalChannels += bufferList.mBuffers[i].mNumberChannels;
+      for (UInt32 index = 0; index < buffer_list->mNumberBuffers; ++index) {
+        total_channels += buffer_list->mBuffers[index].mNumberChannels;
       }
     }
-
-    // Skip devices with no output channels
-    if (totalChannels == 0) {
+    if (total_channels == 0) {
       continue;
     }
 
-    // Query supported sample rates
-    AudioObjectPropertyAddress sampleRateAddress = {kAudioDevicePropertyAvailableNominalSampleRates,
-                                                    kAudioObjectPropertyScopeGlobal,
-                                                    kAudioObjectPropertyElementMain};
-
-    UInt32 sampleRateSize = 0;
-    status =
-        AudioObjectGetPropertyDataSize(deviceID, &sampleRateAddress, 0, nullptr, &sampleRateSize);
-
-    std::vector<uint32_t> supportedSampleRates;
-    if (status == noErr && sampleRateSize > 0) {
-      UInt32 rangeCount = sampleRateSize / sizeof(AudioValueRange);
-      std::vector<AudioValueRange> ranges(rangeCount);
-      status = AudioObjectGetPropertyData(deviceID, &sampleRateAddress, 0, nullptr, &sampleRateSize,
-                                          ranges.data());
-
+    AudioObjectPropertyAddress sample_rate_address = {
+        kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    UInt32 sample_rate_size = 0;
+    status = AudioObjectGetPropertyDataSize(device_id, &sample_rate_address, 0, nullptr,
+                                            &sample_rate_size);
+    std::vector<uint32_t> supported_sample_rates;
+    if (status == noErr && sample_rate_size > 0) {
+      const UInt32 range_count = sample_rate_size / sizeof(AudioValueRange);
+      std::vector<AudioValueRange> ranges(range_count);
+      status = AudioObjectGetPropertyData(device_id, &sample_rate_address, 0, nullptr,
+                                          &sample_rate_size, ranges.data());
       if (status == noErr) {
-        // Common sample rates to check
-        std::vector<uint32_t> commonRates = {44100, 48000, 88200, 96000, 176400, 192000};
-        for (uint32_t rate : commonRates) {
+        const std::vector<uint32_t> common_rates = {44100, 48000, 88200, 96000, 176400, 192000};
+        for (uint32_t rate : common_rates) {
           for (const auto& range : ranges) {
             if (rate >= range.mMinimum && rate <= range.mMaximum) {
-              supportedSampleRates.push_back(rate);
+              supported_sample_rates.push_back(rate);
               break;
             }
           }
         }
       }
     }
-
-    // Fallback: If no sample rates found, assume common rates
-    if (supportedSampleRates.empty()) {
-      supportedSampleRates = {44100, 48000, 96000};
+    if (supported_sample_rates.empty()) {
+      supported_sample_rates = {44100, 48000, 96000};
     }
 
-    // CoreAudio endpoint IDs are persistent HAL UIDs, never session-scoped
-    // AudioDeviceID values or mutable display names.
-    AudioDeviceInfo deviceInfo;
-    deviceInfo.deviceId = uidBuffer;
-    deviceInfo.name = std::string(nameBuffer);
-    deviceInfo.driverType = "CoreAudio";
-    deviceInfo.minChannels = 2; // Stereo minimum
-    deviceInfo.maxChannels = totalChannels;
-    deviceInfo.supportedSampleRates = supportedSampleRates;
-    deviceInfo.supportedBufferSizes = {128, 256, 512, 1024, 2048}; // Common buffer sizes
-    deviceInfo.isDefaultDevice = (deviceID == defaultDeviceID);
-
-    devices.push_back(deviceInfo);
+    AudioDeviceInfo device_info;
+    device_info.deviceId = uid_buffer;
+    device_info.name = std::string(name_buffer);
+    device_info.driverType = "CoreAudio";
+    device_info.minChannels = 2;
+    device_info.maxChannels = total_channels;
+    device_info.supportedSampleRates = supported_sample_rates;
+    device_info.supportedBufferSizes = {128, 256, 512, 1024, 2048};
+    device_info.isDefaultDevice = device_id == default_device_id;
+    devices.push_back(std::move(device_info));
   }
 
   return devices;
@@ -461,16 +401,16 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
 #if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
   std::vector<AudioDeviceInfo> devices;
-  const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  const bool uninitialize = SUCCEEDED(comResult);
-  if (FAILED(comResult) && comResult != RPC_E_CHANGED_MODE) {
+  const HRESULT com_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const bool uninitialize = SUCCEEDED(com_result);
+  if (FAILED(com_result) && com_result != RPC_E_CHANGED_MODE) {
     return devices;
   }
 
   IMMDeviceEnumerator* enumerator = nullptr;
   IMMDeviceCollection* collection = nullptr;
-  IMMDevice* defaultDevice = nullptr;
-  LPWSTR defaultId = nullptr;
+  IMMDevice* default_device = nullptr;
+  LPWSTR default_id = nullptr;
   if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                               __uuidof(IMMDeviceEnumerator),
                               reinterpret_cast<void**>(&enumerator))) ||
@@ -482,8 +422,8 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
     }
     return devices;
   }
-  if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &defaultDevice))) {
-    defaultDevice->GetId(&defaultId);
+  if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &default_device))) {
+    default_device->GetId(&default_id);
   }
 
   UINT count = 0;
@@ -493,7 +433,7 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
     IPropertyStore* properties = nullptr;
     IAudioClient* client = nullptr;
     LPWSTR id = nullptr;
-    WAVEFORMATEX* mixFormat = nullptr;
+    WAVEFORMATEX* mix_format = nullptr;
     PROPVARIANT name;
     PropVariantInit(&name);
 
@@ -502,10 +442,10 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
         FAILED(properties->GetValue(PKEY_Device_FriendlyName, &name)) ||
         FAILED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                                 reinterpret_cast<void**>(&client))) ||
-        FAILED(client->GetMixFormat(&mixFormat)) || mixFormat == nullptr) {
+        FAILED(client->GetMixFormat(&mix_format)) || mix_format == nullptr) {
       PropVariantClear(&name);
       CoTaskMemFree(id);
-      CoTaskMemFree(mixFormat);
+      CoTaskMemFree(mix_format);
       releaseCom(client);
       releaseCom(properties);
       releaseCom(device);
@@ -513,58 +453,59 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
     }
 
     AudioDeviceInfo info{};
-    const std::string rawId = wideToUtf8(id);
-    info.deviceId = "wasapi:" + rawId;
-    info.name = name.vt == VT_LPWSTR ? wideToUtf8(name.pwszVal) : rawId;
+    const std::string raw_id = wideToUtf8(id);
+    info.deviceId = "wasapi:" + raw_id;
+    info.name = name.vt == VT_LPWSTR ? wideToUtf8(name.pwszVal) : raw_id;
     info.driverType = "WASAPI";
-    info.minChannels = mixFormat->nChannels;
-    info.maxChannels = mixFormat->nChannels;
-    info.isDefaultDevice = defaultId != nullptr && std::wcscmp(id, defaultId) == 0;
+    info.minChannels = mix_format->nChannels;
+    info.maxChannels = mix_format->nChannels;
+    info.isDefaultDevice = default_id != nullptr && std::wcscmp(id, default_id) == 0;
 
-    constexpr std::array<uint32_t, 6> sampleRates = {44100, 48000, 88200, 96000, 176400, 192000};
-    const size_t formatBytes = sizeof(WAVEFORMATEX) + mixFormat->cbSize;
-    for (const uint32_t sampleRate : sampleRates) {
-      std::vector<unsigned char> candidateBytes(reinterpret_cast<const unsigned char*>(mixFormat),
-                                                reinterpret_cast<const unsigned char*>(mixFormat) +
-                                                    formatBytes);
-      auto* candidate = reinterpret_cast<WAVEFORMATEX*>(candidateBytes.data());
-      candidate->nSamplesPerSec = sampleRate;
-      candidate->nAvgBytesPerSec = sampleRate * candidate->nBlockAlign;
+    constexpr std::array<uint32_t, 6> sample_rates = {44100, 48000, 88200, 96000, 176400, 192000};
+    const size_t format_bytes = sizeof(WAVEFORMATEX) + mix_format->cbSize;
+    for (const uint32_t sample_rate : sample_rates) {
+      std::vector<unsigned char> candidate_bytes(
+          reinterpret_cast<const unsigned char*>(mix_format),
+          reinterpret_cast<const unsigned char*>(mix_format) + format_bytes);
+      auto* candidate_format = reinterpret_cast<WAVEFORMATEX*>(candidate_bytes.data());
+      candidate_format->nSamplesPerSec = sample_rate;
+      candidate_format->nAvgBytesPerSec = sample_rate * candidate_format->nBlockAlign;
       WAVEFORMATEX* closest = nullptr;
-      if (client->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, candidate, &closest) == S_OK) {
-        appendUnique(info.supportedSampleRates, sampleRate);
+      if (client->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, candidate_format, &closest) == S_OK) {
+        appendUnique(info.supportedSampleRates, sample_rate);
       }
       CoTaskMemFree(closest);
     }
-    appendUnique(info.supportedSampleRates, mixFormat->nSamplesPerSec);
+    appendUnique(info.supportedSampleRates, mix_format->nSamplesPerSec);
     std::sort(info.supportedSampleRates.begin(), info.supportedSampleRates.end());
 
     IAudioClient3* client3 = nullptr;
     if (SUCCEEDED(
             client->QueryInterface(__uuidof(IAudioClient3), reinterpret_cast<void**>(&client3)))) {
-      UINT32 defaultFrames = 0;
-      UINT32 fundamentalFrames = 0;
-      UINT32 minimumFrames = 0;
-      UINT32 maximumFrames = 0;
-      if (SUCCEEDED(client3->GetSharedModeEnginePeriod(
-              mixFormat, &defaultFrames, &fundamentalFrames, &minimumFrames, &maximumFrames))) {
-        appendUnique(info.supportedBufferSizes, minimumFrames);
-        appendUnique(info.supportedBufferSizes, defaultFrames);
-        appendUnique(info.supportedBufferSizes, maximumFrames);
+      UINT32 default_frames = 0;
+      UINT32 fundamental_frames = 0;
+      UINT32 minimum_frames = 0;
+      UINT32 maximum_frames = 0;
+      if (SUCCEEDED(client3->GetSharedModeEnginePeriod(mix_format, &default_frames,
+                                                       &fundamental_frames, &minimum_frames,
+                                                       &maximum_frames))) {
+        appendUnique(info.supportedBufferSizes, minimum_frames);
+        appendUnique(info.supportedBufferSizes, default_frames);
+        appendUnique(info.supportedBufferSizes, maximum_frames);
       }
       releaseCom(client3);
     }
     if (info.supportedBufferSizes.empty()) {
-      REFERENCE_TIME defaultPeriod = 0;
-      REFERENCE_TIME minimumPeriod = 0;
-      if (SUCCEEDED(client->GetDevicePeriod(&defaultPeriod, &minimumPeriod))) {
+      REFERENCE_TIME default_period = 0;
+      REFERENCE_TIME minimum_period = 0;
+      if (SUCCEEDED(client->GetDevicePeriod(&default_period, &minimum_period))) {
         appendUnique(info.supportedBufferSizes,
                      static_cast<uint32_t>(
-                         (static_cast<uint64_t>(minimumPeriod) * mixFormat->nSamplesPerSec) /
+                         (static_cast<uint64_t>(minimum_period) * mix_format->nSamplesPerSec) /
                          10'000'000ULL));
         appendUnique(info.supportedBufferSizes,
                      static_cast<uint32_t>(
-                         (static_cast<uint64_t>(defaultPeriod) * mixFormat->nSamplesPerSec) /
+                         (static_cast<uint64_t>(default_period) * mix_format->nSamplesPerSec) /
                          10'000'000ULL));
       }
     }
@@ -573,14 +514,14 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
 
     PropVariantClear(&name);
     CoTaskMemFree(id);
-    CoTaskMemFree(mixFormat);
+    CoTaskMemFree(mix_format);
     releaseCom(client);
     releaseCom(properties);
     releaseCom(device);
   }
 
-  CoTaskMemFree(defaultId);
-  releaseCom(defaultDevice);
+  CoTaskMemFree(default_id);
+  releaseCom(default_device);
   releaseCom(collection);
   releaseCom(enumerator);
   if (uninitialize) {
@@ -592,33 +533,29 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateWindowsDevices() {
 
 #ifdef __linux__
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateLinuxDevices() {
-  // Phase 1: Stub implementation
-  // Phase 2: Implement ALSA device enumeration using snd_device_name_hint
   return {};
 }
 #endif
 
 std::unique_ptr<IAudioDriver>
-AudioDriverManager::createDriverForDevice(const std::string& deviceId) {
-  if (deviceId == "dummy") {
+AudioDriverManager::createDriverForDevice(const std::string& device_id) {
+  if (device_id == "dummy") {
     return createDummyAudioDriver();
   }
 
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
-  // CoreAudio device identifiers are bare persistent DeviceUID values.
-
   return createCoreAudioDriver();
 #endif
 
 #if defined(_WIN32) && defined(ORPHEUS_ENABLE_WASAPI)
-  if (deviceId.rfind("wasapi:", 0) == 0) {
+  if (device_id.rfind("wasapi:", 0) == 0) {
     return createWASAPIAudioDriver();
   }
 #endif
 
-  // Unsupported device type
   return nullptr;
 }
+
 namespace detail {
 
 std::unique_ptr<IAudioDriverManager> createAudioDriverManagerForTesting(
@@ -628,7 +565,6 @@ std::unique_ptr<IAudioDriverManager> createAudioDriverManagerForTesting(
 
 } // namespace detail
 
-// Factory function
 std::unique_ptr<IAudioDriverManager> createAudioDriverManager() {
   return std::make_unique<AudioDriverManager>();
 }
