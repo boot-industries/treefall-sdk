@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cwchar>
 #include <mutex>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
@@ -86,13 +88,25 @@ public:
   uint32_t getCurrentBufferSize() const override;
   void setDeviceChangeCallback(std::function<void()> callback) override;
   IAudioDriver* getActiveDriver() override;
+  std::vector<AudioEndpointCapabilities> enumerateEndpointCapabilities() override;
+  std::optional<AudioEndpointCapabilities> getEndpointCapabilities(
+      const std::string& deviceId) override;
+  void setEndpointChangeCallback(std::function<void()> callback) override;
 
 private:
   std::vector<AudioDeviceInfo> enumerateCoreAudioDevices();
   std::vector<AudioDeviceInfo> enumerateWindowsDevices();
   std::vector<AudioDeviceInfo> enumerateLinuxDevices();
+  std::vector<AudioEndpointCapabilities> enumerateCoreAudioEndpointCapabilities();
   AudioDeviceInfo getDummyDeviceInfo();
   std::unique_ptr<IAudioDriver> createDriverForDevice(const std::string& deviceId);
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  static OSStatus endpointPropertyChanged(AudioObjectID, UInt32,
+                                          const AudioObjectPropertyAddress*, void*) noexcept;
+  void startEndpointMonitor();
+  void stopEndpointMonitor();
+  void endpointMonitorLoop();
+#endif
 
   std::unique_ptr<IAudioDriver> m_activeDriver;
   DriverFactory m_driverFactory;
@@ -100,6 +114,11 @@ private:
   uint32_t m_currentSampleRate{48000};
   uint32_t m_currentBufferSize{512};
   std::function<void()> m_deviceChangeCallback;
+  std::function<void()> m_endpointChangeCallback;
+  std::atomic<bool> m_endpointMonitorActive{false};
+  std::atomic<bool> m_endpointChangePending{false};
+  std::condition_variable m_endpointChangeCondition;
+  std::thread m_endpointMonitorThread;
   mutable std::mutex m_mutex;
 };
 
@@ -111,6 +130,9 @@ AudioDriverManager::AudioDriverManager(DriverFactory factory)
     : m_driverFactory(std::move(factory)) {}
 
 AudioDriverManager::~AudioDriverManager() {
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  stopEndpointMonitor();
+#endif
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_activeDriver) {
     m_activeDriver->stop();
@@ -251,6 +273,60 @@ void AudioDriverManager::setDeviceChangeCallback(std::function<void()> callback)
 IAudioDriver* AudioDriverManager::getActiveDriver() {
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_activeDriver.get();
+}
+
+std::vector<AudioEndpointCapabilities> AudioDriverManager::enumerateEndpointCapabilities() {
+  AudioEndpointCapabilities dummy;
+  dummy.device_id = "dummy";
+  dummy.display_name = "Dummy Audio Driver";
+  dummy.availability = AudioEndpointAvailability::Available;
+  dummy.supports_output = true;
+  dummy.output_channels.reserve(32);
+  for (uint16_t channel = 0; channel < 32; ++channel) {
+    dummy.output_channels.push_back(
+        {channel, "dummy:output:" + std::to_string(channel),
+         "Dummy Output " + std::to_string(channel + 1)});
+  }
+  dummy.supported_sample_rates = {44100, 48000, 88200, 96000};
+  dummy.supported_buffer_sizes = {128, 256, 512, 1024, 2048};
+  dummy.nominal_sample_rate = 48000;
+  dummy.current_buffer_size = 512;
+
+  std::vector<AudioEndpointCapabilities> endpoints;
+  endpoints.push_back(std::move(dummy));
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  auto core_audio_endpoints = enumerateCoreAudioEndpointCapabilities();
+  endpoints.insert(endpoints.end(), core_audio_endpoints.begin(), core_audio_endpoints.end());
+#endif
+  return endpoints;
+}
+
+std::optional<AudioEndpointCapabilities> AudioDriverManager::getEndpointCapabilities(
+    const std::string& deviceId) {
+  for (auto& endpoint : enumerateEndpointCapabilities()) {
+    if (endpoint.device_id == deviceId) {
+      return endpoint;
+    }
+  }
+  return std::nullopt;
+}
+
+void AudioDriverManager::setEndpointChangeCallback(std::function<void()> callback) {
+  bool should_start = false;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_endpointChangeCallback = std::move(callback);
+    should_start = static_cast<bool>(m_endpointChangeCallback);
+  }
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  if (should_start) {
+    startEndpointMonitor();
+  } else {
+    stopEndpointMonitor();
+  }
+#else
+  (void)should_start;
+#endif
 }
 
 AudioDeviceInfo AudioDriverManager::getDummyDeviceInfo() {
@@ -395,6 +471,257 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
   }
 
   return devices;
+}
+
+std::vector<AudioEndpointCapabilities>
+AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
+  std::vector<AudioEndpointCapabilities> endpoints;
+  const AudioObjectPropertyAddress devices_address = {
+      kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain};
+  UInt32 devices_size = 0;
+  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devices_address, 0, nullptr,
+                                     &devices_size) != noErr ||
+      devices_size == 0) {
+    return endpoints;
+  }
+  std::vector<AudioDeviceID> device_ids(devices_size / sizeof(AudioDeviceID));
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &devices_address, 0, nullptr,
+                                 &devices_size, device_ids.data()) != noErr) {
+    return endpoints;
+  }
+
+  const auto read_string = [](AudioDeviceID device_id,
+                              AudioObjectPropertySelector selector) -> std::string {
+    const AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    CFStringRef value = nullptr;
+    UInt32 size = sizeof(value);
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+        value == nullptr) {
+      return {};
+    }
+    char buffer[1024] = {};
+    const Boolean converted =
+        CFStringGetCString(value, buffer, sizeof(buffer), kCFStringEncodingUTF8);
+    CFRelease(value);
+    return converted ? std::string(buffer) : std::string{};
+  };
+  const auto read_channel_count = [](AudioDeviceID device_id,
+                                     AudioObjectPropertyScope scope) -> uint32_t {
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                                kAudioObjectPropertyElementMain};
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
+        size < sizeof(AudioBufferList)) {
+      return 0;
+    }
+    std::vector<uint8_t> storage(size);
+    auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
+      return 0;
+    }
+    uint32_t channels = 0;
+    for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+      channels += buffers->mBuffers[index].mNumberChannels;
+    }
+    return channels;
+  };
+  const auto read_uint32 = [](AudioDeviceID device_id, AudioObjectPropertySelector selector,
+                              AudioObjectPropertyScope scope) -> uint32_t {
+    const AudioObjectPropertyAddress address = {selector, scope,
+                                                kAudioObjectPropertyElementMain};
+    UInt32 value = 0;
+    UInt32 size = sizeof(value);
+    return AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) == noErr
+               ? value
+               : 0;
+  };
+  const auto read_nominal_rate = [](AudioDeviceID device_id) -> uint32_t {
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyNominalSampleRate,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    Float64 value = 0.0;
+    UInt32 size = sizeof(value);
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+        value <= 0.0) {
+      return 0;
+    }
+    return static_cast<uint32_t>(value);
+  };
+
+  AudioDeviceID default_input = 0;
+  AudioDeviceID default_output = 0;
+  const AudioObjectPropertyAddress default_input_address = {
+      kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain};
+  const AudioObjectPropertyAddress default_output_address = {
+      kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain};
+  UInt32 default_size = sizeof(default_input);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_input_address, 0, nullptr,
+                             &default_size, &default_input);
+  default_size = sizeof(default_output);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_output_address, 0, nullptr,
+                             &default_size, &default_output);
+
+  constexpr uint32_t common_rates[] = {44100, 48000, 88200, 96000, 176400, 192000};
+  constexpr uint32_t common_buffers[] = {32,  64,  96,  128,  160,  192,  256,
+                                         384, 512, 768, 1024, 1536, 2048, 4096};
+  for (const AudioDeviceID device_id : device_ids) {
+    const std::string uid = read_string(device_id, kAudioDevicePropertyDeviceUID);
+    if (uid.empty()) {
+      continue;
+    }
+    const std::string name = read_string(device_id, kAudioDevicePropertyDeviceNameCFString);
+    const uint32_t input_count = read_channel_count(device_id, kAudioObjectPropertyScopeInput);
+    const uint32_t output_count = read_channel_count(device_id, kAudioObjectPropertyScopeOutput);
+
+    AudioEndpointCapabilities endpoint;
+    endpoint.device_id = uid;
+    endpoint.display_name = name.empty() ? uid : name;
+    endpoint.availability = input_count != 0 || output_count != 0
+                                ? AudioEndpointAvailability::Available
+                                : AudioEndpointAvailability::FormatUnavailable;
+    endpoint.is_default_input = device_id == default_input;
+    endpoint.is_default_output = device_id == default_output;
+    endpoint.supports_input = input_count != 0;
+    endpoint.supports_output = output_count != 0;
+    endpoint.input_channels.reserve(input_count);
+    endpoint.output_channels.reserve(output_count);
+    for (uint32_t channel = 0; channel < input_count; ++channel) {
+      endpoint.input_channels.push_back(
+          {static_cast<uint16_t>(channel), uid + ":input:" + std::to_string(channel),
+           endpoint.display_name + " Input " + std::to_string(channel + 1)});
+    }
+    for (uint32_t channel = 0; channel < output_count; ++channel) {
+      endpoint.output_channels.push_back(
+          {static_cast<uint16_t>(channel), uid + ":output:" + std::to_string(channel),
+           endpoint.display_name + " Output " + std::to_string(channel + 1)});
+    }
+
+    const AudioObjectPropertyAddress rates_address = {
+        kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    UInt32 rates_size = 0;
+    if (AudioObjectGetPropertyDataSize(device_id, &rates_address, 0, nullptr, &rates_size) ==
+            noErr &&
+        rates_size >= sizeof(AudioValueRange)) {
+      std::vector<AudioValueRange> ranges(rates_size / sizeof(AudioValueRange));
+      if (AudioObjectGetPropertyData(device_id, &rates_address, 0, nullptr, &rates_size,
+                                     ranges.data()) == noErr) {
+        for (const uint32_t rate : common_rates) {
+          if (std::any_of(ranges.begin(), ranges.end(), [rate](const AudioValueRange& range) {
+                return rate >= range.mMinimum && rate <= range.mMaximum;
+              })) {
+            endpoint.supported_sample_rates.push_back(rate);
+          }
+        }
+      }
+    }
+    endpoint.nominal_sample_rate = read_nominal_rate(device_id);
+    if (endpoint.nominal_sample_rate != 0 &&
+        std::find(endpoint.supported_sample_rates.begin(), endpoint.supported_sample_rates.end(),
+                  endpoint.nominal_sample_rate) == endpoint.supported_sample_rates.end()) {
+      endpoint.supported_sample_rates.push_back(endpoint.nominal_sample_rate);
+    }
+    std::sort(endpoint.supported_sample_rates.begin(), endpoint.supported_sample_rates.end());
+
+    const AudioObjectPropertyAddress buffer_range_address = {
+        kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    AudioValueRange buffer_range{};
+    UInt32 buffer_range_size = sizeof(buffer_range);
+    if (AudioObjectGetPropertyData(device_id, &buffer_range_address, 0, nullptr,
+                                   &buffer_range_size, &buffer_range) == noErr) {
+      for (const uint32_t buffer : common_buffers) {
+        if (buffer >= buffer_range.mMinimum && buffer <= buffer_range.mMaximum) {
+          endpoint.supported_buffer_sizes.push_back(buffer);
+        }
+      }
+    }
+    endpoint.current_buffer_size =
+        read_uint32(device_id, kAudioDevicePropertyBufferFrameSize,
+                    kAudioObjectPropertyScopeGlobal);
+    if (endpoint.current_buffer_size != 0 &&
+        std::find(endpoint.supported_buffer_sizes.begin(), endpoint.supported_buffer_sizes.end(),
+                  endpoint.current_buffer_size) == endpoint.supported_buffer_sizes.end()) {
+      endpoint.supported_buffer_sizes.push_back(endpoint.current_buffer_size);
+    }
+    std::sort(endpoint.supported_buffer_sizes.begin(), endpoint.supported_buffer_sizes.end());
+    endpoints.push_back(std::move(endpoint));
+  }
+  return endpoints;
+}
+#endif
+
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+OSStatus AudioDriverManager::endpointPropertyChanged(
+    AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* context) noexcept {
+  auto* manager = static_cast<AudioDriverManager*>(context);
+  if (manager == nullptr) {
+    return noErr;
+  }
+  manager->m_endpointChangePending.store(true, std::memory_order_release);
+  manager->m_endpointChangeCondition.notify_one();
+  return noErr;
+}
+
+void AudioDriverManager::startEndpointMonitor() {
+  if (m_endpointMonitorActive.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+  const AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices,
+                                              kAudioObjectPropertyScopeGlobal,
+                                              kAudioObjectPropertyElementMain};
+  if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, &endpointPropertyChanged,
+                                     this) != noErr) {
+    m_endpointMonitorActive.store(false, std::memory_order_release);
+    return;
+  }
+  try {
+    m_endpointMonitorThread = std::thread(&AudioDriverManager::endpointMonitorLoop, this);
+  } catch (...) {
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address,
+                                      &endpointPropertyChanged, this);
+    m_endpointMonitorActive.store(false, std::memory_order_release);
+  }
+}
+
+void AudioDriverManager::stopEndpointMonitor() {
+  if (!m_endpointMonitorActive.exchange(false, std::memory_order_acq_rel) &&
+      !m_endpointMonitorThread.joinable()) {
+    return;
+  }
+  const AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices,
+                                              kAudioObjectPropertyScopeGlobal,
+                                              kAudioObjectPropertyElementMain};
+  AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address, &endpointPropertyChanged,
+                                    this);
+  m_endpointChangePending.store(true, std::memory_order_release);
+  m_endpointChangeCondition.notify_one();
+  if (m_endpointMonitorThread.joinable()) {
+    m_endpointMonitorThread.join();
+  }
+}
+
+void AudioDriverManager::endpointMonitorLoop() {
+  while (m_endpointMonitorActive.load(std::memory_order_acquire)) {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_endpointChangeCondition.wait(lock, [this] {
+      return m_endpointChangePending.load(std::memory_order_acquire) ||
+             !m_endpointMonitorActive.load(std::memory_order_acquire);
+    });
+    m_endpointChangePending.store(false, std::memory_order_release);
+    if (!m_endpointMonitorActive.load(std::memory_order_acquire)) {
+      break;
+    }
+    const auto endpoint_callback = m_endpointChangeCallback;
+    lock.unlock();
+    if (endpoint_callback) {
+      endpoint_callback();
+    }
+  }
 }
 #endif
 

@@ -42,6 +42,32 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
   return SessionGraphError::OK;
 }
 
+SessionGraphError DummyAudioDriver::initializeAudioOutput(
+    const AudioOutputRouteRequest& request) {
+  if (request.output_channel_map.empty() || request.requested_sample_rate == 0 ||
+      request.requested_buffer_size == 0 || request.requested_buffer_size > 0xffffu ||
+      request.output_channel_map.size() > 32 ||
+      (!request.output_device_id.empty() && request.output_device_id != "dummy")) {
+    return SessionGraphError::InvalidParameter;
+  }
+  std::vector<bool> seen(32, false);
+  for (const uint16_t channel : request.output_channel_map) {
+    if (channel >= seen.size() || seen[channel]) {
+      return SessionGraphError::InvalidParameter;
+    }
+    seen[channel] = true;
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = request.requested_sample_rate;
+  config.buffer_size = static_cast<uint16_t>(request.requested_buffer_size);
+  config.num_inputs = 0;
+  config.num_outputs = static_cast<uint16_t>(request.output_channel_map.size());
+  config.output_device_id = request.output_device_id;
+  config.channel_map.output_channels = request.output_channel_map;
+  return initialize(config);
+}
+
 SessionGraphError DummyAudioDriver::start(IAudioCallback* callback) {
   if (running_.load(std::memory_order_acquire)) {
     return SessionGraphError::InternalError;
@@ -114,6 +140,29 @@ AudioDriverCapabilities DummyAudioDriver::getCapabilities() const {
 ActiveAudioRoute DummyAudioDriver::getActiveRoute() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return active_route_;
+}
+
+AudioIoRouteState DummyAudioDriver::getAudioIoRouteState() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  AudioIoRouteState state;
+  state.state = running_.load(std::memory_order_acquire) ? AudioRouteState::Running
+                                                         : AudioRouteState::Inactive;
+  state.selected_input_device_id = config_.input_device_id;
+  state.selected_output_device_id = config_.output_device_id;
+  state.requested_sample_rate = config_.sample_rate;
+  state.actual_sample_rate = config_.sample_rate;
+  state.requested_buffer_size = config_.buffer_size;
+  state.actual_buffer_size = config_.buffer_size;
+  state.active_output_channel_map = config_.channel_map.output_channels;
+  if (state.active_output_channel_map.empty()) {
+    state.active_output_channel_map.resize(config_.num_outputs);
+    for (uint16_t channel = 0; channel < config_.num_outputs; ++channel) {
+      state.active_output_channel_map[channel] = channel;
+    }
+  }
+  state.active_input_channel_map = config_.channel_map.input_channels;
+  state.detail = "Dummy driver has no physical endpoint or hardware latency.";
+  return state;
 }
 
 AudioIoTelemetry DummyAudioDriver::getTelemetry() const noexcept {
