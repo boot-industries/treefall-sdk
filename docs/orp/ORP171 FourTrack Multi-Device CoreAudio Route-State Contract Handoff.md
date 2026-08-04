@@ -337,7 +337,7 @@ remote PR, released SDK revision, and FourTrack's follow-up checks.
 
 | Item | Required value | Current value |
 |---|---|---|
-| Upstream issue/PR | URL and target branch | Not assigned |
+| Upstream issue/PR | URL and target branch | [PR #234](https://github.com/chrislyons/orpheus-sdk/pull/234) → `main` |
 | SDK implementation branch | branch name | `feature/orp-output-endpoint-contract` |
 | SDK contract commit | immutable commit | `ae350028` |
 | Released SDK revision | tag/package revision | Not available |
