@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "coreaudio/coreaudio_endpoint_catalog.h"
+
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
 
@@ -565,40 +567,21 @@ AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
   AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_output_address, 0, nullptr,
                              &default_size, &default_output);
 
-  constexpr uint32_t common_rates[] = {44100, 48000, 88200, 96000, 176400, 192000};
-  constexpr uint32_t common_buffers[] = {32,  64,  96,  128,  160,  192,  256,
-                                         384, 512, 768, 1024, 1536, 2048, 4096};
   for (const AudioDeviceID device_id : device_ids) {
     const std::string uid = read_string(device_id, kAudioDevicePropertyDeviceUID);
     if (uid.empty()) {
       continue;
     }
-    const std::string name = read_string(device_id, kAudioDevicePropertyDeviceNameCFString);
-    const uint32_t input_count = read_channel_count(device_id, kAudioObjectPropertyScopeInput);
-    const uint32_t output_count = read_channel_count(device_id, kAudioObjectPropertyScopeOutput);
 
-    AudioEndpointCapabilities endpoint;
-    endpoint.device_id = uid;
-    endpoint.display_name = name.empty() ? uid : name;
-    endpoint.availability = input_count != 0 || output_count != 0
-                                ? AudioEndpointAvailability::Available
-                                : AudioEndpointAvailability::FormatUnavailable;
-    endpoint.is_default_input = device_id == default_input;
-    endpoint.is_default_output = device_id == default_output;
-    endpoint.supports_input = input_count != 0;
-    endpoint.supports_output = output_count != 0;
-    endpoint.input_channels.reserve(input_count);
-    endpoint.output_channels.reserve(output_count);
-    for (uint32_t channel = 0; channel < input_count; ++channel) {
-      endpoint.input_channels.push_back(
-          {static_cast<uint16_t>(channel), uid + ":input:" + std::to_string(channel),
-           endpoint.display_name + " Input " + std::to_string(channel + 1)});
-    }
-    for (uint32_t channel = 0; channel < output_count; ++channel) {
-      endpoint.output_channels.push_back(
-          {static_cast<uint16_t>(channel), uid + ":output:" + std::to_string(channel),
-           endpoint.display_name + " Output " + std::to_string(channel + 1)});
-    }
+    detail::CoreAudioEndpointFacts facts;
+    facts.device_id = uid;
+    facts.display_name = read_string(device_id, kAudioDevicePropertyDeviceNameCFString);
+    facts.is_default_input = device_id == default_input;
+    facts.is_default_output = device_id == default_output;
+    facts.input_channel_count =
+        read_channel_count(device_id, kAudioObjectPropertyScopeInput);
+    facts.output_channel_count =
+        read_channel_count(device_id, kAudioObjectPropertyScopeOutput);
 
     const AudioObjectPropertyAddress rates_address = {
         kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal,
@@ -610,22 +593,14 @@ AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
       std::vector<AudioValueRange> ranges(rates_size / sizeof(AudioValueRange));
       if (AudioObjectGetPropertyData(device_id, &rates_address, 0, nullptr, &rates_size,
                                      ranges.data()) == noErr) {
-        for (const uint32_t rate : common_rates) {
-          if (std::any_of(ranges.begin(), ranges.end(), [rate](const AudioValueRange& range) {
-                return rate >= range.mMinimum && rate <= range.mMaximum;
-              })) {
-            endpoint.supported_sample_rates.push_back(rate);
-          }
+        facts.sample_rate_ranges.reserve(ranges.size());
+        for (const auto& range : ranges) {
+          facts.sample_rate_ranges.push_back(
+              {static_cast<double>(range.mMinimum), static_cast<double>(range.mMaximum)});
         }
       }
     }
-    endpoint.nominal_sample_rate = read_nominal_rate(device_id);
-    if (endpoint.nominal_sample_rate != 0 &&
-        std::find(endpoint.supported_sample_rates.begin(), endpoint.supported_sample_rates.end(),
-                  endpoint.nominal_sample_rate) == endpoint.supported_sample_rates.end()) {
-      endpoint.supported_sample_rates.push_back(endpoint.nominal_sample_rate);
-    }
-    std::sort(endpoint.supported_sample_rates.begin(), endpoint.supported_sample_rates.end());
+    facts.nominal_sample_rate = read_nominal_rate(device_id);
 
     const AudioObjectPropertyAddress buffer_range_address = {
         kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeGlobal,
@@ -634,22 +609,15 @@ AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
     UInt32 buffer_range_size = sizeof(buffer_range);
     if (AudioObjectGetPropertyData(device_id, &buffer_range_address, 0, nullptr,
                                    &buffer_range_size, &buffer_range) == noErr) {
-      for (const uint32_t buffer : common_buffers) {
-        if (buffer >= buffer_range.mMinimum && buffer <= buffer_range.mMaximum) {
-          endpoint.supported_buffer_sizes.push_back(buffer);
-        }
-      }
+      facts.buffer_size_ranges.push_back(
+          {static_cast<double>(buffer_range.mMinimum),
+           static_cast<double>(buffer_range.mMaximum)});
     }
-    endpoint.current_buffer_size =
+    facts.current_buffer_size =
         read_uint32(device_id, kAudioDevicePropertyBufferFrameSize,
                     kAudioObjectPropertyScopeGlobal);
-    if (endpoint.current_buffer_size != 0 &&
-        std::find(endpoint.supported_buffer_sizes.begin(), endpoint.supported_buffer_sizes.end(),
-                  endpoint.current_buffer_size) == endpoint.supported_buffer_sizes.end()) {
-      endpoint.supported_buffer_sizes.push_back(endpoint.current_buffer_size);
-    }
-    std::sort(endpoint.supported_buffer_sizes.begin(), endpoint.supported_buffer_sizes.end());
-    endpoints.push_back(std::move(endpoint));
+
+    endpoints.push_back(detail::makeCoreAudioEndpointCapabilities(facts));
   }
   return endpoints;
 }

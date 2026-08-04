@@ -28,6 +28,7 @@ endif()
 # Audio Driver Manager (platform-agnostic device enumeration and management)
 add_library(orpheus_audio_driver_manager STATIC
     driver_manager.cpp
+    coreaudio/coreaudio_endpoint_catalog.cpp
 )
 
 target_include_directories(orpheus_audio_driver_manager
