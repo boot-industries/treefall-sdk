@@ -339,7 +339,7 @@ remote PR, released SDK revision, and FourTrack's follow-up checks.
 |---|---|---|
 | Upstream issue/PR | URL and target branch | Not assigned |
 | SDK implementation branch | branch name | `feature/orp-output-endpoint-contract` |
-| SDK contract commit | immutable commit | `8f519259` |
+| SDK contract commit | immutable commit | `ae350028` |
 | Released SDK revision | tag/package revision | Not available |
 | FourTrack pin | immutable gitlink | `b452cbfa2b1d11a36bc3f5d69a15e2dea9a80099` |
 | FourTrack adoption | route activation/status path | Blocked pending release |
