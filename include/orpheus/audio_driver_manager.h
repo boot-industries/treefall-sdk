@@ -19,7 +19,7 @@ class IAudioDriver;
 /// Audio device information
 struct AudioDeviceInfo {
   std::string deviceId;                       ///< Unique device identifier
-  std::string name;                           ///< Human-readable name
+  std::string name;                           ///< Human-readable device name
   std::string driverType;                     ///< "CoreAudio", "ASIO", "WASAPI", "ALSA", "Dummy"
   uint32_t minChannels;                       ///< Minimum output channels
   uint32_t maxChannels;                       ///< Maximum output channels
