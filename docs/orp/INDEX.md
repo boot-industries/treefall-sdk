@@ -8,7 +8,8 @@ Project documentation index for orpheus-sdk.
 
 
 ## Recent Documents
-- [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] — proposed SDK contract handoff for FourTrack independent input/output routing, channel maps, active-route facts, split latency, and terminal route outcomes (2026-08-04)
+- [[ORP172 Digital Audio Routing Practice Research]] — 2026 reconnaissance of AES67, ST 2110, Dante, NMOS IS-04/05/08, PTP, and portable routing/control-plane vocabulary (2026-08-04)
+- [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] — implemented SDK route-state contract; release and downstream adoption pending (2026-08-04)
 - [[ORP168 Streaming Seek Priming and Underrun Classification]] — corrected
   streaming Start/refire command-prime leasing and effective pre-trim-IN seek
   priming; rendered realtime regression evidence (2026-08-01)
@@ -138,4 +139,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-01
+**Last Generated:** 2026-08-04

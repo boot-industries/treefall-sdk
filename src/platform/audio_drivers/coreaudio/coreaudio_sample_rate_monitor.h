@@ -36,6 +36,14 @@ public:
   virtual OSStatus getPropertyData(AudioObjectID device_id,
                                    const AudioObjectPropertyAddress* address, UInt32* size,
                                    void* data) noexcept = 0;
+  virtual OSStatus getPropertyDataSize(AudioObjectID device_id,
+                                       const AudioObjectPropertyAddress* address,
+                                       UInt32* size) noexcept {
+    (void)device_id;
+    (void)address;
+    (void)size;
+    return -1;
+  }
   virtual OSStatus setPropertyData(AudioObjectID device_id,
                                    const AudioObjectPropertyAddress* address, UInt32 size,
                                    const void* data) noexcept = 0;
@@ -55,6 +63,8 @@ public:
                            UInt32* size, void* data) noexcept override;
   OSStatus setPropertyData(AudioObjectID device_id, const AudioObjectPropertyAddress* address,
                            UInt32 size, const void* data) noexcept override;
+  OSStatus getPropertyDataSize(AudioObjectID device_id, const AudioObjectPropertyAddress* address,
+                               UInt32* size) noexcept override;
 };
 
 /// Watches every physical route which can invalidate the configured AU format.

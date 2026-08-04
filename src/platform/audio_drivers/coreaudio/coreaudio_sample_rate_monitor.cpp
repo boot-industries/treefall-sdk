@@ -23,6 +23,11 @@ OSStatus CoreAudioSampleRatePropertyApi::getPropertyData(AudioObjectID device_id
   return AudioObjectGetPropertyData(device_id, address, 0, nullptr, size, data);
 }
 
+OSStatus CoreAudioSampleRatePropertyApi::getPropertyDataSize(
+    AudioObjectID device_id, const AudioObjectPropertyAddress* address, UInt32* size) noexcept {
+  return AudioObjectGetPropertyDataSize(device_id, address, 0, nullptr, size);
+}
+
 OSStatus CoreAudioSampleRatePropertyApi::setPropertyData(AudioObjectID device_id,
                                                          const AudioObjectPropertyAddress* address,
                                                          UInt32 size, const void* data) noexcept {
@@ -89,9 +94,8 @@ void CoreAudioSampleRateMonitor::requestCheck() noexcept {
 
 void CoreAudioSampleRateMonitor::waitForChange() noexcept {
   std::unique_lock<std::mutex> lock(pending_mutex_);
-  pending_changed_.wait(lock, [this] {
-    return (state_.load(std::memory_order_acquire) & kPendingBit) != 0;
-  });
+  pending_changed_.wait(
+      lock, [this] { return (state_.load(std::memory_order_acquire) & kPendingBit) != 0; });
 }
 
 CoreAudioSampleRatePollResult CoreAudioSampleRateMonitor::poll() noexcept {
@@ -143,7 +147,6 @@ CoreAudioSampleRatePollResult CoreAudioSampleRateMonitor::poll() noexcept {
   return restored ? CoreAudioSampleRatePollResult::RateRestored
                   : CoreAudioSampleRatePollResult::NoChange;
 }
-
 
 bool CoreAudioSampleRateMonitor::permitsRendering() const noexcept {
   const uint64_t state = state_.load(std::memory_order_acquire);

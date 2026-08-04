@@ -15,6 +15,12 @@ namespace orpheus {
 
 class IPerformanceMonitor;
 
+/// Physical-to-logical channel selections for a configured route.
+struct AudioRouteChannelMap {
+  std::vector<uint16_t> input_channels;
+  std::vector<uint16_t> output_channels;
+};
+
 /// Audio driver configuration.
 ///
 /// Backend endpoint identifiers are stable backend IDs. CoreAudio consumes
@@ -28,6 +34,50 @@ struct AudioDriverConfig {
   uint16_t num_outputs = 2;     ///< Number of output channels
   std::string output_device_id; ///< Stable output endpoint ID (empty = default)
   std::string device_name;      ///< Optional host-visible display name
+
+  /// Physical-to-logical channel selection for each direction.
+  /// An empty vector selects consecutive physical channels starting at zero.
+  AudioRouteChannelMap channel_map{};
+};
+
+/// Decomposed route latency reported by the backend.
+///
+/// `complete` is true only when all mandatory terms for the active route were
+/// measured. A missing term is never estimated from buffer size or wall time.
+struct AudioRouteLatency {
+  uint32_t capture_frames = 0;
+  uint32_t playback_frames = 0;
+  uint32_t processing_frames = 0;
+  bool complete = false;
+};
+
+/// Runtime outcome that can invalidate active audio I/O.
+enum class AudioRouteRuntimeOutcome : uint8_t {
+  Healthy,
+  RouteUnavailable,
+  FormatChanged,
+  ReinitializationRequired,
+  BackendFailure,
+};
+
+/// Control-thread snapshot of the physical route negotiated by a backend.
+///
+/// This is route identity and capability state, not a UI catalog row. IDs are
+/// persistent backend IDs; CoreAudio reports physical endpoint UIDs even when
+/// it uses a private aggregate as the AudioUnit device.
+struct ActiveAudioRoute {
+  std::string input_device_id;
+  std::string output_device_id;
+  std::vector<uint16_t> input_channels;
+  std::vector<uint16_t> output_channels;
+  uint16_t available_input_channels = 0;
+  uint16_t available_output_channels = 0;
+  uint32_t requested_sample_rate = 0;
+  uint32_t actual_sample_rate = 0;
+  uint32_t actual_buffer_frames = 0;
+  AudioRouteLatency latency;
+  bool input_alive = false;
+  bool output_alive = false;
 };
 
 /// Outcome of a backend runtime condition that can invalidate active audio I/O.
@@ -47,6 +97,7 @@ enum class AudioDriverRuntimeOutcome : uint8_t {
 struct AudioIoTelemetry {
   uint64_t input_render_failures = 0; ///< Cumulative failed capture renders
   AudioDriverRuntimeOutcome runtime_outcome = AudioDriverRuntimeOutcome::Healthy;
+  AudioRouteRuntimeOutcome route_outcome = AudioRouteRuntimeOutcome::Healthy;
 };
 
 /// Audio backend family.
@@ -108,8 +159,8 @@ struct AudioProcessBlock {
   bool discontinuity = false;
 };
 
-/// Audio driver callback interface
-/// Called on the audio thread - must be lock-free
+/// Audio driver callback interface.
+/// Called on the audio thread - must be lock-free.
 class IAudioCallback {
 public:
   virtual ~IAudioCallback() = default;
@@ -127,50 +178,37 @@ public:
   }
 };
 
-/// Audio driver interface
-/// Abstracts platform-specific audio I/O (CoreAudio, WASAPI, ASIO, dummy)
+/// Audio driver interface.
+/// Abstracts platform-specific audio I/O (CoreAudio, WASAPI, ASIO, dummy).
 class IAudioDriver {
 public:
   virtual ~IAudioDriver() = default;
 
-  /// Initialize the audio driver
-  /// @param config Driver configuration
-  /// @return SessionGraphError::OK on success
+  /// Initialize the audio driver.
   virtual SessionGraphError initialize(const AudioDriverConfig& config) = 0;
 
-  /// Start audio processing
-  /// @param callback Callback interface for audio processing (must not be nullptr)
-  /// @return SessionGraphError::OK on success
+  /// Start audio processing. Callback must not be nullptr.
   virtual SessionGraphError start(IAudioCallback* callback) = 0;
 
-  /// Stop audio processing
-  /// @return SessionGraphError::OK on success
+  /// Stop audio processing.
   virtual SessionGraphError stop() = 0;
 
-  /// Check if driver is currently running
+  /// Check whether the driver is running.
   virtual bool isRunning() const = 0;
 
-  /// Get current configuration
+  /// Get current configuration.
   virtual const AudioDriverConfig& getConfig() const = 0;
 
-  /// Get driver name (e.g., "Dummy", "CoreAudio", "WASAPI")
+  /// Get human-readable driver name.
   virtual std::string getDriverName() const = 0;
 
-  /// Get current device latency in samples.
-  /// @return Total round-trip latency (input + output)
+  /// Get total measured latency in samples, or zero when unavailable.
   virtual uint32_t getLatencySamples() const = 0;
 
-  /// Get lock-free backend I/O diagnostics. The default remains zero for
-  /// drivers that do not expose backend failures.
-  virtual AudioIoTelemetry getTelemetry() const noexcept {
-    return {};
-  }
-
-  /// Get runtime backend/device capabilities.
+  /// Get backend capabilities.
   ///
-  /// Default implementation is intentionally conservative so older/custom
-  /// driver implementations remain source-compatible until they can report
-  /// richer platform details.
+  /// The default is conservative so custom drivers can adopt richer route
+  /// reporting incrementally.
   virtual AudioDriverCapabilities getCapabilities() const {
     AudioDriverCapabilities caps;
     caps.min_output_channels = getConfig().num_outputs;
@@ -185,18 +223,26 @@ public:
     return caps;
   }
 
-  /// Attach a non-owning realtime performance sink; nullptr detaches it.
+  /// Get the negotiated physical route. Control-thread only.
+  virtual ActiveAudioRoute getActiveRoute() const {
+    return {};
+  }
+
+  /// Get cumulative backend diagnostics. Control-thread only.
+  virtual AudioIoTelemetry getTelemetry() const noexcept {
+    return {};
+  }
+
+  /// Set optional realtime performance monitor.
   virtual void setPerformanceMonitor(IPerformanceMonitor* monitor) {
     (void)monitor;
   }
 };
 
-/// Factory function for dummy audio driver (for testing)
-/// @return New dummy audio driver instance
+/// Factory function for dummy audio driver (for testing).
 ORPHEUS_API std::unique_ptr<IAudioDriver> createDummyAudioDriver();
 
-/// Factory function for CoreAudio driver (macOS only)
-/// @return New CoreAudio driver instance
+/// Factory function for CoreAudio driver (macOS only).
 #ifdef __APPLE__
 ORPHEUS_API std::unique_ptr<IAudioDriver> createCoreAudioDriver();
 #endif
