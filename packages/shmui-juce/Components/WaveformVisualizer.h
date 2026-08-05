@@ -16,6 +16,8 @@
 #include "../Utils/Interpolation.h"
 #include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
+#include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace shmui {
@@ -56,6 +58,8 @@ class WaveformVisualizer : public juce::Component, public ThemeListener {
 public:
   WaveformVisualizer();
   ~WaveformVisualizer() override;
+
+  static constexpr std::size_t kMaxDataPoints = 8192;
 
   //==============================================================================
   // Data
@@ -197,6 +201,8 @@ public:
 
 private:
   void timerCallback() override;
+  void visibilityChanged() override;
+  void updateTimerState();
   void addNewBar();
   void removeOldBars();
 
@@ -211,7 +217,8 @@ private:
   int64_t lastTime = 0;
   uint32_t randomSeed = 42;
   int dataIndex = 0;
-  const std::vector<float>* dataSource = nullptr;
+  bool scrollRequested = false;
+  std::vector<float> dataSource;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScrollingWaveformVisualizer)
 };
@@ -314,7 +321,7 @@ public:
   /**
    * @brief Set the audio analyzer to get data from.
    */
-  void setAudioAnalyzer(AudioAnalyzer* analyzer);
+  void setAudioAnalyzer(std::shared_ptr<AudioAnalyzer> analyzer);
 
   /**
    * @brief Set active state (recording).
@@ -356,16 +363,13 @@ public:
     return usesDefaultThemeStyle_;
   }
   void defaultThemeChanged(const ShmuiTheme&) override;
-
   //==============================================================================
   // History Access
 
   /**
    * @brief Get recorded history data.
    */
-  const std::vector<float>& getHistory() const {
-    return history;
-  }
+  const std::vector<float>& getHistory() const;
 
   /**
    * @brief Clear history.
@@ -380,9 +384,15 @@ public:
 
 private:
   void timerCallback() override;
+  void visibilityChanged() override;
+  void updateTimerState();
 
-  AudioAnalyzer* audioAnalyzer = nullptr;
+  std::shared_ptr<AudioAnalyzer> audioAnalyzer;
   std::vector<float> history;
+  mutable std::vector<float> historySnapshot;
+  mutable bool historySnapshotDirty = true;
+  std::size_t historyWriteIndex = 0;
+  int historyCount = 0;
   WaveformStyle style;
   bool usesDefaultThemeStyle_ = true;
 
@@ -390,8 +400,6 @@ private:
   int historySize = 150;
   int updateRate = 50;
   float sensitivity = 1.0f;
-
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LiveWaveformVisualizer)
 };
 
 } // namespace shmui

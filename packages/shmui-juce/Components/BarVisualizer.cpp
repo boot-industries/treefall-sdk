@@ -11,43 +11,54 @@
 
 #include "BarVisualizer.h"
 #include "../Utils/Interpolation.h"
+#include "../Utils/MessageThread.h"
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
 namespace shmui {
 
 BarVisualizer::BarVisualizer() {
   volumeBands.resize(barCount, 0.0f);
   fakeVolumeBands.resize(barCount, 0.2f);
-
   setOpaque(false);
-  startTimerHz(60);
 }
 
 BarVisualizer::~BarVisualizer() {
   stopTimer();
 }
 
-void BarVisualizer::setAudioAnalyzer(AudioAnalyzer* analyzer) {
-  audioAnalyzer = analyzer;
+void BarVisualizer::setAudioAnalyzer(std::shared_ptr<AudioAnalyzer> analyzer) {
+  if (!requireMessageThread())
+    return;
+
+  audioAnalyzer = std::move(analyzer);
+  updateTimerState();
 }
 
 void BarVisualizer::setVolumeBands(const std::vector<float>& bands) {
-  volumeBands = bands;
+  if (!requireMessageThread())
+    return;
 
-  // Resize if needed
-  while (volumeBands.size() < static_cast<size_t>(barCount)) {
-    volumeBands.push_back(0.0f);
+  volumeBands.assign(static_cast<std::size_t>(barCount), 0.0f);
+  const auto count = std::min(bands.size(), static_cast<std::size_t>(barCount));
+  for (std::size_t i = 0; i < count; ++i) {
+    const float value = bands[i];
+    volumeBands[i] = std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : 0.0f;
   }
 
   repaint();
 }
 
 void BarVisualizer::setAgentState(AgentState state) {
+  if (!requireMessageThread())
+    return;
+
   if (agentState != state) {
     agentState = state;
     animationStep = 0;
     lastAnimTime = juce::Time::currentTimeMillis();
 
-    // Generate animation sequence based on state
     switch (state) {
     case AgentState::Connecting:
     case AgentState::Initializing:
@@ -66,14 +77,18 @@ void BarVisualizer::setAgentState(AgentState state) {
 
     repaint();
   }
+
+  updateTimerState();
 }
 
 void BarVisualizer::setBarCount(int count) {
-  barCount = std::max(1, count);
-  volumeBands.resize(barCount, 0.0f);
-  fakeVolumeBands.resize(barCount, 0.2f);
+  if (!requireMessageThread())
+    return;
 
-  // Regenerate animation sequences
+  barCount = juce::jlimit(1, 4096, count);
+  volumeBands.resize(static_cast<std::size_t>(barCount), 0.0f);
+  fakeVolumeBands.resize(static_cast<std::size_t>(barCount), 0.2f);
+
   if (agentState == AgentState::Connecting || agentState == AgentState::Initializing) {
     generateConnectingSequence();
   } else if (agentState == AgentState::Listening || agentState == AgentState::Thinking) {
@@ -84,37 +99,61 @@ void BarVisualizer::setBarCount(int count) {
 }
 
 void BarVisualizer::setHeightRange(float minPct, float maxPct) {
-  minHeightPct = juce::jlimit(0.0f, 100.0f, minPct);
-  maxHeightPct = juce::jlimit(minHeightPct, 100.0f, maxPct);
+  if (!requireMessageThread())
+    return;
+
+  const float safeMin = std::isfinite(minPct) ? minPct : 0.0f;
+  const float safeMax = std::isfinite(maxPct) ? maxPct : safeMin;
+  minHeightPct = juce::jlimit(0.0f, 100.0f, safeMin);
+  maxHeightPct = juce::jlimit(minHeightPct, 100.0f, safeMax);
   repaint();
 }
 
 void BarVisualizer::setDemoMode(bool demo) {
+  if (!requireMessageThread())
+    return;
+
   demoMode = demo;
+  updateTimerState();
   repaint();
 }
 
 void BarVisualizer::setCenterAlign(bool center) {
+  if (!requireMessageThread())
+    return;
+
   centerAlign = center;
   repaint();
 }
 
 void BarVisualizer::setBarColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   barColour = colour;
   repaint();
 }
 
 void BarVisualizer::setHighlightColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   highlightColour = colour;
   repaint();
 }
 
 void BarVisualizer::setBackgroundColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   backgroundColour = colour;
   repaint();
 }
 
 void BarVisualizer::setGradientMode(bool gradient) {
+  if (!requireMessageThread())
+    return;
+
   gradientMode = gradient;
   repaint();
 }
@@ -204,32 +243,58 @@ void BarVisualizer::resized() {
 }
 
 void BarVisualizer::timerCallback() {
-  const int64_t currentTime = juce::Time::currentTimeMillis();
+  if (!isShowing() || !hasActiveWork()) {
+    updateTimerState();
+    return;
+  }
 
-  // Update demo time
+  const int64_t currentTime = juce::Time::currentTimeMillis();
   demoTime += 1.0f / 60.0f;
 
-  // Update animation
   const int interval = getAnimationInterval();
   if (currentTime - lastAnimTime >= interval && !animationSequence.empty()) {
     animationStep = (animationStep + 1) % static_cast<int>(animationSequence.size());
     lastAnimTime = currentTime;
   }
 
-  // Update audio data
   if (audioAnalyzer != nullptr && !demoMode) {
-    audioAnalyzer->getFrequencyBands(volumeBands, barCount, kLoPass, kHiPass);
+    const int availableBins = audioAnalyzer->getFrequencyBinCount();
+    if (availableBins > 0) {
+      const bool spectrum = availableBins >= AudioAnalyzer::kSpectrumFFTSize / 2;
+      const int loPass = spectrum ? juce::jlimit(0, availableBins, kLoPass) : 0;
+      const int hiPass = spectrum ? juce::jlimit(0, availableBins, kHiPass) : availableBins;
+      audioAnalyzer->getFrequencyBands(volumeBands, barCount, loPass, hiPass);
+    } else {
+      std::fill(volumeBands.begin(), volumeBands.end(), 0.0f);
+    }
   }
 
-  // Update fake data for demo mode
+  for (auto& value : volumeBands) {
+    value = std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : 0.0f;
+  }
+
   if (demoMode && (agentState == AgentState::Speaking || agentState == AgentState::Listening)) {
     updateFakeVolumeBands();
   } else if (demoMode) {
-    // Reset to idle values
     std::fill(fakeVolumeBands.begin(), fakeVolumeBands.end(), 0.2f);
   }
 
   repaint();
+}
+
+void BarVisualizer::visibilityChanged() {
+  updateTimerState();
+}
+
+void BarVisualizer::updateTimerState() {
+  if (isShowing() && hasActiveWork())
+    startTimerHz(60);
+  else
+    stopTimer();
+}
+
+bool BarVisualizer::hasActiveWork() const {
+  return demoMode || audioAnalyzer != nullptr || agentState != AgentState::Idle;
 }
 
 int BarVisualizer::getAnimationInterval() const {

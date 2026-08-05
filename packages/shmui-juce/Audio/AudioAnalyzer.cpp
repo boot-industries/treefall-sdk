@@ -10,13 +10,15 @@
 */
 
 #include "AudioAnalyzer.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace shmui {
 
 //==============================================================================
 
 AudioAnalyzer::AudioAnalyzer(AnalysisMode mode) {
-  // Set FFT size based on mode
   if (mode == AnalysisMode::Spectrum) {
     fftOrder = kSpectrumFFTOrder;
     fftSize = kSpectrumFFTSize;
@@ -25,37 +27,38 @@ AudioAnalyzer::AudioAnalyzer(AnalysisMode mode) {
     fftSize = kWaveformFFTSize;
   }
 
-  // Create FFT processor
   fft = std::make_unique<juce::dsp::FFT>(fftOrder);
-
-  // Allocate buffers
   fftData.resize(fftSize * 2, 0.0f);
   fifo.resize(fftSize, 0.0f);
-  smoothedFrequencyData.resize(fftSize / 2, 0.0f);
+
+  for (auto& slot : publicationSlots) {
+    jassert(slot.state.is_lock_free());
+    slot.data.fill(0.0f);
+  }
 }
 
 //==============================================================================
 // Audio Thread Methods
 
 void AudioAnalyzer::pushSamples(const float* samples, int numSamples) {
-  // Calculate RMS for level metering
-  const float rms = calculateRMS(samples, numSamples);
+  if (samples == nullptr || numSamples <= 0)
+    return;
 
-  // Smooth the RMS value
-  const float currentRMS = smoothedRMS.load(std::memory_order_relaxed);
-  const float newRMS = smoothValue(currentRMS, rms, kVolumeSmoothingFactor);
+  const float rms = calculateRMS(samples, numSamples);
+  const float currentRMS = sanitizeNormalized(smoothedRMS.load(std::memory_order_relaxed));
+  const float newRMS = sanitizeNormalized(smoothValue(currentRMS, rms, kVolumeSmoothingFactor));
   smoothedRMS.store(newRMS, std::memory_order_relaxed);
 
-  // Track peak level
   float peak = 0.0f;
   for (int i = 0; i < numSamples; ++i) {
-    peak = std::max(peak, std::abs(samples[i]));
+    const float sample = std::isfinite(samples[i]) ? samples[i] : 0.0f;
+    peak = std::max(peak, std::abs(sample));
   }
-  peakLevel.store(peak, std::memory_order_relaxed);
+  peakLevel.store(sanitizeNormalized(peak), std::memory_order_relaxed);
 
-  // Fill FIFO for FFT
   for (int i = 0; i < numSamples; ++i) {
-    fifo[fifoIndex++] = samples[i];
+    const float sample = std::isfinite(samples[i]) ? samples[i] : 0.0f;
+    fifo[fifoIndex++] = sample;
 
     if (fifoIndex >= fftSize) {
       performFFT();
@@ -68,32 +71,34 @@ void AudioAnalyzer::processBlock(const juce::AudioBuffer<float>& buffer) {
   const int numChannels = buffer.getNumChannels();
   const int numSamples = buffer.getNumSamples();
 
-  if (numChannels == 0 || numSamples == 0)
+  if (numChannels <= 0 || numSamples <= 0)
     return;
 
-  // Average all channels for mono analysis
-  if (numChannels == 1) {
-    pushSamples(buffer.getReadPointer(0), numSamples);
-  } else {
-    // Use pre-allocated buffer (sized to kMaxBufferSize in constructor)
-    // If buffer exceeds max size, only process what fits (should not happen in practice)
-    const int samplesToProcess = std::min(numSamples, kMaxBufferSize);
+  for (int offset = 0; offset < numSamples; offset += kMaxBufferSize) {
+    const int samplesToProcess = std::min(kMaxBufferSize, numSamples - offset);
 
-    // Clear and mix down to mono
+    if (numChannels == 1) {
+      pushSamples(buffer.getReadPointer(0, offset), samplesToProcess);
+      continue;
+    }
+
     std::fill(monoMixBuffer.begin(), monoMixBuffer.begin() + samplesToProcess, 0.0f);
 
-    for (int ch = 0; ch < numChannels; ++ch) {
-      const float* channelData = buffer.getReadPointer(ch);
-      for (int i = 0; i < samplesToProcess; ++i) {
-        monoMixBuffer[i] += channelData[i];
+    for (int channel = 0; channel < numChannels; ++channel) {
+      const float* channelData = buffer.getReadPointer(channel, offset);
+      if (channelData == nullptr)
+        continue;
+
+      for (int sample = 0; sample < samplesToProcess; ++sample) {
+        const float value = channelData[sample];
+        if (std::isfinite(value))
+          monoMixBuffer[static_cast<std::size_t>(sample)] += value;
       }
     }
 
-    // Normalize
     const float scale = 1.0f / static_cast<float>(numChannels);
-    for (int i = 0; i < samplesToProcess; ++i) {
-      monoMixBuffer[i] *= scale;
-    }
+    for (int sample = 0; sample < samplesToProcess; ++sample)
+      monoMixBuffer[static_cast<std::size_t>(sample)] *= scale;
 
     pushSamples(monoMixBuffer.data(), samplesToProcess);
   }
@@ -103,109 +108,124 @@ void AudioAnalyzer::processBlock(const juce::AudioBuffer<float>& buffer) {
 // UI Thread Methods
 
 void AudioAnalyzer::getFrequencyData(std::vector<float>& outData) const {
-  const juce::SpinLock::ScopedLockType lock(dataLock);
+  const int numBins = std::min(fftSize / 2, static_cast<int>(kPublicationFrameSize));
+  outData.assign(static_cast<std::size_t>(std::max(0, numBins)), 0.0f);
 
-  outData = smoothedFrequencyData;
+  std::size_t slotIndex = 0;
+  if (!claimReadableSlot(slotIndex))
+    return;
 
-  // Apply sensitivity
-  const float sens = sensitivity.load(std::memory_order_relaxed);
-  if (sens != 1.0f) {
-    for (auto& value : outData) {
-      value = juce::jlimit(0.0f, 1.0f, value * sens);
-    }
-  }
+  const auto& frame = publicationSlots[slotIndex].data;
+  std::copy_n(frame.begin(), outData.size(), outData.begin());
+  releaseReadableSlot(slotIndex);
+
+  const float configuredSensitivity = sensitivity.load(std::memory_order_relaxed);
+  const float safeSensitivity =
+      std::isfinite(configuredSensitivity) ? std::max(0.0f, configuredSensitivity) : 1.0f;
+  for (auto& value : outData)
+    value = sanitizeNormalized(value * safeSensitivity);
 }
 
 void AudioAnalyzer::getMirroredFrequencyData(std::vector<float>& outData) const {
-  // Get the frequency data first
   std::vector<float> freqData;
   getFrequencyData(freqData);
 
-  // Extract relevant frequency range (5% to 40% of bins for voice focus)
   const int totalBins = static_cast<int>(freqData.size());
-  const int startFreq = static_cast<int>(totalBins * kFrequencyRangeStart);
-  const int endFreq = static_cast<int>(totalBins * kFrequencyRangeEnd);
-
-  const int rangeSize = endFreq - startFreq;
+  const int startFreq = static_cast<int>(static_cast<float>(totalBins) * kFrequencyRangeStart);
+  const int endFreq = static_cast<int>(static_cast<float>(totalBins) * kFrequencyRangeEnd);
+  const int rangeSize = std::max(0, endFreq - startFreq);
   const int halfLength = rangeSize / 2;
 
   outData.clear();
-  outData.reserve(rangeSize);
+  outData.reserve(static_cast<std::size_t>(rangeSize));
 
-  // Left side (reversed) - as in waveform.tsx lines 655-658
   for (int i = halfLength - 1; i >= 0; --i) {
-    const int idx = startFreq + i;
-    if (idx < totalBins) {
-      outData.push_back(freqData[idx]);
-    }
+    const int index = startFreq + i;
+    if (index >= 0 && index < totalBins)
+      outData.push_back(sanitizeNormalized(freqData[index]));
   }
 
-  // Right side (normal) - as in waveform.tsx lines 660-663
   for (int i = 0; i < halfLength; ++i) {
-    const int idx = startFreq + i;
-    if (idx < totalBins) {
-      outData.push_back(freqData[idx]);
-    }
+    const int index = startFreq + i;
+    if (index >= 0 && index < totalBins)
+      outData.push_back(sanitizeNormalized(freqData[index]));
   }
 }
 
 float AudioAnalyzer::getRMSLevel() const {
-  return smoothedRMS.load(std::memory_order_relaxed);
+  return sanitizeNormalized(smoothedRMS.load(std::memory_order_relaxed));
 }
 
 float AudioAnalyzer::getPeakLevel() const {
-  return peakLevel.load(std::memory_order_relaxed);
+  return sanitizeNormalized(peakLevel.load(std::memory_order_relaxed));
 }
 
 void AudioAnalyzer::getFrequencyBands(std::vector<float>& outBands, int numBands, int loPass,
                                       int hiPass) const {
-  // Implementation from bar-visualizer.tsx splitIntoBands function
-  outBands.resize(numBands);
+  if (numBands <= 0) {
+    outBands.clear();
+    return;
+  }
 
-  const juce::SpinLock::ScopedLockType lock(dataLock);
+  const int bandCount = std::min(numBands, static_cast<int>(kPublicationFrameSize));
+  outBands.assign(static_cast<std::size_t>(bandCount), 0.0f);
 
-  const int sliceLength = hiPass - loPass;
-  const int chunkSize = (sliceLength + numBands - 1) / numBands;
+  const int availableBins = std::min(fftSize / 2, static_cast<int>(kPublicationFrameSize));
+  if (availableBins <= 0)
+    return;
 
-  for (int i = 0; i < numBands; ++i) {
-    float sum = 0.0f;
+  const int firstBin = juce::jlimit(0, availableBins, loPass);
+  const int lastBin = juce::jlimit(0, availableBins, hiPass);
+  if (lastBin <= firstBin)
+    return;
+
+  std::size_t slotIndex = 0;
+  if (!claimReadableSlot(slotIndex))
+    return;
+
+  const auto& frame = publicationSlots[slotIndex].data;
+  const int sliceLength = lastBin - firstBin;
+  const int chunkSize = sliceLength / bandCount + ((sliceLength % bandCount) != 0 ? 1 : 0);
+
+  const float configuredSensitivity = sensitivity.load(std::memory_order_relaxed);
+  const float safeSensitivity =
+      std::isfinite(configuredSensitivity) ? std::max(0.0f, configuredSensitivity) : 1.0f;
+
+  for (int band = 0; band < bandCount; ++band) {
+    const int startOffset = std::min(sliceLength, band * chunkSize);
+    const int endOffset = std::min(sliceLength, (band + 1) * chunkSize);
+    double sum = 0.0;
     int count = 0;
 
-    const int start = loPass + i * chunkSize;
-    const int end = std::min(loPass + (i + 1) * chunkSize, hiPass);
-
-    for (int j = start; j < end; ++j) {
-      if (j < static_cast<int>(smoothedFrequencyData.size())) {
-        // Use normalizeDb for perceptual scaling
-        // Note: smoothedFrequencyData already contains magnitude values
-        // We convert to dB-like range for normalization
-        const float magnitude = smoothedFrequencyData[j];
-        const float dbValue = magnitude > 0.0f ? 20.0f * std::log10(magnitude) : kMinDb;
-        sum += normalizeDb(dbValue);
-        count++;
-      }
+    for (int bin = firstBin + startOffset; bin < firstBin + endOffset; ++bin) {
+      const float magnitude = frame[static_cast<std::size_t>(bin)];
+      const float dbValue =
+          (std::isfinite(magnitude) && magnitude > 0.0f) ? 20.0f * std::log10(magnitude) : kMinDb;
+      sum += static_cast<double>(normalizeDb(dbValue));
+      ++count;
     }
 
-    outBands[i] = count > 0 ? sum / static_cast<float>(count) : 0.0f;
+    const float average = count > 0 ? static_cast<float>(sum / static_cast<double>(count)) : 0.0f;
+    outBands[static_cast<std::size_t>(band)] = sanitizeNormalized(average * safeSensitivity);
   }
 
-  // Apply sensitivity
-  const float sens = sensitivity.load(std::memory_order_relaxed);
-  if (sens != 1.0f) {
-    for (auto& value : outBands) {
-      value = juce::jlimit(0.0f, 1.0f, value * sens);
-    }
-  }
+  releaseReadableSlot(slotIndex);
 }
 
 //==============================================================================
 // Configuration
 
 void AudioAnalyzer::setSmoothingTimeConstant(float smoothing) {
+  if (!std::isfinite(smoothing))
+    return;
+
   smoothingTimeConstant.store(juce::jlimit(0.0f, 1.0f, smoothing), std::memory_order_relaxed);
 }
 
 void AudioAnalyzer::setSensitivity(float newSensitivity) {
+  if (!std::isfinite(newSensitivity))
+    return;
+
   sensitivity.store(std::max(0.0f, newSensitivity), std::memory_order_relaxed);
 }
 
@@ -213,32 +233,42 @@ void AudioAnalyzer::setSensitivity(float newSensitivity) {
 // Static Utility Functions
 
 float AudioAnalyzer::calculateRMS(const float* samples, int numSamples) {
-  if (numSamples <= 0)
+  if (samples == nullptr || numSamples <= 0)
     return 0.0f;
 
-  float sum = 0.0f;
+  double sum = 0.0;
   for (int i = 0; i < numSamples; ++i) {
-    sum += samples[i] * samples[i];
+    const float sample = std::isfinite(samples[i]) ? samples[i] : 0.0f;
+    sum += static_cast<double>(sample) * static_cast<double>(sample);
   }
 
-  return std::sqrt(sum / static_cast<float>(numSamples));
+  if (!std::isfinite(sum))
+    return 1.0f;
+
+  const double mean = sum / static_cast<double>(numSamples);
+  if (!std::isfinite(mean) || mean <= 0.0)
+    return 0.0f;
+
+  return sanitizeNormalized(static_cast<float>(std::sqrt(mean)));
 }
 
 float AudioAnalyzer::normalizeDb(float value) {
-  // From bar-visualizer.tsx normalizeDb function
-  // Perceptual scaling: convert dB to 0-1 with sqrt for perceptual response
+  if (std::isnan(value))
+    return 0.0f;
 
   if (value == -std::numeric_limits<float>::infinity())
     return 0.0f;
 
   const float clamped = juce::jlimit(kMinDb, kMaxDb, value);
   const float normalized = 1.0f - (clamped * -1.0f) / 100.0f;
-
-  return std::sqrt(normalized); // Perceptual scaling
+  return sanitizeNormalized(std::sqrt(std::max(0.0f, normalized)));
 }
 
 float AudioAnalyzer::smoothValue(float current, float target, float factor) {
-  return current + (target - current) * factor;
+  const float safeCurrent = sanitizeNormalized(current);
+  const float safeTarget = sanitizeNormalized(target);
+  const float safeFactor = std::isfinite(factor) ? juce::jlimit(0.0f, 1.0f, factor) : 0.0f;
+  return sanitizeNormalized(safeCurrent + (safeTarget - safeCurrent) * safeFactor);
 }
 
 //==============================================================================
@@ -266,26 +296,82 @@ void AudioAnalyzer::performFFT() {
 }
 
 void AudioAnalyzer::updateSmoothedData() {
-  const juce::SpinLock::ScopedLockType lock(dataLock);
-
-  const float smooth = smoothingTimeConstant.load(std::memory_order_relaxed);
-  const int numBins = fftSize / 2;
+  const float configuredSmooth = smoothingTimeConstant.load(std::memory_order_relaxed);
+  const float smooth = std::isfinite(configuredSmooth) ? juce::jlimit(0.0f, 1.0f, configuredSmooth)
+                                                       : kDefaultSmoothing;
+  const int numBins = std::min(fftSize / 2, static_cast<int>(kPublicationFrameSize));
 
   for (int i = 0; i < numBins; ++i) {
-    // Get magnitude from FFT output
-    // fft->performFrequencyOnlyForwardTransform gives us real magnitudes
-    const float magnitude = fftData[i];
+    const float magnitude = fftData[static_cast<std::size_t>(i)];
+    const float normalizedMagnitude =
+        std::isfinite(magnitude) ? magnitude / static_cast<float>(fftSize) : 0.0f;
+    const float scaledValue = sanitizeNormalized(normalizedMagnitude * 2.0f);
 
-    // Normalize to 0-1 range (divide by FFT size for proper scaling)
-    const float normalizedMagnitude = magnitude / static_cast<float>(fftSize);
-
-    // Scale to 0-255 range like Web Audio's getByteFrequencyData
-    // then normalize back to 0-1
-    const float scaledValue = juce::jlimit(0.0f, 1.0f, normalizedMagnitude * 2.0f);
-
-    // Apply smoothing
-    smoothedFrequencyData[i] = smoothedFrequencyData[i] * smooth + scaledValue * (1.0f - smooth);
+    smoothingAccumulator[static_cast<std::size_t>(i)] =
+        smoothValue(smoothingAccumulator[static_cast<std::size_t>(i)], scaledValue, 1.0f - smooth);
   }
+
+  for (std::size_t i = static_cast<std::size_t>(numBins); i < smoothingAccumulator.size(); ++i) {
+    smoothingAccumulator[i] = 0.0f;
+  }
+
+  std::size_t slotIndex = 0;
+  if (!claimWritableSlot(slotIndex))
+    return;
+
+  auto& slot = publicationSlots[slotIndex];
+  std::copy_n(smoothingAccumulator.begin(), static_cast<std::size_t>(numBins), slot.data.begin());
+  std::fill(slot.data.begin() + numBins, slot.data.end(), 0.0f);
+  slot.state.store(PublicationState::Ready, std::memory_order_release);
+}
+
+bool AudioAnalyzer::claimWritableSlot(std::size_t& index) noexcept {
+  for (std::size_t attempt = 0; attempt < kPublicationSlotCount; ++attempt) {
+    const std::size_t candidate = (nextWriteSlot + attempt) % kPublicationSlotCount;
+    auto& state = publicationSlots[candidate].state;
+    PublicationState expected = PublicationState::Free;
+    if (state.compare_exchange_strong(expected, PublicationState::Writing,
+                                      std::memory_order_acquire, std::memory_order_relaxed)) {
+      index = candidate;
+      nextWriteSlot = (candidate + 1) % kPublicationSlotCount;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool AudioAnalyzer::claimReadableSlot(std::size_t& index) const noexcept {
+  for (std::size_t attempt = 0; attempt < kPublicationSlotCount; ++attempt) {
+    const std::size_t candidate = (nextReadSlot + attempt) % kPublicationSlotCount;
+    auto& state = publicationSlots[candidate].state;
+    PublicationState expected = PublicationState::Ready;
+    if (state.compare_exchange_strong(expected, PublicationState::Reading,
+                                      std::memory_order_acq_rel, std::memory_order_relaxed)) {
+      index = candidate;
+      nextReadSlot = (candidate + 1) % kPublicationSlotCount;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void AudioAnalyzer::releaseReadableSlot(std::size_t index) const noexcept {
+  publicationSlots[index].state.store(PublicationState::Free, std::memory_order_release);
+}
+
+float AudioAnalyzer::sanitizeNormalized(float value) noexcept {
+  if (std::isnan(value))
+    return 0.0f;
+
+  if (value == std::numeric_limits<float>::infinity())
+    return 1.0f;
+
+  if (value == -std::numeric_limits<float>::infinity())
+    return 0.0f;
+
+  return juce::jlimit(0.0f, 1.0f, value);
 }
 
 } // namespace shmui

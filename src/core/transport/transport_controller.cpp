@@ -1389,6 +1389,7 @@ void TransportController::releaseSourceCommand(SourceCommandLifetime* lifetime) 
   if (lifetime) {
     const uint32_t previous = lifetime->unread.fetch_sub(1, std::memory_order_release);
     assert(previous > 0);
+    static_cast<void>(previous);
   }
 }
 
@@ -1402,6 +1403,7 @@ void TransportController::releaseActiveSource(SourceCommandLifetime* lifetime) n
   if (lifetime) {
     const uint32_t previous = lifetime->active_voices.fetch_sub(1, std::memory_order_release);
     assert(previous > 0);
+    static_cast<void>(previous);
   }
 }
 

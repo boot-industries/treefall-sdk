@@ -125,6 +125,8 @@ public:
 
 private:
   void timerCallback() override;
+  void visibilityChanged() override;
+  void updateTimerState();
   void updateAnimationTargets();
   void createShaders();
   void createNoiseTexture();

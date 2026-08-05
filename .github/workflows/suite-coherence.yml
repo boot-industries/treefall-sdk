@@ -6,6 +6,7 @@ on:
       - "suite/**"
       - "tools/suite.py"
       - "tests/CMakeLists.txt"
+      - "tests/suite_test.py"
       - ".github/workflows/suite-coherence.yml"
   workflow_dispatch:
 
@@ -24,6 +25,8 @@ jobs:
           fetch-depth: 1
       - name: Validate Python
         run: python3 -m py_compile tools/suite.py
+      - name: Run coordinator unit contracts
+        run: python3 tests/suite_test.py
       - name: Validate manifest and schema inputs
         run: python3 tools/suite.py validate --json
       - name: Exercise downstream impact calculation

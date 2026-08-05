@@ -10,9 +10,40 @@
 */
 
 #include "WaveformVisualizer.h"
-#include "../Utils/ColorUtils.h"
+#include "../Utils/MessageThread.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <utility>
 
 namespace shmui {
+
+namespace {
+float clampNormalized(float value) {
+  if (std::isnan(value))
+    return 0.0f;
+  if (value == std::numeric_limits<float>::infinity())
+    return 1.0f;
+  if (value == -std::numeric_limits<float>::infinity())
+    return 0.0f;
+  return juce::jlimit(0.0f, 1.0f, value);
+}
+
+void sanitizeWaveformStyle(WaveformStyle& style) {
+  const auto finiteOr = [](float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+  };
+
+  style.barWidth = juce::jlimit(0.5f, 128.0f, finiteOr(style.barWidth, 4.0f));
+  style.barHeight = juce::jlimit(0.0f, 4096.0f, finiteOr(style.barHeight, 4.0f));
+  style.barGap = juce::jlimit(0.0f, 128.0f, finiteOr(style.barGap, 2.0f));
+  style.barRadius = juce::jlimit(0.0f, 128.0f, finiteOr(style.barRadius, 2.0f));
+  style.fadeWidth = juce::jlimit(0.0f, 4096.0f, finiteOr(style.fadeWidth, 24.0f));
+  style.alphaMin = juce::jlimit(0.0f, 1.0f, finiteOr(style.alphaMin, 0.3f));
+  style.alphaMax = juce::jlimit(style.alphaMin, 1.0f, finiteOr(style.alphaMax, 1.0f));
+  style.heightScale = juce::jlimit(0.0f, 1.0f, finiteOr(style.heightScale, 0.8f));
+}
+} // namespace
 
 //==============================================================================
 // WaveformVisualizer
@@ -28,19 +59,33 @@ WaveformVisualizer::~WaveformVisualizer() {
 }
 
 void WaveformVisualizer::setData(const std::vector<float>& data) {
-  waveformData = data;
+  if (!requireMessageThread())
+    return;
+
+  const auto count = std::min(data.size(), static_cast<std::size_t>(kMaxDataPoints));
+  waveformData.assign(count, 0.0f);
+  for (std::size_t i = 0; i < count; ++i)
+    waveformData[i] = clampNormalized(data[i]);
   repaint();
 }
 
 void WaveformVisualizer::setStyle(const WaveformStyle& newStyle) {
+  if (!requireMessageThread())
+    return;
+
   style = newStyle;
+  sanitizeWaveformStyle(style);
   usesDefaultThemeStyle_ = false;
   repaint();
 }
 
 void WaveformVisualizer::useDefaultThemeStyle() {
+  if (!requireMessageThread())
+    return;
+
   usesDefaultThemeStyle_ = true;
   style = WaveformStyle::fromTheme(defaultTheme());
+  sanitizeWaveformStyle(style);
   repaint();
 }
 
@@ -49,10 +94,14 @@ void WaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
     return;
 
   style = WaveformStyle::fromTheme(defaultTheme());
+  sanitizeWaveformStyle(style);
   repaint();
 }
 
 void WaveformVisualizer::setBarColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   style.barColour = colour;
   usesDefaultThemeStyle_ = false;
   repaint();
@@ -62,7 +111,7 @@ void WaveformVisualizer::paint(juce::Graphics& g) {
   const auto bounds = getLocalBounds().toFloat();
   renderWaveform(g, bounds);
 
-  if (style.fadeEdges && style.fadeWidth > 0.0f) {
+  if (style.fadeEdges && style.fadeWidth > 0.0f && bounds.getWidth() > 0.0f) {
     applyEdgeFade(g, bounds);
   }
 }
@@ -110,7 +159,6 @@ void WaveformVisualizer::applyEdgeFade(juce::Graphics& g, const juce::Rectangle<
 
   const float fadePercent = std::min(0.2f, style.fadeWidth / bounds.getWidth());
 
-  // Left fade
   juce::ColourGradient leftGradient = juce::ColourGradient::horizontal(
       juce::Colours::white, bounds.getX(), juce::Colours::transparentWhite,
       bounds.getX() + bounds.getWidth() * fadePercent);
@@ -131,15 +179,20 @@ void WaveformVisualizer::applyEdgeFade(juce::Graphics& g, const juce::Rectangle<
 }
 
 void WaveformVisualizer::mouseDown(const juce::MouseEvent& e) {
-  if (onBarClick && !waveformData.empty()) {
-    const int barIndex = static_cast<int>(e.position.x / (style.barWidth + style.barGap));
-    const int dataIndex =
-        static_cast<int>((static_cast<float>(barIndex) / getBarCount()) * waveformData.size());
+  if (!onBarClick || waveformData.empty())
+    return;
 
-    if (dataIndex >= 0 && dataIndex < static_cast<int>(waveformData.size())) {
-      onBarClick(dataIndex, waveformData[dataIndex]);
-    }
-  }
+  const int barCount = getBarCount();
+  if (barCount <= 0)
+    return;
+
+  const float step = style.barWidth + style.barGap;
+  const int barIndex = juce::jlimit(0, barCount - 1, static_cast<int>(e.position.x / step));
+  const int dataIndex =
+      static_cast<int>((static_cast<float>(barIndex) / barCount) * waveformData.size());
+
+  if (dataIndex >= 0 && dataIndex < static_cast<int>(waveformData.size()))
+    onBarClick(dataIndex, waveformData[static_cast<std::size_t>(dataIndex)]);
 }
 
 void WaveformVisualizer::resized() {
@@ -148,7 +201,12 @@ void WaveformVisualizer::resized() {
 }
 
 int WaveformVisualizer::getBarCount() const {
-  return static_cast<int>(getWidth() / (style.barWidth + style.barGap));
+  const float step = style.barWidth + style.barGap;
+  if (!std::isfinite(step) || step <= 0.0f || getWidth() <= 0)
+    return 0;
+
+  const int count = static_cast<int>(static_cast<float>(getWidth()) / step);
+  return juce::jlimit(0, static_cast<int>(kMaxDataPoints), count);
 }
 
 //==============================================================================
@@ -163,29 +221,56 @@ ScrollingWaveformVisualizer::~ScrollingWaveformVisualizer() {
 }
 
 void ScrollingWaveformVisualizer::setSpeed(float pixelsPerSecond) {
-  scrollSpeed = pixelsPerSecond;
+  if (!requireMessageThread())
+    return;
+
+  scrollSpeed =
+      std::isfinite(pixelsPerSecond) ? juce::jlimit(0.0f, 10000.0f, pixelsPerSecond) : 0.0f;
 }
 
 void ScrollingWaveformVisualizer::setBarCount(int count) {
-  targetBarCount = count;
+  if (!requireMessageThread())
+    return;
+
+  targetBarCount = juce::jlimit(1, 8192, count);
 }
 
 void ScrollingWaveformVisualizer::start() {
+  if (!requireMessageThread())
+    return;
+
+  scrollRequested = true;
   lastTime = juce::Time::currentTimeMillis();
-  startTimerHz(60); // 60 FPS
+  updateTimerState();
 }
 
 void ScrollingWaveformVisualizer::stop() {
-  stopTimer();
+  if (!requireMessageThread())
+    return;
+
+  scrollRequested = false;
+  updateTimerState();
 }
 
 void ScrollingWaveformVisualizer::setDataSource(const std::vector<float>* source) {
-  dataSource = source;
+  if (!requireMessageThread())
+    return;
+
+  dataSource.clear();
+  if (source != nullptr) {
+    const auto count = std::min(source->size(), static_cast<std::size_t>(kMaxDataPoints));
+    dataSource.assign(count, 0.0f);
+    for (std::size_t i = 0; i < count; ++i)
+      dataSource[i] = clampNormalized((*source)[i]);
+  }
   dataIndex = 0;
 }
 
-void ScrollingWaveformVisualizer::setSeed(uint32_t seed) {
-  randomSeed = seed;
+void ScrollingWaveformVisualizer::setSeed(uint32_t newSeed) {
+  if (!requireMessageThread())
+    return;
+
+  randomSeed = newSeed;
 }
 
 void ScrollingWaveformVisualizer::paint(juce::Graphics& g) {
@@ -211,63 +296,76 @@ void ScrollingWaveformVisualizer::paint(juce::Graphics& g) {
   }
 
   // Apply edge fade
-  if (style.fadeEdges && style.fadeWidth > 0.0f) {
+  if (style.fadeEdges && style.fadeWidth > 0.0f && bounds.getWidth() > 0.0f) {
     applyEdgeFade(g, bounds);
   }
 }
 
 void ScrollingWaveformVisualizer::resized() {
-  // Initialize bars if empty
-  if (bars.empty()) {
-    const float step = style.barWidth + style.barGap;
-    float currentX = static_cast<float>(getWidth());
+  if (!bars.empty())
+    return;
 
-    Interpolation::SeedRandom rng(randomSeed);
+  const float step = style.barWidth + style.barGap;
+  if (!std::isfinite(step) || step <= 0.0f)
+    return;
 
-    while (currentX > -step) {
-      bars.push_back({currentX, 0.2f + rng.next() * 0.6f});
-      currentX -= step;
-    }
+  float currentX = static_cast<float>(getWidth());
+  Interpolation::SeedRandom rng(randomSeed);
+  const std::size_t maxBars = static_cast<std::size_t>(targetBarCount) * 2U;
+  std::size_t created = 0;
+
+  while (currentX > -step && created < maxBars) {
+    bars.push_back({currentX, 0.2f + rng.next() * 0.6f});
+    currentX -= step;
+    ++created;
   }
 }
 
 void ScrollingWaveformVisualizer::timerCallback() {
-  const int64_t currentTime = juce::Time::currentTimeMillis();
-  const float deltaTime = static_cast<float>(currentTime - lastTime) / 1000.0f;
-  lastTime = currentTime;
-
-  // Move all bars to the left
-  for (auto& bar : bars) {
-    bar.x -= scrollSpeed * deltaTime;
+  if (!isShowing() || !scrollRequested) {
+    updateTimerState();
+    return;
   }
 
-  // Remove bars that have scrolled off screen
+  const int64_t currentTime = juce::Time::currentTimeMillis();
+  const float elapsed = static_cast<float>(currentTime - lastTime) / 1000.0f;
+  const float deltaTime = std::isfinite(elapsed) ? juce::jlimit(0.0f, 0.25f, elapsed) : 0.0f;
+  lastTime = currentTime;
+
+  for (auto& bar : bars)
+    bar.x -= scrollSpeed * deltaTime;
+
   removeOldBars();
 
-  // Add new bars as needed
   while (bars.empty() || bars.back().x < getWidth()) {
     addNewBar();
-
-    // Safety limit
-    if (bars.size() > static_cast<size_t>(targetBarCount * 2))
+    if (bars.size() > static_cast<std::size_t>(targetBarCount * 2))
       break;
   }
 
   repaint();
 }
 
+void ScrollingWaveformVisualizer::visibilityChanged() {
+  updateTimerState();
+}
+
+void ScrollingWaveformVisualizer::updateTimerState() {
+  if (isShowing() && scrollRequested)
+    startTimerHz(60);
+  else
+    stopTimer();
+}
+
 void ScrollingWaveformVisualizer::addNewBar() {
   const float step = style.barWidth + style.barGap;
   const float lastX = bars.empty() ? static_cast<float>(getWidth()) : bars.back().x + step;
 
-  float newHeight;
-
-  if (dataSource != nullptr && !dataSource->empty()) {
-    // Use data source
-    newHeight = (*dataSource)[dataIndex % dataSource->size()];
-    dataIndex = (dataIndex + 1) % static_cast<int>(dataSource->size());
+  float newHeight = 0.3f;
+  if (!dataSource.empty()) {
+    newHeight = dataSource[static_cast<std::size_t>(dataIndex) % dataSource.size()];
+    dataIndex = (dataIndex + 1) % static_cast<int>(dataSource.size());
   } else {
-    // Generate pseudo-random value (from ScrollingWaveform in shmui)
     const float time = static_cast<float>(juce::Time::currentTimeMillis()) / 1000.0f;
     const float uniqueIndex = static_cast<float>(bars.size()) + time * 0.01f;
 
@@ -277,11 +375,10 @@ void ScrollingWaveformVisualizer::addNewBar() {
         Interpolation::seededRandom(static_cast<float>(randomSeed) * 10000.0f +
                                     uniqueIndex * 137.5f) *
         0.4f;
-
     newHeight = juce::jlimit(0.1f, 0.9f, 0.3f + wave1 + wave2 + randomComponent);
   }
 
-  bars.push_back({lastX, newHeight});
+  bars.push_back({lastX, clampNormalized(newHeight)});
 }
 
 void ScrollingWaveformVisualizer::removeOldBars() {
@@ -306,17 +403,27 @@ AudioScrubberVisualizer::AudioScrubberVisualizer() {
 }
 
 void AudioScrubberVisualizer::setCurrentTime(float time) {
+  if (!requireMessageThread())
+    return;
+
   if (!isDragging && duration > 0.0f) {
-    currentTime = time;
-    localProgress = time / duration;
+    currentTime = std::isfinite(time) ? juce::jlimit(0.0f, duration, time) : 0.0f;
+    localProgress = currentTime / duration;
     repaint();
   }
 }
 
 void AudioScrubberVisualizer::setDuration(float dur) {
-  duration = dur;
+  if (!requireMessageThread())
+    return;
+
+  duration = std::isfinite(dur) ? std::max(0.0f, dur) : 0.0f;
   if (duration > 0.0f) {
+    currentTime = juce::jlimit(0.0f, duration, currentTime);
     localProgress = currentTime / duration;
+  } else {
+    currentTime = 0.0f;
+    localProgress = 0.0f;
   }
   repaint();
 }
@@ -326,11 +433,17 @@ float AudioScrubberVisualizer::getProgress() const {
 }
 
 void AudioScrubberVisualizer::setShowHandle(bool show) {
+  if (!requireMessageThread())
+    return;
+
   showHandle = show;
   repaint();
 }
 
 void AudioScrubberVisualizer::setPlayheadColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   playheadColour = colour;
   repaint();
 }
@@ -391,14 +504,15 @@ void AudioScrubberVisualizer::mouseUp(const juce::MouseEvent&) {
 
 void AudioScrubberVisualizer::handleScrub(float x) {
   const auto bounds = getLocalBounds().toFloat();
-  const float clampedX = juce::jlimit(bounds.getX(), bounds.getRight(), x);
+  if (bounds.getWidth() <= 0.0f || duration <= 0.0f)
+    return;
 
-  localProgress = (clampedX - bounds.getX()) / bounds.getWidth();
+  const float clampedX = juce::jlimit(bounds.getX(), bounds.getRight(), x);
+  localProgress = juce::jlimit(0.0f, 1.0f, (clampedX - bounds.getX()) / bounds.getWidth());
   const float newTime = localProgress * duration;
 
-  if (onSeek) {
+  if (onSeek)
     onSeek(newTime);
-  }
 
   repaint();
 }
@@ -408,10 +522,13 @@ void AudioScrubberVisualizer::handleScrub(float x) {
 
 LiveWaveformVisualizer::LiveWaveformVisualizer() {
   style = WaveformStyle::fromTheme(defaultTheme());
-  // Live waveform defaults
   style.barWidth = 3.0f;
   style.barGap = 1.0f;
   style.barRadius = 1.0f;
+  sanitizeWaveformStyle(style);
+
+  history.resize(static_cast<std::size_t>(historySize), 0.0f);
+  historySnapshot.reserve(static_cast<std::size_t>(historySize));
 
   setOpaque(false);
   addDefaultThemeListener(this);
@@ -422,52 +539,79 @@ LiveWaveformVisualizer::~LiveWaveformVisualizer() {
   stopTimer();
 }
 
-void LiveWaveformVisualizer::setAudioAnalyzer(AudioAnalyzer* analyzer) {
-  audioAnalyzer = analyzer;
+void LiveWaveformVisualizer::setAudioAnalyzer(std::shared_ptr<AudioAnalyzer> analyzer) {
+  if (!requireMessageThread())
+    return;
+
+  audioAnalyzer = std::move(analyzer);
+  updateTimerState();
 }
 
 void LiveWaveformVisualizer::setActive(bool isActive) {
+  if (!requireMessageThread())
+    return;
+
   if (active != isActive) {
     active = isActive;
-
-    if (active) {
+    if (active)
       clearHistory();
-      startTimer(updateRate);
-    } else {
-      stopTimer();
-    }
   }
+
+  updateTimerState();
 }
 
 void LiveWaveformVisualizer::setHistorySize(int size) {
-  historySize = size;
+  if (!requireMessageThread())
+    return;
+
+  const int boundedSize = juce::jlimit(1, 8192, size);
+  if (historySize == boundedSize)
+    return;
+
+  historySize = boundedSize;
+  history.assign(static_cast<std::size_t>(historySize), 0.0f);
+  historyWriteIndex = 0;
+  historyCount = 0;
+  historySnapshot.clear();
+  historySnapshotDirty = true;
+  repaint();
 }
 
 void LiveWaveformVisualizer::setUpdateRate(int milliseconds) {
-  updateRate = milliseconds;
+  if (!requireMessageThread())
+    return;
 
-  if (isTimerRunning()) {
-    stopTimer();
-    startTimer(updateRate);
-  }
+  updateRate = juce::jlimit(1, 1000, milliseconds);
+  updateTimerState();
 }
 
 void LiveWaveformVisualizer::setSensitivity(float sens) {
-  sensitivity = sens;
+  if (!requireMessageThread() || !std::isfinite(sens))
+    return;
+
+  sensitivity = juce::jlimit(0.0f, 16.0f, sens);
 }
 
 void LiveWaveformVisualizer::setStyle(const WaveformStyle& newStyle) {
+  if (!requireMessageThread())
+    return;
+
   style = newStyle;
+  sanitizeWaveformStyle(style);
   usesDefaultThemeStyle_ = false;
   repaint();
 }
 
 void LiveWaveformVisualizer::useDefaultThemeStyle() {
+  if (!requireMessageThread())
+    return;
+
   usesDefaultThemeStyle_ = true;
   style = WaveformStyle::fromTheme(defaultTheme());
   style.barWidth = 3.0f;
   style.barGap = 1.0f;
   style.barRadius = 1.0f;
+  sanitizeWaveformStyle(style);
   repaint();
 }
 
@@ -479,56 +623,59 @@ void LiveWaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
 }
 
 void LiveWaveformVisualizer::clearHistory() {
-  history.clear();
+  if (!requireMessageThread())
+    return;
+
+  std::fill(history.begin(), history.end(), 0.0f);
+  historyWriteIndex = 0;
+  historyCount = 0;
+  historySnapshot.clear();
+  historySnapshotDirty = true;
   repaint();
 }
 
 void LiveWaveformVisualizer::paint(juce::Graphics& g) {
-  if (history.empty())
+  if (historyCount <= 0 || history.empty())
     return;
 
   const auto bounds = getLocalBounds().toFloat();
   const float step = style.barWidth + style.barGap;
+  if (!std::isfinite(step) || step <= 0.0f)
+    return;
+
   const int barCount = static_cast<int>(bounds.getWidth() / step);
   const float centerY = bounds.getCentreY();
   const float maxHeight = bounds.getHeight() * 0.7f;
+  for (int i = 0; i < barCount && i < historyCount; ++i) {
+    const std::size_t offset = static_cast<std::size_t>(i);
+    const std::size_t dataIndex =
+        (historyWriteIndex + history.size() - 1 - offset) % history.size();
+    const float value = clampNormalized(history[dataIndex]);
+    const float x = bounds.getRight() - (i + 1) * step;
+    const float barHeight = std::max(style.barHeight, value * maxHeight);
+    const float y = centerY - barHeight / 2.0f;
 
-  // Render from right to left (newest first)
-  for (int i = 0; i < barCount; ++i) {
-    const int dataIndex = static_cast<int>(history.size()) - 1 - i;
+    const float alpha = style.alphaMin + value * (style.alphaMax - style.alphaMin);
+    g.setColour(style.barColour.withAlpha(alpha));
 
-    if (dataIndex >= 0 && dataIndex < static_cast<int>(history.size())) {
-      const float value = history[dataIndex];
-      const float x = bounds.getRight() - (i + 1) * step;
-      const float barHeight = std::max(style.barHeight, value * maxHeight);
-      const float y = centerY - barHeight / 2.0f;
-
-      const float alpha = style.alphaMin + value * (style.alphaMax - style.alphaMin);
-      g.setColour(style.barColour.withAlpha(alpha));
-
-      if (style.barRadius > 0.0f) {
-        g.fillRoundedRectangle(x, y, style.barWidth, barHeight, style.barRadius);
-      } else {
-        g.fillRect(x, y, style.barWidth, barHeight);
-      }
-    }
+    if (style.barRadius > 0.0f)
+      g.fillRoundedRectangle(x, y, style.barWidth, barHeight, style.barRadius);
+    else
+      g.fillRect(x, y, style.barWidth, barHeight);
   }
 
-  // Apply edge fade
-  if (style.fadeEdges && style.fadeWidth > 0.0f) {
+  if (style.fadeEdges && style.fadeWidth > 0.0f && bounds.getWidth() > 0.0f) {
     const float fadePercent = std::min(0.2f, style.fadeWidth / bounds.getWidth());
 
     juce::ColourGradient leftGradient = juce::ColourGradient::horizontal(
         juce::Colours::white, bounds.getX(), juce::Colours::transparentWhite,
         bounds.getX() + bounds.getWidth() * fadePercent);
-
     juce::ColourGradient rightGradient = juce::ColourGradient::horizontal(
         juce::Colours::transparentWhite, bounds.getRight() - bounds.getWidth() * fadePercent,
         juce::Colours::white, bounds.getRight());
 
     g.setGradientFill(leftGradient);
     g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth() * fadePercent, bounds.getHeight());
-
     g.setGradientFill(rightGradient);
     g.fillRect(bounds.getRight() - bounds.getWidth() * fadePercent, bounds.getY(),
                bounds.getWidth() * fadePercent, bounds.getHeight());
@@ -540,22 +687,48 @@ void LiveWaveformVisualizer::resized() {
 }
 
 void LiveWaveformVisualizer::timerCallback() {
-  if (!audioAnalyzer || !active)
+  if (!isShowing() || !active || audioAnalyzer == nullptr) {
+    updateTimerState();
     return;
-
-  // Get current RMS level
-  const float level = audioAnalyzer->getRMSLevel() * sensitivity;
-  const float clampedLevel = juce::jlimit(0.05f, 1.0f, level);
-
-  // Add to history
-  history.push_back(clampedLevel);
-
-  // Trim history
-  while (static_cast<int>(history.size()) > historySize) {
-    history.erase(history.begin());
   }
 
+  const auto analyzer = audioAnalyzer;
+  const float level = analyzer != nullptr ? analyzer->getRMSLevel() * sensitivity : 0.0f;
+  const float clampedLevel = std::isfinite(level) ? juce::jlimit(0.05f, 1.0f, level) : 0.05f;
+
+  history[historyWriteIndex] = clampedLevel;
+  historyWriteIndex = (historyWriteIndex + 1) % history.size();
+  historyCount = std::min(historyCount + 1, historySize);
+  historySnapshotDirty = true;
   repaint();
+}
+
+const std::vector<float>& LiveWaveformVisualizer::getHistory() const {
+  if (!historySnapshotDirty)
+    return historySnapshot;
+
+  historySnapshot.resize(static_cast<std::size_t>(historyCount));
+  if (historyCount > 0 && !history.empty()) {
+    const std::size_t oldest = historyCount == historySize ? historyWriteIndex : 0;
+    for (int i = 0; i < historyCount; ++i) {
+      const std::size_t index = (oldest + static_cast<std::size_t>(i)) % history.size();
+      historySnapshot[static_cast<std::size_t>(i)] = history[index];
+    }
+  }
+
+  historySnapshotDirty = false;
+  return historySnapshot;
+}
+
+void LiveWaveformVisualizer::visibilityChanged() {
+  updateTimerState();
+}
+
+void LiveWaveformVisualizer::updateTimerState() {
+  if (isShowing() && active && audioAnalyzer != nullptr)
+    startTimer(updateRate);
+  else
+    stopTimer();
 }
 
 } // namespace shmui
