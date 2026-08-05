@@ -1251,6 +1251,16 @@ def cmd_release(args: argparse.Namespace) -> int:
     source_snapshot = selected_snapshot(manifest, args.from_snapshot, args.channel)
     if source_snapshot is None:
         raise SuiteError("release requires a source snapshot via --from-snapshot or a pinned channel")
+    candidate: dict[str, Any] | None = None
+    if action == "stable":
+        candidate_id = (
+            args.from_snapshot
+            or manifest.get("channels", {}).get("candidate", {}).get("snapshot_id")
+        )
+        candidate = manifest.get("snapshots", {}).get(candidate_id)
+        if not candidate or candidate.get("state") != "candidate":
+            raise SuiteError("stable promotion requires a candidate snapshot")
+        source_snapshot = candidate
     acceptance = acceptance_value(args)
     acceptance_blockers = acceptance_errors(manifest, action, acceptance)
     selected = set(args.repositories) if args.repositories else None
@@ -1334,10 +1344,7 @@ def cmd_release(args: argparse.Namespace) -> int:
         output(result, args.json)
         return 0
 
-    candidate_id = args.from_snapshot or manifest.get("channels", {}).get("candidate", {}).get("snapshot_id")
-    candidate = manifest.get("snapshots", {}).get(candidate_id)
-    if not candidate or candidate.get("state") != "candidate":
-        raise SuiteError("stable promotion requires a candidate snapshot")
+    assert candidate is not None
     candidate_acceptance_blockers = acceptance_errors(
         manifest,
         "candidate",

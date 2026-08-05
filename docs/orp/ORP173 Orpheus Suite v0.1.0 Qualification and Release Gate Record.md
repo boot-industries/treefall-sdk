@@ -31,15 +31,15 @@ was introduced.
 
 | Repository | Selected revision | Remote-main comparison | Qualification role |
 | --- | --- | --- | --- |
-| ShmUI | `a7b94b8be49875c7adc0ed5d4617150bb1d18cfa` | equals `origin/main`; PR [#21](https://github.com/chrislyons/shmui/pull/21) merged | canonical JUCE source |
-| Orpheus SDK | `582ab2e01723ccaa5e776845c5e774efecfc1c9d` | published package merge; reachable from current `origin/main` control merge `ba1db4f599a4d29b1d6938e5f6d288f409080d0a`; PR [#236](https://github.com/chrislyons/orpheus-sdk/pull/236) and control PR [#237](https://github.com/chrislyons/orpheus-sdk/pull/237) merged | package and suite system of record |
-| FourTrack | `c77ed582c3fb07a4ec13da6e1cf0a649cb4bd03a` | equals `origin/main`; route-state PR [#58](https://github.com/chrislyons/fourtrack/pull/58) and suite PR [#59](https://github.com/chrislyons/fourtrack/pull/59) merged | native recorder consumer |
+| ShmUI | `a7b94b8be49875c7adc0ed5d4617150bb1d18cfa` | equals `origin/main`; PR #21 merged [3] | canonical JUCE source |
+| Orpheus SDK | `582ab2e01723ccaa5e776845c5e774efecfc1c9d` | published package merge; reachable from current `origin/main` control merge `ba1db4f599a4d29b1d6938e5f6d288f409080d0a`; PR #236 and control PR #237 merged [1], [2] | package and suite system of record |
+| FourTrack | `c77ed582c3fb07a4ec13da6e1cf0a649cb4bd03a` | equals `origin/main`; route-state PR #58 and suite PR #59 merged [4], [5] | native recorder consumer |
 | FreqFinder | `20e80aa1d9cb8ce874525cdeb3d249b7d40b95fb` | equals `origin/main` | isolated source-override consumer |
-| Clip Composer | `9d820fd05e44e2c2f6ccd8e176a93664e5e5332d` | equals `origin/main`; PR [#35](https://github.com/chrislyons/clip-composer/pull/35) merged | SDK-pinned playback consumer |
+| Clip Composer | `9d820fd05e44e2c2f6ccd8e176a93664e5e5332d` | equals `origin/main`; PR #35 merged [6] | SDK-pinned playback consumer |
 
 The SDK control-record merge `ba1db4f599a4d29b1d6938e5f6d288f409080d0a`
 contains this manifest and documentation; it is coordination metadata and is
-not substituted for the selected package component revision `582ab2e...`.
+not substituted for the selected package component revision `582ab2e...` [2].
 
 The selected set is a published component set, not a release claim. Candidate
 preflight still requires the declared checks, immutable snapshot creation, and
@@ -171,3 +171,29 @@ Collect and record the six candidate acceptance pairs in
 Only after a candidate exists may the stable hardware and performance evidence
 be collected and `release stable` be attempted. Do not create a release tag or
 rewrite either immutable snapshot.
+
+## References
+
+[1] C. Lyons, “suite: refresh ShmUI import (ORP-SUITE-20260805-001),” GitHub
+pull request 236, Aug. 5, 2026. [Online]. Available:
+https://github.com/chrislyons/orpheus-sdk/pull/236
+
+[2] C. Lyons, “suite: record ORP170 synchronization checkpoint
+(ORP-SUITE-20260805-001),” GitHub pull request 237, Aug. 5, 2026. [Online].
+Available: https://github.com/chrislyons/orpheus-sdk/pull/237
+
+[3] C. Lyons, “suite: fix isolated sync paths (ORP-SUITE-20260805-001),”
+GitHub pull request 21, Aug. 5, 2026. [Online]. Available:
+https://github.com/chrislyons/shmui/pull/21
+
+[4] C. Lyons, “feat(ftr): add capability-driven CoreAudio route selection,”
+GitHub pull request 58, Aug. 5, 2026. [Online]. Available:
+https://github.com/chrislyons/fourtrack/pull/58
+
+[5] C. Lyons, “suite: repin generated provenance to SDK merge
+(ORP-SUITE-20260805-001),” GitHub pull request 59, Aug. 5, 2026. [Online].
+Available: https://github.com/chrislyons/fourtrack/pull/59
+
+[6] C. Lyons, “suite: repin SDK merge (ORP-SUITE-20260805-001),” GitHub pull
+request 35, Aug. 5, 2026. [Online]. Available:
+https://github.com/chrislyons/clip-composer/pull/35

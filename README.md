@@ -16,14 +16,14 @@ value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 
 ```bash
 # Clone repository
-git clone https://github.com/orpheus-sdk/orpheus-sdk.git
+git clone https://github.com/chrislyons/orpheus-sdk.git
 cd orpheus-sdk
 
 # Build SDK (Debug with AddressSanitizer)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j8
 
-# Run tests (270+ unit tests, core suite ~2 seconds)
+# Run the configured SDK contracts
 ctest --test-dir build --output-on-failure
 ```
 
@@ -36,8 +36,9 @@ ctest --test-dir build --output-on-failure
 **Next Steps:**
 
 - **Review current records:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
+- **Review suite qualification:** [`ORP173`](docs/orp/ORP173%20Orpheus%20Suite%20v0.1.0%20Qualification%20and%20Release%20Gate%20Record.md)
+  records the observed development snapshot and pending candidate/stable gates.
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
-- **Review suite application checkpoint:** See [`ORP166`](docs/orp/ORP166%20Orpheus%20Suite%20Application%20Launch%20and%20Icon%20Checkpoint.md) for synchronized repository state, application launch paths, and icon verification.
 
 
 ## Lightweight Integration Targets
