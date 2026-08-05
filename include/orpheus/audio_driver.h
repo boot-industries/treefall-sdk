@@ -82,6 +82,10 @@ struct ActiveAudioRoute {
 };
 
 /// Playback route lifecycle as observed by a backend.
+///
+/// `InputUnavailable` and `OutputUnavailable` identify a failed physical
+/// endpoint when the backend can distinguish a direction. Terminal states
+/// require an explicit initialize() before the route may render again.
 enum class AudioRouteState : uint8_t {
   Inactive,
   Starting,
@@ -112,6 +116,9 @@ struct AudioLatencyBreakdown {
 
 /// Strict output-only route request. Empty output_device_id follows the
 /// backend's current default output; non-empty IDs are never defaulted.
+///
+/// The driver creates no input route. Output channels identify distinct
+/// physical output indices and must be valid for the selected endpoint.
 struct AudioOutputRouteRequest {
   std::string output_device_id;
   std::vector<uint16_t> output_channel_map;
@@ -303,6 +310,9 @@ public:
   }
 
   /// Get selected/active route state on the control thread.
+  ///
+  /// A terminal state describes the last observed route failure. Hosts must
+  /// explicitly reinitialize rather than assuming automatic endpoint fallback.
   virtual AudioIoRouteState getAudioIoRouteState() const {
     return {};
   }

@@ -37,8 +37,6 @@ ctest --test-dir build --output-on-failure
 
 - **Review current records:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
-- **Review reliability completion:** See [`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md)
-- **Plan child-app adoption:** See [`docs/orp/ORP142 Downstream Consumer Adoption Notes.md`](docs/orp/ORP142%20Downstream%20Consumer%20Adoption%20Notes.md)
 - **Review suite application checkpoint:** See [`ORP166`](docs/orp/ORP166%20Orpheus%20Suite%20Application%20Launch%20and%20Icon%20Checkpoint.md) for synchronized repository state, application launch paths, and icon verification.
 
 
@@ -58,45 +56,11 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
   `trigger_voice.h`, the allocation-free one-shot voice utility used by
   host-owned sequencers and generated tracks.
 
-## Reliability and Adoption Completion
+## CoreAudio Route Reliability
 
-ORP141 is implemented on `main`. The durable delivery and child-team handoff is
-[`ORP143`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md).
-The final implementation verification passed 143/143 configured CTest contracts,
-the installed `find_package` consumer, and the strict in-repository realtime
-audit.
-
-New workflow contracts include stable-ID session transactions and bounded
-message-thread telemetry:
-
-```cpp
-orpheus::core::SessionGraph graph;
-auto transaction = graph.begin_transaction();
-auto trackId = graph.create_track("Program");
-auto clipId = graph.create_clip(
-    trackId,
-    "Intro",
-    orpheus::TimeRange::fromStartLength(
-        orpheus::TimePoint::fromSamples(0), 48000));
-auto change = transaction.commit();
-
-auto transport = orpheus::createTransportController(&graph, 48000);
-auto* telemetry = transport->getRealtimeTelemetry();
-telemetry->setDecimationBlocks(8);
-
-orpheus::RealtimeTelemetrySnapshot snapshot;
-while (telemetry->tryRead(snapshot)) {
-  // Message-thread work only: presentation, history, or app-owned analysis.
-}
-```
-
-The SDK telemetry bridge is fixed-capacity and presentation-neutral. FFTs,
-histories, smoothing, analyzer selection, musical policy, and UI view models
-remain application state.
-
-Audio I/O selection is direction-specific. CoreAudio identifiers are persistent
-HAL DeviceUID values; an empty field alone requests that direction's current
-system default:
+CoreAudio I/O selection is direction-specific. Input and output identifiers are
+persistent HAL DeviceUID values; an empty identifier selects only that
+direction's current system default.
 
 ```cpp
 orpheus::AudioDriverConfig audio;
@@ -109,32 +73,20 @@ auto driver = orpheus::createCoreAudioDriver();
 if (driver->initialize(audio) == orpheus::SessionGraphError::OK) {
   const auto io = driver->getTelemetry();
   // io.input_render_failures distinguishes capture failure from real silence.
-  // A runtime nominal-rate change is never rendered silently. CoreAudio first
-  // reasserts audio.sample_rate; a terminal outcome has stopped the driver and
-  // requires an explicit initialize() with the host's chosen configuration.
-  if (io.runtime_outcome ==
-      orpheus::AudioDriverRuntimeOutcome::SampleRateReinitializationRequired) {
-    // Reconfigure the host deliberately; endpoint IDs remain unchanged.
-  }
+  // Terminal route outcomes stop the driver and require explicit reinitialization.
 }
 ```
 
 Distinct CoreAudio endpoints use a driver-owned private aggregate. Unknown or
 direction-incompatible UIDs fail with `InvalidParameter`; they never fall back
-to another device. `getTelemetry()` is available through `IAudioDriver`, so
-factory consumers do not downcast to platform implementations.
+to another endpoint. During an active route, listeners close the render gate
+and a control worker verifies the physical devices and format. A refused rate
+restore, endpoint loss, or format change stops rendering; the driver never
+silently changes an endpoint or rate.
 
-During an active CoreAudio route, the driver listens to the aggregate wrapper
-and each physical input/output endpoint's nominal sample rate. A notification
-closes the render gate, then a control worker reasserts the configured rate. If
-the device refuses or cannot be queried, rendering stops and
-`runtime_outcome` reports the exact terminal condition; the driver never
-silently substitutes another endpoint or rate.
-
-Child-app teams should use
-[`ORP143 §5`](docs/orp/ORP143%20Reliability%20and%20Adoption%20Sprint%20Completion%20and%20Child-App%20Handoff.md#5-child-app-handoff-matrix)
-for Clip Composer, FreqFinder, FourTrack, and ShmUI adoption checklists. No child
-application was migrated by the SDK sprint.
+See the [contract index](docs/orp/INDEX.md) and
+[`ORP171`](docs/orp/ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md)
+for the current CoreAudio route-state delivery record.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
@@ -147,7 +99,7 @@ artifact remain required; see the [support posture in `AGENTS.md`](AGENTS.md#sou
 - [Feature Highlights](#feature-highlights)
 - [Core Capabilities](#core-capabilities)
 - [Repository Layout](#repository-layout)
-- [Reliability and Adoption Completion](#reliability-and-adoption-completion)
+- [CoreAudio Route Reliability](#coreaudio-route-reliability)
 - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
   - [C++ Toolchain](#c-toolchain)
@@ -243,6 +195,46 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
 **Current contracts:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md); release notes remain in [`CHANGELOG.md`](CHANGELOG.md).
+
+### Directional endpoint discovery and playback routing
+
+`IAudioDriverManager::enumerateEndpointCapabilities()` returns persistent
+backend device IDs, independent input/output channel descriptors, current
+format facts, and the directional system-default flags. Use those IDs for
+route selection; display names are not stable identifiers.
+
+```cpp
+auto manager = createAudioDriverManager();
+for (const auto& endpoint : manager->enumerateEndpointCapabilities()) {
+  if (endpoint.supports_output && endpoint.is_default_output) {
+    auto driver = createCoreAudioDriver();
+    AudioOutputRouteRequest route{
+        .output_device_id = endpoint.device_id,
+        .output_channel_map = {0, 1},
+        .requested_sample_rate = 48000,
+        .requested_buffer_size = 512,
+    };
+    if (driver->initializeAudioOutput(route) == SessionGraphError::OK) {
+      // Start the playback-only driver with the application callback.
+    }
+  }
+}
+```
+
+An empty `AudioOutputRouteRequest::output_device_id` follows the current
+default output. A non-empty ID is strict: unsupported, unavailable, or
+directionally incompatible IDs fail initialization rather than falling back.
+`getAudioIoRouteState()` exposes the selected IDs, active physical route,
+channel maps, actual format, latency terms, and a detail string. Poll it on a
+control thread after an I/O failure; `InputUnavailable` and
+`OutputUnavailable` identify a distinct failed duplex endpoint.
+
+`setEndpointChangeCallback()` is notification-only. On CoreAudio it runs on an
+internal control worker, never the realtime audio callback or the CoreAudio
+property-listener thread. The callback may replace or unregister itself, or
+destroy the manager. It must arrange application-thread re-enumeration and
+must not perform realtime work.
+
 
 ---
 
@@ -340,9 +332,8 @@ The Orpheus SDK provides deterministic session/transport control for professiona
   meters, transport widgets) consumed by downstream JUCE apps; not part of the
   core SDK libraries.
 - The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
-  `@orpheus/shmui`) are **archived** — see
-  [`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
-  for the rationale (C++ SDK focus).
+  `@orpheus/shmui`) are **archived** as part of the C++ SDK focus; they are not
+  part of this repository.
 
 ## Supported Platforms
 
@@ -398,9 +389,8 @@ configuration:
   cmake --build build --target orpheus_demo_host_app
   ```
 
-- **Host integrations** – toggle adapters via CMake cache entries. See
-  [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md)
-  for the full list of flags and host requirements.
+- **Host integrations** – toggle adapters with the documented CMake cache
+  entries in the top-level `CMakeLists.txt`.
 
 ### Running Tests
 
@@ -596,8 +586,7 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 
 ### Reference Documentation
 
-- [`docs/orp/_process/archive/ADAPTERS.md`](docs/orp/_process/archive/ADAPTERS.md) – adapter catalog, build flags, and
-  host-specific notes.
+- [`CMakeLists.txt`](CMakeLists.txt) – adapter and optional-target build flags.
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.

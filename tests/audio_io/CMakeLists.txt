@@ -284,6 +284,7 @@ endif()
 # Audio Driver Manager tests
 add_executable(driver_manager_test
     driver_manager_test.cpp
+    coreaudio_endpoint_monitor_test.cpp
     coreaudio_endpoint_catalog_test.cpp
 )
 

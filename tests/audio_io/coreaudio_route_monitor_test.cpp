@@ -179,7 +179,8 @@ public:
     api.setFormat(stream.stream_id, kAudioStreamPropertyPhysicalFormat,
                   stream.expected_physical_format);
     monitor = std::make_unique<CoreAudioRouteMonitor>(
-        api, 48000, 512, std::vector<AudioDeviceID>{1}, std::vector<CoreAudioRouteStream>{stream});
+        api, 48000, 512, std::vector<CoreAudioRouteDevice>{{1, false, false}},
+        std::vector<CoreAudioRouteStream>{stream});
     initialization_ok = monitor->start();
     if (initialization_ok) {
       monitor->requestCheck();
@@ -273,6 +274,42 @@ TEST(CoreAudioRouteMonitorTest, PropertyReadFailureReportsBackendFailure) {
 
   EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::BackendFailure);
   EXPECT_FALSE(fixture.monitor->permitsRendering());
+}
+TEST(CoreAudioRouteMonitorTest, ReportsUnavailableDirectionForDistinctDuplexEndpoints) {
+  FakeCoreAudioRoutePropertyApi api;
+  for (const AudioDeviceID device_id : {AudioDeviceID{1}, AudioDeviceID{2}, AudioDeviceID{3}}) {
+    api.setAlive(device_id, 1);
+    api.setRate(device_id, 48000.0);
+    api.setBuffer(device_id, 512);
+  }
+
+  {
+    CoreAudioRouteMonitor monitor(
+        api, 48000, 512,
+        std::vector<CoreAudioRouteDevice>{{1, false, false}, {2, true, false}, {3, false, true}},
+        {});
+    ASSERT_TRUE(monitor.start());
+    monitor.requestCheck();
+    ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+    api.setAlive(2, 0);
+    api.notify(2, kAudioDevicePropertyDeviceIsAlive);
+    EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::InputUnavailable);
+  }
+
+  api.setAlive(2, 1);
+  {
+    CoreAudioRouteMonitor monitor(
+        api, 48000, 512,
+        std::vector<CoreAudioRouteDevice>{{1, false, false}, {2, true, false}, {3, false, true}},
+        {});
+    ASSERT_TRUE(monitor.start());
+    monitor.requestCheck();
+    ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+    api.setAlive(1, 0);
+    api.setAlive(3, 0);
+    api.notify(3, kAudioDevicePropertyDeviceIsAlive);
+    EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::OutputUnavailable);
+  }
 }
 
 } // namespace

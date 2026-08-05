@@ -169,6 +169,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   stream_timeline_initialized_ = false;
   runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
   route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
+  unavailable_route_state_.store(AudioRouteState::Failed, std::memory_order_release);
 
   device_id_ = resolveInputOutputDevice();
   if (device_id_ == 0 || !resolveChannelMaps(config)) {
@@ -241,8 +242,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   return SessionGraphError::OK;
 }
 
-SessionGraphError CoreAudioDriver::initializeAudioOutput(
-    const AudioOutputRouteRequest& request) {
+SessionGraphError CoreAudioDriver::initializeAudioOutput(const AudioOutputRouteRequest& request) {
   if (request.output_channel_map.empty() || request.requested_sample_rate == 0 ||
       request.requested_buffer_size == 0 || request.requested_buffer_size > 0xffffu ||
       request.output_channel_map.size() > 0xffffu) {
@@ -361,19 +361,26 @@ ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
   return active_route_;
 }
 
-
 AudioIoRouteState CoreAudioDriver::getAudioIoRouteState() const {
   std::lock_guard<std::mutex> lock(mutex_);
   AudioIoRouteState state;
-  const AudioRouteRuntimeOutcome route_outcome =
-      route_outcome_.load(std::memory_order_acquire);
+  const AudioRouteRuntimeOutcome route_outcome = route_outcome_.load(std::memory_order_acquire);
   if (is_running_.load(std::memory_order_acquire) &&
       route_outcome == AudioRouteRuntimeOutcome::Healthy) {
     state.state = AudioRouteState::Running;
   } else if (route_outcome == AudioRouteRuntimeOutcome::RouteUnavailable) {
-    state.state = config_.num_inputs > 0 ? AudioRouteState::InputUnavailable
-                                         : AudioRouteState::OutputUnavailable;
-    state.detail = "The selected CoreAudio endpoint is unavailable.";
+    state.state = unavailable_route_state_.load(std::memory_order_acquire);
+    switch (state.state) {
+    case AudioRouteState::InputUnavailable:
+      state.detail = "The selected CoreAudio input endpoint is unavailable.";
+      break;
+    case AudioRouteState::OutputUnavailable:
+      state.detail = "The selected CoreAudio output endpoint is unavailable.";
+      break;
+    default:
+      state.detail = "The selected CoreAudio route is unavailable.";
+      break;
+    }
   } else if (route_outcome == AudioRouteRuntimeOutcome::FormatChanged ||
              route_outcome == AudioRouteRuntimeOutcome::ReinitializationRequired) {
     state.state = AudioRouteState::ReconfigurationRequired;
@@ -837,12 +844,12 @@ CoreAudioDriver::getStreamFormat(AudioStreamID stream_id,
 }
 
 bool CoreAudioDriver::createRouteMonitor() {
-  std::vector<AudioDeviceID> device_ids;
-  device_ids.reserve(3);
-  device_ids.push_back(device_id_);
-  device_ids.push_back(output_device_id_);
+  std::vector<CoreAudioRouteDevice> devices;
+  devices.reserve(3);
+  devices.push_back({device_id_, false, false});
+  devices.push_back({output_device_id_, false, true});
   if (config_.num_inputs > 0) {
-    device_ids.push_back(input_device_id_);
+    devices.push_back({input_device_id_, true, false});
   }
 
   std::vector<CoreAudioRouteStream> streams;
@@ -873,7 +880,7 @@ bool CoreAudioDriver::createRouteMonitor() {
 
   try {
     route_monitor_ = std::make_unique<CoreAudioRouteMonitor>(
-        route_property_api_, config_.sample_rate, config_.buffer_size, std::move(device_ids),
+        route_property_api_, config_.sample_rate, config_.buffer_size, std::move(devices),
         std::move(streams));
   } catch (...) {
     route_monitor_.reset();
@@ -967,7 +974,18 @@ void CoreAudioDriver::publishRoutePollResult(CoreAudioRoutePollResult result) {
                            std::memory_order_release);
     route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
     break;
+  case CoreAudioRoutePollResult::InputUnavailable:
+    unavailable_route_state_.store(AudioRouteState::InputUnavailable, std::memory_order_release);
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+    break;
+  case CoreAudioRoutePollResult::OutputUnavailable:
+    unavailable_route_state_.store(AudioRouteState::OutputUnavailable, std::memory_order_release);
+    runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+    route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+    break;
   case CoreAudioRoutePollResult::RouteUnavailable:
+    unavailable_route_state_.store(AudioRouteState::Failed, std::memory_order_release);
     runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
     route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
     break;
@@ -1099,9 +1117,8 @@ AudioLatencyBreakdown CoreAudioDriver::queryDetailedLatencyBreakdown() const {
     if (AudioUnitGetProperty(audio_unit_, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0,
                              &seconds, &size) == noErr &&
         size == sizeof(seconds) && seconds >= 0.0) {
-      const uint32_t rate = active_route_.actual_sample_rate != 0
-                                ? active_route_.actual_sample_rate
-                                : config_.sample_rate;
+      const uint32_t rate = active_route_.actual_sample_rate != 0 ? active_route_.actual_sample_rate
+                                                                  : config_.sample_rate;
       const uint64_t frames = static_cast<uint64_t>(std::llround(seconds * rate));
       latency.aggregate_or_audio_unit_frames =
           static_cast<uint32_t>(std::min<uint64_t>(frames, std::numeric_limits<uint32_t>::max()));
