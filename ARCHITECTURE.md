@@ -69,8 +69,7 @@ graph TD
 - **Shared app packages** (`packages/`) – Active C++/JUCE building blocks for
   downstream applications: `occ-app-platform` (session recovery, preferences,
   health telemetry) and `shmui-juce` (JUCE UI components). Not part of the
-  core SDK libraries. (The former TypeScript driver layer is archived — see
-  `docs/orp/_process/archive/DECISION_PACKAGES.md`.)
+  core SDK libraries. The former TypeScript driver layer is archived.
 - **In-tree apps** (`apps/`) – `wave-finder` (app-platform smoke-test shell)
   and `juce-demo-host` (JUCE demo host). Production applications — Clip
   Composer, FourTrack, FreqFinder — live in their own repositories and consume
@@ -202,9 +201,8 @@ of the core SDK libraries — the core stays UI-free.
 The former JavaScript/TypeScript driver packages (`@orpheus/engine-service`,
 `@orpheus/engine-native`, `@orpheus/engine-wasm`, `@orpheus/client`) and the
 JSON contract system built for them (ORP068 Phases 1-2) were **archived** when
-the project refocused on the C++ SDK. They are not in the tree. See
-[`docs/orp/_process/archive/DECISION_PACKAGES.md`](docs/orp/_process/archive/DECISION_PACKAGES.md)
-for the rationale and `docs/orp/` history (ORP068) for the original design.
+the project refocused on the C++ SDK. They are not in the tree; the current
+documentation index records the remaining SDK contracts.
 
 ---
 
@@ -754,10 +752,10 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 - [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
 - [docs/orp/INDEX.md](docs/orp/INDEX.md) – current and historical documentation index
 
-### Implementation Plans
+### Current Contracts
 
-- [ORP132 – Master Sprint Index](docs/orp/ORP132%20SDK%20Hardening%20and%20Platform%20Roadmap%20-%20Master%20Sprint%20Index.md) – Current hardening program (ORP133–ORP136)
-- [ORP068 - SDK Integration Plan v2.0](<docs/orp/ORP068%20Implementation%20Plan%20(v2.0).md>) – Historical driver architecture (Phases 0-4)
+- [ORP171 – CoreAudio Route-State Contract Handoff](docs/orp/ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md) – directional CoreAudio route contract and downstream handoff.
+- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current SDK contract records.
 
 ### Application Documentation
 
@@ -773,4 +771,4 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 **Document Status:** Authoritative
 **Maintained By:** SDK Core Team
 **Next Review:** After v1.0.0 stable release
-**Last Updated:** November 9, 2025
+**Last Updated:** August 4, 2026

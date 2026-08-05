@@ -98,6 +98,7 @@ private:
   std::atomic<uint64_t> input_render_failures_{0};
   std::atomic<AudioDriverRuntimeOutcome> runtime_outcome_{AudioDriverRuntimeOutcome::Healthy};
   std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
+  std::atomic<AudioRouteState> unavailable_route_state_{AudioRouteState::Failed};
 
   CoreAudioSampleRatePropertyApi route_property_api_;
   std::unique_ptr<CoreAudioRouteMonitor> route_monitor_;

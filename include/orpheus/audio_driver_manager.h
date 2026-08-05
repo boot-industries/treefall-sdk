@@ -36,6 +36,10 @@ struct AudioChannelDescriptor {
 };
 
 /// Direction-specific endpoint capability facts.
+///
+/// `device_id` is a persistent backend identifier suitable for route
+/// selection; `display_name` is presentation-only. The manager may report a
+/// device that supports either or both directions.
 struct AudioEndpointCapabilities {
   std::string device_id;
   std::string display_name;
@@ -164,6 +168,10 @@ public:
 
   /// Notify the host that endpoint discovery may have changed. The callback is
   /// notification-only; hosts re-enumerate on their control/message thread.
+  ///
+  /// On CoreAudio the callback executes on an internal control worker, never
+  /// the CoreAudio property-listener thread or an audio callback. It may
+  /// replace or unregister itself, or destroy the manager.
   virtual void setEndpointChangeCallback(std::function<void()> callback) {
     (void)callback;
   }
