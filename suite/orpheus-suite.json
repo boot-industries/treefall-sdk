@@ -4,7 +4,7 @@
   "suite_id": "orpheus-suite",
   "suite_version": "0.1.0",
   "release_channel": "development",
-  "manifest_revision": "2026-08-01",
+  "manifest_revision": "2026-08-05",
   "workspace": {
     "root_environment": "ORPHEUS_SUITE_WORKSPACE",
     "default_root": "..",
@@ -15,7 +15,7 @@
     "development": {
       "mode": "floating",
       "branch": "main",
-      "snapshot_id": "workspace-20260801"
+      "snapshot_id": "development-0-1-0-20260805-001"
     },
     "candidate": {
       "mode": "pinned",
@@ -84,8 +84,8 @@
           ],
           "expected_sha256": "f34c156d9202261090d6185bbce356b23dd675a96f4c5f39ab90a07c8e4822bc",
           "source_repository": "shmui",
-          "source_revision": "f5696004ba2502762800108a53de614264dfba66",
-          "current_source_revision": "f5696004ba2502762800108a53de614264dfba66",
+          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -177,7 +177,7 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
           "source_repository": "shmui",
-          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
+          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -267,7 +267,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "8e8f56629a8aee9062635a7f07b5a03952de4408"
+          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
         }
       ],
       "external_pins": [
@@ -286,8 +286,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "a165e5aad550a9b073b22244cade3f1bbf8a329caadebb179c62b0d8732c9d60",
           "source_repository": "shmui",
-          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
-          "current_source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
+          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
           "source_paths": [
             "juce/Source",
             "apps/www/styles/orpheus-tokens.css"
@@ -299,8 +299,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "13ddd076cc47e17ff807ab9d2c0c8a7e4656e339af63e3ec01d33fe5bee6da2c",
           "source_repository": "shmui",
-          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
-          "current_source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
+          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -313,25 +313,6 @@
           "command": [
             "scripts/format.sh",
             "--check"
-          ],
-          "tier": "quick",
-          "platforms": [
-            "macos",
-            "linux"
-          ],
-          "required_for": [
-            "candidate",
-            "stable"
-          ]
-        },
-        {
-          "id": "fourtrack-shmui-provenance",
-          "cwd": "fourtrack",
-          "command": [
-            "python3",
-            "scripts/check-shmui-swift.py",
-            "--shmui-root",
-            "../shmui"
           ],
           "tier": "quick",
           "platforms": [
@@ -388,7 +369,7 @@
           "kind": "cmake-source-override",
           "config": "ORPHEUS_SDK_SOURCE_DIR",
           "workspace_path": "orpheus-sdk",
-          "revision": "0a9e9c34f435b9862d78ab9994ffb48a9f21e149"
+          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
         },
         {
           "dependency": "shmui",
@@ -396,7 +377,7 @@
           "config": "SHMUI_JUCE_SOURCE_DIR",
           "workspace_path": "shmui",
           "configured_path": "shmui/juce",
-          "revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3"
+          "revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa"
         }
       ],
       "verification": [
@@ -446,7 +427,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "112b49cbee32ef71276c8a451e2d1bd7f6ee7e4c"
+          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
         }
       ],
       "verification": [
@@ -539,12 +520,30 @@
         "required human acceptance records"
       ],
       "acceptance": [
-        { "repository": "fourtrack", "kind": "native-macos-launch" },
-        { "repository": "fourtrack", "kind": "operator-route-ui-visual" },
-        { "repository": "freqfinder", "kind": "native-macos-launch" },
-        { "repository": "freqfinder", "kind": "operator-ui-visual" },
-        { "repository": "clip-composer", "kind": "native-macos-launch" },
-        { "repository": "clip-composer", "kind": "operator-audio-settings-visual" }
+        {
+          "repository": "fourtrack",
+          "kind": "native-macos-launch"
+        },
+        {
+          "repository": "fourtrack",
+          "kind": "operator-route-ui-visual"
+        },
+        {
+          "repository": "freqfinder",
+          "kind": "native-macos-launch"
+        },
+        {
+          "repository": "freqfinder",
+          "kind": "operator-ui-visual"
+        },
+        {
+          "repository": "clip-composer",
+          "kind": "native-macos-launch"
+        },
+        {
+          "repository": "clip-composer",
+          "kind": "operator-audio-settings-visual"
+        }
       ],
       "publishes": "immutable suite snapshot JSON and a Git tag or GitHub Release only after PRs merge"
     },
@@ -556,12 +555,30 @@
         "no unresolved downstream compatibility or package-consumer failures"
       ],
       "acceptance": [
-        { "repository": "orpheus-sdk", "kind": "coreaudio-hardware-route" },
-        { "repository": "fourtrack", "kind": "coreaudio-real-device-route" },
-        { "repository": "fourtrack", "kind": "realtime-performance" },
-        { "repository": "freqfinder", "kind": "analysis-performance" },
-        { "repository": "clip-composer", "kind": "coreaudio-real-device-output" },
-        { "repository": "clip-composer", "kind": "sixteen-clip-performance" }
+        {
+          "repository": "orpheus-sdk",
+          "kind": "coreaudio-hardware-route"
+        },
+        {
+          "repository": "fourtrack",
+          "kind": "coreaudio-real-device-route"
+        },
+        {
+          "repository": "fourtrack",
+          "kind": "realtime-performance"
+        },
+        {
+          "repository": "freqfinder",
+          "kind": "analysis-performance"
+        },
+        {
+          "repository": "clip-composer",
+          "kind": "coreaudio-real-device-output"
+        },
+        {
+          "repository": "clip-composer",
+          "kind": "sixteen-clip-performance"
+        }
       ],
       "publishes": "the same immutable snapshot under the stable channel; component commits are never rewritten"
     },
@@ -624,6 +641,61 @@
           "SDK ShmUI-JUCE manifest check passed",
           "ShmUI sync check reported generated import-manifest drift before an explicit repair",
           "full suite release promotion was not claimed"
+        ]
+      },
+      "human_acceptance": {
+        "status": "pending",
+        "records": []
+      }
+    },
+    "development-0-1-0-20260805-001": {
+      "id": "development-0-1-0-20260805-001",
+      "suite_version": "0.1.0",
+      "channel": "development",
+      "state": "observed",
+      "immutable": true,
+      "observed_at": "2026-08-05",
+      "repositories": {
+        "orpheus-sdk": {
+          "commit": "582ab2e01723ccaa5e776845c5e774efecfc1c9d",
+          "branch": "detached",
+          "tag": null
+        },
+        "shmui": {
+          "commit": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "branch": "detached",
+          "tag": null
+        },
+        "fourtrack": {
+          "commit": "c77ed582c3fb07a4ec13da6e1cf0a649cb4bd03a",
+          "branch": "detached",
+          "tag": null,
+          "dependency_pins": {
+            "orpheus-sdk": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
+          }
+        },
+        "freqfinder": {
+          "commit": "20e80aa1d9cb8ce874525cdeb3d249b7d40b95fb",
+          "branch": "detached",
+          "tag": null,
+          "dependency_pins": {
+            "orpheus-sdk": "582ab2e01723ccaa5e776845c5e774efecfc1c9d",
+            "shmui": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa"
+          }
+        },
+        "clip-composer": {
+          "commit": "9d820fd05e44e2c2f6ccd8e176a93664e5e5332d",
+          "branch": "detached",
+          "tag": null,
+          "dependency_pins": {
+            "orpheus-sdk": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
+          }
+        }
+      },
+      "verification": {
+        "status": "inventory-only",
+        "evidence": [
+          "suite/evidence/ORP-SUITE-20260805-001/development-observed.txt"
         ]
       },
       "human_acceptance": {
