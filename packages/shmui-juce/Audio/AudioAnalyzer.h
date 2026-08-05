@@ -244,6 +244,7 @@ private:
   void updateSmoothedData();
   bool claimWritableSlot(std::size_t& index) noexcept;
   bool claimReadableSlot(std::size_t& index) const noexcept;
+  bool captureLatestFrame() const noexcept;
   void releaseReadableSlot(std::size_t index) const noexcept;
 
   static float sanitizeNormalized(float value) noexcept;
@@ -263,10 +264,12 @@ private:
   // Audio-thread smoothing accumulator. This is never shared with the UI.
   std::array<float, kPublicationFrameSize> smoothingAccumulator{};
 
-  // Published FFT frames. The producer owns Writing; the UI owns Reading.
+  // Published FFT frames. The producer owns Writing; the UI retains its latest
+  // complete frame after consuming a Ready slot.
   mutable std::array<PublicationSlot, kPublicationSlotCount> publicationSlots{};
   std::size_t nextWriteSlot = 0;
   mutable std::size_t nextReadSlot = 0;
+  mutable std::array<float, kPublicationFrameSize> latestFrequencyFrame{};
 
   // Smoothed output (UI thread reads)
   std::atomic<float> smoothedRMS{0.0f};

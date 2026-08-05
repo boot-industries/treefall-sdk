@@ -242,25 +242,56 @@ class SuiteToolTest(unittest.TestCase):
         self.assertEqual([record["id"] for record in candidate], ["candidate"])
         self.assertEqual([record["id"] for record in stable], ["stable"])
 
-    def test_release_stable_changes_only_channel_pointer(self):
+    def test_release_stable_uses_candidate_snapshot_for_workspace_checks(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workspace = root / "workspace"
             workspace.mkdir()
-            (workspace / ".orpheus-suite-workspace").write_text("ORP-SUITE-20260805-001\n", encoding="utf-8")
+            (workspace / ".orpheus-suite-workspace").write_text(
+                "ORP-SUITE-20260805-001\n", encoding="utf-8"
+            )
             repo, revision, remote = self.make_repo(workspace)
+            (repo / "artifact.txt").write_text("development\n", encoding="utf-8")
+            self.git(repo, "add", "artifact.txt")
+            self.git(repo, "commit", "-m", "test: advance development fixture")
+            development_revision = self.git(repo, "rev-parse", "HEAD")
+            self.git(repo, "push", "origin", "main")
+            self.git(repo, "checkout", revision)
+
             manifest = self.manifest(workspace, revision, remote)
+            manifest["release_channel"] = "development"
+            manifest["channels"]["development"]["snapshot_id"] = "development"
+            manifest["snapshots"]["development"] = {
+                **copy.deepcopy(manifest["snapshots"]["candidate"]),
+                "id": "development",
+                "channel": "development",
+                "state": "observed",
+                "repositories": {
+                    "repo": {
+                        "commit": development_revision,
+                        "branch": "main",
+                        "tag": None,
+                    }
+                },
+            }
             manifest_dir = root / "suite"
             manifest_dir.mkdir()
             manifest_path = manifest_dir / "orpheus-suite.json"
-            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            )
             acceptance_path = root / "stable.json"
             acceptance_path.write_text(
                 json.dumps(
                     {
                         "status": "passed",
                         "records": [
-                            {"repository": "repo", "kind": "stable-hardware", "status": "passed", "evidence": "stable.txt"}
+                            {
+                                "repository": "repo",
+                                "kind": "stable-hardware",
+                                "status": "passed",
+                                "evidence": "stable.txt",
+                            }
                         ],
                     }
                 ),
@@ -272,7 +303,7 @@ class SuiteToolTest(unittest.TestCase):
                 release_action="stable",
                 manifest=str(manifest_path),
                 workspace_root=str(workspace),
-                from_snapshot="candidate",
+                from_snapshot=None,
                 channel=None,
                 version=None,
                 snapshot_id=None,
