@@ -51,11 +51,21 @@ class CommandResult:
         return (self.completed.stdout or "") + (self.completed.stderr or "")
 
 
-def run_command(command: list[str], cwd: Path, *, check: bool = False) -> CommandResult:
+def run_command(
+    command: list[str],
+    cwd: Path,
+    *,
+    check: bool = False,
+    environment: dict[str, str] | None = None,
+) -> CommandResult:
+    env = os.environ.copy()
+    if environment:
+        env.update(environment)
     try:
         completed = subprocess.run(
             command,
             cwd=cwd,
+            env=env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -106,8 +116,38 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 
 
 def normalized_url(value: str) -> str:
-    return value.rstrip("/").removesuffix(".git")
+    raw = value.strip().rstrip("/").removesuffix(".git")
+    if raw.startswith("git@github.com:"):
+        path = raw.split(":", 1)[1]
+        return f"github.com/{path}".lower()
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.hostname and parsed.hostname.lower() == "github.com":
+        return f"github.com/{parsed.path.strip('/')}".lower()
+    return raw
 
+
+def require_isolated_workspace(workspace: Path) -> None:
+    workspace = workspace.resolve()
+    if ".orpheus-suite-worktrees" in ROOT.parts:
+        index = ROOT.parts.index(".orpheus-suite-worktrees")
+        active_root = Path(*ROOT.parts[:index])
+    else:
+        active_root = ROOT.parent.resolve()
+    if workspace == active_root or workspace == ROOT.parent.resolve():
+        raise SuiteError(f"refusing to mutate the active suite root: {workspace}")
+    marker = workspace / ".orpheus-suite-workspace"
+    if not marker.is_file():
+        raise SuiteError(
+            f"refusing to mutate an unmarked workspace: {workspace}; "
+            f"create {marker} in the dedicated suite worktree"
+        )
+
+
+def run_git_mutation(repo: Path, args: list[str], *, check: bool = False) -> CommandResult:
+    status = run_git(repo, ["status", "--short", "--branch"])
+    if not status.ok:
+        raise SuiteError(f"cannot inspect repository before mutation: {repo}")
+    return run_git(repo, args, check=check)
 
 def is_commit(value: Any) -> bool:
     return isinstance(value, str) and COMMIT_RE.fullmatch(value) is not None
@@ -117,7 +157,17 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if manifest.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION}")
-    for key in ("suite_id", "suite_version", "release_channel", "workspace", "channels", "repositories", "dependencies", "release_policy", "snapshots"):
+    for key in (
+        "suite_id",
+        "suite_version",
+        "release_channel",
+        "workspace",
+        "channels",
+        "repositories",
+        "dependencies",
+        "release_policy",
+        "snapshots",
+    ):
         if key not in manifest:
             errors.append(f"missing required top-level key: {key}")
     if manifest.get("release_channel") not in {"development", "candidate", "stable"}:
@@ -125,6 +175,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     workspace = manifest.get("workspace")
     if not isinstance(workspace, dict) or workspace.get("paths_are_relative") is not True:
         errors.append("workspace.paths_are_relative must be true")
+
     repositories = manifest.get("repositories")
     repo_ids: set[str] = set()
     if not isinstance(repositories, list) or not repositories:
@@ -148,20 +199,41 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         remote = repo.get("remote")
         if not isinstance(remote, dict) or not remote.get("fetch_url"):
             errors.append(f"{prefix}.remote must declare fetch_url")
+        elif not isinstance(remote.get("fetch_remote"), str) or not remote["fetch_remote"]:
+            errors.append(f"{prefix}.remote must declare fetch_remote")
         elif (remote.get("push_url") is None) != (remote.get("push_remote") is None):
             errors.append(f"{prefix}.remote must declare push_url and push_remote together, or neither")
         if not isinstance(repo.get("verification"), list):
             errors.append(f"{prefix}.verification must be an array")
+        for check_index, check in enumerate(repo.get("verification", [])):
+            check_prefix = f"{prefix}.verification[{check_index}]"
+            if not isinstance(check, dict):
+                errors.append(f"{check_prefix} must be an object")
+                continue
+            environment = check.get("environment", {})
+            if not isinstance(environment, dict) or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in environment.items()
+            ):
+                errors.append(f"{check_prefix}.environment must map strings to strings")
+            required_for = check.get("required_for")
+            if not isinstance(required_for, list) or not required_for:
+                errors.append(f"{check_prefix}.required_for must be a non-empty array")
+            elif any(value not in {"candidate", "stable"} for value in required_for):
+                errors.append(f"{check_prefix}.required_for contains an unknown release channel")
         for artifact_index, artifact in enumerate(repo.get("generated_artifacts", [])):
             artifact_prefix = f"{prefix}.generated_artifacts[{artifact_index}]"
             if not isinstance(artifact, dict):
                 errors.append(f"{artifact_prefix} must be an object")
                 continue
-            if not isinstance(artifact.get("expected_sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", artifact.get("expected_sha256", "")):
+            if not isinstance(artifact.get("expected_sha256"), str) or not re.fullmatch(
+                r"[a-f0-9]{64}", artifact.get("expected_sha256", "")
+            ):
                 errors.append(f"{artifact_prefix}.expected_sha256 must be a lowercase SHA-256")
             source_repository = artifact.get("source_repository")
             if source_repository is not None and source_repository not in repo_ids and not any(
-                isinstance(candidate, dict) and candidate.get("id") == source_repository for candidate in repositories
+                isinstance(candidate, dict) and candidate.get("id") == source_repository
+                for candidate in repositories
             ):
                 errors.append(f"{artifact_prefix}.source_repository is unknown: {source_repository}")
             for source_key in ("source_revision", "current_source_revision"):
@@ -170,6 +242,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         for pin_index, pin in enumerate(repo.get("dependency_pins", [])):
             if not isinstance(pin, dict) or not is_commit(pin.get("revision")):
                 errors.append(f"{prefix}.dependency_pins[{pin_index}].revision must be a 40-character commit")
+
     dependencies = manifest.get("dependencies")
     if not isinstance(dependencies, list):
         errors.append("dependencies must be an array")
@@ -194,6 +267,43 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         topological_order(repo_ids, graph)
     except SuiteError as exc:
         errors.append(str(exc))
+
+    release_policy = manifest.get("release_policy")
+    if not isinstance(release_policy, dict):
+        errors.append("release_policy must be an object")
+        release_policy = {}
+    else:
+        for gate_name in ("candidate", "stable"):
+            gate = release_policy.get(gate_name)
+            if not isinstance(gate, dict):
+                errors.append(f"release_policy.{gate_name} must be an object")
+                continue
+            acceptance = gate.get("acceptance")
+            if not isinstance(acceptance, list) or not acceptance:
+                errors.append(f"release_policy.{gate_name}.acceptance must be a non-empty array")
+                continue
+            seen: set[tuple[str, str]] = set()
+            for index, record in enumerate(acceptance):
+                prefix = f"release_policy.{gate_name}.acceptance[{index}]"
+                if not isinstance(record, dict):
+                    errors.append(f"{prefix} must be an object")
+                    continue
+                if set(record) != {"repository", "kind"}:
+                    errors.append(f"{prefix} must contain exactly repository and kind")
+                repository = record.get("repository")
+                kind = record.get("kind")
+                if not isinstance(repository, str) or not repository:
+                    errors.append(f"{prefix}.repository must be a non-empty string")
+                elif repository not in repo_ids:
+                    errors.append(f"{prefix}.repository is unknown: {repository}")
+                if not isinstance(kind, str) or not kind:
+                    errors.append(f"{prefix}.kind must be a non-empty string")
+                if isinstance(repository, str) and isinstance(kind, str):
+                    pair = (repository, kind)
+                    if pair in seen:
+                        errors.append(f"{prefix} duplicates acceptance pair {repository}/{kind}")
+                    seen.add(pair)
+
     channels = manifest.get("channels", {})
     snapshots = manifest.get("snapshots", {})
     if not isinstance(snapshots, dict):
@@ -208,10 +318,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
             snapshot_id = value.get("snapshot_id")
             if snapshot_id is not None and snapshot_id not in snapshots:
                 errors.append(f"channels.{channel}.snapshot_id is unknown: {snapshot_id}")
-            if value.get("mode") == "pinned" and snapshot_id is None:
-                # An unpromoted candidate/stable channel is an intentional state.
-                if channel == "development":
-                    errors.append("channels.development cannot be pinned without a snapshot")
+            if value.get("mode") == "pinned" and snapshot_id is None and channel == "development":
+                errors.append("channels.development cannot be pinned without a snapshot")
     for snapshot_id, snapshot in snapshots.items():
         prefix = f"snapshots.{snapshot_id}"
         if not isinstance(snapshot, dict):
@@ -219,6 +327,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
             continue
         if snapshot.get("id") != snapshot_id:
             errors.append(f"{prefix}.id must match its key")
+        if snapshot.get("immutable") is not True:
+            errors.append(f"{prefix}.immutable must be true")
         snapshot_repositories = snapshot.get("repositories")
         if not isinstance(snapshot_repositories, dict) or set(snapshot_repositories) != repo_ids:
             errors.append(f"{prefix}.repositories must contain exactly every repository")
@@ -226,10 +336,54 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
             for repo_id, pin in snapshot_repositories.items():
                 if not isinstance(pin, dict) or not is_commit(pin.get("commit")):
                     errors.append(f"{prefix}.repositories.{repo_id}.commit must be a 40-character commit")
-                for dependency, revision in (pin.get("dependency_pins", {}) if isinstance(pin, dict) else {}).items():
+                for dependency, revision in (
+                    pin.get("dependency_pins", {}) if isinstance(pin, dict) else {}
+                ).items():
                     if not is_commit(revision):
                         errors.append(f"{prefix}.repositories.{repo_id}.dependency_pins.{dependency} must be a commit")
-    release_order = manifest.get("release_policy", {}).get("order", [])
+        acceptance = snapshot.get("human_acceptance")
+        if not isinstance(acceptance, dict) or set(acceptance) != {"status", "records"}:
+            errors.append(f"{prefix}.human_acceptance must contain exactly status and records")
+            continue
+        if acceptance.get("status") not in {"pending", "passed", "failed"}:
+            errors.append(f"{prefix}.human_acceptance.status is invalid")
+        records = acceptance.get("records")
+        if not isinstance(records, list):
+            errors.append(f"{prefix}.human_acceptance.records must be an array")
+            continue
+        seen_acceptance: set[tuple[Any, Any]] = set()
+        for index, record in enumerate(records):
+            record_prefix = f"{prefix}.human_acceptance.records[{index}]"
+            if not isinstance(record, dict) or set(record) != {
+                "repository",
+                "kind",
+                "status",
+                "evidence",
+            }:
+                errors.append(f"{record_prefix} must contain exactly repository, kind, status, evidence")
+                continue
+            repository = record["repository"]
+            kind = record["kind"]
+            if not isinstance(repository, str) or not repository:
+                errors.append(f"{record_prefix}.repository must be a non-empty string")
+            elif repository not in repo_ids:
+                errors.append(f"{record_prefix}.repository is unknown: {repository}")
+            if not isinstance(kind, str) or not kind:
+                errors.append(f"{record_prefix}.kind must be a non-empty string")
+            if isinstance(repository, str) and isinstance(kind, str):
+                pair = (repository, kind)
+                if pair in seen_acceptance:
+                    errors.append(f"{record_prefix} duplicates {repository}/{kind}")
+                seen_acceptance.add(pair)
+            if record["status"] not in {"pending", "passed", "failed"}:
+                errors.append(f"{record_prefix}.status is invalid")
+            if (
+                not isinstance(record["evidence"], str)
+                or not record["evidence"].strip()
+                or any(character in record["evidence"] for character in "\r\n\0")
+            ):
+                errors.append(f"{record_prefix}.evidence must be a durable path or URL")
+    release_order = release_policy.get("order", [])
     if set(release_order) != repo_ids or len(release_order) != len(repo_ids):
         errors.append("release_policy.order must contain every repository exactly once")
     else:
@@ -293,6 +447,35 @@ def selected_snapshot(manifest: dict[str, Any], snapshot_id: str | None, channel
     if snapshot is None:
         raise SuiteError(f"snapshot not found: {chosen}")
     return snapshot
+def remote_branch_revision(path: Path, repo: dict[str, Any]) -> str | None:
+    remote = repo.get("remote", {})
+    fetch_remote = remote.get("fetch_remote", "origin")
+    branch = repo.get("default_branch", "main")
+    result = run_git(path, ["rev-parse", "--verify", f"{fetch_remote}/{branch}"])
+    return result.completed.stdout.strip() if result.ok else None
+
+
+def revision_reachable(path: Path, repo: dict[str, Any], revision: str | None) -> dict[str, Any]:
+    remote = repo.get("remote", {})
+    fetch_remote = remote.get("fetch_remote", "origin")
+    branch = repo.get("default_branch", "main")
+    remote_revision = remote_branch_revision(path, repo)
+    result: dict[str, Any] = {
+        "revision": revision,
+        "remote": fetch_remote,
+        "branch": branch,
+        "remote_revision": remote_revision,
+        "status": "unavailable",
+    }
+    if not revision or not is_commit(revision):
+        result["status"] = "invalid"
+    elif not git_revision_exists(path, revision):
+        result["status"] = "missing"
+    elif remote_revision is None:
+        result["status"] = "remote-branch-unavailable"
+    else:
+        result["status"] = "reachable" if git_is_ancestor(path, revision, remote_revision) else "unreachable"
+    return result
 
 
 def repo_path(workspace: Path, repo: dict[str, Any]) -> Path:
@@ -361,24 +544,23 @@ def check_artifact(artifact: dict[str, Any], owner_path: Path, workspace: Path) 
         "expected_sha256": artifact["expected_sha256"],
         "status": "missing",
     }
-    if not path.exists():
-        return result
-    if artifact["hash_type"] == "sha256-file-v1":
-        actual = hash_file(path) if path.is_file() else None
-    else:
-        actual = hash_tree(path, set(artifact.get("exclude_paths", []))) if path.is_dir() else None
-    result["actual_sha256"] = actual
-    result["status"] = "fresh" if actual == artifact["expected_sha256"] else "hash-mismatch"
+    if path.exists():
+        if artifact["hash_type"] == "sha256-file-v1":
+            actual = hash_file(path) if path.is_file() else None
+        else:
+            actual = hash_tree(path, set(artifact.get("exclude_paths", []))) if path.is_dir() else None
+        result["actual_sha256"] = actual
+        result["status"] = "fresh" if actual == artifact["expected_sha256"] else "hash-mismatch"
+
     source_repository = artifact.get("source_repository")
     source_revision = artifact.get("source_revision")
     if source_repository and source_revision:
-        source_path: Path | None = None
-        if source_repository == "orpheus-sdk":
-            source_path = workspace / "orpheus-sdk"
-        elif (workspace / source_repository).is_dir():
-            source_path = workspace / source_repository
-        if source_path and source_path.is_dir():
-            result["source_revision"] = source_revision
+        source_path = workspace / source_repository
+        result["source_repository"] = source_repository
+        result["source_revision"] = source_revision
+        if not source_path.is_dir():
+            result["provenance_status"] = "source-unavailable"
+        else:
             current_source_revision = artifact.get("current_source_revision")
             actual_source_revision = git_head(source_path)
             if current_source_revision and actual_source_revision == current_source_revision:
@@ -386,7 +568,10 @@ def check_artifact(artifact: dict[str, Any], owner_path: Path, workspace: Path) 
             elif not git_revision_exists(source_path, source_revision):
                 result["provenance_status"] = "source-revision-missing"
             elif artifact.get("source_paths") and git_is_ancestor(source_path, source_revision):
-                changed = run_git(source_path, ["diff", "--quiet", source_revision, "HEAD", "--", *artifact["source_paths"]])
+                changed = run_git(
+                    source_path,
+                    ["diff", "--quiet", source_revision, "HEAD", "--", *artifact["source_paths"]],
+                )
                 result["provenance_status"] = "source-clean" if changed.ok else "source-changed"
             else:
                 result["provenance_status"] = "source-revision-not-ancestor"
@@ -403,53 +588,64 @@ def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[st
             repo_results.append(item)
             continue
         head = git_head(path)
-        expected = snapshot.get("repositories", {}).get(repo_id, {}).get("commit") if snapshot else None
+        expected = snapshot.get("repositories", {}).get(repo_id, {}).get("commit") if snapshot else head
         dirty = git_dirty(path)
         item.update({"head": head, "branch": git_branch(path), "dirty": dirty, "expected": expected})
+        item["reachability"] = revision_reachable(path, repo, expected)
         if head is None:
             item["status"] = "not-a-git-repository"
-        elif expected and head != expected:
+        elif snapshot and expected and head != expected:
             item["status"] = "dirty-drift" if dirty else "drifted"
         elif dirty:
             item["status"] = "dirty"
         else:
-            item["status"] = "pinned" if expected else "clean"
-        fetch_url = repo.get("remote", {}).get("fetch_url")
-        configured = remote_url(path, "origin")
-        push_remote = repo.get("remote", {}).get("push_remote")
-        push_url = repo.get("remote", {}).get("push_url")
-        if push_remote and push_url:
-            configured_push = remote_url(path, push_remote, push=True)
-            push_matches = bool(configured_push) and normalized_url(configured_push) == normalized_url(push_url)
-            push_status = "configured" if push_matches else "mismatch"
-        else:
+            item["status"] = "pinned" if snapshot else "observed"
+
+        remote_config = repo.get("remote", {})
+        fetch_remote = remote_config.get("fetch_remote", "origin")
+        fetch_url = remote_config.get("fetch_url")
+        configured = remote_url(path, fetch_remote)
+        push_remote = remote_config.get("push_remote")
+        push_url = remote_config.get("push_url")
+        if push_remote is None and push_url is None:
             configured_push = None
-            push_matches = False
-            push_status = "unavailable"
+            push_matches = True
+            push_status = "not-required"
+        else:
+            configured_push = remote_url(path, push_remote, push=True) if push_remote else None
+            push_matches = bool(configured_push) and normalized_url(configured_push) == normalized_url(push_url or "")
+            push_status = "configured" if push_matches else "mismatch"
         item["remote"] = {
-            "fetch_remote": "origin",
+            "fetch_remote": fetch_remote,
             "expected": fetch_url,
             "configured": configured,
-            "matches": not configured or normalized_url(configured) == normalized_url(fetch_url or ""),
+            "matches": bool(configured) and normalized_url(configured) == normalized_url(fetch_url or ""),
             "push_remote": push_remote,
             "push_expected": push_url,
             "push_configured": configured_push,
             "push_matches": push_matches,
             "push_status": push_status,
         }
+
         pin_results: list[dict[str, Any]] = []
         expected_pins = snapshot.get("repositories", {}).get(repo_id, {}).get("dependency_pins", {}) if snapshot else {}
         for pin in repo.get("dependency_pins", []):
             dependency = pin.get("dependency")
-            pin_result: dict[str, Any] = {"dependency": dependency, "kind": pin.get("kind"), "expected": expected_pins.get(dependency, pin.get("revision"))}
+            expected_pin = expected_pins.get(dependency, pin.get("revision"))
+            pin_result: dict[str, Any] = {
+                "dependency": dependency,
+                "kind": pin.get("kind"),
+                "expected": expected_pin,
+            }
             if pin.get("kind") == "git-submodule":
-                submodule = path / pin["path"]
-                actual = git_head(submodule) if submodule.is_dir() else None
-                pin_result.update({"actual": actual, "status": "pinned" if actual == pin_result["expected"] else "drifted"})
+                target = path / pin["path"]
             else:
                 target = workspace / pin.get("workspace_path", "")
-                actual = git_head(target) if target.is_dir() else None
-                pin_result.update({"actual": actual, "status": "pinned" if actual == pin_result["expected"] else "drifted"})
+            actual = git_head(target) if target.is_dir() else None
+            pin_result.update({"actual": actual, "status": "pinned" if actual == expected_pin else "drifted"})
+            dependency_repo = repositories.get(dependency)
+            if dependency_repo:
+                pin_result["reachability"] = revision_reachable(target, dependency_repo, expected_pin)
             if pin.get("config"):
                 cache_values: list[str] = []
                 for cache_path in (path / "build-release" / "CMakeCache.txt", path / "build" / "CMakeCache.txt"):
@@ -468,6 +664,10 @@ def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[st
                     pin_result["configured_values"] = cache_values
             pin_results.append(pin_result)
         item["dependency_pins"] = pin_results
+        item["artifacts"] = [
+            check_artifact(artifact, path, workspace)
+            for artifact in repo.get("generated_artifacts", [])
+        ]
         repo_results.append(item)
     return {"snapshot": snapshot.get("id") if snapshot else None, "repositories": repo_results}
 
@@ -479,22 +679,32 @@ def status_errors(status: dict[str, Any], *, require_clean: bool = False) -> lis
             errors.append(f"{repo['id']}: {repo['status']}")
         if require_clean and repo.get("dirty"):
             errors.append(f"{repo['id']}: worktree is dirty")
+        reachability = repo.get("reachability", {})
+        if reachability and reachability.get("status") != "reachable":
+            errors.append(f"{repo['id']}: selected revision is {reachability.get('status')}")
         if repo.get("remote", {}).get("matches") is False:
             errors.append(f"{repo['id']}: configured fetch remote does not match manifest")
-        if repo.get("remote", {}).get("push_status") in {"mismatch", "unavailable"}:
-            errors.append(f"{repo['id']}: push remote is {repo['remote']['push_status']}")
+        if repo.get("remote", {}).get("push_status") == "mismatch":
+            errors.append(f"{repo['id']}: push remote does not match manifest")
         for pin in repo.get("dependency_pins", []):
             if pin.get("status") != "pinned":
                 errors.append(f"{repo['id']}: {pin['dependency']} pin is {pin['status']}")
-            if pin.get("resolution_status") in {"mismatch", "not-configured"}:
+            if pin.get("resolution_status") in {"mismatch", "unavailable", "not-configured"}:
                 errors.append(f"{repo['id']}: {pin['dependency']} resolution is {pin['resolution_status']}")
+            pin_reachability = pin.get("reachability", {})
+            if pin_reachability and pin_reachability.get("status") != "reachable":
+                errors.append(
+                    f"{repo['id']}: {pin['dependency']} revision is "
+                    f"{pin_reachability.get('status')}"
+                )
         for artifact in repo.get("artifacts", []):
             if artifact.get("status") != "fresh":
                 errors.append(f"{repo['id']}: artifact {artifact['id']} is {artifact['status']}")
-            if artifact.get("provenance_status") == "source-changed":
-                errors.append(f"{repo['id']}: artifact {artifact['id']} source changed since provenance revision")
-            if artifact.get("provenance_status") in {"source-revision-missing", "source-revision-not-ancestor"}:
-                errors.append(f"{repo['id']}: artifact {artifact['id']} provenance is {artifact['provenance_status']}")
+            if artifact.get("provenance_status") not in {None, "source-current", "source-clean"}:
+                errors.append(
+                    f"{repo['id']}: artifact {artifact['id']} provenance is "
+                    f"{artifact.get('provenance_status')}"
+                )
     return errors
 
 
@@ -507,21 +717,43 @@ def output(value: Any, json_mode: bool) -> None:
         print(json.dumps(value, indent=2, sort_keys=True))
 
 
-def command_records(manifest: dict[str, Any], workspace: Path, *, tier: str | None, selected: set[str] | None = None) -> list[dict[str, Any]]:
-    current_platform = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}.get(platform.system(), platform.system().lower())
+def command_records(
+    manifest: dict[str, Any],
+    workspace: Path,
+    *,
+    tier: str | None,
+    selected: set[str] | None = None,
+    required_for: str | None = None,
+) -> list[dict[str, Any]]:
+    current_platform = {
+        "Darwin": "macos",
+        "Linux": "linux",
+        "Windows": "windows",
+    }.get(platform.system(), platform.system().lower())
     records: list[dict[str, Any]] = []
     for repo in manifest["repositories"]:
         if selected and repo["id"] not in selected:
             continue
-        repo_root = repo_path(workspace, repo)
         for check in repo.get("verification", []):
             if tier == "quick" and check["tier"] != "quick":
                 continue
+            if required_for and required_for not in check["required_for"]:
+                continue
+            environment = check.get("environment", {})
             if current_platform not in check["platforms"]:
-                records.append({"repository": repo["id"], "id": check["id"], "status": "skipped-platform", "platform": current_platform})
+                records.append(
+                    {
+                        "repository": repo["id"],
+                        "id": check["id"],
+                        "status": "skipped-platform",
+                        "platform": current_platform,
+                        "required_for": check["required_for"],
+                        "environment": environment,
+                    }
+                )
                 continue
             cwd = workspace / check["cwd"]
-            result = run_command(check["command"], cwd)
+            result = run_command(check["command"], cwd, environment=environment)
             status = "passed" if result.ok else "failed"
             if (
                 status == "failed"
@@ -529,15 +761,19 @@ def command_records(manifest: dict[str, Any], workspace: Path, *, tier: str | No
                 and ("not found" in result.output.lower() or "no such file" in result.output.lower())
             ):
                 status = "unavailable"
-            records.append({
-                "repository": repo["id"],
-                "id": check["id"],
-                "status": status,
-                "returncode": result.completed.returncode,
-                "cwd": str(cwd),
-                "command": check["command"],
-                "output": result.output[-4000:],
-            })
+            records.append(
+                {
+                    "repository": repo["id"],
+                    "id": check["id"],
+                    "status": status,
+                    "returncode": result.completed.returncode,
+                    "cwd": str(cwd),
+                    "command": check["command"],
+                    "required_for": check["required_for"],
+                    "environment": environment,
+                    "output": result.output[-4000:],
+                }
+            )
     return records
 
 
@@ -578,7 +814,7 @@ def require_manifest_owner_clean(manifest_path: Path) -> None:
 
 def backup_ref(repo_path_value: Path, repo_id: str, stamp: str) -> str:
     ref = f"refs/suite/backups/{stamp}/{repo_id}"
-    run_git(repo_path_value, ["update-ref", ref, "HEAD"], check=True)
+    run_git_mutation(repo_path_value, ["update-ref", ref, "HEAD"], check=True)
     return ref
 
 
@@ -726,7 +962,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if args.checks:
         selected = set(args.repositories) if args.repositories else None
         checks = command_records(manifest, workspace, tier="quick", selected=selected)
-        errors.extend(f"{item['repository']}: check {item['id']} {item['status']}" for item in checks if item["status"] in {"failed", "unavailable"})
+        errors.extend(
+            f"{item['repository']}: check {item['id']} {item['status']}"
+            for item in checks
+            if item["status"] in {"failed", "unavailable", "skipped-platform"}
+        )
     result.update({"workspace": str(workspace), "checks": checks, "errors": errors, "status": "failed" if errors else "healthy"})
     output(result, args.json)
     return 0 if not errors else 1
@@ -736,7 +976,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _, manifest, workspace = manifest_context(args)
     selected = set(args.repositories) if args.repositories else None
     records = command_records(manifest, workspace, tier=None if args.full else "quick", selected=selected)
-    failures = [record for record in records if record["status"] in {"failed", "unavailable"}]
+    failures = [
+        record
+        for record in records
+        if record["status"] in {"failed", "unavailable", "skipped-platform"}
+    ]
     result = {"workspace": str(workspace), "tier": "full" if args.full else "quick", "checks": records, "failures": failures, "status": "failed" if failures else "passed"}
     output(result, args.json)
     return 0 if not failures else 1
@@ -776,6 +1020,7 @@ def cmd_update(args: argparse.Namespace) -> int:
         return 0
     if not args.yes:
         raise SuiteError("update --apply requires --yes; the default is a dry-run")
+    require_isolated_workspace(workspace)
     require_manifest_owner_clean(manifest_path)
     dirty = clean_repositories(manifest, workspace, [item["repository"] for item in plan])
     if dirty:
@@ -787,7 +1032,7 @@ def cmd_update(args: argparse.Namespace) -> int:
         if not child.is_dir():
             raise SuiteError(f"submodule path is missing: {child}")
         if not git_revision_exists(child, args.revision):
-            run_git(child, ["fetch", "--no-tags", "origin"], check=True)
+            run_git_mutation(child, ["fetch", "--no-tags", "origin"], check=True)
         if not git_revision_exists(child, args.revision):
             raise SuiteError(f"revision {args.revision} is not available in {child}")
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -795,8 +1040,8 @@ def cmd_update(args: argparse.Namespace) -> int:
         consumer = repo_path(workspace, repositories[item["repository"]])
         result["backups"].append(backup_ref(consumer, item["repository"], stamp))
         child = consumer / item["path"]
-        run_git(child, ["checkout", "--detach", args.revision], check=True)
-        run_git(consumer, ["add", item["path"]], check=True)
+        run_git_mutation(child, ["checkout", "--detach", args.revision], check=True)
+        run_git_mutation(consumer, ["add", item["path"]], check=True)
         update_manifest_pin(manifest, item["repository"], source, args.revision)
         result["applied"].append(item["repository"])
     if result["applied"]:
@@ -834,6 +1079,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         return 0
     if not args.yes:
         raise SuiteError("sync --apply requires --yes; the default is a dry-run")
+    require_isolated_workspace(workspace)
     dirty = clean_repositories(manifest, workspace, target_ids)
     if dirty:
         raise SuiteError("refusing to sync dirty worktrees: " + ", ".join(dirty))
@@ -851,12 +1097,12 @@ def cmd_sync(args: argparse.Namespace) -> int:
     for item in plan:
         path = Path(item["path"])
         result["backups"].append(backup_ref(path, item["repository"], stamp))
-        run_git(path, ["switch", "--detach", item["revision"]], check=True)
+        run_git_mutation(path, ["switch", "--detach", item["revision"]], check=True)
         result["applied"].append(item["repository"])
     for item in pin_plan:
         if item["kind"] == "git-submodule":
             path = Path(item["path"])
-            run_git(path, ["checkout", "--detach", item["revision"]], check=True)
+            run_git_mutation(path, ["checkout", "--detach", item["revision"]], check=True)
             result["applied_pins"].append(f"{item['repository']}:{item['dependency']}")
     output(result, args.json)
     return 0
@@ -866,36 +1112,196 @@ def acceptance_value(args: argparse.Namespace) -> dict[str, Any]:
     if not args.acceptance:
         return {"status": "pending", "records": []}
     value = load_json(Path(args.acceptance).expanduser().resolve())
-    if value.get("status") not in {"pending", "passed", "failed"} or not isinstance(value.get("records"), list):
+    if set(value) != {"status", "records"}:
+        raise SuiteError("acceptance file must contain exactly {status, records}")
+    if value.get("status") not in {"pending", "passed", "failed"} or not isinstance(
+        value.get("records"), list
+    ):
         raise SuiteError("acceptance file must contain {status: pending|passed|failed, records: []}")
     return value
 
 
+def acceptance_requirements(manifest: dict[str, Any], action: str) -> set[tuple[str, str]]:
+    gate = manifest.get("release_policy", {}).get(action, {})
+    return {
+        (record["repository"], record["kind"])
+        for record in gate.get("acceptance", [])
+        if isinstance(record, dict)
+        and isinstance(record.get("repository"), str)
+        and isinstance(record.get("kind"), str)
+    }
+
+
+def acceptance_errors(
+    manifest: dict[str, Any],
+    action: str,
+    acceptance: dict[str, Any],
+) -> list[str]:
+    required = acceptance_requirements(manifest, action)
+    errors: list[str] = []
+    if not isinstance(acceptance, dict):
+        return ["acceptance value must be an object"]
+    if set(acceptance) != {"status", "records"}:
+        errors.append("acceptance value must contain exactly {status, records}")
+    if acceptance.get("status") != "passed":
+        errors.append("required human acceptance is not passed")
+    records = acceptance.get("records")
+    if not isinstance(records, list):
+        return errors + ["acceptance records must be an array"]
+    seen: set[tuple[str, str]] = set()
+    repositories = set(repo_map(manifest))
+    for index, record in enumerate(records):
+        prefix = f"acceptance record {index}"
+        if not isinstance(record, dict):
+            errors.append(f"{prefix} is not an object")
+            continue
+        if set(record) != {"repository", "kind", "status", "evidence"}:
+            errors.append(f"{prefix} must contain exactly repository, kind, status, evidence")
+        repository = record.get("repository")
+        kind = record.get("kind")
+        if not isinstance(repository, str) or not repository:
+            errors.append(f"{prefix} has no repository")
+        elif repository not in repositories:
+            errors.append(f"{prefix} names unknown repository {repository}")
+        if not isinstance(kind, str) or not kind:
+            errors.append(f"{prefix} has no kind")
+        if isinstance(repository, str) and isinstance(kind, str):
+            pair = (repository, kind)
+            if pair in seen:
+                errors.append(f"{prefix} duplicates {repository}/{kind}")
+            seen.add(pair)
+        if record.get("status") != "passed":
+            errors.append(f"{prefix} is not passed")
+        evidence = record.get("evidence")
+        if (
+            not isinstance(evidence, str)
+            or not evidence.strip()
+            or any(character in evidence for character in "\r\n\0")
+        ):
+            errors.append(f"{prefix} has no durable evidence path or URL")
+    missing = sorted(required - seen, key=lambda pair: (str(pair[0]), str(pair[1])))
+    extra = sorted(seen - required, key=lambda pair: (str(pair[0]), str(pair[1])))
+    errors.extend(f"missing acceptance record {repository}/{kind}" for repository, kind in missing)
+    errors.extend(f"unexpected acceptance record {repository}/{kind}" for repository, kind in extra)
+    return errors
+
+
+def cmd_snapshot_observe(args: argparse.Namespace) -> int:
+    manifest_path, manifest, workspace = manifest_context(args)
+    require_isolated_workspace(workspace)
+    if not args.snapshot_id:
+        raise SuiteError("snapshot observe requires --snapshot-id")
+    if args.snapshot_id in manifest.get("snapshots", {}):
+        raise SuiteError(f"snapshot already exists: {args.snapshot_id}")
+    if not args.version:
+        raise SuiteError("snapshot observe requires --version X.Y.Z")
+    if not args.evidence or not args.evidence.strip():
+        raise SuiteError("snapshot observe requires --evidence")
+    status = snapshot_status(manifest, workspace, None)
+    blockers = status_errors(status, require_clean=True)
+    verification = {
+        "status": "inventory-only" if not blockers else "blocked",
+        "evidence": [args.evidence] + [f"workspace: {error}" for error in blockers],
+    }
+    acceptance = {"status": "pending", "records": []}
+    result = {
+        "action": "snapshot-observe",
+        "snapshot_id": args.snapshot_id,
+        "verification": verification,
+        "human_acceptance": acceptance,
+        "blockers": blockers,
+        "status": status,
+        "workspace": str(workspace),
+        "applied": False,
+    }
+    if not args.apply:
+        output(result, args.json)
+        return 0 if not blockers else 1
+    if blockers:
+        raise SuiteError("snapshot observe is blocked:\n- " + "\n- ".join(blockers))
+    if not args.yes:
+        raise SuiteError("snapshot observe --apply requires --yes")
+    require_manifest_owner_clean(manifest_path)
+    snapshot = capture_snapshot(
+        manifest,
+        workspace,
+        args.snapshot_id,
+        args.version,
+        "development",
+        "observed",
+        verification,
+        acceptance,
+    )
+    manifest["snapshots"][args.snapshot_id] = snapshot
+    manifest["channels"]["development"]["snapshot_id"] = args.snapshot_id
+    backup_dir = manifest_path.parent / ".backups"
+    backup_dir.mkdir(exist_ok=True)
+    backup = backup_dir / f"manifest-{dt.datetime.now().strftime('%Y%m%dT%H%M%SZ')}.json"
+    shutil.copy2(manifest_path, backup)
+    write_json_atomic(manifest_path, manifest)
+    result.update({"applied": True, "manifest_backup": str(backup)})
+    output(result, args.json)
+    return 0
+
+
 def cmd_release(args: argparse.Namespace) -> int:
     manifest_path, manifest, workspace = manifest_context(args)
+    require_isolated_workspace(workspace)
     action = args.release_action
     source_snapshot = selected_snapshot(manifest, args.from_snapshot, args.channel)
     if source_snapshot is None:
         raise SuiteError("release requires a source snapshot via --from-snapshot or a pinned channel")
     acceptance = acceptance_value(args)
+    acceptance_blockers = acceptance_errors(manifest, action, acceptance)
     selected = set(args.repositories) if args.repositories else None
-    checks = command_records(manifest, workspace, tier=None, selected=selected) if args.run_checks else []
-    failures = [item for item in checks if item["status"] in {"failed", "unavailable"}]
+    checks = (
+        command_records(
+            manifest,
+            workspace,
+            tier=None,
+            selected=selected,
+            required_for=action,
+        )
+        if args.run_checks
+        else []
+    )
+    failures = [
+        item
+        for item in checks
+        if item["status"] in {"failed", "unavailable", "skipped-platform"}
+    ]
+    source_status = snapshot_status(manifest, workspace, source_snapshot)
+    workspace_blockers = status_errors(source_status, require_clean=True)
+
     if action == "candidate":
         if not args.version:
             raise SuiteError("release candidate requires --version X.Y.Z")
-        snapshot_id = args.snapshot_id or f"candidate-{args.version.replace('.', '-')}-{dt.date.today().isoformat().replace('-', '')}"
-        verification = {"status": "passed" if args.run_checks and not failures else "blocked", "evidence": [f"source snapshot: {source_snapshot['id']}"] + [f"{item['repository']}/{item['id']}: {item['status']}" for item in checks]}
+        snapshot_id = args.snapshot_id or (
+            f"candidate-{args.version.replace('.', '-')}-{dt.date.today().isoformat().replace('-', '')}"
+        )
+        verification = {
+            "status": "passed"
+            if args.run_checks and not failures and not workspace_blockers and not acceptance_blockers
+            else "blocked",
+            "evidence": [f"source snapshot: {source_snapshot['id']}"]
+            + [f"{item['repository']}/{item['id']}: {item['status']}" for item in checks]
+            + [f"workspace: {error}" for error in workspace_blockers],
+        }
         blockers: list[str] = []
         if not args.run_checks:
-            blockers.append("run declared checks with --run-checks")
-        if failures:
-            blockers.append("declared checks failed")
-        if acceptance.get("status") != "passed":
-            blockers.append("required human acceptance is not passed")
-        if status_errors(snapshot_status(manifest, workspace, source_snapshot), require_clean=True):
-            blockers.append("workspace does not match the source snapshot cleanly")
-        result = {"action": action, "snapshot_id": snapshot_id, "source_snapshot": source_snapshot["id"], "verification": verification, "human_acceptance": acceptance, "blockers": blockers, "applied": False}
+            blockers.append("run declared candidate checks with --run-checks")
+        blockers.extend(f"{item['repository']}/{item['id']}: {item['status']}" for item in failures)
+        blockers.extend(acceptance_blockers)
+        blockers.extend(f"workspace: {error}" for error in workspace_blockers)
+        result = {
+            "action": action,
+            "snapshot_id": snapshot_id,
+            "source_snapshot": source_snapshot["id"],
+            "verification": verification,
+            "human_acceptance": acceptance,
+            "blockers": blockers,
+            "applied": False,
+        }
         if not args.apply:
             output(result, args.json)
             return 0 if not blockers else 1
@@ -906,7 +1312,16 @@ def cmd_release(args: argparse.Namespace) -> int:
         require_manifest_owner_clean(manifest_path)
         if snapshot_id in manifest["snapshots"]:
             raise SuiteError(f"snapshot already exists: {snapshot_id}")
-        snapshot = capture_snapshot(manifest, workspace, snapshot_id, args.version, "candidate", "candidate", verification, acceptance)
+        snapshot = capture_snapshot(
+            manifest,
+            workspace,
+            snapshot_id,
+            args.version,
+            "candidate",
+            "candidate",
+            verification,
+            acceptance,
+        )
         manifest["snapshots"][snapshot_id] = snapshot
         manifest["channels"]["candidate"]["snapshot_id"] = snapshot_id
         manifest["suite_version"] = args.version
@@ -918,15 +1333,32 @@ def cmd_release(args: argparse.Namespace) -> int:
         result.update({"applied": True, "manifest_backup": str(backup)})
         output(result, args.json)
         return 0
-    candidate = manifest.get("snapshots", {}).get(args.from_snapshot or manifest.get("channels", {}).get("candidate", {}).get("snapshot_id"))
+
+    candidate_id = args.from_snapshot or manifest.get("channels", {}).get("candidate", {}).get("snapshot_id")
+    candidate = manifest.get("snapshots", {}).get(candidate_id)
     if not candidate or candidate.get("state") != "candidate":
         raise SuiteError("stable promotion requires a candidate snapshot")
-    blockers = []
+    candidate_acceptance_blockers = acceptance_errors(
+        manifest,
+        "candidate",
+        candidate.get("human_acceptance", {}),
+    )
+    blockers = list(candidate_acceptance_blockers)
+    blockers.extend(f"candidate workspace: {error}" for error in workspace_blockers)
     if candidate.get("verification", {}).get("status") != "passed":
         blockers.append("candidate verification is not passed")
-    if candidate.get("human_acceptance", {}).get("status") != "passed":
-        blockers.append("candidate human acceptance is not passed")
-    result = {"action": action, "snapshot_id": candidate["id"], "blockers": blockers, "applied": False}
+    if not args.run_checks:
+        blockers.append("run declared stable checks with --run-checks")
+    blockers.extend(f"{item['repository']}/{item['id']}: {item['status']}" for item in failures)
+    blockers.extend(acceptance_blockers)
+    result = {
+        "action": action,
+        "snapshot_id": candidate["id"],
+        "checks": checks,
+        "human_acceptance": acceptance,
+        "blockers": blockers,
+        "applied": False,
+    }
     if not args.apply:
         output(result, args.json)
         return 0 if not blockers else 1
@@ -935,8 +1367,6 @@ def cmd_release(args: argparse.Namespace) -> int:
     if not args.yes:
         raise SuiteError("release stable --apply requires --yes")
     require_manifest_owner_clean(manifest_path)
-    candidate["state"] = "stable"
-    candidate["channel"] = "stable"
     manifest["channels"]["stable"]["snapshot_id"] = candidate["id"]
     manifest["release_channel"] = "stable"
     backup_dir = manifest_path.parent / ".backups"
@@ -964,6 +1394,7 @@ def cmd_rollback(args: argparse.Namespace) -> int:
         return 0
     if not args.yes:
         raise SuiteError("rollback --apply requires --yes; the default is a dry-run")
+    require_isolated_workspace(workspace)
     dirty = clean_repositories(manifest, workspace, target_ids)
     if dirty:
         raise SuiteError("refusing to rollback dirty worktrees: " + ", ".join(dirty))
@@ -978,12 +1409,12 @@ def cmd_rollback(args: argparse.Namespace) -> int:
     for item in plan:
         path = Path(item["path"])
         result["backups"].append(backup_ref(path, item["repository"], stamp))
-        run_git(path, ["switch", "--detach", item["revision"]], check=True)
+        run_git_mutation(path, ["switch", "--detach", item["revision"]], check=True)
         result["applied"].append(item["repository"])
     for item in pin_plan:
         if item["kind"] == "git-submodule":
             path = Path(item["path"])
-            run_git(path, ["checkout", "--detach", item["revision"]], check=True)
+            run_git_mutation(path, ["checkout", "--detach", item["revision"]], check=True)
             result["applied_pins"].append(f"{item['repository']}:{item['dependency']}")
     output(result, args.json)
     return 0
@@ -1010,6 +1441,7 @@ def cmd_coordinate(args: argparse.Namespace) -> int:
         return 0
     if not args.yes:
         raise SuiteError("coordinate --apply requires --yes")
+    require_isolated_workspace(workspace)
     token = os.environ.get(args.token_env)
     if not token:
         raise SuiteError(f"coordinate --apply requires {args.token_env} for GitHub PR creation")
@@ -1027,20 +1459,31 @@ def cmd_coordinate(args: argparse.Namespace) -> int:
             branch = f"{manifest['coordination']['branch_prefix']}{args.change_id.lower()}-{plan['repository']}"
             temporary = Path(tempfile.mkdtemp(prefix=f"orpheus-suite-{plan['repository']}-"))
             worktree = temporary / plan["repository"]
-            run_git(consumer, ["worktree", "add", "-b", branch, str(worktree), repositories[plan["repository"]]["default_branch"]], check=True)
+            run_git_mutation(
+                consumer,
+                [
+                    "worktree",
+                    "add",
+                    "-b",
+                    branch,
+                    str(worktree),
+                    f"{repositories[plan['repository']]['remote'].get('fetch_remote', 'origin')}/{repositories[plan['repository']]['default_branch']}",
+                ],
+                check=True,
+            )
             worktrees.append((consumer, worktree))
-            run_git(worktree, ["submodule", "update", "--init", "--recursive", plan["path"]], check=True)
+            run_git_mutation(worktree, ["submodule", "update", "--init", "--recursive", plan["path"]], check=True)
             child = worktree / plan["path"]
             if not git_revision_exists(child, args.revision):
-                run_git(child, ["fetch", "--no-tags", "origin"], check=True)
+                run_git_mutation(child, ["fetch", "--no-tags", "origin"], check=True)
             if not git_revision_exists(child, args.revision):
                 raise SuiteError(f"revision {args.revision} is not available for {plan['repository']}")
-            run_git(child, ["checkout", "--detach", args.revision], check=True)
-            run_git(worktree, ["add", plan["path"]], check=True)
+            run_git_mutation(child, ["checkout", "--detach", args.revision], check=True)
+            run_git_mutation(worktree, ["add", plan["path"]], check=True)
             commit_message = f"suite: pin {source} for {args.change_id}"
-            run_git(worktree, ["commit", "-m", commit_message], check=True)
+            run_git_mutation(worktree, ["commit", "-m", commit_message], check=True)
             push_remote = repositories[plan["repository"]]["remote"].get("push_remote", "origin")
-            run_git(worktree, ["push", push_remote, f"HEAD:{branch}"], check=True)
+            run_git_mutation(worktree, ["push", push_remote, f"HEAD:{branch}"], check=True)
             body = "\n".join([
                 f"Suite change: `{args.change_id}`",
                 f"Upstream repository: `{source}`",
@@ -1055,7 +1498,7 @@ def cmd_coordinate(args: argparse.Namespace) -> int:
             result["pull_requests"].append({"repository": plan["repository"], "branch": branch, "url": url})
     finally:
         for consumer, worktree in reversed(worktrees):
-            run_git(consumer, ["worktree", "remove", "--force", str(worktree)])
+            run_git_mutation(consumer, ["worktree", "remove", "--force", str(worktree)])
             shutil.rmtree(worktree.parent, ignore_errors=True)
     output(result, args.json)
     return 0
@@ -1113,6 +1556,16 @@ def parser_for() -> argparse.ArgumentParser:
     sync.add_argument("--apply", action="store_true")
     sync.add_argument("--yes", action="store_true")
 
+    snapshot = subparsers.add_parser("snapshot", help="observe an immutable development snapshot")
+    snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_action", required=True)
+    observe = snapshot_subparsers.add_parser("observe", help="capture current clean reachable revisions")
+    add_common(observe)
+    observe.add_argument("--snapshot-id", required=True)
+    observe.add_argument("--version", required=True)
+    observe.add_argument("--evidence", required=True)
+    observe.add_argument("--apply", action="store_true")
+    observe.add_argument("--yes", action="store_true")
+
     release = subparsers.add_parser("release", help="plan or apply candidate creation and stable promotion")
     add_common(release)
     release.add_argument("release_action", choices=["candidate", "stable"])
@@ -1162,6 +1615,9 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_update(args)
         if args.command == "sync":
             return cmd_sync(args)
+        if args.command == "snapshot":
+            if args.snapshot_action == "observe":
+                return cmd_snapshot_observe(args)
         if args.command == "release":
             return cmd_release(args)
         if args.command == "rollback":

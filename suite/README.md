@@ -45,8 +45,10 @@ its transitive downstream closure and returns the declared release order.
 
 ## Commands
 
-Run from the SDK checkout. All commands are read-only or dry-run unless both
-`--apply` and `--yes` are supplied.
+Run read-only inspection from any checkout. Every mutable command requires both
+`--apply` and `--yes`, a clean manifest-controller worktree, and a dedicated
+workspace containing the `.orpheus-suite-workspace` marker. Never point an apply
+command at the active five-repository roots.
 
 ```text
 python3 tools/suite.py validate --json
@@ -56,6 +58,14 @@ python3 tools/suite.py affected shmui --json
 python3 tools/suite.py verify --json                 # quick checks
 python3 tools/suite.py verify --full --json          # all declared checks
 
+# Capture a clean, reachable development inventory.
+python3 tools/suite.py snapshot observe \
+  --snapshot-id development-0-1-0-YYYYMMDD-NNN \
+  --version 0.1.0 \
+  --evidence "immutable component set selected from merged remote-main revisions" \
+  --manifest "$CONTROLLER/suite/orpheus-suite.json" \
+  --workspace-root "$QUALIFICATION_ROOT" --json
+
 # Plan an exact snapshot sync; --affected takes provider IDs in --repositories.
 python3 tools/suite.py sync --snapshot <id> --json
 python3 tools/suite.py sync --snapshot <id> --affected --repositories shmui --json
@@ -64,42 +74,23 @@ python3 tools/suite.py sync --snapshot <id> --apply --yes --json
 # Plan exact consumer-pin updates. Source/package overrides stay manual.
 python3 tools/suite.py update orpheus-sdk --revision <sha> --json
 
-# Plan or publish independent dependent PRs.
+# Plan or publish independent dependent PRs from isolated workspaces.
 python3 tools/suite.py coordinate orpheus-sdk \
   --revision <sha> --change-id ORP-SUITE-YYYYMMDD-NNN --json
 
-# Release commands are guarded by checks and acceptance evidence.
+# Candidate creation requires exact acceptance records for every declared pair.
 python3 tools/suite.py release candidate --from-snapshot <id> \
-  --version X.Y.Z --run-checks --acceptance acceptance.json --json
-python3 tools/suite.py release stable --from-snapshot <candidate-id> --json
+  --snapshot-id candidate-0-1-0-YYYYMMDD-NNN \
+  --version 0.1.0 --run-checks --acceptance candidate-acceptance.json --json
+
+# Stable promotion reruns stable checks, validates incremental acceptance, and
+# changes only the stable channel pointer and top-level release channel.
+python3 tools/suite.py release stable --from-snapshot <candidate-id> \
+  --run-checks --acceptance stable-acceptance.json --json
 
 # Whole-suite rollback is also dry-run by default.
 python3 tools/suite.py rollback <snapshot-id> --json
 ```
-
-`status` separates checkout drift, dirty worktrees, remote mismatch, exact
-consumer-pin drift, configured source/package resolution, generated content
-hash mismatch, and source provenance. A generated artifact may retain an older
-generator commit when its declared current source revision and content hash are
-still valid; that historic revision is not silently rewritten.
-
-`doctor --checks` runs the manifest's quick commands. `verify` runs quick checks
-by default and all declared checks with `--full`. A check whose executable is
-unavailable is reported as `unavailable`, not misreported as a product failure.
-Unavailable platform/tooling still blocks release promotion.
-
-`update --apply --yes` can stage an exact git-submodule pin and updates the
-manifest's observed consumer pin with a timestamped manifest backup. CMake
-source overrides and installed-package selection are reported for an
-application owner to reconfigure and review rather than guessed or rewritten.
-
-`coordinate --apply --yes` requires a short-lived GitHub App/fine-grained token
-in `ORPHEUS_SUITE_GITHUB_TOKEN` (or `--token-env`). It creates a temporary
-worktree, a `suite/<change-id>-<repository>` branch, one pin commit, and one PR
-per supported submodule consumer. It uses the manifest's push remote and puts
-the change ID in the PR body. Generated PRs carry a loop-prevention marker and
-must not trigger a second coordinator run. Source/package consumers remain a
-manual plan item.
 
 ## Channels and snapshots
 
@@ -129,22 +120,31 @@ leaves backup refs for a later explicit recovery command.
 
 ## Current change boundary
 
-Only `orpheus-sdk` needs implementation changes: the manifest, schema, CLI,
-CI safety gate, CTest registration, and generated SDK ShmUI provenance manifest.
-`shmui`, `fourtrack`, `freqfinder`, and `clip-composer` are intentional no-ops;
-their existing source, consumer, and acceptance contracts are represented in
-the manifest without speculative application edits.
+The coordinator is now fail-closed for the release-critical distinctions that
+ORP170 requires:
 
-The inventory also found that ShmUI's `origin` is fetch-only (`no_push`).
-The manifest records that missing push capability explicitly; `status` and
-release gates classify it as `push remote is unavailable` instead of claiming
-that a ShmUI branch or PR can be published. FourTrack's authorized `publish`
-remote is recorded separately.
+- GitHub HTTPS and SSH remotes compare by canonical repository identity.
+- Every repository declares its fetch remote. A null push pair is an explicit
+  fetch-only boundary and reports `push_status: "not-required"`.
+- `status` attaches generated-artifact hashes, provenance, and selected-revision
+  reachability to every repository and dependency pin.
+- The `fourtrack-shmui-provenance` quick gate invokes the consumer-owned checker
+  against the isolated nested SDK and ShmUI worktrees; it checks generated
+  bytes, import-manifest content, contract version, and provenance revisions.
+- Verification commands may declare a controlled environment map. The ShmUI
+  freshness check resolves `SDK_ROOT` relative to its isolated check directory.
+- `snapshot observe` captures an immutable development inventory only from a
+  clean, marked, remote-reachable workspace.
+- Candidate creation validates exact acceptance pairs and candidate checks.
+  Stable promotion reruns stable checks and changes only the stable channel
+  pointer and top-level release channel; the candidate object is not rewritten.
+- All apply paths require an explicit `.orpheus-suite-workspace` marker and
+  inspect the repository status before each Git mutation.
 
-The pre-write synchronization checks were run first. ShmUI reported only the
-stale SDK import-manifest revision; the existing sync script was then invoked
-explicitly, and both `shmui/scripts/sync-juce.sh --check` and
-`python3 tools/shmui_juce_manifest.py --check` pass afterward.
+ShmUI remains fetch-only in the manifest; its owner must publish any source
+change. FourTrack's configured push remote is `origin`, matching the checkout.
+Source/package overrides remain manual qualification work and are never guessed
+or rewritten by `update`, `sync`, or `coordinate`.
 
 ## Primary references
 

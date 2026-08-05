@@ -11,6 +11,8 @@
 
 #include "OrbVisualizer.h"
 #include "../Utils/ColorUtils.h"
+#include "../Utils/MessageThread.h"
+#include <cmath>
 
 namespace shmui {
 
@@ -208,18 +210,13 @@ void main() {
 //==============================================================================
 
 OrbVisualizer::OrbVisualizer() {
-  // Initialize random offsets
   Interpolation::SeedRandom rng(seed);
-  for (size_t i = 0; i < offsets.size(); ++i) {
+  for (size_t i = 0; i < offsets.size(); ++i)
     offsets[i] = rng.next() * juce::MathConstants<float>::twoPi;
-  }
 
-  // Setup OpenGL
   openGLContext.setRenderer(this);
   openGLContext.attachTo(*this);
-
   setOpaque(false);
-  startTimerHz(60);
 }
 
 OrbVisualizer::~OrbVisualizer() {
@@ -228,22 +225,38 @@ OrbVisualizer::~OrbVisualizer() {
 }
 
 void OrbVisualizer::setAgentState(AgentState state) {
+  if (!requireMessageThread())
+    return;
+
   agentState = state;
+  updateTimerState();
 }
 
 void OrbVisualizer::setVolumeMode(OrbVolumeMode mode) {
+  if (!requireMessageThread())
+    return;
+
   volumeMode = mode;
 }
 
 void OrbVisualizer::setInputVolume(float volume) {
-  manualInput = Interpolation::clamp01(volume);
+  if (!requireMessageThread())
+    return;
+
+  manualInput = Interpolation::clamp01(std::isfinite(volume) ? volume : 0.0f);
 }
 
 void OrbVisualizer::setOutputVolume(float volume) {
-  manualOutput = Interpolation::clamp01(volume);
+  if (!requireMessageThread())
+    return;
+
+  manualOutput = Interpolation::clamp01(std::isfinite(volume) ? volume : 0.0f);
 }
 
 void OrbVisualizer::setColors(const juce::Colour& c1, const juce::Colour& c2) {
+  if (!requireMessageThread())
+    return;
+
   color1 = c1;
   color2 = c2;
   targetColor1 = c1;
@@ -251,15 +264,20 @@ void OrbVisualizer::setColors(const juce::Colour& c1, const juce::Colour& c2) {
 }
 
 void OrbVisualizer::setSeed(uint32_t newSeed) {
+  if (!requireMessageThread())
+    return;
+
   seed = newSeed;
 
   Interpolation::SeedRandom rng(seed);
-  for (size_t i = 0; i < offsets.size(); ++i) {
+  for (size_t i = 0; i < offsets.size(); ++i)
     offsets[i] = rng.next() * juce::MathConstants<float>::twoPi;
-  }
 }
 
 void OrbVisualizer::setInverted(bool inv) {
+  if (!requireMessageThread())
+    return;
+
   inverted = inv;
 }
 
@@ -367,33 +385,42 @@ void OrbVisualizer::resized() {
 }
 
 void OrbVisualizer::timerCallback() {
-  const float deltaTime = 1.0f / 60.0f;
-
-  // Update time
-  time += deltaTime * 0.5f;
-
-  // Update opacity fade-in
-  if (opacity < 1.0f) {
-    opacity = std::min(1.0f, opacity + deltaTime * 2.0f);
+  if (!isShowing()) {
+    updateTimerState();
+    return;
   }
 
-  // Update animation targets based on state
+  const float deltaTime = 1.0f / 60.0f;
+
+  time += deltaTime * 0.5f;
+
+  if (opacity < 1.0f)
+    opacity = std::min(1.0f, opacity + deltaTime * 2.0f);
+
   updateAnimationTargets();
 
-  // Smooth volume
   smoothedInput += (targetInput - smoothedInput) * kSmoothingFactor;
   smoothedOutput += (targetOutput - smoothedOutput) * kSmoothingFactor;
 
-  // Update animation speed
   const float targetSpeed = 0.1f + (1.0f - std::pow(smoothedOutput - 1.0f, 2.0f)) * 0.9f;
   animationSpeed += (targetSpeed - animationSpeed) * 0.12f;
   animationTime += deltaTime * animationSpeed;
 
-  // Lerp colors
   currentColor1 = ColorUtils::lerpColour(currentColor1, targetColor1, kColorLerpFactor);
   currentColor2 = ColorUtils::lerpColour(currentColor2, targetColor2, kColorLerpFactor);
 
   openGLContext.triggerRepaint();
+}
+
+void OrbVisualizer::visibilityChanged() {
+  updateTimerState();
+}
+
+void OrbVisualizer::updateTimerState() {
+  if (isShowing())
+    startTimerHz(60);
+  else
+    stopTimer();
 }
 
 void OrbVisualizer::updateAnimationTargets() {

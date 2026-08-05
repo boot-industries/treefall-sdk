@@ -114,10 +114,11 @@
     },
     "remote": {
       "type": "object",
-      "required": ["fetch_url", "push_url", "push_remote"],
+      "required": ["fetch_url", "fetch_remote", "push_url", "push_remote"],
       "additionalProperties": false,
       "properties": {
         "fetch_url": { "type": "string", "format": "uri" },
+        "fetch_remote": { "type": "string", "minLength": 1 },
         "push_url": { "type": ["string", "null"] },
         "push_remote": { "type": ["string", "null"] }
       }
@@ -167,7 +168,21 @@
         "compatibility": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
         "generated_artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
         "dependency_pins": { "type": "array", "items": { "$ref": "#/$defs/dependencyPin" } },
-        "external_pins": { "type": "array", "items": { "type": "object", "required": ["name", "kind", "path", "remote", "revision"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "remote": { "type": "string", "format": "uri" }, "revision": { "$ref": "#/$defs/commit" } } } },
+        "external_pins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind", "path", "remote", "revision"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "kind": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 },
+              "remote": { "type": "string", "format": "uri" },
+              "revision": { "$ref": "#/$defs/commit" }
+            }
+          }
+        },
         "verification": { "type": "array", "items": { "$ref": "#/$defs/check" } }
       }
     },
@@ -179,6 +194,7 @@
         "id": { "type": "string", "minLength": 1 },
         "cwd": { "type": "string", "minLength": 1 },
         "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "environment": { "type": "object", "additionalProperties": { "type": "string" } },
         "tier": { "enum": ["quick", "full"] },
         "platforms": { "type": "array", "items": { "enum": ["macos", "linux", "windows"] }, "minItems": 1 },
         "required_for": { "type": "array", "items": { "enum": ["candidate", "stable"] }, "minItems": 1 }
@@ -197,18 +213,39 @@
         "pin_policy": { "type": "string", "minLength": 1 }
       }
     },
+    "acceptanceRequirement": {
+      "type": "object",
+      "required": ["repository", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 }
+      }
+    },
     "releaseGate": {
       "type": "object",
-      "required": ["requires", "publishes"],
+      "required": ["requires", "publishes", "acceptance"],
       "additionalProperties": false,
       "properties": {
         "requires": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
-        "publishes": { "type": "string", "minLength": 1 }
+        "publishes": { "type": "string", "minLength": 1 },
+        "acceptance": { "type": "array", "items": { "$ref": "#/$defs/acceptanceRequirement" }, "minItems": 1 }
       }
     },
     "commit": {
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
+    },
+    "acceptanceRecord": {
+      "type": "object",
+      "required": ["repository", "kind", "status", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pending", "passed", "failed"] },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
     },
     "snapshot": {
       "type": "object",
@@ -222,8 +259,24 @@
         "immutable": { "const": true },
         "observed_at": { "type": "string", "format": "date" },
         "repositories": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/snapshotRepository" } },
-        "verification": { "type": "object", "required": ["status", "evidence"], "additionalProperties": false, "properties": { "status": { "enum": ["inventory-only", "passed", "failed", "blocked"] }, "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } } } },
-        "human_acceptance": { "type": "object", "required": ["status", "records"], "additionalProperties": false, "properties": { "status": { "enum": ["pending", "passed", "failed"] }, "records": { "type": "array", "items": { "type": "object", "required": ["kind", "status", "evidence"], "additionalProperties": false, "properties": { "kind": { "type": "string", "minLength": 1 }, "status": { "enum": ["pending", "passed", "failed"] }, "evidence": { "type": "string", "minLength": 1 } } } } } }
+        "verification": {
+          "type": "object",
+          "required": ["status", "evidence"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "enum": ["inventory-only", "passed", "failed", "blocked"] },
+            "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "human_acceptance": {
+          "type": "object",
+          "required": ["status", "records"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "enum": ["pending", "passed", "failed"] },
+            "records": { "type": "array", "items": { "$ref": "#/$defs/acceptanceRecord" } }
+          }
+        }
       }
     },
     "snapshotRepository": {

@@ -19,7 +19,6 @@ LevelMeter::LevelMeter() : LevelMeter(1) {}
 
 LevelMeter::LevelMeter(int numChannels)
     : m_numChannels(juce::jlimit(1, MAX_CHANNELS, numChannels)) {
-  // Initialize atomics
   for (int i = 0; i < MAX_CHANNELS; ++i) {
     m_inputLevels[i].store(0.0f);
     m_displayLevels[i] = 0.0f;
@@ -31,7 +30,7 @@ LevelMeter::LevelMeter(int numChannels)
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
   setBallistics(MeterBallistics::Peak);
   addDefaultThemeListener(this);
-  startTimerHz(60);
+  updateTimerState();
 }
 
 LevelMeter::~LevelMeter() {
@@ -275,8 +274,24 @@ void LevelMeter::mouseDown(const juce::MouseEvent& e) {
 
 //==============================================================================
 void LevelMeter::timerCallback() {
+  if (!isShowing()) {
+    updateTimerState();
+    return;
+  }
+
   updateMeter();
   repaint();
+}
+
+void LevelMeter::visibilityChanged() {
+  updateTimerState();
+}
+
+void LevelMeter::updateTimerState() {
+  if (isShowing())
+    startTimerHz(60);
+  else
+    stopTimer();
 }
 
 void LevelMeter::updateMeter() {

@@ -416,6 +416,7 @@ void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noex
     }
     const uint32_t previous = m_pages[index].guard.fetch_sub(1, std::memory_order_acq_rel);
     assert(previous > 0 && previous < kClaimed);
+    static_cast<void>(previous);
   }
   const uint32_t pending = m_pendingCommandPrimes.load(std::memory_order_acquire);
   assert(pending > 0);

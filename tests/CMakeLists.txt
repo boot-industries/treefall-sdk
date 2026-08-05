@@ -150,6 +150,10 @@ if(Python3_Interpreter_FOUND)
       affected
       shmui
       --json)
+  add_test(NAME suite_tool_unit
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tests/suite_test.py)
+  set_tests_properties(suite_tool_unit PROPERTIES LABELS "fast;unit")
 endif()
 
 # Session tests (including Scene Manager)

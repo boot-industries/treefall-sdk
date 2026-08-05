@@ -57,6 +57,7 @@
       "path": "orpheus-sdk",
       "remote": {
         "fetch_url": "https://github.com/chrislyons/orpheus-sdk.git",
+        "fetch_remote": "origin",
         "push_url": "https://github.com/chrislyons/orpheus-sdk.git",
         "push_remote": "origin"
       },
@@ -81,9 +82,10 @@
           "exclude_paths": [
             "shmui-juce-import.json"
           ],
-          "expected_sha256": "193a9e6c769df3f9b3f75dd0f1d5bce06ff574f2f7561a408e98a17b735b672d",
+          "expected_sha256": "f34c156d9202261090d6185bbce356b23dd675a96f4c5f39ab90a07c8e4822bc",
           "source_repository": "shmui",
-          "source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
+          "source_revision": "f5696004ba2502762800108a53de614264dfba66",
+          "current_source_revision": "f5696004ba2502762800108a53de614264dfba66",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -153,6 +155,7 @@
       "path": "shmui",
       "remote": {
         "fetch_url": "https://github.com/chrislyons/shmui.git",
+        "fetch_remote": "origin",
         "push_url": null,
         "push_remote": null
       },
@@ -174,7 +177,7 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
           "source_repository": "shmui",
-          "source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
+          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -189,6 +192,9 @@
             "scripts/sync-juce.sh",
             "--check"
           ],
+          "environment": {
+            "SDK_ROOT": "../orpheus-sdk"
+          },
           "tier": "quick",
           "platforms": [
             "macos",
@@ -241,8 +247,9 @@
       "path": "fourtrack",
       "remote": {
         "fetch_url": "https://github.com/chrislyons/fourtrack.git",
+        "fetch_remote": "origin",
         "push_url": "https://github.com/chrislyons/fourtrack.git",
-        "push_remote": "publish"
+        "push_remote": "origin"
       },
       "default_branch": "main",
       "role": "native-recorder-application",
@@ -279,8 +286,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "a165e5aad550a9b073b22244cade3f1bbf8a329caadebb179c62b0d8732c9d60",
           "source_repository": "shmui",
-          "source_revision": "6129e3cb73f32922e588aa647bbafb87fccdc324",
-          "current_source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
+          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
+          "current_source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
           "source_paths": [
             "juce/Source",
             "apps/www/styles/orpheus-tokens.css"
@@ -292,8 +299,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "13ddd076cc47e17ff807ab9d2c0c8a7e4656e339af63e3ec01d33fe5bee6da2c",
           "source_repository": "shmui",
-          "source_revision": "6129e3cb73f32922e588aa647bbafb87fccdc324",
-          "current_source_revision": "11ad82bcc500cd187446841b92c5c8ac7c04fef3",
+          "source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
+          "current_source_revision": "e7e9b607a950117dc5cc4dfe9a29714db24f0d2a",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -306,6 +313,25 @@
           "command": [
             "scripts/format.sh",
             "--check"
+          ],
+          "tier": "quick",
+          "platforms": [
+            "macos",
+            "linux"
+          ],
+          "required_for": [
+            "candidate",
+            "stable"
+          ]
+        },
+        {
+          "id": "fourtrack-shmui-provenance",
+          "cwd": "fourtrack",
+          "command": [
+            "python3",
+            "scripts/check-shmui-swift.py",
+            "--shmui-root",
+            "../shmui"
           ],
           "tier": "quick",
           "platforms": [
@@ -341,6 +367,7 @@
       "path": "freqfinder",
       "remote": {
         "fetch_url": "https://github.com/chrislyons/freqfinder.git",
+        "fetch_remote": "origin",
         "push_url": "https://github.com/chrislyons/freqfinder.git",
         "push_remote": "origin"
       },
@@ -399,6 +426,7 @@
       "path": "clip-composer",
       "remote": {
         "fetch_url": "https://github.com/chrislyons/clip-composer.git",
+        "fetch_remote": "origin",
         "push_url": "https://github.com/chrislyons/clip-composer.git",
         "push_remote": "origin"
       },
@@ -510,6 +538,14 @@
         "all quick and full checks declared for candidate",
         "required human acceptance records"
       ],
+      "acceptance": [
+        { "repository": "fourtrack", "kind": "native-macos-launch" },
+        { "repository": "fourtrack", "kind": "operator-route-ui-visual" },
+        { "repository": "freqfinder", "kind": "native-macos-launch" },
+        { "repository": "freqfinder", "kind": "operator-ui-visual" },
+        { "repository": "clip-composer", "kind": "native-macos-launch" },
+        { "repository": "clip-composer", "kind": "operator-audio-settings-visual" }
+      ],
       "publishes": "immutable suite snapshot JSON and a Git tag or GitHub Release only after PRs merge"
     },
     "stable": {
@@ -518,6 +554,14 @@
         "all candidate checks green",
         "all required native macOS visual and performance acceptance records",
         "no unresolved downstream compatibility or package-consumer failures"
+      ],
+      "acceptance": [
+        { "repository": "orpheus-sdk", "kind": "coreaudio-hardware-route" },
+        { "repository": "fourtrack", "kind": "coreaudio-real-device-route" },
+        { "repository": "fourtrack", "kind": "realtime-performance" },
+        { "repository": "freqfinder", "kind": "analysis-performance" },
+        { "repository": "clip-composer", "kind": "coreaudio-real-device-output" },
+        { "repository": "clip-composer", "kind": "sixteen-clip-performance" }
       ],
       "publishes": "the same immutable snapshot under the stable channel; component commits are never rewritten"
     },

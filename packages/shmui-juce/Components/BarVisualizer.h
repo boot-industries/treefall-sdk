@@ -16,7 +16,7 @@
 #include "../Utils/AgentState.h"
 #include "../Utils/DesignTokens.h"
 #include <JuceHeader.h>
-#include <vector>
+#include <memory>
 
 namespace shmui {
 
@@ -38,7 +38,7 @@ public:
   /**
    * @brief Set the audio analyzer for real-time data.
    */
-  void setAudioAnalyzer(AudioAnalyzer* analyzer);
+  void setAudioAnalyzer(std::shared_ptr<AudioAnalyzer> analyzer);
 
   /**
    * @brief Set volume bands directly (for external audio processing).
@@ -130,6 +130,9 @@ public:
 
 private:
   void timerCallback() override;
+  void visibilityChanged() override;
+  void updateTimerState();
+  bool hasActiveWork() const;
   int getAnimationInterval() const;
   std::vector<int> getHighlightedIndices() const;
   void updateFakeVolumeBands();
@@ -138,7 +141,7 @@ private:
 
   //==============================================================================
 
-  AudioAnalyzer* audioAnalyzer = nullptr;
+  std::shared_ptr<AudioAnalyzer> audioAnalyzer;
   AgentState agentState = AgentState::Idle;
 
   int barCount = 15;

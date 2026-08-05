@@ -18,8 +18,10 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <vector>
-
 namespace shmui {
 
 /**
@@ -224,8 +226,27 @@ public:
 private:
   //==============================================================================
 
+  enum class PublicationState : std::uint8_t { Free, Writing, Ready, Reading };
+
+  static constexpr std::size_t kPublicationSlotCount = 3;
+  static constexpr std::size_t kPublicationFrameSize =
+      static_cast<std::size_t>(kSpectrumFFTSize / 2);
+
+  struct PublicationSlot {
+    std::array<float, kPublicationFrameSize> data{};
+    std::atomic<PublicationState> state{PublicationState::Free};
+  };
+
+  static_assert(std::atomic<PublicationState>::is_always_lock_free,
+                "AudioAnalyzer publication state must be lock-free");
+
   void performFFT();
   void updateSmoothedData();
+  bool claimWritableSlot(std::size_t& index) noexcept;
+  bool claimReadableSlot(std::size_t& index) const noexcept;
+  void releaseReadableSlot(std::size_t index) const noexcept;
+
+  static float sanitizeNormalized(float value) noexcept;
 
   //==============================================================================
 
@@ -238,10 +259,16 @@ private:
   std::vector<float> fftData; // Time domain -> Frequency domain
   std::vector<float> fifo;    // Input sample FIFO
   int fifoIndex = 0;
-  bool fftDataReady = false;
+
+  // Audio-thread smoothing accumulator. This is never shared with the UI.
+  std::array<float, kPublicationFrameSize> smoothingAccumulator{};
+
+  // Published FFT frames. The producer owns Writing; the UI owns Reading.
+  mutable std::array<PublicationSlot, kPublicationSlotCount> publicationSlots{};
+  std::size_t nextWriteSlot = 0;
+  mutable std::size_t nextReadSlot = 0;
 
   // Smoothed output (UI thread reads)
-  std::vector<float> smoothedFrequencyData;
   std::atomic<float> smoothedRMS{0.0f};
   std::atomic<float> peakLevel{0.0f};
 
@@ -249,18 +276,8 @@ private:
   std::atomic<float> smoothingTimeConstant{kDefaultSmoothing};
   std::atomic<float> sensitivity{1.0f};
 
-  // Thread synchronization
-  mutable juce::SpinLock dataLock;
-
   // Pre-allocated buffer for mono mixdown (avoids allocation on audio thread).
-  // Buffer is pre-sized to kMaxBufferSize. NOTE: parentheses, not braces — the
-  // brace form {kMaxBufferSize, 0.0f} selects the initializer_list ctor and
-  // builds a TWO-element vector [8192.0, 0.0], so processBlock's mixdown then
-  // writes up to kMaxBufferSize floats past a 2-float allocation (audio-thread
-  // heap-buffer-overflow, caught by ASan). The size ctor gives kMaxBufferSize
-  // zero-initialized floats as intended.
-  std::vector<float> monoMixBuffer = std::vector<float>(kMaxBufferSize, 0.0f);
-
+  std::array<float, kMaxBufferSize> monoMixBuffer{};
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioAnalyzer)
 };
 

@@ -35,6 +35,9 @@ project(orpheus_shmui_juce LANGUAGES CXX)
 option(SHMUI_JUCE_ENABLE_OPENGL
   "Build the OpenGL OrbVisualizer component (orpheus_shmui_juce_gl)" OFF)
 
+option(SHMUI_JUCE_BUILD_TESTS
+  "Build deterministic native boundary fixtures" OFF)
+
 # Sources are under Source/ in the shmui repo. The SDK-synced copy flattens this
 # to the package root; sync-juce.sh rewrites SHMUI_SRC accordingly.
 set(SHMUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -140,4 +143,15 @@ if(SHMUI_JUCE_ENABLE_OPENGL)
   if(NOT TARGET Orpheus::shmui_juce_gl)
     add_library(Orpheus::shmui_juce_gl ALIAS orpheus_shmui_juce_gl)
   endif()
+endif()
+
+if(SHMUI_JUCE_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(shmui_shm014_fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM014AudioBoundaryFixture.cpp
+  )
+  target_link_libraries(shmui_shm014_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_features(shmui_shm014_fixture PRIVATE cxx_std_20)
+  add_test(NAME shmui_shm014_audio_boundary COMMAND shmui_shm014_fixture)
 endif()
