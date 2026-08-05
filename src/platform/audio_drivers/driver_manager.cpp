@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MIT
+#include "coreaudio/coreaudio_endpoint_catalog.h"
+#include "coreaudio/coreaudio_endpoint_monitor.h"
+
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cwchar>
 #include <mutex>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
@@ -86,13 +91,21 @@ public:
   uint32_t getCurrentBufferSize() const override;
   void setDeviceChangeCallback(std::function<void()> callback) override;
   IAudioDriver* getActiveDriver() override;
+  std::vector<AudioEndpointCapabilities> enumerateEndpointCapabilities() override;
+  std::optional<AudioEndpointCapabilities>
+  getEndpointCapabilities(const std::string& deviceId) override;
+  void setEndpointChangeCallback(std::function<void()> callback) override;
 
 private:
   std::vector<AudioDeviceInfo> enumerateCoreAudioDevices();
   std::vector<AudioDeviceInfo> enumerateWindowsDevices();
   std::vector<AudioDeviceInfo> enumerateLinuxDevices();
+  std::vector<AudioEndpointCapabilities> enumerateCoreAudioEndpointCapabilities();
   AudioDeviceInfo getDummyDeviceInfo();
   std::unique_ptr<IAudioDriver> createDriverForDevice(const std::string& deviceId);
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  std::unique_ptr<CoreAudioEndpointMonitor> m_endpointMonitor;
+#endif
 
   std::unique_ptr<IAudioDriver> m_activeDriver;
   DriverFactory m_driverFactory;
@@ -111,6 +124,9 @@ AudioDriverManager::AudioDriverManager(DriverFactory factory)
     : m_driverFactory(std::move(factory)) {}
 
 AudioDriverManager::~AudioDriverManager() {
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  m_endpointMonitor.reset();
+#endif
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_activeDriver) {
     m_activeDriver->stop();
@@ -251,6 +267,53 @@ void AudioDriverManager::setDeviceChangeCallback(std::function<void()> callback)
 IAudioDriver* AudioDriverManager::getActiveDriver() {
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_activeDriver.get();
+}
+
+std::vector<AudioEndpointCapabilities> AudioDriverManager::enumerateEndpointCapabilities() {
+  AudioEndpointCapabilities dummy;
+  dummy.device_id = "dummy";
+  dummy.display_name = "Dummy Audio Driver";
+  dummy.availability = AudioEndpointAvailability::Available;
+  dummy.supports_output = true;
+  dummy.output_channels.reserve(32);
+  for (uint16_t channel = 0; channel < 32; ++channel) {
+    dummy.output_channels.push_back({channel, "dummy:output:" + std::to_string(channel),
+                                     "Dummy Output " + std::to_string(channel + 1)});
+  }
+  dummy.supported_sample_rates = {44100, 48000, 88200, 96000};
+  dummy.supported_buffer_sizes = {128, 256, 512, 1024, 2048};
+  dummy.nominal_sample_rate = 48000;
+  dummy.current_buffer_size = 512;
+
+  std::vector<AudioEndpointCapabilities> endpoints;
+  endpoints.push_back(std::move(dummy));
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  auto core_audio_endpoints = enumerateCoreAudioEndpointCapabilities();
+  endpoints.insert(endpoints.end(), core_audio_endpoints.begin(), core_audio_endpoints.end());
+#endif
+  return endpoints;
+}
+
+std::optional<AudioEndpointCapabilities>
+AudioDriverManager::getEndpointCapabilities(const std::string& deviceId) {
+  for (auto& endpoint : enumerateEndpointCapabilities()) {
+    if (endpoint.device_id == deviceId) {
+      return endpoint;
+    }
+  }
+  return std::nullopt;
+}
+
+void AudioDriverManager::setEndpointChangeCallback(std::function<void()> callback) {
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (!m_endpointMonitor) {
+    m_endpointMonitor = createCoreAudioEndpointMonitor();
+  }
+  m_endpointMonitor->setCallback(std::move(callback));
+#else
+  (void)callback;
+#endif
 }
 
 AudioDeviceInfo AudioDriverManager::getDummyDeviceInfo() {
@@ -395,6 +458,148 @@ std::vector<AudioDeviceInfo> AudioDriverManager::enumerateCoreAudioDevices() {
   }
 
   return devices;
+}
+
+std::vector<AudioEndpointCapabilities>
+AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
+  std::vector<AudioEndpointCapabilities> endpoints;
+  const AudioObjectPropertyAddress devices_address = {kAudioHardwarePropertyDevices,
+                                                      kAudioObjectPropertyScopeGlobal,
+                                                      kAudioObjectPropertyElementMain};
+  UInt32 devices_size = 0;
+  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devices_address, 0, nullptr,
+                                     &devices_size) != noErr ||
+      devices_size == 0) {
+    return endpoints;
+  }
+  std::vector<AudioDeviceID> device_ids(devices_size / sizeof(AudioDeviceID));
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &devices_address, 0, nullptr,
+                                 &devices_size, device_ids.data()) != noErr) {
+    return endpoints;
+  }
+
+  const auto read_string = [](AudioDeviceID device_id,
+                              AudioObjectPropertySelector selector) -> std::string {
+    const AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    CFStringRef value = nullptr;
+    UInt32 size = sizeof(value);
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+        value == nullptr) {
+      return {};
+    }
+    char buffer[1024] = {};
+    const Boolean converted =
+        CFStringGetCString(value, buffer, sizeof(buffer), kCFStringEncodingUTF8);
+    CFRelease(value);
+    return converted ? std::string(buffer) : std::string{};
+  };
+  const auto read_channel_count = [](AudioDeviceID device_id,
+                                     AudioObjectPropertyScope scope) -> uint32_t {
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyStreamConfiguration, scope,
+                                                kAudioObjectPropertyElementMain};
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &size) != noErr ||
+        size < sizeof(AudioBufferList)) {
+      return 0;
+    }
+    std::vector<uint8_t> storage(size);
+    auto* buffers = reinterpret_cast<AudioBufferList*>(storage.data());
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, buffers) != noErr) {
+      return 0;
+    }
+    uint32_t channels = 0;
+    for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index) {
+      channels += buffers->mBuffers[index].mNumberChannels;
+    }
+    return channels;
+  };
+  const auto read_uint32 = [](AudioDeviceID device_id, AudioObjectPropertySelector selector,
+                              AudioObjectPropertyScope scope) -> uint32_t {
+    const AudioObjectPropertyAddress address = {selector, scope, kAudioObjectPropertyElementMain};
+    UInt32 value = 0;
+    UInt32 size = sizeof(value);
+    return AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) == noErr
+               ? value
+               : 0;
+  };
+  const auto read_nominal_rate = [](AudioDeviceID device_id) -> uint32_t {
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyNominalSampleRate,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    Float64 value = 0.0;
+    UInt32 size = sizeof(value);
+    if (AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &value) != noErr ||
+        value <= 0.0) {
+      return 0;
+    }
+    return static_cast<uint32_t>(value);
+  };
+
+  AudioDeviceID default_input = 0;
+  AudioDeviceID default_output = 0;
+  const AudioObjectPropertyAddress default_input_address = {
+      kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain};
+  const AudioObjectPropertyAddress default_output_address = {
+      kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain};
+  UInt32 default_size = sizeof(default_input);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_input_address, 0, nullptr,
+                             &default_size, &default_input);
+  default_size = sizeof(default_output);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_output_address, 0, nullptr,
+                             &default_size, &default_output);
+
+  for (const AudioDeviceID device_id : device_ids) {
+    const std::string uid = read_string(device_id, kAudioDevicePropertyDeviceUID);
+    if (uid.empty()) {
+      continue;
+    }
+
+    detail::CoreAudioEndpointFacts facts;
+    facts.device_id = uid;
+    facts.display_name = read_string(device_id, kAudioDevicePropertyDeviceNameCFString);
+    facts.is_default_input = device_id == default_input;
+    facts.is_default_output = device_id == default_output;
+    facts.input_channel_count = read_channel_count(device_id, kAudioObjectPropertyScopeInput);
+    facts.output_channel_count = read_channel_count(device_id, kAudioObjectPropertyScopeOutput);
+
+    const AudioObjectPropertyAddress rates_address = {
+        kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    UInt32 rates_size = 0;
+    if (AudioObjectGetPropertyDataSize(device_id, &rates_address, 0, nullptr, &rates_size) ==
+            noErr &&
+        rates_size >= sizeof(AudioValueRange)) {
+      std::vector<AudioValueRange> ranges(rates_size / sizeof(AudioValueRange));
+      if (AudioObjectGetPropertyData(device_id, &rates_address, 0, nullptr, &rates_size,
+                                     ranges.data()) == noErr) {
+        facts.sample_rate_ranges.reserve(ranges.size());
+        for (const auto& range : ranges) {
+          facts.sample_rate_ranges.push_back(
+              {static_cast<double>(range.mMinimum), static_cast<double>(range.mMaximum)});
+        }
+      }
+    }
+    facts.nominal_sample_rate = read_nominal_rate(device_id);
+
+    const AudioObjectPropertyAddress buffer_range_address = {
+        kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    AudioValueRange buffer_range{};
+    UInt32 buffer_range_size = sizeof(buffer_range);
+    if (AudioObjectGetPropertyData(device_id, &buffer_range_address, 0, nullptr, &buffer_range_size,
+                                   &buffer_range) == noErr) {
+      facts.buffer_size_ranges.push_back(
+          {static_cast<double>(buffer_range.mMinimum), static_cast<double>(buffer_range.mMaximum)});
+    }
+    facts.current_buffer_size = read_uint32(device_id, kAudioDevicePropertyBufferFrameSize,
+                                            kAudioObjectPropertyScopeGlobal);
+
+    endpoints.push_back(detail::makeCoreAudioEndpointCapabilities(facts));
+  }
+  return endpoints;
 }
 #endif
 

@@ -18,6 +18,7 @@ public:
   ~DummyAudioDriver() override;
 
   SessionGraphError initialize(const AudioDriverConfig& config) override;
+  SessionGraphError initializeAudioOutput(const AudioOutputRouteRequest& request) override;
   SessionGraphError start(IAudioCallback* callback) override;
   SessionGraphError stop() override;
   bool isRunning() const override;
@@ -26,6 +27,7 @@ public:
   uint32_t getLatencySamples() const override;
   AudioDriverCapabilities getCapabilities() const override;
   ActiveAudioRoute getActiveRoute() const override;
+  AudioIoRouteState getAudioIoRouteState() const override;
   AudioIoTelemetry getTelemetry() const noexcept override;
 
 private:

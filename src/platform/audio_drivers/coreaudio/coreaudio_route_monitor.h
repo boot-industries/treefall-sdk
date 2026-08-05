@@ -18,9 +18,18 @@ enum class CoreAudioRoutePollResult : uint8_t {
   NoChange,
   RateRestored,
   RouteUnavailable,
+  InputUnavailable,
+  OutputUnavailable,
   FormatChanged,
   ReinitializationRequired,
   BackendFailure,
+};
+
+/// A physical device contributing one or both directions of an active route.
+struct CoreAudioRouteDevice {
+  AudioDeviceID device_id = 0;
+  bool monitors_input = false;
+  bool monitors_output = false;
 };
 
 /// One stream whose virtual and physical formats are part of the active route.
@@ -40,7 +49,7 @@ class CoreAudioRouteMonitor final {
 public:
   CoreAudioRouteMonitor(ICoreAudioSampleRatePropertyApi& property_api,
                         uint32_t expected_sample_rate, uint32_t expected_buffer_frames,
-                        std::vector<AudioDeviceID> device_ids,
+                        std::vector<CoreAudioRouteDevice> devices,
                         std::vector<CoreAudioRouteStream> streams);
   ~CoreAudioRouteMonitor();
 
@@ -89,7 +98,7 @@ private:
   ICoreAudioSampleRatePropertyApi& property_api_;
   const Float64 expected_sample_rate_;
   const UInt32 expected_buffer_frames_;
-  std::vector<AudioDeviceID> device_ids_;
+  std::vector<CoreAudioRouteDevice> devices_;
   std::vector<CoreAudioRouteStream> streams_;
   std::vector<ListenerRegistration> registrations_;
   std::atomic<uint64_t> state_{kStoppedBit};
