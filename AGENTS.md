@@ -181,9 +181,9 @@ and real error paths over source-text or plumbing assertions.
 
 Do not silently implement or mark these complete:
 
-- R5 one-shot voice work remains gated on two independent existing consumers and
-  a shipped/soaked R1–R4 release.
-- The Release Operating Model jobs listed in ORP143 §8.2 were deferred as a unit.
+- ORP170 candidate and stable promotion remain gated on the external acceptance
+  records enumerated in ORP173; the observed development snapshot is not a
+  release claim.
 - Windows/WASAPI support promotion remains gated on the evidence in ORP143 §7.
 
 Reopen any of these only with an explicit task and the stated prerequisite

@@ -111,13 +111,8 @@ void AudioAnalyzer::getFrequencyData(std::vector<float>& outData) const {
   const int numBins = std::min(fftSize / 2, static_cast<int>(kPublicationFrameSize));
   outData.assign(static_cast<std::size_t>(std::max(0, numBins)), 0.0f);
 
-  std::size_t slotIndex = 0;
-  if (!claimReadableSlot(slotIndex))
-    return;
-
-  const auto& frame = publicationSlots[slotIndex].data;
-  std::copy_n(frame.begin(), outData.size(), outData.begin());
-  releaseReadableSlot(slotIndex);
+  captureLatestFrame();
+  std::copy_n(latestFrequencyFrame.begin(), outData.size(), outData.begin());
 
   const float configuredSensitivity = sensitivity.load(std::memory_order_relaxed);
   const float safeSensitivity =
@@ -179,11 +174,9 @@ void AudioAnalyzer::getFrequencyBands(std::vector<float>& outBands, int numBands
   if (lastBin <= firstBin)
     return;
 
-  std::size_t slotIndex = 0;
-  if (!claimReadableSlot(slotIndex))
-    return;
+  captureLatestFrame();
 
-  const auto& frame = publicationSlots[slotIndex].data;
+  const auto& frame = latestFrequencyFrame;
   const int sliceLength = lastBin - firstBin;
   const int chunkSize = sliceLength / bandCount + ((sliceLength % bandCount) != 0 ? 1 : 0);
 
@@ -208,8 +201,6 @@ void AudioAnalyzer::getFrequencyBands(std::vector<float>& outBands, int numBands
     const float average = count > 0 ? static_cast<float>(sum / static_cast<double>(count)) : 0.0f;
     outBands[static_cast<std::size_t>(band)] = sanitizeNormalized(average * safeSensitivity);
   }
-
-  releaseReadableSlot(slotIndex);
 }
 
 //==============================================================================
@@ -355,6 +346,17 @@ bool AudioAnalyzer::claimReadableSlot(std::size_t& index) const noexcept {
   }
 
   return false;
+}
+
+bool AudioAnalyzer::captureLatestFrame() const noexcept {
+  std::size_t slotIndex = 0;
+  if (!claimReadableSlot(slotIndex))
+    return false;
+
+  std::copy(publicationSlots[slotIndex].data.begin(), publicationSlots[slotIndex].data.end(),
+            latestFrequencyFrame.begin());
+  releaseReadableSlot(slotIndex);
+  return true;
 }
 
 void AudioAnalyzer::releaseReadableSlot(std::size_t index) const noexcept {
