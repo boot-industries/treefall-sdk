@@ -16,6 +16,45 @@ namespace orpheus {
 // Forward declaration
 class IAudioDriver;
 
+/// Direction of a physical hardware endpoint.
+enum class AudioEndpointDirection : uint8_t { Input, Output };
+
+/// Endpoint availability on the current host.
+enum class AudioEndpointAvailability : uint8_t {
+  Available,
+  Unavailable,
+  PermissionDenied,
+  FormatUnavailable,
+  Unknown,
+};
+
+/// One physical endpoint channel.
+struct AudioChannelDescriptor {
+  uint16_t device_index = 0;
+  std::string stable_id;
+  std::string display_name;
+};
+
+/// Direction-specific endpoint capability facts.
+///
+/// `device_id` is a persistent backend identifier suitable for route
+/// selection; `display_name` is presentation-only. The manager may report a
+/// device that supports either or both directions.
+struct AudioEndpointCapabilities {
+  std::string device_id;
+  std::string display_name;
+  AudioEndpointAvailability availability = AudioEndpointAvailability::Unknown;
+  bool is_default_input = false;
+  bool is_default_output = false;
+  bool supports_input = false;
+  bool supports_output = false;
+  std::vector<AudioChannelDescriptor> input_channels;
+  std::vector<AudioChannelDescriptor> output_channels;
+  std::vector<uint32_t> supported_sample_rates;
+  std::vector<uint32_t> supported_buffer_sizes;
+  uint32_t nominal_sample_rate = 0;
+  uint32_t current_buffer_size = 0;
+};
 /// Audio device information
 struct AudioDeviceInfo {
   std::string deviceId;                       ///< Unique device identifier
@@ -79,6 +118,7 @@ public:
                                             uint32_t bufferSize) = 0;
 
   /// Get currently active device
+
   ///
   /// @return Device ID, or std::nullopt if no device active
   /// @note Thread-safe, can be called from any thread
@@ -114,6 +154,27 @@ public:
   ///       Synchronize its use with setActiveDevice() and do not retain it
   ///       across a possible replacement.
   virtual IAudioDriver* getActiveDriver() = 0;
+  /// Enumerate direction-specific endpoint capabilities. Control thread only.
+  virtual std::vector<AudioEndpointCapabilities> enumerateEndpointCapabilities() {
+    return {};
+  }
+
+  /// Find one endpoint by stable backend device ID.
+  virtual std::optional<AudioEndpointCapabilities> getEndpointCapabilities(
+      const std::string& deviceId) {
+    (void)deviceId;
+    return std::nullopt;
+  }
+
+  /// Notify the host that endpoint discovery may have changed. The callback is
+  /// notification-only; hosts re-enumerate on their control/message thread.
+  ///
+  /// On CoreAudio the callback executes on an internal control worker, never
+  /// the CoreAudio property-listener thread or an audio callback. It may
+  /// replace or unregister itself, or destroy the manager.
+  virtual void setEndpointChangeCallback(std::function<void()> callback) {
+    (void)callback;
+  }
 };
 
 /// Create driver manager instance

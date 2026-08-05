@@ -982,6 +982,33 @@ TEST_F(CoreAudioDriverTest, ExplicitOutputUidAndMapAreReflectedInActiveRoute) {
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
 }
 
+TEST_F(CoreAudioDriverTest, OutputRouteRequestPublishesPlaybackState) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "Distinct default output with a readable UID is unavailable";
+  }
+
+  AudioOutputRouteRequest request;
+  request.output_device_id = endpoints.output_uid;
+  request.output_channel_map = {1, 0};
+  request.requested_sample_rate = 48000;
+  request.requested_buffer_size = 512;
+
+  ASSERT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::OK);
+  const AudioIoRouteState initialized = m_driver->getAudioIoRouteState();
+  EXPECT_EQ(initialized.state, AudioRouteState::Inactive);
+  EXPECT_EQ(initialized.selected_output_device_id, endpoints.output_uid);
+  EXPECT_EQ(initialized.requested_buffer_size, 512u);
+  EXPECT_EQ(initialized.actual_buffer_size, 512u);
+  EXPECT_EQ(initialized.active_output_channel_map, request.output_channel_map);
+  EXPECT_EQ(initialized.requested_sample_rate, 48000u);
+  EXPECT_EQ(initialized.actual_sample_rate, 48000u);
+
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getAudioIoRouteState().state, AudioRouteState::Running);
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
+
 TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
   const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
   if (!endpoints.isValid()) {

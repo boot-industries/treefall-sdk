@@ -148,6 +148,36 @@ TEST_F(DummyDriverTest, RetainsRequestedChannelMapWithoutFabricatingPhysicalRout
   EXPECT_FALSE(active_route.latency.complete);
 }
 
+TEST_F(DummyDriverTest, OutputRouteRequestPreservesMapAndLifecycleState) {
+  AudioOutputRouteRequest request;
+  request.output_device_id = "dummy";
+  request.output_channel_map = {2, 0};
+  request.requested_sample_rate = 48000;
+  request.requested_buffer_size = 256;
+
+  ASSERT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::OK);
+  auto state = m_driver->getAudioIoRouteState();
+  EXPECT_EQ(state.state, AudioRouteState::Inactive);
+  EXPECT_EQ(state.selected_output_device_id, "dummy");
+  EXPECT_EQ(state.active_output_channel_map, request.output_channel_map);
+  EXPECT_EQ(state.requested_sample_rate, 48000u);
+  EXPECT_EQ(state.actual_sample_rate, 48000u);
+  EXPECT_EQ(state.requested_buffer_size, 256u);
+  EXPECT_EQ(state.actual_buffer_size, 256u);
+
+  ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
+  state = m_driver->getAudioIoRouteState();
+  EXPECT_EQ(state.state, AudioRouteState::Running);
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getAudioIoRouteState().state, AudioRouteState::Inactive);
+}
+
+TEST_F(DummyDriverTest, OutputRouteRequestRejectsDuplicateMap) {
+  AudioOutputRouteRequest request;
+  request.output_channel_map = {1, 1};
+  EXPECT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::InvalidParameter);
+}
+
 TEST_F(DummyDriverTest, InitializeRejectsInvalidConfig) {
   AudioDriverConfig config;
   config.sample_rate = 0; // Invalid

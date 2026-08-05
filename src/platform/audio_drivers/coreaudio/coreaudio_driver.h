@@ -37,6 +37,8 @@ public:
   AudioIoTelemetry getTelemetry() const noexcept override;
   AudioDriverCapabilities getCapabilities() const override;
   ActiveAudioRoute getActiveRoute() const override;
+  SessionGraphError initializeAudioOutput(const AudioOutputRouteRequest& request) override;
+  AudioIoRouteState getAudioIoRouteState() const override;
 
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
@@ -75,6 +77,7 @@ private:
   void refreshActiveRouteLocked();
 
   AudioRouteLatency queryLatencyBreakdown() const;
+  AudioLatencyBreakdown queryDetailedLatencyBreakdown() const;
   uint32_t queryDeviceLatency() const;
   void cleanupAudioUnit();
   void stopRenderingLocked();
@@ -95,6 +98,7 @@ private:
   std::atomic<uint64_t> input_render_failures_{0};
   std::atomic<AudioDriverRuntimeOutcome> runtime_outcome_{AudioDriverRuntimeOutcome::Healthy};
   std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
+  std::atomic<AudioRouteState> unavailable_route_state_{AudioRouteState::Failed};
 
   CoreAudioSampleRatePropertyApi route_property_api_;
   std::unique_ptr<CoreAudioRouteMonitor> route_monitor_;

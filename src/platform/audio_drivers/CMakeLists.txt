@@ -28,6 +28,7 @@ endif()
 # Audio Driver Manager (platform-agnostic device enumeration and management)
 add_library(orpheus_audio_driver_manager STATIC
     driver_manager.cpp
+    coreaudio/coreaudio_endpoint_catalog.cpp
 )
 
 target_include_directories(orpheus_audio_driver_manager
@@ -77,6 +78,7 @@ message(STATUS "Orpheus: Audio Driver Manager enabled")
 if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
     add_library(orpheus_audio_driver_coreaudio STATIC
         coreaudio/coreaudio_driver.cpp
+        coreaudio/coreaudio_endpoint_monitor.cpp
         coreaudio/coreaudio_sample_rate_monitor.cpp
         coreaudio/coreaudio_route_monitor.cpp
     )

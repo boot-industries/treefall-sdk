@@ -39,37 +39,47 @@ int main() {
   if (!outputDriver) {
     return 11;
   }
-  orpheus::AudioDriverConfig outputConfig;
-  outputConfig.sample_rate = kSampleRate;
-  outputConfig.buffer_size = 128;
-  outputConfig.num_inputs = 0;
-  outputConfig.num_outputs = 2;
-  outputConfig.output_device_id = "dummy";
-  outputConfig.channel_map.output_channels = {1, 0};
-  if (outputDriver->initialize(outputConfig) != orpheus::SessionGraphError::OK) {
+  orpheus::AudioOutputRouteRequest outputRequest;
+  outputRequest.output_device_id = "dummy";
+  outputRequest.output_channel_map = {1, 0};
+  outputRequest.requested_sample_rate = kSampleRate;
+  outputRequest.requested_buffer_size = 128;
+  if (outputDriver->initializeAudioOutput(outputRequest) !=
+      orpheus::SessionGraphError::OK) {
     return 12;
   }
   if (outputDriver->getConfig().channel_map.output_channels !=
-      outputConfig.channel_map.output_channels) {
+      outputRequest.output_channel_map) {
     return 13;
+  }
+  const auto routeState = outputDriver->getAudioIoRouteState();
+  if (routeState.state != orpheus::AudioRouteState::Inactive ||
+      routeState.selected_output_device_id != outputRequest.output_device_id ||
+      routeState.active_output_channel_map != outputRequest.output_channel_map ||
+      routeState.requested_sample_rate != kSampleRate ||
+      routeState.actual_sample_rate != kSampleRate ||
+      routeState.requested_buffer_size != outputRequest.requested_buffer_size ||
+      routeState.actual_buffer_size != outputRequest.requested_buffer_size) {
+    return 14;
   }
   const auto activeRoute = outputDriver->getActiveRoute();
   if (!activeRoute.input_device_id.empty() || !activeRoute.output_device_id.empty() ||
       activeRoute.input_alive || activeRoute.output_alive || !activeRoute.input_channels.empty() ||
       !activeRoute.output_channels.empty() || activeRoute.latency.complete) {
-    return 14;
+    return 15;
   }
 
   auto manager = orpheus::createAudioDriverManager();
   if (!manager) {
-    return 15;
+    return 16;
   }
   const auto devices = manager->enumerateDevices();
   const auto dummy = std::find_if(devices.begin(), devices.end(),
                                   [](const auto& device) { return device.deviceId == "dummy"; });
   if (dummy == devices.end() || dummy->maxChannels != 2) {
-    return 16;
+    return 17;
   }
+
 
   auto transport = orpheus::createTransportController(
       nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});

@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   controller teardown. Resampled reader failures propagate rather than becoming
   EOF silence.
 
+
+### Added
+
+- Direction-aware CoreAudio endpoint discovery and strict playback-only route
+  initialization. Public route snapshots now report selected and active
+  endpoints, channel maps, actual format, latency terms, and distinct input or
+  output endpoint loss. Endpoint-change notifications include default input and
+  output changes, run on a control worker, and are safe to replace, unregister,
+  or destroy from their own callback.
+
 ### Changed
 
 - Synchronized `packages/shmui-juce` to ShmUI `6129e3cb73f32922e588aa647bbafb87fccdc324`

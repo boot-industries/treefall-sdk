@@ -8,16 +8,32 @@ namespace orpheus {
 CoreAudioRouteMonitor::CoreAudioRouteMonitor(ICoreAudioSampleRatePropertyApi& property_api,
                                              uint32_t expected_sample_rate,
                                              uint32_t expected_buffer_frames,
-                                             std::vector<AudioDeviceID> device_ids,
+                                             std::vector<CoreAudioRouteDevice> devices,
                                              std::vector<CoreAudioRouteStream> streams)
     : property_api_(property_api),
       expected_sample_rate_(static_cast<Float64>(expected_sample_rate)),
-      expected_buffer_frames_(expected_buffer_frames), device_ids_(std::move(device_ids)),
+      expected_buffer_frames_(expected_buffer_frames), devices_(std::move(devices)),
       streams_(std::move(streams)) {
-  std::sort(device_ids_.begin(), device_ids_.end());
-  device_ids_.erase(std::unique(device_ids_.begin(), device_ids_.end()), device_ids_.end());
-  device_ids_.erase(std::remove(device_ids_.begin(), device_ids_.end(), AudioDeviceID{0}),
-                    device_ids_.end());
+  std::sort(devices_.begin(), devices_.end(),
+            [](const CoreAudioRouteDevice& lhs, const CoreAudioRouteDevice& rhs) {
+              return lhs.device_id < rhs.device_id;
+            });
+  std::vector<CoreAudioRouteDevice> unique_devices;
+  unique_devices.reserve(devices_.size());
+  for (const CoreAudioRouteDevice& device : devices_) {
+    if (device.device_id == 0) {
+      continue;
+    }
+    if (!unique_devices.empty() && unique_devices.back().device_id == device.device_id) {
+      unique_devices.back().monitors_input =
+          unique_devices.back().monitors_input || device.monitors_input;
+      unique_devices.back().monitors_output =
+          unique_devices.back().monitors_output || device.monitors_output;
+      continue;
+    }
+    unique_devices.push_back(device);
+  }
+  devices_ = std::move(unique_devices);
 
   std::sort(streams_.begin(), streams_.end(),
             [](const CoreAudioRouteStream& lhs, const CoreAudioRouteStream& rhs) {
@@ -29,11 +45,13 @@ CoreAudioRouteMonitor::CoreAudioRouteMonitor(ICoreAudioSampleRatePropertyApi& pr
                              }),
                  streams_.end());
 
-  registrations_.reserve(device_ids_.size() * 3 + streams_.size() * 2);
-  for (const AudioDeviceID device_id : device_ids_) {
-    registrations_.push_back({device_id, deviceAddress(kAudioDevicePropertyDeviceIsAlive)});
-    registrations_.push_back({device_id, deviceAddress(kAudioDevicePropertyNominalSampleRate)});
-    registrations_.push_back({device_id, deviceAddress(kAudioDevicePropertyBufferFrameSize)});
+  registrations_.reserve(devices_.size() * 3 + streams_.size() * 2);
+  for (const CoreAudioRouteDevice& device : devices_) {
+    registrations_.push_back({device.device_id, deviceAddress(kAudioDevicePropertyDeviceIsAlive)});
+    registrations_.push_back(
+        {device.device_id, deviceAddress(kAudioDevicePropertyNominalSampleRate)});
+    registrations_.push_back(
+        {device.device_id, deviceAddress(kAudioDevicePropertyBufferFrameSize)});
   }
   for (const CoreAudioRouteStream& stream : streams_) {
     registrations_.push_back({stream.stream_id, streamAddress(kAudioStreamPropertyVirtualFormat)});
@@ -102,24 +120,33 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
   const auto rate_address = deviceAddress(kAudioDevicePropertyNominalSampleRate);
   const auto buffer_address = deviceAddress(kAudioDevicePropertyBufferFrameSize);
   bool rate_restored = false;
+  bool aggregate_unavailable = false;
 
-  for (const AudioDeviceID device_id : device_ids_) {
+  for (const CoreAudioRouteDevice& device : devices_) {
     UInt32 alive = 0;
-    if (!readUInt32(property_api_, device_id, alive_address, alive)) {
+    if (!readUInt32(property_api_, device.device_id, alive_address, alive)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (alive == 0) {
-      return CoreAudioRoutePollResult::RouteUnavailable;
+      if (device.monitors_input && !device.monitors_output) {
+        return CoreAudioRoutePollResult::InputUnavailable;
+      }
+      if (device.monitors_output && !device.monitors_input) {
+        return CoreAudioRoutePollResult::OutputUnavailable;
+      }
+      aggregate_unavailable = true;
+      continue;
     }
 
     Float64 observed_rate = 0.0;
-    if (!readFloat64(property_api_, device_id, rate_address, observed_rate)) {
+    if (!readFloat64(property_api_, device.device_id, rate_address, observed_rate)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (observed_rate != expected_sample_rate_) {
-      if (property_api_.setPropertyData(device_id, &rate_address, sizeof(expected_sample_rate_),
+      if (property_api_.setPropertyData(device.device_id, &rate_address,
+                                        sizeof(expected_sample_rate_),
                                         &expected_sample_rate_) != noErr ||
-          !readFloat64(property_api_, device_id, rate_address, observed_rate)) {
+          !readFloat64(property_api_, device.device_id, rate_address, observed_rate)) {
         return CoreAudioRoutePollResult::ReinitializationRequired;
       }
       if (observed_rate != expected_sample_rate_) {
@@ -129,12 +156,15 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
     }
 
     UInt32 observed_buffer_frames = 0;
-    if (!readUInt32(property_api_, device_id, buffer_address, observed_buffer_frames)) {
+    if (!readUInt32(property_api_, device.device_id, buffer_address, observed_buffer_frames)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (observed_buffer_frames != expected_buffer_frames_) {
       return CoreAudioRoutePollResult::ReinitializationRequired;
     }
+  }
+  if (aggregate_unavailable) {
+    return CoreAudioRoutePollResult::RouteUnavailable;
   }
 
   for (const CoreAudioRouteStream& stream : streams_) {
