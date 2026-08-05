@@ -32,10 +32,14 @@ was introduced.
 | Repository | Selected revision | Remote-main comparison | Qualification role |
 | --- | --- | --- | --- |
 | ShmUI | `a7b94b8be49875c7adc0ed5d4617150bb1d18cfa` | equals `origin/main`; PR [#21](https://github.com/chrislyons/shmui/pull/21) merged | canonical JUCE source |
-| Orpheus SDK | `582ab2e01723ccaa5e776845c5e774efecfc1c9d` | equals `origin/main`; PR [#236](https://github.com/chrislyons/orpheus-sdk/pull/236) merged | package and suite system of record |
+| Orpheus SDK | `582ab2e01723ccaa5e776845c5e774efecfc1c9d` | published package merge; reachable from current `origin/main` control merge `ba1db4f599a4d29b1d6938e5f6d288f409080d0a`; PR [#236](https://github.com/chrislyons/orpheus-sdk/pull/236) and control PR [#237](https://github.com/chrislyons/orpheus-sdk/pull/237) merged | package and suite system of record |
 | FourTrack | `c77ed582c3fb07a4ec13da6e1cf0a649cb4bd03a` | equals `origin/main`; route-state PR [#58](https://github.com/chrislyons/fourtrack/pull/58) and suite PR [#59](https://github.com/chrislyons/fourtrack/pull/59) merged | native recorder consumer |
 | FreqFinder | `20e80aa1d9cb8ce874525cdeb3d249b7d40b95fb` | equals `origin/main` | isolated source-override consumer |
 | Clip Composer | `9d820fd05e44e2c2f6ccd8e176a93664e5e5332d` | equals `origin/main`; PR [#35](https://github.com/chrislyons/clip-composer/pull/35) merged | SDK-pinned playback consumer |
+
+The SDK control-record merge `ba1db4f599a4d29b1d6938e5f6d288f409080d0a`
+contains this manifest and documentation; it is coordination metadata and is
+not substituted for the selected package component revision `582ab2e...`.
 
 The selected set is a published component set, not a release claim. Candidate
 preflight still requires the declared checks, immutable snapshot creation, and
