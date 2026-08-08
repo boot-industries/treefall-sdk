@@ -28,6 +28,8 @@ public:
   AudioDriverCapabilities getCapabilities() const override;
   ActiveAudioRoute getActiveRoute() const override;
   AudioIoRouteState getAudioIoRouteState() const override;
+  AudioRouteCompatibility probeRoute(const AudioDriverConfig& config) const override;
+
   AudioIoTelemetry getTelemetry() const noexcept override;
 
 private:

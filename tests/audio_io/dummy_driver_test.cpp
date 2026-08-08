@@ -317,3 +317,107 @@ TEST_F(DummyDriverTest, StopWhenNotRunning) {
   auto error = m_driver->stop();
   EXPECT_EQ(error, SessionGraphError::OK);
 }
+
+TEST_F(DummyDriverTest, ProbeValidConfigUsesProbeOnlyDummyIdentity) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 256;
+  config.num_inputs = 1;
+  config.num_outputs = 2;
+  config.input_device_id = "dummy";
+  config.output_device_id = "dummy";
+
+  const auto compatibility = m_driver->probeRoute(config);
+
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  EXPECT_EQ(compatibility.resolved_input_device_id, "dummy");
+  EXPECT_EQ(compatibility.resolved_output_device_id, "dummy");
+  EXPECT_EQ(compatibility.current_input_sample_rate, 48000u);
+  EXPECT_EQ(compatibility.current_output_sample_rate, 48000u);
+  EXPECT_FALSE(compatibility.input_rate_change_required);
+  EXPECT_FALSE(compatibility.output_rate_change_required);
+  EXPECT_FALSE(compatibility.input_is_running_somewhere);
+  EXPECT_FALSE(compatibility.output_is_running_somewhere);
+  EXPECT_TRUE(compatibility.detail.empty());
+}
+
+TEST_F(DummyDriverTest, ProbeReportsUnavailableExplicitIdsWithoutFallback) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 256;
+  config.num_inputs = 1;
+  config.num_outputs = 2;
+  config.output_device_id = "not-dummy";
+  auto compatibility = m_driver->probeRoute(config);
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::OutputUnavailable);
+  EXPECT_EQ(compatibility.detail, "resolve:output");
+
+  config.output_device_id.clear();
+  config.input_device_id = "not-dummy";
+  compatibility = m_driver->probeRoute(config);
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::InputUnavailable);
+  EXPECT_EQ(compatibility.detail, "resolve:input");
+}
+
+TEST_F(DummyDriverTest, ProbeReportsInvalidMapsAndStaticPrecedence) {
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 256;
+  config.num_outputs = 2;
+  config.channel_map.output_channels = {0, 0};
+  auto compatibility = m_driver->probeRoute(config);
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::InvalidChannelMap);
+  EXPECT_EQ(compatibility.detail, "map:output");
+
+  config.channel_map.output_channels.clear();
+  config.num_outputs = 0;
+  config.sample_rate = 0;
+  config.buffer_size = 0;
+  compatibility = m_driver->probeRoute(config);
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::OutputUnavailable);
+
+  config.num_outputs = 2;
+  compatibility = m_driver->probeRoute(config);
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::BackendFailure);
+  EXPECT_EQ(compatibility.detail, "config:output");
+}
+
+TEST_F(DummyDriverTest, ProbeDoesNotChangeDriverState) {
+  AudioDriverConfig initialized;
+  initialized.sample_rate = 48000;
+  initialized.buffer_size = 128;
+  initialized.num_inputs = 1;
+  initialized.num_outputs = 2;
+  initialized.channel_map.output_channels = {1, 0};
+  ASSERT_EQ(m_driver->initialize(initialized), SessionGraphError::OK);
+
+  const auto before_config = m_driver->getConfig();
+  const auto before_route = m_driver->getActiveRoute();
+  const auto before_state = m_driver->getAudioIoRouteState();
+
+  AudioDriverConfig request = initialized;
+  request.sample_rate = 96000;
+  request.output_device_id = "dummy";
+  request.input_device_id = "dummy";
+  request.channel_map.output_channels = {0, 1};
+  ASSERT_EQ(m_driver->probeRoute(request).status, AudioRouteCompatibilityStatus::Compatible);
+
+  const auto& after_config = m_driver->getConfig();
+  EXPECT_EQ(after_config.sample_rate, before_config.sample_rate);
+  EXPECT_EQ(after_config.buffer_size, before_config.buffer_size);
+  EXPECT_EQ(after_config.num_inputs, before_config.num_inputs);
+  EXPECT_EQ(after_config.num_outputs, before_config.num_outputs);
+  EXPECT_EQ(after_config.channel_map.output_channels, before_config.channel_map.output_channels);
+  const auto after_route = m_driver->getActiveRoute();
+  EXPECT_EQ(after_route.input_device_id, before_route.input_device_id);
+  EXPECT_EQ(after_route.output_device_id, before_route.output_device_id);
+  EXPECT_EQ(after_route.input_channels, before_route.input_channels);
+  EXPECT_EQ(after_route.output_channels, before_route.output_channels);
+  const auto after_state = m_driver->getAudioIoRouteState();
+  EXPECT_EQ(after_state.state, before_state.state);
+  EXPECT_EQ(after_state.selected_input_device_id, before_state.selected_input_device_id);
+  EXPECT_EQ(after_state.selected_output_device_id, before_state.selected_output_device_id);
+  EXPECT_EQ(after_state.active_input_channel_map, before_state.active_input_channel_map);
+  EXPECT_EQ(after_state.active_output_channel_map, before_state.active_output_channel_map);
+  EXPECT_EQ(after_state.actual_sample_rate, before_state.actual_sample_rate);
+}

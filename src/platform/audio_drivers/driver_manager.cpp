@@ -596,6 +596,9 @@ AudioDriverManager::enumerateCoreAudioEndpointCapabilities() {
     }
     facts.current_buffer_size = read_uint32(device_id, kAudioDevicePropertyBufferFrameSize,
                                             kAudioObjectPropertyScopeGlobal);
+    facts.is_running_somewhere =
+        read_uint32(device_id, kAudioDevicePropertyDeviceIsRunningSomewhere,
+                    kAudioObjectPropertyScopeGlobal) != 0;
 
     endpoints.push_back(detail::makeCoreAudioEndpointCapabilities(facts));
   }

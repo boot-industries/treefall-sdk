@@ -51,8 +51,7 @@ TEST(CoreAudioEndpointCatalogTest, PreservesOutputOnlyEndpointsAndDuplicateNames
             (std::vector<uint32_t>{64, 96, 128, 160, 192, 256, 384, 512}));
   EXPECT_EQ(endpoints[0].current_buffer_size, 256u);
   EXPECT_EQ(endpoints[1].output_channels[0].stable_id, "uid-output-b:output:0");
-  EXPECT_EQ(endpoints[1].supported_sample_rates,
-            (std::vector<uint32_t>{96000, 176400, 192000}));
+  EXPECT_EQ(endpoints[1].supported_sample_rates, (std::vector<uint32_t>{96000, 176400, 192000}));
   EXPECT_EQ(endpoints[1].supported_buffer_sizes,
             (std::vector<uint32_t>{128, 160, 192, 256, 384, 512, 768, 1024}));
 }
@@ -75,6 +74,25 @@ TEST(CoreAudioEndpointCatalogTest, ReportsFormatUnavailableWithoutUsableChannels
   EXPECT_TRUE(endpoint.output_channels.empty());
   EXPECT_EQ(endpoint.supported_sample_rates, (std::vector<uint32_t>{48000}));
   EXPECT_EQ(endpoint.supported_buffer_sizes, (std::vector<uint32_t>{512}));
+}
+TEST(CoreAudioEndpointCatalogTest, ProjectsRunningSomewhereWithoutChangingAvailability) {
+  CoreAudioEndpointFacts running;
+  running.device_id = "running";
+  running.display_name = "Running";
+  running.output_channel_count = 2;
+  running.is_running_somewhere = true;
+
+  CoreAudioEndpointFacts stopped = running;
+  stopped.device_id = "stopped";
+  stopped.is_running_somewhere = false;
+
+  const auto running_endpoint = makeCoreAudioEndpointCapabilities(running);
+  const auto stopped_endpoint = makeCoreAudioEndpointCapabilities(stopped);
+
+  EXPECT_TRUE(running_endpoint.is_running_somewhere);
+  EXPECT_FALSE(stopped_endpoint.is_running_somewhere);
+  EXPECT_EQ(running_endpoint.availability, AudioEndpointAvailability::Available);
+  EXPECT_EQ(stopped_endpoint.availability, AudioEndpointAvailability::Available);
 }
 
 } // namespace

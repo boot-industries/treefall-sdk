@@ -54,6 +54,7 @@ struct AudioEndpointCapabilities {
   std::vector<uint32_t> supported_buffer_sizes;
   uint32_t nominal_sample_rate = 0;
   uint32_t current_buffer_size = 0;
+  bool is_running_somewhere = false;
 };
 /// Audio device information
 struct AudioDeviceInfo {
@@ -160,8 +161,8 @@ public:
   }
 
   /// Find one endpoint by stable backend device ID.
-  virtual std::optional<AudioEndpointCapabilities> getEndpointCapabilities(
-      const std::string& deviceId) {
+  virtual std::optional<AudioEndpointCapabilities>
+  getEndpointCapabilities(const std::string& deviceId) {
     (void)deviceId;
     return std::nullopt;
   }

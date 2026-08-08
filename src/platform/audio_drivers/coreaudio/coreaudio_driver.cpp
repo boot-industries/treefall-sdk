@@ -133,7 +133,10 @@ bool addLatencyTerm(const std::optional<UInt32>& term, uint32_t& total) {
 
 } // namespace
 
-CoreAudioDriver::CoreAudioDriver() = default;
+CoreAudioDriver::CoreAudioDriver() : route_resolver_(detail::makeCoreAudioRouteQuery()) {}
+
+CoreAudioDriver::CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query)
+    : route_resolver_(query ? std::move(query) : detail::makeCoreAudioRouteQuery()) {}
 
 CoreAudioDriver::~CoreAudioDriver() {
   stop();
@@ -354,6 +357,10 @@ AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
   return {input_render_failures_.load(std::memory_order_acquire),
           runtime_outcome_.load(std::memory_order_acquire),
           route_outcome_.load(std::memory_order_acquire)};
+}
+
+AudioRouteCompatibility CoreAudioDriver::probeRoute(const AudioDriverConfig& config) const {
+  return route_resolver_.resolve(config).compatibility;
 }
 
 ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
