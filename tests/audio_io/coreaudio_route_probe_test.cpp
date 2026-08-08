@@ -383,6 +383,35 @@ TEST(CoreAudioRouteProbeTest, UnsupportedRateSkipsCurrentAndRunningQueries) {
   expectFailureDetail(compatibility);
 }
 
+TEST(CoreAudioRouteProbeTest, PassiveFactQueryFailuresAreBackendFailures) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  installSameDevice(*fake);
+  fake->endpoints.at(11).sample_rate_status = CoreAudioRouteQueryStatus::Missing;
+  CoreAudioDriver driver(fake);
+
+  auto compatibility = driver.probeRoute(duplexConfig());
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::BackendFailure);
+  EXPECT_EQ(compatibility.detail, "ranges:output");
+  EXPECT_EQ(fake->ledger.current_rate_reads, 0);
+  expectFailureDetail(compatibility);
+
+  fake->endpoints.at(11).sample_rate_status = CoreAudioRouteQueryStatus::Success;
+  fake->endpoints.at(11).current_rate_status = CoreAudioRouteQueryStatus::Missing;
+  fake->resetLedger();
+  compatibility = driver.probeRoute(duplexConfig());
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::BackendFailure);
+  EXPECT_EQ(compatibility.detail, "current_rate:output");
+  EXPECT_EQ(fake->ledger.running_reads, 0);
+
+  fake->endpoints.at(11).current_rate_status = CoreAudioRouteQueryStatus::Success;
+  fake->endpoints.at(11).running_status = CoreAudioRouteQueryStatus::Missing;
+  fake->resetLedger();
+  compatibility = driver.probeRoute(duplexConfig());
+  EXPECT_EQ(compatibility.status, AudioRouteCompatibilityStatus::BackendFailure);
+  EXPECT_EQ(compatibility.detail, "running:output");
+  expectFailureDetail(compatibility);
+}
+
 TEST(CoreAudioRouteProbeTest, PermissionDeniedInputStopsBeforeInputFacts) {
   auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
   installSameDevice(*fake);

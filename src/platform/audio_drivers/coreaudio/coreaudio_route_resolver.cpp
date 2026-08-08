@@ -286,14 +286,14 @@ void setFailure(ResolvedCoreAudioRoute& route, AudioRouteCompatibilityStatus sta
 }
 
 bool setQueryFailure(ResolvedCoreAudioRoute& route, CoreAudioRouteQueryStatus status,
-                     const char* operation, bool output) {
+                     const char* operation, bool output, bool missing_is_unavailable = true) {
   if (status == CoreAudioRouteQueryStatus::Success) {
     return false;
   }
   const AudioRouteCompatibilityStatus compatibility_status =
       status == CoreAudioRouteQueryStatus::PermissionDenied
           ? AudioRouteCompatibilityStatus::PermissionDenied
-      : status == CoreAudioRouteQueryStatus::Missing
+      : status == CoreAudioRouteQueryStatus::Missing && missing_is_unavailable
           ? unavailableStatus(output)
           : AudioRouteCompatibilityStatus::BackendFailure;
   setFailure(route, compatibility_status, operation, output);
@@ -442,7 +442,7 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
 
   bool output_rate_supported = false;
   const auto output_ranges = query_->advertisedSampleRateRanges(route.output_device_id);
-  if (setQueryFailure(route, output_ranges.status, "ranges", true)) {
+  if (setQueryFailure(route, output_ranges.status, "ranges", true, false)) {
     return route;
   }
   output_rate_supported = supportsRequestedRate(output_ranges.value, config.sample_rate);
@@ -454,7 +454,7 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
   bool input_rate_supported = true;
   if (config.num_inputs > 0 && route.input_device_id != route.output_device_id) {
     const auto input_ranges = query_->advertisedSampleRateRanges(route.input_device_id);
-    if (setQueryFailure(route, input_ranges.status, "ranges", false)) {
+    if (setQueryFailure(route, input_ranges.status, "ranges", false, false)) {
       return route;
     }
     input_rate_supported = supportsRequestedRate(input_ranges.value, config.sample_rate);
@@ -467,7 +467,7 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
   const auto query_global_facts = [&](AudioDeviceID device_id, bool output, uint32_t& rate,
                                       bool& running) -> bool {
     const auto current = query_->currentSampleRate(device_id);
-    if (setQueryFailure(route, current.status, "current_rate", output)) {
+    if (setQueryFailure(route, current.status, "current_rate", output, false)) {
       return false;
     }
     if (!normalizeCurrentSampleRate(current.value, rate)) {
@@ -475,7 +475,7 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
       return false;
     }
     const auto is_running = query_->isRunningSomewhere(device_id);
-    if (setQueryFailure(route, is_running.status, "running", output)) {
+    if (setQueryFailure(route, is_running.status, "running", output, false)) {
       return false;
     }
     running = is_running.value;
