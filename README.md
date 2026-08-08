@@ -86,8 +86,9 @@ restore, endpoint loss, or format change stops rendering; the driver never
 silently changes an endpoint or rate.
 
 See the [contract index](docs/orp/INDEX.md) and
-[`ORP171`](docs/orp/ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md)
-for the current CoreAudio route-state delivery record.
+[`ORP172`](docs/orp/ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md)
+for the current non-mutating route-compatibility probe and CoreAudio route-state
+handoff.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance

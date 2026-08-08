@@ -1,5 +1,37 @@
 # Progress
 
+## ORP172 — Non-mutating CoreAudio route compatibility
+
+**Date:** 2026-08-08  
+**Status:** Implemented and merged as [PR #240](https://github.com/chrislyons/orpheus-sdk/pull/240) at
+`33cd334151bec0e00a495bb4339845791917cb74`; handoff evidence merged as
+[PR #241](https://github.com/chrislyons/orpheus-sdk/pull/241) at
+`5d0d44aa4eb6c6e89f84f83050ed119399063092`.
+
+### Delivered
+
+- `IAudioDriver::probeRoute()` now reports an `AudioRouteCompatibility` result
+  without mutating driver or CoreAudio state. The base implementation returns
+  `BackendFailure`; CoreAudio and Dummy provide concrete probes.
+- CoreAudio resolves active directional endpoints, validates maps and requested
+  rates, and reports current-rate and `DeviceIsRunningSomewhere` facts through a
+  read-only query path. A route probe never creates an aggregate or AudioUnit,
+  writes a property, starts I/O, registers listeners, or requests TCC access.
+- `PreserveDeviceRate` reports a supported rate mismatch as `Compatible` with
+  mismatch flags; `RequestExactRate` reports it as
+  `RequiresSampleRateChange`. Probe classification does not authorize rate
+  writes or guarantee activation.
+
+### Evidence and boundary
+
+- Current local fast CTest suite passed 63/63 cases, including
+  `coreaudio_route_probe_test`, `dummy_driver_test`, and
+  `driver_manager_test`. Debug route targets built successfully.
+- No physical-device or permission-denial claim is made. FTR078 retains
+  transactional rate writes and rollback, passive monitoring, runtime taxonomy,
+  and FourTrack adoption.
+- Full details: [`ORP172 Non-Mutating CoreAudio Route Compatibility Handoff`](docs/orp/ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md).
+
 ## ORP128 — CoreAudio runtime sample-rate resilience
 
 **Date:** 2026-07-28; mainline reconciliation 2026-08-01
