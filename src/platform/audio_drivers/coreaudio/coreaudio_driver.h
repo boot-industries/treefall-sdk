@@ -57,18 +57,10 @@ private:
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
   void recordInputRenderFailure() noexcept;
-
-  std::vector<AudioDeviceID> enumerateDevices();
-  AudioDeviceID findDeviceByUID(const std::string& device_uid);
-  AudioDeviceID getDefaultDevice(AudioObjectPropertySelector selector);
-  AudioDeviceID resolveInputOutputDevice();
-  AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
-                                      AudioDeviceID output_device_id);
-  bool supportsDirection(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
   uint32_t getChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
   std::optional<std::string> getDeviceUID(AudioDeviceID device_id) const;
-
-  bool resolveChannelMaps(const AudioDriverConfig& config);
+  AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
+                                      AudioDeviceID output_device_id);
   SessionGraphError setupAudioUnit(AudioDeviceID device_id);
   std::vector<AudioStreamID> enumerateStreams(AudioDeviceID device_id,
                                               AudioObjectPropertyScope scope) const;
