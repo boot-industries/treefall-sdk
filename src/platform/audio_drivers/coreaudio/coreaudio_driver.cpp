@@ -133,7 +133,10 @@ bool addLatencyTerm(const std::optional<UInt32>& term, uint32_t& total) {
 
 } // namespace
 
-CoreAudioDriver::CoreAudioDriver() = default;
+CoreAudioDriver::CoreAudioDriver() : route_resolver_(detail::makeCoreAudioRouteQuery()) {}
+
+CoreAudioDriver::CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query)
+    : route_resolver_(query ? std::move(query) : detail::makeCoreAudioRouteQuery()) {}
 
 CoreAudioDriver::~CoreAudioDriver() {
   stop();
@@ -162,8 +165,6 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
 
   cleanupAudioUnit();
   config_ = config;
-  input_channel_map_.clear();
-  output_channel_map_.clear();
   active_route_ = {};
   expected_stream_sample_ = 0;
   stream_timeline_initialized_ = false;
@@ -171,13 +172,58 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
   unavailable_route_state_.store(AudioRouteState::Failed, std::memory_order_release);
 
-  device_id_ = resolveInputOutputDevice();
-  if (device_id_ == 0 || !resolveChannelMaps(config)) {
-    route_outcome_.store(device_id_ == 0 ? AudioRouteRuntimeOutcome::RouteUnavailable
-                                         : AudioRouteRuntimeOutcome::ReinitializationRequired,
-                         std::memory_order_release);
+  auto resolved_route = route_resolver_.resolve(config);
+  const auto compatibility_status = resolved_route.compatibility.status;
+  const bool activation_eligible =
+      resolved_route.resolved &&
+      (compatibility_status == AudioRouteCompatibilityStatus::Compatible ||
+       compatibility_status == AudioRouteCompatibilityStatus::RequiresSampleRateChange);
+  if (!activation_eligible) {
+    switch (compatibility_status) {
+    case AudioRouteCompatibilityStatus::InputUnavailable:
+      unavailable_route_state_.store(AudioRouteState::InputUnavailable, std::memory_order_release);
+      route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+      break;
+    case AudioRouteCompatibilityStatus::OutputUnavailable:
+      unavailable_route_state_.store(AudioRouteState::OutputUnavailable, std::memory_order_release);
+      route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+      break;
+    case AudioRouteCompatibilityStatus::PermissionDenied:
+      unavailable_route_state_.store(AudioRouteState::PermissionDenied, std::memory_order_release);
+      route_outcome_.store(AudioRouteRuntimeOutcome::RouteUnavailable, std::memory_order_release);
+      break;
+    case AudioRouteCompatibilityStatus::BackendFailure:
+      route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+      break;
+    case AudioRouteCompatibilityStatus::SampleRateUnsupported:
+    case AudioRouteCompatibilityStatus::InvalidChannelMap:
+    case AudioRouteCompatibilityStatus::Compatible:
+    case AudioRouteCompatibilityStatus::RequiresSampleRateChange:
+      route_outcome_.store(AudioRouteRuntimeOutcome::ReinitializationRequired,
+                           std::memory_order_release);
+      break;
+    }
     cleanupAudioUnit();
     return SessionGraphError::InvalidParameter;
+  }
+
+  input_device_id_ = resolved_route.input_device_id;
+  output_device_id_ = resolved_route.output_device_id;
+  available_input_channels_ = resolved_route.input_channel_count;
+  available_output_channels_ = resolved_route.output_channel_count;
+  input_channel_map_ = std::move(resolved_route.input_channel_map);
+  output_channel_map_ = std::move(resolved_route.output_channel_map);
+  device_id_ = output_device_id_;
+
+  if (resolved_route.requires_private_aggregate) {
+    input_channel_offset_ = getChannelCount(output_device_id_, kAudioObjectPropertyScopeInput);
+    aggregate_device_id_ = createAggregateDevice(input_device_id_, output_device_id_);
+    if (aggregate_device_id_ == 0) {
+      route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+      cleanupAudioUnit();
+      return SessionGraphError::InvalidParameter;
+    }
+    device_id_ = aggregate_device_id_;
   }
 
   try {
@@ -354,6 +400,10 @@ AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
   return {input_render_failures_.load(std::memory_order_acquire),
           runtime_outcome_.load(std::memory_order_acquire),
           route_outcome_.load(std::memory_order_acquire)};
+}
+
+AudioRouteCompatibility CoreAudioDriver::probeRoute(const AudioDriverConfig& config) const {
+  return route_resolver_.resolve(config).compatibility;
 }
 
 ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
@@ -557,69 +607,6 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   return noErr;
 }
 
-std::vector<AudioDeviceID> CoreAudioDriver::enumerateDevices() {
-  std::vector<AudioDeviceID> devices;
-  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDevices,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
-  UInt32 data_size = 0;
-  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0, nullptr, &data_size) !=
-          noErr ||
-      data_size == 0) {
-    return devices;
-  }
-
-  devices.resize(data_size / sizeof(AudioDeviceID));
-  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &data_size,
-                                 devices.data()) != noErr) {
-    devices.clear();
-  }
-  return devices;
-}
-
-AudioDeviceID CoreAudioDriver::getDefaultDevice(AudioObjectPropertySelector selector) {
-  AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
-  AudioDeviceID device_id = 0;
-  UInt32 data_size = sizeof(device_id);
-  const OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr,
-                                                     &data_size, &device_id);
-  return status == noErr && device_id != kAudioObjectUnknown ? device_id : 0;
-}
-
-AudioDeviceID CoreAudioDriver::findDeviceByUID(const std::string& device_uid) {
-  if (device_uid.empty()) {
-    return 0;
-  }
-
-  CFStringRef requested =
-      CFStringCreateWithCString(kCFAllocatorDefault, device_uid.c_str(), kCFStringEncodingUTF8);
-  if (!requested) {
-    return 0;
-  }
-
-  AudioDeviceID matched = 0;
-  for (const AudioDeviceID candidate : enumerateDevices()) {
-    CFStringRef candidate_uid = copyDeviceUID(candidate);
-    if (candidate_uid && CFStringCompare(candidate_uid, requested, 0) == kCFCompareEqualTo) {
-      matched = candidate;
-    }
-    if (candidate_uid) {
-      CFRelease(candidate_uid);
-    }
-    if (matched != 0) {
-      break;
-    }
-  }
-  CFRelease(requested);
-  return matched;
-}
-
-bool CoreAudioDriver::supportsDirection(AudioDeviceID device_id,
-                                        AudioObjectPropertyScope scope) const {
-  return getChannelCount(device_id, scope) > 0;
-}
-
 uint32_t CoreAudioDriver::getChannelCount(AudioDeviceID device_id,
                                           AudioObjectPropertyScope scope) const {
   if (device_id == 0) {
@@ -645,57 +632,6 @@ uint32_t CoreAudioDriver::getChannelCount(AudioDeviceID device_id,
     channels += buffers->mBuffers[index].mNumberChannels;
   }
   return channels;
-}
-
-AudioDeviceID CoreAudioDriver::resolveInputOutputDevice() {
-  input_channel_offset_ = 0;
-  available_input_channels_ = 0;
-  available_output_channels_ = 0;
-
-  const AudioDeviceID output_id = config_.output_device_id.empty()
-                                      ? getDefaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
-                                      : findDeviceByUID(config_.output_device_id);
-  if (output_id == 0 || !supportsDirection(output_id, kAudioObjectPropertyScopeOutput)) {
-    return 0;
-  }
-
-  if (config_.num_inputs == 0) {
-    if (!config_.input_device_id.empty()) {
-      return 0;
-    }
-    input_device_id_ = 0;
-    output_device_id_ = output_id;
-    available_output_channels_ = getChannelCount(output_id, kAudioObjectPropertyScopeOutput);
-    return output_id;
-  }
-
-  const AudioDeviceID input_id = config_.input_device_id.empty()
-                                     ? getDefaultDevice(kAudioHardwarePropertyDefaultInputDevice)
-                                     : findDeviceByUID(config_.input_device_id);
-  if (input_id == 0 || !supportsDirection(input_id, kAudioObjectPropertyScopeInput)) {
-    return 0;
-  }
-
-  input_device_id_ = input_id;
-  output_device_id_ = output_id;
-  available_input_channels_ = getChannelCount(input_id, kAudioObjectPropertyScopeInput);
-  available_output_channels_ = getChannelCount(output_id, kAudioObjectPropertyScopeOutput);
-
-  if (input_id == output_id) {
-    return output_id;
-  }
-
-  input_channel_offset_ = getChannelCount(output_id, kAudioObjectPropertyScopeInput);
-  const AudioDeviceID aggregate_id = createAggregateDevice(input_id, output_id);
-  if (aggregate_id == 0) {
-    input_device_id_ = 0;
-    output_device_id_ = 0;
-    available_input_channels_ = 0;
-    available_output_channels_ = 0;
-    return 0;
-  }
-  aggregate_device_id_ = aggregate_id;
-  return aggregate_id;
 }
 
 AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_id,
@@ -768,41 +704,6 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
   CFRelease(output_uid);
 
   return status == noErr ? aggregate_id : 0;
-}
-
-bool CoreAudioDriver::resolveChannelMaps(const AudioDriverConfig& config) {
-  const auto resolve = [](const std::vector<uint16_t>& requested, uint16_t logical_count,
-                          uint32_t physical_count, std::vector<uint16_t>& resolved) {
-    if (logical_count > physical_count) {
-      return false;
-    }
-    if (requested.empty()) {
-      resolved.resize(logical_count);
-      for (uint16_t channel = 0; channel < logical_count; ++channel) {
-        resolved[channel] = channel;
-      }
-      return true;
-    }
-    if (requested.size() != logical_count) {
-      return false;
-    }
-
-    resolved.clear();
-    resolved.reserve(requested.size());
-    for (const uint16_t channel : requested) {
-      if (channel >= physical_count ||
-          std::find(resolved.begin(), resolved.end(), channel) != resolved.end()) {
-        return false;
-      }
-      resolved.push_back(channel);
-    }
-    return true;
-  };
-
-  return resolve(config.channel_map.input_channels, config.num_inputs, available_input_channels_,
-                 input_channel_map_) &&
-         resolve(config.channel_map.output_channels, config.num_outputs, available_output_channels_,
-                 output_channel_map_);
 }
 
 std::vector<AudioStreamID> CoreAudioDriver::enumerateStreams(AudioDeviceID device_id,
