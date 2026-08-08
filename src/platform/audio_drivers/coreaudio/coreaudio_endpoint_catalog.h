@@ -27,6 +27,7 @@ struct CoreAudioEndpointFacts {
   std::vector<CoreAudioEndpointRange> buffer_size_ranges;
   uint32_t nominal_sample_rate = 0;
   uint32_t current_buffer_size = 0;
+  bool is_running_somewhere = false;
 };
 
 AudioEndpointCapabilities makeCoreAudioEndpointCapabilities(const CoreAudioEndpointFacts& facts);

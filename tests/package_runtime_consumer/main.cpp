@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <vector>
 
+#include <cstdint>
+
 namespace {
 
 class RecordingCallback final : public orpheus::ITransportCallback {
@@ -30,7 +32,20 @@ public:
 
 } // namespace
 
+bool validLegacyAudioDriverConfig(const orpheus::AudioDriverConfig& config) {
+  return config.sample_rate == 48000 && config.buffer_size == 512 && config.num_inputs == 0 &&
+         config.input_device_id.empty() && config.num_outputs == 2 &&
+         config.output_device_id.empty() && config.device_name.empty() &&
+         config.channel_map.input_channels.empty() &&
+         config.channel_map.output_channels == std::vector<uint16_t>{0, 1} &&
+         config.sample_rate_policy == orpheus::AudioSampleRatePolicy::PreserveDeviceRate;
+}
+
 int main() {
+  orpheus::AudioDriverConfig legacy{48000, 512, 0, {}, 2, {}, {}, {{}, {0, 1}}};
+  if (!validLegacyAudioDriverConfig(legacy)) {
+    return 18;
+  }
   constexpr uint32_t kSampleRate = 48000;
   constexpr orpheus::ClipHandle kHandle = 17;
   constexpr size_t kFrames = 64;
@@ -44,12 +59,10 @@ int main() {
   outputRequest.output_channel_map = {1, 0};
   outputRequest.requested_sample_rate = kSampleRate;
   outputRequest.requested_buffer_size = 128;
-  if (outputDriver->initializeAudioOutput(outputRequest) !=
-      orpheus::SessionGraphError::OK) {
+  if (outputDriver->initializeAudioOutput(outputRequest) != orpheus::SessionGraphError::OK) {
     return 12;
   }
-  if (outputDriver->getConfig().channel_map.output_channels !=
-      outputRequest.output_channel_map) {
+  if (outputDriver->getConfig().channel_map.output_channels != outputRequest.output_channel_map) {
     return 13;
   }
   const auto routeState = outputDriver->getAudioIoRouteState();
@@ -79,7 +92,6 @@ int main() {
   if (dummy == devices.end() || dummy->maxChannels != 2) {
     return 17;
   }
-
 
   auto transport = orpheus::createTransportController(
       nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});

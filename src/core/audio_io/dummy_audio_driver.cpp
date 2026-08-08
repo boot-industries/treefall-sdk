@@ -42,8 +42,7 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
   return SessionGraphError::OK;
 }
 
-SessionGraphError DummyAudioDriver::initializeAudioOutput(
-    const AudioOutputRouteRequest& request) {
+SessionGraphError DummyAudioDriver::initializeAudioOutput(const AudioOutputRouteRequest& request) {
   if (request.output_channel_map.empty() || request.requested_sample_rate == 0 ||
       request.requested_buffer_size == 0 || request.requested_buffer_size > 0xffffu ||
       request.output_channel_map.size() > 32 ||
@@ -168,6 +167,91 @@ AudioIoRouteState DummyAudioDriver::getAudioIoRouteState() const {
 AudioIoTelemetry DummyAudioDriver::getTelemetry() const noexcept {
   return {input_render_failures_.load(std::memory_order_acquire),
           AudioDriverRuntimeOutcome::Healthy, AudioRouteRuntimeOutcome::Healthy};
+}
+
+AudioRouteCompatibility DummyAudioDriver::probeRoute(const AudioDriverConfig& config) const {
+  AudioRouteCompatibility compatibility;
+  compatibility.requested_sample_rate = config.sample_rate;
+  if (config.num_outputs == 0) {
+    compatibility.status = AudioRouteCompatibilityStatus::OutputUnavailable;
+    compatibility.detail = "config:output";
+    return compatibility;
+  }
+  if (config.sample_rate == 0 || config.buffer_size == 0) {
+    compatibility.status = AudioRouteCompatibilityStatus::BackendFailure;
+    compatibility.detail = "config:output";
+    return compatibility;
+  }
+
+  const auto resolve_id = [](const std::string& requested, std::string& resolved,
+                             const char* direction, std::string& detail) {
+    if (requested.empty() || requested == "dummy") {
+      resolved = "dummy";
+      return true;
+    }
+    detail = std::string("resolve:") + direction;
+    return false;
+  };
+  if (!resolve_id(config.output_device_id, compatibility.resolved_output_device_id, "output",
+                  compatibility.detail)) {
+    compatibility.status = AudioRouteCompatibilityStatus::OutputUnavailable;
+    return compatibility;
+  }
+  if (config.num_inputs > 0 &&
+      !resolve_id(config.input_device_id, compatibility.resolved_input_device_id, "input",
+                  compatibility.detail)) {
+    compatibility.status = AudioRouteCompatibilityStatus::InputUnavailable;
+    return compatibility;
+  }
+
+  const auto resolve_map = [](const std::vector<uint16_t>& requested, uint16_t logical_count,
+                              std::vector<uint16_t>& resolved) {
+    if (logical_count > 32) {
+      return false;
+    }
+    if (requested.empty()) {
+      resolved.resize(logical_count);
+      for (uint16_t channel = 0; channel < logical_count; ++channel) {
+        resolved[channel] = channel;
+      }
+      return true;
+    }
+    if (requested.size() != logical_count) {
+      return false;
+    }
+    resolved.clear();
+    resolved.reserve(requested.size());
+    for (const uint16_t channel : requested) {
+      if (channel >= 32 || std::find(resolved.begin(), resolved.end(), channel) != resolved.end()) {
+        return false;
+      }
+      resolved.push_back(channel);
+    }
+    return true;
+  };
+
+  std::vector<uint16_t> resolved_output;
+  if (!resolve_map(config.channel_map.output_channels, config.num_outputs, resolved_output)) {
+    compatibility.status = AudioRouteCompatibilityStatus::InvalidChannelMap;
+    compatibility.detail = "map:output";
+    return compatibility;
+  }
+  if (config.num_inputs > 0) {
+    std::vector<uint16_t> resolved_input;
+    if (!resolve_map(config.channel_map.input_channels, config.num_inputs, resolved_input)) {
+      compatibility.status = AudioRouteCompatibilityStatus::InvalidChannelMap;
+      compatibility.detail = "map:input";
+      return compatibility;
+    }
+  }
+
+  compatibility.current_output_sample_rate = config.sample_rate;
+  if (config.num_inputs > 0) {
+    compatibility.current_input_sample_rate = config.sample_rate;
+  }
+  compatibility.status = AudioRouteCompatibilityStatus::Compatible;
+  compatibility.detail.clear();
+  return compatibility;
 }
 
 void DummyAudioDriver::audioThreadMain() {

@@ -3,6 +3,8 @@
 
 #include "../../../core/common/realtime_borrowed_target.h"
 #include "coreaudio_route_monitor.h"
+#include "coreaudio_route_resolver.h"
+
 #include <orpheus/audio_driver.h>
 
 #include <AudioToolbox/AudioToolbox.h>
@@ -25,6 +27,8 @@ class IPerformanceMonitor;
 class CoreAudioDriver : public IAudioDriver {
 public:
   CoreAudioDriver();
+  explicit CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query);
+
   ~CoreAudioDriver() override;
 
   SessionGraphError initialize(const AudioDriverConfig& config) override;
@@ -39,6 +43,7 @@ public:
   ActiveAudioRoute getActiveRoute() const override;
   SessionGraphError initializeAudioOutput(const AudioOutputRouteRequest& request) override;
   AudioIoRouteState getAudioIoRouteState() const override;
+  AudioRouteCompatibility probeRoute(const AudioDriverConfig& config) const override;
 
   void setPerformanceMonitor(IPerformanceMonitor* monitor) override;
 
@@ -52,18 +57,10 @@ private:
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
 
   void recordInputRenderFailure() noexcept;
-
-  std::vector<AudioDeviceID> enumerateDevices();
-  AudioDeviceID findDeviceByUID(const std::string& device_uid);
-  AudioDeviceID getDefaultDevice(AudioObjectPropertySelector selector);
-  AudioDeviceID resolveInputOutputDevice();
-  AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
-                                      AudioDeviceID output_device_id);
-  bool supportsDirection(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
   uint32_t getChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const;
   std::optional<std::string> getDeviceUID(AudioDeviceID device_id) const;
-
-  bool resolveChannelMaps(const AudioDriverConfig& config);
+  AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
+                                      AudioDeviceID output_device_id);
   SessionGraphError setupAudioUnit(AudioDeviceID device_id);
   std::vector<AudioStreamID> enumerateStreams(AudioDeviceID device_id,
                                               AudioObjectPropertyScope scope) const;
@@ -81,6 +78,8 @@ private:
   uint32_t queryDeviceLatency() const;
   void cleanupAudioUnit();
   void stopRenderingLocked();
+
+  detail::CoreAudioRouteResolver route_resolver_;
 
   AudioDriverConfig config_;
   AudioUnit audio_unit_{nullptr};

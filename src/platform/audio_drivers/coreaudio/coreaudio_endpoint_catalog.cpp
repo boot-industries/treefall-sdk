@@ -9,10 +9,9 @@
 namespace orpheus::detail {
 namespace {
 
-constexpr std::array<uint32_t, 6> kCommonSampleRates = {
-    44100, 48000, 88200, 96000, 176400, 192000};
-constexpr std::array<uint32_t, 14> kCommonBufferSizes = {
-    32, 64, 96, 128, 160, 192, 256, 384, 512, 768, 1024, 1536, 2048, 4096};
+constexpr std::array<uint32_t, 6> kCommonSampleRates = {44100, 48000, 88200, 96000, 176400, 192000};
+constexpr std::array<uint32_t, 14> kCommonBufferSizes = {32,  64,  96,  128,  160,  192,  256,
+                                                         384, 512, 768, 1024, 1536, 2048, 4096};
 
 bool isInRange(double value, const CoreAudioEndpointRange& range) {
   return value >= range.minimum && value <= range.maximum;
@@ -34,15 +33,13 @@ void appendChannels(std::vector<AudioChannelDescriptor>& channels, uint32_t coun
   for (uint32_t channel = 0; channel < count; ++channel) {
     channels.push_back({static_cast<uint16_t>(channel),
                         deviceId + ":" + stableDirection + ":" + std::to_string(channel),
-                        displayName + " " + displayDirection + " " +
-                            std::to_string(channel + 1)});
+                        displayName + " " + displayDirection + " " + std::to_string(channel + 1)});
   }
 }
 
 } // namespace
 
-AudioEndpointCapabilities makeCoreAudioEndpointCapabilities(
-    const CoreAudioEndpointFacts& facts) {
+AudioEndpointCapabilities makeCoreAudioEndpointCapabilities(const CoreAudioEndpointFacts& facts) {
   AudioEndpointCapabilities endpoint;
   endpoint.device_id = facts.device_id;
   endpoint.display_name = facts.display_name.empty() ? facts.device_id : facts.display_name;
@@ -90,6 +87,8 @@ AudioEndpointCapabilities makeCoreAudioEndpointCapabilities(
     }
   }
   endpoint.current_buffer_size = facts.current_buffer_size;
+  endpoint.is_running_somewhere = facts.is_running_somewhere;
+
   appendUnique(endpoint.supported_buffer_sizes, endpoint.current_buffer_size);
   std::sort(endpoint.supported_buffer_sizes.begin(), endpoint.supported_buffer_sizes.end());
 
