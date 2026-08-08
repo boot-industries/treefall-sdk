@@ -241,6 +241,31 @@ target_include_directories(dummy_driver_test
 
 add_test(NAME dummy_driver_test COMMAND dummy_driver_test)
 
+# FTR077: deterministic, non-mutating CoreAudio route compatibility probe.
+if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
+    add_executable(coreaudio_route_probe_test
+        coreaudio_route_probe_test.cpp
+    )
+
+    target_link_libraries(coreaudio_route_probe_test
+        PRIVATE
+            orpheus_audio_driver_coreaudio
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+            "-framework CoreFoundation"
+    )
+
+    target_include_directories(coreaudio_route_probe_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/src/platform/audio_drivers
+    )
+
+    add_test(NAME coreaudio_route_probe_test COMMAND coreaudio_route_probe_test)
+    set_tests_properties(coreaudio_route_probe_test PROPERTIES LABELS "unit")
+endif()
+
 # CoreAudio driver tests (macOS only)
 if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     add_executable(coreaudio_driver_test

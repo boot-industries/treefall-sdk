@@ -39,4 +39,5 @@ target_link_libraries(orpheus_add_subdirectory_smoke
   PRIVATE
     Orpheus::transport
     Orpheus::routing
-    Orpheus::audio_utils)
+    Orpheus::audio_utils
+    Orpheus::audio_io)

@@ -21,6 +21,35 @@ struct AudioRouteChannelMap {
   std::vector<uint16_t> input_channels;
   std::vector<uint16_t> output_channels;
 };
+enum class AudioSampleRatePolicy : uint8_t {
+  PreserveDeviceRate,
+  RequestExactRate,
+};
+
+enum class AudioRouteCompatibilityStatus : uint8_t {
+  Compatible,
+  RequiresSampleRateChange,
+  InputUnavailable,
+  OutputUnavailable,
+  SampleRateUnsupported,
+  InvalidChannelMap,
+  PermissionDenied,
+  BackendFailure,
+};
+
+struct AudioRouteCompatibility {
+  AudioRouteCompatibilityStatus status = AudioRouteCompatibilityStatus::BackendFailure;
+  std::string resolved_input_device_id;
+  std::string resolved_output_device_id;
+  uint32_t requested_sample_rate = 0;
+  uint32_t current_input_sample_rate = 0;
+  uint32_t current_output_sample_rate = 0;
+  bool input_rate_change_required = false;
+  bool output_rate_change_required = false;
+  bool input_is_running_somewhere = false;
+  bool output_is_running_somewhere = false;
+  std::string detail;
+};
 
 /// Audio driver configuration.
 ///
@@ -39,6 +68,7 @@ struct AudioDriverConfig {
   /// Physical-to-logical channel selection for each direction.
   /// An empty vector selects consecutive physical channels starting at zero.
   AudioRouteChannelMap channel_map{};
+  AudioSampleRatePolicy sample_rate_policy = AudioSampleRatePolicy::PreserveDeviceRate;
 };
 
 /// Decomposed route latency reported by the backend.
@@ -314,6 +344,11 @@ public:
   /// A terminal state describes the last observed route failure. Hosts must
   /// explicitly reinitialize rather than assuming automatic endpoint fallback.
   virtual AudioIoRouteState getAudioIoRouteState() const {
+    return {};
+  }
+
+  virtual AudioRouteCompatibility probeRoute(const AudioDriverConfig& config) const {
+    (void)config;
     return {};
   }
 };
