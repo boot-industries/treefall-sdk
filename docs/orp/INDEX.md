@@ -9,8 +9,8 @@ Project documentation index for orpheus-sdk.
 
 ## Current Records
 
-- [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] —
-  directional route-state contract and downstream handoff (2026-08-04)
+- [[ORP172 Non-Mutating CoreAudio Route Compatibility Handoff]] — non-mutating CoreAudio route compatibility probe and downstream handoff (2026-08-08)
+- [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] — directional route-state contract and downstream handoff (2026-08-04)
 - [[ORP169 Orpheus Suite Remote Synchronization and PR Merge]] — repository
   synchronization and merge checkpoint (2026-08-04)
 - [[ORP168 Streaming Seek Priming and Underrun Classification]] — streaming
@@ -30,6 +30,7 @@ Project documentation index for orpheus-sdk.
 - [ORP168 Streaming Seek Priming and Underrun Classification](ORP168%20Streaming%20Seek%20Priming%20and%20Underrun%20Classification.md)
 - [ORP169 Orpheus Suite Remote Synchronization and PR Merge](ORP169%20Orpheus%20Suite%20Remote%20Synchronization%20and%20PR%20Merge.md)
 - [ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff](ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md)
+- [ORP172 Non-Mutating CoreAudio Route Compatibility Handoff](ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md)
 - [ORP documentation conventions](ORP.md)
 
 ## Navigation
@@ -44,4 +45,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-04
+**Last Generated:** 2026-08-08
