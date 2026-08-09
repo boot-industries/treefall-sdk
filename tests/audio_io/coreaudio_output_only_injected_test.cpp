@@ -55,7 +55,7 @@ public:
     if (device_id != output_id_) {
       return {detail::CoreAudioRouteQueryStatus::Missing, {}};
     }
-    return {detail::CoreAudioRouteQueryStatus::Success, {{rate_, rate_}}};
+    return {detail::CoreAudioRouteQueryStatus::Success, {{44100.0, 48000.0}}};
   }
 
   detail::CoreAudioRouteQueryResult<double>
@@ -229,6 +229,25 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
   EXPECT_EQ(restored_hog_mode, 1u);
 }
 
+TEST(CoreAudioOutputOnlyInjectedTest, PreserveRateMismatchIsRejectedWithoutPropertyWrites) {
+  auto property_api = std::make_shared<test_support::FakeCoreAudioPropertyApi>();
+  auto query = std::make_shared<OutputOnlyRouteQuery>(11, 2, 48000.0);
+  DirectionAudit audit;
+  CoreAudioDriver driver(query, property_api, &audit);
+
+  AudioDriverConfig config;
+  config.sample_rate = 44100;
+  config.buffer_size = 256;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = "injected.output";
+  config.sample_rate_policy = AudioSampleRatePolicy::PreserveDeviceRate;
+
+  EXPECT_EQ(driver.initialize(config), SessionGraphError::InvalidParameter);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::SampleRateChanged);
+  EXPECT_TRUE(property_api->writeLedger().empty());
+  EXPECT_TRUE(audit.operations.empty());
+}
 } // namespace
 } // namespace orpheus
 #endif
