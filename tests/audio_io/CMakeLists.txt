@@ -270,8 +270,9 @@ endif()
 if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     add_executable(coreaudio_driver_test
         coreaudio_driver_test.cpp
-        coreaudio_sample_rate_monitor_test.cpp
         coreaudio_route_monitor_test.cpp
+        coreaudio_sample_rate_transaction_test.cpp
+        coreaudio_output_only_injected_test.cpp
     )
 
     target_link_libraries(coreaudio_driver_test

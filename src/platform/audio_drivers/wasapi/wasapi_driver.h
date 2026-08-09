@@ -106,7 +106,7 @@ private:
   std::atomic<bool> running_{false};
   std::atomic<bool> initialized_{false};
   std::atomic<bool> reinitialize_required_{false};
-  std::atomic<AudioDriverRuntimeOutcome> runtime_outcome_{AudioDriverRuntimeOutcome::Healthy};
+  std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
   detail::WASAPIResolvedFormat resolved_{};
 };
 
