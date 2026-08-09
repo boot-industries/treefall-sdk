@@ -1,5 +1,42 @@
 # Progress
 
+
+## ORP174 — Cooperative CoreAudio rate negotiation
+
+**Date:** 2026-08-08
+**Status:** Implemented and merged as [PR #242](https://github.com/chrislyons/orpheus-sdk/pull/242) at
+`498c02222f11a81f3dcc3e726d0355bdb20866ae`; downstream adoption deferred to FTR079.
+**Pre-sprint SDK baseline:** `8333a04a47cd9c5f8a2dcd78fb185f6984b2069e`
+
+### Delivered
+
+- The public C++ runtime taxonomy is `AudioRouteRuntimeOutcome`; telemetry has
+  only cumulative input-render failures and that outcome. The package is
+  version `0.7.0`; the stable C ABI remains `1.0`.
+- CoreAudio uses an injectable complete property API, a bounded listener-driven
+  rate transaction with reverse rollback, scoped automatic hog-mode lifecycle,
+  passive directional route monitoring, and a terminal admission latch.
+- Render facts publish atomically before start. A callback validates complete
+  hardware buffers, renders the full input span once, delivers contiguous
+  client chunks without clamping, and copies all output frames.
+
+### Evidence and boundary
+
+- The configured `sdk-debug` tree built successfully and its 80-test CTest
+  configuration passed, including installed package consumers and CoreAudio
+  hardware-tagged coverage.
+- Installed consumers passed current-minor acceptance, previous-minor
+  rejection, exact telemetry assertions, retired enum rejection, and retired
+  telemetry-field rejection.
+- `PYTHONDONTWRITEBYTECODE=1 python3 tools/realtime_audit.py` passed with zero
+  hard failures and zero tracked debt findings.
+- No Windows WASAPI compile or hardware evidence is claimed. FTR079 retains
+  FourTrack manual validation for built-in/USB routes, same-device duplex,
+  distinct private aggregates, default-device changes, unsupported rates,
+  external 44.1/48 kHz rate and buffer changes, permission denial, and
+  disconnect/reconnect.
+- Full details: [`ORP174 Cooperative CoreAudio Rate Negotiation Handoff`](docs/orp/ORP174%20Cooperative%20CoreAudio%20Rate%20Negotiation%20Handoff.md).
+
 ## ORP172 — Non-mutating CoreAudio route compatibility
 
 **Date:** 2026-08-08  

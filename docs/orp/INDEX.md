@@ -9,6 +9,10 @@ Project documentation index for orpheus-sdk.
 
 ## Current Records
 
+- [[ORP174 Cooperative CoreAudio Rate Negotiation Handoff]] — bounded CoreAudio
+  activation, passive route monitoring, and complete callback handoff (2026-08-08)
+- [[ORP173 Orpheus Suite v0.1.0 Qualification and Release Gate Record]] —
+  qualification and release-gate record (2026-08-08)
 - [[ORP172 Non-Mutating CoreAudio Route Compatibility Handoff]] — non-mutating CoreAudio route compatibility probe and downstream handoff (2026-08-08)
 - [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] — directional route-state contract and downstream handoff (2026-08-04)
 - [[ORP169 Orpheus Suite Remote Synchronization and PR Merge]] — repository
@@ -26,11 +30,11 @@ Project documentation index for orpheus-sdk.
 
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
-- [ORP166 Orpheus Suite Application Launch and Icon Checkpoint](ORP166%20Orpheus%20Suite%20Application%20Launch%20and%20Icon%20Checkpoint.md)
-- [ORP168 Streaming Seek Priming and Underrun Classification](ORP168%20Streaming%20Seek%20Priming%20and%20Underrun%20Classification.md)
-- [ORP169 Orpheus Suite Remote Synchronization and PR Merge](ORP169%20Orpheus%20Suite%20Remote%20Synchronization%20and%20PR%20Merge.md)
-- [ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff](ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md)
+- [ORP174 Cooperative CoreAudio Rate Negotiation Handoff](ORP174%20Cooperative%20CoreAudio%20Rate%20Negotiation%20Handoff.md)
+- [ORP173 Orpheus Suite v0.1.0 Qualification and Release Gate Record](ORP173%20Orpheus%20Suite%20v0.1.0%20Qualification%20and%20Release%20Gate%20Record.md)
 - [ORP172 Non-Mutating CoreAudio Route Compatibility Handoff](ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md)
+- [ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff](ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md)
+- [ORP169 Orpheus Suite Remote Synchronization and PR Merge](ORP169%20Orpheus%20Suite%20Remote%20Synchronization%20and%20PR%20Merge.md)
 - [ORP documentation conventions](ORP.md)
 
 ## Navigation
