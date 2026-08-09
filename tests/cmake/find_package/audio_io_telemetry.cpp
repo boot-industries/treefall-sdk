@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/audio_driver.h>
 
+#include <cstdint>
+#include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -40,12 +43,36 @@ private:
   orpheus::AudioDriverConfig config_;
 };
 
+template <typename T>
+concept AcceptsTwoTelemetryFields =
+    requires { T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy}; };
+
+template <typename T>
+concept AcceptsThreeTelemetryFields = requires {
+  T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy,
+    orpheus::AudioRouteRuntimeOutcome::Healthy};
+};
+
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::Healthy) == 0);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::SampleRateUnsupported) == 1);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::SampleRateChangeFailed) == 2);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::SampleRateChanged) == 3);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::BufferSizeChanged) == 4);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::FormatChanged) == 5);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::ChannelMapInvalid) == 6);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::InputRouteUnavailable) == 7);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::OutputRouteUnavailable) == 8);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::PermissionDenied) == 9);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::BackendFailure) == 10);
+static_assert(AcceptsTwoTelemetryFields<orpheus::AudioIoTelemetry>);
+static_assert(!AcceptsThreeTelemetryFields<orpheus::AudioIoTelemetry>);
+
 } // namespace
 
 int main() {
-  orpheus::AudioDriverConfig legacy{48000, 512, 0, {}, 2, {}, {}, {{}, {0, 1}}};
+  orpheus::AudioDriverConfig config{48000, 512, 0, {}, 2, {}, {}, {{}, {0, 1}}};
   TelemetryDriver driver;
-  if (driver.initialize(legacy) != orpheus::SessionGraphError::OK) {
+  if (driver.initialize(config) != orpheus::SessionGraphError::OK) {
     return 1;
   }
   const auto& observed = driver.getConfig();
@@ -57,9 +84,9 @@ int main() {
       observed.sample_rate_policy != orpheus::AudioSampleRatePolicy::PreserveDeviceRate) {
     return 2;
   }
-  const orpheus::AudioIoTelemetry telemetry = driver.getTelemetry();
+  const orpheus::AudioIoTelemetry telemetry{0, orpheus::AudioRouteRuntimeOutcome::Healthy};
   return telemetry.input_render_failures != 0 ||
-                 telemetry.runtime_outcome != orpheus::AudioDriverRuntimeOutcome::Healthy
+                 telemetry.route_outcome != orpheus::AudioRouteRuntimeOutcome::Healthy
              ? 3
              : 0;
 }

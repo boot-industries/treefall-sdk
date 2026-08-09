@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT
+#include <orpheus/audio_driver.h>
+
+int main() {
+  orpheus::AudioIoTelemetry telemetry{};
+  return telemetry.@RETIRED_FIELD_NAME@ == orpheus::AudioRouteRuntimeOutcome::Healthy ? 0 : 1;
+}

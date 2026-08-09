@@ -241,6 +241,32 @@ if(PROJECT_VERSION_MAJOR EQUAL 0 AND PROJECT_VERSION_MINOR GREATER 0)
       -Dexpect_configure_failure=ON
       -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 endif()
+set(RETIRED_ENUM_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/retired_enum_rejection)
+set(RETIRED_ENUM_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/retired_enum_rejection_build)
+set(RETIRED_ENUM_INSTALL_DIR ${CMAKE_BINARY_DIR}/tests/retired_enum_rejection_prefix)
+add_test(NAME cmake_audio_io_retired_enum_rejection
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${RETIRED_ENUM_INSTALL_DIR}
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${RETIRED_ENUM_SOURCE_DIR}
+    -Dbinary_dir=${RETIRED_ENUM_BINARY_DIR}
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
+
+set(RETIRED_TELEMETRY_SOURCE_DIR
+  ${CMAKE_SOURCE_DIR}/tests/cmake/retired_telemetry_field_rejection)
+set(RETIRED_TELEMETRY_BINARY_DIR
+  ${CMAKE_BINARY_DIR}/tests/retired_telemetry_field_rejection_build)
+set(RETIRED_TELEMETRY_INSTALL_DIR
+  ${CMAKE_BINARY_DIR}/tests/retired_telemetry_field_rejection_prefix)
+add_test(NAME cmake_audio_io_retired_telemetry_field_rejection
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${RETIRED_TELEMETRY_INSTALL_DIR}
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${RETIRED_TELEMETRY_SOURCE_DIR}
+    -Dbinary_dir=${RETIRED_TELEMETRY_BINARY_DIR}
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
 
 # ORP127 T10: submodule (add_subdirectory) external-consumer smoke test. Covers
 # the co-development consumption path (FourTrack's choice) whose failure mode
@@ -321,6 +347,8 @@ set_tests_properties(
   cmake_find_package
   cmake_package_runtime_consumer
   cmake_package_rejects_previous_minor
+  cmake_audio_io_retired_enum_rejection
+  cmake_audio_io_retired_telemetry_field_rejection
   cmake_add_subdirectory
   cmake_shmui_package_consumer
   abi_link

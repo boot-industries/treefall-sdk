@@ -45,7 +45,9 @@ public:
     return start_status;
   }
 
-  void signalStop() noexcept override { stop_signaled.store(true, std::memory_order_release); }
+  void signalStop() noexcept override {
+    stop_signaled.store(true, std::memory_order_release);
+  }
 
   detail::WASAPIRenderStatus wait() noexcept override {
     ++wait_calls;
@@ -92,9 +94,15 @@ public:
     device_buffer.clear();
   }
 
-  uint32_t bufferFrames() const noexcept override { return buffer_frames; }
-  bool float32() const noexcept override { return true; }
-  uint32_t latencySamples(uint32_t) const noexcept override { return 0; }
+  uint32_t bufferFrames() const noexcept override {
+    return buffer_frames;
+  }
+  bool float32() const noexcept override {
+    return true;
+  }
+  uint32_t latencySamples(uint32_t) const noexcept override {
+    return 0;
+  }
 
   void resetWaits(std::vector<detail::WASAPIRenderStatus> statuses) {
     wait_statuses = std::move(statuses);
@@ -210,14 +218,13 @@ TEST(WASAPIDriverTest, RejectsResolvedChannelMismatchBeforeDriverCommit) {
   EXPECT_EQ(driver.initialize(validConfig()), SessionGraphError::InvalidParameter);
   EXPECT_EQ(runtime->initialize_calls.load(), 1u);
   EXPECT_FALSE(driver.isRunning());
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::Healthy);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
 }
 
 TEST(WASAPIDriverTest, PublishesZeroUntilDeviceClockCorrelationExists) {
   auto fake = std::make_unique<FakeRenderRuntime>();
   auto* runtime = fake.get();
-  runtime->resetWaits({detail::WASAPIRenderStatus::Ready,
-                       detail::WASAPIRenderStatus::NoFrames});
+  runtime->resetWaits({detail::WASAPIRenderStatus::Ready, detail::WASAPIRenderStatus::NoFrames});
   WASAPIAudioDriver driver(std::move(fake));
   ASSERT_EQ(driver.initialize(validConfig()), SessionGraphError::OK);
 
@@ -246,14 +253,14 @@ TEST(WASAPIDriverTest, TerminalWaitFailureRequiresReinitialize) {
   ASSERT_EQ(driver.start(&callback), SessionGraphError::OK);
   waitUntilStopped(driver);
   EXPECT_EQ(callback.callback_count.load(), 0u);
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::BackendFailure);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
   EXPECT_EQ(driver.start(&callback), SessionGraphError::NotReady);
   EXPECT_EQ(driver.stop(), SessionGraphError::OK);
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::BackendFailure);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
 
   runtime->resetWaits({detail::WASAPIRenderStatus::NoFrames});
   ASSERT_EQ(driver.initialize(validConfig()), SessionGraphError::OK);
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::Healthy);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
 }
 
 TEST(WASAPIDriverTest, LauncherExceptionRollsBackToRetryableInitializedState) {
@@ -273,7 +280,7 @@ TEST(WASAPIDriverTest, LauncherExceptionRollsBackToRetryableInitializedState) {
   CaptureCallback callback;
   EXPECT_EQ(driver.start(&callback), SessionGraphError::InternalError);
   EXPECT_FALSE(driver.isRunning());
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::Healthy);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
 
   EXPECT_EQ(driver.start(&callback), SessionGraphError::OK);
   EXPECT_EQ(driver.stop(), SessionGraphError::OK);
@@ -292,18 +299,17 @@ TEST(WASAPIDriverTest, LauncherRollbackStopFailureRequiresReinitialize) {
 
   CaptureCallback callback;
   EXPECT_EQ(driver.start(&callback), SessionGraphError::InternalError);
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::BackendFailure);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
   EXPECT_EQ(driver.start(&callback), SessionGraphError::NotReady);
 
   runtime->stop_status = detail::WASAPIRenderStatus::Ready;
   EXPECT_EQ(driver.initialize(validConfig()), SessionGraphError::OK);
-  EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::Healthy);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
 }
 
 TEST(WASAPIDriverTest, PaddingAcquireAndReleaseFailuresAreTerminal) {
   const std::array<detail::WASAPIRenderStatus, 3> statuses = {
-      detail::WASAPIRenderStatus::DeviceInvalidated,
-      detail::WASAPIRenderStatus::BackendFailure,
+      detail::WASAPIRenderStatus::DeviceInvalidated, detail::WASAPIRenderStatus::BackendFailure,
       detail::WASAPIRenderStatus::BackendFailure};
   for (size_t failure = 0; failure < statuses.size(); ++failure) {
     auto fake = std::make_unique<FakeRenderRuntime>();
@@ -321,7 +327,7 @@ TEST(WASAPIDriverTest, PaddingAcquireAndReleaseFailuresAreTerminal) {
     CaptureCallback callback;
     ASSERT_EQ(driver.start(&callback), SessionGraphError::OK);
     waitUntilStopped(driver);
-    EXPECT_EQ(driver.getTelemetry().runtime_outcome, AudioDriverRuntimeOutcome::BackendFailure);
+    EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
     EXPECT_EQ(driver.stop(), SessionGraphError::OK);
   }
 }

@@ -78,9 +78,10 @@ message(STATUS "Orpheus: Audio Driver Manager enabled")
 if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
     add_library(orpheus_audio_driver_coreaudio STATIC
         coreaudio/coreaudio_driver.cpp
+        coreaudio/coreaudio_property_api.cpp
+        coreaudio/coreaudio_sample_rate_transaction.cpp
         coreaudio/coreaudio_route_resolver.cpp
         coreaudio/coreaudio_endpoint_monitor.cpp
-        coreaudio/coreaudio_sample_rate_monitor.cpp
         coreaudio/coreaudio_route_monitor.cpp
 
     )

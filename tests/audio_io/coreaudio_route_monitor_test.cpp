@@ -2,158 +2,18 @@
 #include <gtest/gtest.h>
 
 #include "coreaudio/coreaudio_route_monitor.h"
+#include "coreaudio_property_api_test_support.h"
 
-#include <algorithm>
 #include <cstring>
-#include <map>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #ifdef ORPHEUS_ENABLE_COREAUDIO
 
 namespace orpheus {
 namespace {
-
-struct PropertyKey {
-  AudioObjectID object_id;
-  AudioObjectPropertySelector selector;
-
-  bool operator<(const PropertyKey& other) const {
-    return std::tie(object_id, selector) < std::tie(other.object_id, other.selector);
-  }
-};
-
-class FakeCoreAudioRoutePropertyApi final : public ICoreAudioSampleRatePropertyApi {
-public:
-  struct Listener {
-    AudioObjectID object_id;
-    AudioObjectPropertyAddress address;
-    AudioObjectPropertyListenerProc callback;
-    void* context;
-  };
-
-  void setAlive(AudioObjectID object_id, UInt32 alive) {
-    uint32_values_[{object_id, kAudioDevicePropertyDeviceIsAlive}] = alive;
-  }
-
-  void setRate(AudioObjectID object_id, Float64 rate) {
-    float_values_[{object_id, kAudioDevicePropertyNominalSampleRate}] = rate;
-  }
-
-  void setBuffer(AudioObjectID object_id, UInt32 frames) {
-    uint32_values_[{object_id, kAudioDevicePropertyBufferFrameSize}] = frames;
-  }
-
-  void setFormat(AudioStreamID stream_id, AudioObjectPropertySelector selector,
-                 const AudioStreamBasicDescription& format) {
-    formats_[{stream_id, selector}] = format;
-  }
-
-  void allowRateWrites(bool allowed) {
-    allow_rate_writes_ = allowed;
-  }
-
-  void failQueries(bool failed) {
-    fail_queries_ = failed;
-  }
-
-  void notify(AudioObjectID object_id, AudioObjectPropertySelector selector) {
-    const AudioObjectPropertyAddress address = {selector, kAudioObjectPropertyScopeGlobal,
-                                                kAudioObjectPropertyElementMain};
-    for (const Listener& listener : listeners_) {
-      if (listener.object_id == object_id && listener.address.mSelector == selector) {
-        ++callback_deliveries_;
-        listener.callback(object_id, 1, &address, listener.context);
-      }
-    }
-  }
-
-  size_t listenerCount() const {
-    return listeners_.size();
-  }
-
-  size_t callbackDeliveries() const {
-    return callback_deliveries_;
-  }
-
-  OSStatus addPropertyListener(AudioObjectID object_id, const AudioObjectPropertyAddress* address,
-                               AudioObjectPropertyListenerProc callback,
-                               void* context) noexcept override {
-    listeners_.push_back({object_id, *address, callback, context});
-    return noErr;
-  }
-
-  OSStatus removePropertyListener(AudioObjectID object_id,
-                                  const AudioObjectPropertyAddress* address,
-                                  AudioObjectPropertyListenerProc callback,
-                                  void* context) noexcept override {
-    const auto it =
-        std::find_if(listeners_.begin(), listeners_.end(), [&](const Listener& listener) {
-          return listener.object_id == object_id && listener.callback == callback &&
-                 listener.context == context && listener.address.mSelector == address->mSelector;
-        });
-    if (it == listeners_.end()) {
-      return -1;
-    }
-    listeners_.erase(it);
-    return noErr;
-  }
-
-  OSStatus getPropertyData(AudioObjectID object_id, const AudioObjectPropertyAddress* address,
-                           UInt32* size, void* data) noexcept override {
-    if (fail_queries_) {
-      return -1;
-    }
-    const PropertyKey key{object_id, address->mSelector};
-    if (address->mSelector == kAudioDevicePropertyDeviceIsAlive ||
-        address->mSelector == kAudioDevicePropertyBufferFrameSize) {
-      const auto it = uint32_values_.find(key);
-      if (it == uint32_values_.end() || *size < sizeof(UInt32)) {
-        return -1;
-      }
-      *size = sizeof(UInt32);
-      std::memcpy(data, &it->second, sizeof(UInt32));
-      return noErr;
-    }
-    if (address->mSelector == kAudioDevicePropertyNominalSampleRate) {
-      const auto it = float_values_.find(key);
-      if (it == float_values_.end() || *size < sizeof(Float64)) {
-        return -1;
-      }
-      *size = sizeof(Float64);
-      std::memcpy(data, &it->second, sizeof(Float64));
-      return noErr;
-    }
-
-    const auto it = formats_.find(key);
-    if (it == formats_.end() || *size < sizeof(AudioStreamBasicDescription)) {
-      return -1;
-    }
-    *size = sizeof(AudioStreamBasicDescription);
-    std::memcpy(data, &it->second, sizeof(AudioStreamBasicDescription));
-    return noErr;
-  }
-
-  OSStatus setPropertyData(AudioObjectID object_id, const AudioObjectPropertyAddress* address,
-                           UInt32 size, const void* data) noexcept override {
-    if (address->mSelector != kAudioDevicePropertyNominalSampleRate || !allow_rate_writes_ ||
-        size != sizeof(Float64)) {
-      return -1;
-    }
-    Float64 rate = 0.0;
-    std::memcpy(&rate, data, sizeof(rate));
-    float_values_[{object_id, address->mSelector}] = rate;
-    return noErr;
-  }
-
-private:
-  std::map<PropertyKey, UInt32> uint32_values_;
-  std::map<PropertyKey, Float64> float_values_;
-  std::map<PropertyKey, AudioStreamBasicDescription> formats_;
-  std::vector<Listener> listeners_;
-  bool allow_rate_writes_{true};
-  bool fail_queries_{false};
-  size_t callback_deliveries_{0};
-};
+using test_support::FakeCoreAudioPropertyApi;
 
 AudioStreamBasicDescription testFormat() {
   AudioStreamBasicDescription format{};
@@ -179,7 +39,7 @@ public:
     api.setFormat(stream.stream_id, kAudioStreamPropertyPhysicalFormat,
                   stream.expected_physical_format);
     monitor = std::make_unique<CoreAudioRouteMonitor>(
-        api, 48000, 512, std::vector<CoreAudioRouteDevice>{{1, false, false}},
+        api, 48000, 512, std::vector<CoreAudioRouteDevice>{{1, false, true, false}},
         std::vector<CoreAudioRouteStream>{stream});
     initialization_ok = monitor->start();
     if (initialization_ok) {
@@ -195,14 +55,14 @@ public:
     }
   }
 
-  FakeCoreAudioRoutePropertyApi api;
+  FakeCoreAudioPropertyApi api;
   AudioStreamBasicDescription format;
   CoreAudioRouteStream stream;
   std::unique_ptr<CoreAudioRouteMonitor> monitor;
   bool initialization_ok{false};
 };
 
-TEST(CoreAudioRouteMonitorTest, RegistersAllRoutePropertiesAndCleansUp) {
+TEST(CoreAudioRouteMonitorTest, RegistersInSuppliedOrderAndCleansUp) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);
   EXPECT_EQ(fixture.api.listenerCount(), 5u);
@@ -211,37 +71,28 @@ TEST(CoreAudioRouteMonitorTest, RegistersAllRoutePropertiesAndCleansUp) {
   EXPECT_EQ(fixture.api.listenerCount(), 0u);
 }
 
-TEST(CoreAudioRouteMonitorTest, AliveLossClosesGateAndReportsUnavailable) {
+TEST(CoreAudioRouteMonitorTest, AliveLossClosesAdmissionAndReportsOutputUnavailable) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);
   fixture.api.setAlive(1, 0);
   fixture.api.notify(1, kAudioDevicePropertyDeviceIsAlive);
 
-  EXPECT_FALSE(fixture.monitor->permitsRendering());
-  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::RouteUnavailable);
-  EXPECT_FALSE(fixture.monitor->permitsRendering());
+  EXPECT_TRUE(fixture.monitor->permitsRendering())
+      << "Passive monitoring keeps admission open until the control worker reports terminal loss";
+  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::OutputUnavailable);
+  EXPECT_TRUE(fixture.monitor->isTerminal());
+  EXPECT_TRUE(fixture.api.writeLedger().empty());
 }
 
-TEST(CoreAudioRouteMonitorTest, RateChangeRestoresBeforeReopeningGate) {
+TEST(CoreAudioRouteMonitorTest, RateChangeIsReportedWithoutWriteBack) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);
-  fixture.api.setRate(1, 44100.0);
+  fixture.api.thirdPartyRateMutation(1, 44100.0);
   fixture.api.notify(1, kAudioDevicePropertyNominalSampleRate);
 
+  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::SampleRateChanged);
   EXPECT_FALSE(fixture.monitor->permitsRendering());
-  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::RateRestored);
-  EXPECT_TRUE(fixture.monitor->permitsRendering());
-}
-
-TEST(CoreAudioRouteMonitorTest, RefusedRateRestoreRequiresReinitialization) {
-  RouteMonitorFixture fixture;
-  ASSERT_TRUE(fixture.initialization_ok);
-  fixture.api.allowRateWrites(false);
-  fixture.api.setRate(1, 44100.0);
-  fixture.api.notify(1, kAudioDevicePropertyNominalSampleRate);
-
-  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::ReinitializationRequired);
-  EXPECT_FALSE(fixture.monitor->permitsRendering());
+  EXPECT_TRUE(fixture.api.writeLedger().empty());
 }
 
 TEST(CoreAudioRouteMonitorTest, StreamFormatChangeReportsFormatChanged) {
@@ -256,60 +107,87 @@ TEST(CoreAudioRouteMonitorTest, StreamFormatChangeReportsFormatChanged) {
   EXPECT_FALSE(fixture.monitor->permitsRendering());
 }
 
-TEST(CoreAudioRouteMonitorTest, BufferChangeRequiresReinitialization) {
+TEST(CoreAudioRouteMonitorTest, BufferChangeReportsBufferSizeChanged) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);
   fixture.api.setBuffer(1, 256);
   fixture.api.notify(1, kAudioDevicePropertyBufferFrameSize);
 
-  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::ReinitializationRequired);
+  EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::BufferSizeChanged);
   EXPECT_FALSE(fixture.monitor->permitsRendering());
 }
 
 TEST(CoreAudioRouteMonitorTest, PropertyReadFailureReportsBackendFailure) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);
-  fixture.api.failQueries(true);
+  fixture.api.failGet(-1);
   fixture.api.notify(1, kAudioDevicePropertyDeviceIsAlive);
 
   EXPECT_EQ(fixture.monitor->poll(), CoreAudioRoutePollResult::BackendFailure);
   EXPECT_FALSE(fixture.monitor->permitsRendering());
 }
-TEST(CoreAudioRouteMonitorTest, ReportsUnavailableDirectionForDistinctDuplexEndpoints) {
-  FakeCoreAudioRoutePropertyApi api;
+
+TEST(CoreAudioRouteMonitorTest, PhysicalOutputPrecedesInputAndAggregateLoss) {
+  FakeCoreAudioPropertyApi api;
   for (const AudioDeviceID device_id : {AudioDeviceID{1}, AudioDeviceID{2}, AudioDeviceID{3}}) {
     api.setAlive(device_id, 1);
     api.setRate(device_id, 48000.0);
     api.setBuffer(device_id, 512);
   }
 
-  {
-    CoreAudioRouteMonitor monitor(
-        api, 48000, 512,
-        std::vector<CoreAudioRouteDevice>{{1, false, false}, {2, true, false}, {3, false, true}},
-        {});
-    ASSERT_TRUE(monitor.start());
-    monitor.requestCheck();
-    ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
-    api.setAlive(2, 0);
-    api.notify(2, kAudioDevicePropertyDeviceIsAlive);
-    EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::InputUnavailable);
-  }
+  CoreAudioRouteMonitor monitor(api, 48000, 512,
+                                std::vector<CoreAudioRouteDevice>{{3, false, false, true},
+                                                                  {2, true, false, false},
+                                                                  {1, false, true, false}},
+                                {});
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
 
+  api.setAlive(2, 0);
+  api.setAlive(3, 0);
+  api.notify(2, kAudioDevicePropertyDeviceIsAlive);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::InputUnavailable);
+
+  monitor.stop();
   api.setAlive(2, 1);
-  {
-    CoreAudioRouteMonitor monitor(
-        api, 48000, 512,
-        std::vector<CoreAudioRouteDevice>{{1, false, false}, {2, true, false}, {3, false, true}},
-        {});
-    ASSERT_TRUE(monitor.start());
-    monitor.requestCheck();
-    ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
-    api.setAlive(1, 0);
-    api.setAlive(3, 0);
-    api.notify(3, kAudioDevicePropertyDeviceIsAlive);
-    EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::OutputUnavailable);
-  }
+  api.setAlive(3, 1);
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+  api.setAlive(1, 0);
+  api.setAlive(3, 0);
+  api.notify(3, kAudioDevicePropertyDeviceIsAlive);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::OutputUnavailable);
+}
+
+TEST(CoreAudioRouteMonitorTest, SameDeviceDuplexLossUsesOutputPrecedence) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setRate(1, 48000.0);
+  api.setBuffer(1, 512);
+  CoreAudioRouteMonitor monitor(
+      api, 48000, 512,
+      std::vector<CoreAudioRouteDevice>{{1, true, false, false}, {1, false, true, false}}, {});
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+  api.setAlive(1, 0);
+  api.notify(1, kAudioDevicePropertyDeviceIsAlive);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::OutputUnavailable);
+}
+
+TEST(CoreAudioRouteMonitorTest, StopWakesAtomicWorkerWait) {
+  RouteMonitorFixture fixture;
+  ASSERT_TRUE(fixture.initialization_ok);
+  std::atomic<bool> returned{false};
+  std::thread worker([&] {
+    fixture.monitor->waitForChange();
+    returned.store(true, std::memory_order_release);
+  });
+  fixture.monitor->stop();
+  worker.join();
+  EXPECT_TRUE(returned.load(std::memory_order_acquire));
 }
 
 } // namespace

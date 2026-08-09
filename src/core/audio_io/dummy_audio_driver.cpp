@@ -37,7 +37,6 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
   // The dummy backend has no physical endpoint, so it must not fabricate route
   // identity, liveness, channel mapping, or hardware latency facts.
   active_route_ = {};
-  input_render_failures_.store(0, std::memory_order_release);
   initialized_ = true;
   return SessionGraphError::OK;
 }
@@ -165,8 +164,7 @@ AudioIoRouteState DummyAudioDriver::getAudioIoRouteState() const {
 }
 
 AudioIoTelemetry DummyAudioDriver::getTelemetry() const noexcept {
-  return {input_render_failures_.load(std::memory_order_acquire),
-          AudioDriverRuntimeOutcome::Healthy, AudioRouteRuntimeOutcome::Healthy};
+  return {0, AudioRouteRuntimeOutcome::Healthy};
 }
 
 AudioRouteCompatibility DummyAudioDriver::probeRoute(const AudioDriverConfig& config) const {
