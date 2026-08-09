@@ -355,4 +355,4 @@ The example follows this pattern:
 ---
 
 **Last Updated:** October 26, 2025
-**SDK Version:** 0.6.7
+**SDK Version:** 0.7.0

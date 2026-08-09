@@ -415,7 +415,7 @@ SessionGraphError WASAPIAudioDriver::initialize(const AudioDriverConfig& request
   resolved_ = resolved;
   initialized_.store(true, std::memory_order_release);
   reinitialize_required_.store(false, std::memory_order_release);
-  runtime_outcome_.store(AudioDriverRuntimeOutcome::Healthy, std::memory_order_release);
+  route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -503,7 +503,7 @@ uint32_t WASAPIAudioDriver::getLatencySamples() const {
 }
 
 AudioIoTelemetry WASAPIAudioDriver::getTelemetry() const noexcept {
-  return {0, runtime_outcome_.load(std::memory_order_acquire)};
+  return {0, route_outcome_.load(std::memory_order_acquire)};
 }
 
 AudioDriverCapabilities WASAPIAudioDriver::getCapabilities() const {
@@ -541,7 +541,7 @@ void WASAPIAudioDriver::clearCallback() noexcept {
 void WASAPIAudioDriver::markTerminalFailure() noexcept {
   running_.store(false, std::memory_order_release);
   reinitialize_required_.store(true, std::memory_order_release);
-  runtime_outcome_.store(AudioDriverRuntimeOutcome::BackendFailure, std::memory_order_release);
+  route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
   clearCallback();
 }
 

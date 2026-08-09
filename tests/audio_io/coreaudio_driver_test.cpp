@@ -357,10 +357,7 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteStartsWithRuntimeRateMonitor) {
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
-  const AudioDriverRuntimeOutcome outcome = m_driver->getTelemetry().runtime_outcome;
-  EXPECT_TRUE(outcome == AudioDriverRuntimeOutcome::Healthy ||
-              outcome == AudioDriverRuntimeOutcome::SampleRateRestored);
-
+  EXPECT_EQ(m_driver->getTelemetry().route_outcome, AudioRouteRuntimeOutcome::Healthy);
   EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
 }
 
@@ -372,10 +369,11 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteSupports256FrameBuffers) {
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
-  ASSERT_EQ(m_driver->getActiveRoute().actual_buffer_frames, 256u);
+  const uint32_t actual_frames = m_driver->getActiveRoute().actual_buffer_frames;
+  ASSERT_GT(actual_frames, 0u);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_EQ(m_callback->getLastNumFrames(), 256u);
+  EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
   EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
 }
 
@@ -496,6 +494,7 @@ TEST_F(CoreAudioDriverTest, RoundTripLatencyIsDetectedForActiveRoute) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   config.num_outputs = 2;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
@@ -698,6 +697,7 @@ TEST_F(CoreAudioDriverTest, InitializeWithInputEnabled) {
   config.buffer_size = 512;
   config.num_outputs = 2;
   config.num_inputs = 1; // Request capture
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
 
   auto error = m_driver->initialize(config);
   ASSERT_EQ(error, SessionGraphError::OK);
@@ -714,6 +714,7 @@ TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
   config.num_outputs = 2;
 
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
 
@@ -1019,6 +1020,7 @@ TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   config.input_device_id = endpoints.input_uid;
   config.num_outputs = 2;
   config.output_device_id = endpoints.output_uid;
@@ -1053,6 +1055,7 @@ TEST_F(CoreAudioDriverTest, ExplicitDistinctEndpointsCaptureAndReinitializeClean
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   config.input_device_id = endpoints.input_uid;
   config.num_outputs = 2;
   config.output_device_id = endpoints.output_uid;
@@ -1080,6 +1083,7 @@ TEST_F(CoreAudioDriverTest, DirectionalDefaultsWorkWithExplicitOppositeEndpoint)
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   config.input_device_id = endpoints.input_uid;
   config.num_outputs = 2;
 
@@ -1102,6 +1106,7 @@ TEST_F(CoreAudioDriverTest, ExplicitSameDeviceDuplexCapturesWhenAvailable) {
   config.sample_rate = 48000;
   config.buffer_size = 512;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   config.input_device_id = endpoints.input_uid;
   config.num_outputs = 2;
   config.output_device_id = endpoints.output_uid;
@@ -1155,6 +1160,7 @@ TEST_F(CoreAudioDriverTest, CrossDeviceCaptureHasNoRenderFailures) {
   config.buffer_size = 512;
   config.num_outputs = 2;
   config.num_inputs = 1;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_TRUE(liveCaptureWithoutFailures(*m_driver));

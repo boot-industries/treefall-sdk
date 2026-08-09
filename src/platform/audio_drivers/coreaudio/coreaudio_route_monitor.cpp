@@ -2,10 +2,12 @@
 #include "coreaudio_route_monitor.h"
 
 #include <algorithm>
+#include <cstring>
+#include <utility>
 
 namespace orpheus {
 
-CoreAudioRouteMonitor::CoreAudioRouteMonitor(ICoreAudioSampleRatePropertyApi& property_api,
+CoreAudioRouteMonitor::CoreAudioRouteMonitor(ICoreAudioPropertyApi& property_api,
                                              uint32_t expected_sample_rate,
                                              uint32_t expected_buffer_frames,
                                              std::vector<CoreAudioRouteDevice> devices,
@@ -14,36 +16,42 @@ CoreAudioRouteMonitor::CoreAudioRouteMonitor(ICoreAudioSampleRatePropertyApi& pr
       expected_sample_rate_(static_cast<Float64>(expected_sample_rate)),
       expected_buffer_frames_(expected_buffer_frames), devices_(std::move(devices)),
       streams_(std::move(streams)) {
-  std::sort(devices_.begin(), devices_.end(),
-            [](const CoreAudioRouteDevice& lhs, const CoreAudioRouteDevice& rhs) {
-              return lhs.device_id < rhs.device_id;
-            });
   std::vector<CoreAudioRouteDevice> unique_devices;
   unique_devices.reserve(devices_.size());
   for (const CoreAudioRouteDevice& device : devices_) {
     if (device.device_id == 0) {
       continue;
     }
-    if (!unique_devices.empty() && unique_devices.back().device_id == device.device_id) {
-      unique_devices.back().monitors_input =
-          unique_devices.back().monitors_input || device.monitors_input;
-      unique_devices.back().monitors_output =
-          unique_devices.back().monitors_output || device.monitors_output;
-      continue;
+    const auto existing = std::find_if(unique_devices.begin(), unique_devices.end(),
+                                       [&](const CoreAudioRouteDevice& candidate) {
+                                         return candidate.device_id == device.device_id;
+                                       });
+    if (existing == unique_devices.end()) {
+      unique_devices.push_back(device);
+    } else {
+      existing->monitors_input = existing->monitors_input || device.monitors_input;
+      existing->monitors_output = existing->monitors_output || device.monitors_output;
+      existing->is_private_aggregate =
+          existing->is_private_aggregate || device.is_private_aggregate;
     }
-    unique_devices.push_back(device);
   }
   devices_ = std::move(unique_devices);
 
-  std::sort(streams_.begin(), streams_.end(),
-            [](const CoreAudioRouteStream& lhs, const CoreAudioRouteStream& rhs) {
-              return lhs.stream_id < rhs.stream_id;
-            });
-  streams_.erase(std::unique(streams_.begin(), streams_.end(),
-                             [](const CoreAudioRouteStream& lhs, const CoreAudioRouteStream& rhs) {
-                               return lhs.stream_id == rhs.stream_id;
-                             }),
-                 streams_.end());
+  std::vector<CoreAudioRouteStream> unique_streams;
+  unique_streams.reserve(streams_.size());
+  for (const CoreAudioRouteStream& stream : streams_) {
+    if (stream.stream_id == 0) {
+      continue;
+    }
+    const auto existing = std::find_if(unique_streams.begin(), unique_streams.end(),
+                                       [&](const CoreAudioRouteStream& candidate) {
+                                         return candidate.stream_id == stream.stream_id;
+                                       });
+    if (existing == unique_streams.end()) {
+      unique_streams.push_back(stream);
+    }
+  }
+  streams_ = std::move(unique_streams);
 
   registrations_.reserve(devices_.size() * 3 + streams_.size() * 2);
   for (const CoreAudioRouteDevice& device : devices_) {
@@ -64,11 +72,18 @@ CoreAudioRouteMonitor::~CoreAudioRouteMonitor() {
 }
 
 bool CoreAudioRouteMonitor::start() noexcept {
-  if (registered_count_ != 0 || registrations_.empty()) {
-    return registered_count_ != 0;
+  if (registered_count_ != 0) {
+    return state_.load(std::memory_order_acquire) == State::Active;
+  }
+  if (registrations_.empty()) {
+    return false;
   }
 
-  state_.store(0, std::memory_order_release);
+  state_.store(State::Active, std::memory_order_release);
+  pending_.store(false, std::memory_order_release);
+  generation_.fetch_add(1, std::memory_order_acq_rel);
+  generation_.notify_one();
+
   for (const ListenerRegistration& registration : registrations_) {
     if (property_api_.addPropertyListener(registration.object_id, &registration.address,
                                           &propertyChanged, this) != noErr) {
@@ -81,61 +96,65 @@ bool CoreAudioRouteMonitor::start() noexcept {
 }
 
 void CoreAudioRouteMonitor::stop() noexcept {
+  state_.store(State::Stopped, std::memory_order_release);
+  pending_.store(true, std::memory_order_release);
+  signalStateChange();
   while (registered_count_ != 0) {
     --registered_count_;
     const ListenerRegistration& registration = registrations_[registered_count_];
     property_api_.removePropertyListener(registration.object_id, &registration.address,
                                          &propertyChanged, this);
   }
-  state_.fetch_or(kStoppedBit | kPendingBit, std::memory_order_release);
-  pending_changed_.notify_all();
 }
 
 void CoreAudioRouteMonitor::requestCheck() noexcept {
-  uint64_t state = state_.load(std::memory_order_acquire);
-  uint64_t requested_state = 0;
-  do {
-    requested_state = (state + kGenerationIncrement) | kPendingBit;
-  } while (!state_.compare_exchange_weak(state, requested_state, std::memory_order_acq_rel,
-                                         std::memory_order_acquire));
-  pending_changed_.notify_one();
+  if (state_.load(std::memory_order_acquire) == State::Active) {
+    pending_.store(true, std::memory_order_release);
+  }
+  signalStateChange();
+}
+
+void CoreAudioRouteMonitor::closeAdmission() noexcept {
+  State expected = State::Active;
+  state_.compare_exchange_strong(expected, State::Terminal, std::memory_order_acq_rel,
+                                 std::memory_order_acquire);
+  pending_.store(true, std::memory_order_release);
+  signalStateChange();
 }
 
 void CoreAudioRouteMonitor::waitForChange() noexcept {
-  std::unique_lock<std::mutex> lock(pending_mutex_);
-  pending_changed_.wait(
-      lock, [this] { return (state_.load(std::memory_order_acquire) & kPendingBit) != 0; });
+  uint64_t observed = generation_.load(std::memory_order_acquire);
+  while (state_.load(std::memory_order_acquire) == State::Active &&
+         !pending_.load(std::memory_order_acquire)) {
+    generation_.wait(observed, std::memory_order_acquire);
+    observed = generation_.load(std::memory_order_acquire);
+  }
 }
 
 CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
-  uint64_t serviced_state = state_.load(std::memory_order_acquire);
-  if ((serviced_state & kPendingBit) == 0) {
-    return CoreAudioRoutePollResult::NoChange;
-  }
-  if ((serviced_state & kStoppedBit) != 0) {
+  if (state_.load(std::memory_order_acquire) != State::Active ||
+      !pending_.exchange(false, std::memory_order_acq_rel)) {
     return CoreAudioRoutePollResult::NoChange;
   }
 
   const auto alive_address = deviceAddress(kAudioDevicePropertyDeviceIsAlive);
   const auto rate_address = deviceAddress(kAudioDevicePropertyNominalSampleRate);
   const auto buffer_address = deviceAddress(kAudioDevicePropertyBufferFrameSize);
-  bool rate_restored = false;
-  bool aggregate_unavailable = false;
 
-  for (const CoreAudioRouteDevice& device : devices_) {
+  const auto check_device =
+      [&](const CoreAudioRouteDevice& device) noexcept -> CoreAudioRoutePollResult {
     UInt32 alive = 0;
     if (!readUInt32(property_api_, device.device_id, alive_address, alive)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (alive == 0) {
-      if (device.monitors_input && !device.monitors_output) {
-        return CoreAudioRoutePollResult::InputUnavailable;
-      }
-      if (device.monitors_output && !device.monitors_input) {
+      if (device.monitors_output) {
         return CoreAudioRoutePollResult::OutputUnavailable;
       }
-      aggregate_unavailable = true;
-      continue;
+      if (device.monitors_input) {
+        return CoreAudioRoutePollResult::InputUnavailable;
+      }
+      return CoreAudioRoutePollResult::BackendFailure;
     }
 
     Float64 observed_rate = 0.0;
@@ -143,16 +162,7 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (observed_rate != expected_sample_rate_) {
-      if (property_api_.setPropertyData(device.device_id, &rate_address,
-                                        sizeof(expected_sample_rate_),
-                                        &expected_sample_rate_) != noErr ||
-          !readFloat64(property_api_, device.device_id, rate_address, observed_rate)) {
-        return CoreAudioRoutePollResult::ReinitializationRequired;
-      }
-      if (observed_rate != expected_sample_rate_) {
-        return CoreAudioRoutePollResult::ReinitializationRequired;
-      }
-      rate_restored = true;
+      return CoreAudioRoutePollResult::SampleRateChanged;
     }
 
     UInt32 observed_buffer_frames = 0;
@@ -160,46 +170,66 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (observed_buffer_frames != expected_buffer_frames_) {
-      return CoreAudioRoutePollResult::ReinitializationRequired;
+      return CoreAudioRoutePollResult::BufferSizeChanged;
+    }
+    return CoreAudioRoutePollResult::NoChange;
+  };
+
+  // Output is the required direction. This ordering also makes same-device
+  // duplex loss deterministic: the output result wins over input loss.
+  for (const CoreAudioRouteDevice& device : devices_) {
+    if (device.is_private_aggregate) {
+      continue;
+    }
+    const CoreAudioRoutePollResult result = check_device(device);
+    if (result != CoreAudioRoutePollResult::NoChange) {
+      closeAdmission();
+      return result;
     }
   }
-  if (aggregate_unavailable) {
-    return CoreAudioRoutePollResult::RouteUnavailable;
+  for (const CoreAudioRouteDevice& device : devices_) {
+    if (!device.is_private_aggregate) {
+      continue;
+    }
+    const CoreAudioRoutePollResult result = check_device(device);
+    if (result != CoreAudioRoutePollResult::NoChange) {
+      closeAdmission();
+      return result;
+    }
   }
 
+  const auto virtual_address = streamAddress(kAudioStreamPropertyVirtualFormat);
+  const auto physical_address = streamAddress(kAudioStreamPropertyPhysicalFormat);
   for (const CoreAudioRouteStream& stream : streams_) {
-    const auto virtual_address = streamAddress(kAudioStreamPropertyVirtualFormat);
-    const auto physical_address = streamAddress(kAudioStreamPropertyPhysicalFormat);
     AudioStreamBasicDescription observed_virtual_format{};
     AudioStreamBasicDescription observed_physical_format{};
     if (!readFormat(property_api_, stream.stream_id, virtual_address, observed_virtual_format) ||
         !readFormat(property_api_, stream.stream_id, physical_address, observed_physical_format)) {
+      closeAdmission();
       return CoreAudioRoutePollResult::BackendFailure;
     }
     if (!formatsEqual(observed_virtual_format, stream.expected_virtual_format) ||
         !formatsEqual(observed_physical_format, stream.expected_physical_format)) {
+      closeAdmission();
       return CoreAudioRoutePollResult::FormatChanged;
     }
   }
 
-  if (!state_.compare_exchange_strong(serviced_state, serviced_state & ~kPendingBit,
-                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
-    return CoreAudioRoutePollResult::NoChange;
-  }
-  return rate_restored ? CoreAudioRoutePollResult::RateRestored
-                       : CoreAudioRoutePollResult::NoChange;
+  return CoreAudioRoutePollResult::NoChange;
 }
 
 bool CoreAudioRouteMonitor::permitsRendering() const noexcept {
-  const uint64_t state = state_.load(std::memory_order_acquire);
-  return (state & (kPendingBit | kStoppedBit)) == 0;
+  return state_.load(std::memory_order_acquire) == State::Active;
+}
+
+bool CoreAudioRouteMonitor::isTerminal() const noexcept {
+  return state_.load(std::memory_order_acquire) == State::Terminal;
 }
 
 OSStatus CoreAudioRouteMonitor::propertyChanged(AudioObjectID, UInt32,
                                                 const AudioObjectPropertyAddress*,
                                                 void* context) noexcept {
-  auto* monitor = static_cast<CoreAudioRouteMonitor*>(context);
-  monitor->requestCheck();
+  static_cast<CoreAudioRouteMonitor*>(context)->requestCheck();
   return noErr;
 }
 
@@ -222,8 +252,7 @@ bool CoreAudioRouteMonitor::formatsEqual(const AudioStreamBasicDescription& lhs,
          lhs.mBitsPerChannel == rhs.mBitsPerChannel && lhs.mReserved == rhs.mReserved;
 }
 
-bool CoreAudioRouteMonitor::readUInt32(ICoreAudioSampleRatePropertyApi& property_api,
-                                       AudioObjectID object_id,
+bool CoreAudioRouteMonitor::readUInt32(ICoreAudioPropertyApi& property_api, AudioObjectID object_id,
                                        const AudioObjectPropertyAddress& address,
                                        UInt32& value) noexcept {
   UInt32 size = sizeof(value);
@@ -231,7 +260,7 @@ bool CoreAudioRouteMonitor::readUInt32(ICoreAudioSampleRatePropertyApi& property
          size == sizeof(value);
 }
 
-bool CoreAudioRouteMonitor::readFloat64(ICoreAudioSampleRatePropertyApi& property_api,
+bool CoreAudioRouteMonitor::readFloat64(ICoreAudioPropertyApi& property_api,
                                         AudioObjectID object_id,
                                         const AudioObjectPropertyAddress& address,
                                         Float64& value) noexcept {
@@ -240,13 +269,17 @@ bool CoreAudioRouteMonitor::readFloat64(ICoreAudioSampleRatePropertyApi& propert
          size == sizeof(value);
 }
 
-bool CoreAudioRouteMonitor::readFormat(ICoreAudioSampleRatePropertyApi& property_api,
-                                       AudioObjectID object_id,
+bool CoreAudioRouteMonitor::readFormat(ICoreAudioPropertyApi& property_api, AudioObjectID object_id,
                                        const AudioObjectPropertyAddress& address,
                                        AudioStreamBasicDescription& value) noexcept {
   UInt32 size = sizeof(value);
   return property_api.getPropertyData(object_id, &address, &size, &value) == noErr &&
          size == sizeof(value);
+}
+
+void CoreAudioRouteMonitor::signalStateChange() noexcept {
+  generation_.fetch_add(1, std::memory_order_acq_rel);
+  generation_.notify_one();
 }
 
 } // namespace orpheus
