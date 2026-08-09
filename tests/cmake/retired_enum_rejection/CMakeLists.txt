@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.22)
+project(orpheus_retired_enum_rejection LANGUAGES CXX)
+
+find_package(OrpheusSDK CONFIG REQUIRED)
+set(_retired_enum_name_prefix "AudioDriver")
+set(_retired_enum_name_suffix "RuntimeOutcome")
+string(CONCAT RETIRED_ENUM_NAME "${_retired_enum_name_prefix}" "${_retired_enum_name_suffix}")
+configure_file(main.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/main.cpp" @ONLY)
+add_executable(retired_enum_consumer "${CMAKE_CURRENT_BINARY_DIR}/main.cpp")
+target_compile_features(retired_enum_consumer PRIVATE cxx_std_20)
+target_link_libraries(retired_enum_consumer PRIVATE Orpheus::audio_io)

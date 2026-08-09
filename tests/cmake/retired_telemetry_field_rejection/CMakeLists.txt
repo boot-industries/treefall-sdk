@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.22)
+project(orpheus_retired_telemetry_field_rejection LANGUAGES CXX)
+
+find_package(OrpheusSDK CONFIG REQUIRED)
+set(_retired_field_prefix "runtime_")
+set(_retired_field_suffix "outcome")
+string(CONCAT RETIRED_FIELD_NAME "${_retired_field_prefix}" "${_retired_field_suffix}")
+configure_file(main.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/main.cpp" @ONLY)
+add_executable(retired_telemetry_field_consumer "${CMAKE_CURRENT_BINARY_DIR}/main.cpp")
+target_compile_features(retired_telemetry_field_consumer PRIVATE cxx_std_20)
+target_link_libraries(retired_telemetry_field_consumer PRIVATE Orpheus::audio_io)

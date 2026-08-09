@@ -40,7 +40,6 @@ private:
   IAudioCallback* callback_{nullptr};
   std::atomic<bool> running_{false};
   std::atomic<bool> should_stop_{false};
-  std::atomic<uint64_t> input_render_failures_{0};
   std::thread audio_thread_;
 
   std::vector<std::vector<float>> input_buffer_storage_;

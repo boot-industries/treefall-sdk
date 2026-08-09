@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT
+#include <orpheus/audio_driver.h>
+
+int main() {
+  @RETIRED_ENUM_NAME@ retired = @RETIRED_ENUM_NAME@::Healthy;
+  return static_cast<int>(retired);
+}
