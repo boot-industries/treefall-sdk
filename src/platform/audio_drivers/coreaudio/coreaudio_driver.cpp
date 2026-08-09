@@ -284,6 +284,8 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   render_sample_rate_.store(active_route_.actual_sample_rate, std::memory_order_release);
   render_max_callback_frames_.store(maximum_frames, std::memory_order_release);
   render_chunk_frames_.store(config_.buffer_size, std::memory_order_release);
+  render_input_channels_.store(config_.num_inputs, std::memory_order_release);
+  render_output_channels_.store(config_.num_outputs, std::memory_order_release);
   input_render_failures_.store(0, std::memory_order_release);
   route_outcome_.store(AudioRouteRuntimeOutcome::Healthy, std::memory_order_release);
   if (rate_transaction.has_value()) {
@@ -336,6 +338,8 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
     render_sample_rate_.store(active_route_.actual_sample_rate, std::memory_order_release);
     render_max_callback_frames_.store(render_capacity_frames_, std::memory_order_release);
     render_chunk_frames_.store(config_.buffer_size, std::memory_order_release);
+    render_input_channels_.store(config_.num_inputs, std::memory_order_release);
+    render_output_channels_.store(config_.num_outputs, std::memory_order_release);
   }
 
   if (!startRouteMonitorLocked()) {
@@ -518,8 +522,10 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
 
   const uint32_t max_frames = driver->render_max_callback_frames_.load(std::memory_order_acquire);
-  const uint32_t num_input_channels = driver->config_.num_inputs;
-  const uint32_t num_output_channels = driver->config_.num_outputs;
+  const uint32_t num_input_channels =
+      driver->render_input_channels_.load(std::memory_order_acquire);
+  const uint32_t num_output_channels =
+      driver->render_output_channels_.load(std::memory_order_acquire);
   if (max_frames != 0 && inNumberFrames <= max_frames) {
     for (uint32_t channel = 0; channel < num_input_channels; ++channel) {
       std::memset(driver->input_buffers_[channel], 0,
@@ -1478,6 +1484,8 @@ void CoreAudioDriver::cleanupAudioUnit() {
   render_sample_rate_.store(0, std::memory_order_release);
   render_max_callback_frames_.store(0, std::memory_order_release);
   render_chunk_frames_.store(0, std::memory_order_release);
+  render_input_channels_.store(0, std::memory_order_release);
+  render_output_channels_.store(0, std::memory_order_release);
 
   if (aggregate_device_id_ != 0) {
     AudioHardwareDestroyAggregateDevice(aggregate_device_id_);
@@ -1510,6 +1518,8 @@ void CoreAudioDriver::stopRenderingLocked() {
   render_sample_rate_.store(0, std::memory_order_release);
   render_max_callback_frames_.store(0, std::memory_order_release);
   render_chunk_frames_.store(0, std::memory_order_release);
+  render_input_channels_.store(0, std::memory_order_release);
+  render_output_channels_.store(0, std::memory_order_release);
   if (!restoreAutomaticHogModeLocked()) {
     publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BackendFailure);
   }

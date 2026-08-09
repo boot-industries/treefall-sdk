@@ -159,6 +159,8 @@ private:
   std::atomic<uint32_t> render_sample_rate_{0};
   std::atomic<uint32_t> render_max_callback_frames_{0};
   std::atomic<uint32_t> render_chunk_frames_{0};
+  std::atomic<uint16_t> render_input_channels_{0};
+  std::atomic<uint16_t> render_output_channels_{0};
 
   std::unique_ptr<CoreAudioRouteMonitor> route_monitor_;
   std::atomic<bool> route_monitor_active_{false};
