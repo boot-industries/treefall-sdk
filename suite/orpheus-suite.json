@@ -72,7 +72,7 @@
       "compatibility": {
         "api_line": "0.6.x",
         "stable_c_abi": "1.0",
-        "shmui_juce_contract": "0.5.0"
+        "shmui_juce_contract": "0.6.0"
       },
       "generated_artifacts": [
         {
@@ -82,10 +82,10 @@
           "exclude_paths": [
             "shmui-juce-import.json"
           ],
-          "expected_sha256": "f34c156d9202261090d6185bbce356b23dd675a96f4c5f39ab90a07c8e4822bc",
+          "expected_sha256": "f2b6641c53543deae341d7553c7a9949452b36fdf46017cd29b8cfe19380900a",
           "source_repository": "shmui",
-          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
-          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "source_revision": "2b1e1977f887cf99b05eff9a2294647553e90ae8",
+          "current_source_revision": "2b1e1977f887cf99b05eff9a2294647553e90ae8",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -167,8 +167,8 @@
         "registry/"
       ],
       "compatibility": {
-        "design_token_contract": "0.5.0",
-        "juce_import_contract": "0.5.0"
+        "design_token_contract": "0.6.0",
+        "juce_import_contract": "0.6.0"
       },
       "generated_artifacts": [
         {

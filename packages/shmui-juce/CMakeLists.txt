@@ -154,4 +154,12 @@ if(SHMUI_JUCE_BUILD_TESTS)
   target_link_libraries(shmui_shm014_fixture PRIVATE orpheus_shmui_juce)
   target_compile_features(shmui_shm014_fixture PRIVATE cxx_std_20)
   add_test(NAME shmui_shm014_audio_boundary COMMAND shmui_shm014_fixture)
+
+  add_executable(shmui_shm024_operational_state_fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM024OperationalStateFixture.cpp
+  )
+  target_link_libraries(shmui_shm024_operational_state_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_features(shmui_shm024_operational_state_fixture PRIVATE cxx_std_20)
+  add_test(NAME shmui_shm024_operational_state
+    COMMAND shmui_shm024_operational_state_fixture)
 endif()

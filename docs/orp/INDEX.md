@@ -8,6 +8,8 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP175 ShmUI Operational State Contract Handoff]] — governed v0.6.0
+  generated-contract mirror and downstream pin decisions (2026-08-10)
 
 - [[ORP174 Cooperative CoreAudio Rate Negotiation Handoff]] — bounded CoreAudio
   activation, passive route monitoring, and complete callback handoff (2026-08-08)
@@ -30,6 +32,7 @@ Project documentation index for orpheus-sdk.
 
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
+- [ORP175 ShmUI Operational State Contract Handoff](ORP175%20ShmUI%20Operational%20State%20Contract%20Handoff.md)
 - [ORP174 Cooperative CoreAudio Rate Negotiation Handoff](ORP174%20Cooperative%20CoreAudio%20Rate%20Negotiation%20Handoff.md)
 - [ORP173 Orpheus Suite v0.1.0 Qualification and Release Gate Record](ORP173%20Orpheus%20Suite%20v0.1.0%20Qualification%20and%20Release%20Gate%20Record.md)
 - [ORP172 Non-Mutating CoreAudio Route Compatibility Handoff](ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md)
@@ -49,4 +52,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-08
+**Last Generated:** 2026-08-10
