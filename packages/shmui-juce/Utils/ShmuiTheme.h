@@ -78,10 +78,12 @@ struct ShmuiTheme {
   using Illumination = tokens::console::IlluminationRecipe;
   using Display = tokens::console::DisplayPresentation;
   using PhysicalControl = tokens::console::PhysicalControlRecipe;
+  using Operations = tokens::console::OperationalPalette;
 
   Material material;
   Illumination illumination;
   Display display;
+  Operations operations;
   PhysicalControl physicalControl;
 
   static Meter sharedMeter() {
@@ -127,6 +129,7 @@ struct ShmuiTheme {
                                                       tokens::console::AppearanceMode::Dark);
     t.material = fallback.material;
     t.illumination = fallback.illumination;
+    t.operations = fallback.operations;
     t.display = fallback.display;
     t.physicalControl = fallback.physicalControl;
     return t;
@@ -173,6 +176,7 @@ struct ShmuiTheme {
               profile.waveform.line,  profile.waveform.background, profile.waveform.background,
               profile.waveform.grid,  profile.waveform.marker,     profile.waveform.selection};
     t.material = profile.material;
+    t.operations = profile.operations;
     t.illumination = profile.illumination;
     t.display = profile.display;
     t.physicalControl = profile.physicalControl;
