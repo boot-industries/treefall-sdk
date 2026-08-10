@@ -3,7 +3,7 @@
 # ORP175 — ShmUI Operational State Contract Handoff
 
 **Document type:** Cross-repository generated-contract handoff  
-**Status:** Verified SDK merge candidate  
+**Status:** Completed; ShmUI PR #23 and SDK PR #244 merged
 **Date:** 2026-08-10
 
 ## Decision
