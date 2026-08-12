@@ -140,6 +140,28 @@ TEST(CoreAudioRouteMonitorTest, BufferChangeReportsBufferSizeChanged) {
   EXPECT_FALSE(fixture.monitor->permitsRendering());
 }
 
+TEST(CoreAudioRouteMonitorTest, AcceptsDirectionalEndpointBufferFramesAndDetectsMutation) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setAlive(2, 1);
+  api.setRate(1, 44100.0);
+  api.setRate(2, 16000.0);
+  api.setBuffer(1, 512);
+  api.setBuffer(2, 320);
+  CoreAudioRouteMonitor monitor(api, 44100, 512,
+                                std::vector<CoreAudioRouteDevice>{{1, false, true, false, 44100},
+                                                                  {2, true, false, false, 16000}},
+                                {});
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+
+  api.setBuffer(2, 256);
+  api.notify(2, kAudioDevicePropertyBufferFrameSize);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::BufferSizeChanged);
+  EXPECT_FALSE(monitor.permitsRendering());
+}
+
 TEST(CoreAudioRouteMonitorTest, PropertyReadFailureReportsBackendFailure) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);

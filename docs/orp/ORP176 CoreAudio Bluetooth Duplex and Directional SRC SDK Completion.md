@@ -2,11 +2,11 @@
 
 # ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion
 
-**Document type:** SDK implementation and qualification record  
-**Status:** Source and deterministic/package qualification complete; physical Bluetooth acceptance blocked  
-**Date:** 2026-08-11  
-**Consumer:** FourTrack / EightTrack, FTR085  
-**Implementation baseline:** `main` worktree at the FTR085 implementation checkpoint  
+**Document type:** SDK implementation and qualification record
+**Status:** Source and deterministic/package qualification complete; CLbuds activation repair awaiting physical acceptance
+**Date:** 2026-08-12
+**Consumer:** FourTrack / EightTrack, FTR085
+**Implementation baseline:** `main` plus pending directional-buffer monitor repair
 **SDK version:** 0.8.0
 
 ## Decision
@@ -58,7 +58,11 @@ C ABI remains 1.0 because the C-facing ABI contract is unchanged.
    render from session to physical rate without allocation, locks, or I/O in the callback.
    Converted callbacks derive every chunk position from one session-frame base and advance
    the timeline only after the full callback, preserving contiguous sample positions.
-5. The route monitor treats property changes as terminal, publishes one structured outcome,
+5. The route monitor baselines each physical endpoint's own buffer size when
+   listener admission begins. This is required for directional Bluetooth
+   routes, where a 16 kHz input may use 320 frames while a 44.1 kHz output uses
+   512 frames; subsequent mutation remains terminal.
+6. The route monitor treats property changes as terminal, publishes one structured outcome,
    closes callback admission, and prevents stale route facts or repeated writes.
 
 ## Deterministic evidence
@@ -74,11 +78,12 @@ Source and deterministic evidence recorded in this session:
 | Complete configured SDK tree | 80/80 CTest contracts passed in `build-sdk-debug` |
 | Installed package and public version contract | `version_contract`, `cmake_find_package`, and `cmake_package_runtime_consumer` passed against 0.8.0 |
 
-The physical hardware baseline captured before implementation found no CLbuds endpoint.
-A deterministic output-only CoreAudio acceptance run against `BuiltInSpeakerDevice` at
-48 kHz passed; its JSON reported two settled physical output channels, matching active
-map `{0,1}`, no input route, no conversion, and zero callback health failures. A
-negative expected-tone invocation failed as intended when no input callback existed.
+On 2026-08-12, the CLbuds endpoints became available for the first physical
+activation attempt. Their separate UIDs report a 16 kHz, 320-frame, one-channel
+input and a 44.1 kHz, 512-frame, two-channel output. ARM exposed a false
+`BufferSizeChanged` outcome because monitoring applied the output callback size
+to every endpoint. The per-endpoint baseline repair has deterministic coverage;
+the CLbuds capture/monitor run must still demonstrate live frames and audibility.
 
 ## FourTrack adoption boundary
 
