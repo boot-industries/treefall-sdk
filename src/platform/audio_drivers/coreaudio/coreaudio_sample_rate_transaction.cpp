@@ -8,16 +8,20 @@
 namespace orpheus {
 
 CoreAudioSampleRateTransaction::CoreAudioSampleRateTransaction(
-    ICoreAudioPropertyApi& property_api, const detail::ResolvedCoreAudioRoute& route,
-    uint32_t requested_rate, std::chrono::milliseconds timeout) noexcept
-    : property_api_(property_api), requested_rate_(static_cast<Float64>(requested_rate)),
-      timeout_(timeout) {
-  if (route.output_device_id != 0) {
-    endpoints_[endpoint_count_++].device_id = route.output_device_id;
-  }
-  if (route.input_device_id != 0 && route.input_device_id != route.output_device_id &&
-      endpoint_count_ < endpoints_.size()) {
-    endpoints_[endpoint_count_++].device_id = route.input_device_id;
+    ICoreAudioPropertyApi& property_api, const std::vector<detail::CoreAudioDeviceRatePlan>& plans,
+    std::chrono::milliseconds timeout) noexcept
+    : property_api_(property_api), timeout_(timeout) {
+  for (const auto& plan : plans) {
+    if (plan.device_id == 0) {
+      continue;
+    }
+    has_plans_ = true;
+    if (!plan.requested_write_rate.has_value() || endpoint_count_ >= endpoints_.size()) {
+      continue;
+    }
+    auto& endpoint = endpoints_[endpoint_count_++];
+    endpoint.device_id = plan.device_id;
+    endpoint.requested_rate = static_cast<Float64>(*plan.requested_write_rate);
   }
 }
 
@@ -28,8 +32,17 @@ CoreAudioSampleRateTransaction::~CoreAudioSampleRateTransaction() {
 }
 
 AudioRouteRuntimeOutcome CoreAudioSampleRateTransaction::begin() noexcept {
-  if (begun_ || committed_ || endpoint_count_ == 0 || requested_rate_ <= 0.0) {
+  if (begun_ || committed_ || !has_plans_) {
     return fail(AudioRouteRuntimeOutcome::BackendFailure);
+  }
+  if (endpoint_count_ == 0) {
+    begun_ = true;
+    return AudioRouteRuntimeOutcome::Healthy;
+  }
+  for (size_t index = 0; index < endpoint_count_; ++index) {
+    if (endpoints_[index].requested_rate <= 0.0) {
+      return fail(AudioRouteRuntimeOutcome::BackendFailure);
+    }
   }
   begun_ = true;
 
@@ -42,7 +55,7 @@ AudioRouteRuntimeOutcome CoreAudioSampleRateTransaction::begin() noexcept {
       return fail(AudioRouteRuntimeOutcome::BackendFailure);
     }
     endpoint.previous_rate = current_rate;
-    endpoint.needs_change = current_rate != requested_rate_;
+    endpoint.needs_change = current_rate != endpoint.requested_rate;
     endpoint.confirmed = !endpoint.needs_change;
     any_change = any_change || endpoint.needs_change;
   }
@@ -84,8 +97,8 @@ AudioRouteRuntimeOutcome CoreAudioSampleRateTransaction::begin() noexcept {
       continue;
     }
     endpoint.write_started = true;
-    if (property_api_.setPropertyData(endpoint.device_id, &address, sizeof(requested_rate_),
-                                      &requested_rate_) != noErr) {
+    if (property_api_.setPropertyData(endpoint.device_id, &address, sizeof(endpoint.requested_rate),
+                                      &endpoint.requested_rate) != noErr) {
       return fail(AudioRouteRuntimeOutcome::SampleRateChangeFailed);
     }
   }
@@ -104,7 +117,7 @@ AudioRouteRuntimeOutcome CoreAudioSampleRateTransaction::begin() noexcept {
         if (!readRate(endpoint, observed_rate)) {
           return fail(AudioRouteRuntimeOutcome::BackendFailure);
         }
-        if (observed_rate == requested_rate_) {
+        if (observed_rate == endpoint.requested_rate) {
           endpoint.confirmed = true;
         }
       }
@@ -189,7 +202,7 @@ void CoreAudioSampleRateTransaction::rollback() noexcept {
     UInt32 size = sizeof(current_rate);
     if (property_api_.getPropertyData(endpoint.device_id, &address, &size, &current_rate) !=
             noErr ||
-        size != sizeof(current_rate) || current_rate != requested_rate_) {
+        size != sizeof(current_rate) || current_rate != endpoint.requested_rate) {
       continue;
     }
     property_api_.setPropertyData(endpoint.device_id, &address, sizeof(endpoint.previous_rate),

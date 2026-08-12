@@ -13,14 +13,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <vector>
 
 namespace orpheus {
 
 /// Bounded, listener-confirmed activation transaction for physical endpoints.
 class CoreAudioSampleRateTransaction final {
 public:
-  CoreAudioSampleRateTransaction(ICoreAudioPropertyApi&, const detail::ResolvedCoreAudioRoute&,
-                                 uint32_t requested_rate,
+  CoreAudioSampleRateTransaction(ICoreAudioPropertyApi&,
+                                 const std::vector<detail::CoreAudioDeviceRatePlan>&,
                                  std::chrono::milliseconds timeout = std::chrono::seconds{
                                      2}) noexcept;
   ~CoreAudioSampleRateTransaction();
@@ -34,6 +35,7 @@ public:
 private:
   struct Endpoint {
     AudioDeviceID device_id = 0;
+    Float64 requested_rate = 0.0;
     Float64 previous_rate = 0.0;
     bool needs_change = false;
     bool write_started = false;
@@ -54,8 +56,8 @@ private:
   ICoreAudioPropertyApi& property_api_;
   std::array<Endpoint, 2> endpoints_{};
   size_t endpoint_count_{0};
-  const Float64 requested_rate_;
   const std::chrono::milliseconds timeout_;
+  bool has_plans_{false};
   std::atomic<uint32_t> notification_bits_{0};
   std::condition_variable notification_changed_;
   std::mutex notification_mutex_;

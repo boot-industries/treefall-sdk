@@ -7,6 +7,7 @@
 #include "coreaudio_route_resolver.h"
 
 #include <orpheus/audio_driver.h>
+#include <orpheus/directional_sample_rate_converter.h>
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
@@ -86,8 +87,15 @@ private:
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
-
+  static OSStatus inputRenderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
+                                      const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
+                                      UInt32 inNumberFrames, AudioBufferList* ioData);
   void recordInputRenderFailure() noexcept;
+  void recordInputFifoOverrun() noexcept;
+  void recordInputFifoUnderrun() noexcept;
+  void recordInputConversionFailure() noexcept;
+  void recordOutputConversionFailure() noexcept;
+  void failRealtimeConversion(AudioRouteRuntimeOutcome outcome) noexcept;
   void notifyInputOperation(
       detail::CoreAudioDriverDirectionAudit::InputDirectionOperation) const noexcept;
 
@@ -112,7 +120,11 @@ private:
 
   AudioDeviceID createAggregateDevice(AudioDeviceID input_device_id,
                                       AudioDeviceID output_device_id);
+  bool validateAudioUnitFormat(AudioUnit unit, AudioUnitScope scope, UInt32 element,
+                               Float64 expected_rate, UInt16 expected_channels) const noexcept;
+  SessionGraphError setupInputAudioUnit();
   SessionGraphError setupAudioUnit(AudioDeviceID device_id);
+  bool prepareConverters();
   bool createRouteMonitor();
   bool startRouteMonitorLocked();
   void stopRouteMonitor();
@@ -138,9 +150,10 @@ private:
   ICoreAudioPropertyApi* property_api_{nullptr};
   std::shared_ptr<ICoreAudioPropertyApi> injected_property_api_;
   detail::CoreAudioDriverDirectionAudit* direction_audit_{nullptr};
-
   AudioDriverConfig config_;
+
   AudioUnit audio_unit_{nullptr};
+  AudioUnit input_audio_unit_{nullptr};
   AudioDeviceID device_id_{0};
   AudioDeviceID aggregate_device_id_{0};
   AudioDeviceID input_device_id_{0};
@@ -148,38 +161,70 @@ private:
   uint32_t input_channel_offset_{0};
   uint32_t available_input_channels_{0};
   uint32_t available_output_channels_{0};
-  std::vector<uint16_t> input_channel_map_;
-  std::vector<uint16_t> output_channel_map_;
 
   std::atomic<bool> is_running_{false};
   std::atomic<uint64_t> input_render_failures_{0};
+  std::atomic<uint64_t> input_fifo_overruns_{0};
+  std::atomic<uint64_t> input_fifo_underruns_{0};
+  std::atomic<uint64_t> input_conversion_failures_{0};
+  std::atomic<uint64_t> output_conversion_failures_{0};
   uint32_t render_capacity_frames_{0};
+  uint32_t input_render_capacity_frames_{0};
   std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
   std::atomic<AudioRouteState> unavailable_route_state_{AudioRouteState::Failed};
   std::atomic<uint32_t> render_sample_rate_{0};
   std::atomic<uint32_t> render_max_callback_frames_{0};
+  std::atomic<uint32_t> input_render_max_callback_frames_{0};
   std::atomic<uint32_t> render_chunk_frames_{0};
   std::atomic<uint16_t> render_input_channels_{0};
   std::atomic<uint16_t> render_output_channels_{0};
 
+  std::vector<uint16_t> input_channel_map_;
+  std::vector<uint16_t> output_channel_map_;
+  uint32_t input_physical_rate_{0};
+  uint32_t output_physical_rate_{0};
+  uint16_t input_client_channels_{0};
+  uint16_t output_client_channels_{0};
+  bool input_conversion_active_{false};
+  bool output_conversion_active_{false};
+  uint16_t input_virtual_format_channels_{0};
+  uint16_t output_virtual_format_channels_{0};
+  bool input_is_bluetooth_{false};
+  bool output_is_bluetooth_{false};
+  bool endpoints_related_{false};
+  bool output_mono_fallback_{false};
+  uint32_t input_prime_frames_{0};
+  int64_t input_pi_integral_{0};
+  audio_utils::DirectionalSampleRateConverter input_converter_;
+  audio_utils::DirectionalSampleRateConverter output_converter_;
+  int32_t input_correction_ppm_{0};
   std::unique_ptr<CoreAudioRouteMonitor> route_monitor_;
   std::atomic<bool> route_monitor_active_{false};
   std::mutex route_monitor_mutex_;
   std::thread route_monitor_thread_;
 
+  detail::RealtimeBorrowedTarget<CoreAudioDriver> input_callback_target_;
+  detail::RealtimeBorrowedTarget<CoreAudioDriver> output_callback_target_;
   detail::RealtimeBorrowedTarget<IAudioCallback> callback_target_;
   detail::RealtimeBorrowedTarget<IPerformanceMonitor> performance_monitor_target_;
   uint64_t expected_stream_sample_{0};
+  uint64_t session_frame_position_{0};
   bool stream_timeline_initialized_{false};
+  bool conversion_timeline_initialized_{false};
 
   std::vector<float*> input_buffers_;
   std::vector<float*> output_buffers_;
+  std::vector<float*> input_render_chunk_buffers_;
   std::vector<const float*> input_chunk_buffers_;
   std::vector<float*> output_chunk_buffers_;
   std::vector<float> input_storage_;
   std::vector<float> output_storage_;
   std::vector<uint8_t> input_abl_storage_;
-
+  std::vector<const float*> input_capture_const_buffers_;
+  std::vector<float*> input_capture_buffers_;
+  std::vector<float*> output_native_buffers_;
+  std::vector<float> input_capture_storage_;
+  std::vector<float> output_native_storage_;
   bool automatic_hog_mode_changed_{false};
   UInt32 previous_hog_mode_allowed_{0};
   ActiveAudioRoute active_route_;

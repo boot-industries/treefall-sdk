@@ -22,12 +22,12 @@ enum class CoreAudioRoutePollResult : uint8_t {
   BackendFailure,
 };
 
-/// A physical device contributing one or both directions of an active route.
 struct CoreAudioRouteDevice {
   AudioDeviceID device_id = 0;
   bool monitors_input = false;
   bool monitors_output = false;
   bool is_private_aggregate = false;
+  uint32_t expected_sample_rate = 0;
 };
 
 /// One stream whose virtual and physical formats are part of the active route.

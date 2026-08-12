@@ -73,6 +73,48 @@ public:
     }
     return {detail::CoreAudioRouteQueryStatus::Success, false};
   }
+  detail::CoreAudioRouteQueryResult<uint32_t>
+  transportType(AudioDeviceID device_id) const override {
+    if (device_id != output_id_) {
+      return {detail::CoreAudioRouteQueryStatus::Missing, 0};
+    }
+    return {detail::CoreAudioRouteQueryStatus::Success, kAudioDeviceTransportTypeBuiltIn};
+  }
+
+  detail::CoreAudioRouteQueryResult<std::vector<AudioDeviceID>>
+  relatedDeviceIDs(AudioDeviceID device_id) const override {
+    if (device_id != output_id_) {
+      return {detail::CoreAudioRouteQueryStatus::Missing, {}};
+    }
+    return {detail::CoreAudioRouteQueryStatus::Success, {output_id_}};
+  }
+
+  detail::CoreAudioRouteQueryResult<detail::CoreAudioStreamFormat>
+  physicalStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    if (device_id != output_id_ || scope != kAudioObjectPropertyScopeOutput) {
+      return {detail::CoreAudioRouteQueryStatus::Missing, {}};
+    }
+    return {detail::CoreAudioRouteQueryStatus::Success,
+            {static_cast<uint32_t>(rate_), static_cast<uint16_t>(channels_)}};
+  }
+
+  detail::CoreAudioRouteQueryResult<detail::CoreAudioStreamFormat>
+  virtualStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    return physicalStreamFormat(device_id, scope);
+  }
+
+  detail::CoreAudioRouteQueryResult<bool>
+  nominalSampleRateSettable(AudioDeviceID device_id) const override {
+    if (device_id != output_id_) {
+      return {detail::CoreAudioRouteQueryStatus::Missing, false};
+    }
+    return {detail::CoreAudioRouteQueryStatus::Success, true};
+  }
+
+  detail::CoreAudioRouteQueryResult<uint32_t>
+  physicalChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    return channelCount(device_id, scope);
+  }
 
 private:
   AudioDeviceID output_id_;
