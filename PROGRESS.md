@@ -3,8 +3,8 @@
 
 ## ORP176 — CoreAudio Bluetooth duplex and directional SRC
 
-**Date:** 2026-08-11
-**Status:** Deterministic and package qualification complete; physical CLbuds acceptance remains blocked.
+**Date:** 2026-08-12
+**Status:** CLbuds directional activation repaired; physical acceptance remains in progress.
 
 ### Delivered
 
@@ -17,12 +17,16 @@
 
 ### Evidence and boundary
 
-- `polyphase_resampler_test`, `coreaudio_route_probe_test`, and `coreaudio_driver_test`
-  passed after the callback-timeline review correction; `realtime_static_audit` and its
-  unit contract also passed.
-- The repository's complete configured debug suite (80/80) and three release/package
-  contracts passed before review. No CLbuds endpoint is present locally, so no Bluetooth
-  hardware acceptance, release tag, or downstream production pin is claimed.
+- A 2026-08-12 CLbuds inventory supplied the missing directional facts: its
+  `:input` endpoint is 16 kHz/320 frames/one channel, while `:output` is
+  44.1 kHz/512 frames/two channels. The first ARM attempt exposed a monitor
+  defect: it compared every endpoint with the output callback's 512-frame
+  expectation and immediately reported a false reconfiguration.
+- The monitor now baselines each physical endpoint's own buffer size when its
+  listeners are admitted, still terminates on a later mutation, and has a
+  deterministic 16 kHz/320-frame input plus 44.1 kHz/512-frame output contract.
+- Physical capture/monitor audibility and artifact evidence remain unverified;
+  no release tag or downstream production pin is claimed.
 - Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
 
 ## ORP174 — Cooperative CoreAudio rate negotiation

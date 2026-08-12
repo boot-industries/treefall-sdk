@@ -92,6 +92,20 @@ bool CoreAudioRouteMonitor::start() noexcept {
     }
     ++registered_count_;
   }
+
+  const auto buffer_address = deviceAddress(kAudioDevicePropertyBufferFrameSize);
+  for (CoreAudioRouteDevice& device : devices_) {
+    if (device.expected_buffer_frames != 0) {
+      continue;
+    }
+    UInt32 observed_buffer_frames = 0;
+    if (!readUInt32(property_api_, device.device_id, buffer_address, observed_buffer_frames) ||
+        observed_buffer_frames == 0) {
+      stop();
+      return false;
+    }
+    device.expected_buffer_frames = observed_buffer_frames;
+  }
   return true;
 }
 
@@ -168,11 +182,14 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
       return CoreAudioRoutePollResult::SampleRateChanged;
     }
 
+    const UInt32 expected_buffer_frames = device.expected_buffer_frames != 0
+                                              ? device.expected_buffer_frames
+                                              : expected_buffer_frames_;
     UInt32 observed_buffer_frames = 0;
     if (!readUInt32(property_api_, device.device_id, buffer_address, observed_buffer_frames)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
-    if (observed_buffer_frames != expected_buffer_frames_) {
+    if (observed_buffer_frames != expected_buffer_frames) {
       return CoreAudioRoutePollResult::BufferSizeChanged;
     }
     return CoreAudioRoutePollResult::NoChange;
