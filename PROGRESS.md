@@ -1,6 +1,30 @@
 # Progress
 
 
+## ORP176 — CoreAudio Bluetooth duplex and directional SRC
+
+**Date:** 2026-08-11
+**Status:** Deterministic and package qualification complete; physical CLbuds acceptance remains blocked.
+
+### Delivered
+
+- CoreAudio now plans physical endpoint rates independently, applies only safe
+  device-global writes, and performs bounded directional conversion at the I/O boundary.
+- Route state reports physical/AUHAL client rates, virtual and callback widths,
+  conversion latency, Bluetooth relationship, mono fallback, and callback health.
+- Converted callback chunks use one session-frame base and advance the timeline only after
+  the full callback, so multi-chunk delivery is contiguous.
+
+### Evidence and boundary
+
+- `polyphase_resampler_test`, `coreaudio_route_probe_test`, and `coreaudio_driver_test`
+  passed after the callback-timeline review correction; `realtime_static_audit` and its
+  unit contract also passed.
+- The repository's complete configured debug suite (80/80) and three release/package
+  contracts passed before review. No CLbuds endpoint is present locally, so no Bluetooth
+  hardware acceptance, release tag, or downstream production pin is claimed.
+- Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
+
 ## ORP174 — Cooperative CoreAudio rate negotiation
 
 **Date:** 2026-08-08
