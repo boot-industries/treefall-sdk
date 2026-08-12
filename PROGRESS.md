@@ -25,8 +25,12 @@
 - The monitor now baselines each physical endpoint's own buffer size when its
   listeners are admitted, still terminates on a later mutation, and has a
   deterministic 16 kHz/320-frame input plus 44.1 kHz/512-frame output contract.
-- Physical capture/monitor audibility and artifact evidence remain unverified;
-  no release tag or downstream production pin is claimed.
+- The repaired FourTrack build still reports “audio route unavailable” when
+  arming CLbuds capture. No capture occurred; failure detail remains
+  uninvestigated. A separate FourTrack stale-output fallback defect rejects
+  44.1/48 kHz new sessions after a previously-selected CLbuds output disconnects.
+- Physical capture/monitor audibility and artifact evidence failed; no release
+  tag or downstream production pin is claimed.
 - Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
 
 ## ORP174 — Cooperative CoreAudio rate negotiation
