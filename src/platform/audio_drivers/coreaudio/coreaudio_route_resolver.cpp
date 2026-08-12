@@ -10,6 +10,7 @@ namespace orpheus::detail {
 namespace {
 
 constexpr double kSampleRateEpsilonHz = 0.001;
+bool normalizeCurrentSampleRate(double value, uint32_t& normalized);
 
 bool isPermissionDenied(OSStatus status) {
   return status == kAudioDevicePermissionsError;
@@ -238,8 +239,133 @@ public:
     }
     return successQueryResult(value != 0);
   }
+  CoreAudioRouteQueryResult<uint32_t> transportType(AudioDeviceID device_id) const override {
+    if (device_id == 0) {
+      return missingQueryResult<uint32_t>();
+    }
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyTransportType,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    UInt32 value = 0;
+    UInt32 data_size = sizeof(value);
+    const OSStatus status =
+        AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &data_size, &value);
+    if (status != noErr) {
+      return queryResultForStatus<uint32_t>(status);
+    }
+    return successQueryResult(static_cast<uint32_t>(value));
+  }
+
+  CoreAudioRouteQueryResult<std::vector<AudioDeviceID>>
+  relatedDeviceIDs(AudioDeviceID device_id) const override {
+    if (device_id == 0) {
+      return missingQueryResult<std::vector<AudioDeviceID>>();
+    }
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyRelatedDevices,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    UInt32 data_size = 0;
+    OSStatus status = AudioObjectGetPropertyDataSize(device_id, &address, 0, nullptr, &data_size);
+    if (status != noErr) {
+      return queryResultForStatus<std::vector<AudioDeviceID>>(status);
+    }
+    if (data_size == 0) {
+      return successQueryResult(std::vector<AudioDeviceID>{});
+    }
+    if (data_size % sizeof(AudioDeviceID) != 0) {
+      return queryResultForStatus<std::vector<AudioDeviceID>>(kAudioHardwareBadPropertySizeError);
+    }
+    std::vector<AudioDeviceID> related(data_size / sizeof(AudioDeviceID));
+    status =
+        AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &data_size, related.data());
+    if (status != noErr) {
+      return queryResultForStatus<std::vector<AudioDeviceID>>(status);
+    }
+    return successQueryResult(std::move(related));
+  }
+
+  CoreAudioRouteQueryResult<CoreAudioStreamFormat>
+  physicalStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    return streamFormat(device_id, scope, kAudioStreamPropertyPhysicalFormat);
+  }
+
+  CoreAudioRouteQueryResult<CoreAudioStreamFormat>
+  virtualStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    return streamFormat(device_id, scope, kAudioStreamPropertyVirtualFormat);
+  }
+
+  CoreAudioRouteQueryResult<bool>
+  nominalSampleRateSettable(AudioDeviceID device_id) const override {
+    if (device_id == 0) {
+      return missingQueryResult<bool>();
+    }
+    const AudioObjectPropertyAddress address = {kAudioDevicePropertyNominalSampleRate,
+                                                kAudioObjectPropertyScopeGlobal,
+                                                kAudioObjectPropertyElementMain};
+    Boolean settable = 0;
+    const OSStatus status = AudioObjectIsPropertySettable(device_id, &address, &settable);
+    if (status != noErr) {
+      return queryResultForStatus<bool>(status);
+    }
+    return successQueryResult(settable != 0);
+  }
+
+  CoreAudioRouteQueryResult<uint32_t>
+  physicalChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    return channelCount(device_id, scope);
+  }
 
 private:
+  CoreAudioRouteQueryResult<CoreAudioStreamFormat>
+  streamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope,
+               AudioObjectPropertySelector selector) const {
+    if (device_id == 0) {
+      return missingQueryResult<CoreAudioStreamFormat>();
+    }
+    const AudioObjectPropertyAddress streams_address = {kAudioDevicePropertyStreams, scope,
+                                                        kAudioObjectPropertyElementMain};
+    UInt32 data_size = 0;
+    OSStatus status =
+        AudioObjectGetPropertyDataSize(device_id, &streams_address, 0, nullptr, &data_size);
+    if (status != noErr) {
+      return queryResultForStatus<CoreAudioStreamFormat>(status);
+    }
+    if (data_size == 0) {
+      return missingQueryResult<CoreAudioStreamFormat>();
+    }
+    if (data_size % sizeof(AudioStreamID) != 0) {
+      return queryResultForStatus<CoreAudioStreamFormat>(kAudioHardwareBadPropertySizeError);
+    }
+    std::vector<AudioStreamID> streams(data_size / sizeof(AudioStreamID));
+    status = AudioObjectGetPropertyData(device_id, &streams_address, 0, nullptr, &data_size,
+                                        streams.data());
+    if (status != noErr || streams.empty()) {
+      return status == noErr ? missingQueryResult<CoreAudioStreamFormat>()
+                             : queryResultForStatus<CoreAudioStreamFormat>(status);
+    }
+
+    const AudioObjectPropertyAddress format_address = {selector, kAudioObjectPropertyScopeGlobal,
+                                                       kAudioObjectPropertyElementMain};
+    AudioStreamBasicDescription asbd{};
+    UInt32 format_size = sizeof(asbd);
+    status = AudioObjectGetPropertyData(streams.front(), &format_address, 0, nullptr, &format_size,
+                                        &asbd);
+    if (status != noErr) {
+      return queryResultForStatus<CoreAudioStreamFormat>(status);
+    }
+    if (!std::isfinite(asbd.mSampleRate) || asbd.mSampleRate <= 0.0 ||
+        asbd.mChannelsPerFrame == 0 ||
+        asbd.mChannelsPerFrame > std::numeric_limits<uint16_t>::max()) {
+      return queryResultForStatus<CoreAudioStreamFormat>(kAudioHardwareBadPropertySizeError);
+    }
+    uint32_t sample_rate = 0;
+    if (!normalizeCurrentSampleRate(asbd.mSampleRate, sample_rate)) {
+      return queryResultForStatus<CoreAudioStreamFormat>(kAudioHardwareBadPropertySizeError);
+    }
+    return successQueryResult(
+        CoreAudioStreamFormat{sample_rate, static_cast<uint16_t>(asbd.mChannelsPerFrame)});
+  }
+
   CoreAudioRouteQueryResult<std::string> readDeviceUID(AudioDeviceID device_id) const {
     const AudioObjectPropertyAddress address = {kAudioDevicePropertyDeviceUID,
                                                 kAudioObjectPropertyScopeGlobal,
@@ -325,6 +451,23 @@ bool supportsRequestedRate(const std::vector<CoreAudioEndpointRange>& ranges, ui
            requested_rate <= range.maximum + kSampleRateEpsilonHz;
   });
 }
+bool isBluetoothTransport(uint32_t transport) {
+  return transport == kAudioDeviceTransportTypeBluetooth ||
+         transport == kAudioDeviceTransportTypeBluetoothLE;
+}
+
+bool isConverterRate(uint32_t rate) {
+  return rate == 16'000 || rate == 24'000 || rate == 44'100 || rate == 48'000;
+}
+
+bool containsDevice(const std::vector<AudioDeviceID>& devices, AudioDeviceID device_id) {
+  return std::find(devices.begin(), devices.end(), device_id) != devices.end();
+}
+
+bool requestsExplicitStereoMap(const AudioDriverConfig& config) {
+  return config.num_outputs == 2 &&
+         config.channel_map.output_channels == std::vector<uint16_t>{0, 1};
+}
 
 } // namespace
 
@@ -360,9 +503,11 @@ bool resolveCoreAudioChannelMap(const std::vector<uint16_t>& requested, uint16_t
 CoreAudioRouteResolver::CoreAudioRouteResolver(std::shared_ptr<const ICoreAudioRouteQuery> query)
     : query_(std::move(query)) {}
 
-ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& config) const {
+ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& config,
+                                                       bool allow_rate_writes) const {
   ResolvedCoreAudioRoute route;
   route.compatibility.requested_sample_rate = config.sample_rate;
+  route.compatibility.requested_output_channels = config.num_outputs;
 
   if (config.num_outputs == 0) {
     setFailure(route, AudioRouteCompatibilityStatus::OutputUnavailable, "config", true);
@@ -377,28 +522,33 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
     return route;
   }
 
+  struct EndpointFacts {
+    AudioDeviceID device_id = 0;
+    uint32_t physical_channels = 0;
+    uint32_t transport = 0;
+    uint32_t observed_rate = 0;
+    bool running = false;
+    bool settable = false;
+    bool is_bluetooth = false;
+    std::vector<CoreAudioEndpointRange> ranges;
+    CoreAudioStreamFormat physical_format;
+    CoreAudioStreamFormat virtual_format;
+  };
+
   const auto resolve_endpoint = [&](bool output, const std::string& requested,
-                                    ResolvedCoreAudioEndpoint& endpoint) -> bool {
+                                    EndpointFacts& facts) -> bool {
     const auto resolved =
         requested.empty() ? query_->resolveDefault(output) : query_->resolveDeviceUID(requested);
     if (setQueryFailure(route, resolved.status, "resolve", output)) {
       return false;
     }
-    endpoint = resolved.value;
-    if (endpoint.device_id == 0) {
+    if (resolved.value.device_id == 0) {
       setFailure(route, unavailableStatus(output), "resolve", output);
       return false;
     }
-    if (endpoint.device_uid.empty()) {
-      if (requested.empty()) {
-        setFailure(route, AudioRouteCompatibilityStatus::BackendFailure, "resolve", output);
-        return false;
-      }
-      endpoint.device_uid = requested;
-    }
-    const auto channels =
-        query_->channelCount(endpoint.device_id, output ? kAudioObjectPropertyScopeOutput
-                                                        : kAudioObjectPropertyScopeInput);
+    const auto channels = query_->physicalChannelCount(resolved.value.device_id,
+                                                       output ? kAudioObjectPropertyScopeOutput
+                                                              : kAudioObjectPropertyScopeInput);
     if (setQueryFailure(route, channels.status, "channels", output)) {
       return false;
     }
@@ -406,120 +556,316 @@ ResolvedCoreAudioRoute CoreAudioRouteResolver::resolve(const AudioDriverConfig& 
       setFailure(route, unavailableStatus(output), "channels", output);
       return false;
     }
+
+    facts.device_id = resolved.value.device_id;
+    facts.physical_channels = channels.value;
     if (output) {
-      route.output_device_id = endpoint.device_id;
-      route.output_channel_count = channels.value;
-      route.compatibility.resolved_output_device_id = endpoint.device_uid;
+      route.output_device_id = facts.device_id;
+      route.output_channel_count = facts.physical_channels;
+      route.compatibility.resolved_output_device_id =
+          resolved.value.device_uid.empty() ? requested : resolved.value.device_uid;
     } else {
-      route.input_device_id = endpoint.device_id;
-      route.input_channel_count = channels.value;
-      route.compatibility.resolved_input_device_id = endpoint.device_uid;
+      route.input_device_id = facts.device_id;
+      route.input_channel_count = facts.physical_channels;
+      route.compatibility.resolved_input_device_id =
+          resolved.value.device_uid.empty() ? requested : resolved.value.device_uid;
     }
     return true;
   };
 
-  ResolvedCoreAudioEndpoint output_endpoint;
-  if (!resolve_endpoint(true, config.output_device_id, output_endpoint)) {
+  EndpointFacts output_facts;
+  if (!resolve_endpoint(true, config.output_device_id, output_facts)) {
     return route;
   }
 
-  ResolvedCoreAudioEndpoint input_endpoint;
-  if (config.num_inputs > 0 && !resolve_endpoint(false, config.input_device_id, input_endpoint)) {
+  EndpointFacts input_facts;
+  const bool has_input = config.num_inputs > 0;
+  if (has_input && !resolve_endpoint(false, config.input_device_id, input_facts)) {
     return route;
   }
 
-  if (!resolveCoreAudioChannelMap(config.channel_map.output_channels, config.num_outputs,
-                                  route.output_channel_count, route.output_channel_map)) {
+  const auto read_transport = [&](EndpointFacts& facts, bool output) -> bool {
+    const auto transport = query_->transportType(facts.device_id);
+    if (setQueryFailure(route, transport.status, "transport", output, false)) {
+      return false;
+    }
+    facts.transport = transport.value;
+    facts.is_bluetooth = isBluetoothTransport(facts.transport);
+    return true;
+  };
+  if (!read_transport(output_facts, true)) {
+    return route;
+  }
+  if (has_input && input_facts.device_id != output_facts.device_id &&
+      !read_transport(input_facts, false)) {
+    return route;
+  }
+  if (has_input && input_facts.device_id == output_facts.device_id) {
+    input_facts.transport = output_facts.transport;
+    input_facts.is_bluetooth = output_facts.is_bluetooth;
+  }
+  route.output_transport_type = output_facts.transport;
+  route.output_is_bluetooth = output_facts.is_bluetooth;
+  route.compatibility.output_is_bluetooth = output_facts.is_bluetooth;
+  if (has_input) {
+    route.input_transport_type = input_facts.transport;
+    route.input_is_bluetooth = input_facts.is_bluetooth;
+    route.compatibility.input_is_bluetooth = input_facts.is_bluetooth;
+  }
+
+  if (has_input && input_facts.device_id != output_facts.device_id) {
+    const auto output_related = query_->relatedDeviceIDs(output_facts.device_id);
+    if (setQueryFailure(route, output_related.status, "related", true, false)) {
+      return route;
+    }
+    const auto input_related = query_->relatedDeviceIDs(input_facts.device_id);
+    if (setQueryFailure(route, input_related.status, "related", false, false)) {
+      return route;
+    }
+    route.endpoints_related = containsDevice(output_related.value, input_facts.device_id) ||
+                              containsDevice(input_related.value, output_facts.device_id);
+  } else {
+    route.endpoints_related = has_input;
+  }
+  route.compatibility.endpoints_related = route.endpoints_related;
+
+  if (requestsExplicitStereoMap(config) && route.output_channel_count == 1 &&
+      output_facts.is_bluetooth) {
+    if (config.output_channel_policy == AudioOutputChannelPolicy::AllowMonoFallback) {
+      route.output_channel_map = {0};
+      route.output_mono_fallback = true;
+      route.compatibility.output_mono_fallback_planned = true;
+    } else {
+      setFailure(route, AudioRouteCompatibilityStatus::ProfileConflict, "channels", true);
+      return route;
+    }
+  } else if (!resolveCoreAudioChannelMap(config.channel_map.output_channels, config.num_outputs,
+                                         route.output_channel_count, route.output_channel_map)) {
     setFailure(route, AudioRouteCompatibilityStatus::InvalidChannelMap, "map", true);
     return route;
   }
-  if (config.num_inputs > 0 &&
+  if (has_input &&
       !resolveCoreAudioChannelMap(config.channel_map.input_channels, config.num_inputs,
                                   route.input_channel_count, route.input_channel_map)) {
     setFailure(route, AudioRouteCompatibilityStatus::InvalidChannelMap, "map", false);
     return route;
   }
+  route.compatibility.resolved_output_channels =
+      static_cast<uint16_t>(route.output_channel_map.size());
 
-  bool output_rate_supported = false;
-  const auto output_ranges = query_->advertisedSampleRateRanges(route.output_device_id);
-  if (setQueryFailure(route, output_ranges.status, "ranges", true, false)) {
-    return route;
-  }
-  output_rate_supported = supportsRequestedRate(output_ranges.value, config.sample_rate);
-  if (!output_rate_supported) {
-    setFailure(route, AudioRouteCompatibilityStatus::SampleRateUnsupported, "ranges", true);
-    return route;
-  }
-
-  bool input_rate_supported = true;
-  if (config.num_inputs > 0 && route.input_device_id != route.output_device_id) {
-    const auto input_ranges = query_->advertisedSampleRateRanges(route.input_device_id);
-    if (setQueryFailure(route, input_ranges.status, "ranges", false, false)) {
-      return route;
+  const auto read_global_facts = [&](EndpointFacts& facts, bool output) -> bool {
+    const auto ranges = query_->advertisedSampleRateRanges(facts.device_id);
+    if (setQueryFailure(route, ranges.status, "ranges", output, false)) {
+      return false;
     }
-    input_rate_supported = supportsRequestedRate(input_ranges.value, config.sample_rate);
-    if (!input_rate_supported) {
-      setFailure(route, AudioRouteCompatibilityStatus::SampleRateUnsupported, "ranges", false);
-      return route;
+    facts.ranges = ranges.value;
+    const bool session_supported = supportsRequestedRate(facts.ranges, config.sample_rate);
+    if (config.sample_rate_policy != AudioSampleRatePolicy::RequestExactRateOrConvert &&
+        !session_supported) {
+      setFailure(route, AudioRouteCompatibilityStatus::SampleRateUnsupported, "ranges", output);
+      return false;
     }
-  }
 
-  const auto query_global_facts = [&](AudioDeviceID device_id, bool output, uint32_t& rate,
-                                      bool& running) -> bool {
-    const auto current = query_->currentSampleRate(device_id);
+    const auto current = query_->currentSampleRate(facts.device_id);
     if (setQueryFailure(route, current.status, "current_rate", output, false)) {
       return false;
     }
-    if (!normalizeCurrentSampleRate(current.value, rate)) {
+    if (!normalizeCurrentSampleRate(current.value, facts.observed_rate)) {
       setFailure(route, AudioRouteCompatibilityStatus::BackendFailure, "current_rate", output);
       return false;
     }
-    const auto is_running = query_->isRunningSomewhere(device_id);
-    if (setQueryFailure(route, is_running.status, "running", output, false)) {
+    if (!isConverterRate(facts.observed_rate) ||
+        !supportsRequestedRate(facts.ranges, facts.observed_rate)) {
+      setFailure(route, AudioRouteCompatibilityStatus::SampleRateUnsupported, "ranges", output);
       return false;
     }
-    running = is_running.value;
+
+    const auto running = query_->isRunningSomewhere(facts.device_id);
+    if (setQueryFailure(route, running.status, "running", output, false)) {
+      return false;
+    }
+    facts.running = running.value;
+
+    const auto settable = query_->nominalSampleRateSettable(facts.device_id);
+    if (setQueryFailure(route, settable.status, "settable", output, false)) {
+      return false;
+    }
+    facts.settable = settable.value;
     return true;
   };
 
-  uint32_t output_current_rate = 0;
-  bool output_running = false;
-  if (!query_global_facts(route.output_device_id, true, output_current_rate, output_running)) {
+  const auto read_stream_facts = [&](EndpointFacts& facts, bool output) -> bool {
+    const auto physical = query_->physicalStreamFormat(
+        facts.device_id, output ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput);
+    if (setQueryFailure(route, physical.status, "physical_format", output, false)) {
+      return false;
+    }
+    facts.physical_format = physical.value;
+    const auto virtual_format = query_->virtualStreamFormat(
+        facts.device_id, output ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput);
+    if (setQueryFailure(route, virtual_format.status, "virtual_format", output, false)) {
+      return false;
+    }
+    facts.virtual_format = virtual_format.value;
+    return true;
+  };
+
+  if (!read_global_facts(output_facts, true) || !read_stream_facts(output_facts, true)) {
     return route;
   }
-
-  uint32_t input_current_rate = 0;
-  bool input_running = false;
-  if (config.num_inputs > 0) {
-    if (route.input_device_id == route.output_device_id) {
-      input_current_rate = output_current_rate;
-      input_running = output_running;
-    } else if (!query_global_facts(route.input_device_id, false, input_current_rate,
-                                   input_running)) {
+  if (has_input) {
+    if (input_facts.device_id == output_facts.device_id) {
+      input_facts.observed_rate = output_facts.observed_rate;
+      input_facts.running = output_facts.running;
+      input_facts.settable = output_facts.settable;
+      input_facts.ranges = output_facts.ranges;
+    } else if (!read_global_facts(input_facts, false)) {
+      return route;
+    }
+    if (!read_stream_facts(input_facts, false)) {
       return route;
     }
   }
 
-  route.compatibility.current_output_sample_rate = output_current_rate;
-  route.compatibility.output_is_running_somewhere = output_running;
-  route.compatibility.output_rate_change_required = output_current_rate != config.sample_rate;
-  if (config.num_inputs > 0) {
-    route.compatibility.current_input_sample_rate = input_current_rate;
-    route.compatibility.input_is_running_somewhere = input_running;
-    route.compatibility.input_rate_change_required = input_current_rate != config.sample_rate;
+  route.output_physical_format = output_facts.physical_format;
+  route.output_virtual_format = output_facts.virtual_format;
+  route.compatibility.output_virtual_format_channels = output_facts.virtual_format.channels;
+  route.compatibility.current_output_sample_rate = output_facts.observed_rate;
+  route.compatibility.output_is_running_somewhere = output_facts.running;
+  route.compatibility.output_rate_change_required =
+      output_facts.observed_rate != config.sample_rate;
+  if (has_input) {
+    route.input_physical_format = input_facts.physical_format;
+    route.input_virtual_format = input_facts.virtual_format;
+    route.compatibility.input_virtual_format_channels = input_facts.virtual_format.channels;
+    route.compatibility.current_input_sample_rate = input_facts.observed_rate;
+    route.compatibility.input_is_running_somewhere = input_facts.running;
+    route.compatibility.input_rate_change_required =
+        input_facts.observed_rate != config.sample_rate;
   }
 
-  const bool rate_change_required = route.compatibility.output_rate_change_required ||
-                                    route.compatibility.input_rate_change_required;
-  route.compatibility.status =
-      rate_change_required && config.sample_rate_policy == AudioSampleRatePolicy::RequestExactRate
-          ? AudioRouteCompatibilityStatus::RequiresSampleRateChange
-          : AudioRouteCompatibilityStatus::Compatible;
+  route.device_rate_plans.reserve(2);
+  const auto add_plan = [&](AudioDeviceID device_id,
+                            uint32_t observed_rate) -> CoreAudioDeviceRatePlan& {
+    for (auto& plan : route.device_rate_plans) {
+      if (plan.device_id == device_id) {
+        return plan;
+      }
+    }
+    route.device_rate_plans.push_back(CoreAudioDeviceRatePlan{});
+    auto& plan = route.device_rate_plans.back();
+    plan.device_id = device_id;
+    plan.observed_rate = observed_rate;
+    return plan;
+  };
+  auto& output_plan = add_plan(output_facts.device_id, output_facts.observed_rate);
+  CoreAudioDeviceRatePlan* input_plan = nullptr;
+  if (has_input) {
+    input_plan = &add_plan(input_facts.device_id, input_facts.observed_rate);
+  }
+
+  const bool exact_policy = config.sample_rate_policy == AudioSampleRatePolicy::RequestExactRate;
+  const bool conversion_policy =
+      config.sample_rate_policy == AudioSampleRatePolicy::RequestExactRateOrConvert;
+  const bool related_bluetooth_duplex =
+      has_input && route.endpoints_related && input_facts.is_bluetooth && output_facts.is_bluetooth;
+  const bool unrelated_bluetooth_duplex = has_input && !route.endpoints_related &&
+                                          input_facts.is_bluetooth && output_facts.is_bluetooth;
+
+  const auto can_write_rate = [&](const EndpointFacts& facts) {
+    return !facts.running && facts.settable &&
+           supportsRequestedRate(facts.ranges, config.sample_rate);
+  };
+  const auto write_if_safe = [&](const EndpointFacts& facts, CoreAudioDeviceRatePlan& plan,
+                                 bool allow_write) {
+    if (allow_write && allow_rate_writes && facts.observed_rate != config.sample_rate &&
+        can_write_rate(facts)) {
+      plan.requested_write_rate = config.sample_rate;
+      return true;
+    }
+    return false;
+  };
+
+  bool input_converts = has_input && input_facts.observed_rate != config.sample_rate;
+  bool output_converts = output_facts.observed_rate != config.sample_rate;
+  if (conversion_policy) {
+    const bool output_is_unrelated_mac = !output_facts.is_bluetooth && has_input &&
+                                         input_facts.is_bluetooth && !route.endpoints_related;
+    const bool output_write_allowed = !related_bluetooth_duplex && !unrelated_bluetooth_duplex &&
+                                              (!output_facts.is_bluetooth || !has_input) &&
+                                              !output_is_unrelated_mac
+                                          ? true
+                                          : output_is_unrelated_mac;
+    const bool input_write_allowed =
+        !input_facts.is_bluetooth && !related_bluetooth_duplex && !unrelated_bluetooth_duplex;
+    if (has_input && input_plan != &output_plan) {
+      (void)write_if_safe(input_facts, *input_plan, input_write_allowed);
+    } else if (has_input) {
+      (void)write_if_safe(input_facts, output_plan, input_write_allowed);
+    }
+    (void)write_if_safe(output_facts, output_plan, output_write_allowed);
+    input_converts = has_input && input_facts.observed_rate != config.sample_rate &&
+                     (!input_plan || !input_plan->requested_write_rate.has_value());
+    output_converts = output_facts.observed_rate != config.sample_rate &&
+                      !output_plan.requested_write_rate.has_value();
+  } else if (exact_policy) {
+    if (has_input && input_plan != &output_plan) {
+      if (!write_if_safe(input_facts, *input_plan,
+                         !input_facts.is_bluetooth && !related_bluetooth_duplex)) {
+        input_converts = false;
+      } else {
+        input_converts = false;
+      }
+    } else if (has_input && input_facts.observed_rate != config.sample_rate) {
+      (void)write_if_safe(input_facts, output_plan, !input_facts.is_bluetooth);
+      input_converts = false;
+    }
+    (void)write_if_safe(output_facts, output_plan,
+                        !related_bluetooth_duplex && !unrelated_bluetooth_duplex);
+  }
+
+  if (input_plan != nullptr) {
+    input_plan->input_uses_external_src = input_converts;
+  }
+  output_plan.output_uses_external_src = output_converts;
+  if (input_plan == &output_plan) {
+    output_plan.output_uses_external_src = output_converts;
+    output_plan.input_uses_external_src = input_converts;
+  }
+
+  if (exact_policy) {
+    const bool exact_input_failure = has_input && input_facts.observed_rate != config.sample_rate &&
+                                     (!input_plan || !input_plan->requested_write_rate.has_value());
+    const bool exact_output_failure = output_facts.observed_rate != config.sample_rate &&
+                                      !output_plan.requested_write_rate.has_value();
+    if (exact_input_failure || exact_output_failure) {
+      const bool bluetooth_conflict = (exact_input_failure && input_facts.is_bluetooth) ||
+                                      (exact_output_failure && output_facts.is_bluetooth) ||
+                                      related_bluetooth_duplex;
+      route.resolved = false;
+      route.compatibility.status = bluetooth_conflict
+                                       ? AudioRouteCompatibilityStatus::ProfileConflict
+                                       : AudioRouteCompatibilityStatus::RequiresSampleRateChange;
+      route.compatibility.detail.clear();
+      return route;
+    }
+    input_converts = false;
+    output_converts = false;
+  }
+
+  route.compatibility.planned_input_client_rate =
+      has_input ? (input_converts ? input_facts.observed_rate : config.sample_rate) : 0;
+  route.compatibility.planned_output_client_rate =
+      output_converts ? output_facts.observed_rate : config.sample_rate;
+  route.compatibility.input_conversion_required = input_converts;
+  route.compatibility.output_conversion_required = output_converts;
+  route.compatibility.requires_post_bind_reprobe =
+      has_input && (input_facts.is_bluetooth || related_bluetooth_duplex);
+  route.requires_private_aggregate =
+      has_input && input_facts.device_id != output_facts.device_id && !input_converts;
   route.compatibility.detail.clear();
   route.resolved = true;
-  route.requires_private_aggregate =
-      config.num_inputs > 0 && route.input_device_id != route.output_device_id;
-  (void)input_rate_supported;
+  route.compatibility.status = AudioRouteCompatibilityStatus::Compatible;
   return route;
 }
 

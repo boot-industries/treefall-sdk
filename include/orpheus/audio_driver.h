@@ -22,19 +22,26 @@ struct AudioRouteChannelMap {
   std::vector<uint16_t> output_channels;
 };
 enum class AudioSampleRatePolicy : uint8_t {
-  PreserveDeviceRate,
-  RequestExactRate,
+  PreserveDeviceRate = 0,
+  RequestExactRate = 1,
+  RequestExactRateOrConvert = 2,
+};
+
+enum class AudioOutputChannelPolicy : uint8_t {
+  RequireRequestedChannels = 0,
+  AllowMonoFallback = 1,
 };
 
 enum class AudioRouteCompatibilityStatus : uint8_t {
-  Compatible,
-  RequiresSampleRateChange,
-  InputUnavailable,
-  OutputUnavailable,
-  SampleRateUnsupported,
-  InvalidChannelMap,
-  PermissionDenied,
-  BackendFailure,
+  Compatible = 0,
+  RequiresSampleRateChange = 1,
+  InputUnavailable = 2,
+  OutputUnavailable = 3,
+  SampleRateUnsupported = 4,
+  InvalidChannelMap = 5,
+  PermissionDenied = 6,
+  BackendFailure = 7,
+  ProfileConflict = 8,
 };
 
 struct AudioRouteCompatibility {
@@ -48,6 +55,19 @@ struct AudioRouteCompatibility {
   bool output_rate_change_required = false;
   bool input_is_running_somewhere = false;
   bool output_is_running_somewhere = false;
+  uint32_t planned_input_client_rate = 0;
+  uint32_t planned_output_client_rate = 0;
+  uint16_t requested_output_channels = 0;
+  uint16_t resolved_output_channels = 0;
+  uint16_t input_virtual_format_channels = 0;
+  uint16_t output_virtual_format_channels = 0;
+  bool input_conversion_required = false;
+  bool output_conversion_required = false;
+  bool input_is_bluetooth = false;
+  bool output_is_bluetooth = false;
+  bool endpoints_related = false;
+  bool requires_post_bind_reprobe = false;
+  bool output_mono_fallback_planned = false;
   std::string detail;
 };
 
@@ -69,6 +89,8 @@ struct AudioDriverConfig {
   /// An empty vector selects consecutive physical channels starting at zero.
   AudioRouteChannelMap channel_map{};
   AudioSampleRatePolicy sample_rate_policy = AudioSampleRatePolicy::PreserveDeviceRate;
+  AudioOutputChannelPolicy output_channel_policy =
+      AudioOutputChannelPolicy::RequireRequestedChannels;
 };
 
 /// Decomposed route latency reported by the backend.
@@ -84,17 +106,20 @@ struct AudioRouteLatency {
 
 /// Runtime outcome that can invalidate active audio I/O.
 enum class AudioRouteRuntimeOutcome : uint8_t {
-  Healthy,
-  SampleRateUnsupported,
-  SampleRateChangeFailed,
-  SampleRateChanged,
-  BufferSizeChanged,
-  FormatChanged,
-  ChannelMapInvalid,
-  InputRouteUnavailable,
-  OutputRouteUnavailable,
-  PermissionDenied,
-  BackendFailure,
+  Healthy = 0,
+  SampleRateUnsupported = 1,
+  SampleRateChangeFailed = 2,
+  SampleRateChanged = 3,
+  BufferSizeChanged = 4,
+  FormatChanged = 5,
+  ChannelMapInvalid = 6,
+  InputRouteUnavailable = 7,
+  OutputRouteUnavailable = 8,
+  PermissionDenied = 9,
+  BackendFailure = 10,
+  ProfileConflict = 11,
+  InputConversionFailed = 12,
+  OutputConversionFailed = 13,
 };
 
 /// Control-thread snapshot of the physical route negotiated by a backend.
@@ -115,6 +140,22 @@ struct ActiveAudioRoute {
   AudioRouteLatency latency;
   bool input_alive = false;
   bool output_alive = false;
+  uint32_t input_physical_sample_rate = 0;
+  uint32_t output_physical_sample_rate = 0;
+  uint32_t input_client_sample_rate = 0;
+  uint32_t output_client_sample_rate = 0;
+  uint16_t requested_output_channels = 0;
+  uint16_t resolved_output_channels = 0;
+  uint16_t input_virtual_format_channels = 0;
+  uint16_t output_virtual_format_channels = 0;
+  uint16_t input_client_format_channels = 0;
+  uint16_t output_client_format_channels = 0;
+  bool input_conversion_active = false;
+  bool output_conversion_active = false;
+  bool input_is_bluetooth = false;
+  bool output_is_bluetooth = false;
+  bool endpoints_related = false;
+  bool output_mono_fallback = false;
 };
 
 /// Playback route lifecycle as observed by a backend.
@@ -147,6 +188,8 @@ struct AudioLatencyBreakdown {
   std::optional<uint32_t> output_converter_frames;
   std::optional<uint32_t> callback_buffer_frames;
   std::optional<uint32_t> aggregate_or_audio_unit_frames;
+  std::optional<uint32_t> input_audio_unit_frames;
+  std::optional<uint32_t> output_audio_unit_frames;
   bool complete = false;
 };
 
@@ -177,6 +220,22 @@ struct AudioIoRouteState {
   uint32_t actual_buffer_size = 0;
   AudioLatencyBreakdown latency;
   std::string detail;
+  uint32_t input_physical_sample_rate = 0;
+  uint32_t output_physical_sample_rate = 0;
+  uint32_t input_client_sample_rate = 0;
+  uint32_t output_client_sample_rate = 0;
+  uint16_t requested_output_channels = 0;
+  uint16_t resolved_output_channels = 0;
+  uint16_t input_virtual_format_channels = 0;
+  uint16_t output_virtual_format_channels = 0;
+  uint16_t input_client_format_channels = 0;
+  uint16_t output_client_format_channels = 0;
+  bool input_conversion_active = false;
+  bool output_conversion_active = false;
+  bool input_is_bluetooth = false;
+  bool output_is_bluetooth = false;
+  bool endpoints_related = false;
+  bool output_mono_fallback = false;
 };
 /// Outcome of a backend runtime condition that can invalidate active audio I/O.
 /// A terminal outcome means the driver has stopped rendering and requires an
@@ -186,6 +245,10 @@ struct AudioIoRouteState {
 struct AudioIoTelemetry {
   uint64_t input_render_failures = 0; ///< Cumulative failed capture renders
   AudioRouteRuntimeOutcome route_outcome = AudioRouteRuntimeOutcome::Healthy;
+  uint64_t input_fifo_overruns = 0;
+  uint64_t input_fifo_underruns = 0;
+  uint64_t input_conversion_failures = 0;
+  uint64_t output_conversion_failures = 0;
 };
 
 /// Audio backend family.

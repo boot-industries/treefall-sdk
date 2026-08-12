@@ -16,7 +16,10 @@ namespace {
 using detail::CoreAudioEndpointRange;
 using detail::CoreAudioRouteQueryResult;
 using detail::CoreAudioRouteQueryStatus;
+using detail::CoreAudioRouteResolver;
+using detail::CoreAudioStreamFormat;
 using detail::ICoreAudioRouteQuery;
+
 using detail::ResolvedCoreAudioEndpoint;
 
 struct FakeLedger {
@@ -28,6 +31,12 @@ struct FakeLedger {
   int sample_rate_range_reads = 0;
   int current_rate_reads = 0;
   int running_reads = 0;
+  int transport_reads = 0;
+  int related_reads = 0;
+  int physical_format_reads = 0;
+  int virtual_format_reads = 0;
+  int settable_reads = 0;
+  int physical_channel_reads = 0;
   int property_writes = 0;
   int aggregate_requests = 0;
   int auhal_actions = 0;
@@ -50,6 +59,18 @@ struct FakeEndpoint {
   CoreAudioRouteQueryStatus current_rate_status = CoreAudioRouteQueryStatus::Success;
   bool is_running_somewhere = false;
   CoreAudioRouteQueryStatus running_status = CoreAudioRouteQueryStatus::Success;
+  uint32_t transport_type = kAudioDeviceTransportTypeBuiltIn;
+  std::vector<AudioDeviceID> related_device_ids;
+  CoreAudioStreamFormat input_physical_format{48000, 0};
+  CoreAudioStreamFormat output_physical_format{48000, 0};
+  CoreAudioStreamFormat input_virtual_format{48000, 0};
+  CoreAudioStreamFormat output_virtual_format{48000, 0};
+  CoreAudioRouteQueryStatus transport_status = CoreAudioRouteQueryStatus::Success;
+  CoreAudioRouteQueryStatus related_status = CoreAudioRouteQueryStatus::Success;
+  CoreAudioRouteQueryStatus physical_format_status = CoreAudioRouteQueryStatus::Success;
+  CoreAudioRouteQueryStatus virtual_format_status = CoreAudioRouteQueryStatus::Success;
+  CoreAudioRouteQueryStatus settable_status = CoreAudioRouteQueryStatus::Success;
+  bool nominal_sample_rate_settable = true;
 };
 
 template <typename T>
@@ -134,6 +155,79 @@ public:
     }
     return fakeResult(endpoint->second.running_status, endpoint->second.is_running_somewhere);
   }
+  CoreAudioRouteQueryResult<uint32_t> transportType(AudioDeviceID device_id) const override {
+    ++ledger.transport_reads;
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<uint32_t>(CoreAudioRouteQueryStatus::Missing);
+    }
+    return fakeResult(endpoint->second.transport_status, endpoint->second.transport_type);
+  }
+
+  CoreAudioRouteQueryResult<std::vector<AudioDeviceID>>
+  relatedDeviceIDs(AudioDeviceID device_id) const override {
+    ++ledger.related_reads;
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<std::vector<AudioDeviceID>>(CoreAudioRouteQueryStatus::Missing);
+    }
+    return fakeResult(endpoint->second.related_status, endpoint->second.related_device_ids);
+  }
+
+  CoreAudioRouteQueryResult<CoreAudioStreamFormat>
+  physicalStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    ++ledger.physical_format_reads;
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<CoreAudioStreamFormat>(CoreAudioRouteQueryStatus::Missing);
+    }
+    return fakeResult(endpoint->second.physical_format_status,
+                      scope == kAudioObjectPropertyScopeOutput
+                          ? endpoint->second.output_physical_format
+                          : endpoint->second.input_physical_format);
+  }
+
+  CoreAudioRouteQueryResult<CoreAudioStreamFormat>
+  virtualStreamFormat(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    ++ledger.virtual_format_reads;
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<CoreAudioStreamFormat>(CoreAudioRouteQueryStatus::Missing);
+    }
+    return fakeResult(endpoint->second.virtual_format_status,
+                      scope == kAudioObjectPropertyScopeOutput
+                          ? endpoint->second.output_virtual_format
+                          : endpoint->second.input_virtual_format);
+  }
+
+  CoreAudioRouteQueryResult<bool>
+  nominalSampleRateSettable(AudioDeviceID device_id) const override {
+    ++ledger.settable_reads;
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<bool>(CoreAudioRouteQueryStatus::Missing);
+    }
+    return fakeResult(endpoint->second.settable_status,
+                      endpoint->second.nominal_sample_rate_settable);
+  }
+
+  CoreAudioRouteQueryResult<uint32_t>
+  physicalChannelCount(AudioDeviceID device_id, AudioObjectPropertyScope scope) const override {
+    ++ledger.physical_channel_reads;
+    if (scope == kAudioObjectPropertyScopeOutput) {
+      ++ledger.output_channel_reads;
+    } else {
+      ++ledger.input_channel_reads;
+    }
+    const auto endpoint = endpoints.find(device_id);
+    if (endpoint == endpoints.end()) {
+      return fakeResult<uint32_t>(CoreAudioRouteQueryStatus::Missing);
+    }
+    if (scope == kAudioObjectPropertyScopeOutput) {
+      return fakeResult(endpoint->second.output_channel_status, endpoint->second.output_channels);
+    }
+    return fakeResult(endpoint->second.input_channel_status, endpoint->second.input_channels);
+  }
 
   void resetLedger() const {
     ledger = {};
@@ -176,9 +270,35 @@ void installSameDevice(FakeCoreAudioRouteQuery& fake) {
   endpoint.sample_rate_ranges = {{44100.0, 96000.0}};
   endpoint.current_sample_rate = 48000.0;
   endpoint.is_running_somewhere = true;
+  endpoint.related_device_ids = {endpoint.device_id};
+  endpoint.input_physical_format = {48000, 2};
+  endpoint.output_physical_format = {48000, 2};
+  endpoint.input_virtual_format = {48000, 2};
+  endpoint.output_virtual_format = {48000, 2};
   fake.endpoints.emplace(endpoint.device_id, endpoint);
   fake.default_input = endpoint.device_id;
   fake.default_output = endpoint.device_id;
+}
+
+FakeEndpoint makeEndpoint(AudioDeviceID device_id, std::string uid, uint32_t input_channels,
+                          uint32_t output_channels, uint32_t current_rate, uint32_t transport,
+                          std::vector<CoreAudioEndpointRange> ranges,
+                          std::vector<AudioDeviceID> related = {}) {
+  FakeEndpoint endpoint;
+  endpoint.device_id = device_id;
+  endpoint.device_uid = std::move(uid);
+  endpoint.input_channels = input_channels;
+  endpoint.output_channels = output_channels;
+  endpoint.sample_rate_ranges = std::move(ranges);
+  endpoint.current_sample_rate = static_cast<double>(current_rate);
+  endpoint.transport_type = transport;
+  endpoint.related_device_ids =
+      related.empty() ? std::vector<AudioDeviceID>{device_id} : std::move(related);
+  endpoint.input_physical_format = {current_rate, static_cast<uint16_t>(input_channels)};
+  endpoint.output_physical_format = {current_rate, static_cast<uint16_t>(output_channels)};
+  endpoint.input_virtual_format = {current_rate, static_cast<uint16_t>(input_channels)};
+  endpoint.output_virtual_format = {current_rate, static_cast<uint16_t>(output_channels)};
+  return endpoint;
 }
 
 void expectNoProhibitedActions(const FakeLedger& ledger) {
@@ -519,6 +639,180 @@ TEST(CoreAudioRouteProbeTest, ProbeDoesNotMutateCoreAudioDriverState) {
   EXPECT_EQ(after_state.requested_sample_rate, before_state.requested_sample_rate);
   EXPECT_EQ(after_state.actual_sample_rate, before_state.actual_sample_rate);
   expectNoProhibitedActions(fake->ledger);
+}
+TEST(CoreAudioRouteProbeTest, BluetoothInputUsesNativeRateAndWritesOnlyDistinctMacOutput) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->endpoints.emplace(12, makeEndpoint(12, "bt-input", 1, 0, 16000,
+                                           kAudioDeviceTransportTypeBluetooth, {{16000.0, 16000.0}},
+                                           {12}));
+  fake->endpoints.emplace(11, makeEndpoint(11, "mac-output", 0, 2, 44100,
+                                           kAudioDeviceTransportTypeBuiltIn,
+                                           {{44100.0, 44100.0}, {48000.0, 48000.0}}, {11}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.num_inputs = 1;
+  config.input_device_id = "bt-input";
+  config.output_device_id = "mac-output";
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config);
+
+  ASSERT_TRUE(route.resolved);
+  ASSERT_EQ(route.compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  EXPECT_TRUE(route.compatibility.input_conversion_required);
+  EXPECT_FALSE(route.compatibility.output_conversion_required);
+  EXPECT_EQ(route.compatibility.planned_input_client_rate, 16000u);
+  EXPECT_EQ(route.compatibility.planned_output_client_rate, 48000u);
+  EXPECT_TRUE(route.compatibility.input_is_bluetooth);
+  EXPECT_FALSE(route.compatibility.output_is_bluetooth);
+  EXPECT_FALSE(route.compatibility.endpoints_related);
+  EXPECT_TRUE(route.compatibility.requires_post_bind_reprobe);
+  ASSERT_EQ(route.device_rate_plans.size(), 2u);
+  const auto input_plan =
+      std::find_if(route.device_rate_plans.begin(), route.device_rate_plans.end(),
+                   [](const auto& plan) { return plan.device_id == 12; });
+  const auto output_plan =
+      std::find_if(route.device_rate_plans.begin(), route.device_rate_plans.end(),
+                   [](const auto& plan) { return plan.device_id == 11; });
+  ASSERT_NE(input_plan, route.device_rate_plans.end());
+  ASSERT_NE(output_plan, route.device_rate_plans.end());
+  EXPECT_FALSE(input_plan->requested_write_rate.has_value());
+  EXPECT_TRUE(input_plan->input_uses_external_src);
+  ASSERT_TRUE(output_plan->requested_write_rate.has_value());
+  EXPECT_EQ(*output_plan->requested_write_rate, 48000u);
+  EXPECT_FALSE(output_plan->output_uses_external_src);
+}
+
+TEST(CoreAudioRouteProbeTest, RelatedBluetoothDuplexConvertsBothAndStrictPolicyConflicts) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->endpoints.emplace(20, makeEndpoint(20, "headset", 2, 2, 16000,
+                                           kAudioDeviceTransportTypeBluetooth,
+                                           {{16000.0, 16000.0}, {48000.0, 48000.0}}, {20}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto conversion = duplexConfig();
+  conversion.input_device_id = "headset";
+  conversion.output_device_id = "headset";
+  conversion.channel_map.input_channels = {0, 1};
+  conversion.channel_map.output_channels = {0, 1};
+  conversion.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto converted = resolver.resolve(conversion);
+
+  ASSERT_TRUE(converted.resolved);
+  ASSERT_EQ(converted.compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  EXPECT_TRUE(converted.compatibility.input_conversion_required);
+  EXPECT_TRUE(converted.compatibility.output_conversion_required);
+  EXPECT_EQ(converted.compatibility.planned_input_client_rate, 16000u);
+  EXPECT_EQ(converted.compatibility.planned_output_client_rate, 16000u);
+  EXPECT_TRUE(converted.compatibility.input_is_bluetooth);
+  EXPECT_TRUE(converted.compatibility.output_is_bluetooth);
+  EXPECT_TRUE(converted.compatibility.endpoints_related);
+  ASSERT_EQ(converted.device_rate_plans.size(), 1u);
+  EXPECT_FALSE(converted.device_rate_plans.front().requested_write_rate.has_value());
+  EXPECT_TRUE(converted.device_rate_plans.front().input_uses_external_src);
+  EXPECT_TRUE(converted.device_rate_plans.front().output_uses_external_src);
+
+  conversion.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
+  const auto strict = resolver.resolve(conversion);
+  EXPECT_FALSE(strict.resolved);
+  EXPECT_EQ(strict.compatibility.status, AudioRouteCompatibilityStatus::ProfileConflict);
+  EXPECT_TRUE(strict.compatibility.input_is_bluetooth);
+  EXPECT_TRUE(strict.compatibility.output_is_bluetooth);
+}
+
+TEST(CoreAudioRouteProbeTest, UnrelatedBluetoothDuplexPreservesBothNativeRatesWithoutWrites) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->endpoints.emplace(21, makeEndpoint(21, "bt-input", 2, 0, 16000,
+                                           kAudioDeviceTransportTypeBluetooth, {{16000.0, 16000.0}},
+                                           {21}));
+  fake->endpoints.emplace(22, makeEndpoint(22, "bt-output", 0, 2, 24000,
+                                           kAudioDeviceTransportTypeBluetooth, {{24000.0, 24000.0}},
+                                           {22}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.input_device_id = "bt-input";
+  config.output_device_id = "bt-output";
+  config.channel_map.input_channels = {0, 1};
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config);
+
+  ASSERT_TRUE(route.resolved);
+  EXPECT_FALSE(route.compatibility.endpoints_related);
+  EXPECT_TRUE(route.compatibility.input_conversion_required);
+  EXPECT_TRUE(route.compatibility.output_conversion_required);
+  EXPECT_EQ(route.compatibility.planned_input_client_rate, 16000u);
+  EXPECT_EQ(route.compatibility.planned_output_client_rate, 24000u);
+  EXPECT_FALSE(route.requires_private_aggregate);
+  ASSERT_EQ(route.device_rate_plans.size(), 2u);
+  for (const auto& plan : route.device_rate_plans) {
+    EXPECT_FALSE(plan.requested_write_rate.has_value());
+  }
+}
+
+TEST(CoreAudioRouteProbeTest, BluetoothOutputOnlyNeverQueriesInputAndWritesWhenSafe) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->default_input_status = CoreAudioRouteQueryStatus::PermissionDenied;
+  fake->endpoints.emplace(30, makeEndpoint(30, "bt-output", 0, 2, 16000,
+                                           kAudioDeviceTransportTypeBluetooth,
+                                           {{16000.0, 16000.0}, {48000.0, 48000.0}}, {30}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.num_inputs = 0;
+  config.input_device_id = "stale-input";
+  config.output_device_id = "bt-output";
+  config.channel_map.input_channels = {99, 99};
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config);
+
+  ASSERT_TRUE(route.resolved);
+  EXPECT_EQ(route.compatibility.current_input_sample_rate, 0u);
+  EXPECT_FALSE(route.compatibility.input_is_bluetooth);
+  EXPECT_TRUE(route.compatibility.output_is_bluetooth);
+  EXPECT_FALSE(route.compatibility.output_conversion_required);
+  ASSERT_EQ(route.device_rate_plans.size(), 1u);
+  ASSERT_TRUE(route.device_rate_plans.front().requested_write_rate.has_value());
+  EXPECT_EQ(*route.device_rate_plans.front().requested_write_rate, 48000u);
+  EXPECT_EQ(fake->ledger.default_input_reads, 0);
+  EXPECT_EQ(fake->ledger.uid_reads, 1);
+  EXPECT_EQ(fake->ledger.input_channel_reads, 0);
+  EXPECT_EQ(fake->ledger.physical_format_reads, 1);
+}
+
+TEST(CoreAudioRouteProbeTest, ExplicitBluetoothMonoFallbackIsTheOnlyAcceptedWidthReduction) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->endpoints.emplace(31, makeEndpoint(31, "mono-output", 0, 1, 48000,
+                                           kAudioDeviceTransportTypeBluetooth, {{48000.0, 48000.0}},
+                                           {31}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto fallback = duplexConfig();
+  fallback.num_inputs = 0;
+  fallback.output_device_id = "mono-output";
+  fallback.channel_map.output_channels = {0, 1};
+  fallback.output_channel_policy = AudioOutputChannelPolicy::AllowMonoFallback;
+  fallback.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+  const auto accepted = resolver.resolve(fallback);
+
+  ASSERT_TRUE(accepted.resolved);
+  EXPECT_TRUE(accepted.output_mono_fallback);
+  EXPECT_EQ(accepted.output_channel_map, (std::vector<uint16_t>{0}));
+  EXPECT_EQ(accepted.compatibility.requested_output_channels, 2u);
+  EXPECT_EQ(accepted.compatibility.resolved_output_channels, 1u);
+  EXPECT_TRUE(accepted.compatibility.output_mono_fallback_planned);
+
+  fallback.output_channel_policy = AudioOutputChannelPolicy::RequireRequestedChannels;
+  const auto rejected = resolver.resolve(fallback);
+  EXPECT_FALSE(rejected.resolved);
+  EXPECT_EQ(rejected.compatibility.status, AudioRouteCompatibilityStatus::ProfileConflict);
 }
 
 } // namespace
