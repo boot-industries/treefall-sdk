@@ -97,8 +97,10 @@ if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
     target_link_libraries(orpheus_audio_driver_coreaudio
         PUBLIC
             orpheus_session  # For SessionGraphError
+            orpheus_audio_utils  # For directional sample-rate conversion
             "-framework CoreAudio"
             "-framework AudioToolbox"
+            "-framework CoreFoundation"
     )
 
     target_compile_features(orpheus_audio_driver_coreaudio PUBLIC cxx_std_20)

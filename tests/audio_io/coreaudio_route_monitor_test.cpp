@@ -71,6 +71,29 @@ TEST(CoreAudioRouteMonitorTest, RegistersInSuppliedOrderAndCleansUp) {
   EXPECT_EQ(fixture.api.listenerCount(), 0u);
 }
 
+TEST(CoreAudioRouteMonitorTest, DeduplicatesSharedDeviceAndStreamRegistrations) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setRate(1, 48000.0);
+  api.setBuffer(1, 512);
+  const AudioStreamBasicDescription format = testFormat();
+  api.setFormat(100, kAudioStreamPropertyVirtualFormat, format);
+  api.setFormat(100, kAudioStreamPropertyPhysicalFormat, format);
+
+  CoreAudioRouteMonitor monitor(
+      api, 48000, 512,
+      std::vector<CoreAudioRouteDevice>{{1, true, false, false, 48000},
+                                        {1, false, true, false, 48000}},
+      std::vector<CoreAudioRouteStream>{{100, format, format}, {100, format, format}});
+
+  ASSERT_TRUE(monitor.start());
+  EXPECT_EQ(api.listenerCount(), 5u);
+  monitor.requestCheck();
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+  monitor.stop();
+  EXPECT_EQ(api.listenerCount(), 0u);
+}
+
 TEST(CoreAudioRouteMonitorTest, AliveLossClosesAdmissionAndReportsOutputUnavailable) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);

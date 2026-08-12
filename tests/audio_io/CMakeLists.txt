@@ -4,6 +4,7 @@
 # orpheus_audio_utils (no libsndfile, no JUCE, host-neutral).
 add_executable(polyphase_resampler_test
     polyphase_resampler_test.cpp
+    directional_sample_rate_converter_test.cpp
 )
 
 target_link_libraries(polyphase_resampler_test

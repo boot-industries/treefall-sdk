@@ -48,11 +48,28 @@ concept AcceptsTwoTelemetryFields =
     requires { T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy}; };
 
 template <typename T>
-concept AcceptsThreeTelemetryFields = requires {
-  T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy,
-    orpheus::AudioRouteRuntimeOutcome::Healthy};
+concept AcceptsAllTelemetryFields = requires {
+  T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy, uint64_t{2}, uint64_t{3}, uint64_t{4},
+    uint64_t{5}};
 };
 
+static_assert(static_cast<uint8_t>(orpheus::AudioSampleRatePolicy::PreserveDeviceRate) == 0);
+static_assert(static_cast<uint8_t>(orpheus::AudioSampleRatePolicy::RequestExactRate) == 1);
+static_assert(static_cast<uint8_t>(orpheus::AudioSampleRatePolicy::RequestExactRateOrConvert) == 2);
+static_assert(static_cast<uint8_t>(orpheus::AudioOutputChannelPolicy::RequireRequestedChannels) ==
+              0);
+static_assert(static_cast<uint8_t>(orpheus::AudioOutputChannelPolicy::AllowMonoFallback) == 1);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::Compatible) == 0);
+static_assert(
+    static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::RequiresSampleRateChange) == 1);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::InputUnavailable) == 2);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::OutputUnavailable) == 3);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::SampleRateUnsupported) ==
+              4);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::InvalidChannelMap) == 5);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::PermissionDenied) == 6);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::BackendFailure) == 7);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteCompatibilityStatus::ProfileConflict) == 8);
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::Healthy) == 0);
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::SampleRateUnsupported) == 1);
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::SampleRateChangeFailed) == 2);
@@ -64,8 +81,12 @@ static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::InputRoute
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::OutputRouteUnavailable) == 8);
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::PermissionDenied) == 9);
 static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::BackendFailure) == 10);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::ProfileConflict) == 11);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::InputConversionFailed) == 12);
+static_assert(static_cast<uint8_t>(orpheus::AudioRouteRuntimeOutcome::OutputConversionFailed) ==
+              13);
 static_assert(AcceptsTwoTelemetryFields<orpheus::AudioIoTelemetry>);
-static_assert(!AcceptsThreeTelemetryFields<orpheus::AudioIoTelemetry>);
+static_assert(AcceptsAllTelemetryFields<orpheus::AudioIoTelemetry>);
 
 } // namespace
 
@@ -81,7 +102,9 @@ int main() {
       !observed.output_device_id.empty() || !observed.device_name.empty() ||
       !observed.channel_map.input_channels.empty() ||
       observed.channel_map.output_channels != std::vector<uint16_t>{0, 1} ||
-      observed.sample_rate_policy != orpheus::AudioSampleRatePolicy::PreserveDeviceRate) {
+      observed.sample_rate_policy != orpheus::AudioSampleRatePolicy::PreserveDeviceRate ||
+      observed.output_channel_policy !=
+          orpheus::AudioOutputChannelPolicy::RequireRequestedChannels) {
     return 2;
   }
   const orpheus::AudioIoTelemetry telemetry{0, orpheus::AudioRouteRuntimeOutcome::Healthy};

@@ -157,11 +157,14 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
       return CoreAudioRoutePollResult::BackendFailure;
     }
 
+    const Float64 expected_rate = device.expected_sample_rate != 0
+                                      ? static_cast<Float64>(device.expected_sample_rate)
+                                      : expected_sample_rate_;
     Float64 observed_rate = 0.0;
     if (!readFloat64(property_api_, device.device_id, rate_address, observed_rate)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
-    if (observed_rate != expected_sample_rate_) {
+    if (observed_rate != expected_rate) {
       return CoreAudioRoutePollResult::SampleRateChanged;
     }
 
