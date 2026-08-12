@@ -2,7 +2,9 @@
 #include "coreaudio_route_monitor.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 namespace orpheus {
@@ -93,18 +95,34 @@ bool CoreAudioRouteMonitor::start() noexcept {
     ++registered_count_;
   }
 
+  const auto rate_address = deviceAddress(kAudioDevicePropertyNominalSampleRate);
   const auto buffer_address = deviceAddress(kAudioDevicePropertyBufferFrameSize);
   for (CoreAudioRouteDevice& device : devices_) {
-    if (device.expected_buffer_frames != 0) {
-      continue;
-    }
+    Float64 observed_rate = 0.0;
     UInt32 observed_buffer_frames = 0;
-    if (!readUInt32(property_api_, device.device_id, buffer_address, observed_buffer_frames) ||
+    if (!readFloat64(property_api_, device.device_id, rate_address, observed_rate) ||
+        !std::isfinite(observed_rate) || observed_rate <= 0.0 ||
+        observed_rate > static_cast<Float64>(std::numeric_limits<uint32_t>::max()) ||
+        std::floor(observed_rate) != observed_rate ||
+        !readUInt32(property_api_, device.device_id, buffer_address, observed_buffer_frames) ||
         observed_buffer_frames == 0) {
       stop();
       return false;
     }
+    device.expected_sample_rate = static_cast<uint32_t>(observed_rate);
     device.expected_buffer_frames = observed_buffer_frames;
+  }
+
+  const auto virtual_address = streamAddress(kAudioStreamPropertyVirtualFormat);
+  const auto physical_address = streamAddress(kAudioStreamPropertyPhysicalFormat);
+  for (CoreAudioRouteStream& stream : streams_) {
+    if (!readFormat(property_api_, stream.stream_id, virtual_address,
+                    stream.expected_virtual_format) ||
+        !readFormat(property_api_, stream.stream_id, physical_address,
+                    stream.expected_physical_format)) {
+      stop();
+      return false;
+    }
   }
   return true;
 }

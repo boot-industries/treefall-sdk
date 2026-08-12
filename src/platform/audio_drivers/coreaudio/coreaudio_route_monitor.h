@@ -28,14 +28,16 @@ struct CoreAudioRouteDevice {
   bool monitors_input = false;
   bool monitors_output = false;
   bool is_private_aggregate = false;
+  /// Captured from the active endpoint during start().
   uint32_t expected_sample_rate = 0;
-  /// Zero captures the endpoint's current buffer size during start().
+  /// Captured from the active endpoint during start().
   uint32_t expected_buffer_frames = 0;
 };
 
 /// One stream whose virtual and physical formats are part of the active route.
 struct CoreAudioRouteStream {
   AudioStreamID stream_id = 0;
+  /// Captured from the active stream during start().
   AudioStreamBasicDescription expected_virtual_format{};
   AudioStreamBasicDescription expected_physical_format{};
 };
