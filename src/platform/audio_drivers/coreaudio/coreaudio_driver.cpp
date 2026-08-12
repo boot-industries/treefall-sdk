@@ -812,6 +812,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   auto monitor_lease = driver->performance_monitor_target_.tryAcquire();
   const UInt64 callback_start = monitor_lease ? AudioGetCurrentHostTime() : UInt64{0};
   IAudioCallback* callback = callback_lease.get();
+  const uint64_t session_callback_base = driver->session_frame_position_;
   bool first_chunk = true;
   for (uint32_t offset = 0; offset < host_frames;) {
     const uint32_t frames = std::min(chunk_frames, host_frames - offset);
@@ -876,7 +877,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
     block.num_output_channels = static_cast<uint16_t>(num_output_channels);
     block.num_frames = frames;
     if (driver->input_conversion_active_ || driver->output_conversion_active_) {
-      block.device_sample_position = driver->session_frame_position_ + offset;
+      block.device_sample_position = session_callback_base + offset;
       block.discontinuity = first_chunk && !driver->conversion_timeline_initialized_;
       block.host_time_nanoseconds =
           host_valid ? hostTimeForOffset(host_base, offset, sample_rate) : 0;
@@ -904,9 +905,9 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
 
     first_chunk = false;
     offset += frames;
-    if (driver->input_conversion_active_ || driver->output_conversion_active_) {
-      driver->session_frame_position_ += frames;
-    }
+  }
+  if (driver->input_conversion_active_ || driver->output_conversion_active_) {
+    driver->session_frame_position_ = session_callback_base + host_frames;
   }
 
   if (driver->output_conversion_active_) {

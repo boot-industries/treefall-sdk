@@ -56,6 +56,8 @@ C ABI remains 1.0 because the C-facing ABI contract is unchanged.
 4. CoreAudio configures independent input/output AUHAL paths. The bounded
    `DirectionalSampleRateConverter` transfers capture from physical to session rate and
    render from session to physical rate without allocation, locks, or I/O in the callback.
+   Converted callbacks derive every chunk position from one session-frame base and advance
+   the timeline only after the full callback, preserving contiguous sample positions.
 5. The route monitor treats property changes as terminal, publishes one structured outcome,
    closes callback admission, and prevents stale route facts or repeated writes.
 
