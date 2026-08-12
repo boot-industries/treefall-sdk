@@ -82,8 +82,11 @@ On 2026-08-12, the CLbuds endpoints became available for the first physical
 activation attempt. Their separate UIDs report a 16 kHz, 320-frame, one-channel
 input and a 44.1 kHz, 512-frame, two-channel output. ARM exposed a false
 `BufferSizeChanged` outcome because monitoring applied the output callback size
-to every endpoint. The per-endpoint baseline repair has deterministic coverage;
-the CLbuds capture/monitor run must still demonstrate live frames and audibility.
+to every endpoint. The per-endpoint baseline repair has deterministic coverage.
+The repaired FourTrack build then reported **“audio route unavailable”** when
+arming the routed CLbuds input; it did not capture CLbuds audio. The runtime
+outcome and underlying CoreAudio failure details remain uninvestigated. Physical
+acceptance is failed and unresolved, not merely pending.
 
 ## FourTrack adoption boundary
 
@@ -101,14 +104,15 @@ round_trip_frames = capture_frames + playback_frames + processing_frames
 route state. Output-only sessions must leave input selection empty: no input capability
 query, listener, device write, capture failure, or permission request is allowed.
 
-## Remaining physical gate
-
-Physical Bluetooth acceptance is not claimed. The 2026-08-11 machine inventory had no
-CLbuds endpoint, so the required Bluetooth-input-plus-speakers, same-headset stereo,
-same-headset mono strict/fallback, and unrelated Bluetooth endpoint measurements remain
-unexecuted. Do not tag a release, mark FTR085 complete, or advance FourTrack's production
-SDK pin until a CLbuds run records the settled endpoint UIDs, physical/client rates,
-physical callback width, converter latency, counters, and tone/frame evidence.
+Physical Bluetooth acceptance failed. After the buffer-monitor repair, the
+FourTrack host reported **“audio route unavailable”** at CLbuds ARM, with no
+observed capture. Separately, a disconnected previously-selected CLbuds output
+caused FourTrack new-session creation to reject both 44.1 and 48 kHz; that
+host stale-selection/default-fallback defect is outside this SDK repair but
+blocks output-only acceptance after device loss. Do not tag a release, mark
+FTR085 complete, or advance FourTrack's production SDK pin until a CLbuds run
+records the settled endpoint UIDs, physical/client rates, physical callback
+width, converter latency, counters, and tone/frame evidence.
 
 ## References
 
