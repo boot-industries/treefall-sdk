@@ -461,12 +461,6 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   render_input_channels_.store(input_client_channels_, std::memory_order_release);
   render_output_channels_.store(output_client_channels_, std::memory_order_release);
 
-  if (!startRouteMonitorLocked()) {
-    route_monitor_->stop();
-    stopRenderingLocked();
-    return SessionGraphError::InternalError;
-  }
-
   if (input_conversion_active_) {
     input_callback_target_.replaceAndDrain(this);
     if (AudioOutputUnitStart(input_audio_unit_) != noErr) {
@@ -491,6 +485,9 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
       publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::InputConversionFailed);
       return SessionGraphError::NotReady;
     }
+    // Keep the primed FIFO stable while the output AudioUnit starts. Bluetooth
+    // output startup may block long enough to exhaust capture headroom.
+    input_callback_target_.replaceAndDrain(nullptr);
   }
 
   callback_target_.replaceAndDrain(callback);
@@ -505,6 +502,15 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
     stopRenderingLocked();
     route_monitor_->stop();
     publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BackendFailure);
+    return SessionGraphError::InternalError;
+  }
+  if (input_conversion_active_) {
+    input_callback_target_.replaceAndDrain(this);
+  }
+  // Admit the fully activated route before callbacks begin consuming capture.
+  if (!startRouteMonitorLocked()) {
+    route_monitor_->stop();
+    stopRenderingLocked();
     return SessionGraphError::InternalError;
   }
 
@@ -1769,6 +1775,12 @@ bool CoreAudioDriver::prepareConverters() {
         input_render_capacity_frames_ > 4096u || chunk_frames == 0) {
       return false;
     }
+    const auto input_callback_frames = getOptionalUInt32Property(
+        input_device_id_, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal);
+    if (!input_callback_frames.has_value() || *input_callback_frames == 0 ||
+        *input_callback_frames > input_render_capacity_frames_) {
+      return false;
+    }
     audio_utils::DirectionalSrcConfig input_config;
     input_config.input_rate = input_physical_rate_;
     input_config.output_rate = config_.sample_rate;
@@ -1776,8 +1788,8 @@ bool CoreAudioDriver::prepareConverters() {
     input_config.max_input_frames = input_render_capacity_frames_;
     input_config.max_output_frames = chunk_frames;
     input_config.fifo_capacity_frames = 32768;
-    input_prime_frames_ = std::min<uint32_t>(4u * input_render_capacity_frames_,
-                                             input_config.fifo_capacity_frames / 2u);
+    input_prime_frames_ =
+        std::min<uint32_t>(4u * *input_callback_frames, input_config.fifo_capacity_frames / 2u);
     input_config.prime_input_frames = input_prime_frames_;
     input_config.allow_input_rate_correction = true;
     if (input_converter_.prepare(input_config) != SessionGraphError::OK) {
