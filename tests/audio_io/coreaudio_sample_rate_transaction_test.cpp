@@ -20,20 +20,18 @@ AudioObjectPropertyAddress nominalRateAddress() {
           kAudioObjectPropertyElementMain};
 }
 
-detail::ResolvedCoreAudioRoute distinctRoute() {
-  detail::ResolvedCoreAudioRoute route;
-  route.resolved = true;
-  route.output_device_id = kOutputDevice;
-  route.input_device_id = kInputDevice;
-  return route;
-}
-
-detail::ResolvedCoreAudioRoute sameDeviceRoute() {
-  detail::ResolvedCoreAudioRoute route;
-  route.resolved = true;
-  route.output_device_id = kOutputDevice;
-  route.input_device_id = kOutputDevice;
-  return route;
+std::vector<detail::CoreAudioDeviceRatePlan> writePlans(bool distinct) {
+  detail::CoreAudioDeviceRatePlan output;
+  output.device_id = kOutputDevice;
+  output.requested_write_rate = 48000u;
+  std::vector<detail::CoreAudioDeviceRatePlan> plans{output};
+  if (distinct) {
+    detail::CoreAudioDeviceRatePlan input;
+    input.device_id = kInputDevice;
+    input.requested_write_rate = 48000u;
+    plans.push_back(input);
+  }
+  return plans;
 }
 
 void seedRates(test_support::FakeCoreAudioPropertyApi& api, Float64 output_rate = 44100.0,
@@ -50,8 +48,7 @@ protected:
 TEST_F(CoreAudioSampleRateTransactionTest, SameRateHasNoListenersOrWrites) {
   seedRates(api, 48000.0, 48000.0);
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(20));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(20));
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::Healthy);
   EXPECT_TRUE(api.listenerLedger().empty());
   EXPECT_TRUE(api.writeLedger().empty());
@@ -60,8 +57,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, SameRateHasNoListenersOrWrites) {
 TEST_F(CoreAudioSampleRateTransactionTest, WritesOutputThenDistinctInputAndConfirmsEvents) {
   seedRates(api);
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(100));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(100));
   ASSERT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::Healthy);
 
   const auto listeners = api.listenerLedger();
@@ -82,7 +78,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, WritesOutputThenDistinctInputAndConfi
 TEST_F(CoreAudioSampleRateTransactionTest, SameDeviceDuplexUsesOneEndpoint) {
   seedRates(api, 44100.0, 44100.0);
 
-  CoreAudioSampleRateTransaction transaction(api, sameDeviceRoute(), 48000,
+  CoreAudioSampleRateTransaction transaction(api, writePlans(false),
                                              std::chrono::milliseconds(100));
   ASSERT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::Healthy);
 
@@ -98,8 +94,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, SettableFalseFailsBeforeListenersOrWr
   seedRates(api);
   api.setRateSettable(kOutputDevice, false);
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(20));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(20));
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::SampleRateChangeFailed);
   EXPECT_TRUE(api.listenerLedger().empty());
   EXPECT_TRUE(api.writeLedger().empty());
@@ -109,8 +104,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, SettableQueryErrorIsBackendFailure) {
   seedRates(api);
   api.failSettable(-50);
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(20));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(20));
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::BackendFailure);
   EXPECT_TRUE(api.listenerLedger().empty());
   EXPECT_TRUE(api.writeLedger().empty());
@@ -120,8 +114,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, TimeoutRollsBackInReverseOrder) {
   seedRates(api);
   api.suppressListenerDelivery();
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(5));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(5));
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::SampleRateChangeFailed);
 
   const auto writes = api.writeLedger();
@@ -137,8 +130,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, ThirdPartyRateChangeIsNotOverwrittenD
   seedRates(api);
   api.suppressListenerDelivery();
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(30));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(30));
   std::thread mutator([this] {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     api.thirdPartyRateMutation(kOutputDevice, 96000.0);
@@ -157,8 +149,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, SuppressedEventsCanBeDeliveredToCompl
   seedRates(api);
   api.suppressListenerDelivery();
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(200));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(200));
   std::thread delivery([this] {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     api.deliverPendingListeners();
@@ -172,8 +163,7 @@ TEST_F(CoreAudioSampleRateTransactionTest, WriteRefusalIsSampleRateChangeFailure
   seedRates(api);
   api.failSet(-1);
 
-  CoreAudioSampleRateTransaction transaction(api, distinctRoute(), 48000,
-                                             std::chrono::milliseconds(20));
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(20));
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::SampleRateChangeFailed);
   EXPECT_EQ(api.listenerCount(), 0u);
   EXPECT_TRUE(api.writeLedger().empty());

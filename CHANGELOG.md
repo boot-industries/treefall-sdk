@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output endpoint loss. Endpoint-change notifications include default input and
   output changes, run on a control worker, and are safe to replace, unregister,
   or destroy from their own callback.
+- Added directional CoreAudio sample-rate conversion for `RequestExactRateOrConvert`.
+  Endpoint resolution now publishes settled physical/client rates and widths,
+  converter latency, Bluetooth/related-endpoint facts, a deliberate mono-output
+  fallback, and saturating conversion/FIFO/capture health counters. CoreAudio
+  activates only the required device-rate plan and terminates stale routes after
+  a monitored profile change.
 
 ### Changed
 
