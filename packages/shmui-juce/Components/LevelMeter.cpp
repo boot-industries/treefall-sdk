@@ -373,21 +373,20 @@ float LevelMeter::normalizedToDB(float normalized) const {
 }
 
 juce::Colour LevelMeter::getColorForLevel(float normalized) const {
-  float dB = normalizedToDB(normalized);
+  const float dB = normalizedToDB(normalized);
 
-  if (dB >= m_style.redThreshold) {
+  if (dB >= m_style.clipThreshold)
+    return m_style.clipColor;
+  if (dB >= m_style.redThreshold)
     return m_style.meterColorHigh;
-  } else if (dB >= m_style.yellowThreshold) {
-    // Interpolate between yellow and red
-    float t = (dB - m_style.yellowThreshold) / (m_style.redThreshold - m_style.yellowThreshold);
+  if (dB >= m_style.yellowThreshold) {
+    const float t =
+        (dB - m_style.yellowThreshold) / (m_style.redThreshold - m_style.yellowThreshold);
     return m_style.meterColorMid.interpolatedWith(m_style.meterColorHigh, t);
-  } else {
-    // Interpolate between green and yellow
-    float lowDB = m_minDB;
-    float t = (dB - lowDB) / (m_style.yellowThreshold - lowDB);
-    return m_style.meterColorLow.interpolatedWith(m_style.meterColorMid,
-                                                  t * t); // Quadratic for smoother green
   }
+
+  const float t = (dB - m_minDB) / (m_style.yellowThreshold - m_minDB);
+  return m_style.meterColorLow.interpolatedWith(m_style.meterColorMid, t * t);
 }
 
 void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel) {
@@ -401,32 +400,38 @@ void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int
 
   // Draw level fill with gradient
   juce::Rectangle<float> fillBounds;
-
   if (m_isVertical) {
-    float fillHeight = bounds.getHeight() * displayLevel;
-    fillBounds = bounds.removeFromBottom(fillHeight);
+    const float fillHeight = bounds.getHeight() * displayLevel;
+    fillBounds = {bounds.getX(), bounds.getBottom() - fillHeight, bounds.getWidth(), fillHeight};
   } else {
-    float fillWidth = bounds.getWidth() * displayLevel;
-    fillBounds = bounds.removeFromLeft(fillWidth);
+    const float fillWidth = bounds.getWidth() * displayLevel;
+    fillBounds = {bounds.getX(), bounds.getY(), fillWidth, bounds.getHeight()};
   }
 
-  // Create gradient for level
+  // Thresholds are defined in the same normalized signal space as displayLevel.
+  // Vertical meters increase upward; horizontal meters increase rightward.
+  const float yellowNorm = dbToNormalized(m_style.yellowThreshold);
+  const float redNorm = dbToNormalized(m_style.redThreshold);
+  const float clipNorm = dbToNormalized(m_style.clipThreshold);
+
   juce::ColourGradient gradient;
   if (m_isVertical) {
-    gradient = juce::ColourGradient::vertical(m_style.meterColorHigh, bounds.getY(),
+    gradient = juce::ColourGradient::vertical(m_style.clipColor, bounds.getY(),
                                               m_style.meterColorLow, bounds.getBottom());
+    gradient.addColour(0.0, m_style.clipColor);
+    gradient.addColour(1.0 - clipNorm, m_style.clipColor);
+    gradient.addColour(1.0 - redNorm, m_style.meterColorHigh);
+    gradient.addColour(1.0 - yellowNorm, m_style.meterColorMid);
+    gradient.addColour(1.0, m_style.meterColorLow);
   } else {
     gradient = juce::ColourGradient::horizontal(m_style.meterColorLow, bounds.getX(),
-                                                m_style.meterColorHigh, bounds.getRight());
+                                                m_style.clipColor, bounds.getRight());
+    gradient.addColour(0.0, m_style.meterColorLow);
+    gradient.addColour(yellowNorm, m_style.meterColorMid);
+    gradient.addColour(redNorm, m_style.meterColorHigh);
+    gradient.addColour(clipNorm, m_style.clipColor);
+    gradient.addColour(1.0, m_style.clipColor);
   }
-
-  // Add color stops
-  float yellowNorm = dbToNormalized(m_style.yellowThreshold);
-  float redNorm = dbToNormalized(m_style.redThreshold);
-
-  gradient.addColour(0.0, m_style.meterColorLow);
-  gradient.addColour(yellowNorm, m_style.meterColorMid);
-  gradient.addColour(redNorm, m_style.meterColorHigh);
 
   g.setGradientFill(gradient);
   g.fillRoundedRectangle(fillBounds, m_style.cornerRadius);
