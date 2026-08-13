@@ -3,8 +3,8 @@
   "source": {
     "repository": "shmui",
     "path": "juce/Source",
-    "revision": "f21b433770191e83b45e2ab3824dfd02bfaa7d60",
-    "content_sha256": "07acb560e40ba520e0e89c10876c57cf42bd4250b47226699c98c567a732f03c",
+    "revision": "c0562a94475eae97a31f3a881a886fbb50c8ae1c",
+    "content_sha256": "3902f564baccc93c1b02cc6031a5f89994dc236d63550500bc16336844c18714",
     "content_hash_algorithm": "sha256-path-nul-content-v1"
   },
   "design_token_contract_version": "0.6.0",
