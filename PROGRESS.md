@@ -3,8 +3,8 @@
 
 ## ORP176 — CoreAudio Bluetooth duplex and directional SRC
 
-**Date:** 2026-08-12
-**Status:** Activation/startup defects repaired; final CLbuds rerun blocked by device disconnect.
+**Date:** 2026-08-13
+**Status:** Source and deterministic repair complete; final CLbuds rerun blocked by device disconnect.
 
 ### Delivered
 
@@ -41,6 +41,22 @@
   the disconnected CLbuds UID falls back to the live built-in default supporting
   both session rates.
 - No release tag or downstream production pin is claimed.
+### Candidate verification
+
+- The isolated Debug build (`/tmp/ftr085-sdk-debug`) passed the complete 80/80
+  CTest suite, including package consumers, CoreAudio route/driver contracts,
+  realtime audit, and stress labels.
+- The isolated Release build (`/tmp/ftr085-sdk-release`) passed the complete
+  80/80 CTest suite with the same package and platform gates.
+- `python3 tools/realtime_audit.py --root . --include-adjacent` passed with
+  zero hard failures and zero tracked debt findings. Prepared directional
+  converter transfers are covered by the runtime allocation guard.
+- `orpheus_coreaudio_hardware_acceptance` now reports requested/actual route
+  rates and buffers, physical/virtual/client widths, directional latency,
+  conversion/FIFO counters, bounded capture evidence, and stable terminal
+  outcomes. Built-in output-only smoke and expected unavailable-output
+  initialization checks passed; no CLbuds hardware result is inferred.
+
 - Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
 
 ## ORP174 — Cooperative CoreAudio rate negotiation

@@ -4,7 +4,7 @@
 
 **Document type:** SDK implementation and qualification record
 **Status:** Source and deterministic repair complete; final CLbuds 44.1/48 kHz rerun blocked by device disconnect
-**Date:** 2026-08-12
+**Date:** 2026-08-13
 **Consumer:** FourTrack / EightTrack, FTR085
 **Implementation baseline:** `main` plus pending activation-admission and startup-FIFO repair
 **SDK version:** 0.8.0
@@ -79,8 +79,12 @@ Source and deterministic evidence recorded in this session:
 | Resolver: output-only isolation, distinct endpoints, 16 kHz Bluetooth input conversion, strict mono conflict/fallback, related Bluetooth protection, rate-plan decisions | Passed in `coreaudio_route_probe_test` |
 | Driver: dual-AUHAL flow, active physical/client facts, converter latency and counters, terminal monitor outcomes, rollback/lifecycle behavior | `coreaudio_driver_test`: 62/62 passed |
 | Monitor activation admission: 16 kHz/320-frame input plus 44.1 kHz/512-frame output, activation rate/stream baselines, later terminal mutations | `CoreAudioRouteMonitorTest.*`: 13/13 passed |
-| Static callback audit | `realtime_static_audit` and `realtime_static_audit_unit` passed on the original directional-SRC delivery |
+| Static callback audit | `realtime_static_audit`, `realtime_static_audit_unit`, and adjacent-consumer audit passed with zero hard failures and zero tracked debt findings |
 | Installed package and public version contract | `version_contract`, `cmake_find_package`, and `cmake_package_runtime_consumer` passed against 0.8.0 |
+| Complete candidate Debug suite | `/tmp/ftr085-sdk-debug`: 80/80 CTest cases passed |
+| Complete candidate Release suite | `/tmp/ftr085-sdk-release`: 80/80 CTest cases passed |
+| Realtime static and dynamic allocation gate | Static audit: zero hard/debt findings; prepared SRC transfers: zero allocation/deallocation violations |
+| Acceptance CLI contract | Built-in output-only pass and expected unavailable-output initialization pass; no CLbuds result inferred |
 
 On 2026-08-12, live CLbuds testing exposed three defects beyond the original
 deterministic qualification. The monitor used one output-sized buffer

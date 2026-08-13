@@ -2,6 +2,8 @@
 //
 // FTR085: bounded directional sample-rate conversion contracts.
 
+#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
+#include "../support/rt_guard.hpp"
 #include <orpheus/directional_sample_rate_converter.h>
 
 #include <algorithm>
@@ -137,12 +139,15 @@ TEST(DirectionalSampleRateConverterTest, RejectsUnsupportedPairsAndInvalidResour
 }
 
 TEST(DirectionalSampleRateConverterTest, PreservesSineFrequencyAndPassbandGain) {
-  const auto upsampled = convertSine(16'000, 44'100, 1'000.0, 40'000);
+  const auto upsampled_44k = convertSine(16'000, 44'100, 1'000.0, 40'000);
+  const auto upsampled_48k = convertSine(16'000, 48'000, 1'000.0, 40'000);
   const auto downsampled = convertSine(48'000, 24'000, 1'000.0, 12'000);
 
-  EXPECT_NEAR(measureFrequency(upsampled, 44'100, 2'000), 1'000.0, 2.0);
+  EXPECT_NEAR(measureFrequency(upsampled_44k, 44'100, 2'000), 1'000.0, 2.0);
+  EXPECT_NEAR(measureFrequency(upsampled_48k, 48'000, 2'000), 1'000.0, 2.0);
   EXPECT_NEAR(measureFrequency(downsampled, 24'000, 1'000), 1'000.0, 2.0);
-  EXPECT_NEAR(rms(upsampled, 2'000), 1.0 / std::sqrt(2.0), 0.03);
+  EXPECT_NEAR(rms(upsampled_44k, 2'000), 1.0 / std::sqrt(2.0), 0.03);
+  EXPECT_NEAR(rms(upsampled_48k, 2'000), 1.0 / std::sqrt(2.0), 0.03);
   EXPECT_NEAR(rms(downsampled, 1'000), 1.0 / std::sqrt(2.0), 0.03);
 }
 
@@ -283,4 +288,34 @@ TEST(DirectionalSampleRateConverterTest, ReportsLatencyFromConfiguredPrime) {
   DirectionalSampleRateConverter converter;
   ASSERT_EQ(converter.prepare(config), SessionGraphError::OK);
   EXPECT_EQ(converter.latencyOutputFrames(), 573u);
+}
+
+TEST(DirectionalSampleRateConverterTest, PreparedTransfersAreRealtimeAllocationFree) {
+  DirectionalSampleRateConverter converter;
+  const auto config = makeConfig(16'000, 48'000);
+  ASSERT_EQ(converter.prepare(config), SessionGraphError::OK);
+  std::vector<float> input(1024, 0.125F);
+  std::vector<float> output(1024, 0.0F);
+  const float* input_channels[] = {input.data()};
+  float* output_channels[] = {output.data()};
+
+  bool transfers_ok = true;
+  orpheus::tests::support::RtGuardState::reset();
+  {
+    orpheus::tests::support::RtSection realtime;
+    for (int iteration = 0; iteration < 8; ++iteration) {
+      const auto pushed = converter.pushInput(input_channels, 1, 1024);
+      uint32_t required = 0;
+      const auto required_status = converter.requiredInputFrames(1024, required);
+      const auto rendered = converter.renderOutput(output_channels, 1, 1024);
+      transfers_ok = transfers_ok && pushed.status == DirectionalSrcStatus::Ok &&
+                     required_status == DirectionalSrcStatus::Ok &&
+                     rendered.status == DirectionalSrcStatus::Ok &&
+                     rendered.output_frames_produced == 1024;
+    }
+  }
+
+  EXPECT_TRUE(transfers_ok);
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::deallocViolations(), 0u);
 }

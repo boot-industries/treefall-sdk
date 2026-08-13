@@ -483,6 +483,22 @@ TEST(CoreAudioRouteProbeTest, InvalidMapsAreClassifiedAfterBothEndpointsResolve)
   EXPECT_EQ(fake->ledger.output_channel_reads, 1);
   EXPECT_EQ(fake->ledger.sample_rate_range_reads, 0);
 }
+TEST(CoreAudioRouteProbeTest, ChannelMapDefaultsOrderAndBoundsAreDeterministic) {
+  std::vector<uint16_t> resolved;
+
+  EXPECT_TRUE(detail::resolveCoreAudioChannelMap({}, 2, 2, resolved));
+  EXPECT_EQ(resolved, (std::vector<uint16_t>{0, 1}));
+
+  EXPECT_TRUE(detail::resolveCoreAudioChannelMap({1, 0}, 2, 2, resolved));
+  EXPECT_EQ(resolved, (std::vector<uint16_t>{1, 0}));
+  EXPECT_TRUE(detail::resolveCoreAudioChannelMap({2, 0}, 2, 3, resolved));
+  EXPECT_EQ(resolved, (std::vector<uint16_t>{2, 0}));
+
+  EXPECT_FALSE(detail::resolveCoreAudioChannelMap({0, 0}, 2, 2, resolved));
+  EXPECT_FALSE(detail::resolveCoreAudioChannelMap({0, 2}, 2, 2, resolved));
+  EXPECT_FALSE(detail::resolveCoreAudioChannelMap({0}, 2, 2, resolved));
+  EXPECT_FALSE(detail::resolveCoreAudioChannelMap({0, 1, 2}, 2, 3, resolved));
+}
 
 TEST(CoreAudioRouteProbeTest, UnsupportedRateSkipsCurrentAndRunningQueries) {
   auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
