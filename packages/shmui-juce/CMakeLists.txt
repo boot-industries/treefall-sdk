@@ -152,6 +152,8 @@ if(SHMUI_JUCE_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM014AudioBoundaryFixture.cpp
   )
   target_link_libraries(shmui_shm014_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_definitions(shmui_shm014_fixture PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1)
   target_compile_features(shmui_shm014_fixture PRIVATE cxx_std_20)
   add_test(NAME shmui_shm014_audio_boundary COMMAND shmui_shm014_fixture)
 
