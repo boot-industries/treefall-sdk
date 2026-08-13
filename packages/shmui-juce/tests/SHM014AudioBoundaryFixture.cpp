@@ -74,6 +74,80 @@ void requireLevelMeterFollowsAncestorShowingState() {
 
   host.removeFromDesktop();
 }
+
+int colourDistance(juce::Colour left, juce::Colour right) {
+  return std::abs(static_cast<int>(left.getRed()) - static_cast<int>(right.getRed())) +
+         std::abs(static_cast<int>(left.getGreen()) - static_cast<int>(right.getGreen())) +
+         std::abs(static_cast<int>(left.getBlue()) - static_cast<int>(right.getBlue()));
+}
+
+void requireColourNear(juce::Colour actual, juce::Colour expected, const char* message) {
+  if (colourDistance(actual, expected) <= 12)
+    return;
+
+  ++failures;
+  std::fprintf(stderr, "SHM014 failure: %s (actual #%02X%02X%02X, expected #%02X%02X%02X)\n",
+               message, actual.getRed(), actual.getGreen(), actual.getBlue(), expected.getRed(),
+               expected.getGreen(), expected.getBlue());
+}
+
+void requireLevelMeterUsesThresholdGradient(bool vertical) {
+  const int width = vertical ? 40 : 240;
+  const int height = vertical ? 240 : 40;
+
+  juce::Component host;
+  shmui::LevelMeter meter;
+  host.addToDesktop(juce::ComponentPeer::windowIsTemporary);
+  host.setBounds(0, 0, width, height);
+  host.setVisible(true);
+  host.addAndMakeVisible(meter);
+  meter.setBounds(host.getLocalBounds());
+  meter.setVertical(vertical);
+  meter.setBallistics(shmui::MeterBallistics::Peak);
+  meter.setDBRange(-60.0f, 6.0f);
+
+  auto style =
+      shmui::LevelMeterStyle::fromPresentation(shmui::tokens::meter::consolePresentation());
+  style.meterWidth = 24.0f;
+  style.cornerRadius = 0.0f;
+  style.showPeakHold = false;
+  style.showClipIndicator = false;
+  style.showScale = false;
+  style.showTicks = false;
+  meter.setStyle(style);
+
+  meter.setLevelDB(0, 6.0f);
+  const auto displayed = pumpUntil([&meter] { return meter.hasClipped(); }, 500);
+  require(displayed, "full-scale meter input reaches the presentation state");
+  if (!displayed) {
+    host.removeFromDesktop();
+    return;
+  }
+
+  auto image = meter.createComponentSnapshot(meter.getLocalBounds(), true);
+  const auto normalisedForDb = [](float dB) { return (dB + 60.0f) / 66.0f; };
+  const auto sample = [&image](float normalised) {
+    const auto coordinate = juce::jlimit(0, 239, juce::roundToInt(normalised * 239.0f));
+    return image.getPixelAt(20, coordinate);
+  };
+
+  const auto sampleAtDb = [&](float dB) {
+    const auto normalised = normalisedForDb(dB);
+    return vertical
+               ? sample(1.0f - normalised)
+               : image.getPixelAt(juce::jlimit(0, 239, juce::roundToInt(normalised * 239.0f)), 20);
+  };
+
+  requireColourNear(sampleAtDb(-12.0f), style.meterColorMid,
+                    "meter caution threshold uses the yellow stop");
+  requireColourNear(sampleAtDb(-60.0f), style.meterColorLow,
+                    "meter safe floor uses the green stop");
+  requireColourNear(sampleAtDb(-3.0f), style.meterColorHigh,
+                    "meter warning threshold uses the orange stop");
+  requireColourNear(sampleAtDb(0.0f), style.clipColor, "meter clip threshold uses the red stop");
+
+  host.removeFromDesktop();
+}
 } // namespace
 
 int main() {
@@ -165,6 +239,8 @@ int main() {
   live.setActive(true);
   require(live.getHistory().empty(), "hidden live visualizer does not tick");
 
+  requireLevelMeterUsesThresholdGradient(true);
+  requireLevelMeterUsesThresholdGradient(false);
   requireLevelMeterFollowsAncestorShowingState();
 
   return failures == 0 ? 0 : 1;
