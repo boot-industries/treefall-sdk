@@ -26,6 +26,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace shmui {
@@ -345,8 +346,9 @@ public:
 
 private:
   //==============================================================================
+  class ShowingStateWatcher;
+
   void timerCallback() override;
-  void visibilityChanged() override;
   void updateTimerState();
   void updateMeter();
   float linearToNormalized(float linear) const;
@@ -364,6 +366,8 @@ private:
   MeterBallistics m_ballistics = MeterBallistics::Peak;
   LevelMeterStyle m_style;
   bool m_usesDefaultThemeStyle = true;
+
+  std::unique_ptr<ShowingStateWatcher> m_showingStateWatcher;
 
   // dB range
   float m_minDB = -60.0f;

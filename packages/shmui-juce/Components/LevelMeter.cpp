@@ -14,6 +14,25 @@
 
 namespace shmui {
 
+class LevelMeter::ShowingStateWatcher final : public juce::ComponentMovementWatcher {
+public:
+  explicit ShowingStateWatcher(LevelMeter& owner)
+      : juce::ComponentMovementWatcher(&owner), m_owner(owner) {}
+
+  void componentMovedOrResized(bool, bool) override {}
+
+  void componentPeerChanged() override {
+    m_owner.updateTimerState();
+  }
+
+  void componentVisibilityChanged() override {
+    m_owner.updateTimerState();
+  }
+
+private:
+  LevelMeter& m_owner;
+};
+
 //==============================================================================
 LevelMeter::LevelMeter() : LevelMeter(1) {}
 
@@ -30,12 +49,14 @@ LevelMeter::LevelMeter(int numChannels)
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
   setBallistics(MeterBallistics::Peak);
   addDefaultThemeListener(this);
+  m_showingStateWatcher = std::make_unique<ShowingStateWatcher>(*this);
   updateTimerState();
 }
 
 LevelMeter::~LevelMeter() {
-  removeDefaultThemeListener(this);
+  m_showingStateWatcher.reset();
   stopTimer();
+  removeDefaultThemeListener(this);
 }
 
 //==============================================================================
@@ -281,10 +302,6 @@ void LevelMeter::timerCallback() {
 
   updateMeter();
   repaint();
-}
-
-void LevelMeter::visibilityChanged() {
-  updateTimerState();
 }
 
 void LevelMeter::updateTimerState() {

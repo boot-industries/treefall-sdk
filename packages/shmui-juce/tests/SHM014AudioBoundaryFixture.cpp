@@ -1,9 +1,11 @@
 #include "Audio/AudioAnalyzer.h"
 #include "Components/BarVisualizer.h"
+#include "Components/LevelMeter.h"
 #include "Components/WaveformVisualizer.h"
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -25,6 +27,52 @@ void requireFiniteNormalized(const std::vector<float>& values, const char* messa
       return;
     }
   }
+}
+
+bool pumpUntil(const std::function<bool()>& condition, int timeoutMs) {
+  const auto deadline = juce::Time::getMillisecondCounterHiRes() + static_cast<double>(timeoutMs);
+  while (juce::Time::getMillisecondCounterHiRes() < deadline) {
+    if (condition())
+      return true;
+
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+  }
+
+  return condition();
+}
+
+void pumpFor(int durationMs) {
+  (void)pumpUntil([] { return false; }, durationMs);
+}
+
+void requireLevelMeterFollowsAncestorShowingState() {
+  juce::Component host;
+  shmui::LevelMeter meter;
+  host.setBounds(0, 0, 120, 240);
+  host.addToDesktop(juce::ComponentPeer::windowIsTemporary);
+  host.setVisible(false);
+  host.addAndMakeVisible(meter);
+  meter.setBounds(host.getLocalBounds());
+  meter.enableHistory(4);
+  meter.setLevel(0, 1.1f);
+
+  host.setVisible(true);
+  require(pumpUntil([&meter] { return meter.getHistorySize() > 0; }, 500),
+          "meter added under a hidden host starts when the host is shown");
+
+  host.setVisible(false);
+  meter.reset();
+  meter.clearHistory();
+  meter.setLevel(0, 1.1f);
+  pumpFor(150);
+  require(meter.getHistorySize() == 0 && !meter.hasClipped(),
+          "meter remains idle while an ancestor is hidden");
+
+  host.setVisible(true);
+  require(pumpUntil([&meter] { return meter.getHistorySize() > 0; }, 500),
+          "meter resumes when the hidden ancestor is shown");
+
+  host.removeFromDesktop();
 }
 } // namespace
 
@@ -116,6 +164,8 @@ int main() {
   live.setSensitivity(std::numeric_limits<float>::quiet_NaN());
   live.setActive(true);
   require(live.getHistory().empty(), "hidden live visualizer does not tick");
+
+  requireLevelMeterFollowsAncestorShowingState();
 
   return failures == 0 ? 0 : 1;
 }
