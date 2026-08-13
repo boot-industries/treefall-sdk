@@ -13,7 +13,7 @@
     - VU, PPM, and Peak ballistics
     - Clip indicator with latch
     - dB scale markings
-    - Gradient coloring (green -> yellow -> red)
+    - Gradient coloring (green -> yellow -> orange -> red)
 
   ==============================================================================
 */
@@ -74,8 +74,8 @@ struct LevelMeterStyle {
 
   // Thresholds (in dB)
   float yellowThreshold = -12.0f; // Start yellow here
-  float redThreshold = -3.0f;     // Start red here
-  float clipThreshold = 0.0f;     // Clip indicator threshold
+  float redThreshold = -3.0f;     // Start orange warning here
+  float clipThreshold = 0.0f;     // Start red clip here
 
   // Appearance
   float meterWidth = 8.0f; // Width of each meter bar
