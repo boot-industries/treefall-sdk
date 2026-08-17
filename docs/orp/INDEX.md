@@ -8,9 +8,9 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
-- [[ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion]] —
-  directional Bluetooth conversion, settled-route telemetry, and qualification
-  record; physical CLbuds acceptance remains blocked (2026-08-11)
+- [[ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion]] -
+ directional SRC candidate evidence and physical qualification gate; CLbuds
+ acceptance remains blocked (2026-08-17)
 
 - [[ORP175 ShmUI Operational State Contract Handoff]] — governed v0.6.0
   generated-contract mirror and downstream pin decisions (2026-08-10)
@@ -57,4 +57,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-11
+**Last Generated:** 2026-08-17

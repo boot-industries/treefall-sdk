@@ -1,3 +1,25 @@
+## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
+
+- Candidate branch: `release/orp176-coreaudio-directional-src`.
+- Candidate commit: `7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`, based on
+  `origin/main` `5039642b` with the directional-buffer, failed-acceptance,
+  and settled-route repairs.
+- Implemented and verified: route vocabulary/JSON diagnostics, both-rate
+  directional SRC contracts, output-only stale-input isolation, package
+  workflow, macOS CPack archive, local installed-package consumers, and
+  provenance generation.
+- Evidence: focused deterministic gates passed; macOS package consumers passed
+  13/13; full configured release ctest passed 79/80 CTest entries, with
+  25/64 route-dependent `coreaudio_driver_test` cases failing because the
+  current hardware route was unavailable.
+- Physical gate: FourTrack audit inventory at
+  `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` found 16 live devices but no
+  CLbuds endpoint. No physical matrix row or raw acceptance JSON was captured.
+- Publication is intentionally blocked: no merge commit, `v0.8.0` tag, GitHub
+  Release asset, Ubuntu archive, or FourTrack repin exists. Resume by restoring
+  CLbuds, rerunning the exact audit matrix, then completing PR/merge/tag/release
+  gates.
+
 # ORP068 Implementation Progress
 
 > **Note (2026-07-24):** This is a historical ORP068 work log. Current SDK

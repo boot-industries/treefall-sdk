@@ -3,10 +3,12 @@
 # ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion
 
 **Document type:** SDK implementation and qualification record
-**Status:** Source and deterministic repair complete; final CLbuds 44.1/48 kHz rerun blocked by device disconnect
-**Date:** 2026-08-12
+**Status:** Candidate deterministic and packaging changes complete; physical CLbuds gate blocked; no merge, tag, or release publication
+**Date:** 2026-08-17
 **Consumer:** FourTrack / EightTrack, FTR085
-**Implementation baseline:** `main` plus pending activation-admission and startup-FIFO repair
+**Implementation baseline:** `release/orp176-coreaudio-directional-src` candidate `7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`, based on `origin/main` `5039642b` plus repair commits `5b777731`, `c1393153`, and `e41a1727`
+**Merge commit:** Not created; physical acceptance is a release-blocking prerequisite
+**Tag / release:** `v0.8.0` not created or published
 **SDK version:** 0.8.0
 
 ## Decision
@@ -69,65 +71,110 @@ C ABI remains 1.0 because the C-facing ABI contract is unchanged.
 7. Property changes publish one structured terminal outcome, close callback
    admission, and prevent stale route facts or repeated writes.
 
-## Deterministic evidence
+## Deterministic and package evidence
 
-Source and deterministic evidence recorded in this session:
+Candidate verification on 2026-08-17:
 
 | Gate | Result |
 |---|---|
-| Directional SRC: canonical supported rate pairs, tone/frequency preservation, exact frame accounting, limits, reset, bounded FIFO and callback-path safety | Passed in `polyphase_resampler_test` |
-| Resolver: output-only isolation, distinct endpoints, 16 kHz Bluetooth input conversion, strict mono conflict/fallback, related Bluetooth protection, rate-plan decisions | Passed in `coreaudio_route_probe_test` |
-| Driver: dual-AUHAL flow, active physical/client facts, converter latency and counters, terminal monitor outcomes, rollback/lifecycle behavior | `coreaudio_driver_test`: 62/62 passed |
-| Monitor activation admission: 16 kHz/320-frame input plus 44.1 kHz/512-frame output, activation rate/stream baselines, later terminal mutations | `CoreAudioRouteMonitorTest.*`: 13/13 passed |
-| Static callback audit | `realtime_static_audit` and `realtime_static_audit_unit` passed on the original directional-SRC delivery |
-| Installed package and public version contract | `version_contract`, `cmake_find_package`, and `cmake_package_runtime_consumer` passed against 0.8.0 |
+| `cmake --preset sdk-debug` | Passed |
+| `realtime_static_audit`, `realtime_static_audit_unit`, `polyphase_resampler_test`, `coreaudio_route_probe_test` | 4/4 passed |
+| `CoreAudioOutputOnlyInjectedTest.*` | 4/4 passed, including stale-input isolation, duplex reinitialize cleanup, and strict/fallback mono width |
+| Directional SRC contracts | Passed for fixed 1 kHz tone/gain and long-run exact consumption at both 16,000→44,100 and 16,000→48,000 |
+| `python3 tools/version_contract.py --check` and version/package ctest filter | 5/5 checks passed |
+| Release build and CPack | Built `orpheus-sdk-0.8.0-Darwin-arm64.zip` successfully |
+| Extracted macOS package consumer | Configured, built, and ran 13/13 installed `find_package` tests successfully; `Orpheus::audio_driver_coreaudio` was present |
+| Full configured release ctest | 79/80 CTest entries passed. The single failing entry was `coreaudio_driver_test`: 39/64 tests passed and 25 route-dependent tests failed because the current hardware route was unavailable. |
 
-On 2026-08-12, live CLbuds testing exposed three defects beyond the original
-deterministic qualification. The monitor used one output-sized buffer
-expectation for both endpoints, then admitted pre-activation sample-rate and
-stream-format facts. At 48 kHz, input priming used the endpoint's maximum
-capacity and capture continued while output AUHAL startup blocked, eventually
-overflowing the FIFO before output callbacks could drain it.
+The acceptance tool now emits settled post-start and final route facts with
+`session_host_callback_rate`, physical endpoint rates, AUHAL client rates,
+directional conversion flags, converter latency, endpoint relation, callback
+widths, width stability, callback/input frame deltas, and startup/final
+telemetry. `--expect-route-outcome` accepts only `healthy`,
+`sample-rate-changed`, `buffer-size-changed`, `format-changed`,
+`input-route-unavailable`, and `output-route-unavailable`. No generic
+`sample_rate` or ambiguous conversion JSON keys remain.
 
-The repair now baselines rate, buffer, and stream formats per endpoint only
-after full activation, primes from the active 320-frame input callback, and
-freezes the primed FIFO during output startup. The monitor and complete
-CoreAudio-driver deterministic suites pass.
+The public comments clarify that `actual_sample_rate` is the session/host-
+callback rate; `*_physical_sample_rate` is physical endpoint rate;
+`*_client_sample_rate` is the AUHAL client rate; `*_conversion_active` is
+directional sample-rate conversion; converter-frame latency is converter
+latency; and `endpoints_related` describes the selected persistent endpoint
+IDs. Field names, order, and ABI were unchanged.
 
-An intermediate 44.1 kHz hardware run passed with 498 callbacks, 219,618
-host/input frames, a non-zero captured peak, healthy route outcome, and zero
-render, FIFO, or conversion failures. The following 48 kHz run exposed the FIFO
-startup defect. CLbuds disconnected before both rates could be rerun against the
-final source, so final-source physical capture and FourTrack ARM acceptance are
-not claimed.
+The full-suite failures are recorded, not suppressed. They are distinct from
+the passing resolver, converter, route-monitor, output-only injection, static
+audit, version, and installed-package contracts.
+
+## Physical acceptance gate
+
+The FourTrack audit source was taken verbatim from
+`a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` and compiled successfully as
+`/tmp/ftr085-coreaudio-route-probe`. Its preflight inventory at
+`2026-08-17T09:50:20.032Z` reported:
+
+```text
+device_list_status=ok total_count=16 count=16
+default_input_id=166 uid=BuiltInMicrophoneDevice
+default_output_id=159 uid=BuiltInSpeakerDevice
+device_id=166 uid=BuiltInMicrophoneDevice
+transport_normalized=built-in alive=true
+related_device_ids=166,159 related_device_uids=BuiltInMicrophoneDevice,BuiltInSpeakerDevice ok
+input_channels=1 output_channels=0
+nominal_rate=48000.0
+device_id=159 uid=BuiltInSpeakerDevice
+transport_normalized=built-in alive=true
+related_device_ids=159,166 related_device_uids=BuiltInSpeakerDevice,BuiltInMicrophoneDevice ok
+input_channels=0 output_channels=2
+nominal_rate=44100.0
+```
+
+No `CLbuds` input or output UID appeared in the 16-device inventory. No
+physical input/output UID was therefore selected, and no profile-changing
+operation, 30-second capture, mono-state run, related-duplex run, or
+disconnect mutation was attempted. This follows the handoff gate: a virtual
+device, emulated map, inferred Bluetooth label, or stale capture is not
+acceptable.
+
+No raw hardware acceptance JSON exists for this candidate because the
+inventory preflight blocked the first matrix row. The required `ORP176`
+records for settled rates, widths, converter latency, callbacks, tone, and
+health counters remain unpopulated by design.
+
+## Candidate package provenance
+
+Local macOS package evidence was generated from candidate
+`7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`:
+
+```text
+archive: orpheus-sdk-0.8.0-Darwin-arm64.zip
+sha256: 6a4989f4e46017beb0c82eb99aeeaad914db4e4a6c0ff092f64210b8af252170
+CPack .sha256: 6a4989f4e46017beb0c82eb99aeeaad914db4e4a6c0ff092f64210b8af252170
+SHA256SUMS: 6a4989f4e46017beb0c82eb99aeeaad914db4e4a6c0ff092f64210b8af252170
+```
+
+The local SPDX 2.3 and in-toto statements identify the candidate source
+commit, but they are not GitHub release assets. No Ubuntu archive, GitHub
+Release asset URL, merge SHA, tag SHA, or published provenance URL exists.
+The workflow implementation is present; its dual-platform GitHub run remains
+blocked behind physical qualification and the required PR/merge gate.
 
 ## FourTrack adoption boundary
 
-FourTrack must request `RequestExactRateOrConvert` for the fixed session clock and use
-`AllowMonoFallback` only for its existing Bluetooth same-headset policy. It must use the
-SDK's active output map and callback width verbatim; no Swift-side duplicated mono
-channel or UI/control-path SRC is permitted. Take placement remains latched at record
-start using:
+FourTrack must not repin or ship this candidate. After CLbuds is restored, run
+the exact audit probe immediately before and after every profile-changing run,
+capture each one-line JSON result verbatim, and complete every required
+44.1/48 kHz duplex, output-only stereo, physical-mono strict/fallback, related
+duplex, and route-mutation row. Only then may the candidate be reviewed,
+merged, tagged, published, and adopted.
 
-```text
-round_trip_frames = capture_frames + playback_frames + processing_frames
-```
+The source contract remains bounded: FourTrack requests
+`RequestExactRateOrConvert` for the fixed session clock and uses
+`AllowMonoFallback` only for the observed Bluetooth physical-mono policy.
+It consumes the SDK's active output map and callback width verbatim. Output-
+only sessions leave input selection empty and must not query, listen to, write
+to, or request permission for a persisted input UID.
 
-`processing_frames` includes active input/output converter latency from the settled SDK
-route state. Output-only sessions must leave input selection empty: no input capability
-query, listener, device write, capture failure, or permission request is allowed.
-
-FourTrack now resolves an unavailable persisted output preference through
-CoreAudio's current live default without rewriting explicit route overrides. A
-disconnected CLbuds probe resolved to `BuiltInSpeakerDevice`, whose advertised
-ranges include both 44.1 and 48 kHz; the Swift policy test and signed app build
-passed.
-
-The final physical Bluetooth gate remains open. Do not tag a release, mark
-FTR085 complete, or advance FourTrack's production SDK pin until CLbuds is
-reconnected and both 44.1 and 48 kHz runs record settled endpoint UIDs,
-physical/client rates, physical callback width, converter latency, counters,
-and tone/frame evidence.
 
 ## References
 
