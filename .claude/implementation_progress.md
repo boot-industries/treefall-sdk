@@ -1,9 +1,11 @@
 ## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
 
 - Candidate branch: `release/orp176-coreaudio-directional-src`.
-- Candidate commit: `8a21166099e9a4ac93f7bf4b0651af5c3991a750`, based on
+- Candidate commit: `d749d97ebb4b161bdacc4cf825bc61cecbc66e63`, based on
   `origin/main` `5039642b` with the directional-buffer, failed-acceptance,
   and settled-route repairs.
+- Review PR: [#250](https://github.com/chrislyons/orpheus-sdk/pull/250),
+  opened for verification only; merge remains blocked by the physical gate.
 - Implemented and verified: route vocabulary/JSON diagnostics, both-rate
   directional SRC contracts, output-only stale-input isolation, package
   workflow, macOS CPack archive, local installed-package consumers, and
@@ -12,8 +14,8 @@
   13/13; full configured release ctest passed 79/80 CTest entries, with
   25/64 route-dependent `coreaudio_driver_test` cases failing because the
   current hardware route was unavailable.
-- Documentation commits: `a6f98d25`, `a243044d`, `044c8b83`, and final
-  verbatim acceptance-record update `8a211660`.
+- Documentation commits: `a6f98d25`, `a243044d`, `044c8b83`, `8a211660`,
+  and PR-progress update `d749d97e`.
 - Physical gate: FourTrack audit inventory at
   `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` was restored to 18 live devices
   with CLbuds input/output UIDs `58-18-62-82-0F-33:input` and
