@@ -82,6 +82,7 @@ Candidate verification on 2026-08-17:
 | `CoreAudioOutputOnlyInjectedTest.*` | 4/4 passed, including stale-input isolation, duplex reinitialize cleanup, and strict/fallback mono width |
 | Directional SRC contracts | Passed for fixed 1 kHz tone/gain and long-run exact consumption at both 16,000→44,100 and 16,000→48,000 |
 | `python3 tools/version_contract.py --check` and version/package ctest filter | 5/5 checks passed |
+| Post-record `docs_path_audit` and `version_contract` | 2/2 passed |
 | Release build and CPack | Built `orpheus-sdk-0.8.0-Darwin-arm64.zip` successfully |
 | Extracted macOS package consumer | Configured, built, and ran 13/13 installed `find_package` tests successfully; `Orpheus::audio_driver_coreaudio` was present |
 | Full configured release ctest | 79/80 CTest entries passed. The single failing entry was `coreaudio_driver_test`: 39/64 tests passed and 25 route-dependent tests failed because the current hardware route was unavailable. |
