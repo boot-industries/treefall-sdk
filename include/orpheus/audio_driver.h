@@ -135,26 +135,26 @@ struct ActiveAudioRoute {
   uint16_t available_input_channels = 0;
   uint16_t available_output_channels = 0;
   uint32_t requested_sample_rate = 0;
-  uint32_t actual_sample_rate = 0;
+  uint32_t actual_sample_rate = 0; ///< Session/host-callback rate.
   uint32_t actual_buffer_frames = 0;
   AudioRouteLatency latency;
   bool input_alive = false;
   bool output_alive = false;
-  uint32_t input_physical_sample_rate = 0;
-  uint32_t output_physical_sample_rate = 0;
-  uint32_t input_client_sample_rate = 0;
-  uint32_t output_client_sample_rate = 0;
+  uint32_t input_physical_sample_rate = 0;  ///< Selected physical input endpoint rate.
+  uint32_t output_physical_sample_rate = 0; ///< Selected physical output endpoint rate.
+  uint32_t input_client_sample_rate = 0;    ///< Input AUHAL client rate.
+  uint32_t output_client_sample_rate = 0;   ///< Output AUHAL client rate.
   uint16_t requested_output_channels = 0;
   uint16_t resolved_output_channels = 0;
   uint16_t input_virtual_format_channels = 0;
   uint16_t output_virtual_format_channels = 0;
   uint16_t input_client_format_channels = 0;
   uint16_t output_client_format_channels = 0;
-  bool input_conversion_active = false;
-  bool output_conversion_active = false;
+  bool input_conversion_active = false;  ///< Directional input sample-rate conversion is active.
+  bool output_conversion_active = false; ///< Directional output sample-rate conversion is active.
   bool input_is_bluetooth = false;
   bool output_is_bluetooth = false;
-  bool endpoints_related = false;
+  bool endpoints_related = false; ///< Selected persistent endpoint IDs are related.
   bool output_mono_fallback = false;
 };
 
@@ -181,11 +181,11 @@ struct AudioLatencyBreakdown {
   std::optional<uint32_t> input_device_frames;
   std::optional<uint32_t> input_safety_offset_frames;
   std::optional<uint32_t> input_stream_frames;
-  std::optional<uint32_t> input_converter_frames;
+  std::optional<uint32_t> input_converter_frames; ///< Input SRC converter latency.
   std::optional<uint32_t> output_device_frames;
   std::optional<uint32_t> output_safety_offset_frames;
   std::optional<uint32_t> output_stream_frames;
-  std::optional<uint32_t> output_converter_frames;
+  std::optional<uint32_t> output_converter_frames; ///< Output SRC converter latency.
   std::optional<uint32_t> callback_buffer_frames;
   std::optional<uint32_t> aggregate_or_audio_unit_frames;
   std::optional<uint32_t> input_audio_unit_frames;
@@ -215,26 +215,26 @@ struct AudioIoRouteState {
   std::vector<uint16_t> active_input_channel_map;
   std::vector<uint16_t> active_output_channel_map;
   uint32_t requested_sample_rate = 0;
-  uint32_t actual_sample_rate = 0;
+  uint32_t actual_sample_rate = 0; ///< Session/host-callback rate.
   uint32_t requested_buffer_size = 0;
   uint32_t actual_buffer_size = 0;
   AudioLatencyBreakdown latency;
   std::string detail;
-  uint32_t input_physical_sample_rate = 0;
-  uint32_t output_physical_sample_rate = 0;
-  uint32_t input_client_sample_rate = 0;
-  uint32_t output_client_sample_rate = 0;
+  uint32_t input_physical_sample_rate = 0;  ///< Selected physical input endpoint rate.
+  uint32_t output_physical_sample_rate = 0; ///< Selected physical output endpoint rate.
+  uint32_t input_client_sample_rate = 0;    ///< Input AUHAL client rate.
+  uint32_t output_client_sample_rate = 0;   ///< Output AUHAL client rate.
   uint16_t requested_output_channels = 0;
   uint16_t resolved_output_channels = 0;
   uint16_t input_virtual_format_channels = 0;
   uint16_t output_virtual_format_channels = 0;
   uint16_t input_client_format_channels = 0;
   uint16_t output_client_format_channels = 0;
-  bool input_conversion_active = false;
-  bool output_conversion_active = false;
+  bool input_conversion_active = false;  ///< Directional input sample-rate conversion is active.
+  bool output_conversion_active = false; ///< Directional output sample-rate conversion is active.
   bool input_is_bluetooth = false;
   bool output_is_bluetooth = false;
-  bool endpoints_related = false;
+  bool endpoints_related = false; ///< Selected persistent endpoint IDs are related.
   bool output_mono_fallback = false;
 };
 /// Outcome of a backend runtime condition that can invalidate active audio I/O.

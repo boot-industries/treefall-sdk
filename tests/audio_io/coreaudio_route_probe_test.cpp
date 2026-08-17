@@ -22,12 +22,30 @@ using detail::ICoreAudioRouteQuery;
 
 using detail::ResolvedCoreAudioEndpoint;
 
+struct FakeUidRequest {
+  int resolve_requests = 0;
+  int channel_queries = 0;
+  int sample_rate_queries = 0;
+  int current_rate_queries = 0;
+  int running_queries = 0;
+  int transport_queries = 0;
+  int related_queries = 0;
+  int physical_format_queries = 0;
+  int virtual_format_queries = 0;
+  int settable_queries = 0;
+  int physical_channel_queries = 0;
+  int input_scoped_queries = 0;
+  int output_scoped_queries = 0;
+};
+
 struct FakeLedger {
   int default_input_reads = 0;
   int default_output_reads = 0;
   int uid_reads = 0;
   int input_channel_reads = 0;
   int output_channel_reads = 0;
+  int input_scoped_queries = 0;
+  int output_scoped_queries = 0;
   int sample_rate_range_reads = 0;
   int current_rate_reads = 0;
   int running_reads = 0;
@@ -44,6 +62,7 @@ struct FakeLedger {
   int io_starts = 0;
   int tcc_requests = 0;
   int driver_state_mutations = 0;
+  std::map<std::string, FakeUidRequest> uid_requests;
 };
 
 struct FakeEndpoint {
@@ -98,6 +117,7 @@ public:
   CoreAudioRouteQueryResult<ResolvedCoreAudioEndpoint>
   resolveDeviceUID(std::string_view device_uid) const override {
     ++ledger.uid_reads;
+    ++ledger.uid_requests[std::string(device_uid)].resolve_requests;
     const auto status = uid_status.find(std::string(device_uid));
     if (status != uid_status.end() && status->second != CoreAudioRouteQueryStatus::Success) {
       return fakeResult<ResolvedCoreAudioEndpoint>(status->second);
@@ -122,9 +142,15 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<uint32_t>(CoreAudioRouteQueryStatus::Missing);
     }
+    auto& request = ledger.uid_requests[endpoint->second.device_uid];
+    ++request.channel_queries;
     if (scope == kAudioObjectPropertyScopeOutput) {
+      ++ledger.output_scoped_queries;
+      ++request.output_scoped_queries;
       return fakeResult(endpoint->second.output_channel_status, endpoint->second.output_channels);
     }
+    ++ledger.input_scoped_queries;
+    ++request.input_scoped_queries;
     return fakeResult(endpoint->second.input_channel_status, endpoint->second.input_channels);
   }
 
@@ -135,6 +161,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<std::vector<CoreAudioEndpointRange>>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].sample_rate_queries;
     return fakeResult(endpoint->second.sample_rate_status, endpoint->second.sample_rate_ranges);
   }
 
@@ -144,6 +171,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<double>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].current_rate_queries;
     return fakeResult(endpoint->second.current_rate_status, endpoint->second.current_sample_rate);
   }
 
@@ -153,6 +181,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<bool>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].running_queries;
     return fakeResult(endpoint->second.running_status, endpoint->second.is_running_somewhere);
   }
   CoreAudioRouteQueryResult<uint32_t> transportType(AudioDeviceID device_id) const override {
@@ -161,6 +190,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<uint32_t>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].transport_queries;
     return fakeResult(endpoint->second.transport_status, endpoint->second.transport_type);
   }
 
@@ -171,6 +201,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<std::vector<AudioDeviceID>>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].related_queries;
     return fakeResult(endpoint->second.related_status, endpoint->second.related_device_ids);
   }
 
@@ -181,10 +212,18 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<CoreAudioStreamFormat>(CoreAudioRouteQueryStatus::Missing);
     }
+    auto& request = ledger.uid_requests[endpoint->second.device_uid];
+    ++request.physical_format_queries;
+    if (scope == kAudioObjectPropertyScopeOutput) {
+      ++ledger.output_scoped_queries;
+      ++request.output_scoped_queries;
+      return fakeResult(endpoint->second.physical_format_status,
+                        endpoint->second.output_physical_format);
+    }
+    ++ledger.input_scoped_queries;
+    ++request.input_scoped_queries;
     return fakeResult(endpoint->second.physical_format_status,
-                      scope == kAudioObjectPropertyScopeOutput
-                          ? endpoint->second.output_physical_format
-                          : endpoint->second.input_physical_format);
+                      endpoint->second.input_physical_format);
   }
 
   CoreAudioRouteQueryResult<CoreAudioStreamFormat>
@@ -194,10 +233,18 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<CoreAudioStreamFormat>(CoreAudioRouteQueryStatus::Missing);
     }
+    auto& request = ledger.uid_requests[endpoint->second.device_uid];
+    ++request.virtual_format_queries;
+    if (scope == kAudioObjectPropertyScopeOutput) {
+      ++ledger.output_scoped_queries;
+      ++request.output_scoped_queries;
+      return fakeResult(endpoint->second.virtual_format_status,
+                        endpoint->second.output_virtual_format);
+    }
+    ++ledger.input_scoped_queries;
+    ++request.input_scoped_queries;
     return fakeResult(endpoint->second.virtual_format_status,
-                      scope == kAudioObjectPropertyScopeOutput
-                          ? endpoint->second.output_virtual_format
-                          : endpoint->second.input_virtual_format);
+                      endpoint->second.input_virtual_format);
   }
 
   CoreAudioRouteQueryResult<bool>
@@ -207,6 +254,7 @@ public:
     if (endpoint == endpoints.end()) {
       return fakeResult<bool>(CoreAudioRouteQueryStatus::Missing);
     }
+    ++ledger.uid_requests[endpoint->second.device_uid].settable_queries;
     return fakeResult(endpoint->second.settable_status,
                       endpoint->second.nominal_sample_rate_settable);
   }
@@ -222,6 +270,15 @@ public:
     const auto endpoint = endpoints.find(device_id);
     if (endpoint == endpoints.end()) {
       return fakeResult<uint32_t>(CoreAudioRouteQueryStatus::Missing);
+    }
+    auto& request = ledger.uid_requests[endpoint->second.device_uid];
+    ++request.physical_channel_queries;
+    if (scope == kAudioObjectPropertyScopeOutput) {
+      ++ledger.output_scoped_queries;
+      ++request.output_scoped_queries;
+    } else {
+      ++ledger.input_scoped_queries;
+      ++request.input_scoped_queries;
     }
     if (scope == kAudioObjectPropertyScopeOutput) {
       return fakeResult(endpoint->second.output_channel_status, endpoint->second.output_channels);
@@ -426,9 +483,28 @@ TEST(CoreAudioRouteProbeTest, OutputOnlyIgnoresStaleInputUidMapAndPermissionStat
   EXPECT_FALSE(compatibility.input_is_running_somewhere);
   EXPECT_EQ(fake->ledger.default_input_reads, 0);
   EXPECT_EQ(fake->ledger.input_channel_reads, 0);
+  EXPECT_EQ(fake->ledger.input_scoped_queries, 0);
   EXPECT_EQ(fake->ledger.sample_rate_range_reads, 1);
   EXPECT_EQ(fake->ledger.current_rate_reads, 1);
   EXPECT_EQ(fake->ledger.running_reads, 1);
+
+  const auto stale = fake->ledger.uid_requests.find("stale-input");
+  EXPECT_TRUE(stale == fake->ledger.uid_requests.end() ||
+              (stale->second.resolve_requests == 0 && stale->second.channel_queries == 0 &&
+               stale->second.sample_rate_queries == 0 && stale->second.current_rate_queries == 0 &&
+               stale->second.running_queries == 0 && stale->second.transport_queries == 0 &&
+               stale->second.related_queries == 0 && stale->second.physical_format_queries == 0 &&
+               stale->second.virtual_format_queries == 0 && stale->second.settable_queries == 0 &&
+               stale->second.physical_channel_queries == 0 &&
+               stale->second.input_scoped_queries == 0));
+  const auto output = fake->ledger.uid_requests.find("shared");
+  ASSERT_NE(output, fake->ledger.uid_requests.end());
+  EXPECT_EQ(output->second.resolve_requests, 0);
+  EXPECT_GT(output->second.sample_rate_queries, 0);
+  EXPECT_GT(output->second.current_rate_queries, 0);
+  EXPECT_GT(output->second.running_queries, 0);
+  EXPECT_EQ(output->second.input_scoped_queries, 0);
+  EXPECT_GT(output->second.output_scoped_queries, 0);
   expectNoProhibitedActions(fake->ledger);
 }
 

@@ -28,6 +28,8 @@ struct Options {
   uint32_t seconds = 10;
   bool allow_mono_fallback = false;
   std::optional<double> expected_input_tone_hz;
+  orpheus::AudioRouteRuntimeOutcome expected_route_outcome =
+      orpheus::AudioRouteRuntimeOutcome::Healthy;
 };
 
 std::string json_escape(const std::string& value) {
@@ -65,6 +67,27 @@ std::string json_escape(const std::string& value) {
   std::cout << "{\"status\":\"failed\",\"reason\":\"" << json_escape(reason) << "\"}\n";
   std::exit(exit_code);
 }
+orpheus::AudioRouteRuntimeOutcome parse_route_outcome(const std::string& value) {
+  if (value == "healthy") {
+    return orpheus::AudioRouteRuntimeOutcome::Healthy;
+  }
+  if (value == "sample-rate-changed") {
+    return orpheus::AudioRouteRuntimeOutcome::SampleRateChanged;
+  }
+  if (value == "buffer-size-changed") {
+    return orpheus::AudioRouteRuntimeOutcome::BufferSizeChanged;
+  }
+  if (value == "format-changed") {
+    return orpheus::AudioRouteRuntimeOutcome::FormatChanged;
+  }
+  if (value == "input-route-unavailable") {
+    return orpheus::AudioRouteRuntimeOutcome::InputRouteUnavailable;
+  }
+  if (value == "output-route-unavailable") {
+    return orpheus::AudioRouteRuntimeOutcome::OutputRouteUnavailable;
+  }
+  print_error("invalid-expect-route-outcome", 2);
+}
 
 uint32_t parse_uint32(const std::string& value, const char* option) {
   try {
@@ -92,7 +115,10 @@ Options parse_options(int argc, char** argv) {
     if (argument == "--help") {
       std::cout << "usage: orpheus_coreaudio_hardware_acceptance --output-uid UID "
                    "[--input-uid UID] [--sample-rate 44100|48000] [--seconds N] "
-                   "[--output-policy strict|mono-fallback] [--expect-input-tone-hz HZ]\n";
+                   "[--output-policy strict|mono-fallback] "
+                   "[--expect-input-tone-hz HZ] "
+                   "[--expect-route-outcome healthy|sample-rate-changed|buffer-size-changed|"
+                   "format-changed|input-route-unavailable|output-route-unavailable]\n";
       std::exit(0);
     }
     if (argument == "--output-uid") {
@@ -123,6 +149,8 @@ Options parse_options(int argc, char** argv) {
       } catch (const std::exception&) {
         print_error("invalid-expect-input-tone-hz", 2);
       }
+    } else if (argument == "--expect-route-outcome") {
+      options.expected_route_outcome = parse_route_outcome(require_value("expect-route-outcome"));
     } else {
       print_error("unknown-option", 2);
     }
@@ -142,6 +170,8 @@ Options parse_options(int argc, char** argv) {
 class AcceptanceCallback final : public orpheus::IAudioCallback {
 public:
   void processAudio(const orpheus::AudioProcessBlock& block) noexcept override {
+    observeWidth(first_input_width_, input_width_changed_, block.num_input_channels);
+    observeWidth(first_output_width_, output_width_changed_, block.num_output_channels);
     for (uint16_t channel = 0; channel < block.num_output_channels; ++channel) {
       if (block.output_buffers != nullptr && block.output_buffers[channel] != nullptr) {
         std::fill_n(block.output_buffers[channel], block.num_frames, 0.0f);
@@ -183,16 +213,48 @@ public:
   uint64_t zero_crossings() const noexcept {
     return zero_crossings_.load(std::memory_order_relaxed);
   }
+  uint16_t first_input_width() const noexcept {
+    return decodeWidth(first_input_width_);
+  }
+  uint16_t first_output_width() const noexcept {
+    return decodeWidth(first_output_width_);
+  }
+  bool callback_width_changed() const noexcept {
+    return input_width_changed_.load(std::memory_order_relaxed) ||
+           output_width_changed_.load(std::memory_order_relaxed);
+  }
   float peak() const noexcept {
     return peak_;
   }
 
 private:
+  static void observeWidth(std::atomic<uint32_t>& first_width, std::atomic<bool>& changed,
+                           uint16_t width) noexcept {
+    const uint32_t encoded = static_cast<uint32_t>(width) + 1;
+    uint32_t expected = 0;
+    if (first_width.compare_exchange_strong(expected, encoded, std::memory_order_relaxed,
+                                            std::memory_order_relaxed)) {
+      return;
+    }
+    if (expected != encoded) {
+      changed.store(true, std::memory_order_relaxed);
+    }
+  }
+
+  static uint16_t decodeWidth(const std::atomic<uint32_t>& first_width) noexcept {
+    const uint32_t encoded = first_width.load(std::memory_order_relaxed);
+    return encoded == 0 ? 0 : static_cast<uint16_t>(encoded - 1);
+  }
+
   std::atomic<uint64_t> callbacks_{0};
   std::atomic<uint64_t> callback_frames_{0};
   std::atomic<uint64_t> input_callbacks_{0};
   std::atomic<uint64_t> input_frames_{0};
   std::atomic<uint64_t> zero_crossings_{0};
+  std::atomic<uint32_t> first_input_width_{0};
+  std::atomic<uint32_t> first_output_width_{0};
+  std::atomic<bool> input_width_changed_{false};
+  std::atomic<bool> output_width_changed_{false};
   float previous_input_sample_ = 0.0f;
   float peak_ = 0.0f;
 };
@@ -281,6 +343,100 @@ void append_map(std::ostringstream& json, const char* key, const std::vector<uin
   json << ']';
 }
 
+template <typename T>
+void append_prefixed_number(std::ostringstream& json, const std::string& prefix, const char* suffix,
+                            T value, bool& first) {
+  const std::string key = prefix + suffix;
+  append_number(json, key.c_str(), value, first);
+}
+
+void append_prefixed_string(std::ostringstream& json, const std::string& prefix, const char* suffix,
+                            const std::string& value, bool& first) {
+  const std::string key = prefix + suffix;
+  append_string(json, key.c_str(), value, first);
+}
+
+void append_prefixed_bool(std::ostringstream& json, const std::string& prefix, const char* suffix,
+                          bool value, bool& first) {
+  const std::string key = prefix + suffix;
+  append_bool(json, key.c_str(), value, first);
+}
+
+void append_prefixed_map(std::ostringstream& json, const std::string& prefix, const char* suffix,
+                         const std::vector<uint16_t>& value, bool& first) {
+  const std::string key = prefix + suffix;
+  append_map(json, key.c_str(), value, first);
+}
+
+void append_route_facts(std::ostringstream& json, const std::string& prefix,
+                        const orpheus::ActiveAudioRoute& active,
+                        const orpheus::AudioIoRouteState& io_route, bool& first) {
+  append_prefixed_string(json, prefix, "active_input_uid", active.input_device_id, first);
+  append_prefixed_string(json, prefix, "active_output_uid", active.output_device_id, first);
+  append_prefixed_number(json, prefix, "requested_session_host_callback_rate",
+                         active.requested_sample_rate, first);
+  append_prefixed_number(json, prefix, "session_host_callback_rate", active.actual_sample_rate,
+                         first);
+  append_prefixed_number(json, prefix, "session_host_callback_buffer_frames",
+                         active.actual_buffer_frames, first);
+  append_prefixed_number(json, prefix, "physical_input_rate", active.input_physical_sample_rate,
+                         first);
+  append_prefixed_number(json, prefix, "physical_output_rate", active.output_physical_sample_rate,
+                         first);
+  append_prefixed_number(json, prefix, "input_auhal_client_rate", active.input_client_sample_rate,
+                         first);
+  append_prefixed_number(json, prefix, "output_auhal_client_rate", active.output_client_sample_rate,
+                         first);
+  append_prefixed_number(json, prefix, "available_input_channels", active.available_input_channels,
+                         first);
+  append_prefixed_number(json, prefix, "available_output_channels",
+                         active.available_output_channels, first);
+  append_prefixed_number(json, prefix, "requested_output_channels",
+                         active.requested_output_channels, first);
+  append_prefixed_number(json, prefix, "resolved_output_channels", active.resolved_output_channels,
+                         first);
+  append_prefixed_number(json, prefix, "input_auhal_client_format_channels",
+                         active.input_client_format_channels, first);
+  append_prefixed_number(json, prefix, "output_auhal_client_format_channels",
+                         active.output_client_format_channels, first);
+  append_prefixed_bool(json, prefix, "input_sample_rate_conversion_active",
+                       active.input_conversion_active, first);
+  append_prefixed_bool(json, prefix, "output_sample_rate_conversion_active",
+                       active.output_conversion_active, first);
+  append_prefixed_bool(json, prefix, "input_is_bluetooth", active.input_is_bluetooth, first);
+  append_prefixed_bool(json, prefix, "output_is_bluetooth", active.output_is_bluetooth, first);
+  append_prefixed_bool(json, prefix, "endpoints_related", active.endpoints_related, first);
+  append_prefixed_bool(json, prefix, "output_mono_fallback", active.output_mono_fallback, first);
+  append_prefixed_map(json, prefix, "active_output_map", active.output_channels, first);
+  append_prefixed_number(json, prefix, "capture_latency_frames", active.latency.capture_frames,
+                         first);
+  append_prefixed_number(json, prefix, "playback_latency_frames", active.latency.playback_frames,
+                         first);
+  append_prefixed_number(json, prefix, "processing_latency_frames",
+                         active.latency.processing_frames, first);
+  append_prefixed_bool(json, prefix, "latency_complete", active.latency.complete, first);
+  append_prefixed_number(json, prefix, "input_converter_latency_frames",
+                         io_route.latency.input_converter_frames.value_or(0), first);
+  append_prefixed_number(json, prefix, "output_converter_latency_frames",
+                         io_route.latency.output_converter_frames.value_or(0), first);
+  append_prefixed_string(json, prefix, "route_detail", io_route.detail, first);
+}
+
+void append_telemetry(std::ostringstream& json, const std::string& prefix,
+                      const orpheus::AudioIoTelemetry& telemetry, bool& first) {
+  append_prefixed_number(json, prefix, "input_render_failures", telemetry.input_render_failures,
+                         first);
+  append_prefixed_number(json, prefix, "input_fifo_overruns", telemetry.input_fifo_overruns, first);
+  append_prefixed_number(json, prefix, "input_fifo_underruns", telemetry.input_fifo_underruns,
+                         first);
+  append_prefixed_number(json, prefix, "input_conversion_failures",
+                         telemetry.input_conversion_failures, first);
+  append_prefixed_number(json, prefix, "output_conversion_failures",
+                         telemetry.output_conversion_failures, first);
+  append_prefixed_string(json, prefix, "route_outcome", route_outcome_name(telemetry.route_outcome),
+                         first);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -306,14 +462,14 @@ int main(int argc, char** argv) {
                                      : orpheus::AudioOutputChannelPolicy::RequireRequestedChannels;
 
   const auto initialize_result = driver->initialize(config);
-  const auto active = driver->getActiveRoute();
-  const auto io_route = driver->getAudioIoRouteState();
-  const auto telemetry_before = driver->getTelemetry();
+  const auto initialize_io_route = driver->getAudioIoRouteState();
+  const auto initialize_telemetry = driver->getTelemetry();
   if (initialize_result != orpheus::SessionGraphError::OK) {
     std::ostringstream json;
-    json << "{\"status\":\"failed\",\"reason\":\"initialize\",\"route_outcome\":\""
-         << route_outcome_name(telemetry_before.route_outcome) << "\",\"detail\":\""
-         << json_escape(io_route.detail) << "\"}\n";
+    json << "{\"status\":\"failed\",\"reason\":\"initialize\",\"expected_route_outcome\":\""
+         << route_outcome_name(options.expected_route_outcome) << "\",\"route_outcome\":\""
+         << route_outcome_name(initialize_telemetry.route_outcome) << "\",\"detail\":\""
+         << json_escape(initialize_io_route.detail) << "\"}\n";
     std::cout << json.str();
     return 4;
   }
@@ -323,12 +479,18 @@ int main(int argc, char** argv) {
   if (start_result != orpheus::SessionGraphError::OK) {
     const auto telemetry = driver->getTelemetry();
     std::ostringstream json;
-    json << "{\"status\":\"failed\",\"reason\":\"start\",\"route_outcome\":\""
+    json << "{\"status\":\"failed\",\"reason\":\"start\",\"expected_route_outcome\":\""
+         << route_outcome_name(options.expected_route_outcome) << "\",\"route_outcome\":\""
          << route_outcome_name(telemetry.route_outcome) << "\",\"detail\":\""
          << json_escape(driver->getAudioIoRouteState().detail) << "\"}\n";
     std::cout << json.str();
     return 5;
   }
+
+  // Capture the post-start settled route before the acceptance window mutates anything.
+  const auto settled_active = driver->getActiveRoute();
+  const auto settled_io_route = driver->getAudioIoRouteState();
+  const auto settled_telemetry = driver->getTelemetry();
 
   std::this_thread::sleep_for(std::chrono::seconds(options.seconds));
   const auto stop_result = driver->stop();
@@ -337,12 +499,21 @@ int main(int argc, char** argv) {
   const auto telemetry = driver->getTelemetry();
   const auto route_outcome = telemetry.route_outcome;
   const uint64_t expected_frames = static_cast<uint64_t>(options.sample_rate) * options.seconds;
+  const int64_t callback_frame_delta =
+      static_cast<int64_t>(callback.callback_frames()) - static_cast<int64_t>(expected_frames);
+  const int64_t input_frame_delta =
+      static_cast<int64_t>(callback.input_frames()) - static_cast<int64_t>(expected_frames);
   const double zero_crossing_frequency =
       callback.input_frames() == 0 ? 0.0
                                    : static_cast<double>(callback.zero_crossings()) *
                                          static_cast<double>(options.sample_rate) /
                                          (2.0 * static_cast<double>(callback.input_frames()));
-  const bool counters_clear =
+  const bool startup_counters_clear = settled_telemetry.input_render_failures == 0 &&
+                                      settled_telemetry.input_fifo_overruns == 0 &&
+                                      settled_telemetry.input_fifo_underruns == 0 &&
+                                      settled_telemetry.input_conversion_failures == 0 &&
+                                      settled_telemetry.output_conversion_failures == 0;
+  const bool final_counters_clear =
       telemetry.input_render_failures == 0 && telemetry.input_fifo_overruns == 0 &&
       telemetry.input_fifo_underruns == 0 && telemetry.input_conversion_failures == 0 &&
       telemetry.output_conversion_failures == 0;
@@ -353,9 +524,14 @@ int main(int argc, char** argv) {
       !options.expected_input_tone_hz.has_value() ||
       (callback.input_frames() != 0 &&
        std::abs(zero_crossing_frequency - *options.expected_input_tone_hz) <= 20.0);
-  const bool passed = stop_result == orpheus::SessionGraphError::OK && callback.callbacks() > 0 &&
-                      route_outcome == orpheus::AudioRouteRuntimeOutcome::Healthy &&
-                      counters_clear && input_activity_matches && tone_in_tolerance;
+  const bool route_matches = route_outcome == options.expected_route_outcome;
+  const bool widths_stable = !callback.callback_width_changed();
+  const bool passed =
+      stop_result == orpheus::SessionGraphError::OK && callback.callbacks() > 0 && route_matches &&
+      startup_counters_clear && final_counters_clear && input_activity_matches &&
+      tone_in_tolerance &&
+      (options.expected_route_outcome != orpheus::AudioRouteRuntimeOutcome::Healthy ||
+       widths_stable);
 
   std::ostringstream json;
   json << std::setprecision(10) << '{';
@@ -364,47 +540,28 @@ int main(int argc, char** argv) {
   append_string(json, "backend", "CoreAudio", first);
   append_string(json, "input_uid", options.input_uid.value_or(""), first);
   append_string(json, "output_uid", options.output_uid, first);
-  append_number(json, "sample_rate", options.sample_rate, first);
+  append_string(json, "expected_route_outcome", route_outcome_name(options.expected_route_outcome),
+                first);
   append_number(json, "seconds", options.seconds, first);
   append_number(json, "requested_frames", expected_frames, first);
   append_string(json, "output_policy", output_policy_name(options.allow_mono_fallback), first);
-  append_number(json, "input_physical_sample_rate", negotiated.input_physical_sample_rate, first);
-  append_number(json, "output_physical_sample_rate", negotiated.output_physical_sample_rate, first);
-  append_number(json, "input_client_sample_rate", negotiated.input_client_sample_rate, first);
-  append_number(json, "output_client_sample_rate", negotiated.output_client_sample_rate, first);
-  append_number(json, "available_input_channels", negotiated.available_input_channels, first);
-  append_number(json, "available_output_channels", negotiated.available_output_channels, first);
-  append_number(json, "requested_output_channels", negotiated.requested_output_channels, first);
-  append_number(json, "resolved_output_channels", negotiated.resolved_output_channels, first);
-  append_number(json, "input_client_format_channels", negotiated.input_client_format_channels,
-                first);
-  append_number(json, "output_client_format_channels", negotiated.output_client_format_channels,
-                first);
-  append_bool(json, "input_conversion_active", negotiated.input_conversion_active, first);
-  append_bool(json, "output_conversion_active", negotiated.output_conversion_active, first);
-  append_bool(json, "input_is_bluetooth", negotiated.input_is_bluetooth, first);
-  append_bool(json, "output_is_bluetooth", negotiated.output_is_bluetooth, first);
-  append_bool(json, "endpoints_related", negotiated.endpoints_related, first);
-  append_bool(json, "output_mono_fallback", negotiated.output_mono_fallback, first);
-  append_map(json, "active_output_map", negotiated.output_channels, first);
-  append_number(json, "capture_latency_frames", negotiated.latency.capture_frames, first);
-  append_number(json, "playback_latency_frames", negotiated.latency.playback_frames, first);
-  append_number(json, "processing_latency_frames", negotiated.latency.processing_frames, first);
-  append_bool(json, "latency_complete", negotiated.latency.complete, first);
-  append_number(json, "input_converter_latency_frames",
-                final_io_route.latency.input_converter_frames.value_or(0), first);
-  append_number(json, "output_converter_latency_frames",
-                final_io_route.latency.output_converter_frames.value_or(0), first);
+  append_route_facts(json, "settled_", settled_active, settled_io_route, first);
+  append_telemetry(json, "startup_", settled_telemetry, first);
+  append_route_facts(json, "", negotiated, final_io_route, first);
   append_number(json, "callbacks", callback.callbacks(), first);
   append_number(json, "callback_frames", callback.callback_frames(), first);
   append_number(json, "input_callbacks", callback.input_callbacks(), first);
   append_number(json, "input_frames", callback.input_frames(), first);
-  append_number(json, "input_render_failures", telemetry.input_render_failures, first);
-  append_number(json, "input_fifo_overruns", telemetry.input_fifo_overruns, first);
-  append_number(json, "input_fifo_underruns", telemetry.input_fifo_underruns, first);
-  append_number(json, "input_conversion_failures", telemetry.input_conversion_failures, first);
-  append_number(json, "output_conversion_failures", telemetry.output_conversion_failures, first);
-  append_string(json, "route_outcome", route_outcome_name(route_outcome), first);
+  append_number(json, "callback_frame_delta", callback_frame_delta, first);
+  append_number(json, "input_frame_delta", input_frame_delta, first);
+  append_number(json, "first_input_callback_width", callback.first_input_width(), first);
+  append_number(json, "first_output_callback_width", callback.first_output_width(), first);
+  append_bool(json, "callback_width_changed", callback.callback_width_changed(), first);
+  append_bool(json, "callback_width_stable", widths_stable, first);
+  append_bool(json, "input_activity_matches", input_activity_matches, first);
+  append_bool(json, "startup_counters_clear", startup_counters_clear, first);
+  append_bool(json, "final_counters_clear", final_counters_clear, first);
+  append_telemetry(json, "", telemetry, first);
   append_number(json, "input_peak", callback.peak(), first);
   append_number(json, "zero_crossing_frequency_hz", zero_crossing_frequency, first);
   if (options.expected_input_tone_hz.has_value()) {

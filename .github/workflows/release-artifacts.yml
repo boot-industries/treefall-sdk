@@ -10,16 +10,34 @@ permissions:
 
 jobs:
   package:
-    name: Package, SBOM, and provenance
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    name: Package, SBOM, and provenance (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux-x86_64
+          - os: macos-14
+            platform: Darwin-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
 
+      - name: Verify Apple silicon runner
+        if: matrix.platform == 'Darwin-arm64'
+        run: test "$(uname -m)" = "arm64"
+
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y libsndfile1-dev
+          else
+            brew install libsndfile
+          fi
 
       - name: Configure release
         run: >-
@@ -36,7 +54,11 @@ jobs:
           ctest --test-dir build-release-artifact --output-on-failure
 
       - name: Build package
-        run: cmake --build build-release-artifact --target package --parallel
+        run: |
+          cmake --build build-release-artifact --target package --parallel
+          if [[ "${{ matrix.platform }}" == "Darwin-arm64" ]]; then
+            test -f build-release-artifact/orpheus-sdk-0.8.0-Darwin-arm64.zip
+          fi
 
       - name: Generate checksums, SBOM, and provenance
         run: >-
@@ -45,14 +67,112 @@ jobs:
           --output build-release-artifact/evidence
           build-release-artifact/orpheus-sdk-*.zip
 
-      - name: Upload release evidence
+      - name: Stage release evidence
+        run: |
+          mkdir -p "release/${{ matrix.platform }}"
+          cp build-release-artifact/orpheus-sdk-*.zip \
+             build-release-artifact/orpheus-sdk-*.zip.sha256 \
+             build-release-artifact/evidence/SHA256SUMS \
+             build-release-artifact/evidence/orpheus-sdk.spdx.json \
+             build-release-artifact/evidence/orpheus-sdk.provenance.json \
+             "release/${{ matrix.platform }}/"
+
+      - name: Upload platform release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: orpheus-sdk-release-${{ github.ref_name }}
+          name: orpheus-sdk-release-${{ github.ref_name }}-${{ matrix.platform }}
           if-no-files-found: error
-          path: |
-            build-release-artifact/orpheus-sdk-*.zip
-            build-release-artifact/orpheus-sdk-*.zip.sha256
-            build-release-artifact/evidence/SHA256SUMS
-            build-release-artifact/evidence/orpheus-sdk.spdx.json
-            build-release-artifact/evidence/orpheus-sdk.provenance.json
+          path: release
+
+  publish:
+    name: Publish v0.8.0 release assets
+    if: github.ref == 'refs/tags/v0.8.0'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Download platform release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: orpheus-sdk-release-${{ github.ref_name }}-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify package hashes and provenance
+        env:
+          EXPECTED_GITHUB_SHA: ${{ github.sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path("release-assets")
+          expected_sha = os.environ["EXPECTED_GITHUB_SHA"]
+          expected_repository = os.environ["EXPECTED_REPOSITORY"]
+          for platform in ("Linux-x86_64", "Darwin-arm64"):
+              directory = root / platform
+              archives = sorted(directory.glob("*.zip"))
+              assert len(archives) == 1, (platform, archives)
+              archive = archives[0]
+              digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+              cpack_checksum = (directory / f"{archive.name}.sha256").read_text()
+              release_sums = (directory / "SHA256SUMS").read_text()
+              assert digest in cpack_checksum
+              assert f"{digest}  {archive.name}\n" in release_sums
+
+              provenance = json.loads(
+                  (directory / "orpheus-sdk.provenance.json").read_text()
+              )
+              subject = provenance["subject"]
+              assert subject == [{"name": archive.name, "digest": {"sha256": digest}}]
+              uri = provenance["predicate"]["buildDefinition"][
+                  "resolvedDependencies"
+              ][0]["uri"]
+              assert uri == f"git+https://github.com/{expected_repository}@{expected_sha}"
+              assert expected_sha in json.dumps(provenance)
+          PY
+
+      - name: Verify installed package consumers
+        run: |
+          set -euo pipefail
+          for platform in Linux-x86_64 Darwin-arm64; do
+            archive="$(find "release-assets/${platform}" -maxdepth 1 -name '*.zip' -print -quit)"
+            extract_dir="$PWD/package-prefix/${platform}"
+            consumer_dir="$PWD/package-consumer/${platform}"
+            mkdir -p "$extract_dir"
+            unzip -q "$archive" -d "$extract_dir"
+            prefix_dir="$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+            test -n "$prefix_dir"
+            cmake -S tests/cmake/find_package -B "$consumer_dir" -G Ninja \
+              -DORPHEUS_REQUIRED_VERSION=0.8.0 \
+              -DCMAKE_PREFIX_PATH="$prefix_dir"
+            cmake --build "$consumer_dir" --parallel
+            ctest --test-dir "$consumer_dir" --output-on-failure
+          done
+
+      - name: Ensure v0.8.0 release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "Orpheus SDK $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+
+      - name: Upload all platform release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME"
+          release-assets/Linux-x86_64/*
+          release-assets/Darwin-arm64/*
+          --clobber

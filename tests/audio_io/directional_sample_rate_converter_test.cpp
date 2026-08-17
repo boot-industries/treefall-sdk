@@ -137,12 +137,15 @@ TEST(DirectionalSampleRateConverterTest, RejectsUnsupportedPairsAndInvalidResour
 }
 
 TEST(DirectionalSampleRateConverterTest, PreservesSineFrequencyAndPassbandGain) {
-  const auto upsampled = convertSine(16'000, 44'100, 1'000.0, 40'000);
-  const auto downsampled = convertSine(48'000, 24'000, 1'000.0, 12'000);
+  for (const uint32_t output_rate : {44'100u, 48'000u}) {
+    const auto upsampled = convertSine(16'000, output_rate, 1'000.0, 40'000);
+    EXPECT_NEAR(measureFrequency(upsampled, output_rate, 2'000), 1'000.0, 2.0)
+        << "output rate " << output_rate;
+    EXPECT_NEAR(rms(upsampled, 2'000), 1.0 / std::sqrt(2.0), 0.03) << "output rate " << output_rate;
+  }
 
-  EXPECT_NEAR(measureFrequency(upsampled, 44'100, 2'000), 1'000.0, 2.0);
+  const auto downsampled = convertSine(48'000, 24'000, 1'000.0, 12'000);
   EXPECT_NEAR(measureFrequency(downsampled, 24'000, 1'000), 1'000.0, 2.0);
-  EXPECT_NEAR(rms(upsampled, 2'000), 1.0 / std::sqrt(2.0), 0.03);
   EXPECT_NEAR(rms(downsampled, 1'000), 1.0 / std::sqrt(2.0), 0.03);
 }
 
@@ -171,23 +174,26 @@ TEST(DirectionalSampleRateConverterTest, UsesTheExpectedImpulseOrder) {
 }
 
 TEST(DirectionalSampleRateConverterTest, MatchesLongRunRationalFrameConsumption) {
-  DirectionalSampleRateConverter converter;
-  ASSERT_EQ(converter.prepare(makeConfig(16'000, 44'100)), SessionGraphError::OK);
-  std::vector<float> input(16'256, 0.0F);
-  pushPlanar(converter, input);
-
-  uint64_t consumed = 0;
   constexpr uint32_t kOutputFrames = 44'000;
-  for (uint32_t remaining = kOutputFrames; remaining > 0;) {
-    const uint32_t count = std::min<uint32_t>(remaining, 4096);
-    float* output[] = {input.data()};
-    const auto transfer = converter.renderOutput(output, 1, count);
-    ASSERT_EQ(transfer.status, DirectionalSrcStatus::Ok);
-    consumed += transfer.input_frames_consumed;
-    remaining -= count;
+  for (const uint32_t output_rate : {44'100u, 48'000u}) {
+    DirectionalSampleRateConverter converter;
+    ASSERT_EQ(converter.prepare(makeConfig(16'000, output_rate)), SessionGraphError::OK)
+        << "output rate " << output_rate;
+    std::vector<float> input(16'256, 0.0F);
+    pushPlanar(converter, input);
+
+    uint64_t consumed = 0;
+    for (uint32_t remaining = kOutputFrames; remaining > 0;) {
+      const uint32_t count = std::min<uint32_t>(remaining, 4096);
+      float* output[] = {input.data()};
+      const auto transfer = converter.renderOutput(output, 1, count);
+      ASSERT_EQ(transfer.status, DirectionalSrcStatus::Ok) << "output rate " << output_rate;
+      consumed += transfer.input_frames_consumed;
+      remaining -= count;
+    }
+    const uint64_t expected = (static_cast<uint64_t>(kOutputFrames) * 16'000) / output_rate;
+    EXPECT_EQ(consumed, expected) << "output rate " << output_rate;
   }
-  const uint64_t expected = (static_cast<uint64_t>(kOutputFrames) * 16'000) / 44'100;
-  EXPECT_EQ(consumed, expected);
 }
 
 TEST(DirectionalSampleRateConverterTest, CorrectionChangesConsumptionOnlyWhenEnabled) {
