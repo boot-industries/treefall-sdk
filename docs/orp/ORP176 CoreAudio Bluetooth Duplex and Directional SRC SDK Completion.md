@@ -111,8 +111,8 @@ audit, version, and installed-package contracts.
 
 The FourTrack audit source was taken verbatim from
 `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` and compiled successfully as
-`/tmp/ftr085-coreaudio-route-probe`. Its preflight inventory at
-`2026-08-17T09:50:20.032Z` reported:
+`/tmp/ftr085-coreaudio-route-probe`. Its latest preflight inventory at
+`2026-08-17T10:00:21.769Z` reported:
 
 ```text
 device_list_status=ok total_count=16 count=16
