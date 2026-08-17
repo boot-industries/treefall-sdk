@@ -1,9 +1,9 @@
 ## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
 
-- Candidate branch: `release/orp176-coreaudio-directional-src`.
-- Candidate commit: `5fc7ddb56924475f1cd586c911c90e080b2aca9f`, based on
-  `origin/main` `5039642b` with the directional-buffer, failed-acceptance,
-  and settled-route repairs.
+- Release branch: `release/orp176-coreaudio-directional-src`, based on
+  `origin/main` `5039642b`.
+- Candidate implementation baseline: `7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`,
+  with the directional-buffer, failed-acceptance, and settled-route repairs.
 - Review PR: [#250](https://github.com/chrislyons/orpheus-sdk/pull/250),
   opened for verification only; merge remains blocked by the physical gate.
 - Implemented and verified: route vocabulary/JSON diagnostics, both-rate
@@ -14,8 +14,8 @@
   13/13; full configured release ctest passed 79/80 CTest entries, with
   25/64 route-dependent `coreaudio_driver_test` cases failing because the
   current hardware route was unavailable.
-- Documentation commits: `a6f98d25`, `a243044d`, `044c8b83`, `8a211660`,
-  and PR-progress updates `d749d97e`, `5fc7ddb5`.
+- Documentation checkpoints include `a6f98d25`, `a243044d`, `044c8b83`,
+  `8a211660`, `d749d97e`, and `5fc7ddb5`.
 - Physical gate: FourTrack audit inventory at
   `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` was restored to 18 live devices
   with CLbuds input/output UIDs `58-18-62-82-0F-33:input` and
