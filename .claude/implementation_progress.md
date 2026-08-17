@@ -1,7 +1,7 @@
 ## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
 
 - Candidate branch: `release/orp176-coreaudio-directional-src`.
-- Candidate commit: `7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`, based on
+- Candidate commit: `8a21166099e9a4ac93f7bf4b0651af5c3991a750`, based on
   `origin/main` `5039642b` with the directional-buffer, failed-acceptance,
   and settled-route repairs.
 - Implemented and verified: route vocabulary/JSON diagnostics, both-rate
@@ -12,15 +12,20 @@
   13/13; full configured release ctest passed 79/80 CTest entries, with
   25/64 route-dependent `coreaudio_driver_test` cases failing because the
   current hardware route was unavailable.
-- Documentation commits: `a6f98d25`, `a243044d`, and final physical
-  preflight update `044c8b83`.
+- Documentation commits: `a6f98d25`, `a243044d`, `044c8b83`, and final
+  verbatim acceptance-record update `8a211660`.
 - Physical gate: FourTrack audit inventory at
-  `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` found 16 live devices but no
-  CLbuds endpoint. No physical matrix row or raw acceptance JSON was captured.
-- Publication is intentionally blocked: no merge commit, `v0.8.0` tag, GitHub
-  Release asset, Ubuntu archive, or FourTrack repin exists. Resume by restoring
-  CLbuds, rerunning the exact audit matrix, then completing PR/merge/tag/release
-  gates.
+  `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` was restored to 18 live devices
+  with CLbuds input/output UIDs `58-18-62-82-0F-33:input` and
+  `58-18-62-82-0F-33:output`. All eight required rows were executed and their
+  one-line JSON results are recorded verbatim in ORP176. Rows 01, 02, and 05
+  captured non-1 kHz input (zero-crossing readings 4145.324934, 4218.366735,
+  and 2682.421614 Hz); rows 03, 04, 06, and 07 passed; row 08 recorded the
+  expected `InputRouteUnavailable` mutation outcome.
+- Publication remains intentionally blocked: no merge commit, `v0.8.0` tag,
+  GitHub Release asset, Ubuntu archive, or FourTrack repin exists. Resume with
+  an independently calibrated 1 kHz source, rerun the exact matrix, then
+  complete PR/merge/tag/release gates.
 
 # ORP068 Implementation Progress
 
