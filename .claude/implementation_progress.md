@@ -12,6 +12,8 @@
   13/13; full configured release ctest passed 79/80 CTest entries, with
   25/64 route-dependent `coreaudio_driver_test` cases failing because the
   current hardware route was unavailable.
+- Documentation commits: `a6f98d25` and post-record audit update
+  `a243044d`.
 - Physical gate: FourTrack audit inventory at
   `a5feb2edf3b732686bbd105d78cc50fbdb6c6b42` found 16 live devices but no
   CLbuds endpoint. No physical matrix row or raw acceptance JSON was captured.
