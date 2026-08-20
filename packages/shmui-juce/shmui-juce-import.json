@@ -40,12 +40,8 @@
       ]
     },
     "Orpheus::shmui_juce_gl": {
-      "components": [
-        "OrbVisualizer"
-      ],
-      "required_juce_modules": [
-        "juce_opengl"
-      ],
+      "components": ["OrbVisualizer"],
+      "required_juce_modules": ["juce_opengl"],
       "feature_flag": "SHMUI_JUCE_ENABLE_OPENGL",
       "default_enabled": false
     }
