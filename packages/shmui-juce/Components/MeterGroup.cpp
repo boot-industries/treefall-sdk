@@ -134,25 +134,32 @@ LevelMeter& MeterGroup::getMasterMeter() {
 //==============================================================================
 void MeterGroup::enableHistory(int capacityPerMeter) {
   const int masterChannel = getNumGroups();
+  juce::Component::SafePointer<MeterGroup> safeThis(this);
 
   for (int i = 0; i < getNumGroups(); ++i) {
     auto& meter = *m_groups[static_cast<size_t>(i)].meter;
     meter.enableHistory(capacityPerMeter);
-    meter.onLevelEvent = [this, i](const LevelEvent& ev) {
-      LevelEvent out = ev;
-      out.channel = i; // report the group index
-      if (onLevelEvent)
-        onLevelEvent(out);
+    meter.onLevelEvent = [safeThis, i](const LevelEvent& ev) {
+      if (auto* owner = safeThis.getComponent()) {
+        LevelEvent out = ev;
+        out.channel = i; // report the group index
+        auto callback = owner->onLevelEvent;
+        if (callback)
+          callback(out);
+      }
     };
   }
 
   if (m_master) {
     m_master->enableHistory(capacityPerMeter);
-    m_master->onLevelEvent = [this, masterChannel](const LevelEvent& ev) {
-      LevelEvent out = ev;
-      out.channel = masterChannel; // Master reported as numGroups
-      if (onLevelEvent)
-        onLevelEvent(out);
+    m_master->onLevelEvent = [safeThis, masterChannel](const LevelEvent& ev) {
+      if (auto* owner = safeThis.getComponent()) {
+        LevelEvent out = ev;
+        out.channel = masterChannel; // Master reported as numGroups
+        auto callback = owner->onLevelEvent;
+        if (callback)
+          callback(out);
+      }
     };
   }
 }

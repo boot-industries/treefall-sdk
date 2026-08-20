@@ -13,8 +13,10 @@
 #pragma once
 
 #include "../Utils/DesignTokens.h"
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
-#include <functional>
+#include <memory>
 
 namespace shmui {
 
@@ -34,7 +36,7 @@ namespace shmui {
     - Supports dark/light theme
     - Customizable colors and sizes
 */
-class AudioPlayerControls : public juce::Component, public juce::Timer {
+class AudioPlayerControls : public juce::Component, public juce::Timer, public ThemeListener {
 public:
   //==========================================================================
   /** Listener interface for transport events. */
@@ -131,10 +133,12 @@ public:
   // Timer callback for buffering animation
   void timerCallback() override;
 
-private:
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
   //==========================================================================
   /** Formats time in seconds to mm:ss or hh:mm:ss string. */
   static juce::String formatTime(double seconds);
+  /** Sanitizes dimensions that affect geometry. */
+  void sanitizeStyle();
 
   /** Gets the bounds of the play button. */
   juce::Rectangle<float> getPlayButtonBounds() const;
@@ -169,10 +173,13 @@ private:
   bool playButtonHovered{false};
   bool speedButtonHovered{false};
   bool playButtonPressed{false};
+  bool timeDisplayPressed{false};
 
   Style style;
+  bool customStyle{false};
 
-  juce::ListenerList<Listener> listeners;
+  std::shared_ptr<juce::ListenerList<Listener>> listeners =
+      std::make_shared<juce::ListenerList<Listener>>();
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPlayerControls)
 };

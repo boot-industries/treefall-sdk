@@ -27,9 +27,10 @@
 #include "../Utils/RepaintThrottle.h"
 #include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
-#include <map>
+#include <atomic>
+#include <list>
+#include <memory>
 #include <vector>
-
 namespace shmui {
 
 //==============================================================================
@@ -449,7 +450,12 @@ private:
   //==============================================================================
   enum class DragHandle { None, TrimIn, TrimOut, Playhead, Selection, CueMarker };
 
+  class WaveformLoadJob;
   void generateWaveformData(const juce::File& audioFile);
+  static bool loadWaveformData(const juce::File& audioFile, std::atomic<uint64_t>& generation,
+                               uint64_t requestedGeneration, WaveformData& result);
+  void applyLoadedWaveform(uint64_t generation, const juce::String& path, WaveformData data);
+  void sanitizeStyle();
   void drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawTrimMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
   void drawFadeCurves(juce::Graphics& g, juce::Rectangle<float> bounds);
@@ -517,10 +523,16 @@ private:
   int64_t m_dragStartValue = 0;
   bool m_isSelecting = false;
   int m_draggedCueIndex = -1; // index into m_cueMarkers while dragging a cue
-
-  // Caching
+  struct WaveformCacheEntry {
+    juce::String path;
+    WaveformData data;
+  };
+  std::list<WaveformCacheEntry> m_waveformCache;
   juce::String m_cachedFilePath;
-  std::map<juce::String, WaveformData> m_waveformCache;
+  // Loading is deliberately single-worker and generation-cancelled. Jobs own
+  // only bounded peak buffers and publish results back to the message thread.
+  juce::ThreadPool m_loadPool{1};
+  std::atomic<uint64_t> m_loadGeneration{0};
   std::atomic<bool> m_isLoading{false};
   juce::CriticalSection m_dataLock;
 

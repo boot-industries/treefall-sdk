@@ -24,8 +24,9 @@
 #include "../Controls/TransportButton.h"
 #include "../Icons/Icons.h"
 #include "../Utils/DesignTokens.h"
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
-
 namespace shmui {
 
 //==============================================================================
@@ -82,11 +83,11 @@ enum class TimeDisplayFormat {
  *
  * Designed for DAWs, audio players, and media applications.
  */
-class TransportBar : public juce::Component {
+class TransportBar : public juce::Component, public ThemeListener {
 public:
   //==============================================================================
   TransportBar();
-  ~TransportBar() override = default;
+  ~TransportBar() override;
 
   //==============================================================================
   /// @name Transport State
@@ -199,6 +200,7 @@ public:
   // Component overrides
   void paint(juce::Graphics& g) override;
   void resized() override;
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
 
 private:
   //==============================================================================
@@ -210,16 +212,16 @@ private:
 
   //==============================================================================
   TransportBarStyle m_style;
-  TimeDisplayFormat m_timeFormat = TimeDisplayFormat::MinutesSeconds;
+  bool m_usesDefaultThemeStyle = true;
 
   // Transport state
   bool m_isPlaying = false;
   bool m_isRecording = false;
   bool m_isLooping = false;
 
-  // Time
   double m_positionSeconds = 0.0;
   double m_durationSeconds = 0.0;
+  TimeDisplayFormat m_timeFormat = TimeDisplayFormat::MinutesSeconds;
   int64_t m_positionSamples = 0;
   int64_t m_durationSamples = 0;
   int m_sampleRate = 48000;

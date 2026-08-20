@@ -12,8 +12,8 @@
       shmui::ClipButton clipBtn(0);
       clipBtn.setClipName("Kick 01");
       clipBtn.setClipColor(juce::Colours::orange);
-      clipBtn.setState(shmui::ClipButton::State::Loaded);
-      clipBtn.onClick = [this](int idx) { handleClipTrigger(idx); };
+      clipBtn.setClipState(shmui::ClipButton::State::Loaded);
+      clipBtn.onClipClick = [this](int idx) { handleClipTrigger(idx); };
 
   ==============================================================================
 */

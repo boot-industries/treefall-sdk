@@ -47,6 +47,7 @@ LevelMeter::LevelMeter(int numChannels)
   }
 
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
+  sanitizeStyle();
   setBallistics(MeterBallistics::Peak);
   addDefaultThemeListener(this);
   m_showingStateWatcher = std::make_unique<ShowingStateWatcher>(*this);
@@ -62,64 +63,69 @@ LevelMeter::~LevelMeter() {
 //==============================================================================
 void LevelMeter::setLevel(int channel, float level) {
   if (channel >= 0 && channel < m_numChannels) {
-    m_inputLevels[channel].store(level);
+    const float safeLevel = std::isfinite(level) ? juce::jmax(0.0f, level) : 0.0f;
+    m_inputLevels[static_cast<size_t>(channel)].store(safeLevel, std::memory_order_relaxed);
   }
 }
 
 void LevelMeter::setLevelDB(int channel, float dB) {
-  // Convert dB to linear
-  float linear = std::pow(10.0f, dB / 20.0f);
-  setLevel(channel, linear);
+  const float safeDb =
+      std::isfinite(dB) ? juce::jlimit(-200.0f, 200.0f, dB) : (dB > 0.0f ? 200.0f : -200.0f);
+  setLevel(channel, std::pow(10.0f, safeDb / 20.0f));
 }
 
 void LevelMeter::setLevels(const std::vector<float>& levels) {
-  int count = juce::jmin(static_cast<int>(levels.size()), m_numChannels);
-  for (int i = 0; i < count; ++i) {
-    m_inputLevels[i].store(levels[i]);
-  }
+  const int count = juce::jmin(static_cast<int>(levels.size()), m_numChannels);
+  for (int i = 0; i < count; ++i)
+    setLevel(i, levels[static_cast<size_t>(i)]);
 }
 
 void LevelMeter::reset() {
+  if (!requireMessageThread())
+    return;
+
   for (int i = 0; i < m_numChannels; ++i) {
-    m_inputLevels[i].store(0.0f);
-    m_displayLevels[i] = 0.0f;
-    m_peakHolds[i] = 0.0f;
-    m_peakHoldTimes[i] = 0;
-    m_clipped[i] = false;
+    m_inputLevels[static_cast<size_t>(i)].store(0.0f, std::memory_order_relaxed);
+    m_displayLevels[static_cast<size_t>(i)] = 0.0f;
+    m_peakHolds[static_cast<size_t>(i)] = 0.0f;
+    m_peakHoldTimes[static_cast<size_t>(i)] = 0;
+    m_clipped[static_cast<size_t>(i)] = false;
   }
   repaint();
 }
 
 //==============================================================================
 void LevelMeter::setNumChannels(int numChannels) {
+  if (!requireMessageThread())
+    return;
   m_numChannels = juce::jlimit(1, MAX_CHANNELS, numChannels);
   reset();
 }
 
 void LevelMeter::setBallistics(MeterBallistics ballistics) {
-  m_ballistics = ballistics;
+  if (!requireMessageThread())
+    return;
 
-  // Set coefficients based on ballistics type
-  // Coefficients calculated for 60Hz update rate
+  m_ballistics = ballistics;
   switch (ballistics) {
   case MeterBallistics::Peak:
-    m_attackCoeff = 1.0f;   // Instant attack
-    m_releaseCoeff = 0.05f; // ~200ms release
+    m_attackCoeff = 1.0f;
+    m_releaseCoeff = 0.05f;
     break;
-
   case MeterBallistics::VU:
-    m_attackCoeff = 0.3f;  // ~300ms integration
-    m_releaseCoeff = 0.3f; // Same as attack (VU is symmetrical)
+    m_attackCoeff = 0.3f;
+    m_releaseCoeff = 0.3f;
     break;
-
   case MeterBallistics::PPM:
-    m_attackCoeff = 0.8f;   // Fast attack (~10ms)
-    m_releaseCoeff = 0.02f; // Slow decay (~1.5s)
+    m_attackCoeff = 0.8f;
+    m_releaseCoeff = 0.02f;
     break;
   }
 }
 
 void LevelMeter::setVertical(bool vertical) {
+  if (!requireMessageThread())
+    return;
   if (m_isVertical != vertical) {
     m_isVertical = vertical;
     repaint();
@@ -127,40 +133,70 @@ void LevelMeter::setVertical(bool vertical) {
 }
 
 void LevelMeter::setPeakHoldTime(int milliseconds) {
-  m_peakHoldTimeMs = juce::jmax(0, milliseconds);
+  if (!requireMessageThread())
+    return;
+  m_peakHoldTimeMs = juce::jlimit(0, 60000, milliseconds);
 }
 
 void LevelMeter::setDBRange(float minDB, float maxDB) {
-  m_minDB = minDB;
-  m_maxDB = maxDB;
+  if (!requireMessageThread())
+    return;
+
+  const float safeMin = std::isfinite(minDB) ? juce::jlimit(-200.0f, 199.999f, minDB) : -60.0f;
+  const float safeMax = std::isfinite(maxDB) ? juce::jlimit(-200.0f, 200.0f, maxDB) : 6.0f;
+  m_minDB = safeMin;
+  m_maxDB = juce::jlimit(m_minDB + 0.001f, 200.0f, safeMax);
   repaint();
 }
 
 void LevelMeter::setStyle(const LevelMeterStyle& style) {
+  if (!requireMessageThread())
+    return;
   m_style = style;
+  sanitizeStyle();
   m_usesDefaultThemeStyle = false;
   repaint();
 }
 
 void LevelMeter::useDefaultThemeStyle() {
+  if (!requireMessageThread())
+    return;
   m_usesDefaultThemeStyle = true;
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
+  sanitizeStyle();
   repaint();
 }
 
-void LevelMeter::defaultThemeChanged(const ShmuiTheme&) {
-  if (!m_usesDefaultThemeStyle)
+void LevelMeter::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !m_usesDefaultThemeStyle)
     return;
 
-  m_style = LevelMeterStyle::fromTheme(defaultTheme());
+  m_style = LevelMeterStyle::fromTheme(theme);
+  sanitizeStyle();
   repaint();
 }
 
-//==============================================================================
+void LevelMeter::sanitizeStyle() {
+  const auto finiteOr = [](float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+  };
+  m_style.yellowThreshold =
+      juce::jlimit(-200.0f, 200.0f, finiteOr(m_style.yellowThreshold, -12.0f));
+  m_style.redThreshold = juce::jlimit(-200.0f, 200.0f, finiteOr(m_style.redThreshold, -3.0f));
+  if (m_style.redThreshold < m_style.yellowThreshold)
+    m_style.redThreshold = m_style.yellowThreshold;
+  m_style.clipThreshold = juce::jlimit(-200.0f, 200.0f, finiteOr(m_style.clipThreshold, 0.0f));
+  m_style.meterWidth = juce::jlimit(1.0f, 1000.0f, finiteOr(m_style.meterWidth, 8.0f));
+  m_style.meterGap = juce::jmax(0.0f, finiteOr(m_style.meterGap, 2.0f));
+  m_style.cornerRadius = juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.cornerRadius, 2.0f));
+  m_style.peakHoldWidth = juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.peakHoldWidth, 2.0f));
+}
+
 void LevelMeter::clearClip() {
-  for (int i = 0; i < m_numChannels; ++i) {
-    m_clipped[i] = false;
-  }
+  if (!requireMessageThread())
+    return;
+  for (int i = 0; i < m_numChannels; ++i)
+    m_clipped[static_cast<size_t>(i)] = false;
   repaint();
 }
 
@@ -180,13 +216,17 @@ bool LevelMeter::hasClipped(int channel) const {
 
 //==============================================================================
 void LevelMeter::enableHistory(int capacity) {
-  capacity = juce::jmax(1, capacity);
+  if (!requireMessageThread())
+    return;
+  capacity = juce::jlimit(1, MAX_HISTORY_EVENTS, capacity);
   m_history.assign(static_cast<size_t>(capacity), LevelEvent{});
   m_historyHead = 0;
   m_historyCount = 0;
 }
 
 void LevelMeter::disableHistory() {
+  if (!requireMessageThread())
+    return;
   m_history.clear();
   m_history.shrink_to_fit();
   m_historyHead = 0;
@@ -198,17 +238,23 @@ int LevelMeter::getHistorySize() const {
 }
 
 LevelEvent LevelMeter::getHistoryEntry(int indexFromNewest) const {
-  if (indexFromNewest < 0 || indexFromNewest >= m_historyCount)
+  if (indexFromNewest < 0 || indexFromNewest >= m_historyCount || m_history.empty())
     return LevelEvent{};
-  // Newest is at (head - 1); walk backwards.
   const int cap = static_cast<int>(m_history.size());
   const int idx = ((m_historyHead - 1 - indexFromNewest) % cap + cap) % cap;
   return m_history[static_cast<size_t>(idx)];
 }
 
 void LevelMeter::clearHistory() {
+  if (!requireMessageThread())
+    return;
   m_historyHead = 0;
   m_historyCount = 0;
+}
+
+void LevelMeter::setEventTag(uint32_t tag) {
+  if (requireMessageThread())
+    m_eventTag = tag;
 }
 
 void LevelMeter::recordEvent(int channel, float peakDb) {
@@ -225,8 +271,11 @@ void LevelMeter::recordEvent(int channel, float peakDb) {
       ++m_historyCount;
   }
 
-  if (onLevelEvent)
+  if (onLevelEvent) {
+    juce::Component::SafePointer<LevelMeter> safeThis(this);
     onLevelEvent(ev);
+    juce::ignoreUnused(safeThis);
+  }
 }
 
 //==============================================================================
@@ -288,23 +337,29 @@ void LevelMeter::resized() {
 
 void LevelMeter::mouseDown(const juce::MouseEvent& e) {
   juce::ignoreUnused(e);
-
-  // Click to clear clip indicators
-  clearClip();
+  if (requireMessageThread())
+    clearClip();
 }
 
 //==============================================================================
 void LevelMeter::timerCallback() {
+  if (!requireMessageThread())
+    return;
   if (!isShowing()) {
     updateTimerState();
     return;
   }
 
+  juce::Component::SafePointer<LevelMeter> safeThis(this);
   updateMeter();
+  if (safeThis == nullptr)
+    return;
   repaint();
 }
 
 void LevelMeter::updateTimerState() {
+  if (!requireMessageThread())
+    return;
   if (isShowing())
     startTimerHz(60);
   else
@@ -315,61 +370,55 @@ void LevelMeter::updateMeter() {
   const int64_t currentTime = juce::Time::currentTimeMillis();
 
   for (int ch = 0; ch < m_numChannels; ++ch) {
-    float inputLevel = m_inputLevels[ch].load();
+    const float inputLevel = m_inputLevels[static_cast<size_t>(ch)].load(std::memory_order_relaxed);
+    const float inputNorm = linearToNormalized(inputLevel);
+    float& displayLevel = m_displayLevels[static_cast<size_t>(ch)];
 
-    // Convert to normalized
-    float inputNorm = linearToNormalized(inputLevel);
+    const float coeff = inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff;
+    displayLevel = juce::jlimit(0.0f, 1.0f, displayLevel + (inputNorm - displayLevel) * coeff);
 
-    // Apply ballistics
-    float& displayLevel = m_displayLevels[ch];
-
-    if (inputNorm > displayLevel) {
-      // Attack
-      displayLevel = displayLevel + (inputNorm - displayLevel) * m_attackCoeff;
-    } else {
-      // Release
-      displayLevel = displayLevel + (inputNorm - displayLevel) * m_releaseCoeff;
+    if (displayLevel >= m_peakHolds[static_cast<size_t>(ch)]) {
+      m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
+      m_peakHoldTimes[static_cast<size_t>(ch)] = currentTime;
+    } else if (currentTime - m_peakHoldTimes[static_cast<size_t>(ch)] > m_peakHoldTimeMs) {
+      m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
     }
 
-    // Clamp
-    displayLevel = juce::jlimit(0.0f, 1.0f, displayLevel);
-
-    // Update peak hold
-    if (displayLevel >= m_peakHolds[ch]) {
-      m_peakHolds[ch] = displayLevel;
-      m_peakHoldTimes[ch] = currentTime;
-    } else if (currentTime - m_peakHoldTimes[ch] > m_peakHoldTimeMs) {
-      // Peak hold expired, start decay
-      m_peakHolds[ch] = displayLevel;
-    }
-
-    // Check for clip
-    float clipThreshNorm = dbToNormalized(m_style.clipThreshold);
-    if (inputNorm >= clipThreshNorm && !m_clipped[ch]) {
-      m_clipped[ch] = true;
-      if (onClip)
+    const float clipThreshNorm = dbToNormalized(m_style.clipThreshold);
+    if (inputNorm >= clipThreshNorm && !m_clipped[static_cast<size_t>(ch)]) {
+      m_clipped[static_cast<size_t>(ch)] = true;
+      if (onClip) {
+        juce::Component::SafePointer<LevelMeter> safeThis(this);
         onClip(ch);
-      // Log a level event (history ring + onLevelEvent) at the clip peak.
-      recordEvent(ch, normalizedToDB(inputNorm));
+        if (safeThis == nullptr)
+          return;
+      }
+      {
+        juce::Component::SafePointer<LevelMeter> safeThis(this);
+        recordEvent(ch, normalizedToDB(inputNorm));
+        if (safeThis == nullptr)
+          return;
+      }
     }
   }
 }
 
 float LevelMeter::linearToNormalized(float linear) const {
-  if (linear <= 0.0f)
+  if (!std::isfinite(linear) || linear <= 0.0f)
     return 0.0f;
-
-  // Convert to dB
-  float dB = 20.0f * std::log10(linear);
-  return dbToNormalized(dB);
+  return dbToNormalized(20.0f * std::log10(linear));
 }
 
 float LevelMeter::dbToNormalized(float dB) const {
+  if (!std::isfinite(dB) || !std::isfinite(m_minDB) || !std::isfinite(m_maxDB) ||
+      m_maxDB <= m_minDB)
+    return 0.0f;
   return juce::jlimit(0.0f, 1.0f, (dB - m_minDB) / (m_maxDB - m_minDB));
 }
 
 float LevelMeter::normalizedToDB(float normalized) const {
-  return m_minDB + normalized * (m_maxDB - m_minDB);
+  const float safe = std::isfinite(normalized) ? juce::jlimit(0.0f, 1.0f, normalized) : 0.0f;
+  return m_minDB + safe * (m_maxDB - m_minDB);
 }
 
 juce::Colour LevelMeter::getColorForLevel(float normalized) const {
@@ -380,32 +429,33 @@ juce::Colour LevelMeter::getColorForLevel(float normalized) const {
   if (dB >= m_style.redThreshold)
     return m_style.meterColorHigh;
   if (dB >= m_style.yellowThreshold) {
-    const float t =
-        (dB - m_style.yellowThreshold) / (m_style.redThreshold - m_style.yellowThreshold);
+    const float denominator = juce::jmax(0.001f, m_style.redThreshold - m_style.yellowThreshold);
+    const float t = juce::jlimit(0.0f, 1.0f, (dB - m_style.yellowThreshold) / denominator);
     return m_style.meterColorMid.interpolatedWith(m_style.meterColorHigh, t);
   }
 
-  const float t = (dB - m_minDB) / (m_style.yellowThreshold - m_minDB);
+  const float denominator = juce::jmax(0.001f, m_style.yellowThreshold - m_minDB);
+  const float t = juce::jlimit(0.0f, 1.0f, (dB - m_minDB) / denominator);
   return m_style.meterColorLow.interpolatedWith(m_style.meterColorMid, t * t);
 }
 
-void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel) {
-  float displayLevel = m_displayLevels[channel];
-  float peakHold = m_peakHolds[channel];
-  bool clipped = m_clipped[channel];
+void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> trackBounds, int channel) {
+  const float displayLevel = juce::jlimit(
+      0.0f, 1.0f, std::isfinite(m_displayLevels[channel]) ? m_displayLevels[channel] : 0.0f);
+  const float peakHold =
+      juce::jlimit(0.0f, 1.0f, std::isfinite(m_peakHolds[channel]) ? m_peakHolds[channel] : 0.0f);
+  const bool clipped = m_clipped[channel];
 
-  // Draw meter track background
   g.setColour(m_style.backgroundColor.brighter(0.1f));
-  g.fillRoundedRectangle(bounds, m_style.cornerRadius);
+  g.fillRoundedRectangle(trackBounds, m_style.cornerRadius);
 
-  // Draw level fill with gradient
   juce::Rectangle<float> fillBounds;
   if (m_isVertical) {
-    const float fillHeight = bounds.getHeight() * displayLevel;
-    fillBounds = {bounds.getX(), bounds.getBottom() - fillHeight, bounds.getWidth(), fillHeight};
+    const float fillHeight = trackBounds.getHeight() * displayLevel;
+    fillBounds = trackBounds.withTop(trackBounds.getBottom() - fillHeight);
   } else {
-    const float fillWidth = bounds.getWidth() * displayLevel;
-    fillBounds = {bounds.getX(), bounds.getY(), fillWidth, bounds.getHeight()};
+    const float fillWidth = trackBounds.getWidth() * displayLevel;
+    fillBounds = trackBounds.withRight(trackBounds.getX() + fillWidth);
   }
 
   // Thresholds are defined in the same normalized signal space as displayLevel.
@@ -416,51 +466,41 @@ void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int
 
   juce::ColourGradient gradient;
   if (m_isVertical) {
-    gradient = juce::ColourGradient::vertical(m_style.clipColor, bounds.getY(),
-                                              m_style.meterColorLow, bounds.getBottom());
+    gradient = juce::ColourGradient::vertical(m_style.clipColor, trackBounds.getY(),
+                                              m_style.meterColorLow, trackBounds.getBottom());
     gradient.addColour(0.0, m_style.clipColor);
     gradient.addColour(1.0 - clipNorm, m_style.clipColor);
     gradient.addColour(1.0 - redNorm, m_style.meterColorHigh);
     gradient.addColour(1.0 - yellowNorm, m_style.meterColorMid);
     gradient.addColour(1.0, m_style.meterColorLow);
   } else {
-    gradient = juce::ColourGradient::horizontal(m_style.meterColorLow, bounds.getX(),
-                                                m_style.clipColor, bounds.getRight());
+    gradient = juce::ColourGradient::horizontal(m_style.meterColorLow, trackBounds.getX(),
+                                                m_style.clipColor, trackBounds.getRight());
     gradient.addColour(0.0, m_style.meterColorLow);
     gradient.addColour(yellowNorm, m_style.meterColorMid);
     gradient.addColour(redNorm, m_style.meterColorHigh);
     gradient.addColour(clipNorm, m_style.clipColor);
     gradient.addColour(1.0, m_style.clipColor);
   }
-
   g.setGradientFill(gradient);
   g.fillRoundedRectangle(fillBounds, m_style.cornerRadius);
 
-  // Draw peak hold indicator
   if (m_style.showPeakHold && peakHold > 0.01f) {
     g.setColour(m_style.peakHoldColor);
-
     if (m_isVertical) {
-      float peakY = bounds.getBottom() - bounds.getHeight() * peakHold;
-      g.fillRect(bounds.getX(), peakY - m_style.peakHoldWidth * 0.5f, bounds.getWidth(),
+      const float peakY = trackBounds.getBottom() - trackBounds.getHeight() * peakHold;
+      g.fillRect(trackBounds.getX(), peakY - m_style.peakHoldWidth * 0.5f, trackBounds.getWidth(),
                  m_style.peakHoldWidth);
     } else {
-      float peakX = bounds.getX() + bounds.getWidth() * peakHold;
-      g.fillRect(peakX - m_style.peakHoldWidth * 0.5f, bounds.getY(), m_style.peakHoldWidth,
-                 bounds.getHeight());
+      const float peakX = trackBounds.getX() + trackBounds.getWidth() * peakHold;
+      g.fillRect(peakX - m_style.peakHoldWidth * 0.5f, trackBounds.getY(), m_style.peakHoldWidth,
+                 trackBounds.getHeight());
     }
   }
 
-  // Draw clip indicator
   if (m_style.showClipIndicator && clipped) {
-    juce::Rectangle<float> clipBounds;
-
-    if (m_isVertical) {
-      clipBounds = bounds.removeFromTop(6.0f);
-    } else {
-      clipBounds = bounds.removeFromRight(6.0f);
-    }
-
+    const auto clipBounds =
+        m_isVertical ? trackBounds.removeFromTop(6.0f) : trackBounds.removeFromRight(6.0f);
     g.setColour(m_style.clipColor);
     g.fillRoundedRectangle(clipBounds, m_style.cornerRadius);
   }

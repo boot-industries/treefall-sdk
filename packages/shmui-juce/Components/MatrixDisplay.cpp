@@ -10,24 +10,29 @@
 */
 
 #include "MatrixDisplay.h"
+#include <cmath>
 #include <set>
-
 namespace shmui {
 
 //==============================================================================
 // Utility Functions
 
-Frame createEmptyFrame(int rows, int cols) {
-  return Frame(rows, std::vector<float>(cols, 0.0f));
+Frame createEmptyFrame(int requestedRows, int requestedCols) {
+  const int safeRows = juce::jlimit(1, MatrixDisplay::kMaxRows, requestedRows);
+  const int safeCols = juce::jlimit(1, MatrixDisplay::kMaxColumns, requestedCols);
+  return Frame(static_cast<std::size_t>(safeRows),
+               std::vector<float>(static_cast<std::size_t>(safeCols), 0.0f));
 }
 
 Frame createVUMeterFrame(int columns, const std::vector<float>& levels) {
   // From matrix.tsx vu function
+  const int safeColumns = juce::jlimit(1, MatrixDisplay::kMaxColumns, columns);
   const int rows = 7;
-  Frame frame = createEmptyFrame(rows, columns);
+  Frame frame = createEmptyFrame(rows, safeColumns);
 
-  for (int col = 0; col < std::min(columns, static_cast<int>(levels.size())); ++col) {
-    const float level = juce::jlimit(0.0f, 1.0f, levels[col]);
+  for (int col = 0; col < std::min(safeColumns, static_cast<int>(levels.size())); ++col) {
+    const float rawLevel = levels[static_cast<std::size_t>(col)];
+    const float level = std::isfinite(rawLevel) ? juce::jlimit(0.0f, 1.0f, rawLevel) : 0.0f;
     const int height = static_cast<int>(level * rows);
 
     for (int row = 0; row < rows; ++row) {
@@ -43,7 +48,7 @@ Frame createVUMeterFrame(int columns, const std::vector<float>& levels) {
         else
           brightness = 0.6f;
 
-        frame[row][col] = brightness;
+        frame[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] = brightness;
       }
     }
   }
@@ -51,68 +56,100 @@ Frame createVUMeterFrame(int columns, const std::vector<float>& levels) {
   return frame;
 }
 
-//==============================================================================
-// MatrixDisplay
-
 MatrixDisplay::MatrixDisplay() {
-  currentFrame = createEmptyFrame(rows, cols);
   setOpaque(false);
+  const auto& theme = defaultTheme();
+  onColour = theme.fg;
+  offColour = theme.fgMuted.withAlpha(0.5f);
+  currentFrame = createEmptyFrame(rows, cols);
+  addDefaultThemeListener(this);
 }
 
 MatrixDisplay::~MatrixDisplay() {
+  removeDefaultThemeListener(this);
   stopTimer();
 }
 
+//==============================================================================
+// MatrixDisplay
+
 void MatrixDisplay::setSize(int newRows, int newCols) {
-  rows = std::max(1, newRows);
-  cols = std::max(1, newCols);
+  if (!requireMessageThread())
+    return;
+
+  rows = juce::jlimit(1, kMaxRows, newRows);
+  cols = juce::jlimit(1, kMaxColumns, newCols);
   currentFrame = createEmptyFrame(rows, cols);
+  animationFrames.clear();
+  frameIndex = 0;
+  animationPlaying = false;
+  stopTimer();
   repaint();
 }
-
 void MatrixDisplay::setPattern(const Frame& pattern) {
+  if (!requireMessageThread())
+    return;
+
   // Stop any animation
   animationPlaying = false;
   stopTimer();
+  animationFrames.clear();
   vuLevels.clear();
 
   currentFrame = ensureFrameSize(pattern);
   repaint();
 }
-
 void MatrixDisplay::setFrames(const std::vector<Frame>& frames, float newFps, bool shouldLoop) {
-  animationFrames = frames;
-  fps = newFps;
+  if (!requireMessageThread())
+    return;
+
+  animationFrames.clear();
+  const auto count = std::min(frames.size(), static_cast<std::size_t>(kMaxFrames));
+  animationFrames.reserve(count);
+  for (std::size_t i = 0; i < count; ++i)
+    animationFrames.push_back(ensureFrameSize(frames[i]));
+
+  fps = std::isfinite(newFps) ? juce::jlimit(0.1f, 240.0f, newFps) : 12.0f;
   loop = shouldLoop;
   frameIndex = 0;
   accumulator = 0.0f;
+  animationPlaying = false;
   vuLevels.clear();
 
-  if (!animationFrames.empty()) {
-    currentFrame = ensureFrameSize(animationFrames[0]);
-  } else {
+  if (!animationFrames.empty())
+    currentFrame = animationFrames.front();
+  else
     currentFrame = createEmptyFrame(rows, cols);
-  }
 
+  stopTimer();
   repaint();
 }
-
 void MatrixDisplay::setLevels(const std::vector<float>& levels) {
-  vuLevels = levels;
-  currentFrame = createVUMeterFrame(cols, levels);
+  if (!requireMessageThread())
+    return;
+
+  vuLevels.assign(levels.begin(),
+                  levels.begin() + std::min(levels.size(), static_cast<std::size_t>(kMaxColumns)));
+  currentFrame = createVUMeterFrame(cols, vuLevels);
   repaint();
 }
-
 void MatrixDisplay::clear() {
+  if (!requireMessageThread())
+    return;
+
   animationPlaying = false;
   stopTimer();
   animationFrames.clear();
   vuLevels.clear();
   currentFrame = createEmptyFrame(rows, cols);
+  frameIndex = 0;
+  accumulator = 0.0f;
   repaint();
 }
-
 void MatrixDisplay::play() {
+  if (!requireMessageThread())
+    return;
+
   if (!animationFrames.empty()) {
     animationPlaying = true;
     lastTime = juce::Time::currentTimeMillis();
@@ -121,40 +158,66 @@ void MatrixDisplay::play() {
 }
 
 void MatrixDisplay::stop() {
+  if (!requireMessageThread())
+    return;
+
   animationPlaying = false;
   stopTimer();
 }
 
 void MatrixDisplay::setFPS(float newFps) {
-  fps = std::max(0.1f, newFps);
+  if (!requireMessageThread())
+    return;
+
+  fps = std::isfinite(newFps) ? juce::jlimit(0.1f, 240.0f, newFps) : 12.0f;
 }
 
 void MatrixDisplay::setLoop(bool shouldLoop) {
+  if (!requireMessageThread())
+    return;
+
   loop = shouldLoop;
 }
 
 void MatrixDisplay::setLEDSize(float size) {
-  ledSize = std::max(1.0f, size);
+  if (!requireMessageThread())
+    return;
+
+  ledSize = std::isfinite(size) ? juce::jlimit(1.0f, 256.0f, size) : 1.0f;
   repaint();
 }
 
 void MatrixDisplay::setLEDGap(float gap) {
-  ledGap = std::max(0.0f, gap);
+  if (!requireMessageThread())
+    return;
+
+  ledGap = std::isfinite(gap) ? juce::jlimit(0.0f, 256.0f, gap) : 0.0f;
   repaint();
 }
 
 void MatrixDisplay::setOnColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   onColour = colour;
+  customOnColour = true;
   repaint();
 }
 
 void MatrixDisplay::setOffColour(const juce::Colour& colour) {
+  if (!requireMessageThread())
+    return;
+
   offColour = colour;
+  customOffColour = true;
   repaint();
 }
 
 void MatrixDisplay::setBrightness(float newBrightness) {
-  brightness = juce::jlimit(0.0f, 1.0f, newBrightness);
+  if (!requireMessageThread())
+    return;
+
+  brightness = std::isfinite(newBrightness) ? juce::jlimit(0.0f, 1.0f, newBrightness) : 0.0f;
   repaint();
 }
 
@@ -208,52 +271,78 @@ void MatrixDisplay::paint(juce::Graphics& g) {
   }
 }
 
-void MatrixDisplay::resized() {
+void MatrixDisplay::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread())
+    return;
+
+  if (!customOnColour)
+    onColour = theme.fg;
+  if (!customOffColour)
+    offColour = theme.fgMuted.withAlpha(0.5f);
   repaint();
 }
 
+void MatrixDisplay::resized() {
+  if (requireMessageThread())
+    repaint();
+}
+
 void MatrixDisplay::timerCallback() {
+  if (!requireMessageThread())
+    return;
   if (!animationPlaying || animationFrames.empty())
     return;
 
   const int64_t currentTime = juce::Time::currentTimeMillis();
-  const float deltaTime = static_cast<float>(currentTime - lastTime) / 1000.0f;
+  const float deltaTime =
+      juce::jlimit(0.0f, 0.25f, static_cast<float>(currentTime - lastTime) / 1000.0f);
   lastTime = currentTime;
 
   accumulator += deltaTime;
-  const float frameInterval = 1.0f / fps;
+  const float frameInterval = 1.0f / juce::jmax(0.1f, fps);
 
   while (accumulator >= frameInterval) {
     accumulator -= frameInterval;
-    frameIndex++;
+    ++frameIndex;
 
     if (frameIndex >= static_cast<int>(animationFrames.size())) {
-      if (loop) {
+      if (loop)
         frameIndex = 0;
-      } else {
+      else {
         frameIndex = static_cast<int>(animationFrames.size()) - 1;
         animationPlaying = false;
         stopTimer();
       }
     }
 
-    if (onFrame) {
+    juce::Component::SafePointer<MatrixDisplay> safeThis(this);
+    if (onFrame)
       onFrame(frameIndex);
-    }
+    if (safeThis == nullptr)
+      return;
+    if (!animationPlaying || animationFrames.empty())
+      break;
   }
 
-  currentFrame = ensureFrameSize(animationFrames[frameIndex]);
+  if (frameIndex >= 0 && frameIndex < static_cast<int>(animationFrames.size()))
+    currentFrame = animationFrames[static_cast<std::size_t>(frameIndex)];
   repaint();
 }
 
 Frame MatrixDisplay::ensureFrameSize(const Frame& frame) const {
-  Frame result(rows, std::vector<float>(cols, 0.0f));
+  Frame result(static_cast<std::size_t>(rows),
+               std::vector<float>(static_cast<std::size_t>(cols), 0.0f));
+  static const std::vector<float> emptyRow;
 
   for (int r = 0; r < rows; ++r) {
-    const auto& row = (r < static_cast<int>(frame.size())) ? frame[r] : std::vector<float>();
+    const auto& sourceRow =
+        r < static_cast<int>(frame.size()) ? frame[static_cast<std::size_t>(r)] : emptyRow;
 
     for (int c = 0; c < cols; ++c) {
-      result[r][c] = (c < static_cast<int>(row.size())) ? row[c] : 0.0f;
+      const float value =
+          c < static_cast<int>(sourceRow.size()) ? sourceRow[static_cast<std::size_t>(c)] : 0.0f;
+      result[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] =
+          std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : 0.0f;
     }
   }
 

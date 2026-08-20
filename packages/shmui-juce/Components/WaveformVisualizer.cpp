@@ -89,11 +89,11 @@ void WaveformVisualizer::useDefaultThemeStyle() {
   repaint();
 }
 
-void WaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
-  if (!usesDefaultThemeStyle_)
+void WaveformVisualizer::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !usesDefaultThemeStyle_)
     return;
 
-  style = WaveformStyle::fromTheme(defaultTheme());
+  style = WaveformStyle::fromTheme(theme);
   sanitizeWaveformStyle(style);
   repaint();
 }
@@ -179,7 +179,7 @@ void WaveformVisualizer::applyEdgeFade(juce::Graphics& g, const juce::Rectangle<
 }
 
 void WaveformVisualizer::mouseDown(const juce::MouseEvent& e) {
-  if (!onBarClick || waveformData.empty())
+  if (!requireMessageThread() || !onBarClick || waveformData.empty())
     return;
 
   const int barCount = getBarCount();
@@ -191,8 +191,12 @@ void WaveformVisualizer::mouseDown(const juce::MouseEvent& e) {
   const int dataIndex =
       static_cast<int>((static_cast<float>(barIndex) / barCount) * waveformData.size());
 
-  if (dataIndex >= 0 && dataIndex < static_cast<int>(waveformData.size()))
-    onBarClick(dataIndex, waveformData[static_cast<std::size_t>(dataIndex)]);
+  if (dataIndex >= 0 && dataIndex < static_cast<int>(waveformData.size())) {
+    const float value = waveformData[static_cast<std::size_t>(dataIndex)];
+    juce::Component::SafePointer<WaveformVisualizer> safeThis(this);
+    onBarClick(dataIndex, value);
+    juce::ignoreUnused(safeThis);
+  }
 }
 
 void WaveformVisualizer::resized() {
@@ -302,7 +306,7 @@ void ScrollingWaveformVisualizer::paint(juce::Graphics& g) {
 }
 
 void ScrollingWaveformVisualizer::resized() {
-  if (!bars.empty())
+  if (!requireMessageThread() || !bars.empty())
     return;
 
   const float step = style.barWidth + style.barGap;
@@ -322,6 +326,8 @@ void ScrollingWaveformVisualizer::resized() {
 }
 
 void ScrollingWaveformVisualizer::timerCallback() {
+  if (!requireMessageThread())
+    return;
   if (!isShowing() || !scrollRequested) {
     updateTimerState();
     return;
@@ -336,21 +342,22 @@ void ScrollingWaveformVisualizer::timerCallback() {
     bar.x -= scrollSpeed * deltaTime;
 
   removeOldBars();
-
   while (bars.empty() || bars.back().x < getWidth()) {
     addNewBar();
     if (bars.size() > static_cast<std::size_t>(targetBarCount * 2))
       break;
   }
-
   repaint();
 }
 
 void ScrollingWaveformVisualizer::visibilityChanged() {
-  updateTimerState();
+  if (requireMessageThread())
+    updateTimerState();
 }
 
 void ScrollingWaveformVisualizer::updateTimerState() {
+  if (!requireMessageThread())
+    return;
   if (isShowing() && scrollRequested)
     startTimerHz(60);
   else
@@ -450,37 +457,24 @@ void AudioScrubberVisualizer::setPlayheadColour(const juce::Colour& colour) {
 
 void AudioScrubberVisualizer::paint(juce::Graphics& g) {
   const auto bounds = getLocalBounds().toFloat();
-
-  // Draw waveform
   WaveformVisualizer::paint(g);
 
-  // Draw progress overlay
   const float progressX = bounds.getX() + localProgress * bounds.getWidth();
-
-  // Played region (with overlay)
   g.setColour(playheadColour.withAlpha(0.2f));
   g.fillRect(bounds.getX(), bounds.getY(), progressX - bounds.getX(), bounds.getHeight());
 
-  // Playhead line
   g.setColour(playheadColour);
   g.drawVerticalLine(static_cast<int>(progressX), bounds.getY(), bounds.getBottom());
 
-  // Handle
   if (showHandle) {
     const float handleSize = 16.0f;
     const float handleY = bounds.getCentreY();
-
-    // Handle shadow
     g.setColour(juce::Colours::black.withAlpha(0.3f));
     g.fillEllipse(progressX - handleSize / 2.0f + 1.0f, handleY - handleSize / 2.0f + 1.0f,
                   handleSize, handleSize);
-
-    // Handle
     g.setColour(playheadColour);
     g.fillEllipse(progressX - handleSize / 2.0f, handleY - handleSize / 2.0f, handleSize,
                   handleSize);
-
-    // Handle border
     g.setColour(juce::Colours::white);
     g.drawEllipse(progressX - handleSize / 2.0f, handleY - handleSize / 2.0f, handleSize,
                   handleSize, 2.0f);
@@ -488,21 +482,29 @@ void AudioScrubberVisualizer::paint(juce::Graphics& g) {
 }
 
 void AudioScrubberVisualizer::mouseDown(const juce::MouseEvent& e) {
+  if (!requireMessageThread())
+    return;
   isDragging = true;
   handleScrub(e.position.x);
 }
 
 void AudioScrubberVisualizer::mouseDrag(const juce::MouseEvent& e) {
-  if (isDragging) {
+  if (!requireMessageThread())
+    return;
+  if (isDragging)
     handleScrub(e.position.x);
-  }
 }
 
-void AudioScrubberVisualizer::mouseUp(const juce::MouseEvent&) {
-  isDragging = false;
+void AudioScrubberVisualizer::mouseUp(const juce::MouseEvent& e) {
+  juce::ignoreUnused(e);
+  if (requireMessageThread())
+    isDragging = false;
 }
 
 void AudioScrubberVisualizer::handleScrub(float x) {
+  if (!requireMessageThread())
+    return;
+
   const auto bounds = getLocalBounds().toFloat();
   if (bounds.getWidth() <= 0.0f || duration <= 0.0f)
     return;
@@ -511,9 +513,12 @@ void AudioScrubberVisualizer::handleScrub(float x) {
   localProgress = juce::jlimit(0.0f, 1.0f, (clampedX - bounds.getX()) / bounds.getWidth());
   const float newTime = localProgress * duration;
 
-  if (onSeek)
+  if (onSeek) {
+    juce::Component::SafePointer<AudioScrubberVisualizer> safeThis(this);
     onSeek(newTime);
-
+    if (safeThis == nullptr)
+      return;
+  }
   repaint();
 }
 
@@ -615,11 +620,16 @@ void LiveWaveformVisualizer::useDefaultThemeStyle() {
   repaint();
 }
 
-void LiveWaveformVisualizer::defaultThemeChanged(const ShmuiTheme&) {
-  if (!usesDefaultThemeStyle_)
+void LiveWaveformVisualizer::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !usesDefaultThemeStyle_)
     return;
 
-  useDefaultThemeStyle();
+  style = WaveformStyle::fromTheme(theme);
+  style.barWidth = 3.0f;
+  style.barGap = 1.0f;
+  style.barRadius = 1.0f;
+  sanitizeWaveformStyle(style);
+  repaint();
 }
 
 void LiveWaveformVisualizer::clearHistory() {

@@ -37,6 +37,8 @@ TransportButton::TransportButton(Type type, ButtonStyle style) : m_type(type) {
 
 //==============================================================================
 void TransportButton::setType(Type type) {
+  if (!requireMessageThread())
+    return;
   if (m_type != type) {
     m_type = type;
     repaint();
@@ -44,6 +46,8 @@ void TransportButton::setType(Type type) {
 }
 
 void TransportButton::setPlaying(bool playing) {
+  if (!requireMessageThread())
+    return;
   if (m_isPlaying != playing) {
     m_isPlaying = playing;
     if (m_type == Type::PlayPause)
@@ -52,6 +56,8 @@ void TransportButton::setPlaying(bool playing) {
 }
 
 void TransportButton::setRecording(bool recording) {
+  if (!requireMessageThread())
+    return;
   if (m_isRecording != recording) {
     m_isRecording = recording;
     if (m_type == Type::Record)
@@ -60,6 +66,8 @@ void TransportButton::setRecording(bool recording) {
 }
 
 void TransportButton::setLooping(bool looping) {
+  if (!requireMessageThread())
+    return;
   if (m_isLooping != looping) {
     m_isLooping = looping;
     if (m_type == Type::Loop)
@@ -75,13 +83,12 @@ int TransportButton::getPreferredSize() const {
 void TransportButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
                                    juce::Colour foregroundColor) {
   const float iconSize = getIconSizeForButton(getButtonSize());
-
-  // Special color handling for active states
   juce::Colour iconColor = foregroundColor;
+
   if (m_type == Type::Record && m_isRecording) {
-    iconColor = tokens::lab::danger(); // --lab-danger when recording
+    iconColor = defaultTheme().danger;
   } else if (m_type == Type::Loop && m_isLooping) {
-    iconColor = tokens::lab::tone(); // accent (--lab-tone) when looping
+    iconColor = defaultTheme().accent;
   }
 
   // Center the icon in bounds

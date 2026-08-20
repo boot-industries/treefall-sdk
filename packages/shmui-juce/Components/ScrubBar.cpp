@@ -8,51 +8,67 @@
 */
 
 #include "ScrubBar.h"
+#include <cmath>
 
 namespace shmui {
 
 //==============================================================================
 ScrubBar::ScrubBar() {
   setOpaque(false);
+  const auto& theme = defaultTheme();
+  style.trackColor = theme.bgRaise;
+  style.progressColor = theme.accent;
+  style.thumbColor = theme.accent;
+  style.thumbBorderColor = theme.fg;
+  sanitizeStyle();
+  addDefaultThemeListener(this);
 }
 
-ScrubBar::~ScrubBar() = default;
+ScrubBar::~ScrubBar() {
+  removeDefaultThemeListener(this);
+}
 
 //==============================================================================
 void ScrubBar::setPosition(double newPosition) {
-  newPosition = juce::jlimit(0.0, 1.0, newPosition);
+  if (!requireMessageThread())
+    return;
+
+  newPosition = std::isfinite(newPosition) ? juce::jlimit(0.0, 1.0, newPosition) : 0.0;
 
   if (position != newPosition) {
     position = newPosition;
+    currentTime = duration > 0.0 ? position * duration : 0.0;
     repaint();
   }
 }
 
 void ScrubBar::setCurrentTime(double timeInSeconds) {
-  if (currentTime != timeInSeconds) {
-    currentTime = timeInSeconds;
+  if (!requireMessageThread())
+    return;
 
-    // Update position based on duration
-    if (duration > 0.0)
-      setPosition(currentTime / duration);
-    else
-      setPosition(0.0);
+  const double safeTime = std::isfinite(timeInSeconds) ? juce::jmax(0.0, timeInSeconds) : 0.0;
+  if (currentTime != safeTime) {
+    currentTime = safeTime;
+    position = duration > 0.0 ? juce::jlimit(0.0, 1.0, currentTime / duration) : 0.0;
+    repaint();
   }
 }
 
 void ScrubBar::setDuration(double durationInSeconds) {
-  if (duration != durationInSeconds) {
-    duration = durationInSeconds;
+  if (!requireMessageThread())
+    return;
 
-    // Recalculate position
-    if (duration > 0.0)
-      setPosition(currentTime / duration);
-    else
-      setPosition(0.0);
-  }
+  duration = std::isfinite(durationInSeconds) ? juce::jmax(0.0, durationInSeconds) : 0.0;
+  if (duration > 0.0 && currentTime > duration)
+    currentTime = duration;
+  position = duration > 0.0 ? juce::jlimit(0.0, 1.0, currentTime / duration) : 0.0;
+  repaint();
 }
 
 void ScrubBar::setThumbVisible(bool shouldBeVisible) {
+  if (!requireMessageThread())
+    return;
+
   if (showThumb != shouldBeVisible) {
     showThumb = shouldBeVisible;
     repaint();
@@ -61,16 +77,48 @@ void ScrubBar::setThumbVisible(bool shouldBeVisible) {
 
 //==============================================================================
 void ScrubBar::addListener(Listener* listener) {
-  listeners.add(listener);
+  if (!requireMessageThread() || listener == nullptr)
+    return;
+  listeners->add(listener);
 }
 
 void ScrubBar::removeListener(Listener* listener) {
-  listeners.remove(listener);
+  if (!requireMessageThread())
+    return;
+  listeners->remove(listener);
 }
 
 void ScrubBar::setStyle(const Style& newStyle) {
+  if (!requireMessageThread())
+    return;
   style = newStyle;
+  sanitizeStyle();
+  customStyle = true;
   repaint();
+}
+
+void ScrubBar::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || customStyle)
+    return;
+
+  style.trackColor = theme.bgRaise;
+  style.progressColor = theme.accent;
+  style.thumbColor = theme.accent;
+  style.thumbBorderColor = theme.fg;
+  sanitizeStyle();
+  repaint();
+}
+
+void ScrubBar::sanitizeStyle() {
+  style.trackHeight =
+      std::isfinite(style.trackHeight) ? juce::jlimit(1.0f, 1000.0f, style.trackHeight) : 8.0f;
+  style.thumbSize =
+      std::isfinite(style.thumbSize) ? juce::jlimit(1.0f, 1000.0f, style.thumbSize) : 16.0f;
+  style.thumbBorderWidth = std::isfinite(style.thumbBorderWidth)
+                               ? juce::jlimit(0.0f, style.thumbSize * 0.5f, style.thumbBorderWidth)
+                               : 0.0f;
+  style.cornerRadius =
+      std::isfinite(style.cornerRadius) ? juce::jmax(0.0f, style.cornerRadius) : 0.0f;
 }
 
 //==============================================================================
@@ -111,32 +159,54 @@ void ScrubBar::resized() {
 
 //==============================================================================
 void ScrubBar::mouseDown(const juce::MouseEvent& event) {
+  if (!requireMessageThread())
+    return;
+
   isDragging = true;
-  listeners.call([](Listener& l) { l.scrubStarted(); });
+  auto listenerList = listeners;
+  juce::Component::SafePointer<ScrubBar> safeThis(this);
+  listenerList->call([](Listener& l) { l.scrubStarted(); });
+  if (safeThis == nullptr)
+    return;
   updatePositionFromMouse(event);
 }
 
 void ScrubBar::mouseDrag(const juce::MouseEvent& event) {
-  if (isDragging) {
+  if (!requireMessageThread())
+    return;
+
+  if (isDragging)
     updatePositionFromMouse(event);
-  }
 }
 
 void ScrubBar::mouseUp(const juce::MouseEvent& event) {
-  if (isDragging) {
-    isDragging = false;
-    listeners.call([](Listener& l) { l.scrubEnded(); });
+  juce::ignoreUnused(event);
+  if (!requireMessageThread() || !isDragging)
+    return;
 
-    // Final seek
-    if (duration > 0.0) {
-      double seekTime = position * duration;
-      listeners.call([seekTime](Listener& l) { l.seekRequested(seekTime); });
-    }
+  isDragging = false;
+  const double seekTime = duration > 0.0 ? position * duration : -1.0;
+  auto listenerList = listeners;
+  juce::Component::SafePointer<ScrubBar> safeThis(this);
+  listenerList->call([](Listener& l) { l.scrubEnded(); });
+  if (safeThis == nullptr)
+    return;
+
+  if (seekTime >= 0.0) {
+    auto listenerList = listeners;
+    juce::Component::SafePointer<ScrubBar> safeSeekThis(this);
+    listenerList->call([seekTime](Listener& l) { l.seekRequested(seekTime); });
+    if (safeSeekThis == nullptr)
+      return;
   }
 }
 
 void ScrubBar::mouseMove(const juce::MouseEvent& event) {
-  bool wasHovering = isHovering;
+  juce::ignoreUnused(event);
+  if (!requireMessageThread())
+    return;
+
+  const bool wasHovering = isHovering;
   isHovering = true;
   setMouseCursor(juce::MouseCursor::PointingHandCursor);
 
@@ -145,6 +215,10 @@ void ScrubBar::mouseMove(const juce::MouseEvent& event) {
 }
 
 void ScrubBar::mouseExit(const juce::MouseEvent& event) {
+  juce::ignoreUnused(event);
+  if (!requireMessageThread())
+    return;
+
   isHovering = false;
   setMouseCursor(juce::MouseCursor::NormalCursor);
   repaint();
@@ -153,14 +227,18 @@ void ScrubBar::mouseExit(const juce::MouseEvent& event) {
 //==============================================================================
 double ScrubBar::xToPosition(float x) const {
   auto trackBounds = getTrackBounds();
-  float relativeX = x - trackBounds.getX();
-  double pos = relativeX / trackBounds.getWidth();
+  if (trackBounds.getWidth() <= 0.0f)
+    return 0.0;
+
+  const float relativeX = x - trackBounds.getX();
+  const double pos = relativeX / trackBounds.getWidth();
   return juce::jlimit(0.0, 1.0, pos);
 }
 
 float ScrubBar::positionToX(double pos) const {
   auto trackBounds = getTrackBounds();
-  return static_cast<float>(trackBounds.getX() + trackBounds.getWidth() * pos);
+  return static_cast<float>(trackBounds.getX() +
+                            trackBounds.getWidth() * juce::jlimit(0.0, 1.0, pos));
 }
 
 juce::Rectangle<float> ScrubBar::getTrackBounds() const {
@@ -180,19 +258,26 @@ juce::Rectangle<float> ScrubBar::getThumbBounds() const {
 }
 
 void ScrubBar::updatePositionFromMouse(const juce::MouseEvent& event) {
-  double newPosition = xToPosition(event.position.x);
+  const double newPosition = xToPosition(event.position.x);
 
   if (position != newPosition) {
     position = newPosition;
-    currentTime = position * duration;
+    currentTime = duration > 0.0 ? position * duration : 0.0;
+    const double seekTime = duration > 0.0 ? currentTime : -1.0;
     repaint();
 
-    listeners.call([newPosition](Listener& l) { l.scrubPositionChanged(newPosition); });
+    auto listenerList = listeners;
+    juce::Component::SafePointer<ScrubBar> safeThis(this);
+    listenerList->call([newPosition](Listener& l) { l.scrubPositionChanged(newPosition); });
+    if (safeThis == nullptr)
+      return;
 
-    // Also notify seek during drag for real-time feedback
-    if (duration > 0.0) {
-      double seekTime = position * duration;
-      listeners.call([seekTime](Listener& l) { l.seekRequested(seekTime); });
+    if (seekTime >= 0.0) {
+      auto listenerList = listeners;
+      juce::Component::SafePointer<ScrubBar> safeSeekThis(this);
+      listenerList->call([seekTime](Listener& l) { l.seekRequested(seekTime); });
+      if (safeSeekThis == nullptr)
+        return;
     }
   }
 }

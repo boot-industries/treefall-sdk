@@ -22,6 +22,7 @@
 
 #include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
+#include "../Utils/MessageThread.h"
 #include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <array>
@@ -317,9 +318,7 @@ public:
    * @brief Optional payload tag applied to events recorded next
    * (e.g. the current clip index). Purely app-defined.
    */
-  void setEventTag(uint32_t tag) {
-    m_eventTag = tag;
-  }
+  void setEventTag(uint32_t tag);
 
   /// @}
 
@@ -351,6 +350,7 @@ private:
   void timerCallback() override;
   void updateTimerState();
   void updateMeter();
+  void sanitizeStyle();
   float linearToNormalized(float linear) const;
   float dbToNormalized(float dB) const;
   float normalizedToDB(float normalized) const;
@@ -360,6 +360,7 @@ private:
 
   //==============================================================================
   static constexpr int MAX_CHANNELS = 8;
+  static constexpr int MAX_HISTORY_EVENTS = 4096;
 
   int m_numChannels = 1;
   bool m_isVertical = true;

@@ -41,7 +41,7 @@ Current FourTrack-facing SDK contracts are:
 
 - Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.
 - Current release: SDK 0.6.7 with stable C ABI 1.0 and governed ShmUI-JUCE
-  design-token contract 0.3.0.
+  design-token contract 0.6.0.
 - Platform/backend support: `docs/SUPPORT_MATRIX.md`.
 - Installed target manifest: generated package metadata and the clean-prefix
   fixture under `tests/cmake/find_package/`.

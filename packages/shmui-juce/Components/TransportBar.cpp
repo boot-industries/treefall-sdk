@@ -10,24 +10,52 @@
 */
 
 #include "TransportBar.h"
+#include <algorithm>
+#include <cmath>
 
 namespace shmui {
+namespace {
+int64_t saturatingSamples(double seconds, int sampleRate) {
+  if (!std::isfinite(seconds) || seconds <= 0.0)
+    return 0;
+
+  const long double samples =
+      static_cast<long double>(seconds) * static_cast<long double>(juce::jmax(1, sampleRate));
+  const long double maximum = static_cast<long double>(std::numeric_limits<int64_t>::max());
+  return samples >= maximum ? std::numeric_limits<int64_t>::max() : static_cast<int64_t>(samples);
+}
+} // namespace
 
 //==============================================================================
 TransportBar::TransportBar() {
+  const auto& theme = defaultTheme();
+  m_style.backgroundColor = theme.bgPanel;
+  m_style.textColor = theme.fg;
+  m_style.dimTextColor = theme.fgMuted;
+  m_style.separatorColor = theme.stroke;
   setupButtons();
+  addDefaultThemeListener(this);
+}
+
+TransportBar::~TransportBar() {
+  removeDefaultThemeListener(this);
 }
 
 //==============================================================================
 void TransportBar::setPlaying(bool playing) {
+  if (!requireMessageThread())
+    return;
   if (m_isPlaying != playing) {
     m_isPlaying = playing;
-    m_playPauseButton->setPlaying(playing);
+    if (m_playPauseButton)
+      m_playPauseButton->setPlaying(playing);
     repaint();
   }
 }
 
 void TransportBar::setRecording(bool recording) {
+  if (!requireMessageThread())
+    return;
   if (m_isRecording != recording) {
     m_isRecording = recording;
     if (m_recordButton)
@@ -37,6 +65,8 @@ void TransportBar::setRecording(bool recording) {
 }
 
 void TransportBar::setLooping(bool looping) {
+  if (!requireMessageThread())
+    return;
   if (m_isLooping != looping) {
     m_isLooping = looping;
     if (m_loopButton)
@@ -47,71 +77,122 @@ void TransportBar::setLooping(bool looping) {
 
 //==============================================================================
 void TransportBar::setPositionSeconds(double seconds) {
-  m_positionSeconds = seconds;
-  m_positionSamples = static_cast<int64_t>(seconds * m_sampleRate);
+  if (!requireMessageThread())
+    return;
+  const double maxSeconds = static_cast<double>(std::numeric_limits<int64_t>::max()) /
+                            static_cast<double>(juce::jmax(1, m_sampleRate));
+  m_positionSeconds = std::isfinite(seconds) ? juce::jlimit(0.0, maxSeconds, seconds) : 0.0;
+  m_positionSamples = saturatingSamples(m_positionSeconds, m_sampleRate);
 
   if (m_positionLabel)
-    m_positionLabel->setText(formatTime(seconds), juce::dontSendNotification);
+    m_positionLabel->setText(formatTime(m_positionSeconds), juce::dontSendNotification);
 }
 
 void TransportBar::setPositionSamples(int64_t samples, int sampleRate) {
-  m_positionSamples = samples;
-  m_sampleRate = sampleRate;
-  m_positionSeconds = static_cast<double>(samples) / sampleRate;
+  if (!requireMessageThread())
+    return;
+  m_sampleRate = juce::jmax(1, sampleRate);
+  m_positionSamples = juce::jmax<int64_t>(0, samples);
+  m_positionSeconds = static_cast<double>(m_positionSamples) / m_sampleRate;
 
   if (m_positionLabel)
     m_positionLabel->setText(formatTime(m_positionSeconds), juce::dontSendNotification);
 }
 
 void TransportBar::setDurationSeconds(double seconds) {
-  m_durationSeconds = seconds;
-  m_durationSamples = static_cast<int64_t>(seconds * m_sampleRate);
+  if (!requireMessageThread())
+    return;
+  const double maxSeconds = static_cast<double>(std::numeric_limits<int64_t>::max()) /
+                            static_cast<double>(juce::jmax(1, m_sampleRate));
+  m_durationSeconds = std::isfinite(seconds) ? juce::jlimit(0.0, maxSeconds, seconds) : 0.0;
+  m_durationSamples = saturatingSamples(m_durationSeconds, m_sampleRate);
 
   if (m_durationLabel)
-    m_durationLabel->setText(formatTime(seconds), juce::dontSendNotification);
+    m_durationLabel->setText(formatTime(m_durationSeconds), juce::dontSendNotification);
 }
 
 void TransportBar::setDurationSamples(int64_t samples, int sampleRate) {
-  m_durationSamples = samples;
-  m_sampleRate = sampleRate;
-  m_durationSeconds = static_cast<double>(samples) / sampleRate;
+  if (!requireMessageThread())
+    return;
+  m_sampleRate = juce::jmax(1, sampleRate);
+  m_durationSamples = juce::jmax<int64_t>(0, samples);
+  m_durationSeconds = static_cast<double>(m_durationSamples) / m_sampleRate;
 
   if (m_durationLabel)
     m_durationLabel->setText(formatTime(m_durationSeconds), juce::dontSendNotification);
 }
 
 void TransportBar::setTimeFormat(TimeDisplayFormat format) {
+  if (!requireMessageThread())
+    return;
   m_timeFormat = format;
-  setPositionSeconds(m_positionSeconds); // Refresh display
-  setDurationSeconds(m_durationSeconds);
+  if (m_positionLabel)
+    m_positionLabel->setText(formatTime(m_positionSeconds), juce::dontSendNotification);
+  if (m_durationLabel)
+    m_durationLabel->setText(formatTime(m_durationSeconds), juce::dontSendNotification);
 }
 
 //==============================================================================
 void TransportBar::setTempo(double bpm) {
-  m_tempoBPM = bpm;
+  if (!requireMessageThread())
+    return;
+  m_tempoBPM = std::isfinite(bpm) ? juce::jlimit(0.0, 1000000.0, bpm) : 0.0;
   if (m_tempoLabel)
-    m_tempoLabel->setText(juce::String(bpm, 1) + " BPM", juce::dontSendNotification);
+    m_tempoLabel->setText(juce::String(m_tempoBPM, 1) + " BPM", juce::dontSendNotification);
 }
 
 void TransportBar::setTimeSignature(int numerator, int denominator) {
-  m_timeSignatureNum = numerator;
-  m_timeSignatureDenom = denominator;
+  if (!requireMessageThread())
+    return;
+  m_timeSignatureNum = juce::jmax(1, numerator);
+  m_timeSignatureDenom = juce::jmax(1, denominator);
 }
 
 void TransportBar::setStyle(const TransportBarStyle& style) {
+  if (!requireMessageThread())
+    return;
   m_style = style;
+  m_style.height =
+      std::isfinite(m_style.height) ? juce::jlimit(1.0f, 4096.0f, m_style.height) : 48.0f;
+  m_style.buttonSize =
+      std::isfinite(m_style.buttonSize) ? juce::jlimit(1.0f, 4096.0f, m_style.buttonSize) : 36.0f;
+  m_style.buttonSpacing =
+      std::isfinite(m_style.buttonSpacing) ? juce::jmax(0.0f, m_style.buttonSpacing) : 4.0f;
+  m_style.sectionSpacing =
+      std::isfinite(m_style.sectionSpacing) ? juce::jmax(0.0f, m_style.sectionSpacing) : 16.0f;
+  m_usesDefaultThemeStyle = false;
 
-  // Update visibility of optional components
   if (m_recordButton)
-    m_recordButton->setVisible(style.showRecord);
-  if (m_loopButton)
-    m_loopButton->setVisible(style.showLoop);
+    m_recordButton->setVisible(m_style.showRecord);
+  if (m_loopButton) {
+    m_loopButton->setVisible(m_style.showLoop);
+    m_loopButton->setOnColor(m_style.textColor);
+  }
   if (m_tempoLabel)
-    m_tempoLabel->setVisible(style.showTempo);
+    m_tempoLabel->setVisible(m_style.showTempo);
   if (m_panicButton)
-    m_panicButton->setVisible(style.showPanic);
+    m_panicButton->setVisible(m_style.showPanic);
 
   resized();
+  repaint();
+}
+
+void TransportBar::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !m_usesDefaultThemeStyle)
+    return;
+
+  m_style.backgroundColor = theme.bgPanel;
+  m_style.textColor = theme.fg;
+  m_style.dimTextColor = theme.fgMuted;
+  m_style.separatorColor = theme.stroke;
+  if (m_loopButton)
+    m_loopButton->setOnColor(theme.accent);
+  if (m_positionLabel)
+    m_positionLabel->setColour(juce::Label::textColourId, m_style.textColor);
+  if (m_durationLabel)
+    m_durationLabel->setColour(juce::Label::textColourId, m_style.dimTextColor);
+  if (m_tempoLabel)
+    m_tempoLabel->setColour(juce::Label::textColourId, m_style.dimTextColor);
   repaint();
 }
 
@@ -126,62 +207,51 @@ void TransportBar::paint(juce::Graphics& g) {
   g.setColour(m_style.separatorColor);
   g.drawHorizontalLine(0, bounds.getX(), bounds.getRight());
 }
-
 void TransportBar::resized() {
+  if (!requireMessageThread())
+    return;
   auto bounds = getLocalBounds();
-  const int buttonSize = static_cast<int>(m_style.buttonSize);
-  const int spacing = static_cast<int>(m_style.buttonSpacing);
-  const int sectionSpacing = static_cast<int>(m_style.sectionSpacing);
-
-  // Center buttons vertically
-  int buttonY = (bounds.getHeight() - buttonSize) / 2;
+  const int buttonSize = juce::jmax(1, static_cast<int>(m_style.buttonSize));
+  const int spacing = juce::jmax(0, static_cast<int>(m_style.buttonSpacing));
+  const int sectionSpacing = juce::jmax(0, static_cast<int>(m_style.sectionSpacing));
+  const int buttonY = (bounds.getHeight() - buttonSize) / 2;
 
   int x = sectionSpacing;
-
-  // Play/Pause button
-  m_playPauseButton->setBounds(x, buttonY, buttonSize, buttonSize);
-  x += buttonSize + spacing;
-
-  // Stop button
-  m_stopButton->setBounds(x, buttonY, buttonSize, buttonSize);
-  x += buttonSize + spacing;
-
-  // Record button (if visible)
+  if (m_playPauseButton) {
+    m_playPauseButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + spacing;
+  }
+  if (m_stopButton) {
+    m_stopButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + spacing;
+  }
   if (m_style.showRecord && m_recordButton) {
     m_recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + spacing;
   }
 
   x += sectionSpacing;
-
-  // Loop button (if visible)
   if (m_style.showLoop && m_loopButton) {
     m_loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + sectionSpacing;
   }
 
-  // Time display
   const int timeLabelWidth = 90;
   const int timeLabelHeight = 20;
-  int timeY = (bounds.getHeight() - timeLabelHeight) / 2;
-
-  m_positionLabel->setBounds(x, timeY, timeLabelWidth, timeLabelHeight);
-  x += timeLabelWidth + 8;
-
-  // Separator "/"
-  // (drawn in paint if needed)
-
-  m_durationLabel->setBounds(x, timeY, timeLabelWidth, timeLabelHeight);
-  x += timeLabelWidth + sectionSpacing;
-
-  // Tempo display (if visible)
+  const int timeY = (bounds.getHeight() - timeLabelHeight) / 2;
+  if (m_positionLabel) {
+    m_positionLabel->setBounds(x, timeY, timeLabelWidth, timeLabelHeight);
+    x += timeLabelWidth + 8;
+  }
+  if (m_durationLabel) {
+    m_durationLabel->setBounds(x, timeY, timeLabelWidth, timeLabelHeight);
+    x += timeLabelWidth + sectionSpacing;
+  }
   if (m_style.showTempo && m_tempoLabel) {
     const int tempoWidth = 80;
     m_tempoLabel->setBounds(x, timeY, tempoWidth, timeLabelHeight);
     x += tempoWidth + sectionSpacing;
   }
-
-  // Panic button on the right
   if (m_style.showPanic && m_panicButton) {
     m_panicButton->setBounds(bounds.getRight() - sectionSpacing - buttonSize, buttonY, buttonSize,
                              buttonSize);
@@ -194,9 +264,11 @@ void TransportBar::setupButtons() {
   m_playPauseButton = std::make_unique<TransportButton>(TransportButton::Type::PlayPause);
   m_playPauseButton->setSize(ButtonSize::Large);
   m_playPauseButton->setStyle(ButtonStyle::Primary);
-  m_playPauseButton->onClick = [this] {
-    if (onPlayPause)
-      onPlayPause();
+  juce::Component::SafePointer<TransportBar> playThis(this);
+  m_playPauseButton->onClick = [playThis] {
+    if (auto* owner = playThis.getComponent())
+      if (owner->onPlayPause)
+        owner->onPlayPause();
   };
   addAndMakeVisible(*m_playPauseButton);
 
@@ -204,18 +276,22 @@ void TransportBar::setupButtons() {
   m_stopButton = std::make_unique<TransportButton>(TransportButton::Type::Stop);
   m_stopButton->setSize(ButtonSize::Large);
   m_stopButton->setStyle(ButtonStyle::Ghost);
-  m_stopButton->onClick = [this] {
-    if (onStop)
-      onStop();
+  juce::Component::SafePointer<TransportBar> stopThis(this);
+  m_stopButton->onClick = [stopThis] {
+    if (auto* owner = stopThis.getComponent())
+      if (owner->onStop)
+        owner->onStop();
   };
   addAndMakeVisible(*m_stopButton);
 
   // Record button
   m_recordButton = std::make_unique<TransportButton>(TransportButton::Type::Record);
   m_recordButton->setSize(ButtonSize::Large);
-  m_recordButton->onClick = [this] {
-    if (onRecord)
-      onRecord();
+  juce::Component::SafePointer<TransportBar> recordThis(this);
+  m_recordButton->onClick = [recordThis] {
+    if (auto* owner = recordThis.getComponent())
+      if (owner->onRecord)
+        owner->onRecord();
   };
   addAndMakeVisible(*m_recordButton);
   m_recordButton->setVisible(m_style.showRecord);
@@ -225,10 +301,13 @@ void TransportBar::setupButtons() {
   m_loopButton->setSize(ButtonSize::Large);
   m_loopButton->setStyle(ButtonStyle::Ghost);
   m_loopButton->setOnColor(tokens::lab::tone()); // accent (--lab-tone) when active
-  m_loopButton->onToggle = [this](bool enabled) {
-    m_isLooping = enabled;
-    if (onLoopToggle)
-      onLoopToggle(enabled);
+  juce::Component::SafePointer<TransportBar> loopThis(this);
+  m_loopButton->onToggle = [loopThis](bool enabled) {
+    if (auto* owner = loopThis.getComponent()) {
+      owner->m_isLooping = enabled;
+      if (owner->onLoopToggle)
+        owner->onLoopToggle(enabled);
+    }
   };
   addAndMakeVisible(*m_loopButton);
   m_loopButton->setVisible(m_style.showLoop);
@@ -238,9 +317,11 @@ void TransportBar::setupButtons() {
   m_panicButton->setSize(ButtonSize::Large);
   m_panicButton->setStyle(ButtonStyle::Destructive);
   m_panicButton->setTooltipText("Panic - Stop All");
-  m_panicButton->onClick = [this] {
-    if (onPanic)
-      onPanic();
+  juce::Component::SafePointer<TransportBar> panicThis(this);
+  m_panicButton->onClick = [panicThis] {
+    if (auto* owner = panicThis.getComponent())
+      if (owner->onPanic)
+        owner->onPanic();
   };
   addAndMakeVisible(*m_panicButton);
   m_panicButton->setVisible(m_style.showPanic);
@@ -270,46 +351,56 @@ void TransportBar::setupButtons() {
   addAndMakeVisible(*m_tempoLabel);
   m_tempoLabel->setVisible(m_style.showTempo);
 }
-
 juce::String TransportBar::formatTime(double seconds) const {
+  if (!std::isfinite(seconds) || seconds < 0.0)
+    seconds = 0.0;
+
+  const long double maxSeconds =
+      static_cast<long double>(std::numeric_limits<int>::max()) * 3600.0L;
+  const long double boundedSeconds = std::min(static_cast<long double>(seconds), maxSeconds);
+
   switch (m_timeFormat) {
   case TimeDisplayFormat::MinutesSeconds: {
-    int mins = static_cast<int>(seconds / 60.0);
-    double secs = std::fmod(seconds, 60.0);
+    const int mins = static_cast<int>(boundedSeconds / 60.0L);
+    const double secs = static_cast<double>(std::fmod(boundedSeconds, 60.0L));
     return juce::String::formatted("%d:%06.3f", mins, secs);
   }
 
   case TimeDisplayFormat::Timecode:
-    return formatTimecode(seconds);
+    return formatTimecode(static_cast<double>(boundedSeconds));
 
   case TimeDisplayFormat::Bars:
-    return formatBars(seconds);
+    return formatBars(static_cast<double>(boundedSeconds));
 
   case TimeDisplayFormat::Samples:
-    return formatSamples(static_cast<int64_t>(seconds * m_sampleRate));
+    return formatSamples(saturatingSamples(seconds, m_sampleRate));
 
   default:
-    return juce::String(seconds, 3);
+    return juce::String(static_cast<double>(boundedSeconds), 3);
   }
 }
 
 juce::String TransportBar::formatTimecode(double seconds) const {
-  int hours = static_cast<int>(seconds / 3600.0);
-  int mins = static_cast<int>(std::fmod(seconds, 3600.0) / 60.0);
-  int secs = static_cast<int>(std::fmod(seconds, 60.0));
-  int frames = static_cast<int>(std::fmod(seconds * 30.0, 30.0)); // 30fps
+  const double boundedSeconds = std::min(
+      std::max(0.0, seconds), static_cast<double>(std::numeric_limits<int>::max()) * 3600.0);
+  const int hours = static_cast<int>(boundedSeconds / 3600.0);
+  const int mins = static_cast<int>(std::fmod(boundedSeconds, 3600.0) / 60.0);
+  const int secs = static_cast<int>(std::fmod(boundedSeconds, 60.0));
+  const int frames = static_cast<int>(std::fmod(boundedSeconds * 30.0, 30.0));
 
   return juce::String::formatted("%02d:%02d:%02d:%02d", hours, mins, secs, frames);
 }
 
 juce::String TransportBar::formatBars(double seconds) const {
-  // Calculate beats
-  double beatsPerSecond = m_tempoBPM / 60.0;
-  double totalBeats = seconds * beatsPerSecond;
-
-  int bars = static_cast<int>(totalBeats / m_timeSignatureNum) + 1;
-  int beats = static_cast<int>(std::fmod(totalBeats, m_timeSignatureNum)) + 1;
-  int ticks = static_cast<int>(std::fmod(totalBeats, 1.0) * 480); // 480 ticks per beat
+  const long double beatsPerSecond = static_cast<long double>(m_tempoBPM) / 60.0L;
+  const int signature = juce::jmax(1, m_timeSignatureNum);
+  const long double maxTotalBeats =
+      static_cast<long double>(std::numeric_limits<int>::max() - 1) * signature;
+  const long double totalBeats =
+      std::min(std::max(0.0L, static_cast<long double>(seconds) * beatsPerSecond), maxTotalBeats);
+  const int bars = static_cast<int>(totalBeats / signature) + 1;
+  const int beats = static_cast<int>(std::fmod(totalBeats, signature)) + 1;
+  const int ticks = static_cast<int>(std::fmod(totalBeats, 1.0L) * 480.0L);
 
   return juce::String::formatted("%d.%d.%03d", bars, beats, ticks);
 }

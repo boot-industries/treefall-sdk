@@ -37,15 +37,19 @@ Button::Button() : m_animTimer(std::make_unique<AnimationTimer>(*this)) {
 }
 
 Button::~Button() {
+  stopAnimation();
   removeDefaultThemeListener(this);
 }
 
 void Button::defaultThemeChanged(const ShmuiTheme&) {
-  repaint();
+  if (requireMessageThread())
+    repaint();
 }
 
 //==============================================================================
 void Button::setStyle(ButtonStyle style) {
+  if (!requireMessageThread())
+    return;
   if (m_style != style) {
     m_style = style;
     repaint();
@@ -53,6 +57,8 @@ void Button::setStyle(ButtonStyle style) {
 }
 
 void Button::setSize(ButtonSize size) {
+  if (!requireMessageThread())
+    return;
   if (m_size != size) {
     m_size = size;
     repaint();
@@ -60,6 +66,8 @@ void Button::setSize(ButtonSize size) {
 }
 
 void Button::setDarkTheme(bool isDark) {
+  if (!requireMessageThread())
+    return;
   if (m_isDarkTheme != isDark) {
     m_isDarkTheme = isDark;
     repaint();
@@ -67,12 +75,16 @@ void Button::setDarkTheme(bool isDark) {
 }
 
 void Button::setCustomColors(const ButtonColors& colors) {
+  if (!requireMessageThread())
+    return;
   m_customColors = colors;
   m_hasCustomColors = true;
   repaint();
 }
 
 void Button::clearCustomColors() {
+  if (!requireMessageThread())
+    return;
   m_hasCustomColors = false;
   repaint();
 }
@@ -89,6 +101,8 @@ ButtonColors Button::getEffectiveColors() const {
 
 //==============================================================================
 void Button::setEnabled(bool enabled) {
+  if (!requireMessageThread())
+    return;
   if (m_isEnabled != enabled) {
     m_isEnabled = enabled;
     if (!enabled) {
@@ -102,6 +116,8 @@ void Button::setEnabled(bool enabled) {
 }
 
 void Button::setLoading(bool loading) {
+  if (!requireMessageThread())
+    return;
   if (m_isLoading != loading) {
     m_isLoading = loading;
     if (loading) {
@@ -114,6 +130,8 @@ void Button::setLoading(bool loading) {
 }
 
 void Button::setTooltipText(const juce::String& tooltip) {
+  if (!requireMessageThread())
+    return;
   m_tooltipText = tooltip;
   setTooltip(tooltip);
 }
@@ -206,8 +224,12 @@ void Button::mouseExit(const juce::MouseEvent& e) {
 void Button::mouseDown(const juce::MouseEvent& e) {
   if (m_isEnabled && !m_isLoading) {
     if (e.mods.isRightButtonDown()) {
-      if (onRightClick)
+      if (onRightClick) {
+        juce::Component::SafePointer<Button> safeThis(this);
         onRightClick();
+        if (safeThis == nullptr)
+          return;
+      }
     } else {
       m_isPressed = true;
       startAnimation();
@@ -220,8 +242,12 @@ void Button::mouseUp(const juce::MouseEvent& e) {
     m_isPressed = false;
 
     if (getLocalBounds().contains(e.getPosition())) {
-      if (onClick)
+      if (onClick) {
+        juce::Component::SafePointer<Button> safeThis(this);
         onClick();
+        if (safeThis == nullptr)
+          return;
+      }
     }
   }
 }
@@ -243,8 +269,12 @@ void Button::focusLost(FocusChangeType cause) {
 bool Button::keyPressed(const juce::KeyPress& key) {
   if (m_isEnabled && !m_isLoading) {
     if (key == juce::KeyPress::returnKey || key == juce::KeyPress::spaceKey) {
-      if (onClick)
+      if (onClick) {
+        juce::Component::SafePointer<Button> safeThis(this);
         onClick();
+        if (safeThis == nullptr)
+          return true;
+      }
       return true;
     }
   }

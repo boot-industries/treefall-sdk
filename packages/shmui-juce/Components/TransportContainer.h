@@ -18,10 +18,11 @@
 
 #pragma once
 
-#include "TransportBar.h" // reuse TransportBarStyle
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
+#include "TransportBar.h"
 #include <JuceHeader.h>
 #include <vector>
-
 namespace shmui {
 
 //==============================================================================
@@ -35,13 +36,12 @@ namespace shmui {
  * Ownership: added components are NOT owned — the caller keeps them alive
  * (matching typical JUCE parent/child usage where children are members).
  */
-class TransportContainer : public juce::Component {
+class TransportContainer : public juce::Component, public ThemeListener {
 public:
-  //==============================================================================
   enum class Region { Left, Center, Right };
 
   TransportContainer();
-  ~TransportContainer() override = default;
+  ~TransportContainer() override;
 
   //==============================================================================
   /**
@@ -68,6 +68,7 @@ public:
   //==============================================================================
   void paint(juce::Graphics& g) override;
   void resized() override;
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
 
 private:
   //==============================================================================
@@ -81,6 +82,7 @@ private:
 
   std::vector<Item> m_left, m_center, m_right;
   TransportBarStyle m_style;
+  bool m_usesDefaultThemeStyle = true;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportContainer)
 };

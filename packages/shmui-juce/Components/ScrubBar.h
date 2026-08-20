@@ -10,11 +10,12 @@
 */
 
 #pragma once
-
 #include "../Utils/DesignTokens.h"
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <functional>
-
+#include <memory>
 namespace shmui {
 
 //==============================================================================
@@ -33,7 +34,7 @@ namespace shmui {
     - Rounded track with filled progress
     - Circular draggable thumb
 */
-class ScrubBar : public juce::Component {
+class ScrubBar : public juce::Component, public ThemeListener {
 public:
   //==========================================================================
   /** Listener interface for scrub events. */
@@ -131,6 +132,7 @@ public:
   void mouseUp(const juce::MouseEvent& event) override;
   void mouseMove(const juce::MouseEvent& event) override;
   void mouseExit(const juce::MouseEvent& event) override;
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
 
 private:
   //==========================================================================
@@ -140,9 +142,11 @@ private:
   /** Converts a normalized position to an x coordinate. */
   float positionToX(double pos) const;
 
+  /** Sanitizes dimensions that affect geometry. */
+  void sanitizeStyle();
+
   /** Gets the bounds of the track. */
   juce::Rectangle<float> getTrackBounds() const;
-
   /** Gets the bounds of the thumb. */
   juce::Rectangle<float> getThumbBounds() const;
 
@@ -160,8 +164,10 @@ private:
   bool isHovering{false};
 
   Style style;
+  bool customStyle{false};
 
-  juce::ListenerList<Listener> listeners;
+  std::shared_ptr<juce::ListenerList<Listener>> listeners =
+      std::make_shared<juce::ListenerList<Listener>>();
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScrubBar)
 };
