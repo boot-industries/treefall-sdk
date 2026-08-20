@@ -15,6 +15,8 @@
 #include "../Audio/AudioAnalyzer.h"
 #include "../Utils/AgentState.h"
 #include "../Utils/DesignTokens.h"
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <memory>
 
@@ -27,7 +29,7 @@ namespace shmui {
  * Supports state-based animations for AI/voice assistant interfaces.
  * Port of BarVisualizer component from bar-visualizer.tsx.
  */
-class BarVisualizer : public juce::Component, public juce::Timer {
+class BarVisualizer : public juce::Component, public juce::Timer, public ThemeListener {
 public:
   BarVisualizer();
   ~BarVisualizer() override;
@@ -131,6 +133,7 @@ public:
 private:
   void timerCallback() override;
   void visibilityChanged() override;
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
   void updateTimerState();
   bool hasActiveWork() const;
   int getAnimationInterval() const;
@@ -161,11 +164,12 @@ private:
   int64_t lastAnimTime = 0;
   float demoTime = 0.0f;
 
-  // Colours — Orpheus Lab tokens (override per-instance or via ShmuiTheme)
   juce::Colour barColour = tokens::lab::muted();           // idle bars
   juce::Colour highlightColour = tokens::lab::tone();      // active — accent (--lab-tone)
   juce::Colour backgroundColour = tokens::lab::surface0(); // panel floor
-
+  bool customBarColour = false;
+  bool customHighlightColour = false;
+  bool customBackgroundColour = false;
   // Frequency band configuration (matches AudioAnalyzer defaults and React)
   static constexpr int kLoPass = 100;
   static constexpr int kHiPass = 600;

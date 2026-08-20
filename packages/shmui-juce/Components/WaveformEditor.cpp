@@ -11,56 +11,152 @@
 
 #include "WaveformEditor.h"
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <utility>
 
 namespace shmui {
+
+namespace {
+constexpr int kWaveformColumns = 2048;
+constexpr int kWaveformReadChunk = 65536;
+constexpr int kWaveformMaxChannels = 32;
+} // namespace
+
+class WaveformEditor::WaveformLoadJob : public juce::ThreadPoolJob {
+public:
+  WaveformLoadJob(const juce::String& path, juce::Component::SafePointer<WaveformEditor> owner,
+                  std::atomic<uint64_t>& generation, uint64_t requestedGeneration)
+      : juce::ThreadPoolJob("shmui waveform load"), m_path(path), m_owner(std::move(owner)),
+        m_generation(generation), m_requestedGeneration(requestedGeneration) {}
+
+  JobStatus runJob() override {
+    WaveformData data;
+    const bool success = WaveformEditor::loadWaveformData(juce::File(m_path), m_generation,
+                                                          m_requestedGeneration, data);
+    if (shouldExit() || m_generation.load(std::memory_order_acquire) != m_requestedGeneration)
+      return jobHasFinished;
+
+    auto owner = m_owner;
+    const auto path = m_path;
+    juce::MessageManager::callAsync([owner, generation = m_requestedGeneration, path,
+                                     data = std::move(data), success]() mutable {
+      if (owner != nullptr)
+        owner->applyLoadedWaveform(generation, path, success ? std::move(data) : WaveformData{});
+    });
+    return jobHasFinished;
+  }
+
+private:
+  juce::String m_path;
+  juce::Component::SafePointer<WaveformEditor> m_owner;
+  std::atomic<uint64_t>& m_generation;
+  uint64_t m_requestedGeneration;
+};
 
 //==============================================================================
 WaveformEditor::WaveformEditor() {
   setMouseCursor(juce::MouseCursor::NormalCursor);
   m_style = WaveformEditorStyle::fromTheme(defaultTheme());
+  sanitizeStyle();
   addDefaultThemeListener(this);
 }
 
 WaveformEditor::~WaveformEditor() {
   removeDefaultThemeListener(this);
+  m_playheadRepaint.cancel();
+  m_loadGeneration.fetch_add(1, std::memory_order_acq_rel);
+  while (!m_loadPool.removeAllJobs(true, 5000)) {
+  }
 }
 
 //==============================================================================
 void WaveformEditor::setAudioFile(const juce::File& audioFile) {
-  if (audioFile.getFullPathName() == m_cachedFilePath)
+  if (!requireMessageThread())
+    return;
+
+  const auto path = audioFile.getFullPathName();
+  if (path == m_cachedFilePath)
     return; // Already loaded
 
-  // Check cache first
-  auto cached = m_waveformCache.find(audioFile.getFullPathName());
-  if (cached != m_waveformCache.end()) {
-    juce::ScopedLock sl(m_dataLock);
-    m_waveformData = cached->second;
-    m_cachedFilePath = audioFile.getFullPathName();
+  m_loadGeneration.fetch_add(1, std::memory_order_acq_rel);
+  m_loadPool.removeAllJobs(false, 0);
+  m_isLoading.store(false, std::memory_order_release);
 
-    // Reset trim points to full file
+  const auto cacheIt =
+      std::find_if(m_waveformCache.begin(), m_waveformCache.end(),
+                   [&path](const WaveformCacheEntry& entry) { return entry.path == path; });
+  if (cacheIt != m_waveformCache.end()) {
+    const WaveformData cachedData = cacheIt->data;
+    m_waveformCache.splice(m_waveformCache.end(), m_waveformCache, cacheIt);
+    juce::ScopedLock sl(m_dataLock);
+    m_waveformData = cachedData;
+    m_cachedFilePath = path;
     m_trimInSamples = 0;
     m_trimOutSamples = m_waveformData.totalSamples;
     repaint();
     return;
   }
 
-  // Generate new waveform data
+  {
+    juce::ScopedLock sl(m_dataLock);
+    m_waveformData = WaveformData{};
+    m_cachedFilePath.clear();
+    m_trimInSamples = 0;
+    m_trimOutSamples = 0;
+  }
+  repaint();
+
   generateWaveformData(audioFile);
 }
 
 void WaveformEditor::setWaveformData(const WaveformData& data) {
+  if (!requireMessageThread())
+    return;
+
+  m_loadGeneration.fetch_add(1, std::memory_order_acq_rel);
+  m_loadPool.removeAllJobs(false, 0);
+  m_isLoading.store(false, std::memory_order_release);
+
+  WaveformData safeData = data;
+  const auto boundedSize =
+      std::min(safeData.minValues.size(), static_cast<size_t>(kWaveformColumns));
+  safeData.minValues.resize(boundedSize);
+  safeData.maxValues.resize(boundedSize);
+  safeData.sampleRate = juce::jmax(1, safeData.sampleRate);
+  safeData.numChannels = juce::jlimit(1, kWaveformMaxChannels, safeData.numChannels);
+  safeData.totalSamples = juce::jmax(int64_t(0), safeData.totalSamples);
+  for (size_t i = 0; i < boundedSize; ++i) {
+    safeData.minValues[i] = std::isfinite(safeData.minValues[i])
+                                ? juce::jlimit(-1.0f, 1.0f, safeData.minValues[i])
+                                : 0.0f;
+    safeData.maxValues[i] = std::isfinite(safeData.maxValues[i])
+                                ? juce::jlimit(-1.0f, 1.0f, safeData.maxValues[i])
+                                : 0.0f;
+  }
+  safeData.isValid = safeData.isValid && !safeData.minValues.empty() &&
+                     safeData.minValues.size() == safeData.maxValues.size() &&
+                     safeData.totalSamples > 0;
+
   juce::ScopedLock sl(m_dataLock);
-  m_waveformData = data;
+  m_waveformData = std::move(safeData);
+  m_cachedFilePath.clear();
   m_trimInSamples = 0;
-  m_trimOutSamples = data.totalSamples;
+  m_trimOutSamples = m_waveformData.totalSamples;
   repaint();
 }
 
 void WaveformEditor::clear() {
+  if (!requireMessageThread())
+    return;
+
+  m_loadGeneration.fetch_add(1, std::memory_order_acq_rel);
+  m_loadPool.removeAllJobs(false, 0);
+  m_isLoading.store(false, std::memory_order_release);
+
   juce::ScopedLock sl(m_dataLock);
   m_waveformData = WaveformData();
-  m_cachedFilePath = "";
+  m_cachedFilePath.clear();
   m_trimInSamples = 0;
   m_trimOutSamples = 0;
   m_playheadPosition = 0;
@@ -71,6 +167,9 @@ void WaveformEditor::clear() {
 
 //==============================================================================
 void WaveformEditor::setTrimPoints(int64_t trimInSamples, int64_t trimOutSamples) {
+  if (!requireMessageThread())
+    return;
+
   const int64_t total = m_waveformData.totalSamples;
   m_trimInSamples = juce::jlimit(int64_t(0), total, trimInSamples);
   m_trimOutSamples = juce::jlimit(m_trimInSamples, total, trimOutSamples);
@@ -78,38 +177,56 @@ void WaveformEditor::setTrimPoints(int64_t trimInSamples, int64_t trimOutSamples
 }
 
 void WaveformEditor::setTrimPointsNormalized(float trimIn, float trimOut) {
+  if (!requireMessageThread())
+    return;
+
   const int64_t total = m_waveformData.totalSamples;
-  setTrimPoints(static_cast<int64_t>(trimIn * total), static_cast<int64_t>(trimOut * total));
+  const float safeIn = std::isfinite(trimIn) ? juce::jlimit(0.0f, 1.0f, trimIn) : 0.0f;
+  const float safeOut = std::isfinite(trimOut) ? juce::jlimit(0.0f, 1.0f, trimOut) : 0.0f;
+  setTrimPoints(static_cast<int64_t>(safeIn * total), static_cast<int64_t>(safeOut * total));
 }
 
 void WaveformEditor::setFadeInSamples(int64_t samples) {
+  if (!requireMessageThread())
+    return;
   m_fadeInSamples = juce::jmax(int64_t(0), samples);
   repaint();
 }
 
 void WaveformEditor::setFadeOutSamples(int64_t samples) {
+  if (!requireMessageThread())
+    return;
   m_fadeOutSamples = juce::jmax(int64_t(0), samples);
   repaint();
 }
 
 //==============================================================================
 void WaveformEditor::setPlayheadPosition(int64_t samplePosition) {
+  if (!requireMessageThread())
+    return;
+
   const int64_t clamped = juce::jlimit(int64_t(0), m_waveformData.totalSamples, samplePosition);
   if (m_playheadPosition != clamped) {
     m_playheadPosition = clamped;
     if (m_followMode != FollowMode::Off)
-      followPlayhead(); // may adjust scroll (throttled) and repaint
-    // Coalesce rapid playhead-advance repaints (G9).
+      followPlayhead();
     m_playheadRepaint.requestRepaint();
   }
 }
 
 void WaveformEditor::setPlayheadNormalized(float position) {
-  setPlayheadPosition(static_cast<int64_t>(position * m_waveformData.totalSamples));
+  if (!requireMessageThread())
+    return;
+
+  const float safePosition = std::isfinite(position) ? juce::jlimit(0.0f, 1.0f, position) : 0.0f;
+  setPlayheadPosition(static_cast<int64_t>(safePosition * m_waveformData.totalSamples));
 }
 
 //==============================================================================
 void WaveformEditor::setSelection(int64_t startSamples, int64_t endSamples) {
+  if (!requireMessageThread())
+    return;
+
   const int64_t total = m_waveformData.totalSamples;
   m_selectionStart = juce::jlimit(int64_t(0), total, startSamples);
   m_selectionEnd = juce::jlimit(m_selectionStart, total, endSamples);
@@ -117,6 +234,8 @@ void WaveformEditor::setSelection(int64_t startSamples, int64_t endSamples) {
 }
 
 void WaveformEditor::clearSelection() {
+  if (!requireMessageThread())
+    return;
   m_selectionStart = 0;
   m_selectionEnd = 0;
   repaint();
@@ -124,53 +243,76 @@ void WaveformEditor::clearSelection() {
 
 //==============================================================================
 void WaveformEditor::setZoomLevel(float zoom) {
-  m_zoomLevel = juce::jmax(1.0f, zoom);
+  if (!requireMessageThread())
+    return;
+  m_zoomLevel = std::isfinite(zoom) ? juce::jlimit(1.0f, 256.0f, zoom) : 1.0f;
   repaint();
 }
 
 void WaveformEditor::setScrollPosition(float position) {
-  m_scrollPosition = juce::jlimit(0.0f, 1.0f, position);
+  if (!requireMessageThread())
+    return;
+  m_scrollPosition = std::isfinite(position) ? juce::jlimit(0.0f, 1.0f, position) : 0.0f;
   repaint();
 }
 
 void WaveformEditor::zoomToFit() {
+  if (!requireMessageThread())
+    return;
   m_zoomLevel = 1.0f;
   m_scrollPosition = 0.0f;
   repaint();
 }
 
 void WaveformEditor::zoomToSelection() {
-  if (!hasSelection())
+  if (!requireMessageThread() || !hasSelection() || m_waveformData.totalSamples <= 0)
     return;
 
   const float selectionRatio = static_cast<float>(m_selectionEnd - m_selectionStart) /
                                static_cast<float>(m_waveformData.totalSamples);
+  if (selectionRatio <= 0.0f)
+    return;
 
-  m_zoomLevel = 1.0f / selectionRatio;
-  m_scrollPosition =
-      static_cast<float>(m_selectionStart) / static_cast<float>(m_waveformData.totalSamples);
+  m_zoomLevel = juce::jlimit(1.0f, 256.0f, 1.0f / selectionRatio);
+  m_scrollPosition = juce::jlimit(0.0f, 1.0f,
+                                  static_cast<float>(m_selectionStart) /
+                                      static_cast<float>(m_waveformData.totalSamples));
   repaint();
 }
 
 //==============================================================================
 void WaveformEditor::setStyle(const WaveformEditorStyle& style) {
+  if (!requireMessageThread())
+    return;
   m_style = style;
+  sanitizeStyle();
   m_usesDefaultThemeStyle = false;
   repaint();
 }
 
 void WaveformEditor::useDefaultThemeStyle() {
+  if (!requireMessageThread())
+    return;
   m_usesDefaultThemeStyle = true;
   m_style = WaveformEditorStyle::fromTheme(defaultTheme());
+  sanitizeStyle();
   repaint();
 }
 
-void WaveformEditor::defaultThemeChanged(const ShmuiTheme&) {
-  if (!m_usesDefaultThemeStyle)
+void WaveformEditor::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !m_usesDefaultThemeStyle)
     return;
 
-  m_style = WaveformEditorStyle::fromTheme(defaultTheme());
+  m_style = WaveformEditorStyle::fromTheme(theme);
+  sanitizeStyle();
   repaint();
+}
+void WaveformEditor::sanitizeStyle() {
+  const auto finiteOr = [](float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+  };
+  m_style.playheadWidth = juce::jlimit(0.5f, 64.0f, finiteOr(m_style.playheadWidth, 2.0f));
+  m_style.trimHandleWidth = juce::jlimit(1.0f, 128.0f, finiteOr(m_style.trimHandleWidth, 8.0f));
 }
 
 //==============================================================================
@@ -216,21 +358,19 @@ void WaveformEditor::resized() {
 
 //==============================================================================
 void WaveformEditor::mouseDown(const juce::MouseEvent& e) {
-  if (!m_waveformData.isValid)
+  if (!requireMessageThread() || !m_waveformData.isValid)
     return;
 
   auto bounds = getLocalBounds().toFloat();
   if (m_style.showTimeScale)
     bounds.removeFromBottom(20.0f);
 
-  float x = static_cast<float>(e.getPosition().x);
-  float y = static_cast<float>(e.getPosition().y);
-
+  const float x = static_cast<float>(e.getPosition().x);
+  const float y = static_cast<float>(e.getPosition().y);
   m_draggedHandle = getHandleAt(x, y);
   m_dragStartPoint = {x, y};
   m_draggedCueIndex = -1;
 
-  // A cue marker under the cursor takes precedence over a seek click.
   const int cueIdx = cueMarkerIndexAt(x, bounds.getWidth());
   if (m_draggedHandle == DragHandle::None && cueIdx >= 0) {
     m_draggedHandle = DragHandle::CueMarker;
@@ -244,20 +384,20 @@ void WaveformEditor::mouseDown(const juce::MouseEvent& e) {
   } else if (m_draggedHandle == DragHandle::CueMarker) {
     m_dragStartValue = m_cueMarkers[static_cast<size_t>(m_draggedCueIndex)].sample;
   } else if (e.mods.isShiftDown()) {
-    // Start selection
     m_isSelecting = true;
     m_selectionStart = xToSample(x, bounds.getWidth());
     m_selectionEnd = m_selectionStart;
-  } else if (m_draggedHandle == DragHandle::None) {
-    // Seek on click
-    int64_t sample = xToSample(x, bounds.getWidth());
-    if (onSeek)
-      onSeek(sample);
+  } else if (m_draggedHandle == DragHandle::None && onSeek) {
+    const int64_t sample = xToSample(x, bounds.getWidth());
+    juce::Component::SafePointer<WaveformEditor> safeThis(this);
+    onSeek(sample);
+    if (safeThis == nullptr)
+      return;
   }
 }
 
 void WaveformEditor::mouseDoubleClick(const juce::MouseEvent& e) {
-  if (!m_waveformData.isValid || !hasAuditionRegion())
+  if (!requireMessageThread() || !m_waveformData.isValid || !hasAuditionRegion())
     return;
 
   auto bounds = getLocalBounds().toFloat();
@@ -265,28 +405,32 @@ void WaveformEditor::mouseDoubleClick(const juce::MouseEvent& e) {
     bounds.removeFromBottom(20.0f);
 
   const int64_t sample = xToSample(static_cast<float>(e.getPosition().x), bounds.getWidth());
-  if (sample >= m_auditionStart && sample <= m_auditionEnd && onAuditionRequested)
+  if (sample >= m_auditionStart && sample <= m_auditionEnd && onAuditionRequested) {
+    juce::Component::SafePointer<WaveformEditor> safeThis(this);
     onAuditionRequested();
+    juce::ignoreUnused(safeThis);
+  }
 }
 
 void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
-  if (!m_waveformData.isValid)
+  if (!requireMessageThread() || !m_waveformData.isValid)
     return;
 
   auto bounds = getLocalBounds().toFloat();
   if (m_style.showTimeScale)
     bounds.removeFromBottom(20.0f);
-
-  float x = static_cast<float>(e.getPosition().x);
+  const float x = static_cast<float>(e.getPosition().x);
 
   if (m_isSelecting) {
     m_selectionEnd = xToSample(x, bounds.getWidth());
     repaint();
-
     if (onSelectionChanged) {
-      int64_t start = juce::jmin(m_selectionStart, m_selectionEnd);
-      int64_t end = juce::jmax(m_selectionStart, m_selectionEnd);
+      const int64_t start = juce::jmin(m_selectionStart, m_selectionEnd);
+      const int64_t end = juce::jmax(m_selectionStart, m_selectionEnd);
+      juce::Component::SafePointer<WaveformEditor> safeThis(this);
       onSelectionChanged(start, end);
+      if (safeThis == nullptr)
+        return;
     }
   } else if (m_draggedHandle == DragHandle::TrimIn) {
     int64_t newTrimIn = xToSample(x, bounds.getWidth());
@@ -294,9 +438,12 @@ void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
     if (newTrimIn != m_trimInSamples) {
       m_trimInSamples = newTrimIn;
       repaint();
-
-      if (onTrimPointsChanged)
+      if (onTrimPointsChanged) {
+        juce::Component::SafePointer<WaveformEditor> safeThis(this);
         onTrimPointsChanged(m_trimInSamples, m_trimOutSamples);
+        if (safeThis == nullptr)
+          return;
+      }
     }
   } else if (m_draggedHandle == DragHandle::TrimOut) {
     int64_t newTrimOut = xToSample(x, bounds.getWidth());
@@ -304,9 +451,12 @@ void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
     if (newTrimOut != m_trimOutSamples) {
       m_trimOutSamples = newTrimOut;
       repaint();
-
-      if (onTrimPointsChanged)
+      if (onTrimPointsChanged) {
+        juce::Component::SafePointer<WaveformEditor> safeThis(this);
         onTrimPointsChanged(m_trimInSamples, m_trimOutSamples);
+        if (safeThis == nullptr)
+          return;
+      }
     }
   } else if (m_draggedHandle == DragHandle::CueMarker && m_draggedCueIndex >= 0 &&
              m_draggedCueIndex < static_cast<int>(m_cueMarkers.size())) {
@@ -315,21 +465,25 @@ void WaveformEditor::mouseDrag(const juce::MouseEvent& e) {
     auto& marker = m_cueMarkers[static_cast<size_t>(m_draggedCueIndex)];
     if (marker.sample != newSample) {
       marker.sample = newSample;
+      const auto markerId = marker.id;
       repaint();
-      if (onCueMarkerMoved)
-        onCueMarkerMoved(marker.id, newSample);
+      if (onCueMarkerMoved) {
+        juce::Component::SafePointer<WaveformEditor> safeThis(this);
+        onCueMarkerMoved(markerId, newSample);
+        if (safeThis == nullptr)
+          return;
+      }
     }
   }
 }
 
 void WaveformEditor::mouseUp(const juce::MouseEvent& e) {
   juce::ignoreUnused(e);
+  if (!requireMessageThread())
+    return;
 
-  if (m_isSelecting) {
-    // Normalize selection
-    if (m_selectionStart > m_selectionEnd)
-      std::swap(m_selectionStart, m_selectionEnd);
-  }
+  if (m_isSelecting && m_selectionStart > m_selectionEnd)
+    std::swap(m_selectionStart, m_selectionEnd);
 
   m_draggedHandle = DragHandle::None;
   m_isSelecting = false;
@@ -338,110 +492,150 @@ void WaveformEditor::mouseUp(const juce::MouseEvent& e) {
 }
 
 void WaveformEditor::mouseMove(const juce::MouseEvent& e) {
-  if (!m_waveformData.isValid)
+  if (!requireMessageThread() || !m_waveformData.isValid)
     return;
 
-  float x = static_cast<float>(e.getPosition().x);
-  float y = static_cast<float>(e.getPosition().y);
-
-  DragHandle handle = getHandleAt(x, y);
-  updateCursor(handle);
+  const float x = static_cast<float>(e.getPosition().x);
+  const float y = static_cast<float>(e.getPosition().y);
+  updateCursor(getHandleAt(x, y));
 }
 
 void WaveformEditor::mouseWheelMove(const juce::MouseEvent& e,
                                     const juce::MouseWheelDetails& wheel) {
-  if (!m_waveformData.isValid)
+  if (!requireMessageThread() || !m_waveformData.isValid)
     return;
 
   if (e.mods.isCommandDown()) {
-    // Zoom
-    float zoomDelta = wheel.deltaY * 0.5f;
+    const float zoomDelta = wheel.deltaY * 0.5f;
     setZoomLevel(m_zoomLevel * (1.0f + zoomDelta));
   } else {
-    // Scroll
-    float scrollDelta = wheel.deltaX != 0.0f ? wheel.deltaX : wheel.deltaY;
+    const float scrollDelta = wheel.deltaX != 0.0f ? wheel.deltaX : wheel.deltaY;
     setScrollPosition(m_scrollPosition - scrollDelta * 0.1f);
   }
 }
 
 //==============================================================================
 void WaveformEditor::generateWaveformData(const juce::File& audioFile) {
-  if (m_isLoading.exchange(true))
-    return; // Already loading
+  if (!requireMessageThread())
+    return;
+
+  if (m_isLoading.exchange(true, std::memory_order_acq_rel))
+    return;
+
+  const uint64_t generation = m_loadGeneration.load(std::memory_order_acquire);
+  juce::Component::SafePointer<WaveformEditor> safeThis(this);
+  m_loadPool.addJob(
+      new WaveformLoadJob(audioFile.getFullPathName(), safeThis, m_loadGeneration, generation),
+      true);
+}
+
+bool WaveformEditor::loadWaveformData(const juce::File& audioFile,
+                                      std::atomic<uint64_t>& generation,
+                                      uint64_t requestedGeneration, WaveformData& result) {
+  if (generation.load(std::memory_order_acquire) != requestedGeneration)
+    return false;
 
   juce::AudioFormatManager formatManager;
   formatManager.registerBasicFormats();
-
   std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+  if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels == 0 ||
+      !std::isfinite(reader->sampleRate) || reader->sampleRate <= 0.0)
+    return false;
 
-  if (reader == nullptr) {
-    m_isLoading = false;
-    return;
-  }
+  const double boundedRate =
+      juce::jlimit(1.0, static_cast<double>(std::numeric_limits<int>::max()), reader->sampleRate);
+  result.sampleRate = static_cast<int>(boundedRate);
+  result.numChannels = juce::jlimit(1, kWaveformMaxChannels, static_cast<int>(reader->numChannels));
+  result.totalSamples = reader->lengthInSamples;
+  result.minValues.assign(static_cast<size_t>(kWaveformColumns), 0.0f);
+  result.maxValues.assign(static_cast<size_t>(kWaveformColumns), 0.0f);
 
-  WaveformData newData;
-  newData.sampleRate = static_cast<int>(reader->sampleRate);
-  newData.numChannels = static_cast<int>(reader->numChannels);
-  newData.totalSamples = reader->lengthInSamples;
+  const int64_t samplesPerPixel = result.totalSamples / kWaveformColumns +
+                                  (result.totalSamples % kWaveformColumns != 0 ? 1 : 0);
+  const int bufferSamples = static_cast<int>(
+      juce::jmin<int64_t>(juce::jmax<int64_t>(1, samplesPerPixel), kWaveformReadChunk));
+  juce::AudioBuffer<float> buffer(result.numChannels, bufferSamples);
 
-  // Calculate samples per pixel (assuming max width of 2048 for cache)
-  const int targetWidth = 2048;
-  const int64_t samplesPerPixel = juce::jmax(int64_t(1), newData.totalSamples / targetWidth);
+  for (int column = 0; column < kWaveformColumns; ++column) {
+    if (generation.load(std::memory_order_acquire) != requestedGeneration)
+      return false;
 
-  newData.minValues.resize(targetWidth);
-  newData.maxValues.resize(targetWidth);
-
-  // Read and downsample
-  juce::AudioBuffer<float> buffer(newData.numChannels, static_cast<int>(samplesPerPixel));
-
-  for (int i = 0; i < targetWidth; ++i) {
-    int64_t startSample = i * samplesPerPixel;
-    int64_t numToRead = juce::jmin(samplesPerPixel, newData.totalSamples - startSample);
-
-    if (numToRead <= 0) {
-      newData.minValues[i] = 0.0f;
-      newData.maxValues[i] = 0.0f;
+    const int64_t startSample = static_cast<int64_t>(column) * samplesPerPixel;
+    const int64_t endSample = juce::jmin(result.totalSamples, startSample + samplesPerPixel);
+    if (startSample >= endSample)
       continue;
+
+    float minValue = 0.0f;
+    float maxValue = 0.0f;
+    bool columnHasSample = false;
+    for (int64_t offset = startSample; offset < endSample;) {
+      if (generation.load(std::memory_order_acquire) != requestedGeneration)
+        return false;
+
+      const int numSamples =
+          static_cast<int>(juce::jmin<int64_t>(bufferSamples, endSample - offset));
+      if (numSamples <= 0 || !reader->read(&buffer, 0, numSamples, offset, true, true))
+        return false;
+
+      for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+        const auto range = buffer.findMinMax(channel, 0, numSamples);
+        const float rangeMin = range.getStart();
+        const float rangeMax = range.getEnd();
+        if (!std::isfinite(rangeMin) || !std::isfinite(rangeMax))
+          continue;
+
+        if (!columnHasSample) {
+          minValue = rangeMin;
+          maxValue = rangeMax;
+          columnHasSample = true;
+        } else {
+          minValue = juce::jmin(minValue, rangeMin);
+          maxValue = juce::jmax(maxValue, rangeMax);
+        }
+      }
+      offset += numSamples;
     }
 
-    buffer.clear();
-    reader->read(&buffer, 0, static_cast<int>(numToRead), startSample, true, true);
+    if (!columnHasSample)
+      return false;
 
-    float minVal = 0.0f;
-    float maxVal = 0.0f;
-
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
-      auto range = buffer.findMinMax(ch, 0, static_cast<int>(numToRead));
-      minVal = juce::jmin(minVal, range.getStart());
-      maxVal = juce::jmax(maxVal, range.getEnd());
-    }
-
-    newData.minValues[i] = minVal;
-    newData.maxValues[i] = maxVal;
+    result.minValues[static_cast<size_t>(column)] = minValue;
+    result.maxValues[static_cast<size_t>(column)] = maxValue;
   }
 
-  newData.isValid = true;
+  result.isValid = true;
+  return true;
+}
 
-  // Update data
+void WaveformEditor::applyLoadedWaveform(uint64_t generation, const juce::String& path,
+                                         WaveformData data) {
+  if (!requireMessageThread() || m_loadGeneration.load(std::memory_order_acquire) != generation)
+    return;
+
+  m_isLoading.store(false, std::memory_order_release);
+  if (!data.isValid)
+    return;
+
   {
     juce::ScopedLock sl(m_dataLock);
-    m_waveformData = newData;
-    m_cachedFilePath = audioFile.getFullPathName();
-
-    // Reset trim to full file
+    m_waveformData = std::move(data);
+    m_cachedFilePath = path;
     m_trimInSamples = 0;
-    m_trimOutSamples = newData.totalSamples;
-
-    // Add to cache (evict oldest if full)
-    if (m_waveformCache.size() >= MAX_CACHE_SIZE)
-      m_waveformCache.erase(m_waveformCache.begin());
-
-    m_waveformCache[audioFile.getFullPathName()] = newData;
+    m_trimOutSamples = m_waveformData.totalSamples;
   }
 
-  m_isLoading = false;
-
-  juce::MessageManager::callAsync([this] { repaint(); });
+  const auto cacheIt =
+      std::find_if(m_waveformCache.begin(), m_waveformCache.end(),
+                   [&path](const WaveformCacheEntry& entry) { return entry.path == path; });
+  if (cacheIt != m_waveformCache.end()) {
+    cacheIt->data = m_waveformData;
+    m_waveformCache.splice(m_waveformCache.end(), m_waveformCache, cacheIt);
+  } else {
+    m_waveformCache.push_back({path, m_waveformData});
+    if (m_waveformCache.size() > MAX_CACHE_SIZE)
+      m_waveformCache.pop_front();
+  }
+  repaint();
 }
 
 void WaveformEditor::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds) {
@@ -693,18 +887,26 @@ juce::String WaveformEditor::formatTime(int64_t samples) const {
 // Cue markers (G4)
 //==============================================================================
 void WaveformEditor::addCueMarker(const CueMarker& marker) {
+  if (!requireMessageThread())
+    return;
+
   for (auto& m : m_cueMarkers) {
     if (m.id == marker.id) {
-      m = marker; // update in place, preserve order
+      m = marker;
       repaint();
       return;
     }
   }
+  if (m_cueMarkers.size() >= 256)
+    return;
   m_cueMarkers.push_back(marker);
   repaint();
 }
 
 void WaveformEditor::removeCueMarker(const juce::String& id) {
+  if (!requireMessageThread())
+    return;
+
   const auto before = m_cueMarkers.size();
   m_cueMarkers.erase(std::remove_if(m_cueMarkers.begin(), m_cueMarkers.end(),
                                     [&](const CueMarker& m) { return m.id == id; }),
@@ -714,6 +916,9 @@ void WaveformEditor::removeCueMarker(const juce::String& id) {
 }
 
 void WaveformEditor::clearCueMarkers() {
+  if (!requireMessageThread())
+    return;
+
   if (!m_cueMarkers.empty()) {
     m_cueMarkers.clear();
     repaint();
@@ -775,22 +980,30 @@ void WaveformEditor::drawCueMarkers(juce::Graphics& g, juce::Rectangle<float> bo
 // Audition region (G5)
 //==============================================================================
 void WaveformEditor::setAuditionRegion(int64_t startSamples, int64_t endSamples) {
+  if (!requireMessageThread())
+    return;
+
   if (startSamples > endSamples)
     std::swap(startSamples, endSamples);
   m_auditionStart = juce::jlimit(int64_t(0), m_waveformData.totalSamples, startSamples);
-  m_auditionEnd = juce::jlimit(int64_t(0), m_waveformData.totalSamples, endSamples);
+  m_auditionEnd = juce::jlimit(m_auditionStart, m_waveformData.totalSamples, endSamples);
   repaint();
 }
 
 void WaveformEditor::setAuditionRegionFromEnd(double seconds) {
-  if (!m_waveformData.isValid || m_waveformData.sampleRate <= 0)
+  if (!requireMessageThread() || !m_waveformData.isValid || m_waveformData.sampleRate <= 0 ||
+      !std::isfinite(seconds))
     return;
-  const int64_t span = static_cast<int64_t>(seconds * m_waveformData.sampleRate);
+
+  const int64_t span = static_cast<int64_t>(juce::jmax(0.0, seconds) * m_waveformData.sampleRate);
   const int64_t end = m_waveformData.totalSamples;
   setAuditionRegion(juce::jmax(int64_t(0), end - span), end);
 }
 
 void WaveformEditor::clearAuditionRegion() {
+  if (!requireMessageThread())
+    return;
+
   if (hasAuditionRegion()) {
     m_auditionStart = 0;
     m_auditionEnd = 0;
@@ -818,13 +1031,17 @@ void WaveformEditor::drawAuditionRegion(juce::Graphics& g, juce::Rectangle<float
 // Play-follow (G6)
 //==============================================================================
 void WaveformEditor::setFollowMode(FollowMode mode) {
+  if (!requireMessageThread())
+    return;
   m_followMode = mode;
   if (mode != FollowMode::Off)
     followPlayhead();
 }
 
 void WaveformEditor::setFollowThrottleHz(float hz) {
-  m_followThrottleHz = juce::jlimit(1.0f, 120.0f, hz);
+  if (!requireMessageThread())
+    return;
+  m_followThrottleHz = std::isfinite(hz) ? juce::jlimit(1.0f, 120.0f, hz) : 30.0f;
 }
 
 void WaveformEditor::followPlayhead() {

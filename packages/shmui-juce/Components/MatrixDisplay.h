@@ -13,6 +13,8 @@
 #pragma once
 
 #include "../Utils/DesignTokens.h"
+#include "../Utils/MessageThread.h"
+#include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <vector>
 
@@ -48,10 +50,14 @@ Frame createVUMeterFrame(int columns, const std::vector<float>& levels);
  * Supports frame-based animations and real-time VU meter mode.
  * Port of Matrix component from matrix.tsx.
  */
-class MatrixDisplay : public juce::Component, public juce::Timer {
+class MatrixDisplay : public juce::Component, public juce::Timer, public ThemeListener {
 public:
   MatrixDisplay();
   ~MatrixDisplay() override;
+
+  static constexpr int kMaxRows = 128;
+  static constexpr int kMaxColumns = 128;
+  static constexpr int kMaxFrames = 256;
 
   //==============================================================================
   // Configuration
@@ -178,6 +184,7 @@ public:
 
   void paint(juce::Graphics& g) override;
   void resized() override;
+  void defaultThemeChanged(const ShmuiTheme& theme) override;
 
 private:
   void timerCallback() override;
@@ -206,6 +213,8 @@ private:
   float ledGap = 2.0f;
   juce::Colour onColour = tokens::lab::text();                   // lit LED — fg
   juce::Colour offColour = tokens::lab::muted().withAlpha(0.5f); // unlit LED — muted
+  bool customOnColour = false;
+  bool customOffColour = false;
   float brightness = 1.0f;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MatrixDisplay)

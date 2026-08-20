@@ -22,9 +22,15 @@ BarVisualizer::BarVisualizer() {
   volumeBands.resize(barCount, 0.0f);
   fakeVolumeBands.resize(barCount, 0.2f);
   setOpaque(false);
+  const auto& theme = defaultTheme();
+  barColour = theme.fgMuted;
+  highlightColour = theme.accent;
+  backgroundColour = theme.bgPanel;
+  addDefaultThemeListener(this);
 }
 
 BarVisualizer::~BarVisualizer() {
+  removeDefaultThemeListener(this);
   stopTimer();
 }
 
@@ -131,6 +137,7 @@ void BarVisualizer::setBarColour(const juce::Colour& colour) {
     return;
 
   barColour = colour;
+  customBarColour = true;
   repaint();
 }
 
@@ -139,6 +146,7 @@ void BarVisualizer::setHighlightColour(const juce::Colour& colour) {
     return;
 
   highlightColour = colour;
+  customHighlightColour = true;
   repaint();
 }
 
@@ -147,6 +155,20 @@ void BarVisualizer::setBackgroundColour(const juce::Colour& colour) {
     return;
 
   backgroundColour = colour;
+  customBackgroundColour = true;
+  repaint();
+}
+
+void BarVisualizer::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread())
+    return;
+
+  if (!customBarColour)
+    barColour = theme.fgMuted;
+  if (!customHighlightColour)
+    highlightColour = theme.accent;
+  if (!customBackgroundColour)
+    backgroundColour = theme.bgPanel;
   repaint();
 }
 
@@ -237,12 +259,14 @@ void BarVisualizer::paint(juce::Graphics& g) {
     }
   }
 }
-
 void BarVisualizer::resized() {
-  repaint();
+  if (requireMessageThread())
+    repaint();
 }
 
 void BarVisualizer::timerCallback() {
+  if (!requireMessageThread())
+    return;
   if (!isShowing() || !hasActiveWork()) {
     updateTimerState();
     return;
@@ -269,24 +293,25 @@ void BarVisualizer::timerCallback() {
     }
   }
 
-  for (auto& value : volumeBands) {
+  for (auto& value : volumeBands)
     value = std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : 0.0f;
-  }
 
-  if (demoMode && (agentState == AgentState::Speaking || agentState == AgentState::Listening)) {
+  if (demoMode && (agentState == AgentState::Speaking || agentState == AgentState::Listening))
     updateFakeVolumeBands();
-  } else if (demoMode) {
+  else if (demoMode)
     std::fill(fakeVolumeBands.begin(), fakeVolumeBands.end(), 0.2f);
-  }
 
   repaint();
 }
 
 void BarVisualizer::visibilityChanged() {
-  updateTimerState();
+  if (requireMessageThread())
+    updateTimerState();
 }
 
 void BarVisualizer::updateTimerState() {
+  if (!requireMessageThread())
+    return;
   if (isShowing() && hasActiveWork())
     startTimerHz(60);
   else

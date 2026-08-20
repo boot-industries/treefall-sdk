@@ -19,11 +19,17 @@ namespace shmui {
 MuteButton::MuteButton(Type type) : m_type(type) {
   setStyle(ButtonStyle::Ghost);
   setSize(ButtonSize::Small);
-  onClick = [this] { handleClick(); };
+  juce::Component::SafePointer<MuteButton> safeThis(this);
+  onClick = [safeThis] {
+    if (auto* owner = safeThis.getComponent())
+      owner->handleClick();
+  };
 }
 
 //==============================================================================
 void MuteButton::setType(Type type) {
+  if (!requireMessageThread())
+    return;
   if (m_type != type) {
     m_type = type;
     repaint();
@@ -31,6 +37,8 @@ void MuteButton::setType(Type type) {
 }
 
 void MuteButton::setActive(bool active) {
+  if (!requireMessageThread())
+    return;
   if (m_isActive != active) {
     m_isActive = active;
     repaint();
@@ -45,20 +53,21 @@ int MuteButton::getPreferredSize() const {
 void MuteButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds,
                               juce::Colour foregroundColor) {
   const float iconSize = getIconSizeForButton(getButtonSize());
-
-  // Use active color when active
-  juce::Colour iconColor = m_isActive ? getActiveColor() : foregroundColor;
-
-  // Center the icon in bounds
-  auto iconBounds = bounds.withSizeKeepingCentre(iconSize, iconSize);
-
+  const juce::Colour iconColor = m_isActive ? getActiveColor() : foregroundColor;
+  const auto iconBounds = bounds.withSizeKeepingCentre(iconSize, iconSize);
   Icons::drawIcon(g, getCurrentIcon(), iconBounds, iconColor);
 }
 
 void MuteButton::handleClick() {
+  if (!requireMessageThread())
+    return;
   setActive(!m_isActive);
-  if (onToggle)
+  if (onToggle) {
+    juce::Component::SafePointer<MuteButton> safeThis(this);
     onToggle(m_isActive);
+    if (safeThis == nullptr)
+      return;
+  }
 }
 
 IconType MuteButton::getCurrentIcon() const {
@@ -75,18 +84,19 @@ IconType MuteButton::getCurrentIcon() const {
 }
 
 juce::Colour MuteButton::getActiveColor() const {
+  const auto& theme = defaultTheme();
   switch (m_type) {
   case Type::Mute:
-    return tokens::lab::danger(); // --lab-danger
+    return theme.danger;
 
   case Type::Solo:
-    return tokens::lab::warning(); // --lab-warning
+    return theme.warning;
 
   case Type::Bypass:
-    return tokens::lab::muted(); // --lab-muted
+    return theme.fgMuted;
 
   default:
-    return juce::Colours::white;
+    return theme.fg;
   }
 }
 

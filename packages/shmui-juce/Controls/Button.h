@@ -18,9 +18,9 @@
 #pragma once
 
 #include "../Utils/Interpolation.h"
+#include "../Utils/MessageThread.h"
 #include "ButtonStyles.h"
 #include <JuceHeader.h>
-
 namespace shmui {
 
 //==============================================================================
@@ -61,7 +61,7 @@ public:
     return m_size;
   }
 
-  /** Enable/disable dark theme. */
+  /** @deprecated Compatibility state only; setDefaultTheme owns the palette. */
   void setDarkTheme(bool isDark);
   bool isDarkTheme() const {
     return m_isDarkTheme;

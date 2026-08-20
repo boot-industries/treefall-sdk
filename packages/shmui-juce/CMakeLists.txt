@@ -2,7 +2,8 @@
 # ==============================================================================
 # shmui JUCE component library — source-of-truth CMake
 # ==============================================================================
-# Shmui Audio Visualization & UI Components (v2.1)
+# Shmui Audio Visualization & UI Components (public version in
+# Source/ShmUI.h::shmui::Version).
 # Icons, Buttons, Visualizers, and Controls for Orpheus SDK audio applications.
 #
 # This is the SOURCE OF TRUTH for the shmui-juce build. It is synced (verbatim,
@@ -164,4 +165,10 @@ if(SHMUI_JUCE_BUILD_TESTS)
   target_compile_features(shmui_shm024_operational_state_fixture PRIVATE cxx_std_20)
   add_test(NAME shmui_shm024_operational_state
     COMMAND shmui_shm024_operational_state_fixture)
+  add_executable(shmui_shm015_fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM015JuceLifetimeFixture.cpp
+  )
+  target_link_libraries(shmui_shm015_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_features(shmui_shm015_fixture PRIVATE cxx_std_20)
+  add_test(NAME shmui_shm015_juce_lifetime COMMAND shmui_shm015_fixture)
 endif()

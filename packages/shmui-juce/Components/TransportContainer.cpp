@@ -14,7 +14,18 @@
 namespace shmui {
 
 //==============================================================================
-TransportContainer::TransportContainer() = default;
+TransportContainer::TransportContainer() {
+  const auto& theme = defaultTheme();
+  m_style.backgroundColor = theme.bgPanel;
+  m_style.textColor = theme.fg;
+  m_style.dimTextColor = theme.fgMuted;
+  m_style.separatorColor = theme.stroke;
+  addDefaultThemeListener(this);
+}
+
+TransportContainer::~TransportContainer() {
+  removeDefaultThemeListener(this);
+}
 
 //==============================================================================
 std::vector<TransportContainer::Item>& TransportContainer::regionItems(Region region) {
@@ -30,19 +41,24 @@ std::vector<TransportContainer::Item>& TransportContainer::regionItems(Region re
 }
 
 void TransportContainer::addItem(Region region, juce::Component* child, int flexWidth) {
-  if (child != nullptr) {
-    addAndMakeVisible(*child);
-    regionItems(region).push_back({child, flexWidth});
-    resized();
-  }
+  if (!requireMessageThread() || child == nullptr)
+    return;
+
+  addAndMakeVisible(*child);
+  regionItems(region).push_back({child, flexWidth});
+  resized();
 }
 
 void TransportContainer::addSpacer(Region region, int px) {
-  regionItems(region).push_back({nullptr, px});
+  if (!requireMessageThread())
+    return;
+  regionItems(region).push_back({nullptr, juce::jmax(0, px)});
   resized();
 }
 
 void TransportContainer::clearItems() {
+  if (!requireMessageThread())
+    return;
   for (auto* v : {&m_left, &m_center, &m_right}) {
     for (auto& item : *v)
       if (item.component != nullptr)
@@ -54,9 +70,22 @@ void TransportContainer::clearItems() {
 
 //==============================================================================
 void TransportContainer::setStyle(const TransportBarStyle& style) {
+  if (!requireMessageThread())
+    return;
   m_style = style;
+  m_usesDefaultThemeStyle = false;
   repaint();
   resized();
+}
+
+void TransportContainer::defaultThemeChanged(const ShmuiTheme& theme) {
+  if (!requireMessageThread() || !m_usesDefaultThemeStyle)
+    return;
+  m_style.backgroundColor = theme.bgPanel;
+  m_style.textColor = theme.fg;
+  m_style.dimTextColor = theme.fgMuted;
+  m_style.separatorColor = theme.stroke;
+  repaint();
 }
 
 //==============================================================================
@@ -81,13 +110,15 @@ void TransportContainer::layoutRegion(juce::FlexBox& box, std::vector<Item>& ite
       // Spacer.
       fi = juce::FlexItem().withWidth(static_cast<float>(juce::jmax(0, item.flexWidth)));
     }
-    fi = fi.withMargin(juce::FlexItem::Margin(0.0f, m_style.buttonSpacing * 0.5f, 0.0f,
-                                              m_style.buttonSpacing * 0.5f));
+    const float margin = juce::jmax(0.0f, m_style.buttonSpacing * 0.5f);
+    fi = fi.withMargin(juce::FlexItem::Margin(0.0f, margin, 0.0f, margin));
     box.items.add(fi);
   }
 }
 
 void TransportContainer::resized() {
+  if (!requireMessageThread())
+    return;
   auto bounds = getLocalBounds();
   const int third = bounds.getWidth() / 3;
 

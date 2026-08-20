@@ -16,15 +16,25 @@ namespace shmui {
 //==============================================================================
 ToggleButton::ToggleButton(IconType iconOff, IconType iconOn)
     : m_iconOff(iconOff), m_iconOn(iconOn) {
-  onClick = [this] { handleClick(); };
+  juce::Component::SafePointer<ToggleButton> safeThis(this);
+  onClick = [safeThis] {
+    if (auto* owner = safeThis.getComponent())
+      owner->handleClick();
+  };
 }
 
 ToggleButton::ToggleButton(IconType icon) : m_iconOff(icon), m_iconOn(icon) {
-  onClick = [this] { handleClick(); };
+  juce::Component::SafePointer<ToggleButton> safeThis(this);
+  onClick = [safeThis] {
+    if (auto* owner = safeThis.getComponent())
+      owner->handleClick();
+  };
 }
 
 //==============================================================================
 void ToggleButton::setToggled(bool toggled) {
+  if (!requireMessageThread())
+    return;
   if (m_isToggled != toggled) {
     m_isToggled = toggled;
     repaint();
@@ -32,18 +42,24 @@ void ToggleButton::setToggled(bool toggled) {
 }
 
 void ToggleButton::setIcons(IconType iconOff, IconType iconOn) {
+  if (!requireMessageThread())
+    return;
   m_iconOff = iconOff;
   m_iconOn = iconOn;
   repaint();
 }
 
 void ToggleButton::setOnColor(juce::Colour color) {
+  if (!requireMessageThread())
+    return;
   m_onColor = color;
   m_hasOnColor = true;
   repaint();
 }
 
 void ToggleButton::clearOnColor() {
+  if (!requireMessageThread())
+    return;
   m_hasOnColor = false;
   repaint();
 }
@@ -71,9 +87,15 @@ void ToggleButton::paintContent(juce::Graphics& g, juce::Rectangle<float> bounds
 }
 
 void ToggleButton::handleClick() {
+  if (!requireMessageThread())
+    return;
   setToggled(!m_isToggled);
-  if (onToggle)
+  if (onToggle) {
+    juce::Component::SafePointer<ToggleButton> safeThis(this);
     onToggle(m_isToggled);
+    if (safeThis == nullptr)
+      return;
+  }
 }
 
 } // namespace shmui

@@ -82,7 +82,7 @@ remain required before support claims.
 
 ## Current SDK Status
 
-**Version:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0; ShmUI-JUCE token contract 0.3.0.
+**Version:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0; ShmUI-JUCE token contract 0.6.0.
 **Historical milestone:** ORP068 phases are complete; the durable work log is
 `.claude/implementation_progress.md`.
 

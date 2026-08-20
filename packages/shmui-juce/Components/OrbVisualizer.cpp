@@ -16,7 +16,8 @@
 
 namespace shmui {
 
-// Embedded shader source (loaded from files at compile time)
+// Embedded GLSL shader strings are the authoritative native shader source.
+// There are no runtime shader files; package sync must preserve these strings.
 static const char* vertexShaderSource = R"(
 attribute vec4 aPosition;
 attribute vec2 aTexCoord;
@@ -282,6 +283,7 @@ void OrbVisualizer::setInverted(bool inv) {
 }
 
 void OrbVisualizer::newOpenGLContextCreated() {
+  using namespace juce::gl;
   createShaders();
   createNoiseTexture();
 
@@ -303,7 +305,9 @@ void OrbVisualizer::newOpenGLContextCreated() {
 }
 
 void OrbVisualizer::renderOpenGL() {
-  if (shader == nullptr)
+  using namespace juce::gl;
+  if (shader == nullptr || position == nullptr || texCoord == nullptr ||
+      position->attributeID < 0 || texCoord->attributeID < 0)
     return;
 
   juce::OpenGLHelpers::clear(juce::Colours::transparentBlack);
@@ -341,23 +345,22 @@ void OrbVisualizer::renderOpenGL() {
 
   // Draw quad
   openGLContext.extensions.glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-  if (auto* posAttr = shader->getAttributeIDFromName("aPosition")) {
-    openGLContext.extensions.glVertexAttribPointer(posAttr->attributeID, 4, GL_FLOAT, GL_FALSE, 0,
-                                                   nullptr);
-    openGLContext.extensions.glEnableVertexAttribArray(posAttr->attributeID);
-  }
+  openGLContext.extensions.glVertexAttribPointer(position->attributeID, 4, GL_FLOAT, GL_FALSE, 0,
+                                                 nullptr);
+  openGLContext.extensions.glEnableVertexAttribArray(position->attributeID);
 
   openGLContext.extensions.glBindBuffer(GL_ARRAY_BUFFER, texCoordBuffer);
-  if (auto* texAttr = shader->getAttributeIDFromName("aTexCoord")) {
-    openGLContext.extensions.glVertexAttribPointer(texAttr->attributeID, 2, GL_FLOAT, GL_FALSE, 0,
-                                                   nullptr);
-    openGLContext.extensions.glEnableVertexAttribArray(texAttr->attributeID);
-  }
+  openGLContext.extensions.glVertexAttribPointer(texCoord->attributeID, 2, GL_FLOAT, GL_FALSE, 0,
+                                                 nullptr);
+  openGLContext.extensions.glEnableVertexAttribArray(texCoord->attributeID);
 
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 void OrbVisualizer::openGLContextClosing() {
+  using namespace juce::gl;
+  position.reset();
+  texCoord.reset();
   shader.reset();
 
   if (noiseTexture != 0) {
@@ -467,6 +470,7 @@ void OrbVisualizer::updateAnimationTargets() {
 }
 
 void OrbVisualizer::createShaders() {
+  using namespace juce::gl;
   shader = std::make_unique<juce::OpenGLShaderProgram>(openGLContext);
 
   if (!shader->addVertexShader(vertexShaderSource)) {
@@ -486,9 +490,12 @@ void OrbVisualizer::createShaders() {
     shader.reset();
     return;
   }
+  position = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "aPosition");
+  texCoord = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "aTexCoord");
 }
 
 void OrbVisualizer::createNoiseTexture() {
+  using namespace juce::gl;
   // Generate a simple Perlin-like noise texture
   const int size = 256;
   std::vector<uint8_t> data(size * size);

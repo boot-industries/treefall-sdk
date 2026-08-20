@@ -25,8 +25,8 @@
 
 #pragma once
 
+#include "MessageThread.h"
 #include <JuceHeader.h>
-
 namespace shmui {
 
 //==============================================================================
@@ -50,28 +50,36 @@ public:
   }
 
   ~RepaintThrottle() override {
-    stopTimer();
+    if (requireMessageThread())
+      cancel();
+    else
+      stopTimer();
   }
 
   //==============================================================================
   /** Set the maximum repaint rate (Hz). */
   void setMaxHz(float maxHz) {
-    m_maxHz = juce::jlimit(1.0f, 240.0f, maxHz);
-  }
+    if (!requireMessageThread())
+      return;
 
-  float getMaxHz() const {
-    return m_maxHz;
+    m_maxHz = std::isfinite(maxHz) ? juce::jlimit(1.0f, 240.0f, maxHz) : 60.0f;
   }
 
   //==============================================================================
   /** Request a full repaint (coalesced). */
   void requestRepaint() {
+    if (!requireMessageThread())
+      return;
+
     m_fullPending = true;
     ensureRunning();
   }
 
   /** Request a dirty-region repaint (coalesced; regions are unioned). */
   void requestRepaint(juce::Rectangle<int> dirty) {
+    if (!requireMessageThread())
+      return;
+
     if (m_regionPending)
       m_dirty = m_dirty.getUnion(dirty);
     else {
@@ -83,15 +91,22 @@ public:
 
   /** Immediately flush any pending repaint and stop the timer. */
   void flush() {
+    if (!requireMessageThread())
+      return;
+
     stopTimer();
     doRepaint();
   }
 
   /** Discard any pending request without repainting. */
   void cancel() {
+    if (!requireMessageThread())
+      return;
+
     stopTimer();
     m_fullPending = false;
     m_regionPending = false;
+    m_dirty = {};
   }
 
 private:

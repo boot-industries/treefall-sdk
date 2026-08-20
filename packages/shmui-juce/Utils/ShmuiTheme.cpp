@@ -11,6 +11,8 @@
 
 #include "ShmuiTheme.h"
 
+#include "MessageThread.h"
+
 #include <algorithm>
 #include <optional>
 #include <vector>
@@ -29,9 +31,8 @@ DefaultThemeState& defaultThemeState() {
   return state;
 }
 
-void assertMessageThread() {
-  if (auto* manager = juce::MessageManager::getInstanceWithoutCreating())
-    jassert(manager->isThisTheMessageThread());
+bool isThemeMessageThread() noexcept {
+  return requireMessageThread();
 }
 
 bool isRegistered(const DefaultThemeState& state, const ThemeListener* listener) {
@@ -41,12 +42,14 @@ bool isRegistered(const DefaultThemeState& state, const ThemeListener* listener)
 } // namespace
 
 const ShmuiTheme& defaultTheme() {
+  // Returning the current value keeps this accessor usable during bootstrap,
+  // while the assertion rejects reads from an established worker/audio thread.
+  jassert(isMessageThread());
   return defaultThemeState().theme;
 }
 
 void addDefaultThemeListener(ThemeListener* listener) {
-  assertMessageThread();
-  if (listener == nullptr)
+  if (!isThemeMessageThread() || listener == nullptr)
     return;
 
   auto& state = defaultThemeState();
@@ -55,8 +58,7 @@ void addDefaultThemeListener(ThemeListener* listener) {
 }
 
 void removeDefaultThemeListener(ThemeListener* listener) {
-  assertMessageThread();
-  if (listener == nullptr)
+  if (!isThemeMessageThread() || listener == nullptr)
     return;
 
   auto& state = defaultThemeState();
@@ -70,7 +72,9 @@ ThemeListener::~ThemeListener() {
 }
 
 void setDefaultTheme(const ShmuiTheme& theme) {
-  assertMessageThread();
+  if (!isThemeMessageThread())
+    return;
+
   auto& state = defaultThemeState();
   if (state.notifying) {
     state.pendingTheme = theme;

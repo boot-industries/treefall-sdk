@@ -11,6 +11,7 @@
 
 #include "ClipButton.h"
 #include <algorithm>
+#include <cmath>
 
 namespace shmui {
 
@@ -27,28 +28,38 @@ ClipButton::ClipButton(int buttonIndex) : m_buttonIndex(buttonIndex) {
   m_indicators.push_back({"fadeOut", IconType::VolumeMute, juce::Colours::white.withAlpha(0.6f),
                           BadgeSlot::TopRight, false});
 
-  // Override click handlers
-  onClick = [this] { handleClipClick(); };
-  onRightClick = [this] { handleClipRightClick(); };
+  // Override click handlers with destruction-safe owner tokens.
+  juce::Component::SafePointer<ClipButton> safeThis(this);
+  onClick = [safeThis] {
+    if (auto* owner = safeThis.getComponent())
+      owner->handleClipClick();
+  };
+  onRightClick = [safeThis] {
+    if (auto* owner = safeThis.getComponent())
+      owner->handleClipRightClick();
+  };
 }
 
 //==============================================================================
 void ClipButton::setClipState(State newState) {
+  if (!requireMessageThread())
+    return;
   if (m_clipState != newState) {
     m_clipState = newState;
-    m_stateTransition = 0.0f; // Reset transition animation
-
-    // Start playing pulse animation
+    m_stateTransition = 0.0f;
     if (newState == State::Playing) {
       m_playingPulse = 0.0f;
       startAnimation();
+    } else if (newState == State::Stopping) {
+      startAnimation();
     }
-
     repaint();
   }
 }
 
 void ClipButton::setClipName(const juce::String& name) {
+  if (!requireMessageThread())
+    return;
   if (m_clipName != name) {
     m_clipName = name;
     repaint();
@@ -56,6 +67,8 @@ void ClipButton::setClipName(const juce::String& name) {
 }
 
 void ClipButton::setClipColor(juce::Colour color) {
+  if (!requireMessageThread())
+    return;
   if (m_clipColor != color) {
     m_clipColor = color;
     repaint();
@@ -63,13 +76,19 @@ void ClipButton::setClipColor(juce::Colour color) {
 }
 
 void ClipButton::setClipDuration(double durationSeconds) {
-  if (m_durationSeconds != durationSeconds) {
-    m_durationSeconds = durationSeconds;
+  if (!requireMessageThread())
+    return;
+  const double safeDuration =
+      std::isfinite(durationSeconds) ? juce::jmax(0.0, durationSeconds) : 0.0;
+  if (m_durationSeconds != safeDuration) {
+    m_durationSeconds = safeDuration;
     repaint();
   }
 }
 
 void ClipButton::setKeyboardShortcut(const juce::String& shortcut) {
+  if (!requireMessageThread())
+    return;
   if (m_keyboardShortcut != shortcut) {
     m_keyboardShortcut = shortcut;
     repaint();
@@ -77,12 +96,13 @@ void ClipButton::setKeyboardShortcut(const juce::String& shortcut) {
 }
 
 void ClipButton::clearClip() {
+  if (!requireMessageThread())
+    return;
   m_clipName = "";
-  m_clipColor = tokens::clip::empty(); // --clip-empty (unlit well)
+  m_clipColor = tokens::clip::empty();
   m_durationSeconds = 0.0;
   m_keyboardShortcut = "";
   m_playbackProgress = 0.0f;
-  // Hide every indicator (built-in + app-registered) without unregistering.
   for (auto& ind : m_indicators)
     ind.visible = false;
   m_clipState = State::Empty;
@@ -90,7 +110,9 @@ void ClipButton::clearClip() {
 }
 
 void ClipButton::setPlaybackProgress(float progress) {
-  const float clampedProgress = juce::jlimit(0.0f, 1.0f, progress);
+  if (!requireMessageThread())
+    return;
+  const float clampedProgress = std::isfinite(progress) ? juce::jlimit(0.0f, 1.0f, progress) : 0.0f;
   if (std::abs(m_playbackProgress - clampedProgress) > 0.001f) {
     m_playbackProgress = clampedProgress;
     if (m_clipState == State::Playing)
@@ -126,8 +148,10 @@ const ClipIndicator* ClipButton::findIndicator(const juce::String& name) const {
 }
 
 void ClipButton::setIndicator(const ClipIndicator& indicator) {
+  if (!requireMessageThread() || indicator.name.isEmpty())
+    return;
   if (auto* existing = findIndicator(indicator.name))
-    *existing = indicator; // update in place, preserving draw order
+    *existing = indicator;
   else
     m_indicators.push_back(indicator);
   repaint();
@@ -139,6 +163,8 @@ void ClipButton::setIndicator(const juce::String& name, IconType icon, juce::Col
 }
 
 void ClipButton::setIndicatorVisible(const juce::String& name, bool visible) {
+  if (!requireMessageThread())
+    return;
   if (auto* ind = findIndicator(name)) {
     if (ind->visible != visible) {
       ind->visible = visible;
@@ -157,6 +183,8 @@ bool ClipButton::hasIndicator(const juce::String& name) const {
 }
 
 void ClipButton::removeIndicator(const juce::String& name) {
+  if (!requireMessageThread())
+    return;
   const auto before = m_indicators.size();
   m_indicators.erase(std::remove_if(m_indicators.begin(), m_indicators.end(),
                                     [&](const ClipIndicator& ind) { return ind.name == name; }),
@@ -166,6 +194,8 @@ void ClipButton::removeIndicator(const juce::String& name) {
 }
 
 void ClipButton::clearIndicators() {
+  if (!requireMessageThread())
+    return;
   if (!m_indicators.empty()) {
     m_indicators.clear();
     repaint();
@@ -173,6 +203,8 @@ void ClipButton::clearIndicators() {
 }
 
 void ClipButton::setIsPlaybox(bool isPlaybox) {
+  if (!requireMessageThread())
+    return;
   if (m_isPlaybox != isPlaybox) {
     m_isPlaybox = isPlaybox;
     repaint();
@@ -181,6 +213,8 @@ void ClipButton::setIsPlaybox(bool isPlaybox) {
 
 //==============================================================================
 void ClipButton::setShowNumberWhenLoaded(bool shouldShow) {
+  if (!requireMessageThread())
+    return;
   if (m_showNumberWhenLoaded != shouldShow) {
     m_showNumberWhenLoaded = shouldShow;
     repaint();
@@ -188,6 +222,8 @@ void ClipButton::setShowNumberWhenLoaded(bool shouldShow) {
 }
 
 void ClipButton::setNumberSlot(BadgeSlot slot) {
+  if (!requireMessageThread())
+    return;
   if (m_numberSlot != slot) {
     m_numberSlot = slot;
     if (m_showNumberWhenLoaded)
@@ -202,7 +238,8 @@ juce::String ClipButton::getDisplayNumber() const {
 }
 
 void ClipButton::refreshDisplayNumber() {
-  repaint();
+  if (requireMessageThread())
+    repaint();
 }
 
 //==============================================================================
@@ -291,6 +328,14 @@ void ClipButton::animationTick() {
     repaint();
   }
 
+  // Stopping is a one-tick transitional state. The next message-thread
+  // animation tick publishes the stable Loaded state.
+  if (m_clipState == State::Stopping) {
+    m_clipState = State::Loaded;
+    m_stateTransition = 1.0f;
+    repaint();
+  }
+
   // State transition animation
   if (m_stateTransition < 1.0f) {
     m_stateTransition =
@@ -301,13 +346,21 @@ void ClipButton::animationTick() {
 
 //==============================================================================
 void ClipButton::handleClipClick() {
-  if (onClipClick)
+  if (onClipClick) {
+    juce::Component::SafePointer<ClipButton> safeThis(this);
     onClipClick(m_buttonIndex);
+    if (safeThis == nullptr)
+      return;
+  }
 }
 
 void ClipButton::handleClipRightClick() {
-  if (onClipRightClick)
+  if (onClipRightClick) {
+    juce::Component::SafePointer<ClipButton> safeThis(this);
     onClipRightClick(m_buttonIndex);
+    if (safeThis == nullptr)
+      return;
+  }
 }
 
 void ClipButton::drawClipHUD(juce::Graphics& g, juce::Rectangle<float> bounds) {
