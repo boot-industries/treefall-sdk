@@ -36,5 +36,12 @@ add_executable(orpheus_shmui_no_opengl_smoke main.cpp)
 target_link_libraries(orpheus_shmui_no_opengl_smoke PRIVATE Orpheus::shmui_juce)
 target_compile_features(orpheus_shmui_no_opengl_smoke PRIVATE cxx_std_20)
 
+# JUCE's Linux networking layer compiles against libcurl; the smoke binary
+# must carry the link dependency on hosts where the headers are present.
+if(UNIX AND NOT APPLE)
+  find_package(CURL REQUIRED)
+  target_link_libraries(orpheus_shmui_no_opengl_smoke PRIVATE CURL::libcurl)
+endif()
+
 enable_testing()
 add_test(NAME shmui_no_opengl_smoke COMMAND orpheus_shmui_no_opengl_smoke)
