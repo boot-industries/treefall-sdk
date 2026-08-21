@@ -95,6 +95,23 @@
   inherited blocker outside this PR's required macOS/Ubuntu gates.
 - Full record: ORP176 "Calibrated-source physical rerun (2026-08-21)".
 
+### 2026-08-21 evening: physical-mono demonstrated; row 08 blocked by latch semantics
+
+- Strict half demonstrated: terminal `ProfileConflict` against the
+  probe-verified live HFP mono profile.
+- Fallback half demonstrated: zero-gap mono-fallback session bound physical
+  mono (2ch/44.1k requested, 1ch/16k resolved, map `[0]`, fallback flags
+  true, zero failures, stable widths, full 30 s run). The row reported
+  `failed` only because `healthy` was declared before the profile behavior
+  was known; one bind in four zero-gap attempts (A2DP reversion usually wins).
+- Row 08: real mid-run Bluetooth disconnect produced terminal
+  `InputConversionFailed` by design (first-write-wins terminal latch; the
+  starved input callback beats the route poll). `InputRouteUnavailable` is
+  unreachable via physical teardown on this stack and the tool enum offers
+  no conversion-failed expectation. Documented blocker; no semantics
+  altered. Reconnect verified both endpoints alive.
+- Remaining: row 05 calibrated-tone rerun in a quiet environment.
+
 ## ORP174 — Cooperative CoreAudio rate negotiation
 
 **Date:** 2026-08-08

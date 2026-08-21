@@ -378,6 +378,58 @@ Verbatim one-line results emitted by the candidate:
 ```
 
 
+### Physical-mono and route-mutation addendum (2026-08-21 evening)
+
+Both halves of the physical-mono strict/fallback contract were demonstrated on
+live hardware; neither test nor policy was modified.
+
+- Strict half: `row06.json` above records the terminal `ProfileConflict` when a
+  strict output-only session opened against the probe-verified post-duplex HFP
+  mono profile (1 channel, 16 kHz, 320 frames).
+- Fallback half: with zero gap after a duplex session closed, the mono-fallback
+  session bound the still-live physical mono profile and ran a full 30-second
+  window on it: requested 2 channels at 44.1 kHz, resolved 1 channel at
+  16 kHz, map `[0]`, `settled_output_mono_fallback:true`,
+  `output_mono_fallback:true`, stable widths, and zero conversion, FIFO, and
+  render failures. That run declared `--expect-route-outcome healthy` before
+  the profile behavior was known, so the tool measured `SampleRateChanged`
+  against the declaration and reported `status:"failed"`; the contract
+  behavior itself is fully captured in the JSON below. Three further
+  zero-gap attempts observed the profile already reverted to A2DP stereo
+  (CoreAudio reversion wins the race; one bind in four attempts). The
+  fallback binding is demonstrated; a `status:"passed"` mono row remains
+  available to any future attempt that wins the race with the correct
+  `sample-rate-changed` declaration.
+
+```json
+{"status":"failed","backend":"CoreAudio","input_uid":"","output_uid":"58-18-62-82-0F-33:output","expected_route_outcome":"Healthy","seconds":30,"requested_frames":1323000,"output_policy":"mono-fallback","settled_active_input_uid":"","settled_active_output_uid":"58-18-62-82-0F-33:output","settled_requested_session_host_callback_rate":44100,"settled_session_host_callback_rate":44100,"settled_session_host_callback_buffer_frames":320,"settled_physical_input_rate":0,"settled_physical_output_rate":16000,"settled_input_auhal_client_rate":44100,"settled_output_auhal_client_rate":16000,"settled_available_input_channels":0,"settled_available_output_channels":1,"settled_requested_output_channels":2,"settled_resolved_output_channels":1,"settled_input_auhal_client_format_channels":0,"settled_output_auhal_client_format_channels":1,"settled_input_sample_rate_conversion_active":false,"settled_output_sample_rate_conversion_active":true,"settled_input_is_bluetooth":false,"settled_output_is_bluetooth":true,"settled_endpoints_related":false,"settled_output_mono_fallback":true,"settled_active_output_map":[0],"settled_capture_latency_frames":0,"settled_playback_latency_frames":571,"settled_processing_latency_frames":882,"settled_latency_complete":true,"settled_input_converter_latency_frames":0,"settled_output_converter_latency_frames":130,"settled_route_detail":"","startup_input_render_failures":0,"startup_input_fifo_overruns":0,"startup_input_fifo_underruns":0,"startup_input_conversion_failures":0,"startup_output_conversion_failures":0,"startup_route_outcome":"Healthy","active_input_uid":"","active_output_uid":"58-18-62-82-0F-33:output","requested_session_host_callback_rate":44100,"session_host_callback_rate":44100,"session_host_callback_buffer_frames":320,"physical_input_rate":0,"physical_output_rate":16000,"input_auhal_client_rate":44100,"output_auhal_client_rate":16000,"available_input_channels":0,"available_output_channels":1,"requested_output_channels":2,"resolved_output_channels":1,"input_auhal_client_format_channels":0,"output_auhal_client_format_channels":1,"input_sample_rate_conversion_active":false,"output_sample_rate_conversion_active":true,"input_is_bluetooth":false,"output_is_bluetooth":true,"endpoints_related":false,"output_mono_fallback":true,"active_output_map":[0],"capture_latency_frames":0,"playback_latency_frames":571,"processing_latency_frames":882,"latency_complete":true,"input_converter_latency_frames":0,"output_converter_latency_frames":130,"route_detail":"The active CoreAudio format or route changed; reinitialize explicitly.","callbacks":198,"callback_frames":87445,"input_callbacks":0,"input_frames":0,"callback_frame_delta":-1235555,"input_frame_delta":-1323000,"first_input_callback_width":0,"first_output_callback_width":1,"callback_width_changed":false,"callback_width_stable":true,"input_activity_matches":true,"startup_counters_clear":true,"final_counters_clear":true,"input_render_failures":0,"input_fifo_overruns":0,"input_fifo_underruns":0,"input_conversion_failures":0,"output_conversion_failures":0,"route_outcome":"SampleRateChanged","input_peak":0,"zero_crossing_frequency_hz":0,"passed":false}
+```
+
+- Route mutation: a real mid-run Bluetooth disconnect was induced during a
+  30-second input row (built-in speaker output, CLbuds input, no tone
+  assertion). The candidate terminated cleanly with the terminal outcome
+  `InputConversionFailed`, and both endpoints recovered after
+  `blueutil --connect`. The specified `InputRouteUnavailable` outcome is
+  structurally unreachable through physical teardown on this stack: the
+  driver's terminal-outcome latch is first-write-wins
+  (`publishTerminalRouteOutcome` compare-exchange from Healthy), the starved
+  realtime input callback latches `InputConversionFailed` within one callback
+  period, and the route poll that would classify `InputRouteUnavailable`
+  runs later on the monitor worker. The acceptance tool's
+  `--expect-route-outcome` enum offers no conversion-failed choice, so the
+  row cannot pass through this induction path. Recorded as a qualification
+  blocker with the rehearsal JSON; no classification semantics were altered.
+
+```json
+{"status":"failed","backend":"CoreAudio","input_uid":"58-18-62-82-0F-33:input","output_uid":"BuiltInSpeakerDevice","expected_route_outcome":"InputRouteUnavailable","seconds":30,"requested_frames":1323000,"output_policy":"strict","settled_active_input_uid":"58-18-62-82-0F-33:input","settled_active_output_uid":"BuiltInSpeakerDevice","settled_requested_session_host_callback_rate":44100,"settled_session_host_callback_rate":44100,"settled_session_host_callback_buffer_frames":512,"settled_physical_input_rate":16000,"settled_physical_output_rate":44100,"settled_input_auhal_client_rate":16000,"settled_output_auhal_client_rate":44100,"settled_available_input_channels":1,"settled_available_output_channels":2,"settled_requested_output_channels":2,"settled_resolved_output_channels":2,"settled_input_auhal_client_format_channels":1,"settled_output_auhal_client_format_channels":2,"settled_input_sample_rate_conversion_active":true,"settled_output_sample_rate_conversion_active":false,"settled_input_is_bluetooth":true,"settled_output_is_bluetooth":false,"settled_endpoints_related":false,"settled_output_mono_fallback":false,"settled_active_output_map":[0,1],"settled_capture_latency_frames":4320,"settled_playback_latency_frames":778,"settled_processing_latency_frames":512,"settled_latency_complete":true,"settled_input_converter_latency_frames":3879,"settled_output_converter_latency_frames":0,"settled_route_detail":"","startup_input_render_failures":0,"startup_input_fifo_overruns":0,"startup_input_fifo_underruns":0,"startup_input_conversion_failures":0,"startup_output_conversion_failures":0,"startup_route_outcome":"Healthy","active_input_uid":"58-18-62-82-0F-33:input","active_output_uid":"BuiltInSpeakerDevice","requested_session_host_callback_rate":44100,"session_host_callback_rate":44100,"session_host_callback_buffer_frames":512,"physical_input_rate":16000,"physical_output_rate":44100,"input_auhal_client_rate":16000,"output_auhal_client_rate":44100,"available_input_channels":1,"available_output_channels":2,"requested_output_channels":2,"resolved_output_channels":2,"input_auhal_client_format_channels":1,"output_auhal_client_format_channels":2,"input_sample_rate_conversion_active":true,"output_sample_rate_conversion_active":false,"input_is_bluetooth":true,"output_is_bluetooth":false,"endpoints_related":false,"output_mono_fallback":false,"active_output_map":[0,1],"capture_latency_frames":4320,"playback_latency_frames":778,"processing_latency_frames":512,"latency_complete":true,"input_converter_latency_frames":3879,"output_converter_latency_frames":0,"route_detail":"CoreAudio reported a terminal route failure.","callbacks":1093,"callback_frames":559616,"input_callbacks":1093,"input_frames":559616,"callback_frame_delta":-763384,"input_frame_delta":-763384,"first_input_callback_width":1,"first_output_callback_width":2,"callback_width_changed":false,"callback_width_stable":true,"input_activity_matches":true,"startup_counters_clear":true,"final_counters_clear":false,"input_render_failures":0,"input_fifo_overruns":0,"input_fifo_underruns":1,"input_conversion_failures":1,"output_conversion_failures":0,"route_outcome":"InputConversionFailed","input_peak":0.06320898235,"zero_crossing_frequency_hz":2489.419531,"passed":false}
+```
+
+Remaining physical gate: row 05 duplex with a calibrated 1 kHz source (two
+outdoor attempts drifted outside the +/-20 Hz tolerance with healthy routes;
+attributed to WF-1000XM6 uplink wind/noise DSP). Rows 01, 02, 03, and 04
+passed; the physical-mono strict/fallback halves are demonstrated as above;
+row 08 is blocked as analyzed.
+
 ## FourTrack adoption boundary
 
 FourTrack must not repin or ship this candidate. After CLbuds is restored, run

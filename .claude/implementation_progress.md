@@ -1,3 +1,19 @@
+## ORP176 Physical-Mono Demonstration and Row 08 Analysis (2026-08-21 evening)
+
+- Physical-mono strict half: `ProfileConflict` terminal outcome captured
+  against live HFP mono profile (row06.json).
+- Physical-mono fallback half: zero-gap session bound physical mono and ran
+  30 s clean (map [0], 1ch/16k/320f, fallback flags true, counters zero).
+  Expectation declaration (`healthy` vs measured `SampleRateChanged`) made
+  the row report failed; behavior fully captured. Catch rate 1/4 zero-gap
+  attempts.
+- Row 08 rehearsal: real mid-run BT disconnect; candidate terminated with
+  terminal `InputConversionFailed` (first-write-wins latch; callback beats
+  route poll). `InputRouteUnavailable` structurally unreachable via physical
+  teardown; tool enum has no conversion-failed option. Documented blocker;
+  no driver semantics modified. Reconnect restored both endpoints.
+- Row 05 calibrated tone rerun still pending quiet environment.
+
 ## ORP176 Calibrated-Source CLbuds Rerun Checkpoint (2026-08-21)
 
 - Independent iPhone 1 kHz acoustic source authorized by the operator;
