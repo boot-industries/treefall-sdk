@@ -15,6 +15,12 @@
   16 kHz/320 frames while the endpoints remained alive.
 - The physical gate remains blocked. No merge, `v0.8.0` tag, release asset,
   Ubuntu archive, or FourTrack repin is claimed.
+- Current release-local gates after the rerun: selected 5/5 CTest gates passed
+  (`realtime_static_audit`, unit audit, `docs_path_audit`, `version_contract`,
+  and `cmake_find_package`); ShmUI-JUCE manifest check passed for 56 files.
+- `gh pr checks 250` reports no hosted checks; GitHub Actions evidence remains
+  unavailable, independently of the physical CLbuds gate.
+
 
 ## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
 

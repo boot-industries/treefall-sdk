@@ -59,6 +59,11 @@
   installed-package consumers run on each archive's native runner, and publish
   assets receive platform-qualified evidence names. Hosted CI has not run because
   the physical release gate remains open.
+- Current release-local verification passed: selected CTest gates 5/5
+  (`realtime_static_audit`, unit audit, `docs_path_audit`, `version_contract`,
+  and `cmake_find_package`) plus the 56-file ShmUI-JUCE manifest check.
+- `gh pr checks 250` reports no hosted checks; GitHub Actions evidence remains
+  unavailable.
 - No merge, tag, release asset, Ubuntu archive, or FourTrack repin is claimed;
   the physical release gate remains open.
 

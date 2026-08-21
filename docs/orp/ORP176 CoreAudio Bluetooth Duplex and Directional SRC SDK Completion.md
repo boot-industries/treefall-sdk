@@ -57,6 +57,14 @@ provide the independently calibrated 1 kHz source required by rows 01, 02, and
 05. The physical release gate therefore remains blocked; no merge, tag,
 release asset, or FourTrack repin is claimed.
 
+The post-rerun local release checks passed: the selected CTest set was 5/5
+(`realtime_static_audit`, `realtime_static_audit_unit`, `docs_path_audit`,
+`version_contract`, and `cmake_find_package`), the native macOS installed
+package consumer passed 13/13, and the 56-file ShmUI-JUCE manifest check
+passed. GitHub reports no hosted PR checks for this branch, so Ubuntu and
+macOS hosted evidence is still unavailable.
+
+
 
 ## Implemented public contract
 
