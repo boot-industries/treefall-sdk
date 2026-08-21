@@ -3,8 +3,8 @@
 # ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion
 
 **Document type:** SDK implementation and qualification record
-**Status:** Candidate deterministic and packaging changes complete; physical CLbuds gate blocked; no merge, tag, or release publication
-**Date:** 2026-08-17
+**Status:** Candidate deterministic and packaging changes complete; the 2026-08-21 physical CLbuds rerun still fails the calibrated-tone and route-mutation rows; no merge, tag, or release publication
+**Date:** 2026-08-21 rerun; original candidate record 2026-08-17
 **Consumer:** FourTrack / EightTrack, FTR085
 **Implementation baseline:** `release/orp176-coreaudio-directional-src` candidate `7ff29aa65b94b1ba5a34a24ca7a3a78b79ef42ed`, based on `origin/main` `5039642b` plus repair commits `5b777731`, `c1393153`, and `e41a1727`
 **Merge commit:** Not created; physical acceptance is a release-blocking prerequisite
@@ -25,6 +25,38 @@ logical stereo output cannot be physically prepared: strict policy rejects the r
 `AllowMonoFallback` accepts a single physical output channel and exposes callback width
 one. FourTrack retains its stereo program path and folds the final monitor to
 `0.5f * (L + R)`.
+
+## 2026-08-21 CLbuds physical rerun
+
+The candidate acceptance binary was rebuilt from the current release branch before
+the rerun. A fresh FourTrack CoreAudio inventory found 18 devices and both live
+CLbuds endpoints:
+
+```text
+input UID: 58-18-62-82-0F-33:input
+output UID: 58-18-62-82-0F-33:output
+input: 1 channel, 16,000 Hz, 512-frame buffer before activation
+output: 2 channels, 44,100 Hz, 512-frame buffer before activation
+```
+
+All eight required 30-second rows ran with an inventory immediately before and
+after each row:
+
+| Rows | Result | Evidence |
+|---|---|---|
+| 01, 02, 05 | Failed, exit 6 | Duplex 44.1/48 kHz and related-duplex rows remained route-healthy but failed the `--expect-input-tone-hz 1000` acceptance predicate; no independently calibrated 1 kHz source was present. |
+| 03, 04 | Passed, exit 0 | Output-only strict CLbuds at 44.1 and 48 kHz. |
+| 06 | Passed, exit 0 | Output-only strict mono attempt; CoreAudio exposed stereo output rather than a physical-mono conflict. |
+| 07 | Passed, exit 0 | Output-only `mono-fallback`; CoreAudio exposed stereo output, so fallback was not needed. |
+| 08 | Failed, exit 6 | Expected `InputRouteUnavailable` was not induced because the CLbuds input remained connected; the route stayed available. |
+
+After duplex and route-mutation rows, the live CLbuds profile returned to
+one-channel/16,000 Hz/320-frame output while remaining alive. Wearing and
+connecting CLbuds established the required endpoint availability but did not
+provide the independently calibrated 1 kHz source required by rows 01, 02, and
+05. The physical release gate therefore remains blocked; no merge, tag,
+release asset, or FourTrack repin is claimed.
+
 
 ## Implemented public contract
 

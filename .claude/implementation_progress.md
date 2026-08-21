@@ -1,3 +1,21 @@
+## ORP176 Physical CLbuds Rerun Checkpoint (2026-08-21)
+
+- Rebuilt `build-sdk-release/tools/orpheus_coreaudio_hardware_acceptance` from
+  `release/orp176-coreaudio-directional-src` before testing.
+- Fresh FourTrack CoreAudio inventory found 18 devices and live CLbuds
+  endpoints: `58-18-62-82-0F-33:input` (1 channel, 16 kHz) and
+  `58-18-62-82-0F-33:output` (2 channels, 44.1 kHz).
+- Ran all eight required 30-second acceptance rows with before/after route
+  inventories. Rows 03, 04, 06, and 07 passed with exit 0. Rows 01, 02, and
+  05 failed with exit 6 because no independently calibrated 1 kHz source was
+  present for `--expect-input-tone-hz 1000`. Row 08 failed with exit 6 because
+  the connected input was not manually disconnected, so `InputRouteUnavailable`
+  was not observed.
+- Duplex and route-mutation runs returned the live output profile to mono
+  16 kHz/320 frames while the endpoints remained alive.
+- The physical gate remains blocked. No merge, `v0.8.0` tag, release asset,
+  Ubuntu archive, or FourTrack repin is claimed.
+
 ## ORP176 CoreAudio Directional SRC Delivery Checkpoint (2026-08-17)
 
 - Release branch: `release/orp176-coreaudio-directional-src`, based on

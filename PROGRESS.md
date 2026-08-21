@@ -3,8 +3,8 @@
 
 ## ORP176 — CoreAudio Bluetooth duplex and directional SRC
 
-**Date:** 2026-08-12
-**Status:** Activation/startup defects repaired; final CLbuds rerun blocked by device disconnect.
+**Date:** 2026-08-21
+**Status:** Candidate repairs verified on live CLbuds; physical gate still blocked by missing calibrated 1 kHz input and uninduced route mutation.
 
 ### Delivered
 
@@ -42,6 +42,22 @@
   both session rates.
 - No release tag or downstream production pin is claimed.
 - Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
+
+### 2026-08-21 physical rerun
+
+- Rebuilt the release-branch acceptance binary, confirmed 18 live CoreAudio
+  devices, and found CLbuds input `58-18-62-82-0F-33:input` plus output
+  `58-18-62-82-0F-33:output`.
+- Ran all eight required 30-second rows with before/after inventories. Rows
+  03, 04, 06, and 07 passed. Rows 01, 02, and 05 failed the 1 kHz tone
+  predicate because no independently calibrated source was present. Row 08
+  failed because the connected input was not disconnected, so the expected
+  `InputRouteUnavailable` mutation did not occur.
+- The endpoints remained alive throughout. Duplex and route-mutation runs
+  returned the output profile to one channel, 16 kHz, and 320 frames.
+- No merge, tag, release asset, Ubuntu archive, or FourTrack repin is claimed;
+  the physical release gate remains open.
+
 
 ## ORP174 — Cooperative CoreAudio rate negotiation
 
