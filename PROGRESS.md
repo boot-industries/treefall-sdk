@@ -55,6 +55,10 @@
   `InputRouteUnavailable` mutation did not occur.
 - The endpoints remained alive throughout. Duplex and route-mutation runs
   returned the output profile to one channel, 16 kHz, and 320 frames.
+- Release workflow review blockers are addressed in the candidate branch:
+  installed-package consumers run on each archive's native runner, and publish
+  assets receive platform-qualified evidence names. Hosted CI has not run because
+  the physical release gate remains open.
 - No merge, tag, release asset, Ubuntu archive, or FourTrack repin is claimed;
   the physical release gate remains open.
 

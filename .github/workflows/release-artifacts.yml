@@ -77,6 +77,22 @@ jobs:
              build-release-artifact/evidence/orpheus-sdk.provenance.json \
              "release/${{ matrix.platform }}/"
 
+      - name: Verify installed package consumer
+        run: |
+          set -euo pipefail
+          archive="$(printf '%s\n' build-release-artifact/orpheus-sdk-*.zip)"
+          extract_dir="$PWD/package-prefix"
+          consumer_dir="$PWD/package-consumer"
+          mkdir -p "$extract_dir" "$consumer_dir"
+          unzip -q "$archive" -d "$extract_dir"
+          prefix_dir="$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$prefix_dir"
+          cmake -S tests/cmake/find_package -B "$consumer_dir" -G Ninja \
+            -DORPHEUS_REQUIRED_VERSION=0.8.0 \
+            -DCMAKE_PREFIX_PATH="$prefix_dir"
+          cmake --build "$consumer_dir" --parallel
+          ctest --test-dir "$consumer_dir" --output-on-failure
+
       - name: Upload platform release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
@@ -141,24 +157,6 @@ jobs:
               assert expected_sha in json.dumps(provenance)
           PY
 
-      - name: Verify installed package consumers
-        run: |
-          set -euo pipefail
-          for platform in Linux-x86_64 Darwin-arm64; do
-            archive="$(find "release-assets/${platform}" -maxdepth 1 -name '*.zip' -print -quit)"
-            extract_dir="$PWD/package-prefix/${platform}"
-            consumer_dir="$PWD/package-consumer/${platform}"
-            mkdir -p "$extract_dir"
-            unzip -q "$archive" -d "$extract_dir"
-            prefix_dir="$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-            test -n "$prefix_dir"
-            cmake -S tests/cmake/find_package -B "$consumer_dir" -G Ninja \
-              -DORPHEUS_REQUIRED_VERSION=0.8.0 \
-              -DCMAKE_PREFIX_PATH="$prefix_dir"
-            cmake --build "$consumer_dir" --parallel
-            ctest --test-dir "$consumer_dir" --output-on-failure
-          done
-
       - name: Ensure v0.8.0 release exists
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,11 +166,28 @@ jobs:
               --generate-notes
           fi
 
+      - name: Prepare uniquely named release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-upload
+          for platform in Linux-x86_64 Darwin-arm64; do
+            directory="release-assets/${platform}"
+            archive="$(printf '%s\n' "$directory"/*.zip)"
+            archive_name="${archive##*/}"
+            cp "$archive" "release-upload/${archive_name}"
+            cp "$directory/${archive_name}.sha256" \
+              "release-upload/${platform}-${archive_name}.sha256"
+            cp "$directory/SHA256SUMS" \
+              "release-upload/${platform}-SHA256SUMS"
+            cp "$directory/orpheus-sdk.spdx.json" \
+              "release-upload/${platform}-orpheus-sdk.spdx.json"
+            cp "$directory/orpheus-sdk.provenance.json" \
+              "release-upload/${platform}-orpheus-sdk.provenance.json"
+          done
       - name: Upload all platform release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release upload "$GITHUB_REF_NAME"
-          release-assets/Linux-x86_64/*
-          release-assets/Darwin-arm64/*
+          release-upload/*
           --clobber
