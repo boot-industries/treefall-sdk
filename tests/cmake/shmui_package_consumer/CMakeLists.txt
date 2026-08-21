@@ -39,6 +39,13 @@ target_link_libraries(orpheus_shmui_package_consumer PRIVATE
   Orpheus::audio_utils
   Orpheus::shmui_juce)
 
+# JUCE's Linux networking layer compiles against libcurl; the consumer binary
+# must carry the link dependency on hosts where the headers are present.
+if(UNIX AND NOT APPLE)
+  find_package(CURL REQUIRED)
+  target_link_libraries(orpheus_shmui_package_consumer PRIVATE CURL::libcurl)
+endif()
+
 if(APPLE)
   target_compile_options(orpheus_shmui_package_consumer PRIVATE -stdlib=libc++)
   target_link_options(orpheus_shmui_package_consumer PRIVATE -stdlib=libc++)
