@@ -68,6 +68,33 @@
   the physical release gate remains open.
 
 
+### 2026-08-21 calibrated-source rerun
+
+- Supplied an independent acoustic 1 kHz sine (iPhone at the CLbuds mic,
+  user-authorized) and calibrated placement with a 5-second diagnostic
+  (1008.513314 Hz, pass). Rows 01 and 02 then passed with exit 0 under
+  `--expect-input-tone-hz 1000` (row 01 zero-crossing 1006.127249 Hz);
+  rows 03 and 04 passed again; all four ran with before/after probe
+  inventories.
+- Row 05 duplex failed the tone predicate twice (route healthy both times);
+  drift attributed to WF-1000XM6 uplink wind/noise DSP outdoors. Rerun
+  pending quieter conditions.
+- Strict half of the physical-mono gate demonstrated: firing output-only
+  strict inside the probe-verified post-duplex HFP mono window (1 channel,
+  16 kHz, 320 frames) returned terminal `ProfileConflict`. The fallback
+  half remains blocked because CoreAudio reverts the profile to A2DP stereo
+  before any fallback session binds; three catch attempts documented, no
+  test or policy modified.
+- Row 08 still requires a real mid-run input disconnect.
+- Repository Actions had been disabled (`enabled:false`); re-enabled them.
+  Dispatch run 32516236868 drove three repairs now pushed: clang-format-14
+  compliance (`b0374752`), a Linux-fatal unguarded CoreAudio include in
+  `driver_manager.cpp` (`f901ab55`), and CI test-step budgets for the
+  sanitized ShmUI consumer (`1c925048`). Windows Debug/Release fail on
+  inherited `json_io.cpp(206)` MSVC C2059 from `main`; recorded as an
+  inherited blocker outside this PR's required macOS/Ubuntu gates.
+- Full record: ORP176 "Calibrated-source physical rerun (2026-08-21)".
+
 ## ORP174 — Cooperative CoreAudio rate negotiation
 
 **Date:** 2026-08-08

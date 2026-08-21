@@ -1,3 +1,25 @@
+## ORP176 Calibrated-Source CLbuds Rerun Checkpoint (2026-08-21)
+
+- Independent iPhone 1 kHz acoustic source authorized by the operator;
+  5-second placement diagnostic passed at 1008.513314 Hz zero-crossing.
+- Rows 01 and 02 PASSED exit 0 with `--expect-input-tone-hz 1000`
+  (44.1 kHz and 48 kHz sessions). Rows 03 and 04 re-passed on the same
+  candidate. Every row has before/after route-probe captures under
+  `/tmp/ftr176-evidence/`.
+- Row 05 failed its tone predicate twice with healthy routes; suspected
+  WF-1000XM6 wind/noise uplink DSP outdoors. Rerun pending.
+- Physical-mono strict half DEMONSTRATED: `route_outcome:"ProfileConflict"`
+  against the probe-verified live HFP mono profile (1 ch/16 kHz/320 f).
+  Fallback half still blocked by host A2DP reversion; documented, not
+  worked around.
+- Row 08 pending a real mid-run Bluetooth input disconnect.
+- Repository Actions had been disabled repo-wide; re-enabled. Run
+  32516236868 findings fixed and pushed: `b0374752` (clang-format 14),
+  `f901ab55` (guard CoreAudio endpoint includes for non-Apple hosts),
+  `1c925048` (CI test-step budgets). Windows legs fail on inherited
+  `json_io.cpp(206)` C2059 from main; recorded blocker, outside required
+  macOS/Ubuntu gates. No merge, tag, release asset, or FourTrack repin.
+
 ## ORP176 Physical CLbuds Rerun Checkpoint (2026-08-21)
 
 - Rebuilt `build-sdk-release/tools/orpheus_coreaudio_hardware_acceptance` from
