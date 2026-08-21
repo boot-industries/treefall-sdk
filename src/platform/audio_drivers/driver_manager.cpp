@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
 #include "coreaudio/coreaudio_endpoint_catalog.h"
 #include "coreaudio/coreaudio_endpoint_monitor.h"
+#endif
 
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
