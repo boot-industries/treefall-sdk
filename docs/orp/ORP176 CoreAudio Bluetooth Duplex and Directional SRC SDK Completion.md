@@ -430,6 +430,30 @@ attributed to WF-1000XM6 uplink wind/noise DSP). Rows 01, 02, 03, and 04
 passed; the physical-mono strict/fallback halves are demonstrated as above;
 row 08 is blocked as analyzed.
 
+### Hosted CI final state (2026-08-21)
+
+Repository Actions had been disabled repo-wide; after re-enabling, successive
+runs exposed six defects, all fixed on this branch:
+
+1. 48 clang-format-14 violations (`b0374752`).
+2. Linux-fatal unguarded CoreAudio include in `driver_manager.cpp`
+   (`f901ab55`, regression inherited from `main`).
+3. Test-step budgets too small for the sanitized ShmUI-JUCE consumer
+   (`1c925048`).
+4. Missing NOMINMAX guard in `session/json_io.cpp` — broke both the Lint
+   step and the Windows builds (`564880c8`).
+5. Missing X11/freetype/curl/ALSA headers for the Ubuntu JUCE consumers
+   (`564880c8`, `48cc7f53`).
+6. Missing libcurl linkage in the two Linux ShmUI-JUCE consumer projects
+   (`5dcb4264`, `9112b49a`) — this failure layer also explains the July
+   ubuntu-Release red that predated the branch.
+
+Final run `32525538565` on candidate `9112b49a`: C++ Lint passed, macOS
+Debug passed, Ubuntu Debug passed, Ubuntu Release passed. Windows
+Debug/Release fail inside `bcrypt.h` in a JUCE consumer TU — an inherited
+`main` defect outside this PR's required macOS/Ubuntu gate scope, recorded
+for follow-up. No merge, tag, release asset, or FourTrack repin is claimed.
+
 ## FourTrack adoption boundary
 
 FourTrack must not repin or ship this candidate. After CLbuds is restored, run

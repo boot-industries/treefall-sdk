@@ -1,3 +1,18 @@
+## ORP176 Hosted CI Gates Green (2026-08-21 night)
+
+- Run `32525538565` on `9112b49a`: Lint PASS, macOS Debug PASS, Ubuntu Debug
+  PASS, Ubuntu Release PASS.
+- Fixes landed this session: `b0374752` formatting; `f901ab55` Apple-only
+  guard for coreaudio endpoint includes; `1c925048` CI budgets;
+  `564880c8` NOMINMAX + Ubuntu JUCE headers; `48cc7f53` curl/ALSA packages;
+  `5dcb4264` package-consumer curl link; `9112b49a` no-opengl consumer curl
+  link.
+- Windows legs fail on inherited `bcrypt.h` JUCE TU defect from main;
+  documented for follow-up, outside required gates.
+- Physical state: rows 01-04 pass; physical-mono strict/fallback halves
+  demonstrated; row 05 tone rerun pending quiet environment; row 08
+  InputRouteUnavailable unreachable through physical teardown (documented).
+
 ## ORP176 Physical-Mono Demonstration and Row 08 Analysis (2026-08-21 evening)
 
 - Physical-mono strict half: `ProfileConflict` terminal outcome captured

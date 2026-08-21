@@ -112,6 +112,15 @@
   altered. Reconnect verified both endpoints alive.
 - Remaining: row 05 calibrated-tone rerun in a quiet environment.
 
+### 2026-08-21 night: hosted macOS and Ubuntu gates green
+
+- Final run `32525538565` on `9112b49a`: Lint, macOS Debug, Ubuntu Debug,
+  and Ubuntu Release all passed. Six hosted-gate defects were found and
+  fixed on this branch (formatting, include guard, CI budgets, NOMINMAX,
+  Linux JUCE headers, Linux JUCE consumer curl linkage).
+- Windows Debug/Release remain red on an inherited `bcrypt.h` JUCE consumer
+  defect from `main`; recorded outside the required gates.
+
 ## ORP174 — Cooperative CoreAudio rate negotiation
 
 **Date:** 2026-08-08
