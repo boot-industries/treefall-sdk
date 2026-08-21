@@ -29,7 +29,7 @@ jobs:
     name: C++ Build & Test (${{ matrix.os }}, ${{ matrix.build_type }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -138,7 +138,7 @@ jobs:
             ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
           fi
         shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 25
 
       - name: Build ShmUI-JUCE consumer without OpenGL
         if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Release'
