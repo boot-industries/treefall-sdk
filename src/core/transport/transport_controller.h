@@ -83,13 +83,13 @@ struct TransportCommand {
     UpdateStopOthers,
     // ORP127 G1: UI-thread voice mutations routed onto the audio thread so no
     // ActiveClip field is written from two threads.
-    Restart,            // Restart all voices for a handle from trim IN (with fade-in)
-    Seek,               // Seek all voices for a handle to an absolute position
-    UpdateMetadata,     // Apply a full metadata batch to active voices
-    SetVoiceMode,       // ORP127 G5: change a clip's voice policy (audio-thread state)
-    StopOthers,         // ORP127 G7: stop every voice except cmd.handle (choke primitive)
+    Restart,             // Restart all voices for a handle from trim IN (with fade-in)
+    Seek,                // Seek all voices for a handle to an absolute position
+    UpdateMetadata,      // Apply a full metadata batch to active voices
+    SetVoiceMode,        // ORP127 G5: change a clip's voice policy (audio-thread state)
+    StopOthers,          // ORP127 G7: stop every voice except cmd.handle (choke primitive)
     StartWithGroupChoke, // Atomically admit start, then fade registered same-group peers
-    StartWithStopOthers // Atomically admit start, then fade every other voice
+    StartWithStopOthers  // Atomically admit start, then fade every other voice
   };
 
   Type type;
@@ -407,11 +407,11 @@ private:
   ///
   /// Group-choke starts require a registered, available source so every
   /// pre-admission failure is reported before the atomic command is posted.
-  SessionGraphError makeStartContext(
-      ClipHandle handle, bool requireRegisteredSource,
-      std::shared_ptr<ClipPlaybackContext>& context, SourceCommandLifetime*& sourceLifetime,
-      StreamingClipSource*& startSource,
-      StreamingClipSource::PrimeReservation& startPrime);
+  SessionGraphError makeStartContext(ClipHandle handle, bool requireRegisteredSource,
+                                     std::shared_ptr<ClipPlaybackContext>& context,
+                                     SourceCommandLifetime*& sourceLifetime,
+                                     StreamingClipSource*& startSource,
+                                     StreamingClipSource::PrimeReservation& startPrime);
 
   /// Process pending commands from UI thread
   void processCommands();
@@ -692,15 +692,15 @@ private:
   /// ring). Control thread only; caller holds m_audioFilesMutex. A non-null
   /// reservation receives a command-owned pin for an existing source's
   /// first-render page.
-  SessionGraphError ensurePreparedSourceLocked(
-      AudioFileEntry& entry, StreamingClipSource::PrimeReservation* reservation = nullptr);
+  SessionGraphError
+  ensurePreparedSourceLocked(AudioFileEntry& entry,
+                             StreamingClipSource::PrimeReservation* reservation = nullptr);
   void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releaseActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
-
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;

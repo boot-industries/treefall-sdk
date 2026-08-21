@@ -457,11 +457,11 @@ public:
 
 private:
   std::unique_ptr<core::SessionGraph> ownedSessionGraph_;
-  core::SessionGraph* sessionGraph_; // Owned by this manager or supplied by caller
-  IRoutingMatrix* routingMatrix_;                     // Not owned (optional)
-  ITransportController* transport_;                   // Not owned (required for recall)
-  mutable std::mutex mutex_;                          // Protects scenes_
-  std::map<std::string, SceneSnapshot> scenes_;       // In-memory storage
+  core::SessionGraph* sessionGraph_;            // Owned by this manager or supplied by caller
+  IRoutingMatrix* routingMatrix_;               // Not owned (optional)
+  ITransportController* transport_;             // Not owned (required for recall)
+  mutable std::mutex mutex_;                    // Protects scenes_
+  std::map<std::string, SceneSnapshot> scenes_; // In-memory storage
 };
 
 // ============================================================================

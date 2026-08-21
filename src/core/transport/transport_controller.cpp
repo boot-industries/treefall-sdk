@@ -285,12 +285,10 @@ TransportController::~TransportController() {
   releasePendingSeekReservations();
 }
 
-SessionGraphError
-TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredSource,
-                                      std::shared_ptr<ClipPlaybackContext>& context,
-                                      SourceCommandLifetime*& sourceLifetime,
-                                      StreamingClipSource*& startSource,
-                                      StreamingClipSource::PrimeReservation& startPrime) {
+SessionGraphError TransportController::makeStartContext(
+    ClipHandle handle, bool requireRegisteredSource, std::shared_ptr<ClipPlaybackContext>& context,
+    SourceCommandLifetime*& sourceLifetime, StreamingClipSource*& startSource,
+    StreamingClipSource::PrimeReservation& startPrime) {
   sourceLifetime = nullptr;
   startSource = nullptr;
   startPrime = {};
@@ -376,7 +374,6 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
       return SessionGraphError::OK;
     }
 
-
     if (requireRegisteredSource) {
       context.reset();
       return SessionGraphError::ClipNotRegistered;
@@ -444,8 +441,8 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   TransportCommand cmd{};
-  cmd.type = stopOthers ? TransportCommand::Type::StartWithStopOthers
-                        : TransportCommand::Type::Start;
+  cmd.type =
+      stopOthers ? TransportCommand::Type::StartWithStopOthers : TransportCommand::Type::Start;
   cmd.handle = handle;
   cmd.startContext = context;
   cmd.sourceLifetime = sourceLifetime;
@@ -1018,8 +1015,8 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    m_pendingStartReservations[m_pendingStartReservationCount++] = {
-        command.startSource, command.startPrime};
+    m_pendingStartReservations[m_pendingStartReservationCount++] = {command.startSource,
+                                                                    command.startPrime};
   };
 
   while (readIndex != writeIndex) {
@@ -3059,8 +3056,7 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     // The renderer clamps a non-segment seek below trim-IN before its first
     // source read. Prime that effective position, not the discarded request.
     const int64_t effectiveFirstRenderPosition =
-        entry.segmentCount == 0 ? std::max(clampedPosition, entry.trimInSamples)
-                                : clampedPosition;
+        entry.segmentCount == 0 ? std::max(clampedPosition, entry.trimInSamples) : clampedPosition;
     SessionGraphError primeResult = prime(effectiveFirstRenderPosition);
     if (primeResult == SessionGraphError::OK && entry.segmentCount != 0) {
       for (uint32_t index = 0; index < entry.segmentCount; ++index) {
