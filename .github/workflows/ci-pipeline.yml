@@ -61,7 +61,8 @@ jobs:
           sudo apt-get install -y libsndfile1-dev \
             libfontconfig1-dev libfreetype-dev libx11-dev \
             libxcomposite-dev libxcursor-dev libxext-dev \
-            libxinerama-dev libxrandr-dev libxrender-dev
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libcurl4-openssl-dev libasound2-dev
 
       - name: Install libsndfile (macOS)
         if: matrix.os == 'macos-latest'
