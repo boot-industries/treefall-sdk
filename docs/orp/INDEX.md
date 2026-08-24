@@ -9,6 +9,8 @@ Project documentation index for orpheus-sdk.
 
 ## Current Records
 
+- [[ORP174 CoreAudio Stream-Rate Convergence Handoff]] — verified nominal-rate
+  authority and stream-layout monitoring handoff (2026-08-24)
 - [[ORP171 FourTrack Multi-Device CoreAudio Route-State Contract Handoff]] —
   directional route-state contract and downstream handoff (2026-08-04)
 - [[ORP169 Orpheus Suite Remote Synchronization and PR Merge]] — repository
@@ -24,6 +26,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP174 CoreAudio Stream-Rate Convergence Handoff](ORP174%20CoreAudio%20Stream-Rate%20Convergence%20Handoff.md)
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
 - [ORP166 Orpheus Suite Application Launch and Icon Checkpoint](ORP166%20Orpheus%20Suite%20Application%20Launch%20and%20Icon%20Checkpoint.md)
@@ -44,4 +47,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-04
+**Last Generated:** 2026-08-24
