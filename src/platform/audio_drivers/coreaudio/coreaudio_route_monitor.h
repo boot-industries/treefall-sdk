@@ -81,8 +81,8 @@ private:
                                   void* context) noexcept;
   static AudioObjectPropertyAddress deviceAddress(AudioObjectPropertySelector selector) noexcept;
   static AudioObjectPropertyAddress streamAddress(AudioObjectPropertySelector selector) noexcept;
-  static bool formatsEqual(const AudioStreamBasicDescription& lhs,
-                           const AudioStreamBasicDescription& rhs) noexcept;
+  static bool streamLayoutsEqual(const AudioStreamBasicDescription& lhs,
+                                 const AudioStreamBasicDescription& rhs) noexcept;
   static bool readUInt32(ICoreAudioSampleRatePropertyApi& property_api, AudioObjectID object_id,
                          const AudioObjectPropertyAddress& address, UInt32& value) noexcept;
   static bool readFloat64(ICoreAudioSampleRatePropertyApi& property_api, AudioObjectID object_id,

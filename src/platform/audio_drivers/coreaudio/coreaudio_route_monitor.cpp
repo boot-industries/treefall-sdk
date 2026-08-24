@@ -176,8 +176,8 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
         !readFormat(property_api_, stream.stream_id, physical_address, observed_physical_format)) {
       return CoreAudioRoutePollResult::BackendFailure;
     }
-    if (!formatsEqual(observed_virtual_format, stream.expected_virtual_format) ||
-        !formatsEqual(observed_physical_format, stream.expected_physical_format)) {
+    if (!streamLayoutsEqual(observed_virtual_format, stream.expected_virtual_format) ||
+        !streamLayoutsEqual(observed_physical_format, stream.expected_physical_format)) {
       return CoreAudioRoutePollResult::FormatChanged;
     }
   }
@@ -213,10 +213,12 @@ CoreAudioRouteMonitor::streamAddress(AudioObjectPropertySelector selector) noexc
   return {selector, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 }
 
-bool CoreAudioRouteMonitor::formatsEqual(const AudioStreamBasicDescription& lhs,
-                                         const AudioStreamBasicDescription& rhs) noexcept {
-  return lhs.mSampleRate == rhs.mSampleRate && lhs.mFormatID == rhs.mFormatID &&
-         lhs.mFormatFlags == rhs.mFormatFlags && lhs.mBytesPerPacket == rhs.mBytesPerPacket &&
+bool CoreAudioRouteMonitor::streamLayoutsEqual(const AudioStreamBasicDescription& lhs,
+                                               const AudioStreamBasicDescription& rhs) noexcept {
+  // mSampleRate is intentionally excluded: device nominal rate is authoritative and verified
+  // before stream layout.
+  return lhs.mFormatID == rhs.mFormatID && lhs.mFormatFlags == rhs.mFormatFlags &&
+         lhs.mBytesPerPacket == rhs.mBytesPerPacket &&
          lhs.mFramesPerPacket == rhs.mFramesPerPacket && lhs.mBytesPerFrame == rhs.mBytesPerFrame &&
          lhs.mChannelsPerFrame == rhs.mChannelsPerFrame &&
          lhs.mBitsPerChannel == rhs.mBitsPerChannel && lhs.mReserved == rhs.mReserved;
