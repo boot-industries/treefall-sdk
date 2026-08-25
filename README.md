@@ -74,9 +74,17 @@ auto driver = orpheus::createCoreAudioDriver();
 if (driver->initialize(audio) == orpheus::SessionGraphError::OK) {
   const auto io = driver->getTelemetry();
   // io.input_render_failures distinguishes capture failure from real silence.
-  // Terminal route outcomes stop the driver and require explicit reinitialization.
+
+  const auto start_error = driver->start(callback);
+  if (start_error != orpheus::SessionGraphError::OK) {
+    const auto failed_io = driver->getTelemetry();
+    if (failed_io.route_outcome == orpheus::AudioRouteRuntimeOutcome::BackendFailure &&
+        failed_io.route_backend_error != 0) {
+      // failed_io.route_backend_error is the platform-native start status.
+    }
+    // Reinitialize explicitly after handling a terminal route outcome.
+  }
 }
-```
 
 Distinct CoreAudio endpoints use a driver-owned private aggregate. Unknown or
 direction-incompatible UIDs fail with `InvalidParameter`; they never fall back

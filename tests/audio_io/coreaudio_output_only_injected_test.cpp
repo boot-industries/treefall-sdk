@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -184,7 +185,14 @@ uint32_t outputChannels(AudioDeviceID device_id) {
   return channels;
 }
 
-TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
+struct HardwareOutputOnlyRoute {
+  std::shared_ptr<test_support::FakeCoreAudioPropertyApi> property_api;
+  std::shared_ptr<OutputOnlyRouteQuery> query;
+  uint32_t sample_rate;
+  uint16_t buffer_size;
+};
+
+std::optional<HardwareOutputOnlyRoute> makeHardwareOutputOnlyRoute(std::string& skip_reason) {
   AudioObjectPropertyAddress default_output = {kAudioHardwarePropertyDefaultOutputDevice,
                                                kAudioObjectPropertyScopeGlobal,
                                                kAudioObjectPropertyElementMain};
@@ -193,16 +201,18 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
   if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &default_output, 0, nullptr,
                                  &default_size, &output_id) != noErr ||
       output_id == 0) {
-    GTEST_SKIP() << "No readable CoreAudio default output";
+    skip_reason = "No readable CoreAudio default output";
+    return std::nullopt;
   }
 
-  UInt32 channels = outputChannels(output_id);
+  const uint32_t channels = outputChannels(output_id);
   Float64 rate = 0.0;
   UInt32 buffer = 0;
   if (channels < 2 || !readRate(output_id, rate) ||
       !readUInt32(output_id, kAudioDevicePropertyBufferFrameSize, buffer) || buffer == 0 ||
       buffer > 0xffffu || rate > 0xffffu) {
-    GTEST_SKIP() << "Default output lacks a usable stereo rate/buffer route";
+    skip_reason = "Default output lacks a usable stereo rate/buffer route";
+    return std::nullopt;
   }
 
   auto property_api = std::make_shared<test_support::FakeCoreAudioPropertyApi>();
@@ -228,12 +238,28 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
   property_api->setFormat(kSyntheticStream, kAudioStreamPropertyPhysicalFormat, format);
 
   auto query = std::make_shared<OutputOnlyRouteQuery>(output_id, channels, rate);
+  return HardwareOutputOnlyRoute{std::move(property_api), std::move(query),
+                                 static_cast<uint32_t>(rate), static_cast<uint16_t>(buffer)};
+}
+constexpr OSStatus kInjectedOutputStartStatus = static_cast<OSStatus>(-50'001);
+
+OSStatus injectedOutputUnitStart(AudioUnit) {
+  return kInjectedOutputStartStatus;
+}
+
+TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
+  std::string skip_reason;
+  const auto setup = makeHardwareOutputOnlyRoute(skip_reason);
+  if (!setup.has_value()) {
+    GTEST_SKIP() << skip_reason;
+  }
+
   DirectionAudit audit;
-  CoreAudioDriver driver(query, property_api, &audit);
+  CoreAudioDriver driver(setup->query, setup->property_api, &audit);
 
   AudioDriverConfig config;
-  config.sample_rate = static_cast<uint32_t>(rate);
-  config.buffer_size = static_cast<uint16_t>(buffer);
+  config.sample_rate = setup->sample_rate;
+  config.buffer_size = setup->buffer_size;
   config.num_inputs = 0;
   config.num_outputs = 2;
   config.input_device_id = "stale.input.uid";
@@ -246,14 +272,14 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
   ASSERT_EQ(driver.stop(), SessionGraphError::OK);
 
   EXPECT_TRUE(audit.operations.empty());
-  EXPECT_TRUE(property_api->writeLedger().empty());
+  EXPECT_TRUE(setup->property_api->writeLedger().empty());
 
-  property_api->clearLedgers();
-  property_api->setHogModeAllowed(1);
-  property_api->setHogModeSettable(true);
+  setup->property_api->clearLedgers();
+  setup->property_api->setHogModeAllowed(1);
+  setup->property_api->setHogModeSettable(true);
   config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRate;
   ASSERT_EQ(driver.initialize(config), SessionGraphError::OK);
-  auto writes = property_api->writeLedger();
+  auto writes = setup->property_api->writeLedger();
   ASSERT_EQ(writes.size(), 1u);
   EXPECT_EQ(writes[0].address.mSelector, kAudioHardwarePropertyHogModeIsAllowed);
   UInt32 disabled_hog_mode = 99;
@@ -263,12 +289,43 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
 
   ASSERT_EQ(driver.start(&callback), SessionGraphError::OK);
   ASSERT_EQ(driver.stop(), SessionGraphError::OK);
-  writes = property_api->writeLedger();
+  writes = setup->property_api->writeLedger();
   ASSERT_EQ(writes.size(), 2u);
   UInt32 restored_hog_mode = 0;
   ASSERT_EQ(writes[1].bytes.size(), sizeof(restored_hog_mode));
   std::memcpy(&restored_hog_mode, writes[1].bytes.data(), sizeof(restored_hog_mode));
   EXPECT_EQ(restored_hog_mode, 1u);
+}
+
+TEST(CoreAudioOutputOnlyInjectedTest, OutputStartFailurePublishesNativeStatus) {
+  std::string skip_reason;
+  const auto setup = makeHardwareOutputOnlyRoute(skip_reason);
+  if (!setup.has_value()) {
+    GTEST_SKIP() << skip_reason;
+  }
+
+  DirectionAudit audit;
+  CoreAudioDriver driver(setup->query, setup->property_api, &audit, &injectedOutputUnitStart);
+
+  AudioDriverConfig config;
+  config.sample_rate = setup->sample_rate;
+  config.buffer_size = setup->buffer_size;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id = "injected.output";
+
+  ASSERT_EQ(driver.initialize(config), SessionGraphError::OK);
+  OutputCallback callback;
+  EXPECT_EQ(driver.start(&callback), SessionGraphError::InternalError);
+  EXPECT_FALSE(driver.isRunning());
+
+  const auto telemetry = driver.getTelemetry();
+  EXPECT_EQ(telemetry.route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
+  EXPECT_EQ(telemetry.route_backend_error, static_cast<int32_t>(kInjectedOutputStartStatus));
+  EXPECT_EQ(callback.calls.load(std::memory_order_relaxed), 0u);
+
+  ASSERT_EQ(driver.initialize(config), SessionGraphError::OK);
+  EXPECT_EQ(driver.getTelemetry().route_backend_error, 0);
 }
 
 TEST(CoreAudioOutputOnlyInjectedTest, PreserveRateMismatchIsRejectedWithoutPropertyWrites) {
@@ -287,6 +344,7 @@ TEST(CoreAudioOutputOnlyInjectedTest, PreserveRateMismatchIsRejectedWithoutPrope
 
   EXPECT_EQ(driver.initialize(config), SessionGraphError::InvalidParameter);
   EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::SampleRateChanged);
+  EXPECT_EQ(driver.getTelemetry().route_backend_error, 0);
   EXPECT_TRUE(property_api->writeLedger().empty());
   EXPECT_TRUE(audit.operations.empty());
 }

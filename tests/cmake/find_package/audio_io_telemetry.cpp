@@ -49,8 +49,10 @@ concept AcceptsTwoTelemetryFields =
 
 template <typename T>
 concept AcceptsAllTelemetryFields = requires {
-  T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy, uint64_t{2}, uint64_t{3}, uint64_t{4},
-    uint64_t{5}};
+  T{uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy,
+    uint64_t{2}, uint64_t{3},
+    uint64_t{4}, uint64_t{5},
+    int32_t{-7}};
 };
 
 static_assert(static_cast<uint8_t>(orpheus::AudioSampleRatePolicy::PreserveDeviceRate) == 0);
@@ -108,6 +110,14 @@ int main() {
     return 2;
   }
   const orpheus::AudioIoTelemetry telemetry{0, orpheus::AudioRouteRuntimeOutcome::Healthy};
+  const orpheus::AudioIoTelemetry full_telemetry{
+      uint64_t{1}, orpheus::AudioRouteRuntimeOutcome::Healthy,
+      uint64_t{2}, uint64_t{3},
+      uint64_t{4}, uint64_t{5},
+      int32_t{-7}};
+  if (full_telemetry.route_backend_error != -7) {
+    return 4;
+  }
   return telemetry.input_render_failures != 0 ||
                  telemetry.route_outcome != orpheus::AudioRouteRuntimeOutcome::Healthy
              ? 3

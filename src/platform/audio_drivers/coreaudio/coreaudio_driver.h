@@ -46,6 +46,7 @@ struct CoreAudioDriverDirectionAudit {
   virtual ~CoreAudioDriverDirectionAudit() = default;
   virtual void beforeInputOperation(InputDirectionOperation operation) noexcept = 0;
 };
+using AudioOutputUnitStartFunction = OSStatus (*)(AudioUnit);
 
 } // namespace detail
 
@@ -57,7 +58,8 @@ public:
   explicit CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query);
   CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query,
                   std::shared_ptr<ICoreAudioPropertyApi> property_api,
-                  detail::CoreAudioDriverDirectionAudit* direction_audit = nullptr);
+                  detail::CoreAudioDriverDirectionAudit* direction_audit = nullptr,
+                  detail::AudioOutputUnitStartFunction audio_unit_start = nullptr);
   CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query,
                   ICoreAudioPropertyApi& property_api,
                   detail::CoreAudioDriverDirectionAudit* direction_audit = nullptr);
@@ -91,6 +93,7 @@ private:
                                       const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                       UInt32 inNumberFrames, AudioBufferList* ioData);
   void recordInputRenderFailure() noexcept;
+  void recordRouteBackendError(OSStatus status) noexcept;
   void recordInputFifoOverrun() noexcept;
   void recordInputFifoUnderrun() noexcept;
   void recordInputConversionFailure() noexcept;
@@ -149,6 +152,7 @@ private:
   CoreAudioPropertyApi production_property_api_;
   ICoreAudioPropertyApi* property_api_{nullptr};
   std::shared_ptr<ICoreAudioPropertyApi> injected_property_api_;
+  detail::AudioOutputUnitStartFunction audio_unit_start_{&AudioOutputUnitStart};
   detail::CoreAudioDriverDirectionAudit* direction_audit_{nullptr};
   AudioDriverConfig config_;
 
@@ -171,6 +175,7 @@ private:
   uint32_t render_capacity_frames_{0};
   uint32_t input_render_capacity_frames_{0};
   std::atomic<AudioRouteRuntimeOutcome> route_outcome_{AudioRouteRuntimeOutcome::Healthy};
+  std::atomic<int32_t> route_backend_error_{0};
   std::atomic<AudioRouteState> unavailable_route_state_{AudioRouteState::Failed};
   std::atomic<uint32_t> render_sample_rate_{0};
   std::atomic<uint32_t> render_max_callback_frames_{0};
