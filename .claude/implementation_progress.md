@@ -62,8 +62,10 @@
 - **FourTrack handoff:** ORP251 and ORP171 require bridge/model propagation of
   the scalar and numeric failed-new-session display adoption; route startup and
   retry behavior remain unchanged.
-- **Delivery:** The merged branch/commit and issue-closure result are added
-  after the verified feature branch reaches `main`.
+- **Delivery:** Verified implementation commit `d5b555b8` is on
+  `fix/orp251-audio-unit-start-status` and is the merge unit for `main`.
+  Remote feature publication, fast-forward merge, and issue closure remain
+  delivery operations; FourTrack adoption remains downstream work.
 
 ## 🔊 Audio Device Selection Fix (2026-02-27)
 
