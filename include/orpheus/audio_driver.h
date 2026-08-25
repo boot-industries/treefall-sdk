@@ -249,6 +249,9 @@ struct AudioIoTelemetry {
   uint64_t input_fifo_underruns = 0;
   uint64_t input_conversion_failures = 0;
   uint64_t output_conversion_failures = 0;
+  /// Platform-native error code for the terminal route outcome. Zero means no
+  /// backend error code is available. Signed storage preserves macOS OSStatus.
+  int32_t route_backend_error = 0;
 };
 
 /// Audio backend family.

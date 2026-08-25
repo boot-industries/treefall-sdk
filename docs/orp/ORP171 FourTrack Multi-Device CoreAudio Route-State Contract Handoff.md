@@ -254,6 +254,32 @@ The render callback uses only preallocated buffers and atomics/borrowed targets.
 HAL queries, listener lifecycle, route recovery, allocations, and route-state
 publication remain on control paths.
 
+### 4.5 Native route-start diagnostic (ORP251)
+
+The SDK now appends `int32_t AudioIoTelemetry::route_backend_error` after the
+existing failure counters. `0` means that no native backend error code is
+available. On CoreAudio, only a non-`noErr` `AudioOutputUnitStart` result
+publishes its signed `OSStatus`; all other route failures leave this field at
+zero unless a backend status was actually returned. The existing
+`SessionGraphError::InternalError` and terminal
+`AudioRouteRuntimeOutcome::BackendFailure` semantics are unchanged.
+
+This is a C++ header-layout change because `AudioIoTelemetry` is returned by
+value; FourTrack must rebuild against the released SDK revision. Its adoption
+boundary is:
+
+1. carry `route_backend_error` through the macOS bridge's `FTAudioRouteState`
+   and `apply_telemetry_facts`;
+2. expose the scalar through `EngineController`'s route model; and
+3. include the numeric native status in the failed new-session route message
+   only when `route_outcome` is `BackendFailure` and
+   `route_backend_error != 0`.
+
+FourTrack must use the scalar rather than parse `AudioIoRouteState::detail`
+text. Existing route startup and retry behavior remains unchanged. Bridge and
+Swift-model coverage must exercise both zero and nonzero values before
+downstream adoption is complete.
+
 ## 5. FourTrack consumption after release
 
 After the SDK contract is merged and released, FourTrack will:

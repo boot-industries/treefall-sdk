@@ -32,6 +32,39 @@
 
 ---
 
+## ORP251 — CoreAudio AudioOutputUnitStart Status Telemetry (2026-08-25)
+
+- **Scope:** Preserve the native CoreAudio `AudioOutputUnitStart` `OSStatus`
+  when output-only route startup fails, without changing
+  `SessionGraphError::InternalError` or
+  `AudioRouteRuntimeOutcome::BackendFailure`.
+- **Branch:** `fix/orp251-audio-unit-start-status`.
+- **Public contract:** `AudioIoTelemetry` appends signed `int32_t
+  route_backend_error`; `0` means no native backend error is available. The
+  stable C ABI is unchanged, but returned-by-value C++ consumers must rebuild.
+- **Implementation:** CoreAudio records the status from both the optional input
+  conversion and required output `AudioOutputUnitStart` calls; successful
+  initialization resets the field alongside existing telemetry counters.
+  Dummy/WASAPI leading aggregate initializers remain source-compatible.
+- **Verification:** The injected output-only regression passed with
+  `OSStatus(-50'001)`, exact signed publication, unchanged generic failure,
+  no callback, successful reinitialization reset, and zero status for the
+  preserve-rate mismatch. The registered CoreAudio executable and installed
+  package fixture passed. The final Debug tree built successfully and the
+  configured CTest suite passed 80/80 enabled tests, including CoreAudio,
+  Dummy, realtime, installed-package, and add-subdirectory contracts. No
+  hardware test was skipped; the CoreAudio executable reports one disabled
+  test. Changed-file clang-format and `git diff --check` passed; repository
+  lint remains red on pre-existing unrelated formatting violations.
+- **Coverage boundary:** The existing readable default stereo output is used
+  only to create a real AUHAL route; no synthetic AudioUnit claims hardware
+  evidence. Windows/WASAPI still has no local compile or execution evidence.
+- **FourTrack handoff:** ORP251 and ORP171 require bridge/model propagation of
+  the scalar and numeric failed-new-session display adoption; route startup and
+  retry behavior remain unchanged.
+- **Delivery:** The merged branch/commit and issue-closure result are added
+  after the verified feature branch reaches `main`.
+
 ## 🔊 Audio Device Selection Fix (2026-02-27)
 
 **Scope:** Fix silent audio output and hardcoded "Default Device" in Audio Settings dialog

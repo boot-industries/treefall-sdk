@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   render-block page leases protect source lifetime through unregistration and
   controller teardown. Resampled reader failures propagate rather than becoming
   EOF silence.
+- CoreAudio now preserves the native `AudioOutputUnitStart` `OSStatus` in
+  `AudioIoTelemetry::route_backend_error` while retaining the existing
+  `InternalError` and `BackendFailure` route semantics.
 
 
 ### Added

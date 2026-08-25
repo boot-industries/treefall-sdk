@@ -129,9 +129,12 @@ CoreAudioDriver::CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQu
 
 CoreAudioDriver::CoreAudioDriver(std::shared_ptr<const detail::ICoreAudioRouteQuery> query,
                                  std::shared_ptr<ICoreAudioPropertyApi> property_api,
-                                 detail::CoreAudioDriverDirectionAudit* direction_audit)
+                                 detail::CoreAudioDriverDirectionAudit* direction_audit,
+                                 detail::AudioOutputUnitStartFunction audio_unit_start)
     : route_resolver_(query ? std::move(query) : detail::makeCoreAudioRouteQuery()),
-      injected_property_api_(std::move(property_api)), direction_audit_(direction_audit) {
+      injected_property_api_(std::move(property_api)),
+      audio_unit_start_(audio_unit_start ? audio_unit_start : &AudioOutputUnitStart),
+      direction_audit_(direction_audit) {
   property_api_ = injected_property_api_ ? injected_property_api_.get() : &production_property_api_;
 }
 
@@ -403,6 +406,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   input_fifo_underruns_.store(0, std::memory_order_release);
   input_conversion_failures_.store(0, std::memory_order_release);
   output_conversion_failures_.store(0, std::memory_order_release);
+  route_backend_error_.store(0, std::memory_order_release);
   input_pi_integral_ = 0;
   session_frame_position_ = 0;
   conversion_timeline_initialized_ = false;
@@ -469,7 +473,9 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
 
   if (input_conversion_active_) {
     input_callback_target_.replaceAndDrain(this);
-    if (AudioOutputUnitStart(input_audio_unit_) != noErr) {
+    const OSStatus input_start_status = audio_unit_start_(input_audio_unit_);
+    if (input_start_status != noErr) {
+      recordRouteBackendError(input_start_status);
       input_callback_target_.replaceAndDrain(nullptr);
       route_monitor_->stop();
       stopRenderingLocked();
@@ -501,7 +507,9 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   conversion_timeline_initialized_ = false;
   is_running_.store(true, std::memory_order_release);
 
-  if (AudioOutputUnitStart(audio_unit_) != noErr) {
+  const OSStatus output_start_status = audio_unit_start_(audio_unit_);
+  if (output_start_status != noErr) {
+    recordRouteBackendError(output_start_status);
     stopRenderingLocked();
     route_monitor_->stop();
     publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BackendFailure);
@@ -551,6 +559,7 @@ AudioIoTelemetry CoreAudioDriver::getTelemetry() const noexcept {
   AudioIoTelemetry telemetry;
   telemetry.input_render_failures = input_render_failures_.load(std::memory_order_acquire);
   telemetry.route_outcome = route_outcome_.load(std::memory_order_acquire);
+  telemetry.route_backend_error = route_backend_error_.load(std::memory_order_acquire);
   telemetry.input_fifo_overruns = input_fifo_overruns_.load(std::memory_order_acquire);
   telemetry.input_fifo_underruns = input_fifo_underruns_.load(std::memory_order_acquire);
   telemetry.input_conversion_failures = input_conversion_failures_.load(std::memory_order_acquire);
@@ -631,6 +640,9 @@ void CoreAudioDriver::setInputRenderFailuresForTesting(uint64_t count) noexcept 
 
 void CoreAudioDriver::incrementInputRenderFailuresForTesting() noexcept {
   recordInputRenderFailure();
+}
+void CoreAudioDriver::recordRouteBackendError(OSStatus status) noexcept {
+  route_backend_error_.store(static_cast<int32_t>(status), std::memory_order_release);
 }
 
 void CoreAudioDriver::recordInputRenderFailure() noexcept {
