@@ -22,8 +22,9 @@ namespace core {
 class SessionGraph;
 } // namespace core
 
-/// Control-thread-owned token which pins a registered source while a Start or
-/// Seek command still carries a raw source pointer through the SPSC ring.
+/// Control-thread-owned token which pins a registered source while a Start,
+/// Seek, UpdateTrim, or UpdateMetadata command still carries a raw source
+/// pointer through the SPSC ring.
 struct SourceCommandLifetime {
   std::atomic<uint32_t> unread{0};
   std::atomic<uint32_t> active_voices{0};
@@ -107,6 +108,11 @@ struct TransportCommand {
   StreamingClipSource::PrimeReservation startPrime{};
   StreamingClipSource* seekSource{nullptr};
   StreamingClipSource::PrimeReservation seekPrime{};
+  // Metadata/trim commands may reposition a live voice before its first
+  // render. A control-thread prime keeps that reposition failure-atomic and
+  // pins the source page through the consuming render block.
+  StreamingClipSource* metadataSource{nullptr};
+  StreamingClipSource::PrimeReservation metadataPrime{};
 
   union {
     struct {
@@ -534,6 +540,13 @@ private:
   std::array<PendingSeekReservation, MAX_ACTIVE_CLIPS> m_pendingSeekReservations{};
   size_t m_pendingSeekReservationCount{0};
 
+  struct PendingMetadataReservation {
+    StreamingClipSource* source{nullptr};
+    StreamingClipSource::PrimeReservation prime{};
+  };
+  std::array<PendingMetadataReservation, MAX_COMMANDS> m_pendingMetadataReservations{};
+  size_t m_pendingMetadataReservationCount{0};
+
   // Atomic seqlock publication. Every payload field is atomic, so a reader that
   // overlaps publication can retry without a C++ data race; the RT writer never
   // waits, locks, or allocates.
@@ -692,15 +705,18 @@ private:
   /// ring). Control thread only; caller holds m_audioFilesMutex. A non-null
   /// reservation receives a command-owned pin for an existing source's
   /// first-render page.
-  SessionGraphError ensurePreparedSourceLocked(
-      AudioFileEntry& entry, StreamingClipSource::PrimeReservation* reservation = nullptr);
+  SessionGraphError
+  ensurePreparedSourceLocked(AudioFileEntry& entry,
+                             StreamingClipSource::PrimeReservation* reservation = nullptr);
+  SessionGraphError prepareMetadataCommandPrimeLocked(AudioFileEntry& entry, int64_t position,
+                                                      TransportCommand& command);
   void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releaseActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
-
+  void releasePendingMetadataReservations() noexcept;
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;

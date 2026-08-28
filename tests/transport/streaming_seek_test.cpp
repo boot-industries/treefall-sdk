@@ -668,6 +668,87 @@ TEST_F(StreamingSeekMatrixTest, FadeOverlapSeekMovesBothVoicesWithoutUnderrun) {
   EXPECT_EQ(RtGuardState::totalViolations(), 0u);
 }
 
+TEST_F(StreamingSeekMatrixTest, TrimUpdateIntoEvictedPageDoesNotUnderrun) {
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t distantPosition = 6 * page + 100;
+
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  transport->setPreparedSourceMaxFrames(rate);
+  SeekCallback callback;
+  transport->setCallback(&callback);
+  ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipTrimPoints(1, 0, 9 * static_cast<int64_t>(rate)),
+            SessionGraphError::OK);
+  ASSERT_EQ(transport->setClipLoopMode(1, true), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+  ASSERT_EQ(transport->seekClip(1, distantPosition), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+
+  ASSERT_EQ(transport->updateClipTrimPoints(1, 0, rate), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+  transport->processCallbacks();
+
+  EXPECT_EQ(callback.underruns.load(), 0)
+      << "A trim update that clamps a live stream must prime its new boundary";
+}
+
+TEST_F(StreamingSeekMatrixTest, BatchMetadataUpdateIntoEvictedPageDoesNotUnderrun) {
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t distantPosition = 6 * page + 100;
+
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  transport->setPreparedSourceMaxFrames(rate);
+  SeekCallback callback;
+  transport->setCallback(&callback);
+  ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipTrimPoints(1, 0, 9 * static_cast<int64_t>(rate)),
+            SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+  ASSERT_EQ(transport->seekClip(1, distantPosition), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->trimInSamples = 0;
+  metadata->trimOutSamples = rate;
+  metadata->segmentCount = 1;
+  metadata->segments[0] = {0, static_cast<int64_t>(rate), 1};
+  metadata->loopEnabled = false;
+  metadata->stopFadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+  transport->processCallbacks();
+
+  EXPECT_EQ(callback.underruns.load(), 0)
+      << "A full metadata trim clamp must prime its new boundary";
+}
+
 TEST(StreamingClipSourcePrimeTest, PrimeFailuresRollBackAndRecover) {
   auto reader =
       std::make_shared<FaultReader>(4 * static_cast<int64_t>(StreamingClipSource::kPageFrames));

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four-page steady window is exhausted. The fixed lease survives command
   consumption and the first render, then releases atomically; steady worker
   servicing remains restricted to its own capacity.
+- Active `updateClipTrimPoints` and `updateClipMetadata` commands now prime
+  and pin any streaming page needed when a live trim or segment-program edit
+  repositions a voice. Preparation failures reject the update atomically before
+  metadata or cursor state is committed.
 - `ITransportController::seekClip` now primes the renderer's effective
   first-read position for non-segment seeks below trim-IN, rather than the
   discarded pre-trim target. Looping and non-looping first accepted renders now

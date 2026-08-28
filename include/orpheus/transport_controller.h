@@ -541,7 +541,13 @@ public:
   /// @return SessionGraphError::OK on success, error code on failure
   ///
   /// Thread-safe: Can be called from UI thread
-  /// Takes effect: On next clip start (does not affect currently playing clips)
+  /// Takes effect: On the next command boundary for active clips and on the
+  /// next clip start for stopped clips.
+  ///
+  /// Registered streaming sources are synchronously primed on the control
+  /// thread when an active voice must be repositioned by the new range. A
+  /// preparation failure rejects the update atomically without changing the
+  /// registered trim window or active cursor.
   ///
   /// Validation:
   /// - trimInSamples must be >= 0 and < file duration
@@ -681,7 +687,13 @@ public:
   /// @return SessionGraphError::OK on success, error code on failure
   ///
   /// Thread-safe: Can be called from UI thread
-  /// Takes effect: Immediately for active clips (where applicable), on next start for stopped clips
+  /// Takes effect: Immediately for active clips (where applicable), on next
+  /// start for stopped clips.
+  ///
+  /// For active registered streaming sources, any trim or segment-program
+  /// reposition is synchronously primed on the control thread before the
+  /// command is published. A preparation failure rejects the complete update
+  /// atomically, leaving metadata and active cursors unchanged.
   ///
   /// Validation:
   /// - All validation rules from individual update methods apply.

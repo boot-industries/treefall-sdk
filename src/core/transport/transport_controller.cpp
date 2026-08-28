@@ -272,10 +272,17 @@ TransportController::~TransportController() {
         command.startSource && command.startPrime.pageMask != 0) {
       command.startSource->releaseCommandPrime(command.startPrime);
     }
+    if ((command.type == TransportCommand::Type::UpdateTrim ||
+         command.type == TransportCommand::Type::UpdateMetadata) &&
+        command.metadataSource && command.metadataPrime.pageMask != 0) {
+      command.metadataSource->releaseCommandPrime(command.metadataPrime);
+    }
     if ((command.type == TransportCommand::Type::Start ||
          command.type == TransportCommand::Type::StartWithGroupChoke ||
          command.type == TransportCommand::Type::StartWithStopOthers ||
-         command.type == TransportCommand::Type::Seek) &&
+         command.type == TransportCommand::Type::Seek ||
+         command.type == TransportCommand::Type::UpdateTrim ||
+         command.type == TransportCommand::Type::UpdateMetadata) &&
         command.sourceLifetime) {
       releaseSourceCommand(command.sourceLifetime);
     }
@@ -283,6 +290,7 @@ TransportController::~TransportController() {
   }
   releasePendingStartReservations();
   releasePendingSeekReservations();
+  releasePendingMetadataReservations();
 }
 
 SessionGraphError
@@ -969,10 +977,12 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     ++i;
   }
 
-  // Start and seek command primes remain pinned through every source read in
-  // this callback, including loop interpolation and stopping overlap tails.
+  // Start, seek, and metadata command primes remain pinned through every
+  // source read in this callback, including trim-clamp repositioning and
+  // stopping overlap tails.
   releasePendingStartReservations();
   releasePendingSeekReservations();
+  releasePendingMetadataReservations();
 
   // Update transport position
   int64_t newSample =
@@ -1018,8 +1028,18 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    m_pendingStartReservations[m_pendingStartReservationCount++] = {
-        command.startSource, command.startPrime};
+    m_pendingStartReservations[m_pendingStartReservationCount++] = {command.startSource,
+                                                                    command.startPrime};
+  };
+  const auto settleMetadataPrime = [&](const TransportCommand& command) noexcept {
+    if (command.metadataSource == nullptr || command.metadataPrime.pageMask == 0)
+      return;
+    if (m_pendingMetadataReservationCount >= MAX_COMMANDS) {
+      command.metadataSource->releaseCommandPrime(command.metadataPrime);
+      return;
+    }
+    m_pendingMetadataReservations[m_pendingMetadataReservationCount++] = {command.metadataSource,
+                                                                          command.metadataPrime};
   };
 
   while (readIndex != writeIndex) {
@@ -1366,10 +1386,16 @@ void TransportController::processCommands() {
       break;
     }
 
+    if (cmd.type == TransportCommand::Type::UpdateTrim ||
+        cmd.type == TransportCommand::Type::UpdateMetadata)
+      settleMetadataPrime(cmd);
+
     if ((cmd.type == TransportCommand::Type::Start ||
          cmd.type == TransportCommand::Type::StartWithGroupChoke ||
          cmd.type == TransportCommand::Type::StartWithStopOthers ||
-         cmd.type == TransportCommand::Type::Seek) &&
+         cmd.type == TransportCommand::Type::Seek ||
+         cmd.type == TransportCommand::Type::UpdateTrim ||
+         cmd.type == TransportCommand::Type::UpdateMetadata) &&
         cmd.sourceLifetime) {
       releaseSourceCommand(cmd.sourceLifetime);
     }
@@ -1427,6 +1453,16 @@ void TransportController::releasePendingSeekReservations() noexcept {
     pending = {};
   }
   m_pendingSeekReservationCount = 0;
+}
+
+void TransportController::releasePendingMetadataReservations() noexcept {
+  for (size_t index = 0; index < m_pendingMetadataReservationCount; ++index) {
+    PendingMetadataReservation& pending = m_pendingMetadataReservations[index];
+    if (pending.source && pending.prime.pageMask != 0)
+      pending.source->releaseCommandPrime(pending.prime);
+    pending = {};
+  }
+  m_pendingMetadataReservationCount = 0;
 }
 
 ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
@@ -2308,56 +2344,99 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
   return SessionGraphError::OK;
 }
 
+SessionGraphError
+TransportController::prepareMetadataCommandPrimeLocked(AudioFileEntry& entry, int64_t position,
+                                                       TransportCommand& command) {
+  if (!entry.source)
+    return SessionGraphError::NotReady;
+
+  auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source);
+  if (!streaming)
+    return SessionGraphError::OK;
+
+  assertCommandProducer();
+  if (!commandQueueHasCapacity())
+    return SessionGraphError::InternalError;
+
+  constexpr size_t kMaxPlaybackRate = 4;
+  const size_t firstRenderFrames =
+      static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + 2;
+  StreamingClipSource::PrimeReservation reservation{};
+  const auto result = streaming->primeForCommand(position, firstRenderFrames, reservation);
+  if (result != SessionGraphError::OK)
+    return result;
+  if (reservation.pageMask == 0)
+    return SessionGraphError::OK;
+
+  if (!entry.commandLifetime) {
+    streaming->releaseCommandPrime(reservation);
+    return SessionGraphError::InternalError;
+  }
+  command.metadataSource = streaming.get();
+  command.metadataPrime = reservation;
+  command.sourceLifetime = entry.commandLifetime.get();
+  retainSourceCommand(command.sourceLifetime);
+  return SessionGraphError::OK;
+}
+
 SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
                                                             int64_t trimInSamples,
                                                             int64_t trimOutSamples) {
-  if (handle == 0) {
+  if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  }
 
-  // Find clip in registered audio files (need to check file duration)
-  int64_t fileDurationSamples = 0;
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    fileDurationSamples = it->second.metadata.duration_samples;
-    for (uint32_t index = 0; index < it->second.segmentCount; ++index) {
-      const auto& segment = it->second.segments[index];
-      if (segment.startSample < trimInSamples || segment.endSample > trimOutSamples) {
-        return SessionGraphError::InvalidClipTrimPoints;
-      }
-    }
-  }
+  const auto activeSnapshot = getActiveVoiceSnapshot();
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end())
+    return SessionGraphError::ClipNotRegistered;
 
-  // Validate trim points
-  if (trimInSamples < 0 || trimInSamples >= fileDurationSamples) {
+  const int64_t fileDurationSamples = it->second.metadata.duration_samples;
+  for (uint32_t index = 0; index < it->second.segmentCount; ++index) {
+    const auto& segment = it->second.segments[index];
+    if (segment.startSample < trimInSamples || segment.endSample > trimOutSamples)
+      return SessionGraphError::InvalidClipTrimPoints;
+  }
+  if (trimInSamples < 0 || trimInSamples >= fileDurationSamples ||
+      trimOutSamples <= trimInSamples || trimOutSamples > fileDurationSamples)
     return SessionGraphError::InvalidClipTrimPoints;
+
+  std::optional<int64_t> reposition;
+  for (uint32_t index = 0; index < activeSnapshot.entryCount; ++index) {
+    const auto& entry = activeSnapshot.entries[index];
+    if (entry.handle != handle)
+      continue;
+    if (entry.newestPosition.samples < trimInSamples)
+      reposition = trimInSamples;
+    else if (entry.newestPosition.samples >= trimOutSamples)
+      reposition = it->second.loopEnabled ? trimInSamples : trimOutSamples;
   }
 
-  if (trimOutSamples <= trimInSamples || trimOutSamples > fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
+  TransportCommand command{};
+  command.type = TransportCommand::Type::UpdateTrim;
+  command.handle = handle;
+  command.data.trim.in = trimInSamples;
+  command.data.trim.out = trimOutSamples;
+  if (reposition.has_value()) {
+    const auto primeResult = prepareMetadataCommandPrimeLocked(it->second, *reposition, command);
+    if (primeResult != SessionGraphError::OK)
+      return primeResult;
   }
 
-  // Store trim points persistently in AudioFileEntry
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
-      it->second.trimInSamples = trimInSamples;
-      it->second.trimOutSamples = trimOutSamples;
-    }
+  // Queue admission precedes the persistent commit. A rejected update must
+  // leave both the live voice and the registered trim window unchanged.
+  const auto postResult = postCommand(command);
+  if (postResult != SessionGraphError::OK) {
+    if (command.metadataSource && command.metadataPrime.pageMask != 0)
+      command.metadataSource->releaseCommandPrime(command.metadataPrime);
+    if (command.sourceLifetime)
+      releaseSourceCommand(command.sourceLifetime);
+    return postResult;
   }
 
-  // Post command to audio thread for thread-safe update (ORP115)
-  TransportCommand cmd{};
-  cmd.type = TransportCommand::Type::UpdateTrim;
-  cmd.handle = handle;
-  cmd.data.trim.in = trimInSamples;
-  cmd.data.trim.out = trimOutSamples;
-  return postCommand(cmd);
+  it->second.trimInSamples = trimInSamples;
+  it->second.trimOutSamples = trimOutSamples;
+  return SessionGraphError::OK;
 }
 
 SessionGraphError TransportController::updateClipFades(ClipHandle handle, double fadeInSeconds,
@@ -2706,44 +2785,75 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.segments = metadata.segments;
   cmd.dspProcessor = preparedDsp;
 
-  // Queue admission precedes the persistent commit. A full ring therefore
-  // cannot publish metadata that active voices did not receive, which is
-  // required when group choke compares registered and active routing groups.
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    const SessionGraphError postResult = postCommand(cmd);
-    if (postResult != SessionGraphError::OK) {
-      return postResult;
-    }
+  // Queue admission precedes the persistent commit. A full ring or an
+  // unavailable command prime therefore cannot publish metadata that active
+  // voices did not receive.
+  const auto activeSnapshot = getActiveVoiceSnapshot();
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end())
+    return SessionGraphError::ClipNotRegistered;
 
-    it->second.trimInSamples = metadata.trimInSamples;
-    it->second.trimOutSamples = trimOut;
-    it->second.fadeInSeconds = metadata.fadeInSeconds;
-    it->second.fadeOutSeconds = metadata.fadeOutSeconds;
-    it->second.fadeInCurve = metadata.fadeInCurve;
-    it->second.fadeOutCurve = metadata.fadeOutCurve;
-    it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
-    it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
-    it->second.loopEnabled = metadata.loopEnabled;
-    it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
-    it->second.voiceMode = metadata.voiceMode;
-    it->second.gainDb = metadata.gainDb;
-    it->second.muted = metadata.muted;
-    it->second.pan = metadata.pan;
-    it->second.playbackRate = metadata.playbackRate;
-    it->second.playDelaySeconds = metadata.playDelaySeconds;
-    it->second.routingGroup = metadata.routingGroup;
-    it->second.sourceLayout = metadata.sourceLayout;
-    it->second.speakerPatchSize = metadata.speakerPatchSize;
-    it->second.speakerPatch = metadata.speakerPatch;
-    it->second.segmentCount = metadata.segmentCount;
-    it->second.segments = metadata.segments;
-    it->second.dsp = metadata.dsp;
+  bool segmentProgramChanged =
+      it->second.segmentCount != metadata.segmentCount ||
+      !std::equal(it->second.segments.begin(),
+                  it->second.segments.begin() +
+                      std::min(it->second.segmentCount, metadata.segmentCount),
+                  metadata.segments.begin());
+  std::optional<int64_t> reposition;
+  for (uint32_t index = 0; index < activeSnapshot.entryCount; ++index) {
+    const auto& entry = activeSnapshot.entries[index];
+    if (entry.handle != handle)
+      continue;
+    if (segmentProgramChanged) {
+      reposition =
+          metadata.segmentCount > 0 ? metadata.segments[0].startSample : metadata.trimInSamples;
+    } else if (entry.newestPosition.samples < metadata.trimInSamples) {
+      reposition = metadata.trimInSamples;
+    } else if (entry.newestPosition.samples >= trimOut) {
+      reposition = metadata.loopEnabled ? metadata.trimInSamples : trimOut;
+    }
+    break;
   }
+
+  if (reposition.has_value()) {
+    const auto primeResult = prepareMetadataCommandPrimeLocked(it->second, *reposition, cmd);
+    if (primeResult != SessionGraphError::OK)
+      return primeResult;
+  }
+
+  const SessionGraphError postResult = postCommand(cmd);
+  if (postResult != SessionGraphError::OK) {
+    if (cmd.metadataSource && cmd.metadataPrime.pageMask != 0)
+      cmd.metadataSource->releaseCommandPrime(cmd.metadataPrime);
+    if (cmd.sourceLifetime)
+      releaseSourceCommand(cmd.sourceLifetime);
+    return postResult;
+  }
+
+  it->second.trimInSamples = metadata.trimInSamples;
+  it->second.trimOutSamples = trimOut;
+  it->second.fadeInSeconds = metadata.fadeInSeconds;
+  it->second.fadeOutSeconds = metadata.fadeOutSeconds;
+  it->second.fadeInCurve = metadata.fadeInCurve;
+  it->second.fadeOutCurve = metadata.fadeOutCurve;
+  it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
+  it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
+  it->second.loopEnabled = metadata.loopEnabled;
+  it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
+  it->second.voiceMode = metadata.voiceMode;
+  it->second.gainDb = metadata.gainDb;
+  it->second.muted = metadata.muted;
+  it->second.pan = metadata.pan;
+  it->second.playbackRate = metadata.playbackRate;
+  it->second.playDelaySeconds = metadata.playDelaySeconds;
+  it->second.routingGroup = metadata.routingGroup;
+  it->second.sourceLayout = metadata.sourceLayout;
+  it->second.speakerPatchSize = metadata.speakerPatchSize;
+  it->second.speakerPatch = metadata.speakerPatch;
+  it->second.segmentCount = metadata.segmentCount;
+  it->second.segments = metadata.segments;
+  it->second.dsp = metadata.dsp;
 
   return SessionGraphError::OK;
 }
