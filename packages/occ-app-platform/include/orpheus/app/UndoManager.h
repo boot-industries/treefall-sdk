@@ -44,6 +44,12 @@ public:
   /** Checks if redo is possible. */
   bool canRedo() const;
 
+  /** Returns the command that undo() would apply, without advancing history. */
+  const Command* peekUndoCommand() const noexcept;
+
+  /** Returns the command that redo() would apply, without advancing history. */
+  const Command* peekRedoCommand() const noexcept;
+
   /** Returns description of the next undoable action. */
   juce::String getUndoDescription() const;
 

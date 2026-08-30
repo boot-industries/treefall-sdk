@@ -12,8 +12,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cmath>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -77,9 +77,9 @@ public:
   std::atomic<int> underruns{0};
   std::atomic<int> seeks{0};
 
-  void onClipStarted(ClipHandle, uint32_t, TransportPosition) override {}
-  void onClipStopped(ClipHandle, uint32_t, TransportPosition) override {}
-  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipStarted(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipStopped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {
     underruns.fetch_add(1, std::memory_order_relaxed);
   }
@@ -558,8 +558,7 @@ TEST_F(StreamingSeekMatrixTest, SeekBeforeEvictedTrimInPrimesEffectiveFirstRende
     transport->setPreparedSourceMaxFrames(rate);
     SeekCallback callback;
     transport->setCallback(&callback);
-    ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)),
-              SessionGraphError::OK);
+    ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
     ASSERT_EQ(transport->updateClipTrimPoints(1, trimIn, fileLength), SessionGraphError::OK);
     ASSERT_EQ(transport->setClipLoopMode(1, looping), SessionGraphError::OK);
     ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
@@ -717,8 +716,7 @@ TEST(StreamingClipSourcePrimeTest, CommandPrefillUsesPrimeCapacityAfterSteadyExh
 
   EXPECT_EQ(source.prefill(3 * page + 100, 1), SessionGraphError::NotReady);
   ASSERT_EQ(source.prefill(3 * page + 100, 1, &reservation), SessionGraphError::OK);
-  const uint8_t commandMask =
-      static_cast<uint8_t>(0xFFu << StreamingClipSource::kWindowPages);
+  const uint8_t commandMask = static_cast<uint8_t>(0xFFu << StreamingClipSource::kWindowPages);
   EXPECT_NE(reservation.pageMask & commandMask, 0);
   EXPECT_TRUE(source.read(3 * page + 100, scratch.data(), 32, framesRead));
   EXPECT_EQ(framesRead, 32u);

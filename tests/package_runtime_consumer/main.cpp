@@ -14,15 +14,17 @@ namespace {
 
 class RecordingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle handle, uint32_t voiceId,
+  void onClipStarted(orpheus::ClipHandle handle, orpheus::StartRequestTag, uint32_t voiceId,
                      orpheus::TransportPosition) override {
     ++started;
     lastHandle = handle;
     lastVoiceId = voiceId;
   }
 
-  void onClipStopped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {}
-  void onClipLooped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {}
+  void onClipStopped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                     orpheus::TransportPosition) override {}
+  void onClipLooped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                    orpheus::TransportPosition) override {}
   void onBufferUnderrun(orpheus::TransportPosition) override {}
 
   int started = 0;

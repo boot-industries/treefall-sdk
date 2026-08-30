@@ -70,15 +70,18 @@ protected:
   // Test transport callback
   class TestTransportCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition position) override {
       m_clipsStarted.fetch_add(1, std::memory_order_relaxed);
     }
 
-    void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition position) override {
       m_clipsStopped.fetch_add(1, std::memory_order_relaxed);
     }
 
-    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                      TransportPosition position) override {
       // Not used in stress tests
     }
 

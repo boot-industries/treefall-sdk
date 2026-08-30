@@ -64,15 +64,18 @@ struct CallbackEvent {
 
 class RecordingCallback final : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle handle, uint32_t, TransportPosition) override {
+  void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition) override {
     events.push_back({CallbackEvent::Type::Started, handle});
   }
-  void onClipStopped(ClipHandle handle, uint32_t, TransportPosition) override {
+  void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition) override {
     events.push_back({CallbackEvent::Type::Stopped, handle});
   }
-  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {}
-  void onActiveClipLimitReached(ClipHandle handle, TransportPosition) override {
+  void onActiveClipLimitReached(ClipHandle handle, orpheus::StartRequestTag,
+                                TransportPosition) override {
     events.push_back({CallbackEvent::Type::Refused, handle});
   }
 

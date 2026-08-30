@@ -41,17 +41,20 @@ public:
   int underrunCount = 0;
   ClipHandle lastHandle = 0;
 
-  void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition position) override {
     ++startCount;
     lastHandle = handle;
   }
 
-  void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition position) override {
     ++stopCount;
     lastHandle = handle;
   }
 
-  void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipLooped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                    TransportPosition position) override {
     ++loopCount;
     lastHandle = handle;
   }
@@ -275,13 +278,12 @@ TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
 // - Command queue overflow handling
 // - Integration with actual audio processing
 
-
 TEST_F(TransportControllerTest, MalformedRenderShapeIsNoTouch) {
   const TransportConfig config = m_transport->getRenderConfig();
   const float sentinel = 17.25f;
   const size_t storageFrames = config.maxBlockFrames + 1;
-  std::vector<std::vector<float>> storage(
-      config.outputChannels, std::vector<float>(storageFrames, sentinel));
+  std::vector<std::vector<float>> storage(config.outputChannels,
+                                          std::vector<float>(storageFrames, sentinel));
   std::vector<float*> outputs;
   outputs.reserve(config.outputChannels);
   for (auto& channel : storage) {
@@ -310,8 +312,8 @@ TEST_F(TransportControllerTest, MalformedRenderShapeIsNoTouch) {
 
 TEST_F(TransportControllerTest, ZeroFrameProcessesBoundedControlState) {
   const TransportConfig config = m_transport->getRenderConfig();
-  std::vector<std::vector<float>> storage(
-      config.outputChannels, std::vector<float>(config.maxBlockFrames, 9.0f));
+  std::vector<std::vector<float>> storage(config.outputChannels,
+                                          std::vector<float>(config.maxBlockFrames, 9.0f));
   std::vector<float*> outputs;
   outputs.reserve(config.outputChannels);
   for (auto& channel : storage) {

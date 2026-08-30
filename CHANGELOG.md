@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added host-supplied `StartRequestTag` identity to transport starts, lifecycle
+  callbacks, and schema-2 active-voice snapshots. A lock-free schema-1
+  `StartSettlementSnapshot` retains 64 exact start outcomes with explicit
+  overwrite and sequence-exhaustion state; tag-zero starts consume no sequence.
+- `orpheus::UndoManager` now exposes non-mutating `peekUndoCommand()` and
+  `peekRedoCommand()` queries so applications can authorize the exact pending
+  history target before advancing the undo index.
 - Direction-aware CoreAudio endpoint discovery and strict playback-only route
   initialization. Public route snapshots now report selected and active
   endpoints, channel maps, actual format, latency terms, and distinct input or

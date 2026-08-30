@@ -291,9 +291,9 @@ namespace {
 class UnderrunCountingCallback : public ITransportCallback {
 public:
   std::atomic<int> underruns{0};
-  void onClipStarted(ClipHandle, uint32_t, TransportPosition) override {}
-  void onClipStopped(ClipHandle, uint32_t, TransportPosition) override {}
-  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipStarted(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipStopped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {
     underruns.fetch_add(1, std::memory_order_relaxed);
   }

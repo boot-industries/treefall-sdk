@@ -8,6 +8,10 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP252 Tagged Start Settlement Contract]] — lock-free tagged start outcomes,
+  callback identity, active-voice reconciliation, and OCC history inspection
+  (2026-08-30)
+
 - [[ORP251 CoreAudio AudioOutputUnitStart Status Telemetry]] — preserved
   native CoreAudio start status and FourTrack adoption boundary (2026-08-25)
 
@@ -37,6 +41,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
@@ -61,4 +66,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-25
+**Last Generated:** 2026-08-30

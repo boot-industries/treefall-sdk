@@ -83,17 +83,18 @@ struct TransportCommand {
     UpdateStopOthers,
     // ORP127 G1: UI-thread voice mutations routed onto the audio thread so no
     // ActiveClip field is written from two threads.
-    Restart,            // Restart all voices for a handle from trim IN (with fade-in)
-    Seek,               // Seek all voices for a handle to an absolute position
-    UpdateMetadata,     // Apply a full metadata batch to active voices
-    SetVoiceMode,       // ORP127 G5: change a clip's voice policy (audio-thread state)
-    StopOthers,         // ORP127 G7: stop every voice except cmd.handle (choke primitive)
+    Restart,             // Restart all voices for a handle from trim IN (with fade-in)
+    Seek,                // Seek all voices for a handle to an absolute position
+    UpdateMetadata,      // Apply a full metadata batch to active voices
+    SetVoiceMode,        // ORP127 G5: change a clip's voice policy (audio-thread state)
+    StopOthers,          // ORP127 G7: stop every voice except cmd.handle (choke primitive)
     StartWithGroupChoke, // Atomically admit start, then fade registered same-group peers
-    StartWithStopOthers // Atomically admit start, then fade every other voice
+    StartWithStopOthers  // Atomically admit start, then fade every other voice
   };
 
   Type type;
   ClipHandle handle;
+  StartRequestTag requestTag{0};
 
   // Context for Start command (carries reader + metadata safely)
   // This is separate from the union to ensure proper shared_ptr management
@@ -163,7 +164,8 @@ struct TransportCommand {
 /// Active clip state (in audio thread)
 struct ActiveClip {
   ClipHandle handle;
-  uint32_t voiceId;      // Unique voice instance ID (for multi-voice layering)
+  uint32_t voiceId; // Unique voice instance ID (for multi-voice layering)
+  StartRequestTag startRequestTag{0};
   uint64_t startOrdinal; // Chronological start generation (wrap-aware)
   int64_t startSample;   // When clip started playing (transport time)
   int64_t currentSample; // Current position within clip audio
@@ -274,6 +276,7 @@ struct TransportEvent {
   TransportEventType type;
   uint64_t sequence;          ///< Monotonic attempted-delivery sequence
   ClipHandle handle;          ///< Subject clip (0 for transport-wide events)
+  StartRequestTag requestTag; ///< Start identity, zero for untagged paths
   uint32_t voiceId;           ///< Voice instance when known, 0 otherwise (diagnostic)
   TransportPosition position; ///< Position payload delivered to the callback
 };
@@ -299,13 +302,14 @@ public:
   void processCallbacks() override;
 
   // ITransportController interface
-  SessionGraphError startClip(ClipHandle handle) override;
+  SessionGraphError startClip(ClipHandle handle, StartRequestTag requestTag = 0) override;
   SessionGraphError stopClip(ClipHandle handle) override;
   SessionGraphError stopAllClips() override;
   SessionGraphError panic() override; // OCC155 Ask #5: hard-cut, no fade
   SessionGraphError stopAllInGroup(uint8_t groupIndex) override;
   SessionGraphError stopOtherClips(ClipHandle exceptHandle) override;
-  SessionGraphError startClipWithGroupChoke(ClipHandle handle) override;
+  SessionGraphError startClipWithGroupChoke(ClipHandle handle,
+                                            StartRequestTag requestTag = 0) override;
   SessionGraphError setMaxVoicesPerClip(uint32_t maxVoices) override;
   uint32_t getMaxVoicesPerClip() const override;
   PlaybackState getClipState(ClipHandle handle) const override;
@@ -338,6 +342,7 @@ public:
   size_t getActiveVoiceCount(ClipHandle handle) const override;
   size_t getTotalActiveVoiceCount() const override;
   TransportCallbackTelemetry getCallbackDeliveryTelemetry() const noexcept override;
+  StartSettlementSnapshot getStartSettlementSnapshot() const noexcept override;
   ActiveVoiceSnapshot getActiveVoiceSnapshot() const noexcept override;
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
@@ -393,6 +398,13 @@ public:
     m_nextVoiceStartOrdinal = nextOrdinal;
   }
 
+  /// Test-only control while the audio callback is stopped.
+  void setStartSettlementSequenceForTesting(uint64_t latestSequence,
+                                            bool exhausted = false) noexcept {
+    m_startSettlementSequence = latestSequence;
+    m_startSettlementSequenceExhausted = exhausted;
+  }
+
   /// Test-only mutation while the audio callback is stopped.
   bool setVoiceSnapshotFieldsForTesting(uint32_t voiceId, bool stopping, bool looping,
                                         int64_t trimIn, int64_t trimOut,
@@ -407,11 +419,11 @@ private:
   ///
   /// Group-choke starts require a registered, available source so every
   /// pre-admission failure is reported before the atomic command is posted.
-  SessionGraphError makeStartContext(
-      ClipHandle handle, bool requireRegisteredSource,
-      std::shared_ptr<ClipPlaybackContext>& context, SourceCommandLifetime*& sourceLifetime,
-      StreamingClipSource*& startSource,
-      StreamingClipSource::PrimeReservation& startPrime);
+  SessionGraphError makeStartContext(ClipHandle handle, bool requireRegisteredSource,
+                                     std::shared_ptr<ClipPlaybackContext>& context,
+                                     SourceCommandLifetime*& sourceLifetime,
+                                     StreamingClipSource*& startSource,
+                                     StreamingClipSource::PrimeReservation& startPrime);
 
   /// Process pending commands from UI thread
   void processCommands();
@@ -439,7 +451,8 @@ private:
 
   /// Add a clip to the active list. Returns false when the global voice pool
   /// cannot accept the start.
-  bool addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context);
+  bool addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context,
+                     StartRequestTag requestTag);
 
   /// Allocate a nonzero ID distinct from every active voice. Audio-thread only;
   /// bounded by the fixed active-voice capacity. ignoredVoiceId is reserved
@@ -456,7 +469,8 @@ private:
   ///   only fading tails exist, add a fresh voice alongside them.
   /// - MonoStrict: restart in place with no fade tail; if a voice is fading,
   ///   cut it and start fresh (single voice, sample-accurate replace).
-  uint32_t startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context);
+  uint32_t startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context,
+                              StartRequestTag requestTag);
 
   /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
   /// restart (used by the mono voice modes). Applies the broadcast-safe restart
@@ -477,6 +491,10 @@ private:
 
   /// Publish callback delivery counters through a coherent atomic seqlock.
   void publishCallbackTelemetry() noexcept;
+
+  /// Retain one tagged start outcome and publish a coherent fixed snapshot.
+  void publishStartSettlement(StartRequestTag requestTag, ClipHandle handle, uint32_t voiceId,
+                              TransportPosition position, StartSettlementOutcome outcome) noexcept;
 
   /// Calculate fade gain based on curve type
   /// @param normalizedPosition Position in fade (0.0 to 1.0)
@@ -541,6 +559,7 @@ private:
     std::atomic<ClipHandle> handle{0};
     std::atomic<uint32_t> activeVoiceCount{0};
     std::atomic<uint32_t> newestVoiceId{0};
+    std::atomic<StartRequestTag> newestStartRequestTag{0};
     std::atomic<uint8_t> state{static_cast<uint8_t>(PlaybackState::Stopped)};
     std::atomic<uint8_t> newestVoiceStopping{0};
     std::atomic<uint8_t> newestVoiceLoopEnabled{0};
@@ -565,6 +584,32 @@ private:
   uint64_t m_voiceSnapshotRevision{0};
   uint64_t m_voiceSnapshotSequence{0};
 
+  struct AtomicStartSettlementRecord {
+    std::atomic<uint64_t> sequence{0};
+    std::atomic<StartRequestTag> requestTag{0};
+    std::atomic<ClipHandle> handle{0};
+    std::atomic<uint32_t> voiceId{0};
+    std::atomic<int64_t> positionSamples{0};
+    std::atomic<uint64_t> positionSecondsBits{0};
+    std::atomic<uint64_t> positionBeatsBits{0};
+    std::atomic<uint8_t> outcome{static_cast<uint8_t>(StartSettlementOutcome::Started)};
+  };
+  struct AtomicStartSettlementSnapshot {
+    std::atomic<uint64_t> revision{0};
+    std::atomic<uint32_t> schemaVersion{kStartSettlementSnapshotSchemaVersion};
+    std::atomic<uint32_t> entryCount{0};
+    std::atomic<uint8_t> sequenceExhausted{0};
+    std::array<std::atomic<uint8_t>, 7> reserved{};
+    std::atomic<uint64_t> oldestSequence{0};
+    std::atomic<uint64_t> latestSequence{0};
+    std::atomic<uint64_t> overwrittenCount{0};
+    std::array<AtomicStartSettlementRecord, kStartSettlementSnapshotCapacity> entries{};
+  };
+  AtomicStartSettlementSnapshot m_publishedStartSettlements{};
+  StartSettlementSnapshot m_startSettlementScratch{};
+  uint64_t m_startSettlementRevision{0};
+  uint64_t m_startSettlementSequence{0};
+  bool m_startSettlementSequenceExhausted{false};
   // Multi-voice management (ORP127 G7: configurable voice cap for resource
   // protection). Default 8, hard ceiling 32; hosts typically set 2/4/8/16.
   static constexpr uint32_t VOICE_CAP_HARD_MAX = 32;
@@ -692,15 +737,15 @@ private:
   /// ring). Control thread only; caller holds m_audioFilesMutex. A non-null
   /// reservation receives a command-owned pin for an existing source's
   /// first-render page.
-  SessionGraphError ensurePreparedSourceLocked(
-      AudioFileEntry& entry, StreamingClipSource::PrimeReservation* reservation = nullptr);
+  SessionGraphError
+  ensurePreparedSourceLocked(AudioFileEntry& entry,
+                             StreamingClipSource::PrimeReservation* reservation = nullptr);
   void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releaseActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
-
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;

@@ -37,19 +37,22 @@ private:
 // Test callback to track transport events
 class TestTransportCallback : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition position) override {
     m_start_count.fetch_add(1, std::memory_order_relaxed);
     m_last_started_handle = handle;
     (void)position;
   }
 
-  void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                     TransportPosition position) override {
     m_stop_count.fetch_add(1, std::memory_order_relaxed);
     m_last_stopped_handle = handle;
     (void)position;
   }
 
-  void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
+  void onClipLooped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                    TransportPosition position) override {
     // Not tested yet
     (void)handle;
     (void)position;

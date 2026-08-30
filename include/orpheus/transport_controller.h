@@ -26,6 +26,8 @@ class SessionGraph;
 
 using ClipHandle = uint64_t;
 
+using StartRequestTag = uint64_t;
+
 /// Fade curve types for clip fades
 enum class FadeCurve : uint8_t {
   Linear = 0,     ///< f(x) = x
@@ -78,7 +80,40 @@ struct TransportPosition {
 inline constexpr uint32_t kTransportCallbackTelemetrySchemaVersion = 1;
 
 /// Stable schema version for ActiveVoiceSnapshot.
-inline constexpr uint32_t kActiveVoiceSnapshotSchemaVersion = 1;
+inline constexpr uint32_t kActiveVoiceSnapshotSchemaVersion = 2;
+
+/// Audio-thread settlement for one nonzero host start-request identity.
+enum class StartSettlementOutcome : uint8_t { Started = 0, ActiveVoiceLimitRejected = 1 };
+
+/// Retained result of one tagged start at its command-processing position.
+struct StartSettlementRecord {
+  uint64_t sequence = 0;
+  StartRequestTag requestTag = 0;
+  ClipHandle handle = 0;
+  uint32_t voiceId = 0;
+  TransportPosition position{};
+  StartSettlementOutcome outcome = StartSettlementOutcome::Started;
+};
+
+/// Stable schema and bounded retention for tagged start settlements.
+inline constexpr uint32_t kStartSettlementSnapshotSchemaVersion = 1;
+inline constexpr size_t kStartSettlementSnapshotCapacity = 64;
+
+/// Coherent value snapshot ordered by ascending sequence.
+///
+/// Tag-zero starts are absent. overwrittenCount reports records evicted from
+/// the 64-entry window. sequenceExhausted is terminal for this controller:
+/// later tagged commands cannot mutate voices and publish no record or callback.
+struct StartSettlementSnapshot {
+  uint32_t schemaVersion = kStartSettlementSnapshotSchemaVersion;
+  uint32_t entryCount = 0;
+  uint8_t sequenceExhausted = 0;
+  uint8_t reserved[7]{};
+  uint64_t oldestSequence = 0;
+  uint64_t latestSequence = 0;
+  uint64_t overwrittenCount = 0;
+  std::array<StartSettlementRecord, kStartSettlementSnapshotCapacity> entries{};
+};
 
 /// Maximum number of distinct clip handles represented in one active snapshot.
 ///
@@ -113,12 +148,14 @@ struct TransportCallbackTelemetry {
 ///
 /// "Newest" is the surviving voice with the greatest transport start sample;
 /// when starts share that sample, the later accepted start wins even when its
-/// voice ID wrapped. state is Playing when any voice for the handle is playing
-/// and Stopping only when all of them are stopping.
+/// voice ID wrapped. newestVoiceId and newestStartRequestTag always describe
+/// that same accepted start. state is Playing when any voice for the handle is
+/// playing and Stopping only when all of them are stopping.
 struct ActiveVoiceSnapshotEntry {
   ClipHandle handle = 0;
   uint32_t activeVoiceCount = 0;
   uint32_t newestVoiceId = 0;
+  StartRequestTag newestStartRequestTag = 0;
   PlaybackState state = PlaybackState::Stopped;
   uint8_t newestVoiceStopping = 0;
   uint8_t newestVoiceLoopEnabled = 0;
@@ -145,6 +182,10 @@ struct ActiveVoiceSnapshot {
   std::array<ActiveVoiceSnapshotEntry, kActiveVoiceSnapshotCapacity> entries{};
 };
 
+static_assert(std::is_trivially_copyable_v<StartSettlementRecord>);
+static_assert(std::is_standard_layout_v<StartSettlementRecord>);
+static_assert(std::is_trivially_copyable_v<StartSettlementSnapshot>);
+static_assert(std::is_standard_layout_v<StartSettlementSnapshot>);
 static_assert(std::is_trivially_copyable_v<TransportCallbackTelemetry>);
 static_assert(std::is_standard_layout_v<TransportCallbackTelemetry>);
 static_assert(std::is_trivially_copyable_v<ActiveVoiceSnapshotEntry>);
@@ -263,21 +304,27 @@ public:
 
   /// Called when a clip starts playing
   /// @param handle The clip that started
+  /// @param requestTag Host request identity, zero for an untagged start
   /// @param voiceId Nonzero SDK voice instance identity
   /// @param position Current transport position
-  virtual void onClipStarted(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
+  virtual void onClipStarted(ClipHandle handle, StartRequestTag requestTag, uint32_t voiceId,
+                             TransportPosition position) = 0;
 
   /// Called when a clip stops playing
   /// @param handle The clip that stopped
+  /// @param requestTag Identity copied from the exact retiring voice
   /// @param voiceId SDK identity of the retired voice
   /// @param position Current transport position
-  virtual void onClipStopped(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
+  virtual void onClipStopped(ClipHandle handle, StartRequestTag requestTag, uint32_t voiceId,
+                             TransportPosition position) = 0;
 
   /// Called when a clip loops back to start
   /// @param handle The clip that looped
+  /// @param requestTag Identity copied from the exact looping voice
   /// @param voiceId SDK identity of the looping voice
   /// @param position Current transport position
-  virtual void onClipLooped(ClipHandle handle, uint32_t voiceId, TransportPosition position) = 0;
+  virtual void onClipLooped(ClipHandle handle, StartRequestTag requestTag, uint32_t voiceId,
+                            TransportPosition position) = 0;
 
   /// Called when a clip restarts playback from its IN point
   /// @param handle The clip that restarted
@@ -300,7 +347,9 @@ public:
   virtual void onBufferUnderrun(TransportPosition position) = 0;
 
   /// Called when the fixed global active-voice pool refuses a start.
-  virtual void onActiveClipLimitReached(ClipHandle /*handle*/, TransportPosition /*position*/) {}
+  /// @param requestTag Identity of the refused start
+  virtual void onActiveClipLimitReached(ClipHandle /*handle*/, StartRequestTag /*requestTag*/,
+                                        TransportPosition /*position*/) {}
 };
 
 /// Transport controller interface for sample-accurate clip playback
@@ -350,11 +399,12 @@ public:
   /// and I/O-free.
   ///
   /// @param handle The clip to start (must be a valid handle from SessionGraph)
+  /// @param requestTag Host identity retained through settlement and lifecycle
   /// @return SessionGraphError::OK on success, or preparation/queue error
   ///
   /// @note If the clip is already playing, this function follows its configured
   ///       VoiceMode. Playback honors trim points and fade-in settings.
-  virtual SessionGraphError startClip(ClipHandle handle) = 0;
+  virtual SessionGraphError startClip(ClipHandle handle, StartRequestTag requestTag = 0) = 0;
 
   /// Stop playback of a specific clip
   ///
@@ -970,7 +1020,8 @@ public:
   /// startClip() and the other control-mutating methods. The default preserves
   /// source compatibility for external interface implementations; concrete
   /// controllers that do not override it report an unavailable capability.
-  virtual SessionGraphError startClipWithGroupChoke(ClipHandle /*handle*/) {
+  virtual SessionGraphError startClipWithGroupChoke(ClipHandle /*handle*/,
+                                                    StartRequestTag /*requestTag*/ = 0) {
     return SessionGraphError::NotSupported;
   }
 
@@ -980,6 +1031,13 @@ public:
   /// The default preserves source compatibility for recompiled custom
   /// implementations; it is not a C++ binary-compatibility guarantee.
   virtual TransportCallbackTelemetry getCallbackDeliveryTelemetry() const noexcept {
+    return {};
+  }
+
+  /// Poll the retained outcomes for tagged start requests.
+  ///
+  /// Lock-free any-thread query. Tag-zero starts are deliberately absent.
+  virtual StartSettlementSnapshot getStartSettlementSnapshot() const noexcept {
     return {};
   }
 

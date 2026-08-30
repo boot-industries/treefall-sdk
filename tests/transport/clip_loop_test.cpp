@@ -164,13 +164,16 @@ TEST_F(ClipLoopTest, OnClipLoopedCallbackFires) {
   // Callback test fixture
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition position) override {
       startedHandle = handle;
     }
 
-    void onClipStopped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
+    void onClipStopped(ClipHandle /*handle*/, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition /*position*/) override {}
 
-    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                      TransportPosition position) override {
       loopedHandle = handle;
       loopedPosition = position;
       loopCount++;
@@ -398,9 +401,12 @@ TEST_F(ClipLoopTest, MultipleLoopsExecuteCorrectly) {
   // Callback to count loops
   class LoopCountCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
-    void onClipStopped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {}
-    void onClipLooped(ClipHandle /*handle*/, uint32_t, TransportPosition /*position*/) override {
+    void onClipStarted(ClipHandle /*handle*/, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition /*position*/) override {}
+    void onClipStopped(ClipHandle /*handle*/, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition /*position*/) override {}
+    void onClipLooped(ClipHandle /*handle*/, orpheus::StartRequestTag, uint32_t,
+                      TransportPosition /*position*/) override {
       loopCount++;
     }
     void onBufferUnderrun(TransportPosition /*position*/) override {}

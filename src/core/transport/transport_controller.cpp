@@ -285,12 +285,10 @@ TransportController::~TransportController() {
   releasePendingSeekReservations();
 }
 
-SessionGraphError
-TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredSource,
-                                      std::shared_ptr<ClipPlaybackContext>& context,
-                                      SourceCommandLifetime*& sourceLifetime,
-                                      StreamingClipSource*& startSource,
-                                      StreamingClipSource::PrimeReservation& startPrime) {
+SessionGraphError TransportController::makeStartContext(
+    ClipHandle handle, bool requireRegisteredSource, std::shared_ptr<ClipPlaybackContext>& context,
+    SourceCommandLifetime*& sourceLifetime, StreamingClipSource*& startSource,
+    StreamingClipSource::PrimeReservation& startPrime) {
   sourceLifetime = nullptr;
   startSource = nullptr;
   startPrime = {};
@@ -376,7 +374,6 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
       return SessionGraphError::OK;
     }
 
-
     if (requireRegisteredSource) {
       context.reset();
       return SessionGraphError::ClipNotRegistered;
@@ -416,7 +413,7 @@ TransportController::makeStartContext(ClipHandle handle, bool requireRegisteredS
   }
 }
 
-SessionGraphError TransportController::startClip(ClipHandle handle) {
+SessionGraphError TransportController::startClip(ClipHandle handle, StartRequestTag requestTag) {
   std::shared_ptr<ClipPlaybackContext> context;
   SourceCommandLifetime* sourceLifetime = nullptr;
   StreamingClipSource* startSource = nullptr;
@@ -444,9 +441,10 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   }
 
   TransportCommand cmd{};
-  cmd.type = stopOthers ? TransportCommand::Type::StartWithStopOthers
-                        : TransportCommand::Type::Start;
+  cmd.type =
+      stopOthers ? TransportCommand::Type::StartWithStopOthers : TransportCommand::Type::Start;
   cmd.handle = handle;
+  cmd.requestTag = requestTag;
   cmd.startContext = context;
   cmd.sourceLifetime = sourceLifetime;
   cmd.startSource = startSource;
@@ -459,7 +457,8 @@ SessionGraphError TransportController::startClip(ClipHandle handle) {
   return postResult;
 }
 
-SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle) {
+SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle,
+                                                               StartRequestTag requestTag) {
   std::shared_ptr<ClipPlaybackContext> context;
   SourceCommandLifetime* sourceLifetime = nullptr;
   StreamingClipSource* startSource = nullptr;
@@ -480,6 +479,7 @@ SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::StartWithGroupChoke;
   cmd.handle = handle;
+  cmd.requestTag = requestTag;
   cmd.startContext = context;
   cmd.sourceLifetime = sourceLifetime;
   cmd.startSource = startSource;
@@ -674,6 +674,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
             TransportEvent event{};
             event.type = TransportEventType::ClipLooped;
             event.handle = clip.handle;
+            event.requestTag = clip.startRequestTag;
             event.voiceId = clip.voiceId;
             event.position = getCurrentPosition();
             postTransportEvent(event);
@@ -918,6 +919,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
       if (clip.stopFadeFramesElapsed >= stopFadeSamples) {
         const ClipHandle stoppedHandle = clip.handle;
+        const StartRequestTag stoppedRequestTag = clip.startRequestTag;
         const uint32_t stoppedVoiceId = clip.voiceId;
         removeActiveVoice(stoppedVoiceId);
 
@@ -927,6 +929,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         TransportEvent event{};
         event.type = TransportEventType::ClipStopped;
         event.handle = stoppedHandle;
+        event.requestTag = stoppedRequestTag;
         event.voiceId = stoppedVoiceId;
         event.position = getCurrentPosition();
         postTransportEvent(event);
@@ -954,6 +957,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           TransportEvent event{};
           event.type = TransportEventType::ClipLooped;
           event.handle = clip.handle;
+          event.requestTag = clip.startRequestTag;
           event.voiceId = clip.voiceId;
           event.position = getCurrentPosition();
           postTransportEvent(event);
@@ -1018,40 +1022,51 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    m_pendingStartReservations[m_pendingStartReservationCount++] = {
-        command.startSource, command.startPrime};
+    m_pendingStartReservations[m_pendingStartReservationCount++] = {command.startSource,
+                                                                    command.startPrime};
+  };
+  const auto processStart = [&](const TransportCommand& command) -> uint32_t {
+    if (command.requestTag != 0 && m_startSettlementSequenceExhausted) {
+      settleStartPrime(command, false);
+      return 0;
+    }
+
+    const TransportPosition position = getCurrentPosition();
+    const uint32_t voiceId =
+        command.startContext ? startVoiceWithMode(command.startContext, command.requestTag) : 0;
+    settleStartPrime(command, voiceId != 0);
+
+    if (command.requestTag != 0) {
+      publishStartSettlement(command.requestTag, command.handle, voiceId, position,
+                             voiceId != 0 ? StartSettlementOutcome::Started
+                                          : StartSettlementOutcome::ActiveVoiceLimitRejected);
+    }
+
+    if (voiceId != 0) {
+      TransportEvent event{};
+      event.type = TransportEventType::ClipStarted;
+      event.handle = command.handle;
+      event.requestTag = command.requestTag;
+      event.voiceId = voiceId;
+      event.position = position;
+      postTransportEvent(event);
+    }
+    return voiceId;
   };
 
   while (readIndex != writeIndex) {
     const TransportCommand& cmd = m_commands[readIndex];
 
     switch (cmd.type) {
-    case TransportCommand::Type::Start: {
-      const uint32_t voiceId = cmd.startContext ? startVoiceWithMode(cmd.startContext) : 0;
-      settleStartPrime(cmd, voiceId != 0);
-      if (voiceId != 0) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStarted;
-        event.handle = cmd.handle;
-        event.voiceId = voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
-      }
-    } break;
+    case TransportCommand::Type::Start:
+      (void)processStart(cmd);
+      break;
 
     case TransportCommand::Type::StartWithGroupChoke: {
       // Admission is deliberately first. A voice-pool refusal may publish the
       // existing typed rejection event, but it cannot mutate any peer.
-      const uint32_t voiceId = cmd.startContext ? startVoiceWithMode(cmd.startContext) : 0;
-      settleStartPrime(cmd, voiceId != 0);
+      const uint32_t voiceId = processStart(cmd);
       if (voiceId != 0) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStarted;
-        event.handle = cmd.handle;
-        event.voiceId = voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
-
         // Only after the firing voice is live do same-group peers enter their
         // normal configured stop fades. The firing handle is always spared so
         // MonoWithFadeOverlap and other per-handle policies remain authoritative.
@@ -1068,15 +1083,8 @@ void TransportController::processCommands() {
     case TransportCommand::Type::StartWithStopOthers: {
       // Admission is deliberately first. The firing voice and the peer choke
       // share one queue slot, so a full queue cannot partially mutate peers.
-      const uint32_t voiceId = cmd.startContext ? startVoiceWithMode(cmd.startContext) : 0;
-      settleStartPrime(cmd, voiceId != 0);
+      const uint32_t voiceId = processStart(cmd);
       if (voiceId != 0) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStarted;
-        event.handle = cmd.handle;
-        event.voiceId = voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
         for (size_t i = 0; i < m_activeClipCount; ++i) {
           ActiveClip& peer = m_activeClips[i];
           if (peer.handle != cmd.handle && !peer.isStopping) {
@@ -1107,11 +1115,13 @@ void TransportController::processCommands() {
       while (m_activeClipCount != 0) {
         const ActiveClip& voice = m_activeClips[0];
         const ClipHandle stoppedHandle = voice.handle;
+        const StartRequestTag stoppedRequestTag = voice.startRequestTag;
         const uint32_t stoppedVoiceId = voice.voiceId;
         removeActiveVoice(stoppedVoiceId);
         TransportEvent event{};
         event.type = TransportEventType::ClipStopped;
         event.handle = stoppedHandle;
+        event.requestTag = stoppedRequestTag;
         event.voiceId = stoppedVoiceId;
         event.position = getCurrentPosition();
         postTransportEvent(event);
@@ -1528,12 +1538,13 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
 }
 
 uint32_t
-TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context) {
+TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context,
+                                        StartRequestTag requestTag) {
   if (!context)
     return 0;
 
-  const auto addVoice = [this, &context]() -> uint32_t {
-    if (!addActiveClip(context))
+  const auto addVoice = [this, &context, requestTag]() -> uint32_t {
+    if (!addActiveClip(context, requestTag))
       return 0;
     return m_activeClips[m_activeClipCount - 1].voiceId;
   };
@@ -1570,6 +1581,9 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
     }
     if (!primary)
       return addVoice();
+    primary->startRequestTag = requestTag;
+    primary->startOrdinal = allocateVoiceStartOrdinal();
+    primary->startSample = m_currentSample.load(std::memory_order_relaxed);
 
     resetSegmentCursor(*primary);
     const int64_t startPosition = playbackWindowStart(*primary);
@@ -1600,6 +1614,9 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
       return addVoice();
 
     restartVoiceInPlace(*live);
+    live->startRequestTag = requestTag;
+    live->startOrdinal = allocateVoiceStartOrdinal();
+    live->startSample = m_currentSample.load(std::memory_order_relaxed);
     live->voiceMode = mode;
     return live->voiceId;
   }
@@ -1667,7 +1684,8 @@ bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, boo
   }
   return false;
 }
-bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context) {
+bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContext>& context,
+                                        StartRequestTag requestTag) {
   if (!context) {
     return false;
   }
@@ -1688,6 +1706,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
     TransportEvent event{};
     event.type = TransportEventType::ActiveClipLimitReached;
     event.handle = handle;
+    event.requestTag = requestTag;
     event.position = getCurrentPosition();
     postTransportEvent(event);
     return false;
@@ -1719,6 +1738,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.sourcePosition = static_cast<double>(startPosition);
   clip.handle = handle;
   clip.voiceId = voiceId;
+  clip.startRequestTag = requestTag;
   clip.startOrdinal = startOrdinal;
   clip.startSample = m_currentSample.load(std::memory_order_relaxed);
   clip.currentSample = startPosition;
@@ -1803,6 +1823,7 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
 
         dest.handle = src.handle;
         dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
+        dest.startRequestTag = src.startRequestTag;
         dest.startOrdinal = src.startOrdinal;
         dest.startSample = src.startSample;
         dest.currentSample = src.currentSample;
@@ -1962,6 +1983,7 @@ void TransportController::publishVoiceSnapshot() noexcept {
         (voice.startSample == entry.newestStartSample &&
          isLaterStartOrdinal(voice.startOrdinal, m_voiceSnapshotNewestStartOrdinal[entryIndex]))) {
       entry.newestVoiceId = voice.voiceId;
+      entry.newestStartRequestTag = voice.startRequestTag;
       entry.newestVoiceStopping = voice.isStopping ? 1 : 0;
       entry.newestVoiceLoopEnabled = voice.loopEnabled.load(std::memory_order_relaxed) ? 1 : 0;
       entry.newestStartSample = voice.startSample;
@@ -1988,6 +2010,8 @@ void TransportController::publishVoiceSnapshot() noexcept {
     destination.handle.store(source.handle, std::memory_order_release);
     destination.activeVoiceCount.store(source.activeVoiceCount, std::memory_order_release);
     destination.newestVoiceId.store(source.newestVoiceId, std::memory_order_release);
+    destination.newestStartRequestTag.store(source.newestStartRequestTag,
+                                            std::memory_order_release);
     destination.state.store(static_cast<uint8_t>(source.state), std::memory_order_release);
     destination.newestVoiceStopping.store(source.newestVoiceStopping, std::memory_order_release);
     destination.newestVoiceLoopEnabled.store(source.newestVoiceLoopEnabled,
@@ -2006,6 +2030,82 @@ void TransportController::publishVoiceSnapshot() noexcept {
   const uint64_t evenRevision = m_voiceSnapshotRevision + 1;
   m_voiceSnapshotRevision = evenRevision;
   m_publishedVoiceSnapshot.revision.store(evenRevision, std::memory_order_release);
+}
+
+void TransportController::publishStartSettlement(StartRequestTag requestTag, ClipHandle handle,
+                                                 uint32_t voiceId, TransportPosition position,
+                                                 StartSettlementOutcome outcome) noexcept {
+  if (requestTag == 0 || m_startSettlementSequenceExhausted) {
+    return;
+  }
+
+  StartSettlementSnapshot& snapshot = m_startSettlementScratch;
+  const uint64_t sequence = m_startSettlementSequence + 1;
+  m_startSettlementSequence = sequence;
+
+  uint32_t destinationIndex = snapshot.entryCount;
+  if (snapshot.entryCount == kStartSettlementSnapshotCapacity) {
+    for (size_t index = 1; index < kStartSettlementSnapshotCapacity; ++index) {
+      snapshot.entries[index - 1] = snapshot.entries[index];
+    }
+    destinationIndex = static_cast<uint32_t>(kStartSettlementSnapshotCapacity - 1);
+    snapshot.overwrittenCount = incrementSaturated(snapshot.overwrittenCount);
+  } else {
+    ++snapshot.entryCount;
+  }
+
+  StartSettlementRecord& record = snapshot.entries[destinationIndex];
+  record = {};
+  record.sequence = sequence;
+  record.requestTag = requestTag;
+  record.handle = handle;
+  record.voiceId = voiceId;
+  record.position = position;
+  record.outcome = outcome;
+  snapshot.oldestSequence = snapshot.entries[0].sequence;
+  snapshot.latestSequence = sequence;
+  if (sequence == std::numeric_limits<uint64_t>::max()) {
+    snapshot.sequenceExhausted = 1;
+    m_startSettlementSequenceExhausted = true;
+  }
+
+  const uint64_t oddRevision = m_startSettlementRevision + 1;
+  m_startSettlementRevision = oddRevision;
+  m_publishedStartSettlements.revision.store(oddRevision, std::memory_order_release);
+  m_publishedStartSettlements.schemaVersion.store(snapshot.schemaVersion,
+                                                  std::memory_order_release);
+  m_publishedStartSettlements.entryCount.store(snapshot.entryCount, std::memory_order_release);
+  m_publishedStartSettlements.sequenceExhausted.store(snapshot.sequenceExhausted,
+                                                      std::memory_order_release);
+  for (size_t index = 0; index < std::size(snapshot.reserved); ++index) {
+    m_publishedStartSettlements.reserved[index].store(snapshot.reserved[index],
+                                                      std::memory_order_release);
+  }
+  m_publishedStartSettlements.oldestSequence.store(snapshot.oldestSequence,
+                                                   std::memory_order_release);
+  m_publishedStartSettlements.latestSequence.store(snapshot.latestSequence,
+                                                   std::memory_order_release);
+  m_publishedStartSettlements.overwrittenCount.store(snapshot.overwrittenCount,
+                                                     std::memory_order_release);
+
+  for (size_t index = 0; index < kStartSettlementSnapshotCapacity; ++index) {
+    const StartSettlementRecord& source = snapshot.entries[index];
+    AtomicStartSettlementRecord& destination = m_publishedStartSettlements.entries[index];
+    destination.sequence.store(source.sequence, std::memory_order_release);
+    destination.requestTag.store(source.requestTag, std::memory_order_release);
+    destination.handle.store(source.handle, std::memory_order_release);
+    destination.voiceId.store(source.voiceId, std::memory_order_release);
+    destination.positionSamples.store(source.position.samples, std::memory_order_release);
+    destination.positionSecondsBits.store(std::bit_cast<uint64_t>(source.position.seconds),
+                                          std::memory_order_release);
+    destination.positionBeatsBits.store(std::bit_cast<uint64_t>(source.position.beats),
+                                        std::memory_order_release);
+    destination.outcome.store(static_cast<uint8_t>(source.outcome), std::memory_order_release);
+  }
+
+  const uint64_t evenRevision = m_startSettlementRevision + 1;
+  m_startSettlementRevision = evenRevision;
+  m_publishedStartSettlements.revision.store(evenRevision, std::memory_order_release);
 }
 
 void TransportController::postTransportEvent(const TransportEvent& sourceEvent) noexcept {
@@ -2073,13 +2173,13 @@ void TransportController::processCallbacks() {
     if (m_callback) {
       switch (event.type) {
       case TransportEventType::ClipStarted:
-        m_callback->onClipStarted(event.handle, event.voiceId, event.position);
+        m_callback->onClipStarted(event.handle, event.requestTag, event.voiceId, event.position);
         break;
       case TransportEventType::ClipStopped:
-        m_callback->onClipStopped(event.handle, event.voiceId, event.position);
+        m_callback->onClipStopped(event.handle, event.requestTag, event.voiceId, event.position);
         break;
       case TransportEventType::ClipLooped:
-        m_callback->onClipLooped(event.handle, event.voiceId, event.position);
+        m_callback->onClipLooped(event.handle, event.requestTag, event.voiceId, event.position);
         break;
       case TransportEventType::ClipRestarted:
         m_callback->onClipRestarted(event.handle, event.position);
@@ -2091,7 +2191,7 @@ void TransportController::processCallbacks() {
         m_callback->onBufferUnderrun(event.position);
         break;
       case TransportEventType::ActiveClipLimitReached:
-        m_callback->onActiveClipLimitReached(event.handle, event.position);
+        m_callback->onActiveClipLimitReached(event.handle, event.requestTag, event.position);
         break;
       }
     }
@@ -2937,6 +3037,55 @@ TransportCallbackTelemetry TransportController::getCallbackDeliveryTelemetry() c
   }
 }
 
+StartSettlementSnapshot TransportController::getStartSettlementSnapshot() const noexcept {
+  for (;;) {
+    const uint64_t revisionBefore =
+        m_publishedStartSettlements.revision.load(std::memory_order_acquire);
+    if ((revisionBefore & 1u) != 0) {
+      continue;
+    }
+
+    StartSettlementSnapshot snapshot{};
+    snapshot.schemaVersion =
+        m_publishedStartSettlements.schemaVersion.load(std::memory_order_acquire);
+    snapshot.entryCount = m_publishedStartSettlements.entryCount.load(std::memory_order_acquire);
+    snapshot.sequenceExhausted =
+        m_publishedStartSettlements.sequenceExhausted.load(std::memory_order_acquire);
+    for (size_t index = 0; index < std::size(snapshot.reserved); ++index) {
+      snapshot.reserved[index] =
+          m_publishedStartSettlements.reserved[index].load(std::memory_order_acquire);
+    }
+    snapshot.oldestSequence =
+        m_publishedStartSettlements.oldestSequence.load(std::memory_order_acquire);
+    snapshot.latestSequence =
+        m_publishedStartSettlements.latestSequence.load(std::memory_order_acquire);
+    snapshot.overwrittenCount =
+        m_publishedStartSettlements.overwrittenCount.load(std::memory_order_acquire);
+
+    for (size_t index = 0; index < kStartSettlementSnapshotCapacity; ++index) {
+      const AtomicStartSettlementRecord& source = m_publishedStartSettlements.entries[index];
+      StartSettlementRecord& destination = snapshot.entries[index];
+      destination.sequence = source.sequence.load(std::memory_order_acquire);
+      destination.requestTag = source.requestTag.load(std::memory_order_acquire);
+      destination.handle = source.handle.load(std::memory_order_acquire);
+      destination.voiceId = source.voiceId.load(std::memory_order_acquire);
+      destination.position.samples = source.positionSamples.load(std::memory_order_acquire);
+      destination.position.seconds =
+          std::bit_cast<double>(source.positionSecondsBits.load(std::memory_order_acquire));
+      destination.position.beats =
+          std::bit_cast<double>(source.positionBeatsBits.load(std::memory_order_acquire));
+      destination.outcome =
+          static_cast<StartSettlementOutcome>(source.outcome.load(std::memory_order_acquire));
+    }
+
+    const uint64_t revisionAfter =
+        m_publishedStartSettlements.revision.load(std::memory_order_acquire);
+    if (revisionBefore == revisionAfter) {
+      return snapshot;
+    }
+  }
+}
+
 ActiveVoiceSnapshot TransportController::getActiveVoiceSnapshot() const noexcept {
   for (;;) {
     const uint64_t revisionBefore =
@@ -2960,6 +3109,8 @@ ActiveVoiceSnapshot TransportController::getActiveVoiceSnapshot() const noexcept
       destination.handle = source.handle.load(std::memory_order_acquire);
       destination.activeVoiceCount = source.activeVoiceCount.load(std::memory_order_acquire);
       destination.newestVoiceId = source.newestVoiceId.load(std::memory_order_acquire);
+      destination.newestStartRequestTag =
+          source.newestStartRequestTag.load(std::memory_order_acquire);
       destination.state = static_cast<PlaybackState>(source.state.load(std::memory_order_acquire));
       destination.newestVoiceStopping = source.newestVoiceStopping.load(std::memory_order_acquire);
       destination.newestVoiceLoopEnabled =
@@ -3059,8 +3210,7 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     // The renderer clamps a non-segment seek below trim-IN before its first
     // source read. Prime that effective position, not the discarded request.
     const int64_t effectiveFirstRenderPosition =
-        entry.segmentCount == 0 ? std::max(clampedPosition, entry.trimInSamples)
-                                : clampedPosition;
+        entry.segmentCount == 0 ? std::max(clampedPosition, entry.trimInSamples) : clampedPosition;
     SessionGraphError primeResult = prime(effectiveFirstRenderPosition);
     if (primeResult == SessionGraphError::OK && entry.segmentCount != 0) {
       for (uint32_t index = 0; index < entry.segmentCount; ++index) {
