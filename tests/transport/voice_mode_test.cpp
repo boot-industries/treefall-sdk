@@ -69,15 +69,17 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
 
 class HandleTransitionCallback : public ITransportCallback {
 public:
-  void onClipStarted(ClipHandle handle, uint32_t voiceId, TransportPosition) override {
+  void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t voiceId,
+                     TransportPosition) override {
     started.push_back(handle);
     startedVoiceIds.push_back(voiceId);
   }
-  void onClipStopped(ClipHandle handle, uint32_t voiceId, TransportPosition) override {
+  void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t voiceId,
+                     TransportPosition) override {
     stopped.push_back(handle);
     stoppedVoiceIds.push_back(voiceId);
   }
-  void onClipLooped(ClipHandle, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {}
 
   std::vector<uint32_t> startedVoiceIds;

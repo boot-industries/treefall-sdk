@@ -32,6 +32,22 @@
 
 ---
 
+## ORP252 — Tagged Start Settlement Contract (2026-08-30)
+
+- **Public contract:** `StartRequestTag` now follows every tagged start through
+  the command ring, callbacks, schema-2 active-voice publication, and the new
+  schema-1 64-record settlement snapshot. Tag zero remains explicitly untagged.
+- **Realtime boundary:** The audio thread publishes the complete atomic snapshot
+  through a bounded seqlock; overwrite and terminal sequence exhaustion are
+  explicit, and later tagged starts cannot mutate voices after exhaustion.
+- **Application-platform support:** `UndoManager::peekUndoCommand()` and
+  `peekRedoCommand()` expose the exact next history target without advancing it.
+- **Evidence:** `transport_controller_test`, `callback_loss_telemetry_test`, and
+  `realtime_static_audit` pass. Coverage includes ordered start/rejection
+  records, tag-zero exclusion, overwrite, saturation, voice-ID reuse, newest
+  active tag, callback identity, and concurrent reader coherence.
+- **Record:** `docs/orp/ORP252 Tagged Start Settlement Contract.md`.
+
 ## ORP251 — CoreAudio AudioOutputUnitStart Status Telemetry (2026-08-25)
 
 - **Scope:** Preserve the native CoreAudio `AudioOutputUnitStart` `OSStatus`

@@ -57,13 +57,18 @@ std::string writeSilentWav(const std::filesystem::path& path) {
 
 class CountingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
+  void onClipStarted(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
+                     orpheus::TransportPosition) override {
     ++count;
+    started.push_back({requestTag, voiceId});
   }
-  void onClipStopped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
+  void onClipStopped(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
+                     orpheus::TransportPosition) override {
     ++count;
+    stopped.push_back({requestTag, voiceId});
   }
-  void onClipLooped(orpheus::ClipHandle, uint32_t, orpheus::TransportPosition) override {
+  void onClipLooped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                    orpheus::TransportPosition) override {
     ++count;
   }
   void onClipRestarted(orpheus::ClipHandle, orpheus::TransportPosition) override {
@@ -75,6 +80,19 @@ public:
   void onBufferUnderrun(orpheus::TransportPosition) override {
     ++count;
   }
+  void onActiveClipLimitReached(orpheus::ClipHandle, orpheus::StartRequestTag requestTag,
+                                orpheus::TransportPosition) override {
+    rejectedTags.push_back(requestTag);
+  }
+
+  struct TaggedVoice {
+    orpheus::StartRequestTag requestTag = 0;
+    uint32_t voiceId = 0;
+  };
+
+  std::vector<TaggedVoice> started;
+  std::vector<TaggedVoice> stopped;
+  std::vector<orpheus::StartRequestTag> rejectedTags;
 
   uint64_t count = 0;
 };
@@ -459,6 +477,250 @@ TEST_F(CallbackLossTelemetryTest, SameSampleOrdinalWrapSelectsChronologicallyNew
   const double expectedSeconds = 104.0 / static_cast<double>(kSampleRate);
   EXPECT_DOUBLE_EQ(aggregate->newestPosition.seconds, expectedSeconds);
   EXPECT_DOUBLE_EQ(aggregate->newestPosition.beats, expectedSeconds * 2.0);
+}
+
+TEST_F(CallbackLossTelemetryTest, StartSettlementSnapshotBeginsEmptyAndIgnoresUntaggedStarts) {
+  auto snapshot = transport->getStartSettlementSnapshot();
+  EXPECT_EQ(snapshot.schemaVersion, orpheus::kStartSettlementSnapshotSchemaVersion);
+  EXPECT_EQ(snapshot.entryCount, 0u);
+  EXPECT_EQ(snapshot.sequenceExhausted, 0u);
+  EXPECT_EQ(snapshot.oldestSequence, 0u);
+  EXPECT_EQ(snapshot.latestSequence, 0u);
+  EXPECT_EQ(snapshot.overwrittenCount, 0u);
+
+  ASSERT_EQ(transport->startClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  renderBlock();
+
+  snapshot = transport->getStartSettlementSnapshot();
+  EXPECT_EQ(snapshot.entryCount, 0u);
+  EXPECT_EQ(snapshot.latestSequence, 0u);
+  const auto active = transport->getActiveVoiceSnapshot();
+  EXPECT_EQ(active.schemaVersion, orpheus::kActiveVoiceSnapshotSchemaVersion);
+  const auto* entry = findEntry(active, kFirstHandle);
+  ASSERT_NE(entry, nullptr);
+  EXPECT_EQ(entry->newestStartRequestTag, 0u);
+}
+
+TEST_F(CallbackLossTelemetryTest, TaggedStartsPublishOrderedPositionsCallbacksAndNewestTags) {
+  ASSERT_EQ(transport->startClip(kFirstHandle, 41), orpheus::SessionGraphError::OK);
+  renderBlock();
+  ASSERT_EQ(transport->startClip(kSecondHandle, 42), orpheus::SessionGraphError::OK);
+  renderBlock();
+
+  const auto settlements = transport->getStartSettlementSnapshot();
+  ASSERT_EQ(settlements.entryCount, 2u);
+  EXPECT_EQ(settlements.oldestSequence, 1u);
+  EXPECT_EQ(settlements.latestSequence, 2u);
+  EXPECT_EQ(settlements.overwrittenCount, 0u);
+  EXPECT_EQ(settlements.entries[0].sequence, 1u);
+  EXPECT_EQ(settlements.entries[0].requestTag, 41u);
+  EXPECT_EQ(settlements.entries[0].handle, kFirstHandle);
+  EXPECT_NE(settlements.entries[0].voiceId, 0u);
+  EXPECT_EQ(settlements.entries[0].position.samples, 0);
+  EXPECT_EQ(settlements.entries[0].outcome, orpheus::StartSettlementOutcome::Started);
+  EXPECT_EQ(settlements.entries[1].sequence, 2u);
+  EXPECT_EQ(settlements.entries[1].requestTag, 42u);
+  EXPECT_EQ(settlements.entries[1].handle, kSecondHandle);
+  EXPECT_NE(settlements.entries[1].voiceId, 0u);
+  EXPECT_EQ(settlements.entries[1].position.samples, static_cast<int64_t>(kBlockFrames));
+  EXPECT_EQ(settlements.entries[1].outcome, orpheus::StartSettlementOutcome::Started);
+
+  const auto voices = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(voices, kFirstHandle), nullptr);
+  ASSERT_NE(findEntry(voices, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(voices, kFirstHandle)->newestStartRequestTag, 41u);
+  EXPECT_EQ(findEntry(voices, kSecondHandle)->newestStartRequestTag, 42u);
+
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 2u);
+  EXPECT_EQ(callback.started[0].requestTag, 41u);
+  EXPECT_EQ(callback.started[0].voiceId, settlements.entries[0].voiceId);
+  EXPECT_EQ(callback.started[1].requestTag, 42u);
+  EXPECT_EQ(callback.started[1].voiceId, settlements.entries[1].voiceId);
+}
+
+TEST_F(CallbackLossTelemetryTest, TaggedVoiceLimitRejectionPublishesOutcomeAndCallbackIdentity) {
+  orpheus::TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kBlockFrames);
+  config.maxActiveVoices = 1;
+  auto limited = std::make_unique<orpheus::TransportController>(nullptr, config);
+  ASSERT_EQ(limited->registerClipAudio(kFirstHandle, audioPath), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(limited->registerClipAudio(kSecondHandle, audioPath), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(limited->prepareClipAudio(kFirstHandle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(limited->prepareClipAudio(kSecondHandle), orpheus::SessionGraphError::OK);
+  CountingCallback limitedCallback;
+  limited->setCallback(&limitedCallback);
+
+  ASSERT_EQ(limited->startClip(kFirstHandle, 51), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(limited->startClip(kSecondHandle, 52), orpheus::SessionGraphError::OK);
+  std::array<float, kBlockFrames> limitedLeft{};
+  std::array<float, kBlockFrames> limitedRight{};
+  float* outputs[2] = {limitedLeft.data(), limitedRight.data()};
+  limited->processAudio(outputs, 2, kBlockFrames);
+
+  const auto settlements = limited->getStartSettlementSnapshot();
+  ASSERT_EQ(settlements.entryCount, 2u);
+  EXPECT_EQ(settlements.entries[0].requestTag, 51u);
+  EXPECT_EQ(settlements.entries[0].outcome, orpheus::StartSettlementOutcome::Started);
+  EXPECT_NE(settlements.entries[0].voiceId, 0u);
+  EXPECT_EQ(settlements.entries[1].requestTag, 52u);
+  EXPECT_EQ(settlements.entries[1].outcome,
+            orpheus::StartSettlementOutcome::ActiveVoiceLimitRejected);
+  EXPECT_EQ(settlements.entries[1].voiceId, 0u);
+  EXPECT_EQ(settlements.entries[1].position.samples, 0);
+
+  limited->processCallbacks();
+  ASSERT_EQ(limitedCallback.started.size(), 1u);
+  ASSERT_EQ(limitedCallback.rejectedTags.size(), 1u);
+  EXPECT_EQ(limitedCallback.started[0].requestTag, 51u);
+  EXPECT_EQ(limitedCallback.rejectedTags[0], 52u);
+}
+
+TEST_F(CallbackLossTelemetryTest, StartSettlementRetentionOverwritesOldestRecordsInOrder) {
+  ASSERT_EQ(transport->setMaxVoicesPerClip(2), orpheus::SessionGraphError::OK);
+  constexpr uint64_t kFirstTag = 1000;
+  constexpr uint64_t kStartCount = 66;
+  for (uint64_t index = 0; index < kStartCount; ++index) {
+    ASSERT_EQ(transport->startClip(kFirstHandle, kFirstTag + index),
+              orpheus::SessionGraphError::OK);
+  }
+  renderBlock();
+
+  const auto snapshot = transport->getStartSettlementSnapshot();
+  ASSERT_EQ(snapshot.entryCount, orpheus::kStartSettlementSnapshotCapacity);
+  EXPECT_EQ(snapshot.oldestSequence, 3u);
+  EXPECT_EQ(snapshot.latestSequence, kStartCount);
+  EXPECT_EQ(snapshot.overwrittenCount, 2u);
+  for (size_t index = 0; index < orpheus::kStartSettlementSnapshotCapacity; ++index) {
+    EXPECT_EQ(snapshot.entries[index].sequence, index + 3);
+    EXPECT_EQ(snapshot.entries[index].requestTag, kFirstTag + index + 2);
+    EXPECT_EQ(snapshot.entries[index].outcome, orpheus::StartSettlementOutcome::Started);
+  }
+
+  const auto voices = transport->getActiveVoiceSnapshot();
+  const auto* entry = findEntry(voices, kFirstHandle);
+  ASSERT_NE(entry, nullptr);
+  EXPECT_EQ(entry->newestStartRequestTag, kFirstTag + kStartCount - 1);
+}
+
+TEST_F(CallbackLossTelemetryTest, StartSettlementSequenceSaturatesAndBlocksOnlyLaterTaggedStarts) {
+  auto* concrete = dynamic_cast<orpheus::TransportController*>(transport.get());
+  ASSERT_NE(concrete, nullptr);
+  concrete->setStartSettlementSequenceForTesting(std::numeric_limits<uint64_t>::max() - 1);
+
+  ASSERT_EQ(transport->startClip(kFirstHandle, 71), orpheus::SessionGraphError::OK);
+  renderBlock();
+  auto snapshot = transport->getStartSettlementSnapshot();
+  ASSERT_EQ(snapshot.entryCount, 1u);
+  EXPECT_EQ(snapshot.entries[0].sequence, std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(snapshot.sequenceExhausted, 1u);
+  const size_t taggedVoiceCount = transport->getActiveVoiceSnapshot().totalActiveVoiceCount;
+
+  ASSERT_EQ(transport->startClip(kFirstHandle, 72), orpheus::SessionGraphError::OK);
+  renderBlock();
+  snapshot = transport->getStartSettlementSnapshot();
+  EXPECT_EQ(snapshot.entryCount, 1u);
+  EXPECT_EQ(snapshot.latestSequence, std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(transport->getActiveVoiceSnapshot().totalActiveVoiceCount, taggedVoiceCount);
+
+  ASSERT_EQ(transport->startClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  renderBlock();
+  EXPECT_GT(transport->getActiveVoiceSnapshot().totalActiveVoiceCount, taggedVoiceCount);
+  EXPECT_EQ(transport->getStartSettlementSnapshot().entryCount, 1u);
+
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 2u);
+  EXPECT_EQ(callback.started[0].requestTag, 71u);
+  EXPECT_EQ(callback.started[1].requestTag, 0u);
+}
+
+TEST_F(CallbackLossTelemetryTest, ReusedVoiceIdRetainsExactStartTagThroughStopAndRefire) {
+  auto* concrete = dynamic_cast<orpheus::TransportController*>(transport.get());
+  ASSERT_NE(concrete, nullptr);
+
+  ASSERT_EQ(transport->startClip(kFirstHandle, 81), orpheus::SessionGraphError::OK);
+  renderBlock();
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 1u);
+  const uint32_t recycledVoiceId = callback.started[0].voiceId;
+  ASSERT_NE(recycledVoiceId, 0u);
+
+  ASSERT_EQ(transport->stopClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  for (size_t block = 0; block < 10; ++block) {
+    renderBlock();
+  }
+  transport->processCallbacks();
+  ASSERT_EQ(callback.stopped.size(), 1u);
+  EXPECT_EQ(callback.stopped[0].requestTag, 81u);
+  EXPECT_EQ(callback.stopped[0].voiceId, recycledVoiceId);
+
+  concrete->setNextVoiceIdForTesting(recycledVoiceId);
+  ASSERT_EQ(transport->startClip(kFirstHandle, 82), orpheus::SessionGraphError::OK);
+  renderBlock();
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 2u);
+  EXPECT_EQ(callback.started[1].requestTag, 82u);
+  EXPECT_EQ(callback.started[1].voiceId, recycledVoiceId);
+  const auto activeSnapshot = transport->getActiveVoiceSnapshot();
+  const auto* active = findEntry(activeSnapshot, kFirstHandle);
+  ASSERT_NE(active, nullptr);
+  EXPECT_EQ(active->newestStartRequestTag, 82u);
+  EXPECT_EQ(active->newestVoiceId, recycledVoiceId);
+}
+
+TEST_F(CallbackLossTelemetryTest, StartSettlementSnapshotIsCoherentDuringConcurrentPublication) {
+  ASSERT_EQ(transport->setMaxVoicesPerClip(2), orpheus::SessionGraphError::OK);
+  std::atomic<bool> finished{false};
+  std::atomic<bool> coherent{true};
+
+  const auto validate = [](const orpheus::StartSettlementSnapshot& snapshot) {
+    if (snapshot.schemaVersion != orpheus::kStartSettlementSnapshotSchemaVersion ||
+        snapshot.entryCount > orpheus::kStartSettlementSnapshotCapacity) {
+      return false;
+    }
+    if (snapshot.entryCount == 0) {
+      return snapshot.oldestSequence == 0 && snapshot.latestSequence == 0;
+    }
+    if (snapshot.oldestSequence != snapshot.entries[0].sequence ||
+        snapshot.latestSequence != snapshot.entries[snapshot.entryCount - 1].sequence) {
+      return false;
+    }
+    for (uint32_t index = 0; index < snapshot.entryCount; ++index) {
+      const auto& record = snapshot.entries[index];
+      if (record.requestTag == 0 || record.handle != kFirstHandle ||
+          record.outcome != orpheus::StartSettlementOutcome::Started || record.voiceId == 0) {
+        return false;
+      }
+      if (index != 0 && record.sequence != snapshot.entries[index - 1].sequence + 1) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  std::thread writer([&] {
+    for (uint64_t tag = 1; tag <= 256; ++tag) {
+      if (transport->startClip(kFirstHandle, tag) != orpheus::SessionGraphError::OK) {
+        coherent.store(false, std::memory_order_release);
+        break;
+      }
+      renderBlock();
+    }
+    finished.store(true, std::memory_order_release);
+  });
+
+  while (!finished.load(std::memory_order_acquire)) {
+    if (!validate(transport->getStartSettlementSnapshot())) {
+      coherent.store(false, std::memory_order_release);
+      break;
+    }
+  }
+  writer.join();
+
+  EXPECT_TRUE(coherent.load(std::memory_order_acquire));
+  EXPECT_TRUE(validate(transport->getStartSettlementSnapshot()));
 }
 
 } // namespace

@@ -141,17 +141,20 @@ class ClipRestartCallbackTest : public ::testing::Test {
 protected:
   class TestCallback : public ITransportCallback {
   public:
-    void onClipStarted(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipStarted(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition position) override {
       startedHandle = handle;
       startedPosition = position;
     }
 
-    void onClipStopped(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipStopped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                       TransportPosition position) override {
       stoppedHandle = handle;
       stoppedPosition = position;
     }
 
-    void onClipLooped(ClipHandle handle, uint32_t, TransportPosition position) override {
+    void onClipLooped(ClipHandle handle, orpheus::StartRequestTag, uint32_t,
+                      TransportPosition position) override {
       loopedHandle = handle;
       loopedPosition = position;
     }

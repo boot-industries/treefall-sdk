@@ -67,6 +67,14 @@ bool UndoManager::canRedo() const {
   return m_currentIndex < m_history.size();
 }
 
+const Command* UndoManager::peekUndoCommand() const noexcept {
+  return canUndo() ? m_history[m_currentIndex - 1].get() : nullptr;
+}
+
+const Command* UndoManager::peekRedoCommand() const noexcept {
+  return canRedo() ? m_history[m_currentIndex].get() : nullptr;
+}
+
 juce::String UndoManager::getUndoDescription() const {
   if (canUndo())
     return "Undo " + m_history[m_currentIndex - 1]->getDescription();

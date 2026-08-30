@@ -8,7 +8,7 @@ namespace {
 
 class LegacyTransportImplementation final : public orpheus::ITransportController {
 public:
-  orpheus::SessionGraphError startClip(orpheus::ClipHandle) override {
+  orpheus::SessionGraphError startClip(orpheus::ClipHandle, orpheus::StartRequestTag = 0) override {
     return orpheus::SessionGraphError::OK;
   }
   orpheus::SessionGraphError stopClip(orpheus::ClipHandle) override {
