@@ -45,7 +45,7 @@ struct SceneSnapshot {
 
   // Routing configuration (from Feature 1: Routing Matrix)
   std::vector<RoutingGroupIndex> clipGroups; ///< Group assignment per clip or UNASSIGNED_GROUP
-  std::vector<float> groupGains;   ///< Gain per Clip Group in dB (-inf to +12.0)
+  std::vector<float> groupGains;             ///< Gain per Clip Group in dB (-inf to +12.0)
 
   /// Default constructor
   SceneSnapshot() : sceneId(""), name(""), timestamp(0) {}

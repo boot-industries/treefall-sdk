@@ -33,8 +33,7 @@ size_t checkedElementCount(size_t frames, uint16_t channels) {
   }
   const size_t elements = frames * static_cast<size_t>(channels);
   const size_t maxElements = std::vector<float>{}.max_size();
-  if (elements > maxElements ||
-      elements > std::numeric_limits<size_t>::max() / sizeof(float)) {
+  if (elements > maxElements || elements > std::numeric_limits<size_t>::max() / sizeof(float)) {
     throw std::length_error("AudioInputRing allocation exceeds vector capacity");
   }
   return elements;

@@ -211,8 +211,8 @@ CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
       closeAdmission();
       return CoreAudioRoutePollResult::BackendFailure;
     }
-    if (!formatsEqual(observed_virtual_format, stream.expected_virtual_format) ||
-        !formatsEqual(observed_physical_format, stream.expected_physical_format)) {
+    if (!streamLayoutsEqual(observed_virtual_format, stream.expected_virtual_format) ||
+        !streamLayoutsEqual(observed_physical_format, stream.expected_physical_format)) {
       closeAdmission();
       return CoreAudioRoutePollResult::FormatChanged;
     }
@@ -246,10 +246,13 @@ CoreAudioRouteMonitor::streamAddress(AudioObjectPropertySelector selector) noexc
   return {selector, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 }
 
-bool CoreAudioRouteMonitor::formatsEqual(const AudioStreamBasicDescription& lhs,
-                                         const AudioStreamBasicDescription& rhs) noexcept {
-  return lhs.mSampleRate == rhs.mSampleRate && lhs.mFormatID == rhs.mFormatID &&
-         lhs.mFormatFlags == rhs.mFormatFlags && lhs.mBytesPerPacket == rhs.mBytesPerPacket &&
+// poll() validates each device's nominal rate before checking streams, so only
+// that verified device-rate check is authoritative for rate changes. A stream
+// channel or other layout mutation remains terminal FormatChanged.
+bool CoreAudioRouteMonitor::streamLayoutsEqual(const AudioStreamBasicDescription& lhs,
+                                               const AudioStreamBasicDescription& rhs) noexcept {
+  return lhs.mFormatID == rhs.mFormatID && lhs.mFormatFlags == rhs.mFormatFlags &&
+         lhs.mBytesPerPacket == rhs.mBytesPerPacket &&
          lhs.mFramesPerPacket == rhs.mFramesPerPacket && lhs.mBytesPerFrame == rhs.mBytesPerFrame &&
          lhs.mChannelsPerFrame == rhs.mChannelsPerFrame &&
          lhs.mBitsPerChannel == rhs.mBitsPerChannel && lhs.mReserved == rhs.mReserved;

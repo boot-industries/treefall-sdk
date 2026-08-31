@@ -1,6 +1,23 @@
 # Progress
 
 
+## ORP253 — CoreAudio output-only rate recovery
+
+**Date:** 2026-08-31  
+**Status:** Implementation committed at `1bbd1fd6b5d4df850ad41d3a69cc94b8ddd49b04`; SDK PR pending. Clip Composer pin advancement waits for the merged SDK `main` SHA.
+
+- CoreAudio output-only requests now use `RequestExactRateOrConvert`, preserving
+  explicit UID/map/rate/buffer transfer without changing the public request shape.
+- Safe idle/settable built-in outputs plan the requested nominal-rate write;
+  busy or non-settable outputs use bounded output SRC at the physical rate.
+- Stream monitoring treats the verified device nominal rate as authoritative and
+  ignores only stream-format sample-rate convergence; other layout changes remain
+  terminal `FormatChanged`.
+- Focused bridge, resolver, and monitor contracts passed. The configured 80-entry
+  suite reproduced the documented 12 legacy default-device/two-input
+  `InvalidParameter` cases in `coreaudio_driver_test`; no new failure occurred.
+- Full record: [`ORP253 CoreAudio Output-Only Rate Recovery`](docs/orp/ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md).
+
 ## ORP176 — CoreAudio Bluetooth duplex and directional SRC
 
 **Date:** 2026-08-11

@@ -328,6 +328,40 @@ TEST(CoreAudioOutputOnlyInjectedTest, OutputStartFailurePublishesNativeStatus) {
   EXPECT_EQ(driver.getTelemetry().route_backend_error, 0);
 }
 
+TEST(CoreAudioOutputOnlyInjectedTest, OutputRouteRequestUsesCooperativeRatePolicy) {
+  std::string skip_reason;
+  const auto setup = makeHardwareOutputOnlyRoute(skip_reason);
+  if (!setup.has_value()) {
+    GTEST_SKIP() << skip_reason;
+  }
+
+  DirectionAudit audit;
+  CoreAudioDriver driver(setup->query, setup->property_api, &audit);
+
+  AudioOutputRouteRequest request;
+  request.output_device_id = "injected.output";
+  request.output_channel_map = {0, 1};
+  request.requested_sample_rate = setup->sample_rate;
+  request.requested_buffer_size = setup->buffer_size;
+
+  ASSERT_EQ(driver.initializeAudioOutput(request), SessionGraphError::OK);
+  OutputCallback callback;
+  ASSERT_EQ(driver.start(&callback), SessionGraphError::OK);
+  ASSERT_EQ(driver.stop(), SessionGraphError::OK);
+
+  const auto& config = driver.getConfig();
+  EXPECT_EQ(config.num_inputs, 0);
+  EXPECT_TRUE(config.input_device_id.empty());
+  EXPECT_TRUE(config.channel_map.input_channels.empty());
+  EXPECT_EQ(config.output_device_id, "injected.output");
+  EXPECT_EQ(config.channel_map.output_channels, (std::vector<uint16_t>{0, 1}));
+  EXPECT_EQ(config.num_outputs, request.output_channel_map.size());
+  EXPECT_EQ(config.sample_rate, request.requested_sample_rate);
+  EXPECT_EQ(config.buffer_size, request.requested_buffer_size);
+  EXPECT_EQ(config.sample_rate_policy, AudioSampleRatePolicy::RequestExactRateOrConvert);
+  EXPECT_TRUE(audit.operations.empty());
+}
+
 TEST(CoreAudioOutputOnlyInjectedTest, PreserveRateMismatchIsRejectedWithoutPropertyWrites) {
   auto property_api = std::make_shared<test_support::FakeCoreAudioPropertyApi>();
   auto query = std::make_shared<OutputOnlyRouteQuery>(11, 2, 48000.0);

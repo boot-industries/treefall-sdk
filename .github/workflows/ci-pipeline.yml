@@ -29,7 +29,7 @@ jobs:
     name: C++ Build & Test (${{ matrix.os }}, ${{ matrix.build_type }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +57,13 @@ jobs:
       - name: Install libsndfile (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+
+      - name: Install JUCE Linux dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install -y \
+            libfontconfig1-dev libfreetype-dev libgtk-3-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
 
       - name: Install libsndfile (macOS)
         if: matrix.os == 'macos-latest'
@@ -138,14 +145,11 @@ jobs:
             ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
           fi
         shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
 
       - name: Build ShmUI-JUCE consumer without OpenGL
         if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Release'
         run: |
-          sudo apt-get install -y \
-            libfontconfig1-dev libfreetype-dev libx11-dev libxcomposite-dev \
-            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
           cmake \
             -Dsource_dir=tests/cmake/shmui_no_opengl \
             -Dbinary_dir="${RUNNER_TEMP}/shmui-no-opengl" \

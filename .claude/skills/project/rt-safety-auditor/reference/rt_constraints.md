@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Last Updated:** 2025-10-18
-**Authority:** Orpheus SDK Core Principles (CLAUDE.md)
+**Authority:** Orpheus SDK Core Principles (AGENTS.md)
 
 ---
 
@@ -409,7 +409,7 @@ void backgroundThread() {
 
 ## References
 
-- [Orpheus SDK CLAUDE.md](../../../CLAUDE.md) - Core principles
+- [Orpheus SDK AGENTS.md](../../../../../AGENTS.md) - Core principles
 - JUCE Framework Real-Time Safety Guide [1]
 - Ross Bencina - "Real-time audio programming 101" [2]
 - Timur Doumler - "Want fast C++? Know your hardware!" [3]

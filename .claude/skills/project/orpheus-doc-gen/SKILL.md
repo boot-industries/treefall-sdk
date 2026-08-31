@@ -35,7 +35,7 @@ When creating new PREFIX-numbered documentation (ORP, OCC), files **MUST** follo
 - ❌ `ORP082.md` (missing descriptive title)
 - ❌ `OCC-103-QA.md` (wrong separator format)
 
-See `~/chrislyons/dev/CLAUDE.md` for complete naming conventions.
+See `~/dev/AGENTS.md` for complete naming conventions.
 
 ## When to Use
 

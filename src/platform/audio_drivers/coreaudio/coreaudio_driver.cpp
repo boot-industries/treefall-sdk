@@ -438,6 +438,7 @@ SessionGraphError CoreAudioDriver::initializeAudioOutput(const AudioOutputRouteR
   config.num_outputs = static_cast<uint16_t>(request.output_channel_map.size());
   config.output_device_id = request.output_device_id;
   config.channel_map.output_channels = request.output_channel_map;
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
   return initialize(config);
 }
 

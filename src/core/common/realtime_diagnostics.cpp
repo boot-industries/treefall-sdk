@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include <orpheus/realtime_diagnostics.h>
 #include "realtime_counter.h"
+#include <orpheus/realtime_diagnostics.h>
 namespace orpheus {
 
 void RealtimeDiagnostics::recordCallback(uint32_t bufferFrames, uint32_t sampleRate,

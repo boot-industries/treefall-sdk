@@ -15,15 +15,15 @@ enum class ChannelLayout : uint8_t {
   Unspecified = 0,
   Mono = 1,
   Stereo = 2,
-  LCR = 3,          // Left, Center, Right (film/theater)
-  Quad = 4,         // L, R, Ls, Rs (legacy quad)
-  Surround_5_0 = 5, // L, R, C, Ls, Rs (film without LFE)
-  Surround_5_1 = 6, // L, R, C, LFE, Ls, Rs (ITU-R BS.775)
-  Surround_7_1 = 8, // L, R, C, LFE, Ls, Rs, Lb, Rb
-  Atmos_5_1_2 = 8,  // 5.1 + 2 height (Ltf, Rtf)
-  Atmos_5_1_4 = 10, // 5.1 + 4 height (Ltf, Rtf, Ltb, Rtb)
-  Atmos_7_1_4 = 12, // 7.1 + 4 height
-  SMPTE_51_ST = 108, // ST 2110-30 compound order: L, R, C, LFE, Ls, Rs, Lo, Ro
+  LCR = 3,             // Left, Center, Right (film/theater)
+  Quad = 4,            // L, R, Ls, Rs (legacy quad)
+  Surround_5_0 = 5,    // L, R, C, Ls, Rs (film without LFE)
+  Surround_5_1 = 6,    // L, R, C, LFE, Ls, Rs (ITU-R BS.775)
+  Surround_7_1 = 8,    // L, R, C, LFE, Ls, Rs, Lb, Rb
+  Atmos_5_1_2 = 8,     // 5.1 + 2 height (Ltf, Rtf)
+  Atmos_5_1_4 = 10,    // 5.1 + 4 height (Ltf, Rtf, Ltb, Rtb)
+  Atmos_7_1_4 = 12,    // 7.1 + 4 height
+  SMPTE_51_ST = 108,   // ST 2110-30 compound order: L, R, C, LFE, Ls, Rs, Lo, Ro
   SMPTE_51_LTRT = 109, // Matrix-stereo alternative: L, R, C, LFE, Ls, Rs, Lt, Rt
 
   // Scene-based formats (ambisonics)

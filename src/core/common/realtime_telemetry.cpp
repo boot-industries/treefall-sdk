@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-#include <orpheus/realtime_telemetry.h>
 #include "realtime_counter.h"
 #include "spsc_observation.h"
+#include <orpheus/realtime_telemetry.h>
 
 #include <algorithm>
 

@@ -763,8 +763,7 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 
 ### Developer Tools
 
-- [AGENTS.md](AGENTS.md) – coding assistant and repository workflow guidelines
-- [CLAUDE.md](CLAUDE.md) – Claude Code development guide
+- [AGENTS.md](AGENTS.md) – repository development guide and workflow conventions
 
 ---
 

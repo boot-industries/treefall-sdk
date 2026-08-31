@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <utility>
 
@@ -16,8 +16,7 @@ struct NoopObservationHook {
 /// Reading the consumer index first permits a producer/consumer publication to
 /// be observed between the two loads; the capacity clamp preserves the public
 /// bounded-diagnostic contract in that permitted overestimate.
-template <typename ReadAtomic, typename WriteAtomic,
-          typename BetweenLoads = NoopObservationHook>
+template <typename ReadAtomic, typename WriteAtomic, typename BetweenLoads = NoopObservationHook>
 size_t observeBoundedPending(const ReadAtomic& read_index, const WriteAtomic& write_index,
                              size_t capacity,
                              BetweenLoads between_loads = BetweenLoads{}) noexcept {
