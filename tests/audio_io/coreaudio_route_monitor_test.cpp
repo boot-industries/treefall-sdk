@@ -118,6 +118,38 @@ TEST(CoreAudioRouteMonitorTest, RateChangeIsReportedWithoutWriteBack) {
   EXPECT_TRUE(fixture.api.writeLedger().empty());
 }
 
+TEST(CoreAudioRouteMonitorTest, RateOnlyStreamConvergenceUsesVerifiedDeviceRate) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setRate(1, 48000.0);
+  api.setBuffer(1, 512);
+
+  const AudioStreamID stream_id = 100;
+  auto initial_format = testFormat();
+  initial_format.mSampleRate = 44100.0;
+  const CoreAudioRouteStream stream{stream_id, initial_format, initial_format};
+  api.setFormat(stream_id, kAudioStreamPropertyVirtualFormat, initial_format);
+  api.setFormat(stream_id, kAudioStreamPropertyPhysicalFormat, initial_format);
+
+  CoreAudioRouteMonitor monitor(api, 48000, 512,
+                                std::vector<CoreAudioRouteDevice>{{1, false, true, false}},
+                                std::vector<CoreAudioRouteStream>{stream});
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+  ASSERT_TRUE(monitor.permitsRendering());
+
+  auto converged_format = initial_format;
+  converged_format.mSampleRate = 48000.0;
+  api.setFormat(stream_id, kAudioStreamPropertyVirtualFormat, converged_format);
+  api.setFormat(stream_id, kAudioStreamPropertyPhysicalFormat, converged_format);
+  api.notify(stream_id, kAudioStreamPropertyVirtualFormat);
+  api.notify(stream_id, kAudioStreamPropertyPhysicalFormat);
+
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+  EXPECT_TRUE(monitor.permitsRendering());
+}
+
 TEST(CoreAudioRouteMonitorTest, StreamFormatChangeReportsFormatChanged) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);

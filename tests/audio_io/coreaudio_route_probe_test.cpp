@@ -432,6 +432,95 @@ TEST(CoreAudioRouteProbeTest, OutputOnlyIgnoresStaleInputUidMapAndPermissionStat
   expectNoProhibitedActions(fake->ledger);
 }
 
+TEST(CoreAudioRouteProbeTest, OutputOnlyBuiltInSafeWritePlansRequestedRate) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  fake->endpoints.emplace(40, makeEndpoint(40, "built-in.output", 0, 2, 44100,
+                                           kAudioDeviceTransportTypeBuiltIn,
+                                           {{44100.0, 44100.0}, {48000.0, 48000.0}}));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.num_inputs = 0;
+  config.input_device_id = "stale-input";
+  config.channel_map.input_channels = {99, 99};
+  config.output_device_id = "built-in.output";
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config, true);
+
+  ASSERT_TRUE(route.resolved);
+  ASSERT_EQ(route.compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  ASSERT_EQ(route.device_rate_plans.size(), 1u);
+  const auto& output_plan = route.device_rate_plans.front();
+  ASSERT_TRUE(output_plan.requested_write_rate.has_value());
+  EXPECT_EQ(*output_plan.requested_write_rate, 48000u);
+  EXPECT_FALSE(route.compatibility.output_conversion_required);
+  EXPECT_FALSE(output_plan.output_uses_external_src);
+  EXPECT_EQ(fake->ledger.default_input_reads, 0);
+  EXPECT_EQ(fake->ledger.input_channel_reads, 0);
+}
+
+TEST(CoreAudioRouteProbeTest, OutputOnlyBusyBuiltInUsesExternalSrc) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  auto endpoint = makeEndpoint(40, "built-in.output", 0, 2, 44100, kAudioDeviceTransportTypeBuiltIn,
+                               {{44100.0, 44100.0}, {48000.0, 48000.0}});
+  endpoint.is_running_somewhere = true;
+  fake->endpoints.emplace(endpoint.device_id, std::move(endpoint));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.num_inputs = 0;
+  config.input_device_id = "stale-input";
+  config.channel_map.input_channels = {99, 99};
+  config.output_device_id = "built-in.output";
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config, true);
+
+  ASSERT_TRUE(route.resolved);
+  ASSERT_EQ(route.compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  ASSERT_EQ(route.device_rate_plans.size(), 1u);
+  const auto& output_plan = route.device_rate_plans.front();
+  EXPECT_FALSE(output_plan.requested_write_rate.has_value());
+  EXPECT_TRUE(route.compatibility.output_conversion_required);
+  EXPECT_TRUE(output_plan.output_uses_external_src);
+  EXPECT_EQ(route.compatibility.planned_output_client_rate, 44100u);
+  EXPECT_EQ(fake->ledger.default_input_reads, 0);
+  EXPECT_EQ(fake->ledger.input_channel_reads, 0);
+}
+
+TEST(CoreAudioRouteProbeTest, OutputOnlyNonSettableBuiltInUsesExternalSrc) {
+  auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
+  auto endpoint = makeEndpoint(40, "built-in.output", 0, 2, 44100, kAudioDeviceTransportTypeBuiltIn,
+                               {{44100.0, 44100.0}, {48000.0, 48000.0}});
+  endpoint.nominal_sample_rate_settable = false;
+  fake->endpoints.emplace(endpoint.device_id, std::move(endpoint));
+  CoreAudioRouteResolver resolver(fake);
+
+  auto config = duplexConfig();
+  config.num_inputs = 0;
+  config.input_device_id = "stale-input";
+  config.channel_map.input_channels = {99, 99};
+  config.output_device_id = "built-in.output";
+  config.channel_map.output_channels = {0, 1};
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  const auto route = resolver.resolve(config, true);
+
+  ASSERT_TRUE(route.resolved);
+  ASSERT_EQ(route.compatibility.status, AudioRouteCompatibilityStatus::Compatible);
+  ASSERT_EQ(route.device_rate_plans.size(), 1u);
+  const auto& output_plan = route.device_rate_plans.front();
+  EXPECT_FALSE(output_plan.requested_write_rate.has_value());
+  EXPECT_TRUE(route.compatibility.output_conversion_required);
+  EXPECT_TRUE(output_plan.output_uses_external_src);
+  EXPECT_EQ(route.compatibility.planned_output_client_rate, 44100u);
+  EXPECT_EQ(fake->ledger.default_input_reads, 0);
+  EXPECT_EQ(fake->ledger.input_channel_reads, 0);
+}
+
 TEST(CoreAudioRouteProbeTest, InvalidStaticConfigurationPrecedesEveryEndpointQuery) {
   auto fake = std::make_shared<FakeCoreAudioRouteQuery>();
   installSameDevice(*fake);

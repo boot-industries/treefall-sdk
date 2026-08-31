@@ -67,7 +67,7 @@ orpheus-sdk/
 │   └── shmui-juce/      # UX package - JUCE audio visualization components
 ├── tests/               # GoogleTest suite
 ├── docs/orp/            # ORP-prefixed documentation
-├── CLAUDE.md            # Claude Code config (reference)
+├── AGENTS.md             # Repository development and workflow guide
 └── .codex/              # This directory
     └── AGENTS.md        # This file
 ```
@@ -336,7 +336,7 @@ Detailed explanation and rationale.
 
 ## Additional Resources
 
-**See `CLAUDE.md` for:**
+**See `AGENTS.md` for:**
 
 - Detailed workflow conventions
 - Cross-repo awareness patterns

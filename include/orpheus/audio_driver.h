@@ -198,6 +198,12 @@ struct AudioLatencyBreakdown {
 ///
 /// The driver creates no input route. Output channels identify distinct
 /// physical output indices and must be valid for the selected endpoint.
+/// CoreAudio output-only requests always use `RequestExactRateOrConvert`.
+/// `requested_sample_rate` is a session target for `CoreAudioDriver`: it
+/// attempts a safe nominal-rate change and otherwise uses output sample-rate
+/// conversion. Callers cannot select `PreserveDeviceRate` through this
+/// CoreAudio adapter. Dummy and other backend implementations retain their
+/// own output-only semantics.
 struct AudioOutputRouteRequest {
   std::string output_device_id;
   std::vector<uint16_t> output_channel_map;

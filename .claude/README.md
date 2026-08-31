@@ -12,7 +12,7 @@ This directory contains development notes and session reports for AI-assisted de
 
 ### Project Documentation
 
-- **[../CLAUDE.md](../CLAUDE.md)** - Claude Code development guide (for AI assistants)
+- **[../AGENTS.md](../AGENTS.md)** - repository development guide (for AI assistants)
 - **[../docs/ORP/](../docs/ORP/)** - Orpheus Reference Plans (ORP) index
 - **Orpheus Clip Composer** - extracted to its own repo (`~/dev/clip-composer`, GitHub `chrislyons/clip-composer`); OCC design docs live there under `docs/occ/`. See `docs/orp/ORP131`.
 - **[../docs/repo-commands.html](../docs/repo-commands.html)** - Command reference (build, test, git)
@@ -60,11 +60,11 @@ git submodule. OCC docs, build, CI, and `.claude/` tooling live in that repo. Se
 1. Check **[../docs/ORP/INDEX.md](../docs/ORP/INDEX.md)** for next available ORP number (currently ORP098)
 2. Review recent commits: `git log --oneline -10`
 3. Check current branch: `git branch --show-current`
-4. Review **[../CLAUDE.md](../CLAUDE.md)** for repository conventions
+4. Review **[../AGENTS.md](../AGENTS.md)** for repository conventions
 
 ### For Understanding Architecture
 
-1. **[../CLAUDE.md](../CLAUDE.md)** - Core principles, build commands, development rules
+1. **[../AGENTS.md](../AGENTS.md)** - Core principles, build commands, development rules
 2. **[../docs/repo-commands.html](../docs/repo-commands.html)** - Complete command reference
 3. **[../include/orpheus/](../include/orpheus/)** - Public API headers
 4. **[../docs/ORP/](../docs/ORP/)** - Feature specifications and design docs
@@ -73,7 +73,7 @@ git submodule. OCC docs, build, CI, and `.claude/` tooling live in that repo. Se
 
 Clip Composer is now a **standalone repo** at `~/dev/clip-composer` (GitHub
 `chrislyons/clip-composer`) that consumes this SDK as a submodule. Do OCC work from
-that repo — its `docs/occ/`, `CLAUDE.md`, and `.claude/` tooling live there. SDK work
+that repo — its `docs/occ/`, `AGENTS.md`, and `.claude/` tooling live there. SDK work
 that OCC depends on (transport, routing, audio_io, ABI) stays here; bump the submodule
 pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 
@@ -117,11 +117,11 @@ pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 2. Check current branch: `git branch --show-current`
 3. Identify next ORP number from `docs/ORP/INDEX.md`
 4. Create feature branch if needed
-5. Review `CLAUDE.md` for build/test commands
+5. Review `AGENTS.md` for build/test commands
 
 ### During Development
 
-1. Follow conventions in `CLAUDE.md`
+1. Follow conventions in `AGENTS.md`
 2. Run tests frequently: `ctest --test-dir build --output-on-failure`
 3. Check linting: See `docs/repo-commands.html` for commands
 4. Document decisions in ORP documents
@@ -559,12 +559,12 @@ gh pr view --web
 
 1. **Review recent work:** `git log --oneline -10`
 2. **Check current branch:** `git branch --show-current`
-3. **Read CLAUDE.md** for repository conventions and build commands
+3. **Read AGENTS.md** for repository conventions and build commands
 4. **Check ORP INDEX** (`docs/ORP/INDEX.md`) for next available number
 
 ### During Development
 
-1. Follow patterns in CLAUDE.md (offline-first, deterministic, host-neutral)
+1. Follow patterns in AGENTS.md (offline-first, deterministic, host-neutral)
 2. Run tests frequently
 3. Document significant work in new ORP documents
 4. Update `docs/ORP/INDEX.md` when creating new ORPs
@@ -594,7 +594,7 @@ gh pr view --web
 
 **Essential Files:**
 
-- `CLAUDE.md` - Development guide (must-read)
+- `AGENTS.md` - Development guide (must-read)
 - `docs/repo-commands.html` - Command reference
 - `CMakeLists.txt` - Build configuration
 - `docs/ORP/INDEX.md` - ORP document catalog

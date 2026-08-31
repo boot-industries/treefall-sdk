@@ -32,7 +32,7 @@ LINK_CHECKED_DOCS = [
     "README.md",
     "ARCHITECTURE.md",
     "ROADMAP.md",
-    "CLAUDE.md",
+    "AGENTS.md",
 ]
 LINK_CHECKED_GLOBS = ["docs/**/*.md"]
 

@@ -482,7 +482,7 @@ Clip Composer depends on — then bump the submodule pin in the app repo.
 | Add routing matrix test      | SDK           | Core library testing      |
 | Fix waveform display         | Clip Composer | Application UI component  |
 
-**See also:** `CLAUDE.md` Multi-Instance Usage section for complete documentation
+**See also:** `AGENTS.md` Multi-Instance Usage section for complete documentation
 
 ## Demo Workflows
 
@@ -592,7 +592,7 @@ ls -1 docs/orp/ | sort
 ([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer),
 `docs/occ/`) — not in this repository.
 
-Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see the workspace `CLAUDE.md` for full conventions.
+Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see the workspace `AGENTS.md` for full conventions.
 
 ### Reference Documentation
 
@@ -602,7 +602,6 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
   core.
 - [Clip Composer repo](https://github.com/chrislyons/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
 - [`AGENTS.md`](AGENTS.md) – coding assistant and repository workflow guidelines
-- [`CLAUDE.md`](CLAUDE.md) – Claude Code development guide
 
 ## Contributing
 

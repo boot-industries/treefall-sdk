@@ -2,7 +2,7 @@
 
 > **Note (2026-07-24):** This is a historical ORP068 work log. Current SDK
 > contracts and delivery evidence live in the numbered ORP documents and
-> `.claude/CLAUDE.md`. The Clip Composer app was extracted to
+> `PROGRESS.md`. The Clip Composer app was extracted to
 > `~/dev/clip-composer` and consumes this SDK as a submodule; historical
 > `apps/clip-composer/...` paths below refer to the former in-tree layout.
 
@@ -1384,7 +1384,7 @@ pnpm run build
 ### Important Files:
 
 - Implementation plan: `docs/integration/ORP068 Implementation Plan v2.0...md`
-- Architecture: `docs/ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`
+- Architecture: `docs/ARCHITECTURE.md`, `AGENTS.md`
 - Contract schemas: `packages/contract/schemas/v0.1.0-alpha/`
 - Performance budgets: `budgets.json`
 

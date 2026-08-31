@@ -426,7 +426,7 @@ void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noex
 }
 
 SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
-                                                PrimeReservation* commandReservation) {
+                                               PrimeReservation* commandReservation) {
   if (m_lengthFrames <= 0 || pos >= m_lengthFrames) {
     return SessionGraphError::OK;
   }
