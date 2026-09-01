@@ -64,6 +64,11 @@ is required for final platform evidence.
   7111.5 us true peak (p99 6954.04 us, average 6575.28 us), below the 10666.7
   us budget. The full configured Debug CTest suite passed 80/80 in 341.21
   seconds.
+- Windows portability follow-up: `media_integrity.cpp` now includes `windows.h`
+  before `bcrypt.h`, ensuring the Windows SDK's `NTSTATUS` declarations are
+  available to BCrypt. This build-only correction leaves the public metering
+  contract unchanged.
+
 - Full record: [`ORP255 Host-Neutral Multichannel Metering Contract`](docs/orp/ORP255%20Host-Neutral%20Multichannel%20Metering%20Contract.md).
 
 ## ORP253 — CoreAudio output-only rate recovery
