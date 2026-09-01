@@ -171,4 +171,11 @@ if(SHMUI_JUCE_BUILD_TESTS)
   target_link_libraries(shmui_shm015_fixture PRIVATE orpheus_shmui_juce)
   target_compile_features(shmui_shm015_fixture PRIVATE cxx_std_20)
   add_test(NAME shmui_shm015_juce_lifetime COMMAND shmui_shm015_fixture)
+  add_executable(shmui_shm026_segmented_meter_fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM026SegmentedMeterFixture.cpp
+  )
+  target_link_libraries(shmui_shm026_segmented_meter_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_features(shmui_shm026_segmented_meter_fixture PRIVATE cxx_std_20)
+  add_test(NAME shmui_shm026_segmented_meter
+    COMMAND shmui_shm026_segmented_meter_fixture)
 endif()

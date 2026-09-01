@@ -8,6 +8,10 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP254 ShmUI Segmented Meter Import Handoff]] — additive segmented
+  Peak/RMS LevelMeter import, governed source provenance, and downstream
+  adoption path (2026-08-31)
+
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
   rate policy, safe nominal writes, SRC fallback, and verified-rate stream
   convergence (2026-08-31)
@@ -45,6 +49,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP254 ShmUI Segmented Meter Import Handoff](ORP254%20ShmUI%20Segmented%20Meter%20Import%20Handoff.md)
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
@@ -71,4 +76,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-08-30
+**Last Generated:** 2026-08-31
