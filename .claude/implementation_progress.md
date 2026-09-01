@@ -89,10 +89,11 @@
   CTest suite passed 80/80 in 341.21 seconds. Record:
 
   `docs/orp/ORP255 Host-Neutral Multichannel Metering Contract.md`.
-- **Windows portability:** Hosted Windows validation exposed the existing
-  `bcrypt.h`/`windows.h` include-order defect in `media_integrity.cpp`. The
-  include order now supplies `NTSTATUS` before BCrypt declarations; this is a
-  build-only correction with no metering-contract change.
+- **Windows portability:** Hosted Windows validation exposed existing Windows
+  SDK include-order defects in `media_integrity.cpp` and `driver_manager.cpp`.
+  Both now supply `windows.h` before dependent BCrypt/WASAPI declarations; the
+  corrections are build-only with no metering-contract change.
+
 
 
 
