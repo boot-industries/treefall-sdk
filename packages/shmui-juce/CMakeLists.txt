@@ -176,6 +176,8 @@ if(SHMUI_JUCE_BUILD_TESTS)
   )
   target_link_libraries(shmui_shm026_segmented_meter_fixture PRIVATE orpheus_shmui_juce)
   target_compile_features(shmui_shm026_segmented_meter_fixture PRIVATE cxx_std_20)
+  target_compile_definitions(shmui_shm026_segmented_meter_fixture PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME shmui_shm026_segmented_meter
     COMMAND shmui_shm026_segmented_meter_fixture)
 endif()

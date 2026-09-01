@@ -18,8 +18,8 @@ single-value API unless they opt in.
 | Field | Value |
 | --- | --- |
 | Upstream repository | `shmui` |
-| Source revision | `8189f529b78a9886de0c1c26ac01e443e3d4134d` |
-| Governed content SHA-256 | `b77c9b74f9ab0af008013b1d781bbd2b33d503a305c5af48a2891a8a7c814815` |
+| Source revision | `1a3148f5a19dee9ca694a04911aa5a274dd06398` |
+| Governed content SHA-256 | `02f59ff290e3aab61562eac931bc3123c3a7435b401604fe9c1c40a1a60a3e0f` |
 | Token-contract version | `0.6.0` |
 | Package target | `Orpheus::shmui_juce` |
 
@@ -48,7 +48,7 @@ Observed in this SDK worktree:
 python3 tools/shmui_juce_manifest.py --sync
 python3 tools/shmui_juce_manifest.py --check
 # ShmUI-JUCE manifest is consistent: 58 files,
-# sha256 b77c9b74f9ab0af008013b1d781bbd2b33d503a305c5af48a2891a8a7c814815
+# sha256 02f59ff290e3aab61562eac931bc3123c3a7435b401604fe9c1c40a1a60a3e0f
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
@@ -58,8 +58,9 @@ ctest --test-dir build --output-on-failure \
 ```
 
 The package-consumer fixture compiled the imported `LevelMeter.cpp` through the
-SDK’s clean producer/consumer path. The initial package run exposed a missing
-upstream `drawScale` declaration; it was corrected in ShmUI revision `8189f52`,
+SDK’s clean producer/consumer path. The SHM026 fixture target explicitly enables
+JUCE modal-loop support so its visible-peer timer pump is available in the
+governed package build. The correction was committed upstream as `1a3148f`,
 then synchronized and reverified rather than patched here.
 
 ## Downstream Adoption Path
