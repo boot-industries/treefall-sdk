@@ -93,6 +93,11 @@
   SDK include-order defects in `media_integrity.cpp` and `driver_manager.cpp`.
   Both now supply `windows.h` before dependent BCrypt/WASAPI declarations; the
   corrections are build-only with no metering-contract change.
+- **Scope boundary:** Later hosted Windows failures in WASAPI property-key
+  declarations and session-test linkage also occur on `main`. The PR retains
+  only the safe include-order corrections; broader Windows baseline repair is a
+  separate platform task.
+
 
 
 
