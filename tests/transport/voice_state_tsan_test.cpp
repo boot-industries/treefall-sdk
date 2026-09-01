@@ -222,6 +222,8 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
   });
 
   volatile int sink = 0; // prevent the queries being optimized away
+  uint32_t invalidMeterSnapshots = 0;
+
   constexpr int kIterations = 6000;
   GroupOutputMeterSnapshot meterSnapshot;
   for (int iter = 0; iter < kIterations; ++iter) {
@@ -231,21 +233,25 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
     sink += static_cast<int>(m_transport->getClipPosition(h) & 0xFF);
 
     routing->copyGroupOutputMeterSnapshot(meterSnapshot);
-    const bool groupCountValid =
-        meterSnapshot.group_count <= kRoutingControlMaxGroups &&
-        meterSnapshot.group_count <= routingConfig.num_groups;
-    sink += groupCountValid ? 0 : 1;
-    const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-        meterSnapshot.group_count, kRoutingControlMaxGroups);
-    for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
-      const auto& frame = meterSnapshot.groups[group];
-      sink += frame.logical_lane_count <= kRoutingMaxOutputs ? 0 : 1;
-      sink += static_cast<uint32_t>(frame.routing_output_start) +
-                      frame.logical_lane_count <=
-                  routingConfig.num_outputs
-              ? 0
-              : 1;
+    if (meterSnapshot.coherent != 0) {
+      const bool groupCountValid =
+          meterSnapshot.group_count <= kRoutingControlMaxGroups &&
+          meterSnapshot.group_count <= routingConfig.num_groups;
+      if (!groupCountValid) {
+        ++invalidMeterSnapshots;
+      } else {
+        for (RoutingGroupIndex group = 0; group < meterSnapshot.group_count; ++group) {
+          const auto& frame = meterSnapshot.groups[group];
+          if (frame.logical_lane_count > kRoutingMaxOutputs ||
+              static_cast<uint32_t>(frame.routing_output_start) +
+                      frame.logical_lane_count >
+                  routingConfig.num_outputs) {
+            ++invalidMeterSnapshots;
+          }
+        }
+      }
     }
+
 
     if ((iter % 5) == 0) {
       const auto channel = static_cast<RoutingChannelIndex>(
@@ -272,6 +278,8 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
 
   stop.store(true, std::memory_order_relaxed);
   audioThread.join();
+  EXPECT_EQ(invalidMeterSnapshots, 0u)
+      << "coherent group-output meter snapshot exceeded configured bounds";
   (void)sink;
-  SUCCEED();
+
 }

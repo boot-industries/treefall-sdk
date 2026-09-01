@@ -90,14 +90,18 @@ C++ binary mix is supported.
 
 ## Coherence, topology, and finite-input rules
 
-Channel group/lane identity is one packed atomic route word. Accepted route
-publications advance a saturating channel-route generation. Accepted group
-control transactions advance one geometry generation when output start or width
-changes. The audio thread refreshes one complete group-control snapshot before a
-render and verifies the channel generation after each slice. A stable pair that
-changes resets true-peak histories, advances the rendered topology revision,
-and publishes that revision. A mid-slice route change publishes
-`Unmeasured` with `coherent == 0`; it never labels mixed route state coherent.
+Channel group/lane identity is one packed atomic route word. Each accepted
+channel-route transaction is serialized by an odd/even route-publication
+sequence: the control writer makes it odd before changing any packed word,
+advances the saturating route generation within that transaction, and makes it
+even only after the complete route state is visible. The audio thread captures
+that sequence before and after each slice and accepts a route topology only
+when both values match, are even, and the route generation is unchanged.
+Accepted route or group-geometry changes reset true-peak histories, advance the
+rendered topology revision, and publish that revision. An in-progress or
+mid-slice route transaction publishes `Unmeasured` with `coherent == 0`; it
+never labels mixed route state coherent.
+
 
 The group-output publication is protected by one matrix-wide sequence. The
 sequence is odd while every group metadata value and lane meter is written and
@@ -253,23 +257,38 @@ Focused transport canonical tests
 drops, failure/unavailable distinction, unsupported extension behavior, and
 schema stamping.
 
+Post-review remediation added deterministic coverage for an in-progress route
+transaction, reinitialization revision reset, the exact
+`publishFromRealtime(const RealtimeTelemetrySnapshot&) noexcept` member
+signature, non-silent maximum-topology allocation behavior, and coherent
+snapshot bounds. The follow-up Debug checks observed 58/58 routing tests,
+10/10 realtime-diagnostics tests, the non-silent 32-group/32-output allocation
+gate, the installed `cmake_find_package` fixture, and the concurrent query
+harness passing.
+
+
 Release max-topology deadline test, unsanitized `build-release`
-Sample peak: average 4911.39 us, p99 5379.83 us, maximum 5554.38 us.
-True peak: average 7004.89 us, p99 7700.29 us, maximum 7966.29 us.
+Sample peak: average 4710.97 us, p99 5163.04 us, maximum 5236.5 us.
+True peak: average 6575.28 us, p99 6954.04 us, maximum 7111.5 us.
 Budget: 10666.7 us (512 frames at 48 kHz). Both observed maxima were below the
 budget in this controlled local release run.
+
+
 ```
 
-The exact separate TSan command was executed on macOS after correcting the
-packed-route publication race. `HammerQueriesUnderConcurrentRender` passed with
-no ThreadSanitizer warning. The governed ShmUI manifest check passed with 57
+The exact separate TSan command was executed on macOS after adding the
+serialized packed-route publication protocol. The concurrent query test now
+asserts bounds for every coherent group-output snapshot and passed with no
+ThreadSanitizer warning. The governed ShmUI manifest check passed with 57
 files and content SHA-256
+
 `3741685e84433a3dfa4efebc1d930ef02f0b678f0b2cd162e6cb140022b273d9`.
 
 The required 11-test Debug contract set passed 11/11, and the complete
-configured Debug CTest suite passed 80/80. The full suite included package,
-static-audit, documentation, routing, transport, CoreAudio, and stress gates;
-the new maximum-topology harness ran as part of the suite.
+configured Debug CTest suite passed 80/80 in 341.21 seconds. The full suite
+included package, static-audit, documentation, routing, transport, CoreAudio,
+and stress gates; the new maximum-topology harness ran as part of the suite.
+
 
 ## Reference
 

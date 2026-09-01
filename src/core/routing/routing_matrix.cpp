@@ -85,11 +85,16 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     m_output_true_peak_meters[output].reset();
   }
 
+  m_channel_route_publication_sequence.store(0, std::memory_order_release);
+  m_channel_route_publication_in_progress.store(false, std::memory_order_release);
+
   m_channel_route_generation.store(0, std::memory_order_release);
   m_group_geometry_generation.store(0, std::memory_order_release);
   m_rendered_channel_route_generation = 0;
   m_rendered_group_geometry_generation = 0;
   m_last_published_group_geometry_generation = 0;
+  m_rendered_topology_revision = 0;
+
   m_group_output_meter_publication_sequence.store(0, std::memory_order_release);
   m_group_output_meter_group_count.store(config.num_groups, std::memory_order_release);
   m_group_output_meter_topology_revision.store(0, std::memory_order_release);
@@ -112,6 +117,29 @@ RoutingConfig RoutingMatrix::getConfig() const {
 void RoutingMatrix::setCallback(IRoutingCallback* callback) {
   m_callback = callback;
 }
+
+void RoutingMatrix::beginChannelRouteWrite() noexcept {
+  bool expected = false;
+  while (!m_channel_route_publication_in_progress.compare_exchange_weak(
+      expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    expected = false;
+  }
+  m_channel_route_publication_sequence.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void RoutingMatrix::endChannelRouteWrite() noexcept {
+  m_channel_route_publication_sequence.fetch_add(1, std::memory_order_release);
+  m_channel_route_publication_in_progress.store(false, std::memory_order_release);
+}
+
+void RoutingMatrix::publishChannelRoute(ChannelState& channel, RoutingGroupIndex group,
+                                        RoutingOutputIndex lane) noexcept {
+  beginChannelRouteWrite();
+  channel.packed_route.store(detail::packRoutingRoute(group, lane), std::memory_order_release);
+  detail::publishSaturatingIncrement(m_channel_route_generation);
+  endChannelRouteWrite();
+}
+
 
 // ============================================================================
 // Channel Configuration
@@ -137,9 +165,8 @@ SessionGraphError RoutingMatrix::setChannelGroup(RoutingChannelIndex channel_ind
     return SessionGraphError::InvalidParameter;
   }
 
-  channel.packed_route.store(detail::packRoutingRoute(group_index, lane),
-                             std::memory_order_release);
-  detail::publishSaturatingIncrement(m_channel_route_generation);
+  publishChannelRoute(channel, group_index, lane);
+
   return SessionGraphError::OK;
 }
 
@@ -161,9 +188,8 @@ SessionGraphError RoutingMatrix::setChannelRoute(RoutingChannelIndex channel_ind
   }
 
   auto& channel = m_channels[channel_index];
-  channel.packed_route.store(detail::packRoutingRoute(group_index, output_index),
-                             std::memory_order_release);
-  detail::publishSaturatingIncrement(m_channel_route_generation);
+  publishChannelRoute(channel, group_index, output_index);
+
   return SessionGraphError::OK;
 }
 
@@ -248,10 +274,8 @@ SessionGraphError RoutingMatrix::configureChannel(RoutingChannelIndex channel_in
   normalized.pan = std::clamp(normalized.pan, -1.0f, 1.0f);
   auto& channel = m_channels[channel_index];
   channel.config = normalized;
-  channel.packed_route.store(
-      detail::packRoutingRoute(normalized.group_index, normalized.output_channel),
-      std::memory_order_release);
-  detail::publishSaturatingIncrement(m_channel_route_generation);
+  publishChannelRoute(channel, normalized.group_index, normalized.output_channel);
+
   channel.gain_smoother->setTarget(dbToLinear(normalized.gain_db));
   updatePanLaw(channel_index, normalized.pan);
   channel.mute.store(normalized.mute, std::memory_order_release);
@@ -811,6 +835,8 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     m_groups[index].config = std::move(normalizedGroup);
   }
 
+  beginChannelRouteWrite();
+
   for (size_t i = 0; i < snapshot.channels.size(); ++i) {
     ChannelConfig normalizedChannel = snapshot.channels[i];
     normalizedChannel.gain_db =
@@ -820,14 +846,17 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     channel.config = normalizedChannel;
     channel.packed_route.store(
         detail::packRoutingRoute(normalizedChannel.group_index,
-                                  normalizedChannel.output_channel),
+                                 normalizedChannel.output_channel),
         std::memory_order_release);
-    detail::publishSaturatingIncrement(m_channel_route_generation);
+
     channel.gain_smoother->setTarget(dbToLinear(normalizedChannel.gain_db));
     updatePanLaw(static_cast<RoutingChannelIndex>(i), normalizedChannel.pan);
     channel.mute.store(normalizedChannel.mute, std::memory_order_release);
     channel.solo.store(normalizedChannel.solo, std::memory_order_release);
   }
+  detail::publishSaturatingIncrement(m_channel_route_generation);
+  endChannelRouteWrite();
+
   updateSoloState();
   m_master_gain_smoother->setTarget(
       dbToLinear(std::clamp(snapshot.master_gain_db, -100.0f, 12.0f)));
@@ -953,12 +982,16 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     return std::isfinite(value) ? value : 0.0f;
   };
 
+  const uint64_t routePublicationSequence =
+      m_channel_route_publication_sequence.load(std::memory_order_acquire);
+  const bool routePublicationInProgress = (routePublicationSequence & 1u) != 0u;
   const uint64_t routeGeneration =
       m_channel_route_generation.load(std::memory_order_acquire);
   const uint64_t geometryGeneration = m_rendered_group_geometry_generation;
   const bool topologyChanged =
-      routeGeneration != m_rendered_channel_route_generation ||
+      routePublicationInProgress || routeGeneration != m_rendered_channel_route_generation ||
       geometryGeneration != m_last_published_group_geometry_generation;
+
   if (topologyChanged) {
     resetLogicalGroupTruePeakHistories();
   }
@@ -1250,8 +1283,13 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     }
   }
 
+  const uint64_t routePublicationSequenceAfter =
+      m_channel_route_publication_sequence.load(std::memory_order_acquire);
   const bool routeStable =
+      (routePublicationSequence & 1u) == 0u &&
+      routePublicationSequence == routePublicationSequenceAfter &&
       routeGeneration == m_channel_route_generation.load(std::memory_order_acquire);
+
   if (routeStable) {
     if (topologyChanged) {
       m_rendered_channel_route_generation = routeGeneration;
