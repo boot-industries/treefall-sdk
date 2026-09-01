@@ -20,6 +20,16 @@ static_assert(std::is_standard_layout_v<orpheus::RoutingGroupControlState>);
 static_assert(std::is_trivially_copyable_v<orpheus::RoutingControlSnapshot>);
 static_assert(std::is_standard_layout_v<orpheus::RoutingControlSnapshot>);
 static_assert(orpheus::kRoutingControlMaxGroups == 32);
+static_assert(std::is_trivially_copyable_v<orpheus::AudioMeter>);
+static_assert(std::is_standard_layout_v<orpheus::AudioMeter>);
+static_assert(std::is_trivially_copyable_v<orpheus::GroupOutputMeterFrame>);
+static_assert(std::is_standard_layout_v<orpheus::GroupOutputMeterFrame>);
+static_assert(std::is_trivially_copyable_v<orpheus::GroupOutputMeterSnapshot>);
+static_assert(std::is_standard_layout_v<orpheus::GroupOutputMeterSnapshot>);
+static_assert(std::is_trivially_copyable_v<orpheus::RoutingMeterTelemetry>);
+static_assert(std::is_standard_layout_v<orpheus::RoutingMeterTelemetry>);
+static_assert(std::is_trivially_copyable_v<orpheus::RealtimeTelemetrySnapshot>);
+static_assert(std::is_standard_layout_v<orpheus::RealtimeTelemetrySnapshot>);
 
 namespace {
 
@@ -63,7 +73,7 @@ int main() {
   config.num_channels = 1;
   config.num_groups = 1;
   config.num_outputs = 2;
-  config.enable_metering = false;
+  config.enable_metering = true;
   config.enable_clipping_protection = false;
   if (routing->initialize(config) != orpheus::SessionGraphError::OK) {
     return 1;
@@ -78,6 +88,17 @@ int main() {
   if (routing->processRouting(inputs, outputs, frames) != orpheus::SessionGraphError::OK ||
       left[2048] < 0.3f || right.back() < 0.3f) {
     return 2;
+  }
+  orpheus::GroupOutputMeterSnapshot groupMeters;
+  routing->copyGroupOutputMeterSnapshot(groupMeters);
+  if (groupMeters.schema_version != orpheus::kGroupOutputMeterSnapshotSchemaVersion ||
+      groupMeters.availability != orpheus::MeterAvailability::Measured ||
+      groupMeters.coherent == 0 || groupMeters.group_count != 1 ||
+      groupMeters.groups[0].logical_lane_count != 2 ||
+      groupMeters.groups[0].raw_block_frames != orpheus::kRoutingSliceFrames ||
+      groupMeters.groups[0].lane_meters[0].peak_db <=
+          orpheus::kAudioMeterSilenceDb) {
+    return 11;
   }
 
   const auto initialRouting = routing->getRoutingControlSnapshot();

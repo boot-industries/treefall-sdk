@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "routing_matrix.h"
 #include "gain_smoother.h"
+#include "../common/realtime_counter.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-
 namespace orpheus {
 
 // ============================================================================
@@ -32,8 +32,10 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Clean up existing state if reinitializing
+  // Clean up existing state if reinitializing. Initialization is a control
+  // boundary; callers must stop audio processing before entering it.
   if (m_initialized.load(std::memory_order_acquire)) {
+    m_initialized.store(false, std::memory_order_release);
     m_channels.clear();
     m_groups.clear();
   }
@@ -69,7 +71,7 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   m_temp_buffer.clear();
   m_temp_buffer.resize(MAX_BUFFER_SIZE, 0.0f);
 
-  // Reset metering
+  // Reset metering. Clip counters reset only at initialize(), never at reset().
   m_master_peak.store(0.0f, std::memory_order_release);
   m_master_rms.store(0.0f, std::memory_order_release);
   m_master_clip_count.store(0, std::memory_order_release);
@@ -82,6 +84,18 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
     m_output_clip_count[output].store(0, std::memory_order_release);
     m_output_true_peak_meters[output].reset();
   }
+
+  m_channel_route_generation.store(0, std::memory_order_release);
+  m_group_geometry_generation.store(0, std::memory_order_release);
+  m_rendered_channel_route_generation = 0;
+  m_rendered_group_geometry_generation = 0;
+  m_last_published_group_geometry_generation = 0;
+  m_group_output_meter_publication_sequence.store(0, std::memory_order_release);
+  m_group_output_meter_group_count.store(config.num_groups, std::memory_order_release);
+  m_group_output_meter_topology_revision.store(0, std::memory_order_release);
+  m_group_output_meter_availability.store(
+      static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_release);
+  m_group_output_meter_coherent.store(0, std::memory_order_release);
 
   m_group_control_sequence.store(0, std::memory_order_release);
   m_initialized.store(true, std::memory_order_release);
@@ -108,40 +122,48 @@ SessionGraphError RoutingMatrix::setChannelGroup(RoutingChannelIndex channel_ind
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
   if (channel_index >= m_channels.size()) {
     return SessionGraphError::InvalidParameter;
   }
-
   if (group_index != UNASSIGNED_GROUP && group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Lock-free update (atomic write)
-  m_channels[channel_index].group_index = group_index;
-  m_channels[channel_index].config.group_index = group_index;
+  auto& channel = m_channels[channel_index];
+  const RoutingOutputIndex lane =
+      detail::unpackRoutingLane(channel.packed_route.load(std::memory_order_acquire));
+  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  if (lane >= config.num_outputs) {
+    return SessionGraphError::InvalidParameter;
+  }
 
+  channel.packed_route.store(detail::packRoutingRoute(group_index, lane),
+                             std::memory_order_release);
+  detail::publishSaturatingIncrement(m_channel_route_generation);
   return SessionGraphError::OK;
 }
 
 SessionGraphError RoutingMatrix::setChannelRoute(RoutingChannelIndex channel_index,
                                                  RoutingGroupIndex group_index,
                                                  RoutingOutputIndex output_index) {
-  if (!m_initialized.load(std::memory_order_acquire) || channel_index >= m_channels.size()) {
+  if (!m_initialized.load(std::memory_order_acquire)) {
+    return SessionGraphError::NotInitialized;
+  }
+  if (channel_index >= m_channels.size()) {
     return SessionGraphError::InvalidParameter;
   }
   if (group_index != UNASSIGNED_GROUP && group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
-  const int configIndex = m_active_config_idx.load(std::memory_order_acquire);
-  if (output_index >= m_config_buffers[configIndex].num_outputs) {
+  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  if (output_index >= config.num_outputs) {
     return SessionGraphError::InvalidParameter;
   }
 
   auto& channel = m_channels[channel_index];
-  channel.group_index = group_index;
-  channel.config.group_index = group_index;
-  channel.config.output_channel = output_index;
+  channel.packed_route.store(detail::packRoutingRoute(group_index, output_index),
+                             std::memory_order_release);
+  detail::publishSaturatingIncrement(m_channel_route_generation);
   return SessionGraphError::OK;
 }
 
@@ -149,24 +171,17 @@ SessionGraphError RoutingMatrix::setChannelGain(RoutingChannelIndex channel_inde
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
-  if (channel_index >= m_channels.size()) {
+  if (channel_index >= m_channels.size() || !std::isfinite(gain_db)) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Clamp to valid range
   gain_db = std::clamp(gain_db, -100.0f, 12.0f);
-
-  // Convert to linear and set target (lock-free)
-  float gain_linear = dbToLinear(gain_db);
-  m_channels[channel_index].gain_smoother->setTarget(gain_linear);
+  m_channels[channel_index].gain_smoother->setTarget(dbToLinear(gain_db));
   m_channels[channel_index].config.gain_db = gain_db;
 
-  // Notify callback
   if (m_callback) {
     m_callback->onChannelGainChanged(channel_index, gain_db);
   }
-
   return SessionGraphError::OK;
 }
 
@@ -174,19 +189,13 @@ SessionGraphError RoutingMatrix::setChannelPan(RoutingChannelIndex channel_index
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
-  if (channel_index >= m_channels.size()) {
+  if (channel_index >= m_channels.size() || !std::isfinite(pan)) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Clamp to valid range
   pan = std::clamp(pan, -1.0f, 1.0f);
-
-  // Update pan law (constant-power, -3 dB at center)
   updatePanLaw(channel_index, pan);
-
   m_channels[channel_index].config.pan = pan;
-
   return SessionGraphError::OK;
 }
 
@@ -230,22 +239,28 @@ SessionGraphError RoutingMatrix::configureChannel(RoutingChannelIndex channel_in
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
-  if (channel_index >= m_channels.size()) {
+  if (!validateChannelConfig(channel_index, config)) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // Batch update all parameters
-  setChannelGroup(channel_index, config.group_index);
-  setChannelGain(channel_index, config.gain_db);
-  setChannelPan(channel_index, config.pan);
-  setChannelMute(channel_index, config.mute);
-  setChannelSolo(channel_index, config.solo);
+  ChannelConfig normalized = config;
+  normalized.gain_db = std::clamp(normalized.gain_db, -100.0f, 12.0f);
+  normalized.pan = std::clamp(normalized.pan, -1.0f, 1.0f);
+  auto& channel = m_channels[channel_index];
+  channel.config = normalized;
+  channel.packed_route.store(
+      detail::packRoutingRoute(normalized.group_index, normalized.output_channel),
+      std::memory_order_release);
+  detail::publishSaturatingIncrement(m_channel_route_generation);
+  channel.gain_smoother->setTarget(dbToLinear(normalized.gain_db));
+  updatePanLaw(channel_index, normalized.pan);
+  channel.mute.store(normalized.mute, std::memory_order_release);
+  channel.solo.store(normalized.solo, std::memory_order_release);
+  updateSoloState();
 
-  m_channels[channel_index].config.name = config.name;
-  m_channels[channel_index].config.color = config.color;
-  m_channels[channel_index].config.output_channel = config.output_channel;
-
+  if (m_callback) {
+    m_callback->onChannelGainChanged(channel_index, channel.config.gain_db);
+  }
   return SessionGraphError::OK;
 }
 
@@ -344,20 +359,11 @@ SessionGraphError RoutingMatrix::setGroupOutputRoute(RoutingGroupIndex group_ind
   if (group_index >= m_groups.size()) {
     return SessionGraphError::InvalidParameter;
   }
-  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
-  if (output_width == 0 ||
-      static_cast<uint32_t>(output_start) + output_width > config.num_outputs) {
-    return SessionGraphError::InvalidParameter;
-  }
 
-  beginGroupControlWrite();
-  auto& group = m_groups[group_index];
-  group.output_start.store(output_start, std::memory_order_relaxed);
-  group.output_width.store(output_width, std::memory_order_relaxed);
-  group.config.output_start = output_start;
-  group.config.output_width = output_width;
-  endGroupControlWrite();
-  return SessionGraphError::OK;
+  auto snapshot = getRoutingControlSnapshot();
+  snapshot.groups[group_index].output_start = output_start;
+  snapshot.groups[group_index].output_width = output_width;
+  return applyGroupControlSnapshot(snapshot);
 }
 
 // ============================================================================
@@ -368,14 +374,12 @@ SessionGraphError RoutingMatrix::setMasterGain(float gain_db) {
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
+  if (!std::isfinite(gain_db)) {
+    return SessionGraphError::InvalidParameter;
+  }
 
-  // Clamp to valid range
   gain_db = std::clamp(gain_db, -100.0f, 12.0f);
-
-  // Convert to linear and set target (lock-free)
-  float gain_linear = dbToLinear(gain_db);
-  m_master_gain_smoother->setTarget(gain_linear);
-
+  m_master_gain_smoother->setTarget(dbToLinear(gain_db));
   return SessionGraphError::OK;
 }
 
@@ -475,12 +479,73 @@ bool RoutingMatrix::validateGroupControlSnapshot(
   return true;
 }
 
+bool RoutingMatrix::validateChannelConfig(RoutingChannelIndex channel_index,
+                                           const ChannelConfig& config) const noexcept {
+  if (channel_index >= m_channels.size() || !std::isfinite(config.gain_db) ||
+      !std::isfinite(config.pan)) {
+    return false;
+  }
+  const auto& routingConfig =
+      m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  if (config.output_channel >= routingConfig.num_outputs) {
+    return false;
+  }
+  if (config.group_index != UNASSIGNED_GROUP) {
+    if (config.group_index >= m_groups.size()) {
+      return false;
+    }
+    const uint16_t width =
+        m_groups[config.group_index].output_width.load(std::memory_order_acquire);
+    if (config.output_channel >= width) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool RoutingMatrix::validateRoutingSnapshot(const RoutingSnapshot& snapshot) const noexcept {
+  if (snapshot.channels.size() != m_channels.size() ||
+      snapshot.groups.size() != m_groups.size() ||
+      !std::isfinite(snapshot.master_gain_db)) {
+    return false;
+  }
+
+  const auto& routingConfig =
+      m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  for (const auto& group : snapshot.groups) {
+    if (!std::isfinite(group.gain_db) || group.output_width == 0 ||
+        static_cast<uint32_t>(group.output_start) + group.output_width > routingConfig.num_outputs) {
+      return false;
+    }
+  }
+  for (const auto& channel : snapshot.channels) {
+    if (!std::isfinite(channel.gain_db) || !std::isfinite(channel.pan) ||
+        channel.output_channel >= routingConfig.num_outputs) {
+      return false;
+    }
+    if (channel.group_index != UNASSIGNED_GROUP &&
+        (channel.group_index >= snapshot.groups.size() ||
+         channel.output_channel >= snapshot.groups[channel.group_index].output_width)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 SessionGraphError RoutingMatrix::applyGroupControlSnapshot(const RoutingControlSnapshot& snapshot) {
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
   if (!validateGroupControlSnapshot(snapshot)) {
     return SessionGraphError::InvalidParameter;
+  }
+
+  const auto prior = getRoutingControlSnapshot();
+  bool geometryChanged = false;
+  for (RoutingGroupIndex index = 0; index < snapshot.group_count; ++index) {
+    geometryChanged = geometryChanged ||
+                      prior.groups[index].output_start != snapshot.groups[index].output_start ||
+                      prior.groups[index].output_width != snapshot.groups[index].output_width;
   }
 
   beginGroupControlWrite();
@@ -499,6 +564,9 @@ SessionGraphError RoutingMatrix::applyGroupControlSnapshot(const RoutingControlS
     group.config.output_width = state.output_width;
   }
   updateSoloState(false);
+  if (geometryChanged) {
+    detail::publishSaturatingIncrement(m_group_geometry_generation);
+  }
   endGroupControlWrite();
 
   if (m_callback) {
@@ -556,6 +624,8 @@ void RoutingMatrix::refreshRenderGroupControls() noexcept {
     auto& state = m_render_group_controls[index];
     state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
   }
+  m_rendered_group_geometry_generation =
+      m_group_geometry_generation.load(std::memory_order_acquire);
   m_group_control_render_reading.store(false, std::memory_order_release);
 }
 
@@ -628,6 +698,50 @@ AudioMeter RoutingMatrix::getMasterMeter() const {
   return meter;
 }
 
+void RoutingMatrix::copyGroupOutputMeterSnapshot(
+    GroupOutputMeterSnapshot& destination) const noexcept {
+  const uint64_t before = m_group_output_meter_publication_sequence.load(
+      std::memory_order_acquire);
+  destination = {};
+  destination.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
+  destination.availability = static_cast<MeterAvailability>(
+      m_group_output_meter_availability.load(std::memory_order_relaxed));
+  destination.group_count = m_group_output_meter_group_count.load(std::memory_order_relaxed);
+  destination.render_sequence = before / 2u;
+  destination.routing_topology_revision =
+      m_group_output_meter_topology_revision.load(std::memory_order_relaxed);
+
+  const RoutingGroupIndex groupCount =
+      std::min<RoutingGroupIndex>(destination.group_count, kRoutingControlMaxGroups);
+  for (RoutingGroupIndex groupIndex = 0; groupIndex < groupCount; ++groupIndex) {
+    const auto& source = m_groups[groupIndex];
+    auto& frame = destination.groups[groupIndex];
+    frame.routing_output_start = source.meter_output_start.load(std::memory_order_relaxed);
+    frame.logical_lane_count = source.meter_output_width.load(std::memory_order_relaxed);
+    frame.availability = static_cast<MeterAvailability>(
+        source.meter_availability.load(std::memory_order_relaxed));
+    frame.peak_definition = static_cast<MeterPeakDefinition>(
+        source.meter_peak_definition.load(std::memory_order_relaxed));
+    frame.raw_block_frames = source.meter_raw_block_frames.load(std::memory_order_relaxed);
+    const uint16_t laneCount =
+        std::min<uint16_t>(frame.logical_lane_count, kRoutingMaxOutputs);
+    for (uint16_t lane = 0; lane < laneCount; ++lane) {
+      AudioMeter meter;
+      meter.peak_db = linearToDb(source.lane_peak_level[lane].load(std::memory_order_relaxed));
+      meter.rms_db = linearToDb(source.lane_rms_level[lane].load(std::memory_order_relaxed));
+      meter.clip_count = source.lane_clip_count[lane].load(std::memory_order_relaxed);
+      meter.clipping = meter.clip_count > 0;
+      frame.lane_meters[lane] = meter;
+    }
+  }
+
+  const uint64_t after = m_group_output_meter_publication_sequence.load(
+      std::memory_order_acquire);
+  destination.coherent = static_cast<uint8_t>(
+      before == after && (after & 1u) == 0u &&
+      m_group_output_meter_coherent.load(std::memory_order_acquire) != 0);
+}
+
 // ============================================================================
 // Snapshots
 // ============================================================================
@@ -642,7 +756,11 @@ RoutingSnapshot RoutingMatrix::saveSnapshot(const std::string& name,
 
   // Save channel states
   for (const auto& channel : m_channels) {
-    snapshot.channels.push_back(channel.config);
+    auto config = channel.config;
+    const uint32_t route = channel.packed_route.load(std::memory_order_acquire);
+    config.group_index = detail::unpackRoutingGroup(route);
+    config.output_channel = detail::unpackRoutingLane(route);
+    snapshot.channels.push_back(std::move(config));
   }
 
   // Save group controls from one coherent transaction boundary.
@@ -669,12 +787,7 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
-
-  // Validate snapshot compatibility
-  if (snapshot.channels.size() != m_channels.size()) {
-    return SessionGraphError::InvalidParameter;
-  }
-  if (snapshot.groups.size() != m_groups.size()) {
+  if (!validateRoutingSnapshot(snapshot)) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -682,7 +795,7 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
   for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
     const auto& group = snapshot.groups[index];
     auto& state = controls.groups[index];
-    state.gain_db = group.gain_db;
+    state.gain_db = std::clamp(group.gain_db, -100.0f, 12.0f);
     state.configured_mute = group.mute;
     state.configured_solo = group.solo;
     state.output_start = group.output_start;
@@ -693,19 +806,32 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     return groupResult;
   }
   for (RoutingGroupIndex index = 0; index < controls.group_count; ++index) {
-    m_groups[index].config.name = snapshot.groups[index].name;
-    m_groups[index].config.color = snapshot.groups[index].color;
+    GroupConfig normalizedGroup = snapshot.groups[index];
+    normalizedGroup.gain_db = controls.groups[index].gain_db;
+    m_groups[index].config = std::move(normalizedGroup);
   }
 
-  // Load channel states after the group transaction has validated.
   for (size_t i = 0; i < snapshot.channels.size(); ++i) {
-    configureChannel(static_cast<RoutingChannelIndex>(i), snapshot.channels[i]);
+    ChannelConfig normalizedChannel = snapshot.channels[i];
+    normalizedChannel.gain_db =
+        std::clamp(normalizedChannel.gain_db, -100.0f, 12.0f);
+    normalizedChannel.pan = std::clamp(normalizedChannel.pan, -1.0f, 1.0f);
+    auto& channel = m_channels[i];
+    channel.config = normalizedChannel;
+    channel.packed_route.store(
+        detail::packRoutingRoute(normalizedChannel.group_index,
+                                  normalizedChannel.output_channel),
+        std::memory_order_release);
+    detail::publishSaturatingIncrement(m_channel_route_generation);
+    channel.gain_smoother->setTarget(dbToLinear(normalizedChannel.gain_db));
+    updatePanLaw(static_cast<RoutingChannelIndex>(i), normalizedChannel.pan);
+    channel.mute.store(normalizedChannel.mute, std::memory_order_release);
+    channel.solo.store(normalizedChannel.solo, std::memory_order_release);
   }
-
-  // Load master state
-  setMasterGain(snapshot.master_gain_db);
-  setMasterMute(snapshot.master_mute);
-
+  updateSoloState();
+  m_master_gain_smoother->setTarget(
+      dbToLinear(std::clamp(snapshot.master_gain_db, -100.0f, 12.0f)));
+  m_master_mute.store(snapshot.master_mute, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -763,10 +889,16 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   const int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
   const RoutingConfig& cfg = m_config_buffers[cfg_idx];
   if (master_output == nullptr) {
+    m_group_output_meter_availability.store(
+        static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_release);
+    m_group_output_meter_coherent.store(0, std::memory_order_release);
     return SessionGraphError::InvalidParameter;
   }
   for (RoutingOutputIndex out = 0; out < cfg.num_outputs; ++out) {
     if (master_output[out] == nullptr) {
+      m_group_output_meter_availability.store(
+          static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_release);
+      m_group_output_meter_coherent.store(0, std::memory_order_release);
       return SessionGraphError::InvalidParameter;
     }
   }
@@ -817,15 +949,60 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
 
   const int config_idx = m_active_config_idx.load(std::memory_order_acquire);
   const RoutingConfig& config = m_config_buffers[config_idx];
+  const auto sanitize = [](float value) noexcept {
+    return std::isfinite(value) ? value : 0.0f;
+  };
+
+  const uint64_t routeGeneration =
+      m_channel_route_generation.load(std::memory_order_acquire);
+  const uint64_t geometryGeneration = m_rendered_group_geometry_generation;
+  const bool topologyChanged =
+      routeGeneration != m_rendered_channel_route_generation ||
+      geometryGeneration != m_last_published_group_geometry_generation;
+  if (topologyChanged) {
+    resetLogicalGroupTruePeakHistories();
+  }
+
+  // One matrix-wide publication covers all groups and all logical lanes.
+  m_group_output_meter_publication_sequence.fetch_add(1, std::memory_order_acq_rel);
+  m_group_output_meter_group_count.store(config.num_groups, std::memory_order_relaxed);
+  m_group_output_meter_topology_revision.store(m_rendered_topology_revision,
+                                               std::memory_order_relaxed);
+  m_group_output_meter_availability.store(
+      static_cast<uint8_t>(config.enable_metering ? MeterAvailability::Measured
+                                                  : MeterAvailability::Unmeasured),
+      std::memory_order_relaxed);
+  m_group_output_meter_coherent.store(0, std::memory_order_relaxed);
 
   for (RoutingGroupIndex group = 0; group < config.num_groups; ++group) {
-    m_group_buffers[group].clear();
+    auto& state = m_groups[group];
+    const auto& controls = m_render_group_controls[group];
+    state.meter_output_start.store(controls.output_start, std::memory_order_relaxed);
+    state.meter_output_width.store(controls.output_width, std::memory_order_relaxed);
+    state.meter_availability.store(
+        static_cast<uint8_t>(config.enable_metering ? MeterAvailability::Measured
+                                                    : MeterAvailability::Unmeasured),
+        std::memory_order_relaxed);
+    state.meter_peak_definition.store(
+        static_cast<uint8_t>(config.metering_mode == MeteringMode::TruePeak
+                                 ? MeterPeakDefinition::TruePeak4x
+                                 : MeterPeakDefinition::SamplePeak),
+        std::memory_order_relaxed);
+    state.meter_raw_block_frames.store(num_frames, std::memory_order_relaxed);
+  }
+
+  for (RoutingGroupIndex group = 0; group < config.num_groups; ++group) {
+    for (auto& lane : m_group_buffers[group].channels) {
+      std::fill_n(lane.begin(), num_frames, 0.0f);
+    }
   }
 
   for (RoutingChannelIndex channel_index = 0; channel_index < config.num_channels;
        ++channel_index) {
     auto& channel = m_channels[channel_index];
-    const RoutingGroupIndex group_index = channel.group_index;
+    const uint32_t packedRoute = channel.packed_route.load(std::memory_order_acquire);
+    const RoutingGroupIndex group_index = detail::unpackRoutingGroup(packedRoute);
+    const RoutingOutputIndex logicalLane = detail::unpackRoutingLane(packedRoute);
 
     if (group_index == UNASSIGNED_GROUP || group_index >= config.num_groups) {
       if (config.enable_metering) {
@@ -844,36 +1021,35 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       std::fill_n(meter_right.begin(), num_frames, 0.0f);
     }
 
-    RoutingOutputIndex discrete_output = channel.config.output_channel;
-    if (discrete_output >= config.num_outputs) {
-      discrete_output = 0;
-    }
-
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float channel_gain = channel.gain_smoother->process();
-      const float pan_left = channel.pan_left->process();
-      const float pan_right = channel.pan_right->process();
+      const float channel_gain = sanitize(channel.gain_smoother->process());
+      const float pan_left = sanitize(channel.pan_left->process());
+      const float pan_right = sanitize(channel.pan_right->process());
       if (muted) {
         continue;
       }
 
-      const float sample = input[frame] * channel_gain;
+      const float sample = sanitize(input[frame]);
+      const float gained = sanitize(sample * channel_gain);
       switch (config.source_channel_policy) {
       case SourceChannelPolicy::Discrete:
-        group_buffer.channels[discrete_output][frame] += sample;
+        if (logicalLane < group_buffer.channels.size()) {
+          group_buffer.channels[logicalLane][frame] =
+              sanitize(group_buffer.channels[logicalLane][frame] + gained);
+        }
         if (config.enable_metering) {
-          meter_left[frame] = sample;
+          meter_left[frame] = gained;
         }
         break;
       case SourceChannelPolicy::StereoPairs: {
-        const float left = sample * pan_left;
-        group_buffer.channels[0][frame] += left;
+        const float left = sanitize(gained * pan_left);
+        group_buffer.channels[0][frame] = sanitize(group_buffer.channels[0][frame] + left);
         if (config.enable_metering) {
           meter_left[frame] = left;
         }
         if (config.num_outputs > 1) {
-          const float right = sample * pan_right;
-          group_buffer.channels[1][frame] += right;
+          const float right = sanitize(gained * pan_right);
+          group_buffer.channels[1][frame] = sanitize(group_buffer.channels[1][frame] + right);
           if (config.enable_metering) {
             meter_right[frame] = right;
           }
@@ -881,9 +1057,10 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         break;
       }
       case SourceChannelPolicy::MonoFoldDown:
-        group_buffer.channels[0][frame] += sample;
+        group_buffer.channels[0][frame] =
+            sanitize(group_buffer.channels[0][frame] + gained);
         if (config.enable_metering) {
-          meter_left[frame] = sample;
+          meter_left[frame] = gained;
         }
         break;
       }
@@ -901,7 +1078,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       processStereoMetering(meter_left.data(), right, num_frames, channel.true_peak_meters,
                             channel.peak_level, channel.rms_level);
       if (detectClipping(meter_left.data(), num_frames) ||
-          (right != nullptr && detectClipping(meter_right.data(), num_frames))) {
+          (right != nullptr && detectClipping(right, num_frames))) {
         channel.clip_count.fetch_add(1, std::memory_order_relaxed);
       }
     }
@@ -916,33 +1093,9 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     auto& group_buffer = m_group_buffers[group_index];
     const auto& controls = m_render_group_controls[group_index];
     const bool muted = controls.effective_mute;
-    const float headroom = getHeadroomCompensation(group_index);
-
+    const float headroom = sanitize(getHeadroomCompensation(group_index));
     const RoutingOutputIndex outputStart = controls.output_start;
     const uint16_t outputWidth = controls.output_width;
-
-    for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float group_gain = group.gain_smoother->process();
-      if (muted) {
-        continue;
-      }
-
-      if (config.source_channel_policy == SourceChannelPolicy::StereoPairs) {
-        if (outputWidth > 0) {
-          master_output[outputStart][frame] +=
-              group_buffer.channels[0][frame] * group_gain * headroom;
-        }
-        if (outputWidth > 1) {
-          master_output[outputStart + 1][frame] +=
-              group_buffer.channels[1][frame] * group_gain * headroom;
-        }
-      } else {
-        for (uint16_t lane = 0; lane < outputWidth; ++lane) {
-          master_output[outputStart + lane][frame] +=
-              group_buffer.channels[lane][frame] * group_gain * headroom;
-        }
-      }
-    }
 
     if (config.enable_metering) {
       const float* right = config.num_outputs > 1 ? group_buffer.channels[1].data() : nullptr;
@@ -955,16 +1108,81 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         }
       }
     }
+
+    for (uint32_t frame = 0; frame < num_frames; ++frame) {
+      float group_gain = sanitize(group.gain_smoother->process());
+      for (RoutingOutputIndex lane = 0; lane < config.num_outputs; ++lane) {
+        float sample = 0.0f;
+        if (!muted && lane < outputWidth) {
+          sample = sanitize(group_buffer.channels[lane][frame] * group_gain * headroom);
+          master_output[outputStart + lane][frame] =
+              sanitize(master_output[outputStart + lane][frame] + sample);
+        }
+        group_buffer.channels[lane][frame] = sample;
+      }
+    }
+
+    if (config.enable_metering) {
+      for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
+        auto& lanePeak = group.lane_peak_level[lane];
+        auto& laneRms = group.lane_rms_level[lane];
+        if (lane >= outputWidth || lane >= config.num_outputs) {
+          lanePeak.store(0.0f, std::memory_order_relaxed);
+          laneRms.store(0.0f, std::memory_order_relaxed);
+          continue;
+        }
+
+        float peak = 0.0f;
+        double sumSquares = 0.0;
+        bool anyNonZero = false;
+        for (uint32_t frame = 0; frame < num_frames; ++frame) {
+          const float sample = sanitize(group_buffer.channels[lane][frame]);
+          group_buffer.channels[lane][frame] = sample;
+          const float magnitude = std::abs(sample);
+          peak = std::max(peak, magnitude);
+          anyNonZero = anyNonZero || sample != 0.0f;
+          sumSquares += static_cast<double>(sample) * sample;
+        }
+
+        if (!anyNonZero || muted) {
+          group.lane_true_peak_meters[lane].reset();
+          peak = 0.0f;
+        } else if (config.metering_mode == MeteringMode::TruePeak) {
+          peak = 0.0f;
+          for (uint32_t frame = 0; frame < num_frames; ++frame) {
+            peak = std::max(peak, group.lane_true_peak_meters[lane].process(
+                                     group_buffer.channels[lane][frame]));
+          }
+        } else {
+          group.lane_true_peak_meters[lane].reset();
+        }
+
+        lanePeak.store(sanitize(peak), std::memory_order_relaxed);
+        laneRms.store(
+            sanitize(static_cast<float>(
+                std::sqrt(sumSquares / static_cast<double>(num_frames)))),
+            std::memory_order_relaxed);
+        if (detectClipping(group_buffer.channels[lane].data(), num_frames)) {
+          group.lane_clip_count[lane].fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+    } else {
+      for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
+        group.lane_peak_level[lane].store(0.0f, std::memory_order_relaxed);
+        group.lane_rms_level[lane].store(0.0f, std::memory_order_relaxed);
+        group.lane_true_peak_meters[lane].reset();
+      }
+    }
   }
 
   const bool master_muted = m_master_mute.load(std::memory_order_acquire);
   for (uint32_t frame = 0; frame < num_frames; ++frame) {
-    const float master_gain = master_muted ? 0.0f : m_master_gain_smoother->process();
+    const float master_gain = master_muted ? 0.0f : sanitize(m_master_gain_smoother->process());
     if (master_muted) {
       m_master_gain_smoother->process();
     }
     for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
-      master_output[output][frame] *= master_gain;
+      master_output[output][frame] = sanitize(master_output[output][frame] * master_gain);
     }
   }
 
@@ -986,14 +1204,14 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
 
     for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
       for (uint32_t frame = 0; frame < num_frames; ++frame) {
-        float sample = master_output[output][frame];
+        float sample = sanitize(master_output[output][frame]);
         const float magnitude = std::abs(sample);
         if (magnitude > threshold) {
           const float compressed =
               threshold + std::tanh((magnitude - threshold) / knee_width) * knee_width;
           sample = std::copysign(std::min(compressed, ceiling), sample);
         }
-        master_output[output][frame] = sample;
+        master_output[output][frame] = sanitize(sample);
       }
     }
   }
@@ -1002,23 +1220,57 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     if (!config.enable_metering || output >= config.num_outputs) {
       m_output_peak[output].store(0.0f, std::memory_order_release);
       m_output_rms[output].store(0.0f, std::memory_order_release);
+      m_output_true_peak_meters[output].reset();
       continue;
     }
 
     float peak = 0.0f;
     double sumSquares = 0.0;
+    bool anyNonZero = false;
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float sample = master_output[output][frame];
-      peak = std::max(peak, m_output_true_peak_meters[output].process(sample));
+      const float sample = sanitize(master_output[output][frame]);
+      master_output[output][frame] = sample;
+      anyNonZero = anyNonZero || sample != 0.0f;
       sumSquares += static_cast<double>(sample) * sample;
     }
-    const float rms = std::sqrt(static_cast<float>(sumSquares / num_frames));
-    m_output_peak[output].store(peak, std::memory_order_release);
-    m_output_rms[output].store(rms, std::memory_order_release);
-    if (detectClipping(master_output[output], num_frames))
+    if (!anyNonZero) {
+      m_output_true_peak_meters[output].reset();
+    } else {
+      for (uint32_t frame = 0; frame < num_frames; ++frame) {
+        peak = std::max(peak, m_output_true_peak_meters[output].process(
+                                 master_output[output][frame]));
+      }
+    }
+    m_output_peak[output].store(sanitize(peak), std::memory_order_release);
+    m_output_rms[output].store(
+        sanitize(static_cast<float>(std::sqrt(sumSquares / static_cast<double>(num_frames)))),
+        std::memory_order_release);
+    if (detectClipping(master_output[output], num_frames)) {
       m_output_clip_count[output].fetch_add(1, std::memory_order_relaxed);
+    }
   }
 
+  const bool routeStable =
+      routeGeneration == m_channel_route_generation.load(std::memory_order_acquire);
+  if (routeStable) {
+    if (topologyChanged) {
+      m_rendered_channel_route_generation = routeGeneration;
+      m_last_published_group_geometry_generation = geometryGeneration;
+      m_rendered_topology_revision =
+          detail::saturatingIncrement(m_rendered_topology_revision);
+    }
+    m_group_output_meter_topology_revision.store(m_rendered_topology_revision,
+                                                 std::memory_order_relaxed);
+  } else {
+    m_group_output_meter_availability.store(
+        static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_relaxed);
+    for (RoutingGroupIndex group = 0; group < config.num_groups; ++group) {
+      m_groups[group].meter_availability.store(
+          static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_relaxed);
+    }
+  }
+  m_group_output_meter_coherent.store(routeStable ? 1 : 0, std::memory_order_release);
+  m_group_output_meter_publication_sequence.fetch_add(1, std::memory_order_release);
   return SessionGraphError::OK;
 }
 
@@ -1038,7 +1290,9 @@ void RoutingMatrix::initializeChannels() {
 
   for (RoutingChannelIndex i = 0; i < config.num_channels; ++i) {
     ChannelState channel;
-    channel.group_index = 0; // Default to group 0
+    const RoutingOutputIndex lane = static_cast<RoutingOutputIndex>(i % config.num_outputs);
+    channel.packed_route.store(detail::packRoutingRoute(0, lane),
+                               std::memory_order_relaxed);
     channel.gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
     channel.gain_smoother->reset(1.0f); // Unity gain
 
@@ -1050,15 +1304,16 @@ void RoutingMatrix::initializeChannels() {
 
     channel.mute.store(false, std::memory_order_release);
     channel.solo.store(false, std::memory_order_release);
-
     channel.peak_level.store(0.0f, std::memory_order_release);
     channel.rms_level.store(0.0f, std::memory_order_release);
     channel.clip_count.store(0, std::memory_order_release);
+    for (auto& meter : channel.true_peak_meters) {
+      meter.reset();
+    }
 
-    // Default config
     channel.config.name = "Channel " + std::to_string(i + 1);
     channel.config.group_index = 0;
-    channel.config.output_channel = static_cast<RoutingOutputIndex>(i % config.num_outputs);
+    channel.config.output_channel = lane;
     channel.config.gain_db = 0.0f;
     channel.config.pan = 0.0f;
     channel.config.mute = false;
@@ -1076,9 +1331,6 @@ void RoutingMatrix::initializeGroups() {
   const RoutingConfig& config = m_config_buffers[config_idx];
   uint32_t sample_rate = config.sample_rate;
 
-  m_groups.clear();
-  m_groups.reserve(config.num_groups);
-
   for (RoutingGroupIndex i = 0; i < config.num_groups; ++i) {
     GroupState group;
     group.gain_smoother = std::make_unique<GainSmoother>(sample_rate, config.gain_smoothing_ms);
@@ -1087,12 +1339,16 @@ void RoutingMatrix::initializeGroups() {
     group.mute.store(false, std::memory_order_release);
     group.solo.store(false, std::memory_order_release);
     group.configured_gain_db.store(0.0f, std::memory_order_release);
-
     group.peak_level.store(0.0f, std::memory_order_release);
     group.rms_level.store(0.0f, std::memory_order_release);
     group.clip_count.store(0, std::memory_order_release);
+    for (size_t lane = 0; lane < kRoutingMaxOutputs; ++lane) {
+      group.lane_peak_level[lane].store(0.0f, std::memory_order_release);
+      group.lane_rms_level[lane].store(0.0f, std::memory_order_release);
+      group.lane_clip_count[lane].store(0, std::memory_order_release);
+      group.lane_true_peak_meters[lane].reset();
+    }
 
-    // Default config
     group.config.name = "Group " + std::to_string(i + 1);
     group.config.gain_db = 0.0f;
     group.config.mute = false;
@@ -1102,6 +1358,16 @@ void RoutingMatrix::initializeGroups() {
     group.config.output_start = 0;
     group.config.output_width = config.num_outputs;
     group.config.color = 0xFFFFFFFF;
+    group.meter_output_start.store(0, std::memory_order_release);
+    group.meter_output_width.store(config.num_outputs, std::memory_order_release);
+    group.meter_availability.store(
+        static_cast<uint8_t>(MeterAvailability::Unmeasured), std::memory_order_release);
+    group.meter_peak_definition.store(
+        static_cast<uint8_t>(config.metering_mode == MeteringMode::TruePeak
+                                 ? MeterPeakDefinition::TruePeak4x
+                                 : MeterPeakDefinition::SamplePeak),
+        std::memory_order_release);
+    group.meter_raw_block_frames.store(0, std::memory_order_release);
 
     auto& renderState = m_render_group_controls[i];
     renderState.gain_db = 0.0f;
@@ -1159,10 +1425,35 @@ void RoutingMatrix::updatePanLaw(RoutingChannelIndex channel_index, float pan) {
   m_channels[channel_index].pan_right->setTarget(gain_right);
 }
 
+void RoutingMatrix::resetLogicalGroupTruePeakHistories() noexcept {
+  for (auto& channel : m_channels) {
+    for (auto& meter : channel.true_peak_meters) {
+      meter.reset();
+    }
+  }
+  for (auto& group : m_groups) {
+    for (auto& meter : group.true_peak_meters) {
+      meter.reset();
+    }
+    for (auto& meter : group.lane_true_peak_meters) {
+      meter.reset();
+    }
+  }
+  for (auto& meter : m_master_true_peak_meters) {
+    meter.reset();
+  }
+  for (auto& meter : m_output_true_peak_meters) {
+    meter.reset();
+  }
+}
+
 void RoutingMatrix::processStereoMetering(const float* left, const float* right, size_t num_frames,
                                           std::array<TruePeakMeter, 2>& true_peak_meters,
                                           std::atomic<float>& peak, std::atomic<float>& rms) {
   if (num_frames == 0 || (left == nullptr && right == nullptr)) {
+    for (auto& meter : true_peak_meters) {
+      meter.reset();
+    }
     peak.store(0.0f, std::memory_order_release);
     rms.store(0.0f, std::memory_order_release);
     return;
@@ -1172,22 +1463,49 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
   const MeteringMode mode = m_config_buffers[config_idx].metering_mode;
   float peak_value = 0.0f;
   double sum_squares = 0.0;
+  bool any_nonzero = false;
 
   for (size_t i = 0; i < num_frames; ++i) {
-    const float left_sample = left != nullptr ? left[i] : 0.0f;
-    const float right_sample = right != nullptr ? right[i] : 0.0f;
+    const float left_sample =
+        left != nullptr && std::isfinite(left[i]) ? left[i] : 0.0f;
+    const float right_sample =
+        right != nullptr && std::isfinite(right[i]) ? right[i] : 0.0f;
     peak_value = std::max(peak_value, std::max(std::abs(left_sample), std::abs(right_sample)));
+    any_nonzero = any_nonzero || left_sample != 0.0f || right_sample != 0.0f;
     sum_squares += static_cast<double>(left_sample) * left_sample +
                    static_cast<double>(right_sample) * right_sample;
   }
 
-  if (mode == MeteringMode::TruePeak) {
-    const float left_peak =
-        left != nullptr ? true_peak_meters[0].processBuffer(left, num_frames) : 0.0f;
-    const float right_peak =
-        right != nullptr ? true_peak_meters[1].processBuffer(right, num_frames) : 0.0f;
-    peak_value = std::max(left_peak, right_peak);
-  } else if (mode == MeteringMode::LUFS) {
+  if (!any_nonzero) {
+    for (auto& meter : true_peak_meters) {
+      meter.reset();
+    }
+    peak_value = 0.0f;
+  } else if (mode == MeteringMode::TruePeak) {
+    if (left != nullptr) {
+      peak_value = 0.0f;
+      for (size_t i = 0; i < num_frames; ++i) {
+        const float sample = std::isfinite(left[i]) ? left[i] : 0.0f;
+        peak_value = std::max(peak_value, true_peak_meters[0].process(sample));
+      }
+    } else {
+      true_peak_meters[0].reset();
+    }
+    if (right != nullptr) {
+      for (size_t i = 0; i < num_frames; ++i) {
+        const float sample = std::isfinite(right[i]) ? right[i] : 0.0f;
+        peak_value = std::max(peak_value, true_peak_meters[1].process(sample));
+      }
+    } else {
+      true_peak_meters[1].reset();
+    }
+  } else {
+    for (auto& meter : true_peak_meters) {
+      meter.reset();
+    }
+  }
+
+  if (mode == MeteringMode::LUFS && any_nonzero) {
     const double mean_square = sum_squares / static_cast<double>(num_frames * 2);
     const double lufs = mean_square > 0.0 ? -0.691 + 10.0 * std::log10(mean_square) : -100.0;
     peak_value = static_cast<float>(std::pow(10.0, lufs / 20.0));
@@ -1195,8 +1513,8 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
 
   const float rms_value =
       static_cast<float>(std::sqrt(sum_squares / static_cast<double>(num_frames * 2)));
-  peak.store(peak_value, std::memory_order_release);
-  rms.store(rms_value, std::memory_order_release);
+  peak.store(std::isfinite(peak_value) ? peak_value : 0.0f, std::memory_order_release);
+  rms.store(std::isfinite(rms_value) ? rms_value : 0.0f, std::memory_order_release);
 }
 
 void RoutingMatrix::publishChannelMeterSilence(ChannelState& channel) {
@@ -1207,30 +1525,31 @@ void RoutingMatrix::publishChannelMeterSilence(ChannelState& channel) {
   }
 }
 
-bool RoutingMatrix::detectClipping(float* buffer, size_t num_frames) {
-  // Clipping threshold: ≥ 1.0 or ≤ -1.0 (0 dBFS)
+bool RoutingMatrix::detectClipping(const float* buffer, size_t num_frames) const {
   constexpr float CLIPPING_THRESHOLD = 1.0f;
-
   for (size_t i = 0; i < num_frames; ++i) {
-    float abs_sample = std::abs(buffer[i]);
-    if (abs_sample >= CLIPPING_THRESHOLD) {
-      return true; // Clipping detected
+    const float sample = buffer[i];
+    if (std::isfinite(sample) && std::abs(sample) >= CLIPPING_THRESHOLD) {
+      return true;
     }
   }
-
-  return false; // No clipping
+  return false;
 }
 
 float RoutingMatrix::dbToLinear(float db) const {
-  if (db <= -100.0f)
-    return 0.0f; // -inf
-  return std::pow(10.0f, db / 20.0f);
+  if (!std::isfinite(db) || db <= -100.0f) {
+    return 0.0f;
+  }
+  const float linear = std::pow(10.0f, db / 20.0f);
+  return std::isfinite(linear) ? linear : 0.0f;
 }
 
 float RoutingMatrix::linearToDb(float linear) const {
-  if (linear <= 0.0f)
-    return -100.0f; // -inf
-  return 20.0f * std::log10(linear);
+  if (!std::isfinite(linear) || linear <= 0.0f) {
+    return kAudioMeterSilenceDb;
+  }
+  const float db = 20.0f * std::log10(linear);
+  return std::isfinite(db) ? db : kAudioMeterSilenceDb;
 }
 
 // ============================================================================
@@ -1240,7 +1559,9 @@ float RoutingMatrix::linearToDb(float linear) const {
 uint32_t RoutingMatrix::countActiveChannelsInGroup(RoutingGroupIndex group_index) const {
   uint32_t count = 0;
   for (const auto& channel : m_channels) {
-    if (channel.group_index == group_index && !channel.mute.load(std::memory_order_acquire)) {
+    const RoutingGroupIndex assignedGroup = detail::unpackRoutingGroup(
+        channel.packed_route.load(std::memory_order_acquire));
+    if (assignedGroup == group_index && !channel.mute.load(std::memory_order_acquire)) {
       ++count;
     }
   }
@@ -1250,7 +1571,9 @@ uint32_t RoutingMatrix::countActiveChannelsInGroup(RoutingGroupIndex group_index
 uint32_t RoutingMatrix::countTotalActiveChannels() const {
   uint32_t count = 0;
   for (const auto& channel : m_channels) {
-    if (channel.group_index != UNASSIGNED_GROUP && !channel.mute.load(std::memory_order_acquire)) {
+    const RoutingGroupIndex assignedGroup = detail::unpackRoutingGroup(
+        channel.packed_route.load(std::memory_order_acquire));
+    if (assignedGroup != UNASSIGNED_GROUP && !channel.mute.load(std::memory_order_acquire)) {
       ++count;
     }
   }

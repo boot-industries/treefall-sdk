@@ -15,9 +15,24 @@ namespace orpheus {
 // Forward declaration for gain smoother
 class GainSmoother;
 
-/// Internal channel state (audio thread)
+namespace detail {
+constexpr uint32_t packRoutingRoute(RoutingGroupIndex group, RoutingOutputIndex lane) noexcept {
+  return static_cast<uint32_t>(group) | (static_cast<uint32_t>(lane) << 16u);
+}
+
+constexpr RoutingGroupIndex unpackRoutingGroup(uint32_t route) noexcept {
+  return static_cast<RoutingGroupIndex>(route & 0xFFFFu);
+}
+
+constexpr RoutingOutputIndex unpackRoutingLane(uint32_t route) noexcept {
+  return static_cast<RoutingOutputIndex>(route >> 16u);
+}
+} // namespace detail
+
+/// Internal channel state (audio thread).
 struct ChannelState {
-  RoutingGroupIndex group_index;               ///< Assigned group or UNASSIGNED_GROUP
+  /// One atomic publication keeps group and group-local lane identity coherent.
+  std::atomic<uint32_t> packed_route;
   std::unique_ptr<GainSmoother> gain_smoother; ///< Gain smoothing
   std::unique_ptr<GainSmoother> pan_left;      ///< Left pan gain
   std::unique_ptr<GainSmoother> pan_right;     ///< Right pan gain
@@ -30,21 +45,23 @@ struct ChannelState {
   std::atomic<uint32_t> clip_count;
   std::array<TruePeakMeter, 2> true_peak_meters;
 
-  // Configuration (UI thread writes, audio thread reads)
+  // Non-route configuration (control-thread ownership).
   ChannelConfig config;
 
   // Move constructor (needed for std::vector with atomics)
   ChannelState(ChannelState&& other) noexcept
-      : group_index(other.group_index), gain_smoother(std::move(other.gain_smoother)),
-        pan_left(std::move(other.pan_left)), pan_right(std::move(other.pan_right)),
-        mute(other.mute.load()), solo(other.solo.load()), peak_level(other.peak_level.load()),
-        rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
-        true_peak_meters(std::move(other.true_peak_meters)), config(std::move(other.config)) {}
+      : packed_route(other.packed_route.load(std::memory_order_relaxed)),
+        gain_smoother(std::move(other.gain_smoother)), pan_left(std::move(other.pan_left)),
+        pan_right(std::move(other.pan_right)),
+        peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
+        clip_count(other.clip_count.load()), true_peak_meters(std::move(other.true_peak_meters)),
+        config(std::move(other.config)) {}
 
   // Default constructor
   ChannelState()
-      : group_index(0), gain_smoother(nullptr), pan_left(nullptr), pan_right(nullptr), mute(false),
-        solo(false), peak_level(0.0f), rms_level(0.0f), clip_count(0) {}
+      : packed_route(detail::packRoutingRoute(0, 0)), gain_smoother(nullptr), pan_left(nullptr),
+        pan_right(nullptr), mute(false), solo(false), peak_level(0.0f), rms_level(0.0f),
+        clip_count(0) {}
 
   // Deleted copy constructor (atomics are not copyable)
   ChannelState(const ChannelState&) = delete;
@@ -52,7 +69,7 @@ struct ChannelState {
   ChannelState& operator=(ChannelState&&) = delete;
 };
 
-/// Internal group state (audio thread)
+/// Internal group state (audio thread).
 struct GroupState {
   std::unique_ptr<GainSmoother> gain_smoother; ///< Gain smoothing
   std::atomic<bool> mute;
@@ -61,11 +78,24 @@ struct GroupState {
   std::atomic<RoutingOutputIndex> output_start;
   std::atomic<uint16_t> output_width;
 
-  // Metering
+  // Legacy aggregate metering.
   std::atomic<float> peak_level;
   std::atomic<float> rms_level;
   std::atomic<uint32_t> clip_count;
   std::array<TruePeakMeter, 2> true_peak_meters;
+
+  // Fixed-capacity logical group-output metering publication.
+  std::array<std::atomic<float>, kRoutingMaxOutputs> lane_peak_level{};
+  std::array<std::atomic<float>, kRoutingMaxOutputs> lane_rms_level{};
+  std::array<std::atomic<uint32_t>, kRoutingMaxOutputs> lane_clip_count{};
+  std::array<TruePeakMeter, kRoutingMaxOutputs> lane_true_peak_meters{};
+  std::atomic<RoutingOutputIndex> meter_output_start{0};
+  std::atomic<uint16_t> meter_output_width{0};
+  std::atomic<uint8_t> meter_availability{
+      static_cast<uint8_t>(MeterAvailability::Unmeasured)};
+  std::atomic<uint8_t> meter_peak_definition{
+      static_cast<uint8_t>(MeterPeakDefinition::SamplePeak)};
+  std::atomic<uint32_t> meter_raw_block_frames{0};
 
   // Configuration
   GroupConfig config;
@@ -77,7 +107,19 @@ struct GroupState {
         output_start(other.output_start.load()), output_width(other.output_width.load()),
         peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
         clip_count(other.clip_count.load()), true_peak_meters(std::move(other.true_peak_meters)),
-        config(std::move(other.config)) {}
+        lane_true_peak_meters(std::move(other.lane_true_peak_meters)),
+        meter_output_start(other.meter_output_start.load()),
+        meter_output_width(other.meter_output_width.load()),
+        meter_availability(other.meter_availability.load()),
+        meter_peak_definition(other.meter_peak_definition.load()),
+        meter_raw_block_frames(other.meter_raw_block_frames.load()),
+        config(std::move(other.config)) {
+    for (size_t lane = 0; lane < kRoutingMaxOutputs; ++lane) {
+      lane_peak_level[lane].store(other.lane_peak_level[lane].load());
+      lane_rms_level[lane].store(other.lane_rms_level[lane].load());
+      lane_clip_count[lane].store(other.lane_clip_count[lane].load());
+    }
+  }
 
   // Default constructor
   GroupState()
@@ -89,6 +131,7 @@ struct GroupState {
   GroupState& operator=(const GroupState&) = delete;
   GroupState& operator=(GroupState&&) = delete;
 };
+
 
 /// Preallocated planar buffer for one logical group.
 struct MultichannelGroupBuffer {
@@ -154,6 +197,8 @@ public:
   AudioMeter getMasterMeter() const override;
   AudioMeter getOutputMeter(RoutingOutputIndex output_index) const override;
   RoutingControlSnapshot getRoutingControlSnapshot() const noexcept override;
+  void copyGroupOutputMeterSnapshot(
+      GroupOutputMeterSnapshot& destination) const noexcept override;
 
   // Snapshots
   RoutingSnapshot saveSnapshot(const std::string& name,
@@ -185,7 +230,11 @@ private:
   void beginGroupControlWrite() noexcept;
   void endGroupControlWrite() noexcept;
   bool validateGroupControlSnapshot(const RoutingControlSnapshot& snapshot) const noexcept;
+  bool validateChannelConfig(RoutingChannelIndex channel_index,
+                             const ChannelConfig& config) const noexcept;
+  bool validateRoutingSnapshot(const RoutingSnapshot& snapshot) const noexcept;
   void refreshRenderGroupControls() noexcept;
+  void resetLogicalGroupTruePeakHistories() noexcept;
 
   float dbToLinear(float db) const;
   float linearToDb(float linear) const;
@@ -199,7 +248,7 @@ private:
                              std::array<TruePeakMeter, 2>& true_peak_meters,
                              std::atomic<float>& peak, std::atomic<float>& rms);
   void publishChannelMeterSilence(ChannelState& channel);
-  bool detectClipping(float* buffer, size_t num_frames);
+  bool detectClipping(const float* buffer, size_t num_frames) const;
 
   // Configuration (lock-free double-buffer pattern)
   RoutingConfig m_config_buffers[2];
@@ -216,6 +265,22 @@ private:
   std::atomic<float> m_master_peak;
   std::atomic<float> m_master_rms;
   std::atomic<uint32_t> m_master_clip_count;
+
+  // Matrix-wide seqlock publication for the logical group-output extension.
+  std::atomic<uint64_t> m_group_output_meter_publication_sequence{0};
+  std::atomic<RoutingGroupIndex> m_group_output_meter_group_count{0};
+  std::atomic<uint64_t> m_group_output_meter_topology_revision{0};
+  std::atomic<uint8_t> m_group_output_meter_availability{
+      static_cast<uint8_t>(MeterAvailability::Unmeasured)};
+  std::atomic<uint8_t> m_group_output_meter_coherent{0};
+
+  // Control-thread generation inputs and audio-thread rendered watermarks.
+  std::atomic<uint64_t> m_channel_route_generation{0};
+  std::atomic<uint64_t> m_group_geometry_generation{0};
+  uint64_t m_rendered_channel_route_generation{0};
+  uint64_t m_rendered_group_geometry_generation{0};
+  uint64_t m_last_published_group_geometry_generation{0};
+  uint64_t m_rendered_topology_revision{0};
   std::array<TruePeakMeter, 2> m_master_true_peak_meters;
   std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_peak{};
   std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_rms{};

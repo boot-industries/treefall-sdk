@@ -15,17 +15,63 @@
 namespace orpheus {
 
 /// Stable schema version for RealtimeTelemetrySnapshot.
-inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 2;
+inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 3;
+
+/// Schema version for the canonical routing-meter payload.
+inline constexpr uint32_t kRoutingMeterTelemetrySchemaVersion = 1;
 
 /// Default cadence: retain one snapshot after every eight audio callbacks.
 inline constexpr uint32_t kRealtimeTelemetryDefaultDecimationBlocks = 8;
-/// Maximum routing groups carried by one telemetry snapshot.
+/// Maximum logical groups carried by the legacy fields in one telemetry snapshot.
 inline constexpr size_t kRealtimeTelemetryMaxGroups = 16;
-/// Maximum physical output lanes carried by one telemetry snapshot.
+/// Maximum routing output lanes carried by one telemetry snapshot.
 inline constexpr size_t kRealtimeTelemetryMaxOutputs = kRoutingMaxOutputs;
-
 /// Number of snapshots retained by RealtimeTelemetry before new captures drop.
 inline constexpr size_t kRealtimeTelemetryCapacity = 64;
+
+/// Canonical routing-level metering captured at one transport publication.
+///
+/// After an OK routing render with RoutingConfig::enable_metering, availability
+/// is Measured. Standard aggregate domains use the active routing configuration:
+/// group_aggregate_meters is bounded by num_groups and
+/// post_master_output_lane_meters by num_outputs, independently of the
+/// optional nested logical-group-output extension. Indices beyond those counts
+/// are Unconfigured. If metering is disabled or routing fails, the outer and
+/// standard domains are Unmeasured and both window fields are zero. An
+/// individual unsupported/unmeasured domain has ignored meter fields while
+/// measured domains retain the frame windows.
+///
+/// peak_window_frames is the saturating sum of successful transport-callback
+/// frame counts since the prior successful enqueue. rms_window_frames is the
+/// final successful callback's numFrames. Canonical peak is the maximum across
+/// the peak window; canonical RMS is from the final callback. A zero-frame
+/// callback extends neither window. Logical-lane raw_block_frames remains the
+/// independent routing-slice length.
+struct RoutingMeterTelemetry {
+  uint32_t schema_version{kRoutingMeterTelemetrySchemaVersion};
+  MeterAvailability availability{MeterAvailability::Unsupported};
+  MeterPeakDefinition aggregate_peak_definition{MeterPeakDefinition::SamplePeak};
+  MeterPeakDefinition post_master_output_peak_definition{
+      MeterPeakDefinition::TruePeak4x};
+  uint8_t reserved0{0};
+  uint16_t post_master_output_count{0};
+  uint64_t peak_window_frames{0};
+  uint32_t rms_window_frames{0};
+  uint32_t reserved1{0};
+  std::array<MeterAvailability, kRoutingControlMaxGroups>
+      group_aggregate_availability{};
+  std::array<AudioMeter, kRoutingControlMaxGroups> group_aggregate_meters{};
+  GroupOutputMeterSnapshot group_output_meters{};
+  MeterAvailability master_aggregate_availability{MeterAvailability::Unsupported};
+  std::array<uint8_t, 3> reserved2{};
+  AudioMeter master_aggregate_meter{};
+  std::array<MeterAvailability, kRoutingMaxOutputs>
+      post_master_output_availability{};
+  std::array<AudioMeter, kRoutingMaxOutputs> post_master_output_lane_meters{};
+};
+
+static_assert(std::is_trivially_copyable_v<RoutingMeterTelemetry>);
+static_assert(std::is_standard_layout_v<RoutingMeterTelemetry>);
 
 /// Fixed-size transport, routing, and callback-health observation.
 ///
@@ -43,9 +89,11 @@ struct RealtimeTelemetrySnapshot {
   uint8_t output_count{0};
   std::array<AudioMeter, kRealtimeTelemetryMaxOutputs> output_meters{};
   AudioMeter master_meter{};
+  RoutingMeterTelemetry routing_meters{};
 };
 
 static_assert(std::is_trivially_copyable_v<RealtimeTelemetrySnapshot>);
+static_assert(std::is_standard_layout_v<RealtimeTelemetrySnapshot>);
 
 /// Fixed-capacity single-producer/single-consumer realtime telemetry bridge.
 ///
@@ -75,11 +123,10 @@ public:
   /// Add one source/cache underrun to the next diagnostics snapshot.
   void reportUnderrunFromRealtime() noexcept;
 
-  /// Publish a due snapshot. Returns false when the fixed ring is full.
-  /// The bridge stamps schema_version, sequence, and diagnostics.
-  [[nodiscard]] bool publishFromRealtime(RealtimeTelemetrySnapshot snapshot) noexcept;
-
-  /// Read the oldest retained snapshot on the single consumer thread.
+  /// Publish a due snapshot by copying into the fixed ring slot. Returns false
+  /// when full; attempt sequence advances before that capacity check. The
+  /// bridge stamps schema_version, sequence, diagnostics, and nested schemas.
+  [[nodiscard]] bool publishFromRealtime(const RealtimeTelemetrySnapshot& snapshot) noexcept;
   [[nodiscard]] bool tryRead(RealtimeTelemetrySnapshot& snapshot) noexcept;
 
   /// Capture one snapshot after each N callbacks. Zero is clamped to one.

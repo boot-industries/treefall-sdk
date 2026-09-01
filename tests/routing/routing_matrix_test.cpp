@@ -3,6 +3,7 @@
 
 #include <array>
 #include <atomic>
+#include <limits>
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -1283,6 +1284,9 @@ TEST_F(RoutingMatrixTest, AcceptedGroupTransactionTakesEffectAtNextRenderBoundar
 TEST_F(RoutingMatrixTest, RoutingPresetRecallPublishesSavedGroupControls) {
   config.num_outputs = 4;
   ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelRoute(1, 1, 0), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelGroup(2, UNASSIGNED_GROUP), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelGroup(3, UNASSIGNED_GROUP), SessionGraphError::OK);
   auto expected = matrix->getRoutingControlSnapshot();
   expected.groups[0].gain_db = -12.0f;
   expected.groups[0].configured_mute = true;
@@ -1359,6 +1363,353 @@ TEST_F(RoutingMatrixTest, ConcurrentRenderAndQueryObserveOnlyCompleteTransaction
 
   writer.join();
   EXPECT_FALSE(failed.load(std::memory_order_acquire));
+}
+
+TEST_F(RoutingMatrixTest, GroupOutputMeterFrameUsesPostGroupLogicalLanes) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  ChannelConfig channel;
+  channel.group_index = 0;
+  channel.output_channel = 0;
+  ASSERT_EQ(matrix->configureChannel(0, channel), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupGain(0, -6.0f), SessionGraphError::OK);
+
+  std::vector<float> input(BUFFER_SIZE, 0.5f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  ASSERT_EQ(snapshot.availability, MeterAvailability::Measured);
+  ASSERT_EQ(snapshot.coherent, 1);
+  ASSERT_EQ(snapshot.groups[0].availability, MeterAvailability::Measured);
+  ASSERT_EQ(snapshot.groups[0].logical_lane_count, 2);
+  const float legacyPeak =
+      std::pow(10.0f, matrix->getGroupMeter(0).peak_db / 20.0f);
+  const float logicalPeak =
+      std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
+  EXPECT_NEAR(legacyPeak, 0.5f, 0.001f);
+  EXPECT_NEAR(logicalPeak, 0.5f * std::pow(10.0f, -6.0f / 20.0f), 0.001f);
+  EXPECT_LT(logicalPeak, legacyPeak);
+  EXPECT_EQ(snapshot.groups[0].peak_definition, MeterPeakDefinition::SamplePeak);
+}
+
+TEST_F(RoutingMatrixTest, GroupOutputMeterFrameSeparatesOverlappingPhysicalRoutes) {
+  config.num_channels = 2;
+  config.num_groups = 2;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  ChannelConfig channel0;
+  channel0.group_index = 0;
+  channel0.output_channel = 0;
+  ChannelConfig channel1 = channel0;
+  channel1.group_index = 1;
+  ASSERT_EQ(matrix->configureChannel(0, channel0), SessionGraphError::OK);
+  ASSERT_EQ(matrix->configureChannel(1, channel1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupOutputRoute(0, 0, 1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupOutputRoute(1, 0, 1), SessionGraphError::OK);
+
+  std::vector<float> source0(BUFFER_SIZE, 0.25f);
+  std::vector<float> source1(BUFFER_SIZE, 0.5f);
+  const float* inputs[2] = {source0.data(), source1.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  ASSERT_EQ(snapshot.coherent, 1);
+  const auto linear = [](float db) { return std::pow(10.0f, db / 20.0f); };
+  EXPECT_NEAR(linear(snapshot.groups[0].lane_meters[0].peak_db), 0.25f, 0.001f);
+  EXPECT_NEAR(linear(snapshot.groups[1].lane_meters[0].peak_db), 0.5f, 0.001f);
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], 0.75f, 0.001f);
+  EXPECT_FLOAT_EQ(outputs[1][BUFFER_SIZE - 1], 0.0f);
+}
+
+TEST_F(RoutingMatrixTest, GroupOutputMeterFrameDistinguishesSilenceUnmeasuredAndUnconfigured) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  GroupOutputMeterSnapshot before;
+  matrix->copyGroupOutputMeterSnapshot(before);
+  EXPECT_EQ(before.availability, MeterAvailability::Unmeasured);
+  EXPECT_EQ(before.coherent, 0);
+
+  std::vector<float> input(BUFFER_SIZE, 0.0f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot silent;
+  matrix->copyGroupOutputMeterSnapshot(silent);
+  ASSERT_EQ(silent.availability, MeterAvailability::Measured);
+  ASSERT_EQ(silent.groups[0].availability, MeterAvailability::Measured);
+  EXPECT_EQ(silent.groups[0].lane_meters[0].peak_db, kAudioMeterSilenceDb);
+
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupOutputRoute(0, 0, 1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot narrower;
+  matrix->copyGroupOutputMeterSnapshot(narrower);
+  EXPECT_EQ(narrower.groups[0].logical_lane_count, 1);
+
+  config.enable_metering = false;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  GroupOutputMeterSnapshot disabled;
+  matrix->copyGroupOutputMeterSnapshot(disabled);
+  EXPECT_EQ(disabled.availability, MeterAvailability::Unmeasured);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  matrix->copyGroupOutputMeterSnapshot(disabled);
+  EXPECT_EQ(disabled.availability, MeterAvailability::Unmeasured);
+}
+
+TEST_F(RoutingMatrixTest, RoutingTopologyRevisionTracksChannelRouteChanges) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::vector<float> input(BUFFER_SIZE, 0.25f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot initial;
+  matrix->copyGroupOutputMeterSnapshot(initial);
+  ASSERT_EQ(initial.routing_topology_revision, 0u);
+
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 1), SessionGraphError::OK);
+  GroupOutputMeterSnapshot pending;
+  matrix->copyGroupOutputMeterSnapshot(pending);
+  EXPECT_EQ(pending.routing_topology_revision, initial.routing_topology_revision);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot applied;
+  matrix->copyGroupOutputMeterSnapshot(applied);
+  EXPECT_EQ(applied.routing_topology_revision, initial.routing_topology_revision + 1);
+  EXPECT_NEAR(outputs[1][BUFFER_SIZE - 1], 0.25f, 0.001f);
+}
+
+TEST_F(RoutingMatrixTest, TruePeakMeterStateResetsOnSilenceMuteAndTopologyChange) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.metering_mode = MeteringMode::TruePeak;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_clipping_protection = false;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::vector<float> input(BUFFER_SIZE, 0.0f);
+  input[0] = 1.2f;
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot clipped;
+  matrix->copyGroupOutputMeterSnapshot(clipped);
+  ASSERT_GT(clipped.groups[0].lane_meters[0].clip_count, 0u);
+  const uint32_t clipCount = clipped.groups[0].lane_meters[0].clip_count;
+
+  std::fill(input.begin(), input.end(), 0.0f);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot silent;
+  matrix->copyGroupOutputMeterSnapshot(silent);
+  EXPECT_EQ(silent.groups[0].lane_meters[0].peak_db, kAudioMeterSilenceDb);
+  EXPECT_EQ(silent.groups[0].lane_meters[0].clip_count, clipCount);
+
+  ASSERT_EQ(matrix->setChannelMute(0, true), SessionGraphError::OK);
+  input[0] = 1.2f;
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot muted;
+  matrix->copyGroupOutputMeterSnapshot(muted);
+  EXPECT_EQ(muted.groups[0].lane_meters[0].peak_db, kAudioMeterSilenceDb);
+  EXPECT_EQ(muted.groups[0].lane_meters[0].clip_count, clipCount);
+
+  ASSERT_EQ(matrix->setChannelMute(0, false), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot moved;
+  matrix->copyGroupOutputMeterSnapshot(moved);
+  EXPECT_EQ(moved.routing_topology_revision, clipped.routing_topology_revision + 1);
+  EXPECT_EQ(moved.groups[0].lane_meters[0].clip_count, clipCount);
+}
+
+TEST_F(RoutingMatrixTest, TruePeakImpulseProcessesTrailingZeros) {
+  const auto renderSecondBlockPeak = [](uint32_t firstBlockFrames) {
+    auto localMatrix = createRoutingMatrix();
+    RoutingConfig localConfig;
+    localConfig.num_channels = 1;
+    localConfig.num_groups = 1;
+    localConfig.num_outputs = 1;
+    localConfig.source_channel_policy = SourceChannelPolicy::Discrete;
+    localConfig.metering_mode = MeteringMode::TruePeak;
+    localConfig.gain_smoothing_ms = 0.0f;
+    localConfig.enable_clipping_protection = false;
+    EXPECT_EQ(localMatrix->initialize(localConfig), SessionGraphError::OK);
+
+    std::vector<float> first(firstBlockFrames, 0.0f);
+    first[0] = 1.0f;
+    const float* firstInputs[1] = {first.data()};
+    std::vector<float> output(firstBlockFrames, 0.0f);
+    float* firstOutputs[1] = {output.data()};
+    EXPECT_EQ(localMatrix->processRouting(firstInputs, firstOutputs, firstBlockFrames),
+              SessionGraphError::OK);
+
+    std::vector<float> second(1, 0.01f);
+    const float* secondInputs[1] = {second.data()};
+    std::vector<float> secondOutput(1, 0.0f);
+    float* secondOutputs[1] = {secondOutput.data()};
+    EXPECT_EQ(localMatrix->processRouting(secondInputs, secondOutputs, 1),
+              SessionGraphError::OK);
+    GroupOutputMeterSnapshot snapshot;
+    localMatrix->copyGroupOutputMeterSnapshot(snapshot);
+    return std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
+  };
+
+  const float peakAfterTrailingZeros = renderSecondBlockPeak(64);
+  const float peakWithHistory = renderSecondBlockPeak(1);
+  EXPECT_NEAR(peakAfterTrailingZeros, 0.01f, 0.001f);
+  EXPECT_GT(peakWithHistory, peakAfterTrailingZeros + 0.005f);
+}
+
+TEST_F(RoutingMatrixTest, NonFiniteRoutingSamplesPublishFiniteSilence) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::vector<float> input(BUFFER_SIZE, 0.0f);
+  input[0] = std::numeric_limits<float>::quiet_NaN();
+  input[1] = std::numeric_limits<float>::infinity();
+  input[2] = -std::numeric_limits<float>::infinity();
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE, 7.0f));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  for (const auto& output : outputs) {
+    for (float sample : output) {
+      EXPECT_TRUE(std::isfinite(sample));
+      EXPECT_FLOAT_EQ(sample, 0.0f);
+    }
+  }
+  const auto channelMeter = matrix->getChannelMeter(0);
+  EXPECT_TRUE(std::isfinite(channelMeter.peak_db));
+  EXPECT_TRUE(std::isfinite(channelMeter.rms_db));
+  EXPECT_EQ(channelMeter.peak_db, kAudioMeterSilenceDb);
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  EXPECT_TRUE(std::isfinite(snapshot.groups[0].lane_meters[0].peak_db));
+  EXPECT_EQ(snapshot.groups[0].lane_meters[0].peak_db, kAudioMeterSilenceDb);
+}
+
+TEST_F(RoutingMatrixTest, ConfigurationAndSnapshotValidationAreFailureAtomic) {
+  config.num_channels = 2;
+  config.num_groups = 2;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ChannelConfig valid;
+  valid.group_index = 0;
+  valid.output_channel = 0;
+  valid.gain_db = -3.0f;
+  valid.pan = 0.25f;
+  ASSERT_EQ(matrix->configureChannel(0, valid), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupGain(0, -4.0f), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setMasterGain(-2.0f), SessionGraphError::OK);
+  const auto before = matrix->saveSnapshot("before");
+  const auto controlsBefore = matrix->getRoutingControlSnapshot();
+
+  auto invalidChannel = valid;
+  invalidChannel.gain_db = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_EQ(matrix->configureChannel(0, invalidChannel),
+            SessionGraphError::InvalidParameter);
+  invalidChannel = valid;
+  invalidChannel.pan = std::numeric_limits<float>::infinity();
+  EXPECT_EQ(matrix->configureChannel(0, invalidChannel),
+            SessionGraphError::InvalidParameter);
+  const auto afterConfigure = matrix->saveSnapshot("after configure");
+  EXPECT_EQ(afterConfigure.channels[0].group_index, before.channels[0].group_index);
+  EXPECT_EQ(afterConfigure.channels[0].output_channel, before.channels[0].output_channel);
+  EXPECT_FLOAT_EQ(afterConfigure.channels[0].gain_db, before.channels[0].gain_db);
+  EXPECT_FLOAT_EQ(afterConfigure.channels[0].pan, before.channels[0].pan);
+
+  auto invalidSnapshot = before;
+  invalidSnapshot.channels[0].gain_db = std::numeric_limits<float>::infinity();
+  EXPECT_EQ(matrix->loadSnapshot(invalidSnapshot), SessionGraphError::InvalidParameter);
+  invalidSnapshot = before;
+  invalidSnapshot.groups[0].gain_db = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_EQ(matrix->loadSnapshot(invalidSnapshot), SessionGraphError::InvalidParameter);
+  invalidSnapshot = before;
+  invalidSnapshot.master_gain_db = -std::numeric_limits<float>::infinity();
+  EXPECT_EQ(matrix->loadSnapshot(invalidSnapshot), SessionGraphError::InvalidParameter);
+
+  const auto afterSnapshot = matrix->saveSnapshot("after snapshot");
+  const auto controlsAfter = matrix->getRoutingControlSnapshot();
+  EXPECT_EQ(controlsAfter.revision, controlsBefore.revision);
+  EXPECT_FLOAT_EQ(afterSnapshot.channels[0].gain_db, before.channels[0].gain_db);
+  EXPECT_FLOAT_EQ(afterSnapshot.groups[0].gain_db, before.groups[0].gain_db);
+  EXPECT_FLOAT_EQ(afterSnapshot.master_gain_db, before.master_gain_db);
+}
+
+TEST_F(RoutingMatrixTest, LufsModePreservesLegacyProxyAndLogicalSamplePeak) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.metering_mode = MeteringMode::LUFS;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_clipping_protection = false;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ChannelConfig channel;
+  channel.group_index = 0;
+  channel.output_channel = 0;
+  ASSERT_EQ(matrix->configureChannel(0, channel), SessionGraphError::OK);
+  std::vector<float> input(BUFFER_SIZE, 0.5f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  const AudioMeter legacy = matrix->getGroupMeter(0);
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  const float logicalPeak =
+      std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
+  EXPECT_EQ(snapshot.groups[0].peak_definition, MeterPeakDefinition::SamplePeak);
+  EXPECT_NEAR(logicalPeak, 0.5f, 0.001f);
+  EXPECT_LT(legacy.peak_db, snapshot.groups[0].lane_meters[0].peak_db);
 }
 
 // ============================================================================

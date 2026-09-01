@@ -60,6 +60,29 @@
 
 ---
 
+## ORP255 — Host-Neutral Multichannel Metering (2026-09-01)
+
+- **Branch:** `feat/orp255-host-neutral-multichannel-metering` in the isolated
+  `../orpheus-sdk-orp255-metering` worktree.
+- **Contract:** SDK 0.9.0 appends schema-3 `RealtimeTelemetrySnapshot.routing_meters`
+  and nested schema-1 fixed logical-group-output frames. Legacy aggregate
+  getters and fields remain, with routing LUFS explicitly labeled
+  `LegacyLufsProxy`.
+- **Routing implementation:** Packed atomic channel routes, matrix-wide
+  logical-lane publication seqlock, route/geometry generations, finite-control
+  rejection, non-finite sample sanitization, complete-slice true-peak history
+  handling, and cumulative clip counters.
+- **Evidence:** Focused routing 9/9, multichannel transport 5/5, realtime
+  telemetry 1/1, full routing 56/56, transport controller 17/17,
+  multichannel 10/10, and ThreadSanitizer
+  `HammerQueriesUnderConcurrentRender` passed with no warning after route-field
+  race correction. Release maximum-topology timing: sample peak 5554.38 us
+  (p99 5379.83 us, average 4911.39 us), true peak 7966.29 us
+  (p99 7700.29 us, average 7004.89 us) against a 10666.7 us budget.
+  full required Debug contract set 11/11 and complete configured suite 80/80
+  passed; package, static-audit, documentation, and manifest checks were
+  included. Record: `docs/orp/ORP255 Host-Neutral Multichannel Metering Contract.md`.
+
 ## ORP252 — Tagged Start Settlement Contract (2026-08-30)
 
 - **Public contract:** `StartRequestTag` now follows every tagged start through

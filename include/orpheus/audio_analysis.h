@@ -9,8 +9,9 @@
 //
 //  * FFT / STFT           — new in the SDK (iterative radix-2, power-of-two)
 //  * RMS / peak           — buffer statistics
-//  * Integrated LUFS      — WRAPS the existing LoudnessMeter (BS.1770-style
-//                           K-weighting); the facade does not re-implement it
+//  * Integrated LUFS      — wraps the existing LoudnessMeter (K-weighted
+//                           analysis modeled against BS.1770); the facade does
+//                           not re-implement it
 //  * Spectral centroid / rolloff — derived from the magnitude spectrum
 //  * Onset detection      — spectral-flux peak picking over the STFT
 //  * Waveform proxy       — min/max peaks for an IN-MEMORY buffer. For

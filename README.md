@@ -288,14 +288,17 @@ The Orpheus SDK provides deterministic session/transport control for professiona
 
 ### Routing & Mixing
 
-- **Routing matrix** – Professional N×M routing with solo/mute/metering (ORP109)
+- **Routing matrix** – Professional N×M routing with aggregate and logical
+  lane metering, solo/mute, and bounded schema-3 telemetry (ORP109, ORP255)
 - **Multi-channel** – Support for 2-32 channel configurations (ORP109)
 - **Clip Groups** – 4 Clip Groups → Master (simplified API for OCC)
 
 ### Performance & Diagnostics
 
 - **Performance monitoring** – Real-time CPU/latency/underrun tracking (ORP109)
-- **Real-time metering** – Peak/RMS/TruePeak/LUFS (ORP109)
+- **Routing-level metering** – Sample/RMS/SDK true-peak lanes plus the
+  retained legacy routing LUFS proxy; standalone K-weighted loudness analysis
+  is a separate control/offline facility (ORP255)
 - **Callback timing histogram** – Opt-in jitter profiling; disabled by default
   (`ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING=OFF`) and active only with an attached
   performance monitor
