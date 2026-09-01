@@ -64,6 +64,7 @@
 
 - **Branch:** `feat/orp255-host-neutral-multichannel-metering` in the isolated
   `../orpheus-sdk-orp255-metering` worktree.
+- **Implementation commit:** `24cce0b4861b3bdb72fbb310ac1784482fc86e94`.
 - **Contract:** SDK 0.9.0 appends schema-3 `RealtimeTelemetrySnapshot.routing_meters`
   and nested schema-1 fixed logical-group-output frames. Legacy aggregate
   getters and fields remain, with routing LUFS explicitly labeled

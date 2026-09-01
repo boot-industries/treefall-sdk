@@ -1,6 +1,6 @@
 # ORP255 Host-Neutral Multichannel Metering Contract
 
-**Status:** Implemented on `feat/orp255-host-neutral-multichannel-metering`; verification record maintained with this branch
+**Status:** Implementation committed at `24cce0b4861b3bdb72fbb310ac1784482fc86e94`; feature branch delivery pending
 **Date:** 2026-09-01
 **SDK:** 0.9.0; stable C ABI 1.0
 **Scope:** Host-neutral routing meters, bounded schema-3 telemetry, and C++ migration boundary
