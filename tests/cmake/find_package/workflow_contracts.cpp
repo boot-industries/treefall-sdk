@@ -10,10 +10,11 @@ static_assert(std::is_trivially_copyable_v<orpheus::GroupOutputMeterSnapshot>);
 static_assert(std::is_standard_layout_v<orpheus::GroupOutputMeterSnapshot>);
 static_assert(std::is_trivially_copyable_v<orpheus::RoutingMeterTelemetry>);
 static_assert(std::is_standard_layout_v<orpheus::RoutingMeterTelemetry>);
-static_assert(std::is_invocable_r_v<
-              bool, decltype(&orpheus::RealtimeTelemetry::publishFromRealtime),
-              orpheus::RealtimeTelemetry*,
-              const orpheus::RealtimeTelemetrySnapshot&>);
+using PublishFromRealtimeSignature =
+    bool (orpheus::RealtimeTelemetry::*)(const orpheus::RealtimeTelemetrySnapshot&) noexcept;
+static_assert(std::is_same_v<decltype(&orpheus::RealtimeTelemetry::publishFromRealtime),
+                             PublishFromRealtimeSignature>);
+
 
 int main() {
   orpheus::core::SessionGraph graph;

@@ -539,38 +539,71 @@ TEST_F(RealtimeHarnessTest, CallbackDurationWithinBudget) {
 }
 
 TEST_F(RealtimeHarnessTest, MaxTopologyTelemetryMeteringIsAllocationFree) {
-  TransportConfig config;
-  config.sampleRate = kSampleRate;
-  config.outputChannels = 32;
-  config.maxBlockFrames = static_cast<uint32_t>(kBufferFrames);
-  config.maxActiveVoices = 32;
-  config.maxSourceChannels = 8;
-  config.numGroups = 32;
-  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  constexpr RoutingChannelIndex kRoutingChannels = 256;
+  constexpr RoutingGroupIndex kRoutingGroups = 32;
+  constexpr RoutingOutputIndex kRoutingOutputs = 32;
 
-  auto transport = std::make_unique<TransportController>(nullptr, config);
-  std::vector<std::vector<float>> storage(
-      config.outputChannels, std::vector<float>(kBufferFrames, 0.0f));
-  std::vector<float*> buffers;
-  for (auto& lane : storage) {
-    buffers.push_back(lane.data());
+  RoutingConfig config;
+  config.num_channels = kRoutingChannels;
+  config.num_groups = kRoutingGroups;
+  config.num_outputs = kRoutingOutputs;
+  config.sample_rate = kSampleRate;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_metering = true;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.metering_mode = MeteringMode::TruePeak;
+
+  RoutingMatrix matrix;
+  ASSERT_EQ(matrix.initialize(config), SessionGraphError::OK);
+  for (RoutingChannelIndex channel = 0; channel < kRoutingChannels; ++channel) {
+    ASSERT_EQ(matrix.setChannelRoute(
+                  channel, static_cast<RoutingGroupIndex>(channel % kRoutingGroups),
+                  static_cast<RoutingOutputIndex>(channel % kRoutingOutputs)),
+              SessionGraphError::OK);
   }
-  auto* telemetry = transport->getRealtimeTelemetry();
-  ASSERT_NE(telemetry, nullptr);
-  telemetry->setDecimationBlocks(1);
-  transport->processAudio(buffers.data(), buffers.size(), kBufferFrames);
+
+  std::vector<std::vector<float>> inputs(
+      kRoutingChannels, std::vector<float>(kBufferFrames, 0.01f));
+  std::vector<const float*> inputPointers;
+  inputPointers.reserve(kRoutingChannels);
+  for (const auto& lane : inputs) {
+    inputPointers.push_back(lane.data());
+  }
+  std::vector<std::vector<float>> outputs(
+      kRoutingOutputs, std::vector<float>(kBufferFrames, 0.0f));
+  std::vector<float*> outputPointers;
+  outputPointers.reserve(kRoutingOutputs);
+  for (auto& lane : outputs) {
+    outputPointers.push_back(lane.data());
+  }
+
+  for (int warmup = 0; warmup < 4; ++warmup) {
+    ASSERT_EQ(matrix.processRouting(inputPointers.data(), outputPointers.data(), kBufferFrames),
+              SessionGraphError::OK);
+  }
+  GroupOutputMeterSnapshot snapshot;
+  matrix.copyGroupOutputMeterSnapshot(snapshot);
+  ASSERT_EQ(snapshot.coherent, 1);
+  ASSERT_EQ(snapshot.availability, MeterAvailability::Measured);
+  ASSERT_EQ(snapshot.groups[0].availability, MeterAvailability::Measured);
+
+  // The separate deadline gate covers 300 callbacks per mode. A repeated
+  // non-silent callback sample is sufficient to expose allocation in this path.
+  constexpr int kAllocationCallbacks = 16;
 
   RtGuardState::reset();
-  for (int callback = 0; callback < 300; ++callback) {
+  for (int callback = 0; callback < kAllocationCallbacks; ++callback) {
     RtSection section;
-    transport->processAudio(buffers.data(), buffers.size(), kBufferFrames);
+    ASSERT_EQ(matrix.processRouting(inputPointers.data(), outputPointers.data(), kBufferFrames),
+              SessionGraphError::OK);
   }
 
   EXPECT_EQ(RtGuardState::allocViolations(), 0u)
-      << "maximum topology metering allocated on the callback";
+      << "maximum-topology non-silent metering allocated on the callback";
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u)
-      << "maximum topology metering deallocated on the callback";
+      << "maximum-topology non-silent metering deallocated on the callback";
 }
+
 
 TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
   constexpr RoutingChannelIndex kRoutingChannels = 256;

@@ -69,20 +69,27 @@
   and nested schema-1 fixed logical-group-output frames. Legacy aggregate
   getters and fields remain, with routing LUFS explicitly labeled
   `LegacyLufsProxy`.
-- **Routing implementation:** Packed atomic channel routes, matrix-wide
-  logical-lane publication seqlock, route/geometry generations, finite-control
-  rejection, non-finite sample sanitization, complete-slice true-peak history
-  handling, and cumulative clip counters.
-- **Evidence:** Focused routing 9/9, multichannel transport 5/5, realtime
-  telemetry 1/1, full routing 56/56, transport controller 17/17,
-  multichannel 10/10, and ThreadSanitizer
-  `HammerQueriesUnderConcurrentRender` passed with no warning after route-field
-  race correction. Release maximum-topology timing: sample peak 5554.38 us
-  (p99 5379.83 us, average 4911.39 us), true peak 7966.29 us
-  (p99 7700.29 us, average 7004.89 us) against a 10666.7 us budget.
-  full required Debug contract set 11/11 and complete configured suite 80/80
-  passed; package, static-audit, documentation, and manifest checks were
-  included. Record: `docs/orp/ORP255 Host-Neutral Multichannel Metering Contract.md`.
+- **Routing implementation:** Packed atomic channel routes use a serialized
+  odd/even route-publication sequence; audio accepts only matching-even
+  before/after sequence observations with an unchanged generation. This
+  prevents concurrent route updates from publishing a mixed topology as
+  coherent and resets the rendered topology revision on reinitialization.
+- **Review remediation:** Exact `publishFromRealtime(const&) noexcept`
+  member-signature assertions now cover both in-tree and installed consumers;
+  the maximum-topology allocation gate drives non-silent true-peak lanes; the
+  TSan query harness asserts bounds on coherent meter snapshots; and ORP254 now
+  distinguishes its upstream Fine source from the current imported manifest.
+- **Follow-up evidence:** Routing 58/58, realtime diagnostics 10/10,
+  multichannel transport 10/10, transport controller 17/17, the installed
+  `cmake_find_package` fixture, and the non-silent maximum-topology allocation
+  test passed. ThreadSanitizer `HammerQueriesUnderConcurrentRender` passed with
+  no warning in 984 ms. Release maximum-topology timing: sample peak 5236.5 us
+  (p99 5163.04 us, average 4710.97 us), true peak 7111.5 us (p99 6954.04 us,
+  average 6575.28 us), against a 10666.7 us budget. The full configured Debug
+  CTest suite passed 80/80 in 341.21 seconds. Record:
+
+  `docs/orp/ORP255 Host-Neutral Multichannel Metering Contract.md`.
+
 
 ## ORP252 — Tagged Start Settlement Contract (2026-08-30)
 

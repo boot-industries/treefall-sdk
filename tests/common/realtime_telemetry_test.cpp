@@ -95,9 +95,11 @@ TEST(RealtimeTelemetryTest, ClampsDecimationAndPublishesUnderrunDiagnostics) {
 }
 
 TEST(RealtimeTelemetryTest, SlotSideSchemaStampingAndCanonicalAvailability) {
-  static_assert(std::is_invocable_r_v<
-                bool, decltype(&RealtimeTelemetry::publishFromRealtime),
-                RealtimeTelemetry*, const RealtimeTelemetrySnapshot&>);
+  using PublishFromRealtimeSignature =
+      bool (RealtimeTelemetry::*)(const RealtimeTelemetrySnapshot&) noexcept;
+  static_assert(std::is_same_v<decltype(&RealtimeTelemetry::publishFromRealtime),
+                               PublishFromRealtimeSignature>);
+
 
   RealtimeTelemetry telemetry(1);
   ASSERT_TRUE(telemetry.beginRealtimeBlock(64, 48000));

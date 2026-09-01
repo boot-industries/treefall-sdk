@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "../../include/orpheus/routing_matrix.h"
+#include "../../src/core/routing/gain_smoother.h"
+#include "../../src/core/routing/routing_matrix.h"
+
 
 #include <array>
 #include <atomic>
@@ -12,6 +15,27 @@
 #include <vector>
 
 using namespace orpheus;
+
+namespace orpheus {
+class RoutingMatrixTestAccess {
+public:
+  static void beginRoutePublication(RoutingMatrix& matrix) noexcept {
+    matrix.beginChannelRouteWrite();
+  }
+
+  static void publishRoute(RoutingMatrix& matrix, RoutingChannelIndex channel,
+                           RoutingGroupIndex group, RoutingOutputIndex lane) noexcept {
+    matrix.m_channels[channel].packed_route.store(detail::packRoutingRoute(group, lane),
+                                                  std::memory_order_release);
+    matrix.m_channel_route_generation.fetch_add(1, std::memory_order_release);
+  }
+
+  static void endRoutePublication(RoutingMatrix& matrix) noexcept {
+    matrix.endChannelRouteWrite();
+  }
+};
+} // namespace orpheus
+
 
 class RoutingMatrixTest : public ::testing::Test {
 protected:
@@ -1511,6 +1535,78 @@ TEST_F(RoutingMatrixTest, RoutingTopologyRevisionTracksChannelRouteChanges) {
   EXPECT_EQ(applied.routing_topology_revision, initial.routing_topology_revision + 1);
   EXPECT_NEAR(outputs[1][BUFFER_SIZE - 1], 0.25f, 0.001f);
 }
+
+TEST(RoutingMatrixTopologyPublicationTest, RejectsInProgressRoutePublication) {
+  RoutingMatrix matrix;
+  RoutingConfig config;
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix.initialize(config), SessionGraphError::OK);
+
+  std::vector<float> input(512, 0.25f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(512));
+  std::vector<float*> outputPointers = {outputs[0].data(), outputs[1].data()};
+  ASSERT_EQ(matrix.processRouting(inputs, outputPointers.data(), 512), SessionGraphError::OK);
+
+  GroupOutputMeterSnapshot initial;
+  matrix.copyGroupOutputMeterSnapshot(initial);
+  ASSERT_EQ(initial.coherent, 1);
+
+  RoutingMatrixTestAccess::beginRoutePublication(matrix);
+  RoutingMatrixTestAccess::publishRoute(matrix, 0, 0, 1);
+  ASSERT_EQ(matrix.processRouting(inputs, outputPointers.data(), 512), SessionGraphError::OK);
+  GroupOutputMeterSnapshot inProgress;
+  matrix.copyGroupOutputMeterSnapshot(inProgress);
+  EXPECT_EQ(inProgress.coherent, 0);
+  EXPECT_EQ(inProgress.availability, MeterAvailability::Unmeasured);
+  EXPECT_EQ(inProgress.routing_topology_revision, initial.routing_topology_revision);
+
+  RoutingMatrixTestAccess::endRoutePublication(matrix);
+  ASSERT_EQ(matrix.processRouting(inputs, outputPointers.data(), 512), SessionGraphError::OK);
+  GroupOutputMeterSnapshot applied;
+  matrix.copyGroupOutputMeterSnapshot(applied);
+  EXPECT_EQ(applied.coherent, 1);
+  EXPECT_EQ(applied.availability, MeterAvailability::Measured);
+  EXPECT_EQ(applied.routing_topology_revision, initial.routing_topology_revision + 1);
+  EXPECT_NEAR(outputs[1][511], 0.25f, 0.001f);
+}
+
+TEST_F(RoutingMatrixTest, RoutingTopologyRevisionResetsOnInitialize) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  std::vector<float> input(BUFFER_SIZE, 0.25f);
+  const float* inputs[1] = {input.data()};
+  std::vector<std::vector<float>> outputs(2, std::vector<float>(BUFFER_SIZE));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 1), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  GroupOutputMeterSnapshot beforeReinitialize;
+  matrix->copyGroupOutputMeterSnapshot(beforeReinitialize);
+  ASSERT_GT(beforeReinitialize.routing_topology_revision, 0u);
+
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+  GroupOutputMeterSnapshot reinitialized;
+  matrix->copyGroupOutputMeterSnapshot(reinitialized);
+  EXPECT_EQ(reinitialized.coherent, 1);
+  EXPECT_EQ(reinitialized.routing_topology_revision, 0u);
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], 0.25f, 0.001f);
+}
+
 
 TEST_F(RoutingMatrixTest, TruePeakMeterStateResetsOnSilenceMuteAndTopologyChange) {
   config.num_channels = 1;

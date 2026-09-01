@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CoreAudio now preserves the native `AudioOutputUnitStart` `OSStatus` in
   `AudioIoTelemetry::route_backend_error` while retaining the existing
   `InternalError` and `BackendFailure` route semantics.
+- Logical group-output topology now uses serialized odd/even route publication,
+  so an in-progress route transaction cannot label mixed meter state coherent;
+  reinitialization also clears the rendered topology revision.
 
 
 ### Added

@@ -14,6 +14,8 @@ namespace orpheus {
 
 // Forward declaration for gain smoother
 class GainSmoother;
+class RoutingMatrixTestAccess;
+
 
 namespace detail {
 constexpr uint32_t packRoutingRoute(RoutingGroupIndex group, RoutingOutputIndex lane) noexcept {
@@ -212,6 +214,8 @@ public:
   uint32_t maxBlockFrames() const override;
 
 private:
+  friend class RoutingMatrixTestAccess;
+
   // FTR028: Process a single slice of at most MAX_BUFFER_SIZE frames. The
   // public processRouting() loops over this for arbitrarily large blocks;
   // this stays allocation-free and lock-free (operates on pre-allocated
@@ -227,6 +231,11 @@ private:
 
   void updateSoloState(bool notifyCallback = true);
   void updatePanLaw(RoutingChannelIndex channel_index, float pan);
+  void beginChannelRouteWrite() noexcept;
+  void endChannelRouteWrite() noexcept;
+  void publishChannelRoute(ChannelState& channel, RoutingGroupIndex group,
+                           RoutingOutputIndex lane) noexcept;
+
   void beginGroupControlWrite() noexcept;
   void endGroupControlWrite() noexcept;
   bool validateGroupControlSnapshot(const RoutingControlSnapshot& snapshot) const noexcept;
@@ -275,6 +284,11 @@ private:
   std::atomic<uint8_t> m_group_output_meter_coherent{0};
 
   // Control-thread generation inputs and audio-thread rendered watermarks.
+  // One seqlock publication covers a complete channel-route transaction.
+  // Control writers serialize; the audio thread only observes and never waits.
+  std::atomic<uint64_t> m_channel_route_publication_sequence{0};
+  std::atomic<bool> m_channel_route_publication_in_progress{false};
+
   std::atomic<uint64_t> m_channel_route_generation{0};
   std::atomic<uint64_t> m_group_geometry_generation{0};
   uint64_t m_rendered_channel_route_generation{0};

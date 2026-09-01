@@ -44,17 +44,26 @@ is required for final platform evidence.
 ## ORP255 — Host-neutral multichannel metering
 
 **Date:** 2026-09-01
-**Status:** Implementation committed at `24cce0b4861b3bdb72fbb310ac1784482fc86e94`; verification complete; Debug contract set 11/11 and full configured suite 80/80 passed.
+**Status:** Review remediation complete; final Debug suite 80/80, package, TSan, and release deadline gates passed.
+
 
 - SDK 0.9.0 adds schema-3 canonical routing telemetry, nested schema-1 logical
-  group-output lanes, packed atomic route identity, generation-based coherent
-  publication, finite-input sanitization, and true-peak silence/history rules.
-- Legacy aggregate fields/getters remain with routing LUFS labeled
-  `LegacyLufsProxy`; C ABI remains 1.0 and all C++ consumers require a rebuild.
-- Focused routing, transport, telemetry, package, static-audit, documentation,
-  release deadline, and TSan gates passed. Final release maxima were 5554.38
-  us sample peak (p99 5379.83 us, average 4911.39 us) and 7966.29 us true
-  peak (p99 7700.29 us, average 7004.89 us) against a 10666.7 us budget.
+  group-output lanes, packed atomic route identity, finite-input sanitization,
+  and true-peak silence/history rules.
+- Route updates now serialize through an odd/even publication sequence. Audio
+  slices accept topology only when matching-even before/after observations and
+  the route generation agree; reinitialization clears the rendered revision.
+- Exact reference-signature contracts, non-silent maximum-topology allocation
+  coverage, coherent-snapshot TSan bounds, and corrected ORP254 manifest
+  provenance close the PR review findings.
+- Follow-up checks passed: routing 58/58, realtime diagnostics 10/10,
+  multichannel transport 10/10, transport controller 17/17,
+  `cmake_find_package`, the non-silent allocation gate, and ThreadSanitizer
+  `HammerQueriesUnderConcurrentRender` (984 ms, no warning). Final release
+  maxima were 5236.5 us sample peak (p99 5163.04 us, average 4710.97 us) and
+  7111.5 us true peak (p99 6954.04 us, average 6575.28 us), below the 10666.7
+  us budget. The full configured Debug CTest suite passed 80/80 in 341.21
+  seconds.
 - Full record: [`ORP255 Host-Neutral Multichannel Metering Contract`](docs/orp/ORP255%20Host-Neutral%20Multichannel%20Metering%20Contract.md).
 
 ## ORP253 — CoreAudio output-only rate recovery

@@ -18,14 +18,17 @@ single-value API unless they opt in.
 | Field | Value |
 | --- | --- |
 | Upstream repository | `shmui` |
-| Source revision | `a714344d93e8e84ddb1c194a500f26655cf73149` |
-| Governed content SHA-256 | `3bcf27228f873d410ec075fed1b1c4cd96d81793d5baaa05a3f35e8be967cfb9` |
+| Upstream Fine-segment source revision | `a714344d93e8e84ddb1c194a500f26655cf73149` |
+| Imported manifest source revision | `cd83c31b14535e0f6f5ae38327b5245d3a80ecdc` |
+| Governed content SHA-256 | `3741685e84433a3dfa4efebc1d930ef02f0b678f0b2cd162e6cb140022b273d9` |
 | Token-contract version | `0.6.0` |
 | Package target | `Orpheus::shmui_juce` |
 
-`packages/shmui-juce/shmui-juce-import.json` records this source identity and
-hash. The import was created only through ShmUI’s `scripts/sync-juce.sh`; no
-SDK package file was hand-patched.
+`packages/shmui-juce/shmui-juce-import.json` records the imported manifest
+identity and hash. The Fine-segment source revision is retained separately as
+its upstream provenance. The import was created only through ShmUI’s
+`scripts/sync-juce.sh`; no SDK package file was hand-patched.
+
 
 ## Package Contract
 
@@ -51,8 +54,8 @@ Observed in the adjacent SDK import worktree:
 ```text
 python3 tools/shmui_juce_manifest.py --sync
 python3 tools/shmui_juce_manifest.py --check
-# ShmUI-JUCE manifest is consistent: 58 files,
-# sha256 3bcf27228f873d410ec075fed1b1c4cd96d81793d5baaa05a3f35e8be967cfb9
+# ShmUI-JUCE manifest is consistent: 57 files,
+# sha256 3741685e84433a3dfa4efebc1d930ef02f0b678f0b2cd162e6cb140022b273d9
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
