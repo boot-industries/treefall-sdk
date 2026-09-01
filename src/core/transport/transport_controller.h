@@ -511,8 +511,7 @@ private:
   void collectRoutingMeters(uint32_t numFrames) noexcept;
   void markRoutingMetersUnmeasured() noexcept;
   void markLogicalGroupOutputUnmeasured() noexcept;
-  static void mergeAudioMeter(AudioMeter& accumulated,
-                              const AudioMeter& current) noexcept;
+  static void mergeAudioMeter(AudioMeter& accumulated, const AudioMeter& current) noexcept;
 
   /// Assert the documented single-control-thread producer contract.
   void assertCommandProducer() const noexcept;
