@@ -44,7 +44,7 @@ is required for final platform evidence.
 ## ORP255 — Host-neutral multichannel metering
 
 **Date:** 2026-09-01
-**Status:** Implementation and verification complete; Debug contract set 11/11 and full configured suite 80/80 passed.
+**Status:** Implementation committed at `24cce0b4861b3bdb72fbb310ac1784482fc86e94`; verification complete; Debug contract set 11/11 and full configured suite 80/80 passed.
 
 - SDK 0.9.0 adds schema-3 canonical routing telemetry, nested schema-1 logical
   group-output lanes, packed atomic route identity, generation-based coherent
