@@ -16,7 +16,6 @@ namespace orpheus {
 class GainSmoother;
 class RoutingMatrixTestAccess;
 
-
 namespace detail {
 constexpr uint32_t packRoutingRoute(RoutingGroupIndex group, RoutingOutputIndex lane) noexcept {
   return static_cast<uint32_t>(group) | (static_cast<uint32_t>(lane) << 16u);
@@ -54,10 +53,9 @@ struct ChannelState {
   ChannelState(ChannelState&& other) noexcept
       : packed_route(other.packed_route.load(std::memory_order_relaxed)),
         gain_smoother(std::move(other.gain_smoother)), pan_left(std::move(other.pan_left)),
-        pan_right(std::move(other.pan_right)),
-        peak_level(other.peak_level.load()), rms_level(other.rms_level.load()),
-        clip_count(other.clip_count.load()), true_peak_meters(std::move(other.true_peak_meters)),
-        config(std::move(other.config)) {}
+        pan_right(std::move(other.pan_right)), peak_level(other.peak_level.load()),
+        rms_level(other.rms_level.load()), clip_count(other.clip_count.load()),
+        true_peak_meters(std::move(other.true_peak_meters)), config(std::move(other.config)) {}
 
   // Default constructor
   ChannelState()
@@ -93,10 +91,8 @@ struct GroupState {
   std::array<TruePeakMeter, kRoutingMaxOutputs> lane_true_peak_meters{};
   std::atomic<RoutingOutputIndex> meter_output_start{0};
   std::atomic<uint16_t> meter_output_width{0};
-  std::atomic<uint8_t> meter_availability{
-      static_cast<uint8_t>(MeterAvailability::Unmeasured)};
-  std::atomic<uint8_t> meter_peak_definition{
-      static_cast<uint8_t>(MeterPeakDefinition::SamplePeak)};
+  std::atomic<uint8_t> meter_availability{static_cast<uint8_t>(MeterAvailability::Unmeasured)};
+  std::atomic<uint8_t> meter_peak_definition{static_cast<uint8_t>(MeterPeakDefinition::SamplePeak)};
   std::atomic<uint32_t> meter_raw_block_frames{0};
 
   // Configuration
@@ -133,7 +129,6 @@ struct GroupState {
   GroupState& operator=(const GroupState&) = delete;
   GroupState& operator=(GroupState&&) = delete;
 };
-
 
 /// Preallocated planar buffer for one logical group.
 struct MultichannelGroupBuffer {
@@ -199,8 +194,7 @@ public:
   AudioMeter getMasterMeter() const override;
   AudioMeter getOutputMeter(RoutingOutputIndex output_index) const override;
   RoutingControlSnapshot getRoutingControlSnapshot() const noexcept override;
-  void copyGroupOutputMeterSnapshot(
-      GroupOutputMeterSnapshot& destination) const noexcept override;
+  void copyGroupOutputMeterSnapshot(GroupOutputMeterSnapshot& destination) const noexcept override;
 
   // Snapshots
   RoutingSnapshot saveSnapshot(const std::string& name,
