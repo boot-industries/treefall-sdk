@@ -69,10 +69,11 @@ is required for final platform evidence.
   headers, ensuring their `NTSTATUS` and property-key definitions are
   available. These build-only corrections leave the public metering contract
   unchanged.
-- **Scope boundary:** The remaining hosted Windows failure—WASAPI property-key
-  definitions and session-test linkage—is present on `main` and outside ORP255.
-  Per delivery decision, this PR retains only the safe include-order corrections;
-  broader Windows baseline repair is a separate platform task.
+- **Scope boundary:** The remaining hosted Windows failures—WASAPI property-key
+  declarations and session-test linkage—are broader platform-baseline work
+  outside ORP255. Per delivery decision, this PR retains only the safe
+  include-order corrections; platform repair is a separate task.
+
 
 
 
