@@ -41,6 +41,22 @@ is required for final platform evidence.
   the generated `.exe` from its configuration directory. The Windows CTest
   step now allows 15 minutes for the multi-config package gates.
 
+## ORP255 — Host-neutral multichannel metering
+
+**Date:** 2026-09-01
+**Status:** Implementation and verification complete; Debug contract set 11/11 and full configured suite 80/80 passed.
+
+- SDK 0.9.0 adds schema-3 canonical routing telemetry, nested schema-1 logical
+  group-output lanes, packed atomic route identity, generation-based coherent
+  publication, finite-input sanitization, and true-peak silence/history rules.
+- Legacy aggregate fields/getters remain with routing LUFS labeled
+  `LegacyLufsProxy`; C ABI remains 1.0 and all C++ consumers require a rebuild.
+- Focused routing, transport, telemetry, package, static-audit, documentation,
+  release deadline, and TSan gates passed. Final release maxima were 5554.38
+  us sample peak (p99 5379.83 us, average 4911.39 us) and 7966.29 us true
+  peak (p99 7700.29 us, average 7004.89 us) against a 10666.7 us budget.
+- Full record: [`ORP255 Host-Neutral Multichannel Metering Contract`](docs/orp/ORP255%20Host-Neutral%20Multichannel%20Metering%20Contract.md).
+
 ## ORP253 — CoreAudio output-only rate recovery
 
 **Date:** 2026-08-31  

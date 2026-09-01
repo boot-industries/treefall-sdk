@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ORP121 Q-04: True-Peak Metering (ITU-R BS.1770-4)
+// ORP121 Q-04: True-Peak Metering Estimator
 #pragma once
 
 #include <array>
@@ -8,19 +8,16 @@
 
 namespace orpheus {
 
-/// ITU-R BS.1770-4 compliant true-peak meter
+/// SDK true-peak estimator modeled against ITU-R BS.1770-4 terminology.
 ///
-/// True-peak detection requires oversampling to catch inter-sample peaks
-/// that can cause clipping in downstream D/A converters. This implementation
-/// uses 4x oversampling with a 48-tap polyphase FIR interpolation filter.
+/// This estimator uses 4x oversampling to expose inter-sample peaks that can
+/// cause clipping in downstream D/A converters. It is not a standalone claim
+/// of standards conformance.
 ///
-/// Key specifications:
+/// Configuration:
 /// - 4x oversampling factor
 /// - 12-tap polyphase filter per phase (48 total coefficients)
-/// - Detects inter-sample peaks with ~0.1 dB accuracy
-/// - Zero-latency output (reports peak for each input sample)
-///
-/// Reference: ITU-R BS.1770-4, Section 2.3 "Measurement of true-peak audio level"
+/// - Zero allocation and bounded work per input sample
 class TruePeakMeter {
 public:
   static constexpr int OVERSAMPLE_FACTOR = 4;
@@ -74,10 +71,9 @@ public:
 private:
   std::array<float, TAPS_PER_PHASE> m_history{};
 
-  // ITU-R BS.1770-4 polyphase FIR filter coefficients
-  // 4 phases × 12 taps = 48 coefficients
-  // These coefficients are derived from a windowed sinc function
-  // optimized for 4x interpolation per the ITU-R recommendation
+  // SDK polyphase FIR filter coefficients.
+  // 4 phases × 12 taps = 48 coefficients.
+  // These windowed-sinc coefficients are selected for the SDK's 4x estimator.
   //
   // Phase 0: Samples at original positions (identity + filtering)
   // Phase 1: Samples at 1/4 offset

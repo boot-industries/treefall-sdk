@@ -25,6 +25,8 @@
 #include "../support/rt_guard.hpp"
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../../src/core/routing/gain_smoother.h"
+#include "../../src/core/routing/routing_matrix.h"
 
 #include <atomic>
 #include <chrono>
@@ -534,6 +536,143 @@ TEST_F(RealtimeHarnessTest, CallbackDurationWithinBudget) {
   } else {
     std::cout << "  - duration bound skipped under sanitizer\n";
   }
+}
+
+TEST_F(RealtimeHarnessTest, MaxTopologyTelemetryMeteringIsAllocationFree) {
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 32;
+  config.maxBlockFrames = static_cast<uint32_t>(kBufferFrames);
+  config.maxActiveVoices = 32;
+  config.maxSourceChannels = 8;
+  config.numGroups = 32;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  std::vector<std::vector<float>> storage(
+      config.outputChannels, std::vector<float>(kBufferFrames, 0.0f));
+  std::vector<float*> buffers;
+  for (auto& lane : storage) {
+    buffers.push_back(lane.data());
+  }
+  auto* telemetry = transport->getRealtimeTelemetry();
+  ASSERT_NE(telemetry, nullptr);
+  telemetry->setDecimationBlocks(1);
+  transport->processAudio(buffers.data(), buffers.size(), kBufferFrames);
+
+  RtGuardState::reset();
+  for (int callback = 0; callback < 300; ++callback) {
+    RtSection section;
+    transport->processAudio(buffers.data(), buffers.size(), kBufferFrames);
+  }
+
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u)
+      << "maximum topology metering allocated on the callback";
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u)
+      << "maximum topology metering deallocated on the callback";
+}
+
+TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
+  constexpr RoutingChannelIndex kRoutingChannels = 256;
+  constexpr RoutingGroupIndex kRoutingGroups = 32;
+  constexpr RoutingOutputIndex kRoutingOutputs = 32;
+  constexpr int kCallbacks = 300;
+
+  RoutingConfig config;
+  config.num_channels = kRoutingChannels;
+  config.num_groups = kRoutingGroups;
+  config.num_outputs = kRoutingOutputs;
+  config.sample_rate = kSampleRate;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_metering = true;
+  config.enable_clipping_protection = false;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+
+  std::vector<std::vector<float>> inputs(
+      kRoutingChannels, std::vector<float>(kBufferFrames, 0.01f));
+  std::vector<const float*> inputPointers;
+  inputPointers.reserve(kRoutingChannels);
+  for (const auto& lane : inputs) {
+    inputPointers.push_back(lane.data());
+  }
+  std::vector<std::vector<float>> outputs(
+      kRoutingOutputs, std::vector<float>(kBufferFrames, 0.0f));
+  std::vector<float*> outputPointers;
+  outputPointers.reserve(kRoutingOutputs);
+  for (auto& lane : outputs) {
+    outputPointers.push_back(lane.data());
+  }
+
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  constexpr bool kUnderSanitizer = true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+  constexpr bool kUnderSanitizer = true;
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+#else
+  constexpr bool kUnderSanitizer = false;
+#endif
+
+  const auto runMode = [&](MeteringMode mode, const char* label) {
+    config.metering_mode = mode;
+    RoutingMatrix matrix;
+    ASSERT_EQ(matrix.initialize(config), SessionGraphError::OK);
+    for (RoutingChannelIndex channel = 0; channel < kRoutingChannels; ++channel) {
+      ASSERT_EQ(matrix.setChannelRoute(
+                    channel, static_cast<RoutingGroupIndex>(channel / 8),
+                    static_cast<RoutingOutputIndex>(channel % 8)),
+                SessionGraphError::OK);
+    }
+    for (int warmup = 0; warmup < 4; ++warmup) {
+      ASSERT_EQ(matrix.processRouting(inputPointers.data(), outputPointers.data(),
+                                      kBufferFrames),
+                SessionGraphError::OK);
+    }
+
+    std::vector<double> durations;
+    durations.reserve(kCallbacks);
+    RtGuardState::reset();
+    for (int callback = 0; callback < kCallbacks; ++callback) {
+      const auto start = std::chrono::steady_clock::now();
+      {
+        RtSection section;
+        ASSERT_EQ(matrix.processRouting(inputPointers.data(), outputPointers.data(),
+                                        kBufferFrames),
+                  SessionGraphError::OK);
+      }
+      const auto end = std::chrono::steady_clock::now();
+      durations.push_back(
+          std::chrono::duration<double, std::micro>(end - start).count());
+    }
+
+    std::sort(durations.begin(), durations.end());
+    double total = 0.0;
+    for (double duration : durations) {
+      total += duration;
+    }
+    const double average = total / static_cast<double>(durations.size());
+    const double p99 = durations[(durations.size() * 99) / 100];
+    const double maximum = durations.back();
+    const double budget =
+        (static_cast<double>(kBufferFrames) * 1'000'000.0) / kSampleRate;
+    std::cout << "[RT Harness] max topology " << label << ": avg " << average
+              << " us, p99 " << p99 << " us, max " << maximum
+              << " us, budget " << budget << " us\n";
+    EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+    EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+#if defined(NDEBUG)
+    if (!kUnderSanitizer) {
+      EXPECT_LT(maximum, budget)
+          << label << " exceeded the 512-frame/48 kHz callback budget";
+    }
+#endif
+  };
+
+  runMode(MeteringMode::Peak, "sample-peak");
+  runMode(MeteringMode::TruePeak, "true-peak");
 }
 
 int main(int argc, char** argv) {

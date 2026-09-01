@@ -48,8 +48,10 @@ constexpr uint32_t kRoutingSliceFrames = 2048;
 
 /// Fixed public capacity for coherent group-control snapshots.
 constexpr size_t kRoutingControlMaxGroups = 32;
-/// Maximum physical output lanes exposed by routing and telemetry.
+/// Maximum routing output lanes exposed by routing and telemetry.
 constexpr size_t kRoutingMaxOutputs = 32;
+/// Encoded exact silence for all public meter dB fields.
+inline constexpr float kAudioMeterSilenceDb = -100.0f;
 
 /// Schema version for RoutingControlSnapshot.
 constexpr uint32_t kRoutingControlSnapshotSchemaVersion = 1;
@@ -73,12 +75,13 @@ enum class SoloMode : uint8_t {
   Destructive = 3
 };
 
-/// Metering mode for audio level detection
+/// Metering algorithm used by legacy aggregate getters and logical lanes.
 enum class MeteringMode : uint8_t {
-  Peak = 0,     ///< Peak hold (fastest, most responsive)
+  Peak = 0,     ///< Sample peak (fastest, most responsive)
   RMS = 1,      ///< Root-mean-square (average energy)
-  TruePeak = 2, ///< ITU-R BS.1770 true peak (oversampled)
-  LUFS = 3      ///< Loudness Units Full Scale (broadcast standard)
+  TruePeak = 2, ///< SDK 4x true-peak estimator
+  /// Legacy routing proxy retained for compatibility; not integrated loudness.
+  LUFS = 3
 };
 
 /// ORP121 Q-05: Headroom management mode for automatic gain compensation
@@ -117,11 +120,14 @@ enum class DownmixPolicy : uint8_t {
   EqualPower = 2
 };
 
-/// Channel strip configuration (like a console channel)
+/// Channel strip configuration (like a console channel).
+///
+/// output_channel is a group-local logical output lane. It is not a device
+/// destination; drivers map routing outputs through their output-channel map.
 struct ChannelConfig {
   std::string name;                  ///< Human-readable channel name
   RoutingGroupIndex group_index;     ///< Assigned group, or UNASSIGNED_GROUP
-  RoutingOutputIndex output_channel; ///< Discrete destination within the group bus
+  RoutingOutputIndex output_channel; ///< Logical lane within the assigned group
   float gain_db;                     ///< Channel gain in dB (-inf to +12 dB)
   float pan;      ///< Pan position (-1.0 = hard left, 0.0 = center, +1.0 = hard right)
   bool mute;      ///< Mute flag
@@ -134,14 +140,18 @@ struct ChannelConfig {
         solo(false), color(0xFFFFFFFF) {}
 };
 
-/// Group (bus) configuration (like a console subgroup)
+/// Group (bus) configuration (like a console subgroup).
+///
+/// output_start/output_width identify a contiguous range of routing-matrix
+/// output lanes. They are not device-physical destinations; drivers later map
+/// routing outputs through AudioOutputRouteRequest::output_channel_map.
 struct GroupConfig {
   std::string name;                ///< Group name (e.g., "Drums", "Music", "SFX", "Dialogue")
   float gain_db;                   ///< Group gain in dB (-inf to +12 dB)
   bool mute;                       ///< Mute flag
   bool solo;                       ///< Solo flag (groups can be solo'd too)
-  RoutingOutputIndex output_start; ///< First physical output for this logical bus
-  uint16_t output_width;           ///< Number of routed channels in this bus
+  RoutingOutputIndex output_start; ///< First logical routing output lane
+  uint16_t output_width;           ///< Number of logical routing output lanes
   uint32_t color;                  ///< UI color hint (RGBA)
 
   /// Default constructor
@@ -214,15 +224,81 @@ struct RoutingConfig {
         downmix_policy(DownmixPolicy::ITU_BS775_3) {}
 };
 
-/// Audio level meters (per-channel or per-group)
+/// Audio level meter (per-channel, aggregate, or routing output).
+///
+/// Values are dBFS-like linear amplitude encodings. Peak and RMS may exceed
+/// 0 dBFS before clipping protection. A clip_count is cumulative from
+/// initialize(): one increment is published for each internal
+/// processRoutingBlock() slice containing one or more threshold-crossing
+/// samples. clipping is latched while clip_count is nonzero. IRoutingMatrix::reset()
+/// does not clear meter counters. Exact silence is encoded as
+/// kAudioMeterSilenceDb. Legacy LUFS retains its historical proxy value.
 struct AudioMeter {
-  float peak_db;       ///< Peak level in dBFS (-inf to 0.0)
-  float rms_db;        ///< RMS level in dBFS (-inf to 0.0)
-  bool clipping;       ///< Clipping detected flag
-  uint32_t clip_count; ///< Number of samples clipped since reset
+  float peak_db;
+  float rms_db;
+  bool clipping;
+  uint32_t clip_count;
 
-  AudioMeter() : peak_db(-100.0f), rms_db(-100.0f), clipping(false), clip_count(0) {}
+  AudioMeter()
+      : peak_db(kAudioMeterSilenceDb), rms_db(kAudioMeterSilenceDb), clipping(false), clip_count(0) {}
 };
+
+inline constexpr uint32_t kGroupOutputMeterSnapshotSchemaVersion = 1;
+
+/// Availability of one metering domain or logical lane.
+enum class MeterAvailability : uint8_t {
+  Unsupported = 0,
+  Unconfigured = 1,
+  Unmeasured = 2,
+  Measured = 3,
+};
+
+/// Peak definition carried by a meter payload.
+enum class MeterPeakDefinition : uint8_t {
+  SamplePeak = 0,
+  TruePeak4x = 1,
+  LegacyLufsProxy = 2,
+};
+
+/// One logical group's fixed-capacity output-lane meter frame.
+///
+/// groups[g].lane_meters[l] is logical lane l of RoutingGroupIndex g. Only
+/// l < logical_lane_count is configured; its routing-matrix output lane is
+/// routing_output_start + l. routing_output_start is not a device-physical
+/// channel index. raw_block_frames is the most recent completed internal
+/// processRoutingBlock() slice, never an accumulated telemetry window.
+struct GroupOutputMeterFrame {
+  RoutingOutputIndex routing_output_start{0};
+  uint16_t logical_lane_count{0};
+  MeterAvailability availability{MeterAvailability::Unconfigured};
+  MeterPeakDefinition peak_definition{MeterPeakDefinition::SamplePeak};
+  uint32_t raw_block_frames{0};
+  std::array<AudioMeter, kRoutingMaxOutputs> lane_meters{};
+};
+
+/// Fixed-capacity coherent publication of all logical-group output lanes.
+///
+/// groups[g] is RoutingGroupIndex g. A configured lane with Measured and
+/// kAudioMeterSilenceDb is measured silence. Lanes outside logical_lane_count
+/// are Unconfigured. Unmeasured means metering is disabled, a render has not
+/// completed, or a render/topology publication was rejected. Unsupported is
+/// the default for an implementation that does not implement this extension.
+struct GroupOutputMeterSnapshot {
+  uint32_t schema_version{kGroupOutputMeterSnapshotSchemaVersion};
+  uint8_t coherent{0};
+  MeterAvailability availability{MeterAvailability::Unsupported};
+  RoutingGroupIndex group_count{0};
+  uint64_t render_sequence{0};
+  uint64_t routing_topology_revision{0};
+  std::array<GroupOutputMeterFrame, kRoutingControlMaxGroups> groups{};
+};
+
+static_assert(std::is_trivially_copyable_v<AudioMeter>);
+static_assert(std::is_standard_layout_v<AudioMeter>);
+static_assert(std::is_trivially_copyable_v<GroupOutputMeterFrame>);
+static_assert(std::is_standard_layout_v<GroupOutputMeterFrame>);
+static_assert(std::is_trivially_copyable_v<GroupOutputMeterSnapshot>);
+static_assert(std::is_standard_layout_v<GroupOutputMeterSnapshot>);
 
 /// Optional caller-supplied provenance for a routing snapshot. Neither field
 /// participates in deterministic routing identity or render hashes.
@@ -260,11 +336,10 @@ struct RoutingSnapshot {
 /// - Yamaha CL/QL: Scene memory, smooth parameter changes
 ///
 /// Key Features:
-/// - Up to 64 channels → 16 groups → 32 outputs
+/// - Up to 256 source channels → 32 logical groups → 32 routing outputs
 /// - Multiple solo modes (SIP, AFL, PFL, Destructive)
 /// - Per-channel and per-group gain with smoothing (click-free)
-/// - Real-time metering (Peak/RMS/TruePeak/LUFS)
-/// - Snapshot/preset system for instant recall
+/// - Real-time metering (sample peak/RMS/SDK true-peak plus legacy LUFS proxy)
 /// - Lock-free audio thread (UI updates never block audio)
 /// - Clipping protection (soft-clip before 0 dBFS)
 /// - Broadcast-safe (zero allocations in audio thread)
@@ -326,8 +401,11 @@ public:
   virtual SessionGraphError setChannelGroup(RoutingChannelIndex channel_index,
                                             RoutingGroupIndex group_index) = 0;
 
-  /// Atomically assign one source lane to a logical bus and hardware output.
-  /// Audio-thread-safe: updates fixed-capacity POD routing state only.
+  /// Atomically assign one source lane to a logical bus and group-local
+  /// logical output lane. The lane is not a hardware destination; drivers map
+  /// routing outputs through AudioOutputRouteRequest::output_channel_map.
+  /// Under SourceChannelPolicy::Discrete, a lane outside the group's rendered
+  /// width contributes no signal and remains Unconfigured in the group frame.
   virtual SessionGraphError setChannelRoute(RoutingChannelIndex channel_index,
                                             RoutingGroupIndex group_index,
                                             RoutingOutputIndex output_index) = 0;
@@ -396,7 +474,7 @@ public:
   virtual SessionGraphError configureGroup(RoutingGroupIndex group_index,
                                            const GroupConfig& config) = 0;
 
-  /// Atomically route a logical group bus to a contiguous physical output range.
+  /// Atomically route a logical group bus to a contiguous routing-output range.
   virtual SessionGraphError setGroupOutputRoute(RoutingGroupIndex group_index,
                                                 RoutingOutputIndex output_start,
                                                 uint16_t output_width) = 0;
@@ -454,21 +532,28 @@ public:
   /// effective channel-solo logic, but before unrelated channels are summed
   /// and before group or master processing. Stereo peak is the maximum lane
   /// peak; RMS is the square root of the mean power across both lanes. A null,
-  /// unrouted, or effectively muted channel publishes silence in the current
-  /// processRouting() call. clip_count remains cumulative until reset.
+  /// unrouted, or effectively muted channel publishes exact silence in the
+  /// current processRouting() call. clip_count remains cumulative until the
+  /// next initialize(). Legacy LUFS returns its historical proxy value.
+  /// Non-finite input/control values are sanitized or rejected as documented.
   /// @param channel_index Channel index [0, num_channels)
   /// @return Isolated channel meter (peak, RMS, clipping)
   virtual AudioMeter getChannelMeter(RoutingChannelIndex channel_index) const = 0;
 
-  /// Get group meter
+  /// Get legacy aggregate group meter before group controls.
+  /// Values retain the legacy signal point and LUFS proxy behavior.
   /// @param group_index Group index [0, num_groups)
   /// @return Audio meter
   virtual AudioMeter getGroupMeter(RoutingGroupIndex group_index) const = 0;
-  /// Get one physical output lane's post-master, post-protection meter.
-  /// Invalid or unconfigured output indices return silence.
+
+  /// Get one routing-matrix output lane's post-master, post-protection meter.
+  /// This is a routing output, not a device-physical channel before driver
+  /// mapping. Invalid or unconfigured output indices return exact silence.
+  /// Its peak definition is the existing true-peak estimator.
   virtual AudioMeter getOutputMeter(RoutingOutputIndex output_index) const = 0;
 
-  /// Get master meter
+  /// Get legacy aggregate master meter after master gain/mute and before
+  /// protection. Its LUFS value remains the historical proxy.
   /// @return Audio meter
   virtual AudioMeter getMasterMeter() const = 0;
 
@@ -532,6 +617,17 @@ public:
   ///
   /// @return Slice size in frames (kRoutingSliceFrames)
   virtual uint32_t maxBlockFrames() const = 0;
+
+  /// Copy the optional coherent logical-group output meter publication.
+  ///
+  /// Implementations that do not provide this extension return the truthful
+  /// Unsupported default. Implemented concurrent publications may return
+  /// coherent == 0 and should be retried by the caller when availability is
+  /// not Unsupported.
+  virtual void copyGroupOutputMeterSnapshot(
+      GroupOutputMeterSnapshot& destination) const noexcept {
+    destination = {};
+  }
 };
 
 // ============================================================================
@@ -557,7 +653,8 @@ public:
   /// @param active True if any channel/group is solo'd
   virtual void onSoloStateChanged(bool active) = 0;
 
-  /// Called when clipping detected
+  /// RoutingMatrix does not emit this callback. Hosts observe clipping through
+  /// AudioMeter and realtime telemetry instead.
   /// @param channel_index Channel that clipped (UNASSIGNED_GROUP for master)
   /// @param peak_db Peak level in dBFS
   virtual void onClippingDetected(RoutingChannelIndex channel_index, float peak_db) = 0;

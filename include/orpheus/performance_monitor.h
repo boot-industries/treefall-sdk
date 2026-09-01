@@ -29,10 +29,11 @@ struct PerformanceMetrics {
   double uptimeSeconds;           ///< Time since audio thread started
 };
 
-/// Performance monitor for diagnostics and metering
+/// Performance monitor for realtime diagnostics.
 ///
-/// This interface provides real-time performance monitoring for the audio engine.
-/// All methods are thread-safe and designed to be called from the UI thread.
+/// This interface provides real-time CPU, callback, and underrun diagnostics
+/// for the audio engine. Audio-level metering is owned by the routing contract,
+/// not this diagnostics interface.
 ///
 /// Thread Safety:
 /// - All query methods are thread-safe (atomic reads from audio thread state)

@@ -411,6 +411,7 @@ public:
                                         int64_t currentSample) noexcept;
 
 private:
+  friend class TransportControllerTestAccess;
   /// Derive seconds/beats from the sample-canonical coordinate and current
   /// block-boundary tempo snapshot.
   TransportPosition positionAtSamples(int64_t samples) const;
@@ -505,6 +506,13 @@ private:
   /// Publish a coherent per-handle aggregate of all surviving voices.
   /// Audio-thread only; fixed work bounded by the configured 32-voice ceiling.
   void publishVoiceSnapshot() noexcept;
+
+  /// Capture canonical routing metering from the completed routing render.
+  void collectRoutingMeters(uint32_t numFrames) noexcept;
+  void markRoutingMetersUnmeasured() noexcept;
+  void markLogicalGroupOutputUnmeasured() noexcept;
+  static void mergeAudioMeter(AudioMeter& accumulated,
+                              const AudioMeter& current) noexcept;
 
   /// Assert the documented single-control-thread producer contract.
   void assertCommandProducer() const noexcept;
@@ -748,6 +756,12 @@ private:
   void releasePendingSeekReservations() noexcept;
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
+
+  // Audio-thread-owned routing-meter scratch and pending canonical frame.
+  GroupOutputMeterSnapshot m_groupOutputMeterScratch{};
+  RoutingMeterTelemetry m_routingMeterAccumulator{};
+  bool m_routingMeterAccumulatorValid{false};
+  RealtimeTelemetrySnapshot m_realtimeTelemetrySnapshot{};
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;
   std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS> m_groupOutputStarts{};

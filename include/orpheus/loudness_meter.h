@@ -11,11 +11,12 @@
 
 namespace orpheus {
 
-/// Lightweight BS.1770-style loudness meter for stereo or mono streams.
+/// Lightweight K-weighted loudness meter for stereo or mono streams.
 ///
-/// This meter applies K-weighting, maintains a 3 s short-term window, and
-/// accumulates overlapping 400 ms blocks for integrated loudness with
-/// absolute/relative gating.
+/// This control/offline facility maintains a 3 s short-term window and
+/// accumulates overlapping 400 ms blocks with absolute/relative gating. Its
+/// terminology is modeled against BS.1770; it is not a standalone
+/// standards-conformance implementation.
 class LoudnessMeter {
 public:
   static constexpr float kSilenceLufs = -100.0f;

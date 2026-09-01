@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <limits>
+#include <type_traits>
 using namespace orpheus;
 
 TEST(RealtimeTelemetryTest, CapturesAtExactBlockCadence) {
@@ -91,6 +92,27 @@ TEST(RealtimeTelemetryTest, ClampsDecimationAndPublishesUnderrunDiagnostics) {
   ASSERT_TRUE(telemetry.tryRead(output));
   EXPECT_EQ(output.schema_version, kRealtimeTelemetrySchemaVersion);
   EXPECT_EQ(output.diagnostics.underrun_count, 1u);
+}
+
+TEST(RealtimeTelemetryTest, SlotSideSchemaStampingAndCanonicalAvailability) {
+  static_assert(std::is_invocable_r_v<
+                bool, decltype(&RealtimeTelemetry::publishFromRealtime),
+                RealtimeTelemetry*, const RealtimeTelemetrySnapshot&>);
+
+  RealtimeTelemetry telemetry(1);
+  ASSERT_TRUE(telemetry.beginRealtimeBlock(64, 48000));
+  const RealtimeTelemetrySnapshot input{};
+  ASSERT_TRUE(telemetry.publishFromRealtime(input));
+
+  RealtimeTelemetrySnapshot output;
+  ASSERT_TRUE(telemetry.tryRead(output));
+  EXPECT_EQ(output.schema_version, kRealtimeTelemetrySchemaVersion);
+  EXPECT_EQ(output.routing_meters.schema_version,
+            kRoutingMeterTelemetrySchemaVersion);
+  EXPECT_EQ(output.routing_meters.group_output_meters.schema_version,
+            kGroupOutputMeterSnapshotSchemaVersion);
+  EXPECT_EQ(output.routing_meters.availability, MeterAvailability::Unsupported);
+  EXPECT_FALSE(telemetry.tryRead(output));
 }
 
 

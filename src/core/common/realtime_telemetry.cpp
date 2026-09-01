@@ -28,19 +28,25 @@ void RealtimeTelemetry::reportUnderrunFromRealtime() noexcept {
   diagnostics_.reportUnderrun();
 }
 
-bool RealtimeTelemetry::publishFromRealtime(RealtimeTelemetrySnapshot snapshot) noexcept {
-  snapshot.sequence = next_sequence_;
-  next_sequence_ = detail::saturatingIncrement(next_sequence_);
-  snapshot.diagnostics = diagnostics_.snapshot();
-
+bool RealtimeTelemetry::publishFromRealtime(
+    const RealtimeTelemetrySnapshot& snapshot) noexcept {
   const uint64_t writeIndex = write_index_.load(std::memory_order_relaxed);
   const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
+  const uint64_t sequence = next_sequence_;
+  next_sequence_ = detail::saturatingIncrement(next_sequence_);
   if ((writeIndex - readIndex) >= kRealtimeTelemetryCapacity) {
     detail::publishSaturatingIncrement(dropped_snapshot_count_);
     return false;
   }
 
-  snapshots_[writeIndex % kRealtimeTelemetryCapacity] = snapshot;
+  RealtimeTelemetrySnapshot& slot = snapshots_[writeIndex % kRealtimeTelemetryCapacity];
+  slot = snapshot;
+  slot.sequence = sequence;
+  slot.diagnostics = diagnostics_.snapshot();
+  slot.schema_version = kRealtimeTelemetrySchemaVersion;
+  slot.routing_meters.schema_version = kRoutingMeterTelemetrySchemaVersion;
+  slot.routing_meters.group_output_meters.schema_version =
+      kGroupOutputMeterSnapshotSchemaVersion;
   write_index_.store(writeIndex + 1, std::memory_order_release);
   return true;
 }
