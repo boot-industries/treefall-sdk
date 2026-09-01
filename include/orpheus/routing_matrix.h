@@ -240,7 +240,8 @@ struct AudioMeter {
   uint32_t clip_count;
 
   AudioMeter()
-      : peak_db(kAudioMeterSilenceDb), rms_db(kAudioMeterSilenceDb), clipping(false), clip_count(0) {}
+      : peak_db(kAudioMeterSilenceDb), rms_db(kAudioMeterSilenceDb), clipping(false),
+        clip_count(0) {}
 };
 
 inline constexpr uint32_t kGroupOutputMeterSnapshotSchemaVersion = 1;
@@ -624,8 +625,7 @@ public:
   /// Unsupported default. Implemented concurrent publications may return
   /// coherent == 0 and should be retried by the caller when availability is
   /// not Unsupported.
-  virtual void copyGroupOutputMeterSnapshot(
-      GroupOutputMeterSnapshot& destination) const noexcept {
+  virtual void copyGroupOutputMeterSnapshot(GroupOutputMeterSnapshot& destination) const noexcept {
     destination = {};
   }
 };

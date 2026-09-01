@@ -51,22 +51,19 @@ struct RoutingMeterTelemetry {
   uint32_t schema_version{kRoutingMeterTelemetrySchemaVersion};
   MeterAvailability availability{MeterAvailability::Unsupported};
   MeterPeakDefinition aggregate_peak_definition{MeterPeakDefinition::SamplePeak};
-  MeterPeakDefinition post_master_output_peak_definition{
-      MeterPeakDefinition::TruePeak4x};
+  MeterPeakDefinition post_master_output_peak_definition{MeterPeakDefinition::TruePeak4x};
   uint8_t reserved0{0};
   uint16_t post_master_output_count{0};
   uint64_t peak_window_frames{0};
   uint32_t rms_window_frames{0};
   uint32_t reserved1{0};
-  std::array<MeterAvailability, kRoutingControlMaxGroups>
-      group_aggregate_availability{};
+  std::array<MeterAvailability, kRoutingControlMaxGroups> group_aggregate_availability{};
   std::array<AudioMeter, kRoutingControlMaxGroups> group_aggregate_meters{};
   GroupOutputMeterSnapshot group_output_meters{};
   MeterAvailability master_aggregate_availability{MeterAvailability::Unsupported};
   std::array<uint8_t, 3> reserved2{};
   AudioMeter master_aggregate_meter{};
-  std::array<MeterAvailability, kRoutingMaxOutputs>
-      post_master_output_availability{};
+  std::array<MeterAvailability, kRoutingMaxOutputs> post_master_output_availability{};
   std::array<AudioMeter, kRoutingMaxOutputs> post_master_output_lane_meters{};
 };
 
