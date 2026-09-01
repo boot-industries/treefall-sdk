@@ -18,8 +18,8 @@ single-value API unless they opt in.
 | Field | Value |
 | --- | --- |
 | Upstream repository | `shmui` |
-| Source revision | `1a3148f5a19dee9ca694a04911aa5a274dd06398` |
-| Governed content SHA-256 | `02f59ff290e3aab61562eac931bc3123c3a7435b401604fe9c1c40a1a60a3e0f` |
+| Source revision | `c53b2ff48b21ba3adb9390ee670c20662b5b6192` |
+| Governed content SHA-256 | `8864dc7fa4c136ec881f771bbbd11821d2f3609f442717716a9626fd555e6724` |
 | Token-contract version | `0.6.0` |
 | Package target | `Orpheus::shmui_juce` |
 
@@ -48,7 +48,7 @@ Observed in this SDK worktree:
 python3 tools/shmui_juce_manifest.py --sync
 python3 tools/shmui_juce_manifest.py --check
 # ShmUI-JUCE manifest is consistent: 58 files,
-# sha256 02f59ff290e3aab61562eac931bc3123c3a7435b401604fe9c1c40a1a60a3e0f
+# sha256 8864dc7fa4c136ec881f771bbbd11821d2f3609f442717716a9626fd555e6724
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
@@ -60,8 +60,8 @@ ctest --test-dir build --output-on-failure \
 The package-consumer fixture compiled the imported `LevelMeter.cpp` through the
 SDK’s clean producer/consumer path. The SHM026 fixture target explicitly enables
 JUCE modal-loop support so its visible-peer timer pump is available in the
-governed package build. The correction was committed upstream as `1a3148f`,
-then synchronized and reverified rather than patched here.
+governed package build. The fixture’s physical-gap pixel assertion was corrected
+upstream as `c53b2ff`, then synchronized and reverified rather than patched here.
 
 ## Downstream Adoption Path
 

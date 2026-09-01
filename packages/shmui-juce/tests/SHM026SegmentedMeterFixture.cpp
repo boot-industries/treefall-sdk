@@ -244,8 +244,8 @@ void requireSegmentedRenderingAndNeedle() {
   }
   require(transitioningGreens == 6, "exactly six pre-yellow green grits transition to yellow");
 
-  const int firstGapY =
-      juce::roundToInt(static_cast<float>(meterHeight - 1) - leading - bodyLength - 0.5f);
+  const int firstGapY = static_cast<int>(
+      std::floor(static_cast<float>(meterHeight - 1) - leading - bodyLength - 0.5f));
   requireColourNear(image.getPixelAt(meterWidth / 2, firstGapY),
                     style.backgroundColor.brighter(0.1f), "one-pixel signal-axis gaps remain dark");
 
