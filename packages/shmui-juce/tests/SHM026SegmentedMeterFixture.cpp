@@ -188,7 +188,7 @@ void requireSegmentedRenderingAndNeedle() {
   style.fillStyle = shmui::MeterFillStyle::Segmented;
   style.segmentLength = bodyLength;
   style.segmentGap = 0.5f;
-  style.greenToYellowTransitionSegments = 6;
+  style.greenToYellowTransitionSegments = 12;
   style.showPeakHold = false;
   style.showPeakRmsNeedle = true;
   style.peakRmsNeedleWidth = 2.0f;
@@ -223,7 +223,7 @@ void requireSegmentedRenderingAndNeedle() {
     if (dbForSegment(index, count, bodyLength, gap, leading, contentHeight) < style.yellowThreshold)
       ++greenCount;
   }
-  require(greenCount >= 6, "fixture has enough green grits for the six-grit transition");
+  require(greenCount >= 12, "fixture has enough green grits for the twelve-grit transition");
 
   int greenIndex = 0;
   int transitioningGreens = 0;
@@ -239,10 +239,10 @@ void requireSegmentedRenderingAndNeedle() {
     requireColourNear(image.getPixelAt(meterWidth / 2, y),
                       expectedSegmentColour(style, db, currentGreenIndex, greenCount),
                       "each fixed-position grit uses its midpoint dB colour");
-    if (isGreen && currentGreenIndex >= greenCount - 6)
+    if (isGreen && currentGreenIndex >= greenCount - 12)
       ++transitioningGreens;
   }
-  require(transitioningGreens == 6, "exactly six pre-yellow green grits transition to yellow");
+  require(transitioningGreens == 12, "exactly twelve pre-yellow green grits transition to yellow");
 
   const int firstGapY = static_cast<int>(
       std::floor(static_cast<float>(meterHeight - 1) - leading - bodyLength - 0.5f));
