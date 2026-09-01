@@ -174,4 +174,4 @@ See `multi_clip_trigger` example for multi-clip playback and `offline_renderer` 
 ---
 
 **Last Updated:** October 26, 2025
-**SDK Version:** 0.8.0
+**SDK Version:** 0.9.0
