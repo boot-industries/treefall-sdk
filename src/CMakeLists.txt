@@ -164,9 +164,12 @@ add_library(orpheus_core INTERFACE)
 target_link_libraries(orpheus_core INTERFACE ${ORPHEUS_CORE_TARGETS})
 orpheus_enable_sanitizers(orpheus_core)
 
-if(WIN32 AND ORP_BUILD_SHARED_CORE)
-  target_compile_definitions(orpheus_core INTERFACE ORPHEUS_USING_DLL)
-endif()
+# The ABI libraries may be shared on Windows, but the realtime/runtime targets
+# remain static. Do not propagate ORPHEUS_USING_DLL through the aggregate target:
+# it would mark static-library factories such as createRoutingMatrix() and
+# createTransportController() as dllimport and produce __imp_* link failures.
+# Shared-library consumers link the ABI import libraries through the target
+# graph without requiring the optional dllimport annotation.
 
 add_library(Orpheus::core ALIAS orpheus_core)
 add_library(Orpheus::orpheus_core ALIAS orpheus_core)

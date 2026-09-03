@@ -244,6 +244,7 @@ TEST(AbiRenderClickTest, StreamsBoundedPcmAndRejectsImpossiblePlansBeforeFileCre
   EXPECT_FALSE(fs::exists(infinite_duration));
   EXPECT_FALSE(fs::exists(excessive_bars));
 
+  stream.close();
   fs::remove_all(root);
 }
 

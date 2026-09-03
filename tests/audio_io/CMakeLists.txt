@@ -372,3 +372,5 @@ target_include_directories(device_hot_swap_test
 )
 
 add_test(NAME device_hot_swap_test COMMAND device_hot_swap_test)
+
+orpheus_stage_runtime_dlls_in_directory()

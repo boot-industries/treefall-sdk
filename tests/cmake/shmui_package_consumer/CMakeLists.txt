@@ -39,6 +39,21 @@ target_link_libraries(orpheus_shmui_package_consumer PRIVATE
   Orpheus::audio_utils
   Orpheus::shmui_juce)
 
+if(WIN32)
+  foreach(runtime_target
+      Orpheus::orpheus_session
+      Orpheus::orpheus_clipgrid
+      Orpheus::orpheus_render)
+    if(TARGET ${runtime_target})
+      add_custom_command(TARGET orpheus_shmui_package_consumer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:orpheus_shmui_package_consumer>
+                $<TARGET_FILE:${runtime_target}>
+                $<TARGET_FILE_DIR:orpheus_shmui_package_consumer>
+        COMMAND_EXPAND_LISTS)
+    endif()
+  endforeach()
+endif()
 if(APPLE)
   target_compile_options(orpheus_shmui_package_consumer PRIVATE -stdlib=libc++)
   target_link_options(orpheus_shmui_package_consumer PRIVATE -stdlib=libc++)
