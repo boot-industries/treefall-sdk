@@ -1,4 +1,32 @@
 # ORP068 Implementation Progress
+## Windows CI baseline repair — 2026-09-02
+
+- Ordered Windows SDK includes so `windows.h` supplies prerequisites before the
+  property-key macro, BCrypt, and WASAPI headers.
+- Removed `ORPHEUS_USING_DLL` from the aggregate `Orpheus::core` interface.
+  Shared ABI libraries and static realtime/runtime libraries cannot share one
+  consumer import definition; the old propagation caused session-test
+  `__imp_createRoutingMatrix` and `__imp_createTransportController` failures.
+- Local focused build and tests passed.
+- Hosted follow-up also found the WASAPI factory declaration lacked a
+  definition and the hardware acceptance tool used the retired callback
+  signature; both are corrected.
+- Hosted Windows package follow-up also required active-configuration selection
+  in compile-failure installs and explicit configuration selection for nested
+  ShmUI CTest. Both harnesses now pass the requested configuration.
+- The ShmUI manifest hash now canonicalizes CRLF to LF and uses explicit POSIX
+  path ordering, keeping the imported content contract stable across Windows
+  and Unix checkouts.
+- Ubuntu's ShmUI package gate now installs the JUCE-required ALSA and libcurl
+  development headers, and the consumer explicitly links the discovered CURL
+  target required by JUCE's static core module. Nested producer and consumer
+  builds now pass the selected multi-config explicitly before installation and
+  execution. The Windows sndfile provider matrix clears the outer vcpkg
+  toolchain, forces its fake package directory, uses Visual Studio's
+  multi-config generator, builds with the selected configuration, and invokes
+  the generated `.exe` from its configuration directory. The Windows CTest
+  step now allows 15 minutes for the multi-config package gates.
+
 
 > **Note (2026-07-24):** This is a historical ORP068 work log. Current SDK
 > contracts and delivery evidence live in the numbered ORP documents and

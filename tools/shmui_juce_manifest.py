@@ -21,10 +21,18 @@ EXPECTED_TARGETS = {"Orpheus::shmui_juce", "Orpheus::shmui_juce_gl"}
 
 def imported_files() -> list[pathlib.Path]:
     return sorted(
-        path
-        for path in PACKAGE.rglob("*")
-        if path.is_file() and path != MANIFEST and not path.name.startswith(".")
+        (
+            path
+            for path in PACKAGE.rglob("*")
+            if path.is_file() and path != MANIFEST and not path.name.startswith(".")
+        ),
+        key=lambda path: path.relative_to(PACKAGE).as_posix(),
     )
+
+
+def canonical_content(path: pathlib.Path) -> bytes:
+    """Hash imported text consistently across Git checkout platforms."""
+    return path.read_bytes().replace(b"\r\n", b"\n")
 
 
 def content_hash() -> str:
@@ -33,7 +41,7 @@ def content_hash() -> str:
         relative = path.relative_to(PACKAGE).as_posix().encode("utf-8")
         digest.update(relative)
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(canonical_content(path))
         digest.update(b"\0")
     return digest.hexdigest()
 
