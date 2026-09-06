@@ -115,6 +115,9 @@ public:
   }
 
   Result<size_t> readSamples(float* buffer, size_t samples) override {
+    if (std::this_thread::get_id() == m_callingThread) {
+      readOnCallingThread.store(true, std::memory_order_relaxed);
+    }
     if (!m_open || failRead.load(std::memory_order_relaxed)) {
       return {0, SessionGraphError::NotReady, {}};
     }
@@ -134,6 +137,9 @@ public:
   }
 
   SessionGraphError seek(int64_t position) override {
+    if (std::this_thread::get_id() == m_callingThread) {
+      readOnCallingThread.store(true, std::memory_order_relaxed);
+    }
     if (!m_open || failSeek.load(std::memory_order_relaxed)) {
       return SessionGraphError::NotReady;
     }
@@ -154,6 +160,11 @@ public:
   std::atomic<bool> failRead{false};
   std::atomic<bool> failSeek{false};
   std::atomic<bool> earlyEof{false};
+  std::atomic<bool> readOnCallingThread{false};
+
+  void setCallingThread(std::thread::id id) {
+    m_callingThread = id;
+  }
 
 private:
   int64_t m_frames;
@@ -161,6 +172,7 @@ private:
   uint32_t m_rate;
   int64_t m_position{0};
   bool m_open{false};
+  std::thread::id m_callingThread{};
 };
 
 class StreamingSeekMatrixTest : public ::testing::Test {
@@ -506,7 +518,7 @@ TEST_F(StreamingSeekMatrixTest, StartUsesCommandPrimeWhenSteadyWindowIsFull) {
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // The target page is already resident, so this advances demand without
-  // consuming command-prime capacity. The worker then fills the four steady
+  // consuming command-prime capacity. The worker then fills the six steady
   // slots around the target while trim-IN remains evicted.
   ASSERT_EQ(transport->seekClip(1, evictionTarget), SessionGraphError::OK);
   transport->processAudio(buffers, 1, block);
@@ -702,10 +714,13 @@ TEST(StreamingClipSourcePrimeTest, PrimeFailuresRollBackAndRecover) {
 }
 
 TEST(StreamingClipSourcePrimeTest, CommandPrefillUsesPrimeCapacityAfterSteadyExhaustion) {
+  // 12 pages: after the seek-eviction refill the widened 6-page steady window
+  // must be FULL (pages 4..9) so the 3*page demand page can only be served
+  // from command-prime capacity.
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
-  auto reader = std::make_shared<FaultReader>(9 * page);
+  auto reader = std::make_shared<FaultReader>(12 * page);
   ASSERT_TRUE(reader->open("").isOk());
-  StreamingClipSource source(reader, 1, 9 * page);
+  StreamingClipSource source(reader, 1, 12 * page);
   StreamingClipSource::PrimeReservation reservation{};
 
   ASSERT_EQ(source.prefill(3 * page + 100), SessionGraphError::OK);
@@ -716,7 +731,7 @@ TEST(StreamingClipSourcePrimeTest, CommandPrefillUsesPrimeCapacityAfterSteadyExh
 
   EXPECT_EQ(source.prefill(3 * page + 100, 1), SessionGraphError::NotReady);
   ASSERT_EQ(source.prefill(3 * page + 100, 1, &reservation), SessionGraphError::OK);
-  const uint8_t commandMask = static_cast<uint8_t>(0xFFu << StreamingClipSource::kWindowPages);
+  const uint16_t commandMask = static_cast<uint16_t>(0xFFFFu << StreamingClipSource::kWindowPages);
   EXPECT_NE(reservation.pageMask & commandMask, 0);
   EXPECT_TRUE(source.read(3 * page + 100, scratch.data(), 32, framesRead));
   EXPECT_EQ(framesRead, 32u);
@@ -788,6 +803,73 @@ TEST(StreamingClipSourcePrimeTest,
   worker.join();
   EXPECT_FALSE(source.hasPendingCommandPrimes());
 }
+
+TEST(StreamingClipSourcePrimeTest, AttachedPrimeDecodesOnWorkerThreadOnly) {
+  // OCC191: while attached to a MediaStreamWorker the worker is the SOLE
+  // decoder. primeForCommand must request + wait, never decode on the
+  // command-priming (control) thread.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(7 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 7 * page);
+  // Keep the attached source alive for the worker's weak references; the
+  // no-op deleter prevents freeing the stack-allocated source.
+  std::shared_ptr<StreamingClipSource> keepAlive(&source, [](StreamingClipSource*) {});
+  MediaStreamWorker worker;
+  worker.attach(keepAlive);
+  reader->setCallingThread(std::this_thread::get_id());
+
+  StreamingClipSource::PrimeReservation reservation{};
+  ASSERT_EQ(source.primeForCommand(2 * page, 32, reservation), SessionGraphError::OK);
+  // Any decode/seek on this thread (including the timeout fallback) is a
+  // regression: it would stall the worker that must keep the window ahead.
+  EXPECT_FALSE(reader->readOnCallingThread.load());
+  source.releaseCommandPrime(reservation);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+}
+
+TEST(StreamingClipSourcePrimeTest, AttachedPrimeFailureRollsBackWithoutLeak) {
+  // OCC191 failure path: a worker decode failure must surface as NotReady with
+  // no pins, no pending-prime accounting, and recover cleanly on retry.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(7 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 7 * page);
+  std::shared_ptr<StreamingClipSource> keepAlive(&source, [](StreamingClipSource*) {});
+  // Fail decodes BEFORE attaching so the worker can never make the demanded
+  // page resident from its steady window: the prime must take the
+  // worker-decode path, which fails deterministically.
+  reader->failRead.store(true, std::memory_order_relaxed);
+  MediaStreamWorker worker;
+  worker.attach(keepAlive);
+
+  StreamingClipSource::PrimeReservation reservation{};
+  EXPECT_EQ(source.primeForCommand(2 * page, 32, reservation), SessionGraphError::NotReady);
+  EXPECT_EQ(reservation.pageMask, 0);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+
+  reader->failRead.store(false, std::memory_order_relaxed);
+  ASSERT_EQ(source.primeForCommand(2 * page, 32, reservation), SessionGraphError::OK);
+  EXPECT_NE(reservation.pageMask, 0);
+  source.releaseCommandPrime(reservation);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+}
+
+TEST(StreamingClipSourcePrimeTest, PrefillWidenedWindowCoversFourPagesAhead) {
+  // OCC191: the resident window grew from 1 behind + demand + 2 ahead to
+  // 1 behind + demand + 4 ahead, so a demand at page 0 must serve page 4.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(9 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 9 * page);
+
+  ASSERT_EQ(source.prefill(0), SessionGraphError::OK);
+  std::vector<float> scratch(32, 0.0f);
+  size_t framesRead = 0;
+  ASSERT_TRUE(source.read(4 * page + 100, scratch.data(), 32, framesRead));
+  EXPECT_EQ(framesRead, 32u);
+}
+
 TEST(ResamplingSeekPrimeTest, WrappedReaderErrorIsNotConvertedToEof) {
   auto reader = std::make_shared<FaultReader>(48000);
   ResamplingAudioFileReader resampling(reader, 44100);
