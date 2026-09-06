@@ -218,9 +218,73 @@ SessionGraphError StreamingClipSource::fillPage(int64_t alignedStart) {
   return result;
 }
 
+SessionGraphError StreamingClipSource::decodeMissingIntoCommandPool(
+    const std::array<int64_t, kCommandPrimePages>& missingPages, size_t missingCount,
+    uint16_t& claimedMask) {
+  claimedMask = 0;
+  struct ClaimedPage {
+    Page* page{nullptr};
+    int64_t start{-1};
+  };
+  std::array<ClaimedPage, kCommandPrimePages> claimedPages{};
+  size_t claimedCount = 0;
+
+  const auto releaseClaims = [&]() noexcept {
+    for (size_t index = 0; index < claimedCount; ++index) {
+      claimedPages[index].page->guard.store(0, std::memory_order_release);
+    }
+  };
+
+  for (size_t missingIndex = 0; missingIndex < missingCount; ++missingIndex) {
+    const int64_t requestedStart = missingPages[missingIndex];
+    Page* target = nullptr;
+    for (size_t scan = 0; scan < kNumPages && target == nullptr; ++scan) {
+      bool observedContention = false;
+      for (size_t pageIndex = kWindowPages; pageIndex < kNumPages; ++pageIndex) {
+        const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << pageIndex);
+        if ((claimedMask & bit) != 0) {
+          continue;
+        }
+        Page& page = m_pages[pageIndex];
+        if (page.start.load(std::memory_order_acquire) != -1) {
+          continue;
+        }
+        uint32_t expected = 0;
+        if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                               std::memory_order_acquire)) {
+          target = &page;
+          claimedMask |= bit;
+          claimedPages[claimedCount++] = {target, requestedStart};
+          break;
+        }
+        observedContention = true;
+      }
+      if (!observedContention) {
+        break;
+      }
+    }
+    if (target == nullptr) {
+      releaseClaims();
+      return SessionGraphError::NotReady;
+    }
+  }
+
+  for (size_t index = 0; index < claimedCount; ++index) {
+    const SessionGraphError result =
+        decodePage(*claimedPages[index].page, claimedPages[index].start);
+    if (result != SessionGraphError::OK) {
+      releaseClaims();
+      return result;
+    }
+  }
+  for (size_t index = 0; index < claimedCount; ++index) {
+    claimedPages[index].page->start.store(claimedPages[index].start, std::memory_order_release);
+  }
+  return SessionGraphError::OK;
+}
+
 SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frames,
                                                        PrimeReservation& reservation) {
-  std::lock_guard<std::mutex> lock(m_readerMutex);
   if (m_lengthFrames <= 0 || frames == 0) {
     return SessionGraphError::OK;
   }
@@ -246,36 +310,44 @@ SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frame
         firstPage + static_cast<int64_t>(index * static_cast<size_t>(kPageFrames));
   }
 
-  struct ClaimedPage {
-    Page* page{nullptr};
-    int64_t start{-1};
-  };
-  std::array<ClaimedPage, kCommandPrimePages> claimedPages{};
-  size_t claimedCount = 0;
-  const uint8_t originalMask = reservation.pageMask;
-  uint8_t readyPinMask = 0;
-  uint8_t claimedMask = 0;
+  const uint16_t originalMask = reservation.pageMask;
+  uint16_t readyPinMask = 0;
+  uint16_t claimedMask = 0;
 
-  const auto reservationSize = [](uint8_t mask) noexcept {
+  const auto reservationSize = [](uint16_t mask) noexcept {
     size_t count = 0;
     for (size_t index = 0; index < kNumPages; ++index) {
-      count += (mask & static_cast<uint8_t>(uint8_t{1} << index)) != 0 ? 1u : 0u;
+      count += (mask & static_cast<uint16_t>(uint16_t{1} << index)) != 0 ? 1u : 0u;
     }
     return count;
   };
 
+  // Phase 1 pins only pages already resident; decode work happens later, so a
+  // rollback only ever needs to undo READY pins. Command-pool claims taken by
+  // decodeMissingIntoCommandPool are released inside that helper on failure.
   const auto rollback = [&]() noexcept {
-    for (size_t index = 0; index < claimedCount; ++index) {
-      claimedPages[index].page->guard.store(0, std::memory_order_release);
-    }
     for (size_t index = 0; index < kNumPages; ++index) {
-      const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << index);
+      const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << index);
       if ((readyPinMask & bit) != 0) {
         releaseReadyPin(m_pages[index]);
       }
     }
   };
 
+  const auto commit = [&](uint16_t mask) -> SessionGraphError {
+    reservation.pageMask = mask;
+    if (originalMask == 0 && reservation.pageMask != 0) {
+      m_pendingCommandPrimes.fetch_add(1, std::memory_order_release);
+    }
+    return SessionGraphError::OK;
+  };
+
+  // Phase 1: pin every requested page that is already resident (existing
+  // retry/exhaustion/capacity logic, unchanged), and collect the pages that
+  // must be decoded. Runs without m_readerMutex (atomics only); pins acquired
+  // here are stable because the audio thread cannot retire a pinned page.
+  std::array<int64_t, kCommandPrimePages> missingPages{};
+  size_t missingCount = 0;
   for (size_t requestIndex = 0; requestIndex < pageCount; ++requestIndex) {
     const int64_t requestedStart = requestedPages[requestIndex];
     bool satisfied = false;
@@ -285,7 +357,7 @@ SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frame
       bool foundReady = false;
       for (size_t pageIndex = 0; pageIndex < kNumPages; ++pageIndex) {
         Page& page = m_pages[pageIndex];
-        const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << pageIndex);
+        const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << pageIndex);
         if (page.start.load(std::memory_order_acquire) != requestedStart) {
           continue;
         }
@@ -295,7 +367,7 @@ SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frame
           break;
         }
 
-        if (reservationSize(static_cast<uint8_t>(originalMask | readyPinMask | claimedMask)) >=
+        if (reservationSize(static_cast<uint16_t>(originalMask | readyPinMask | claimedMask)) >=
             kCommandPrimePages) {
           rollback();
           return SessionGraphError::NotReady;
@@ -342,62 +414,83 @@ SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frame
       rollback();
       return SessionGraphError::NotReady;
     }
-
-    if (reservationSize(static_cast<uint8_t>(originalMask | readyPinMask | claimedMask)) >=
-        kCommandPrimePages) {
-      rollback();
-      return SessionGraphError::NotReady;
-    }
-
-    Page* target = nullptr;
-    for (size_t scan = 0; scan < kNumPages && target == nullptr; ++scan) {
-      bool observedContention = false;
-      for (size_t pageIndex = kWindowPages; pageIndex < kNumPages; ++pageIndex) {
-        const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << pageIndex);
-        if ((claimedMask & bit) != 0) {
-          continue;
-        }
-        Page& page = m_pages[pageIndex];
-        if (page.start.load(std::memory_order_acquire) != -1) {
-          continue;
-        }
-        uint32_t expected = 0;
-        if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                               std::memory_order_acquire)) {
-          target = &page;
-          claimedMask |= bit;
-          claimedPages[claimedCount++] = {target, requestedStart};
-          break;
-        }
-        observedContention = true;
-      }
-      if (!observedContention) {
-        break;
-      }
-    }
-    if (target == nullptr) {
-      rollback();
-      return SessionGraphError::NotReady;
-    }
+    missingPages[missingCount++] = requestedStart;
   }
 
-  for (size_t index = 0; index < claimedCount; ++index) {
+  if (missingCount == 0) {
+    return commit(static_cast<uint16_t>(originalMask | readyPinMask));
+  }
+
+  // The command pool holds kCommandPrimePages pages total (existing
+  // reservation + ready pins + missing decodes); refuse an over-capacity
+  // request before any decode work starts.
+  if (reservationSize(static_cast<uint16_t>(originalMask | readyPinMask)) + missingCount >
+      kCommandPrimePages) {
+    rollback();
+    return SessionGraphError::NotReady;
+  }
+
+  // Unattached direct-drive path: decode synchronously, exactly as before.
+  if (!m_attached.load(std::memory_order_acquire)) {
+    std::lock_guard<std::mutex> lock(m_readerMutex);
     const SessionGraphError result =
-        decodePage(*claimedPages[index].page, claimedPages[index].start);
+        decodeMissingIntoCommandPool(missingPages, missingCount, claimedMask);
     if (result != SessionGraphError::OK) {
       rollback();
       return result;
     }
-  }
-  for (size_t index = 0; index < claimedCount; ++index) {
-    claimedPages[index].page->start.store(claimedPages[index].start, std::memory_order_release);
+    return commit(static_cast<uint16_t>(originalMask | readyPinMask | claimedMask));
   }
 
-  reservation.pageMask = static_cast<uint8_t>(originalMask | readyPinMask | claimedMask);
-  if (originalMask == 0 && reservation.pageMask != 0) {
-    m_pendingCommandPrimes.fetch_add(1, std::memory_order_release);
+  // Attached: the worker is the sole decoder. Publish the demand request and
+  // wait for the worker to fill the missing pages and pin them.
+  const int64_t firstMissing = missingPages[0];
+  const int64_t lastMissing = missingPages[missingCount - 1];
+  m_commandFillState.store(0, std::memory_order_release);
+  m_commandDemandFrames.store(lastMissing - firstMissing + static_cast<int64_t>(kPageFrames),
+                              std::memory_order_release);
+  m_commandDemandStart.store(firstMissing, std::memory_order_release);
+
+  std::unique_lock<std::mutex> lock(m_fillMutex);
+  const bool done = m_fillCv.wait_for(lock, kFillWaitTimeout, [this]() {
+    return m_commandFillState.load(std::memory_order_acquire) != 0;
+  });
+  if (done) {
+    const uint32_t state = m_commandFillState.load(std::memory_order_acquire);
+    const uint16_t workerMask =
+        (state == 1) ? m_commandFillMask.load(std::memory_order_acquire) : 0;
+    m_commandFillState.store(0, std::memory_order_release);
+    m_commandDemandStart.store(-1, std::memory_order_release);
+    lock.unlock();
+    if (state == 2) {
+      rollback();
+      return SessionGraphError::NotReady;
+    }
+    return commit(static_cast<uint16_t>(originalMask | readyPinMask | workerMask));
   }
-  return SessionGraphError::OK;
+
+  // Timeout: clear the demand so the worker stops servicing it. If the worker
+  // completed concurrently, keep its pins (they are valid command pins);
+  // otherwise fall back to a synchronous decode. m_fillMutex is released
+  // before any decode work to respect the lock-ordering rule.
+  m_commandDemandStart.store(-1, std::memory_order_release);
+  const uint32_t state = m_commandFillState.load(std::memory_order_acquire);
+  if (state == 1) {
+    const uint16_t workerMask = m_commandFillMask.load(std::memory_order_acquire);
+    m_commandFillState.store(0, std::memory_order_release);
+    lock.unlock();
+    return commit(static_cast<uint16_t>(originalMask | readyPinMask | workerMask));
+  }
+  lock.unlock();
+
+  std::lock_guard<std::mutex> readerLock(m_readerMutex);
+  const SessionGraphError result =
+      decodeMissingIntoCommandPool(missingPages, missingCount, claimedMask);
+  if (result != SessionGraphError::OK) {
+    rollback();
+    return result;
+  }
+  return commit(static_cast<uint16_t>(originalMask | readyPinMask | claimedMask));
 }
 
 void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noexcept {
@@ -405,7 +498,7 @@ void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noex
     return;
   }
   for (size_t index = 0; index < kNumPages; ++index) {
-    const uint8_t bit = static_cast<uint8_t>(uint8_t{1} << index);
+    const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << index);
     if ((reservation.pageMask & bit) == 0) {
       continue;
     }
@@ -425,28 +518,7 @@ void StreamingClipSource::releaseCommandPrime(PrimeReservation reservation) noex
   }
 }
 
-SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
-                                               PrimeReservation* commandReservation) {
-  if (m_lengthFrames <= 0 || pos >= m_lengthFrames) {
-    return SessionGraphError::OK;
-  }
-  if (max_pages == 0) {
-    return SessionGraphError::NotReady;
-  }
-  const int64_t base = alignDown(std::max<int64_t>(0, pos));
-
-  // A command publisher must pin the page the first render will consume. This
-  // path deliberately uses the transactional command-prime lease rather than
-  // allowing a full steady window to turn preparation into NotReady.
-  size_t filled = 0;
-  if (commandReservation != nullptr) {
-    const SessionGraphError result = primeForCommand(base, 1, *commandReservation);
-    if (result != SessionGraphError::OK) {
-      return result;
-    }
-    filled = 1;
-  }
-
+SessionGraphError StreamingClipSource::fillWindow(int64_t base, size_t max_pages) {
   // Fill order: audible demand, forward look-ahead, then reverse runway.
   std::array<int64_t, kWindowPages> wanted{};
   size_t wantedCount = 0;
@@ -455,12 +527,10 @@ SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
   }
   wanted[wantedCount++] = base - static_cast<int64_t>(kPageFrames);
 
+  size_t filled = 0;
   for (size_t index = 0; index < wantedCount && filled < max_pages; ++index) {
     const int64_t start = wanted[index];
     if (start < 0 || start >= m_lengthFrames) {
-      continue;
-    }
-    if (commandReservation != nullptr && index == 0) {
       continue;
     }
     bool resident = false;
@@ -476,8 +546,8 @@ SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
 
     const SessionGraphError result = fillPage(start);
     if (result != SessionGraphError::OK) {
-      if (index == 0 && commandReservation == nullptr) {
-        return result;
+      if (index == 0) {
+        return result; // the audible demand page is mandatory
       }
       continue; // look-ahead is deliberately best effort
     }
@@ -486,8 +556,237 @@ SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
   return SessionGraphError::OK;
 }
 
+SessionGraphError StreamingClipSource::prefill(int64_t pos, size_t max_pages,
+                                               PrimeReservation* commandReservation) {
+  if (m_lengthFrames <= 0 || pos >= m_lengthFrames) {
+    return SessionGraphError::OK;
+  }
+  if (max_pages == 0) {
+    return SessionGraphError::NotReady;
+  }
+  const int64_t base = alignDown(std::max<int64_t>(0, pos));
+
+  // A command publisher must pin the page the first render will consume. This
+  // path deliberately uses the transactional command-prime lease rather than
+  // allowing a full steady window to turn preparation into NotReady.
+  const auto primeDemand = [&]() -> SessionGraphError {
+    if (commandReservation == nullptr) {
+      return SessionGraphError::OK;
+    }
+    return primeForCommand(base, 1, *commandReservation);
+  };
+
+  // Unattached direct-drive path: synchronous fill, exactly as before (with
+  // the demand pin acquired first when a reservation is supplied).
+  if (!m_attached.load(std::memory_order_acquire)) {
+    const SessionGraphError result = primeDemand();
+    if (result != SessionGraphError::OK) {
+      return result;
+    }
+    return fillWindow(base, max_pages);
+  }
+
+  // Attached: steer the worker, then wait for it to fill the wanted window.
+  // With a reservation the pinned demand page is skipped by the resident check
+  // instead of consuming `max_pages`, so one extra look-ahead page may fill —
+  // harmless, and no test depends on it.
+  m_demand.store(pos, std::memory_order_relaxed);
+  const SessionGraphError result = primeDemand();
+  if (result != SessionGraphError::OK) {
+    return result;
+  }
+
+  std::array<int64_t, kWindowPages> wanted{};
+  size_t wantedCount = 0;
+  for (size_t index = 0; index + 1 < kWindowPages; ++index) {
+    wanted[wantedCount++] = base + static_cast<int64_t>(index * static_cast<size_t>(kPageFrames));
+  }
+  wanted[wantedCount++] = base - static_cast<int64_t>(kPageFrames);
+  if (wantedCount > max_pages) {
+    wantedCount = max_pages;
+  }
+
+  const auto allWantedResident = [&]() {
+    for (size_t index = 0; index < wantedCount; ++index) {
+      const int64_t start = wanted[index];
+      if (start < 0 || start >= m_lengthFrames) {
+        continue;
+      }
+      bool resident = false;
+      for (auto& page : m_pages) {
+        if (page.start.load(std::memory_order_acquire) == start) {
+          resident = true;
+          break;
+        }
+      }
+      if (!resident) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  std::unique_lock<std::mutex> lock(m_fillMutex);
+  m_fillCv.wait_for(lock, kFillWaitTimeout, allWantedResident);
+  lock.unlock();
+  if (!allWantedResident()) {
+    (void)fillWindow(base, max_pages); // synchronous fallback
+  }
+
+  bool demandResident = false;
+  for (auto& page : m_pages) {
+    if (page.start.load(std::memory_order_acquire) == base) {
+      demandResident = true;
+      break;
+    }
+  }
+  return demandResident ? SessionGraphError::OK : SessionGraphError::NotReady;
+}
+
 void StreamingClipSource::service() {
-  (void)prefill(m_demand.load(std::memory_order_relaxed));
+  const int64_t pos = m_demand.load(std::memory_order_relaxed);
+  if (m_lengthFrames > 0 && pos < m_lengthFrames) {
+    (void)fillWindow(alignDown(std::max<int64_t>(0, pos)), kWindowPages);
+  }
+  m_fillCv.notify_all();
+}
+
+void StreamingClipSource::serviceCommandDemand() {
+  if (!m_attached.load(std::memory_order_acquire)) {
+    return;
+  }
+  const int64_t demandStart = m_commandDemandStart.load(std::memory_order_acquire);
+  if (demandStart < 0 || m_commandFillState.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+  const int64_t demandFrames =
+      std::max<int64_t>(1, m_commandDemandFrames.load(std::memory_order_acquire));
+  const int64_t firstPage = alignDown(demandStart);
+  const int64_t lastPage = alignDown(demandStart + demandFrames - 1);
+
+  uint16_t mask = 0;
+  bool aborted = false;
+  bool failed = false;
+
+  for (int64_t pageStart = firstPage; pageStart <= lastPage;
+       pageStart += static_cast<int64_t>(kPageFrames)) {
+    // A demanded page may have become resident since the control thread's
+    // phase-1 scan (worker fills, prior command content). Pin it in place when
+    // free; a command pin from phase 1 (guard in (0, kClaimed)) is already
+    // covered by the control thread's readyPinMask, so skip it.
+    size_t residentIndex = kNumPages;
+    for (size_t index = 0; index < kNumPages; ++index) {
+      if (m_pages[index].start.load(std::memory_order_acquire) == pageStart) {
+        residentIndex = index;
+        break;
+      }
+    }
+    if (residentIndex != kNumPages) {
+      Page& page = m_pages[residentIndex];
+      const uint32_t guard = page.guard.load(std::memory_order_acquire);
+      if (guard > 0 && guard < kClaimed) {
+        continue;
+      }
+      bool pinned = false;
+      for (int attempt = 0; attempt < 3 && !pinned; ++attempt) {
+        uint32_t expected = 0;
+        if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                               std::memory_order_acquire)) {
+          if (page.start.load(std::memory_order_acquire) == pageStart) {
+            pinned = true;
+          } else {
+            // Retired concurrently; undo this pin and decode a fresh copy.
+            releaseReadyPin(page);
+            break;
+          }
+        }
+      }
+      if (pinned) {
+        mask |= static_cast<uint16_t>(uint16_t{1} << residentIndex);
+        continue;
+      }
+      // Fall through: the resident copy is being claimed/retired — decode fresh.
+    }
+
+    // Fresh fill into a command-pool page. Holds m_readerMutex for the decode
+    // only; the completion handshake below never runs while it is held.
+    {
+      std::lock_guard<std::mutex> lock(m_readerMutex);
+      if (m_commandDemandStart.load(std::memory_order_acquire) != demandStart) {
+        aborted = true;
+        break;
+      }
+      Page* target = nullptr;
+      size_t targetIndex = kNumPages;
+      for (size_t scan = 0; scan < kNumPages && target == nullptr; ++scan) {
+        bool observedContention = false;
+        for (size_t index = kWindowPages; index < kNumPages; ++index) {
+          const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << index);
+          if ((mask & bit) != 0) {
+            continue;
+          }
+          Page& pool = m_pages[index];
+          if (pool.start.load(std::memory_order_acquire) != -1) {
+            continue;
+          }
+          uint32_t expected = 0;
+          if (pool.guard.compare_exchange_strong(expected, kClaimed, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire)) {
+            target = &pool;
+            targetIndex = index;
+            break;
+          }
+          observedContention = true;
+        }
+        if (!observedContention) {
+          break;
+        }
+      }
+      if (target == nullptr) {
+        failed = true;
+        break;
+      }
+      const SessionGraphError result = decodePage(*target, pageStart);
+      if (result != SessionGraphError::OK) {
+        target->guard.store(0, std::memory_order_release);
+        failed = true;
+        break;
+      }
+      if (m_commandDemandStart.load(std::memory_order_acquire) != demandStart) {
+        target->start.store(-1, std::memory_order_release);
+        target->guard.store(0, std::memory_order_release);
+        aborted = true;
+        break;
+      }
+      target->start.store(pageStart, std::memory_order_release);
+      target->guard.store(1, std::memory_order_release);
+      mask |= static_cast<uint16_t>(uint16_t{1} << targetIndex);
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(m_fillMutex);
+    if (aborted || failed) {
+      // The worker owns every pinned bit in `mask`; free them. On failure also
+      // publish the failed state; an aborted request stays idle so the control
+      // thread falls back or retries.
+      for (size_t index = 0; index < kNumPages; ++index) {
+        const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << index);
+        if ((mask & bit) == 0) {
+          continue;
+        }
+        m_pages[index].start.store(-1, std::memory_order_release);
+        m_pages[index].guard.store(0, std::memory_order_release);
+      }
+      if (failed) {
+        m_commandFillState.store(2, std::memory_order_release);
+      }
+    } else {
+      m_commandFillMask.store(mask, std::memory_order_release);
+      m_commandFillState.store(1, std::memory_order_release);
+    }
+  }
+  m_fillCv.notify_all();
 }
 
 // ============================================================================
@@ -512,15 +811,19 @@ void MediaStreamWorker::attach(const std::shared_ptr<StreamingClipSource>& sourc
     std::lock_guard<std::mutex> lock(m_mutex);
     m_sources.push_back(source);
   }
+  // Publish attachment before waking the worker so its very first pass sees
+  // the attached source as worker-owned (command priming requests+waits).
+  source->m_attached.store(true, std::memory_order_release);
   m_wake.notify_all();
 }
 
 void MediaStreamWorker::run() {
   std::unique_lock<std::mutex> lock(m_mutex);
+  std::vector<std::shared_ptr<StreamingClipSource>> live;
   while (!m_stop) {
     // Snapshot live sources, then service them without holding the lock so
     // attach() never blocks behind file I/O.
-    std::vector<std::shared_ptr<StreamingClipSource>> live;
+    live.clear();
     live.reserve(m_sources.size());
     for (auto it = m_sources.begin(); it != m_sources.end();) {
       if (auto strong = it->lock()) {
@@ -532,15 +835,20 @@ void MediaStreamWorker::run() {
     }
 
     lock.unlock();
+    // Two passes: command-prime demand first (bounds command-prime latency for
+    // accepted seeks), then the steady window refill.
+    for (auto& source : live) {
+      source->serviceCommandDemand();
+    }
     for (auto& source : live) {
       source->service();
     }
-    live.clear();
     lock.lock();
 
-    // The audio thread cannot notify (no locks there); poll. 10ms against a
-    // multi-second resident window keeps refill latency negligible.
-    m_wake.wait_for(lock, std::chrono::milliseconds(10), [this]() { return m_stop; });
+    // The audio thread cannot notify (no locks there); poll. 2ms keeps
+    // command-prime and refill latency negligible against a multi-second
+    // resident window.
+    m_wake.wait_for(lock, std::chrono::milliseconds(2), [this]() { return m_stop; });
   }
 }
 

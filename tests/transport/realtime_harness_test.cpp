@@ -317,7 +317,7 @@ TEST_F(RealtimeHarnessTest, StreamingSourcePlaysPrefilledWindowWithoutUnderrun) 
   UnderrunCountingCallback callback;
   m_transport->setCallback(&callback);
 
-  // 10s file >> the 4-page resident window (~5.46s @ 48k).
+  // 10s file >> the 6-page resident window (~8.2s @ 48k).
   std::string path = writeSineWav(m_tempDir, "stream_long.wav", 220.0f, 10.0f);
   ASSERT_EQ(m_transport->registerClipAudio(1, path), SessionGraphError::OK);
   ASSERT_EQ(m_transport->prepareClipAudio(1), SessionGraphError::OK);

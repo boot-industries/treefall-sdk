@@ -2366,10 +2366,13 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
   // audio thread only ever memcpy-reads the published source.
   if (entry.source) {
     if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source)) {
-      // Refires and starts synchronously pin their audible trim-IN page. When
-      // the steady worker window is full, the command-owned reservation uses
-      // the separate prime capacity and remains with the Start command.
-      return streaming->prefill(entry.trimInSamples, 1, reservation);
+      // Refires and starts pin their audible trim-IN page. The worker owns all
+      // decode for attached sources, so command priming requests+waits for it
+      // instead of decoding on this thread (OCC191).
+      if (reservation != nullptr) {
+        return streaming->primeForCommand(entry.trimInSamples, 1, *reservation);
+      }
+      return streaming->prefill(entry.trimInSamples);
     }
     return SessionGraphError::OK;
   }
@@ -2392,20 +2395,22 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
     return SessionGraphError::OK;
   }
 
-  // Long file: stream through a fixed page ring. Prefill the window at the
-  // trim IN synchronously so playback starts without an initial underrun,
-  // then hand the source to the background worker for steady-state refills.
+  // Long file: stream through a fixed page ring. Attach the source to the
+  // worker FIRST so the worker is the sole decoder (OCC191 — command priming
+  // requests + waits instead of stalling the worker with decode), set the
+  // steady window target, then prime/prefill the trim-IN page for an
+  // underrun-free start.
   auto streaming = std::make_shared<StreamingClipSource>(entry.reader, numChannels, lengthFrames);
-  const SessionGraphError prefillResult = streaming->prefill(entry.trimInSamples);
-  if (prefillResult != SessionGraphError::OK) {
-    return prefillResult;
-  }
   if (!m_streamWorker) {
     m_streamWorker = std::make_unique<MediaStreamWorker>();
   }
   m_streamWorker->attach(streaming);
   entry.source = streaming;
-  return SessionGraphError::OK;
+  streaming->setDemand(entry.trimInSamples); // steady window target
+  if (reservation != nullptr) {
+    return streaming->primeForCommand(entry.trimInSamples, 1, *reservation);
+  }
+  return streaming->prefill(entry.trimInSamples);
 }
 
 SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
