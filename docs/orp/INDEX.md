@@ -8,7 +8,7 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
-- [[ORP259 Web Contribution Harness Feasibility and Plan]] —
+- [[ORP180 Web Contribution Harness Feasibility and Plan]] —
   web-embedded OMP harness feasibility, read-only onboarding surface vs.
   trust-gated contributor harness, and rejection of the public write funnel
   (2026-09-07)
@@ -68,7 +68,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
-- [ORP259 Web Contribution Harness Feasibility and Plan](ORP259%20Web%20Contribution%20Harness%20Feasibility%20and%20Plan.md)
+- [ORP180 Web Contribution Harness Feasibility and Plan](ORP180%20Web%20Contribution%20Harness%20Feasibility%20and%20Plan.md)
 - [ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors](ORP255%20Strategic%20Architecture,%20Competitive%20Posture,%20and%20Expansion%20Vectors.md)
 - [ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation](ORP254%20Suite%20Commercialization,%20Rebrand%20Strategy,%20and%20Tier%20Segmentation.md)
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
