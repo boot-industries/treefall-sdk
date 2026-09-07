@@ -1,8 +1,8 @@
 # Simple Clip Player Example
 
-**Purpose:** Demonstrates basic audio file playback using the Orpheus SDK
+**Purpose:** Demonstrates basic audio file playback using the Treefall SDK
 
-This is the simplest possible example of using the Orpheus SDK for audio playback. It loads a single audio file and plays it back through the system's audio output.
+This is the simplest possible example of using the Treefall SDK for audio playback. It loads a single audio file and plays it back through the system's audio output.
 
 ## Features Demonstrated
 
@@ -78,12 +78,13 @@ The example follows a simple 7-step pattern:
 The `SimpleAudioCallback` class connects the audio driver to the transport controller:
 
 ```cpp
-class SimpleAudioCallback : public orpheus::IAudioCallback {
+class SimpleAudioCallback : public treefall::IAudioCallback {
 public:
-  void processAudio(const float** inputs, float** outputs,
-                    size_t num_channels, size_t num_frames) override {
-    transport_->processAudio(outputs, num_channels, num_frames);
+  void processAudio(const treefall::AudioProcessBlock& block) noexcept override {
+    transport_->processAudio(block.output_buffers, block.num_output_channels, block.num_frames);
   }
+private:
+  treefall::ITransportController* transport_;
 };
 ```
 
@@ -91,18 +92,16 @@ This callback runs on a **real-time audio thread** - no allocations, no locks, n
 
 ### Clip Registration
 
-Before playing audio, you must register it with the transport:
+Register and prepare a clip from the control thread before starting playback:
 
 ```cpp
-orpheus::ClipRegistration clip_reg;
-clip_reg.audio_file_path = "/path/to/audio.wav";
-clip_reg.trim_in_samples = 0;
-clip_reg.trim_out_samples = duration_samples;
-
-auto clip_handle = transport->registerClipAudio(clip_reg);
+treefall::ClipHandle clip_handle = 1;  // stable application-owned handle
+transport->registerClipAudio(clip_handle, "/path/to/audio.wav");
+transport->prepareClipAudio(clip_handle);
+transport->startClip(clip_handle, 0);
 ```
 
-The returned `clip_handle` is used to control playback.
+`processCallbacks()` is pumped by the control thread, never from `processAudio()`.
 
 ### Error Handling
 
@@ -125,8 +124,8 @@ Always check return values before proceeding!
 - No gain/fade controls
 - No loop support
 - Blocks until playback finishes
+For deterministic non-real-time composition, see `../offline_renderer/README.md`. It documents the installed public API recipe; no offline renderer executable is shipped.
 
-See `multi_clip_trigger` example for multi-clip playback and `offline_renderer` for non-real-time rendering.
 
 ## Troubleshooting
 
@@ -158,7 +157,7 @@ See `multi_clip_trigger` example for multi-clip playback and `offline_renderer` 
 **For more advanced examples:**
 
 - `multi_clip_trigger` - Play multiple clips simultaneously with triggering
-- `offline_renderer` - Non-real-time rendering to WAV files
+- `../offline_renderer/README.md` - Installed public-API offline rendering recipe
 
 **For SDK documentation:**
 
