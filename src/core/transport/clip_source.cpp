@@ -483,6 +483,9 @@ SessionGraphError StreamingClipSource::primeForCommand(int64_t pos, size_t frame
   }
   lock.unlock();
 
+  // Timeout fallback: decode synchronously. The control thread may contend
+  // with the worker on m_readerMutex, but the 2s wait bound makes this a
+  // last-resort path, not a starvation vector.
   std::lock_guard<std::mutex> readerLock(m_readerMutex);
   const SessionGraphError result =
       decodeMissingIntoCommandPool(missingPages, missingCount, claimedMask);
@@ -787,6 +790,92 @@ void StreamingClipSource::serviceCommandDemand() {
     }
   }
   m_fillCv.notify_all();
+}
+
+SessionGraphError StreamingClipSource::pinLoopAnchor(int64_t pos) {
+  if (m_lengthFrames <= 0) {
+    return SessionGraphError::NotReady;
+  }
+  const int64_t anchor = alignDown(std::clamp<int64_t>(pos, 0, m_lengthFrames - 1));
+  if (m_loopAnchorStart.load(std::memory_order_acquire) == anchor) {
+    return SessionGraphError::OK;
+  }
+  if (m_loopAnchorStart.load(std::memory_order_acquire) >= 0) {
+    releaseLoopAnchor();
+  }
+
+  std::lock_guard<std::mutex> lock(m_readerMutex);
+  // Already resident? Pin it in place (shares a command pin if one exists).
+  for (size_t index = 0; index < kNumPages; ++index) {
+    Page& page = m_pages[index];
+    if (page.start.load(std::memory_order_acquire) != anchor) {
+      continue;
+    }
+    uint32_t expected = page.guard.load(std::memory_order_acquire);
+    while (expected > 0 && expected < kClaimed - 1) {
+      if (page.guard.compare_exchange_weak(expected, expected + 1, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
+        m_loopAnchorStart.store(anchor, std::memory_order_release);
+        return SessionGraphError::OK;
+      }
+    }
+    if (expected == 0) {
+      if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                             std::memory_order_acquire)) {
+        m_loopAnchorStart.store(anchor, std::memory_order_release);
+        return SessionGraphError::OK;
+      }
+    }
+    // kClaimed (worker filling) or contended — fall through to decode a fresh
+    // copy below rather than spinning.
+  }
+
+  // Not resident: claim a free command-pool page and decode the anchor page.
+  Page* target = nullptr;
+  for (size_t index = kWindowPages; index < kNumPages; ++index) {
+    Page& page = m_pages[index];
+    if (page.start.load(std::memory_order_acquire) != -1) {
+      continue;
+    }
+    uint32_t expected = 0;
+    if (page.guard.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
+      target = &page;
+      break;
+    }
+  }
+  if (target == nullptr) {
+    return SessionGraphError::NotReady;
+  }
+  const SessionGraphError result = decodePage(*target, anchor);
+  if (result != SessionGraphError::OK) {
+    target->guard.store(0, std::memory_order_release);
+    return result;
+  }
+  target->start.store(anchor, std::memory_order_release);
+  m_loopAnchorStart.store(anchor, std::memory_order_release);
+  return SessionGraphError::OK;
+}
+
+void StreamingClipSource::releaseLoopAnchor() noexcept {
+  const int64_t anchored = m_loopAnchorStart.exchange(-1, std::memory_order_acq_rel);
+  if (anchored < 0) {
+    return;
+  }
+  for (size_t index = 0; index < kNumPages; ++index) {
+    Page& page = m_pages[index];
+    if (page.start.load(std::memory_order_acquire) != anchored) {
+      continue;
+    }
+    uint32_t observed = page.guard.load(std::memory_order_acquire);
+    while (observed > 0 && observed < kClaimed) {
+      if (page.guard.compare_exchange_weak(observed, observed - 1, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
+        break;
+      }
+    }
+    break;
+  }
 }
 
 // ============================================================================

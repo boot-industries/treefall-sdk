@@ -870,6 +870,156 @@ TEST(StreamingClipSourcePrimeTest, PrefillWidenedWindowCoversFourPagesAhead) {
   EXPECT_EQ(framesRead, 32u);
 }
 
+TEST_F(StreamingSeekMatrixTest, LoopViaMetadataPinsAnchorForLoopRestart) {
+  // OCC191: the app toggles loop through updateClipMetadata (not
+  // setClipLoopMode). The loop-restart page (trim-IN) must be pinned while
+  // loop is enabled so the audio-thread loop boundary — which cannot prime —
+  // never misses the first read of the loop restart.
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t trimIn = 2 * page;          // page 2
+  const int64_t trimOut = 3 * page + 4000;  // inside page 3
+  const int64_t evictionTarget = 6 * page;  // far from trim-IN
+  const int64_t fileLength = 9 * static_cast<int64_t>(rate);
+
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  transport->setPreparedSourceMaxFrames(rate);
+  SeekCallback callback;
+  transport->setCallback(&callback);
+  ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipTrimPoints(1, trimIn, fileLength), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+
+  // Evict the trim-IN page: render far away (still inside the file) so read()
+  // retires page 2 without natural-ending the voice.
+  ASSERT_EQ(transport->seekClip(1, evictionTarget), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  transport->processAudio(buffers, 1, block);
+
+  // Enable loop AND narrow the trim window through updateClipMetadata (the
+  // app's actual path for both).
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->trimInSamples = trimIn;
+  metadata->trimOutSamples = trimOut;
+  metadata->loopEnabled = true;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+
+  // Seek near trim-OUT; the next render crosses the loop boundary and
+  // restarts at trim-IN. The loop-restart read must not miss.
+  ASSERT_EQ(transport->seekClip(1, trimOut - 2000), SessionGraphError::OK);
+  RtGuardState::reset();
+  for (int i = 0; i < 12; ++i) {
+    {
+      RtSection section;
+      transport->processAudio(buffers, 1, block);
+    }
+    transport->processCallbacks();
+  }
+
+  EXPECT_EQ(callback.underruns.load(), 0)
+      << "loop-restart read at trim-IN missed with loop anchor pinned";
+  EXPECT_EQ(RtGuardState::totalViolations(), 0u);
+  transport->setCallback(nullptr);
+}
+
+TEST_F(StreamingSeekMatrixTest, LoopNudgeChurnKeepsRestartPageResident) {
+  // OCC191 app repro: trim-IN nudges (< / >) move trim-IN while loop is
+  // enabled. The loop-restart page must follow every nudge so the audio-thread
+  // loop boundary never reads a non-resident page at the new trim-IN.
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t baseIn = 2 * page;          // page 2 (small, like app's page-0 nudges)
+  const int64_t trimOut = 3 * page + 4000;  // inside page 3
+  const int64_t evictionTarget = 6 * page;
+  const int64_t fileLength = 9 * static_cast<int64_t>(rate);
+
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  transport->setPreparedSourceMaxFrames(rate);
+  SeekCallback callback;
+  transport->setCallback(&callback);
+  ASSERT_EQ(transport->registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipTrimPoints(1, baseIn, fileLength), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+
+  // Evict the trim-IN page by rendering far away.
+  ASSERT_EQ(transport->seekClip(1, evictionTarget), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  transport->processAudio(buffers, 1, block);
+
+  // Enable loop AND narrow the trim window via updateClipMetadata.
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->trimInSamples = baseIn;
+  metadata->trimOutSamples = trimOut;
+  metadata->loopEnabled = true;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+
+  // Nudge trim-IN left/right a few ticks while loop is enabled — each nudge
+  // must re-anchor the loop-restart page (app's < / > keys).
+  int64_t trimIn = baseIn;
+  for (int tick = 0; tick < 4; ++tick) {
+    trimIn -= 640;  // nudge left one tick
+    auto m = transport->getClipMetadata(1);
+    ASSERT_TRUE(m.has_value());
+    m->trimInSamples = trimIn;
+    m->loopEnabled = true;
+    ASSERT_EQ(transport->updateClipMetadata(1, *m), SessionGraphError::OK);
+    transport->processAudio(buffers, 1, block);
+  }
+  for (int tick = 0; tick < 4; ++tick) {
+    trimIn += 640;  // nudge right
+    auto m = transport->getClipMetadata(1);
+    ASSERT_TRUE(m.has_value());
+    m->trimInSamples = trimIn;
+    m->loopEnabled = true;
+    ASSERT_EQ(transport->updateClipMetadata(1, *m), SessionGraphError::OK);
+    transport->processAudio(buffers, 1, block);
+  }
+
+  // Seek near trim-OUT and render across the loop boundary repeatedly.
+  ASSERT_EQ(transport->seekClip(1, trimOut - 2000), SessionGraphError::OK);
+  RtGuardState::reset();
+  for (int i = 0; i < 16; ++i) {
+    {
+      RtSection section;
+      transport->processAudio(buffers, 1, block);
+    }
+    transport->processCallbacks();
+  }
+
+  EXPECT_EQ(callback.underruns.load(), 0)
+      << "loop restart missed after trim-IN nudges with loop enabled";
+  EXPECT_EQ(RtGuardState::totalViolations(), 0u);
+  transport->setCallback(nullptr);
+}
+
 TEST(ResamplingSeekPrimeTest, WrappedReaderErrorIsNotConvertedToEof) {
   auto reader = std::make_shared<FaultReader>(48000);
   ResamplingAudioFileReader resampling(reader, 44100);

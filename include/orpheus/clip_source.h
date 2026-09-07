@@ -187,6 +187,17 @@ public:
   /// THREAD ONLY.
   void serviceCommandDemand();
 
+  /// Pin the loop-restart page (the page covering `pos`, i.e. trim-IN) while
+  /// loop mode is enabled. The audio thread's loop boundary restarts playback
+  /// at trim-IN and cannot block or prime, so the page must already be
+  /// resident; this keeps it pinned against window retirement until
+  /// releaseLoopAnchor(). Re-anchors when `pos` changes. CONTROL THREAD ONLY.
+  SessionGraphError pinLoopAnchor(int64_t pos);
+
+  /// Drop the loop-anchor pin. The page stays resident until the steady window
+  /// retires it normally. CONTROL THREAD ONLY.
+  void releaseLoopAnchor() noexcept;
+
 private:
   friend class MediaStreamWorker; // attach() sets m_attached; serviceCommandDemand() fills command primes
 
@@ -242,6 +253,7 @@ private:
   std::atomic<int64_t> m_commandDemandFrames{0};
   std::atomic<uint32_t> m_commandFillState{0};          // 0 idle, 1 done-ok, 2 done-failed
   std::atomic<uint16_t> m_commandFillMask{0};           // worker-pinned pages (state==1)
+  std::atomic<int64_t> m_loopAnchorStart{-1};           // pinned loop-restart page (control thread)
   uint16_t m_numChannels;
   int64_t m_lengthFrames;
   Page m_pages[kNumPages];
