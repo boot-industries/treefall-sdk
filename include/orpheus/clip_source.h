@@ -32,6 +32,11 @@
 //    (setDemand); the worker polls it. Unprimed reposition/cache misses remain
 //    non-blocking false returns. Command preparation owns reader access and
 //    page publication before the command can be consumed.
+//  * While attached to a MediaStreamWorker, the worker is the SOLE decoder:
+//    command priming (primeForCommand) and prefill publish a demand request
+//    and wait for the worker to fill it (bounded by kFillWaitTimeout) instead
+//    of decoding directly. m_readerMutex serializes decode only in the
+//    unattached direct-drive path (unit tests) and the wait-timeout fallback.
 //
 // Reads are position-explicit (no shared file cursor), which also makes
 // multi-voice playback of one clip correct by construction — voices no
@@ -39,7 +44,9 @@
 
 #include <orpheus/audio_file_reader.h>
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -105,20 +112,29 @@ private:
 /// Fixed-page streaming source for long files.
 ///
 /// The resident window is BIDIRECTIONAL (FTR025 T3b): one page behind the
-/// demand position plus the demand page and two pages ahead. Forward playback
-/// keeps ~2.7 s of lookahead; reverse/scrub playback keeps ~1.4 s of runway
+/// demand position plus the demand page and four pages ahead. Forward playback
+/// keeps ~8.2 s of lookahead; reverse/scrub playback keeps ~1.4 s of runway
 /// behind the cursor, so position-explicit reads serve true backward playback
 /// (descending positions) without a miss at every backward page crossing.
 class StreamingClipSource : public IClipSource {
 public:
   static constexpr size_t kPageFrames = 65536; ///< frames per page (~1.4s @ 48k)
-  static constexpr size_t kWindowPages = 4;    ///< 1 behind + demand + 2 ahead (≈5.5s @ 48k)
+  static constexpr size_t kWindowPages = 6;    ///< 1 behind + demand + 4 ahead (≈8.2s @ 48k)
   static constexpr size_t kCommandPrimePages = 4;
   static constexpr size_t kNumPages = kWindowPages + kCommandPrimePages;
-  static_assert(kNumPages <= 8, "PrimeReservation page mask must cover every page");
+  static_assert(kNumPages <= 16, "PrimeReservation page mask must cover every page");
 
   struct PrimeReservation {
-    uint8_t pageMask{0};
+    uint16_t pageMask{0};
+  };
+
+  struct LoopAnchorTransition {
+    static constexpr size_t kInactivePageIndex = kNumPages;
+
+    size_t previousPageIndex{kInactivePageIndex};
+    int64_t previousStart{-1};
+    size_t replacementPageIndex{kInactivePageIndex};
+    int64_t replacementStart{-1};
   };
 
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
@@ -145,6 +161,9 @@ public:
   /// newly published page or pin in reservation. An existing reservation may
   /// be extended, but a request spanning more than kCommandPrimePages pages is
   /// rejected before mutation.
+  /// Attached: waits for the worker to decode the missing pages. On timeout,
+  /// cancellation is acknowledged before the bounded synchronous fallback.
+  /// Unattached: synchronous decode.
   SessionGraphError primeForCommand(int64_t pos, size_t frames, PrimeReservation& reservation);
 
   /// CONTROL THREAD for rejected/unread-command cleanup, or AUDIO THREAD after
@@ -156,13 +175,14 @@ public:
     return m_pendingCommandPrimes.load(std::memory_order_acquire) != 0;
   }
 
-  /// Fill up to `max_pages` non-resident pages of the steady worker window
-  /// synchronously — the demand page first, then forward pages, then behind.
-  /// The audible page is mandatory; later look-ahead pages are best effort.
-  /// When `commandReservation` is supplied, the mandatory page is pinned as a
+  /// Fill up to `max_pages` non-resident pages of the steady worker window —
+  /// the demand page first, then forward pages, then behind. The audible page
+  /// is mandatory; later look-ahead pages are best effort. When
+  /// `commandReservation` is supplied, the mandatory page is pinned as a
   /// command-owned page so a caller publishing a command can use command-prime
   /// capacity when the steady window is full.
-  /// CONTROL/WORKER THREAD.
+  /// Attached: waits for the worker to fill the window; look-ahead remains
+  /// best effort after the bounded wait. Unattached: synchronous fill.
   SessionGraphError prefill(int64_t pos, size_t max_pages = kWindowPages,
                             PrimeReservation* commandReservation = nullptr);
 
@@ -170,8 +190,49 @@ public:
   /// WORKER THREAD ONLY.
   void service();
 
+  /// One worker pass: fill every page demanded by a pending command prime,
+  /// pin them as command-owned, and publish the completion mask. WORKER
+  /// THREAD ONLY.
+  void serviceCommandDemand();
+
+  /// Prepare an exact loop-anchor ownership transition without changing the
+  /// current anchor. CONTROL THREAD ONLY.
+  SessionGraphError prepareLoopAnchorTransition(int64_t pos, bool enabled,
+                                                LoopAnchorTransition& transition);
+
+  /// Commit a prepared loop-anchor transition after its command is admitted.
+  /// CONTROL THREAD ONLY.
+  void commitLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
+
+  /// Roll back a prepared transition whose command was rejected or discarded.
+  /// CONTROL THREAD ONLY.
+  void rollbackLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
+
 private:
+  friend class MediaStreamWorker; // attach() sets m_attached; worker fills command primes
+  friend class StreamingClipSourceTestAccess;
+
   static constexpr uint32_t kClaimed = UINT32_MAX;
+  static constexpr std::chrono::milliseconds kFillWaitTimeout{2000};
+
+  enum class CommandFillState : uint8_t {
+    Idle,
+    Pending,
+    Filling,
+    Succeeded,
+    Failed,
+    CancelRequested,
+    Cancelled
+  };
+
+  struct CommandFillRequest {
+    uint64_t generation{0};
+    int64_t start{-1};
+    int64_t frames{0};
+    CommandFillState state{CommandFillState::Idle};
+    uint16_t residentPinMask{0};
+    uint16_t freshPageMask{0};
+  };
 
   struct Page {
     // -1 == FREE, >= 0 == READY at that aligned frame. A nonzero guard makes
@@ -197,13 +258,31 @@ private:
   /// Fill one FREE steady-window page and publish it. Worker/control thread.
   SessionGraphError fillPage(int64_t alignedStart);
 
+  /// Fill up to `max_pages` pages of the steady window at `base` — demand page
+  /// first, then forward pages, then behind. Caller holds m_readerMutex.
+  SessionGraphError fillWindow(int64_t base, size_t max_pages);
+
+  /// Decode the missing command pages into FREE command-pool pages (indices
+  /// kWindowPages..kNumPages-1), pin them, and set the matching claimedMask
+  /// bits. Caller holds m_readerMutex.
+  SessionGraphError
+  decodeMissingIntoCommandPool(const std::array<int64_t, kCommandPrimePages>& missingPages,
+                               size_t missingCount, uint16_t& claimedMask);
+
   /// Undo exactly one READY-page pin acquired by a failed command-prime scan.
   void releaseReadyPin(Page& page) noexcept;
 
   std::shared_ptr<IAudioFileReader> m_reader; // worker/control threads only
   std::mutex m_readerMutex;                   // serializes prefill vs service
+  std::mutex m_fillMutex;                     // protects the command-fill request transaction
+  std::condition_variable m_fillCv;
   std::atomic<int64_t> m_demand{0};
   std::atomic<uint32_t> m_pendingCommandPrimes{0};
+  std::atomic<bool> m_attached{false}; // set by MediaStreamWorker::attach
+  uint64_t m_nextCommandFillGeneration{1};
+  CommandFillRequest m_commandFillRequest{};
+  size_t m_loopAnchorPageIndex{kNumPages};
+  int64_t m_loopAnchorStart{-1};
   uint16_t m_numChannels;
   int64_t m_lengthFrames;
   Page m_pages[kNumPages];

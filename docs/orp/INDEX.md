@@ -22,6 +22,9 @@ Project documentation index for orpheus-sdk.
 
 - [[ORP256 ShmUI Segmented Meter Import Handoff]] — governed segmented meter
   package import and downstream handoff (2026-08-30)
+- [[ORP258 Streaming Prefetch Realtime Sustain Fix]] — transactional worker
+  command-page ownership, loop-anchor transitions, and source-scoped
+  consumption-aware streaming primes (2026-09-07)
 
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
   rate policy, safe nominal writes, SRC fallback, and verified-rate stream
@@ -63,6 +66,7 @@ Project documentation index for orpheus-sdk.
 - [ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors](ORP255%20Strategic%20Architecture,%20Competitive%20Posture,%20and%20Expansion%20Vectors.md)
 - [ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation](ORP254%20Suite%20Commercialization,%20Rebrand%20Strategy,%20and%20Tier%20Segmentation.md)
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
+- [ORP258 Streaming Prefetch Realtime Sustain Fix](ORP258%20Streaming%20Prefetch%20Realtime%20Sustain%20Fix.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
 - [ORP257 Host-Neutral Multichannel Metering Contract](ORP257%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
