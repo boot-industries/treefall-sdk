@@ -1022,8 +1022,10 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    m_pendingStartReservations[m_pendingStartReservationCount++] = {command.startSource,
-                                                                    command.startPrime};
+    const int64_t primedStart =
+        command.startContext ? command.startContext->trimInSamples : 0;
+    m_pendingStartReservations[m_pendingStartReservationCount++] = {
+        command.startSource, command.startPrime, primedStart};
   };
   const auto processStart = [&](const TransportCommand& command) -> uint32_t {
     if (command.requestTag != 0 && m_startSettlementSequenceExhausted) {
@@ -1288,7 +1290,8 @@ void TransportController::processCommands() {
           PendingSeekReservation& pending = m_pendingSeekReservations[index];
           if (pending.source == cmd.seekSource) {
             pending.source->releaseCommandPrime(pending.prime);
-            pending = {cmd.handle, cmd.seekSource, cmd.seekPrime};
+            pending = {cmd.handle, cmd.seekSource, cmd.seekPrime,
+                       cmd.data.seekPosition};
             replaced = true;
             break;
           }
@@ -1297,7 +1300,7 @@ void TransportController::processCommands() {
           assert(m_pendingSeekReservationCount < MAX_ACTIVE_CLIPS);
           if (m_pendingSeekReservationCount < MAX_ACTIVE_CLIPS) {
             m_pendingSeekReservations[m_pendingSeekReservationCount++] = {
-                cmd.handle, cmd.seekSource, cmd.seekPrime};
+                cmd.handle, cmd.seekSource, cmd.seekPrime, cmd.data.seekPosition};
           } else {
             // The bound is implied by the active-voice ceiling. Retain
             // failure-atomic lifetime behavior even in a corrupted state.
@@ -1418,25 +1421,69 @@ void TransportController::releaseActiveSource(SourceCommandLifetime* lifetime) n
 }
 
 void TransportController::releasePendingStartReservations() noexcept {
+  // OCC191: a Start prime must stay pinned until the consuming voice has
+  // actually read past the primed page. Releasing one block too early lets a
+  // competing command (seek/restart) retire the page before the first render
+  // consumed it, producing a silent-buffer underrun on the restart.
+  size_t kept = 0;
   for (size_t index = 0; index < m_pendingStartReservationCount; ++index) {
     PendingStartReservation& pending = m_pendingStartReservations[index];
-    if (pending.source && pending.prime.pageMask != 0) {
-      pending.source->releaseCommandPrime(pending.prime);
+    if (pending.source == nullptr || pending.prime.pageMask == 0) {
+      continue;
     }
-    pending = {};
+    const int64_t primeEnd =
+        pending.primedStart + static_cast<int64_t>(StreamingClipSource::kPageFrames);
+    bool consumed = true;
+    for (size_t voice = 0; voice < m_activeClipCount; ++voice) {
+      const ActiveClip& clip = m_activeClips[voice];
+      if (clip.handle == 0) {
+        continue;
+      }
+      // The primed page is consumed once every voice on this source has read
+      // past its end (sourcePosition is the fractional source cursor).
+      if (clip.sourcePosition < static_cast<double>(primeEnd)) {
+        consumed = false;
+        break;
+      }
+    }
+    if (consumed) {
+      pending.source->releaseCommandPrime(pending.prime);
+      pending = {};
+    } else {
+      m_pendingStartReservations[kept++] = pending;
+    }
   }
-  m_pendingStartReservationCount = 0;
+  m_pendingStartReservationCount = kept;
 }
 
 void TransportController::releasePendingSeekReservations() noexcept {
+  // OCC191: same consumption rule for accepted seeks — the seek prime pins the
+  // first-render page and must survive until the sought voice reads past it.
+  size_t kept = 0;
   for (size_t index = 0; index < m_pendingSeekReservationCount; ++index) {
     PendingSeekReservation& pending = m_pendingSeekReservations[index];
-    if (pending.source && pending.prime.pageMask != 0) {
-      pending.source->releaseCommandPrime(pending.prime);
+    if (pending.source == nullptr || pending.prime.pageMask == 0) {
+      continue;
     }
-    pending = {};
+    const int64_t primeEnd =
+        pending.primedStart + static_cast<int64_t>(StreamingClipSource::kPageFrames);
+    bool consumed = true;
+    for (size_t voice = 0; voice < m_activeClipCount; ++voice) {
+      const ActiveClip& clip = m_activeClips[voice];
+      if (clip.handle != pending.handle || clip.sourcePosition >= static_cast<double>(primeEnd)) {
+        continue;
+      }
+      consumed = false;
+      break;
+    }
+    if (consumed) {
+      pending.source->releaseCommandPrime(pending.prime);
+      pending = {};
+    } else {
+      m_pendingSeekReservations[kept++] = pending;
+    }
   }
-  m_pendingSeekReservationCount = 0;
+  m_pendingSeekReservationCount = kept;
 }
 
 ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
@@ -2407,6 +2454,11 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
   m_streamWorker->attach(streaming);
   entry.source = streaming;
   streaming->setDemand(entry.trimInSamples); // steady window target
+  // OCC191: a clip loaded with loop already enabled must pin its loop-restart
+  // page now — the audio thread cannot prime at the loop boundary.
+  if (entry.loopEnabled) {
+    (void)streaming->pinLoopAnchor(entry.trimInSamples);
+  }
   if (reservation != nullptr) {
     return streaming->primeForCommand(entry.trimInSamples, 1, *reservation);
   }
@@ -2447,13 +2499,24 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
   }
 
   // Store trim points persistently in AudioFileEntry
+  StreamingClipSource* streaming = nullptr;
+  bool loopEnabled = false;
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
     if (it != m_audioFiles.end()) {
       it->second.trimInSamples = trimInSamples;
       it->second.trimOutSamples = trimOutSamples;
+      loopEnabled = it->second.loopEnabled;
+      if (it->second.source) {
+        streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+      }
     }
+  }
+
+  // OCC191: the loop-restart page follows trim-IN; re-pin it when trim moves.
+  if (streaming != nullptr && loopEnabled) {
+    (void)streaming->pinLoopAnchor(trimInSamples);
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
@@ -2620,6 +2683,7 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
   }
 
   // Store loop mode persistently in AudioFileEntry
+  StreamingClipSource* streaming = nullptr;
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
@@ -2627,6 +2691,25 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
       return SessionGraphError::ClipNotRegistered;
     }
     it->second.loopEnabled = shouldLoop;
+    if (it->second.source) {
+      streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+    }
+  }
+
+  // OCC191: while looping, the audio-thread loop boundary restarts at trim-IN
+  // and cannot block, so keep the loop-restart page pinned resident.
+  if (streaming != nullptr) {
+    if (shouldLoop) {
+      int64_t trimIn = 0;
+      {
+        std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+        const auto it = m_audioFiles.find(handle);
+        trimIn = it != m_audioFiles.end() ? it->second.trimInSamples : 0;
+      }
+      (void)streaming->pinLoopAnchor(trimIn);
+    } else {
+      streaming->releaseLoopAnchor();
+    }
   }
 
   // Post command to audio thread for thread-safe update (ORP115)
@@ -2814,6 +2897,24 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   // Queue admission precedes the persistent commit. A full ring therefore
   // cannot publish metadata that active voices did not receive, which is
   // required when group choke compares registered and active routing groups.
+  // OCC191: keep the loop-restart page pinned while loop mode is enabled. The
+  // app toggles loop through updateClipMetadata, not setClipLoopMode.
+  StreamingClipSource* streaming = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+    auto it = m_audioFiles.find(handle);
+    if (it != m_audioFiles.end() && it->second.source) {
+      streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+    }
+  }
+  if (streaming != nullptr) {
+    if (metadata.loopEnabled) {
+      (void)streaming->pinLoopAnchor(metadata.trimInSamples);
+    } else {
+      streaming->releaseLoopAnchor();
+    }
+  }
+
   {
     std::lock_guard<std::mutex> lock(m_audioFilesMutex);
     auto it = m_audioFiles.find(handle);
