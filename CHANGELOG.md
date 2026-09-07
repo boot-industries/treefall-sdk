@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Orpheus SDK will be documented in this file.
+All notable changes to the Treefall SDK will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
+- Transport queue refusal now returns `NotReady` without changing persistent
+  clip metadata, choking peers, retaining source leases, or settling rejected
+  start tags. Registry-dependent validation, preparation, admission, and
+  persistent commits share one control-thread transaction.
 
 - Registered streaming `startClip` and `startClipWithGroupChoke` preparation now
   pins their trim-IN first-render page with command-prime capacity when the
@@ -41,6 +46,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Public `getAudioFileCapabilities`, `preflightAudioFileWrite`, and
+  `probeAudioFile` expose immutable codec policy, exact writer-tuple validation,
+  and background-only header probing. Missing providers remain distinct from
+  unsupported formats, invalid parameters, and runtime file failures.
+- An installed public-API offline render consumer verifies exact stereo PCM16
+  samples and a fixed SHA-256 across 256/512/1024/2048-frame blocks and repeats.
+  The obsolete offline-renderer executable is retired; its README is the
+  supported transport/reader/writer composition recipe.
+- Bounded multi-producer command ingress retains 255 usable nodes, limits
+  publication to 32 CAS attempts, and exposes independent saturating admission,
+  capacity, contention, preparation-rejection, and processed counters. Audio
+  consumption remains single-threaded; source preparation is not realtime-safe.
+- Additive `TreefallSDK`, `Treefall::` targets, `treefall/` headers, a C++ namespace
+  alias, and six real `treefall_*` C entrypoints share the existing binaries and
+  C ABI 1.0 tables. Both package names support relocated installations.
+
 - Added schema-3 canonical routing telemetry plus the nested schema-1
   logical-group-output lane payload. Routing now exposes independent fixed
   logical lanes while preserving legacy aggregate getters and the legacy LUFS
@@ -70,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a monitored profile change.
 
 ### Changed
+
+- New archive and release-evidence names use `treefall-sdk`; existing Orpheus
+  configs, headers, native libraries, exports, build options, and the actual
+  source repository remain unchanged. Legacy surfaces remain throughout C ABI
+  1.0; removal requires a separately approved major migration.
+- The appended transport ingress telemetry virtual requires rebuilding C++
+  consumers, including custom implementations. No SDK version, tag, backend
+  support tier, ShmUI import, or downstream pin is promoted by this change.
 
 - Synchronized `packages/shmui-juce` to ShmUI `6129e3cb73f32922e588aa647bbafb87fccdc324`
   and token contract 0.5.0. The package now exposes six orthogonal Console

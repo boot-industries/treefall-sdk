@@ -1,10 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Orpheus SDK support matrix
+# Treefall SDK support matrix
 
-**SDK version:** generated from `project(orpheus VERSION ...)` in the root
-`CMakeLists.txt`. Run `python3 tools/version_contract.py --check` to verify the
-repository claims.
+**Public product identity:** Treefall SDK. The technical CMake project remains
+`orpheus`, so the SDK version is generated from `project(orpheus VERSION ...)`
+in the root `CMakeLists.txt`. Run `python3 tools/version_contract.py --check`
+to verify the repository claims.
 
 ## Release tiers
 
@@ -55,20 +56,24 @@ to required CI.
 
 ## Documented installed targets
 
-The machine-readable manifest is installed at
-`share/orpheus/installed-targets.json`. Stable targets for supported host-neutral
+The machine-readable manifest is installed at `share/orpheus/installed-targets.json`;
+Treefall package discovery provides the same physical targets under the
+`Treefall::` compatibility namespace. Stable targets for supported host-neutral
 scenarios are:
 
-- `Orpheus::core`
-- `Orpheus::diagnostics`
-- `Orpheus::audio_utils`
-- `Orpheus::audio_io`
-- `Orpheus::routing`
-- `Orpheus::transport`
+- `Orpheus::core` / `Treefall::core`
+- `Orpheus::diagnostics` / `Treefall::diagnostics`
+- `Orpheus::audio_utils` / `Treefall::audio_utils`
+- `Orpheus::audio_io` / `Treefall::audio_io`
+- `Orpheus::routing` / `Treefall::routing`
+- `Orpheus::transport` / `Treefall::transport`
 
-Platform and optional targets appear only when their build feature and dependencies
-are enabled. Consumers must not infer availability from the operating system; they
-must test the CMake target or query the driver capability API.
+Existing `OrpheusSDK` package configuration remains supported; new integrations
+may discover `TreefallSDK`. These names do not create a second binary graph.
+Platform and optional targets appear only when their build feature and
+dependencies are enabled. Consumers must not infer availability from the
+operating system; they must test the CMake target or query the driver capability
+API.
 
 ## Linux backend decision
 
