@@ -109,6 +109,9 @@ struct TransportCommand {
   StreamingClipSource* seekSource{nullptr};
   StreamingClipSource::PrimeReservation seekPrime{};
 
+  StreamingClipSource* loopAnchorSource{nullptr};
+  StreamingClipSource::LoopAnchorTransition loopAnchorTransition{};
+
   union {
     struct {
       int64_t in;
