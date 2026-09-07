@@ -161,3 +161,91 @@ Game studios, post houses, and sound libraries manage petabytes of audio assets 
 4. **Step 4: Linux ALSA & Robotics Seam**
    - Implement a dedicated, minimal ALSA provider (`G-01b`) for headless Linux appliances.
    - Prototype the `treefall_ros2` node and headless asset linter CLI.
+
+---
+
+## 8. Sprint Decomposition Recommendations
+
+To de-risk delivery, prevent architectural regression, and maintain strict realtime safety audit compliance, the expansion and hardening work is decomposed into four discrete, sequential sprints. Each sprint has an explicit entry gate, core deliverables, and verifiable acceptance criteria.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                       SPRINT SEQUENCING ROADMAP                        │
+│                                                                        │
+│  Sprint 1: Public Offline Seam & Codec Preflight (G-08 / G-07)         │
+│  ├── Public CMake offline render fixture & documentation               │
+│  ├── Bit-exact golden hash regression tests                            │
+│  └── Codec preflight verification API                                  │
+│                                 │                                      │
+│                                 ▼                                      │
+│  Sprint 2: High-Concurrency Control Ingress (G-02)                     │
+│  ├── Bounded MPSC transport command ring                               │
+│  ├── Lock-free multi-producer thread safety audit                      │
+│  └── Tagged settlement telemetry integration                           │
+│                                 │                                      │
+│                                 ▼                                      │
+│  Sprint 3: Platform Evidence & Windows Promotion (G-01a)               │
+│  ├── Physical hardware WASAPI acceptance runner execution              │
+│  ├── Windows package/ABI verification gate closure                     │
+│  └── Promotion of WASAPI to Supported status in SUPPORT_MATRIX.md       │
+│                                 │                                      │
+│                                 ▼                                      │
+│  Sprint 4: Headless Linux & Edge Robotics Wedge (G-01b & ROS 2)        │
+│  ├── Dedicated minimal ALSA device provider (no generic Linux claims)  │
+│  ├── Headless CLI asset verification & lint utility (`treefall-lint`)  │
+│  └── Prototype ROS 2 lifecycle audio node (`treefall_ros2`)            │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.1 Sprint 1 — Public Offline Seam & Codec Preflight (`ORP256`)
+
+**Theme:** Developer ergonomics, documentation parity, and offline determinism.  
+**Focus:** Address `G-08` and `G-07` from ORP147 without modifying realtime callback internals.
+
+- **Core Objectives:**
+  1. **Public Offline Render Fixture (`G-08`):** Author a clean-prefix installed-package consumer fixture under `tests/cmake/` demonstrating headless, non-realtime render-to-disk pipelines using only documented `Orpheus::` public targets.
+  2. **Golden-Hash Determinism:** Prove bit-identical offline render hashes across various buffer sizes (256, 512, 1024, 2048 samples) and across OS runners.
+  3. **Codec & Preflight Capability Registry (`G-07`):** Expose public API methods allowing hosts to query supported file formats, sample rates, and bit depths prior to allocation or playback attempts.
+- **Acceptance Criteria:**
+  - `ctest -R cmake_find_package` builds and runs the offline render example cleanly from an installed prefix.
+  - Stale in-tree offline renderer examples are either updated to match public headers or retired.
+  - `realtime_static_audit` remains green.
+
+### 8.2 Sprint 2 — High-Concurrency Control Ingress (`ORP257`)
+
+**Theme:** Multi-threaded control-plane safety and low-latency command ingestion.  
+**Focus:** Address `G-02` (bounded multi-producer control ingress).
+
+- **Core Objectives:**
+  1. **Bounded MPSC Command Queue:** Replace the single-producer transport command boundary with a bounded, lock-free Multi-Producer Single-Consumer (MPSC) queue, allowing simultaneous event posting from UI, MIDI, OSC, and automation threads without external mutex locks.
+  2. **Command Drop & Sequence Telemetry:** Ensure saturating counters track command queue saturation and drops without heap allocations or blocking waits.
+  3. **Settlement Contract Conformance:** Preserve tagged start outcomes and active voice reconciliation contracts established in ORP252.
+- **Acceptance Criteria:**
+  - TSAN stress test: 8 concurrent threads saturating the command queue while the audio thread consumes at 96 kHz / 64 frames. Zero data races, zero deadlocks, zero heap allocations on the consumer side.
+  - `realtime_harness_test` confirms memory-hook invariance and zero OS I/O.
+
+### 8.3 Sprint 3 — Windows WASAPI Hardware Promotion (`ORP258`)
+
+**Theme:** Platform truthfulness and evidence closure.  
+**Focus:** Address `G-01a` to graduate Windows from experimental/unsupported status.
+
+- **Core Objectives:**
+  1. **Real-Device Hardware Execution:** Execute the manual `wasapi-hardware-acceptance` workflow on a verified physical Windows audio workstation.
+  2. **Format Negotiation & XRun Validation:** Verify exclusive/shared mode transitions, channel mapping adherence (refusing mismatched channel counts without silent truncation), and underrun telemetry reporting under physical load.
+  3. **Matrix Promotion:** Update `docs/SUPPORT_MATRIX.md` to promote Windows/WASAPI to full release-supported status backed by published acceptance artifacts.
+- **Acceptance Criteria:**
+  - Machine-readable hardware acceptance artifact committed to repository records.
+  - Windows Debug and Release CI package/ABI fixtures pass without waivers.
+
+### 8.4 Sprint 4 — Headless Linux ALSA & Robotics Wedge (`ORP259`)
+
+**Theme:** Edge computing, industrial robotics, and headless tooling.  
+**Focus:** Address `G-01b` and seed the robotics/asset-tooling expansion.
+
+- **Core Objectives:**
+  1. **Dedicated Minimal ALSA Provider:** Implement a focused, zero-allocation ALSA device backend (`Orpheus::alsa` / `Treefall::alsa`) adhering strictly to callback safety contracts (no ALSA plugin bloat, direct MMAP hardware access where available).
+  2. **Standalone Asset Linter CLI (`treefall-lint`):** Build a lightweight command-line tool using SDK analysis primitives for CI/CD pipelines (clipping detection, LUFS compliance, SHA-256 fingerprint validation).
+  3. **ROS 2 Lifecycle Audio Prototype (`treefall_ros2`):** Package a reference ROS 2 C++ node wrapping the headless ALSA engine, publishing telemetry topics and consuming robot audio cue events.
+- **Acceptance Criteria:**
+  - ALSA driver passes common device conformance tests in Linux CI (clean enumeration, format negotiation, xrun accounting).
+  - `treefall-lint` runs headless in a GitHub Action and verifies sample audio directories with deterministic exit codes.
