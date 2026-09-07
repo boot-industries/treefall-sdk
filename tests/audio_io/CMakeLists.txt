@@ -151,7 +151,25 @@ endif()
 
 add_test(NAME reverse_read_test COMMAND reverse_read_test)
 
-# Audio file reader tests (requires libsndfile)
+# D1: allocation-free capability registry and truthful codec/file preflight.
+add_executable(audio_file_capabilities_test
+    audio_file_capabilities_test.cpp
+)
+target_link_libraries(audio_file_capabilities_test
+    PRIVATE
+        orpheus_audio_utils
+        GTest::gtest
+        GTest::gtest_main
+)
+target_include_directories(audio_file_capabilities_test
+    PRIVATE ${CMAKE_SOURCE_DIR}/include
+)
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
+    target_compile_definitions(audio_file_capabilities_test PRIVATE
+        ORPHEUS_AUDIO_FILE_CAPABILITIES_HAVE_SNDFILE)
+endif()
+add_test(NAME audio_file_capabilities_test COMMAND audio_file_capabilities_test)
+
 if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
     add_executable(audio_file_reader_test
         audio_file_reader_test.cpp

@@ -26,9 +26,9 @@ struct AudioFileMetadata {
   uint32_t sample_rate;         ///< Sample rate in Hz (e.g., 48000)
   uint16_t num_channels;        ///< Number of audio channels (1=mono, 2=stereo, etc.)
   int64_t duration_samples;     ///< Total duration in sample frames
-  uint16_t bit_depth;           ///< Bit depth (16, 24, 32)
+  uint16_t bit_depth;           ///< Represented bit depth (16, 24, 32), or 0 for other subtypes
   std::string codec;            ///< Codec name (e.g., "PCM", "FLAC")
-  std::string file_hash_sha256; ///< SHA-256 hash of file (for integrity verification)
+  std::string file_hash_sha256; ///< SHA-256 on reader open; empty for header-only probeAudioFile
 
   /// Derived: Duration in seconds
   double durationSeconds() const {
