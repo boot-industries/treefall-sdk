@@ -12,25 +12,25 @@ importers:
   .:
     devDependencies:
       '@changesets/changelog-github':
-        specifier: ^0.5.0
+        specifier: 0.5.1
         version: 0.5.1
       '@changesets/cli':
-        specifier: ^2.26.2
+        specifier: 2.29.7
         version: 2.29.7(@types/node@20.5.1)
       '@commitlint/cli':
-        specifier: ^17.6.3
+        specifier: 17.8.1
         version: 17.8.1
       '@commitlint/config-conventional':
-        specifier: ^17.6.3
+        specifier: 17.8.1
         version: 17.8.1
       husky:
-        specifier: ^9.1.7
+        specifier: 9.1.7
         version: 9.1.7
       lint-staged:
-        specifier: ^16.2.4
+        specifier: 16.2.4
         version: 16.2.4
       prettier:
-        specifier: ^3.3.2
+        specifier: 3.6.2
         version: 3.6.2
 
 packages:
@@ -1003,6 +1003,7 @@ packages:
   /git-raw-commits@2.0.11:
     resolution: {integrity: sha512-VnctFhw+xfj8Va1xtfEqCUD2XDrbAPSJx+hSrE5K7fGdjZruW7XV+QOrN7LF/RJyvspRiD2I0asWsxFp0ya26A==}
     engines: {node: '>=10'}
+    deprecated: Deprecated and no longer maintained. Use @conventional-changelog/git-client instead.
     hasBin: true
     dependencies:
       dargs: 7.0.0
