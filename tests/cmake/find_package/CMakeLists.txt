@@ -77,6 +77,10 @@ target_link_libraries(orpheus_find_package_media_integrity PRIVATE Orpheus::audi
 add_orpheus_fixture(orpheus_find_package_writer_input writer_input.cpp)
 target_link_libraries(orpheus_find_package_writer_input PRIVATE Orpheus::audio_utils)
 
+add_orpheus_fixture(orpheus_find_package_offline_render offline_render.cpp)
+target_link_libraries(orpheus_find_package_offline_render
+  PRIVATE Orpheus::transport Orpheus::audio_utils)
+
 add_orpheus_fixture(orpheus_find_package_transport_routing transport_routing.cpp)
 target_link_libraries(orpheus_find_package_transport_routing
   PRIVATE Orpheus::transport Orpheus::routing Orpheus::audio_driver_manager)
