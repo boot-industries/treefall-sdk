@@ -8,6 +8,10 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP258 Streaming Prefetch Realtime Sustain Fix]] — transactional worker
+  command-page ownership, loop-anchor transitions, and source-scoped
+  consumption-aware streaming primes (2026-09-07)
+
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
   rate policy, safe nominal writes, SRC fallback, and verified-rate stream
   convergence (2026-08-31)
@@ -46,6 +50,7 @@ Project documentation index for orpheus-sdk.
 ## Records
 
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
+- [ORP258 Streaming Prefetch Realtime Sustain Fix](ORP258%20Streaming%20Prefetch%20Realtime%20Sustain%20Fix.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)

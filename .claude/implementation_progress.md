@@ -60,6 +60,28 @@
 
 ---
 
+## ORP258 — Streaming Prefetch Realtime Sustain Remediation (2026-09-07)
+
+- **Branch:** `fix/streaming-prefetch-realtime-sustain` (PR #256); historical
+  implementation commits `994aa680`, `e1e5e255`, and `21360eb5` remain
+  preserved identifiers.
+- **Remediation commit:** `8feafb21`.
+- **Implementation:** Replaced the generation-less command-fill handshake with
+  a mutex-owned generation/state transaction and cancellation acknowledgement;
+  separated late-resident and fresh-page ownership; added exact loop-anchor
+  transitions; made queued trim/loop/metadata mutations failure-atomic; and
+  qualified pending Start/Seek leases by source pointer.
+- **Regressions:** Added deterministic FaultReader gates, test-only
+  `StreamingClipSourceTestAccess`, worker rollback/cancellation coverage,
+  queue-full loop-anchor coverage, source-scoped lease coverage, and queued
+  anchor-nudge coverage in `tests/transport/streaming_seek_test.cpp`.
+- **Verification:** `build-orp256` configured and compiled
+  `orpheus_transport`, `streaming_seek_test`, `multichannel_transport_test`,
+  `realtime_diagnostics_test`, and `realtime_harness_test`. No CTest,
+  runtime, sanitizer, TSan, downstream CI, formatter, or merge was run.
+- **Record:** `docs/orp/ORP258 Streaming Prefetch Realtime Sustain Fix.md`.
+
+
 ## ORP252 — Tagged Start Settlement Contract (2026-08-30)
 
 - **Public contract:** `StartRequestTag` now follows every tagged start through

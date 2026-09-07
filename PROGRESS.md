@@ -41,6 +41,28 @@ is required for final platform evidence.
   the generated `.exe` from its configuration directory. The Windows CTest
   step now allows 15 minutes for the multi-config package gates.
 
+## ORP258 — Streaming prefetch realtime sustain remediation
+
+**Date:** 2026-09-07
+**Branch:** `fix/streaming-prefetch-realtime-sustain` (PR #256; historical implementation commits `994aa680`, `e1e5e255`, and `21360eb5`)
+- **Implementation commit:** `8feafb21`.
+**Status:** Transactional worker/page ownership and failure-atomic loop mutations implemented; affected Debug targets compiled. Runtime tests, downstream CI, and merge remain unrun by the approved plan.
+
+- Replaced the generation-less fill atomics with a mutex-owned
+  `CommandFillRequest` state machine, generation fence, cancellation
+  acknowledgement, and separate late-resident/fresh-page masks.
+- Added exact loop-anchor transitions, source-lifetime retention through queued
+  commands, reverse-order unread-command rollback, source-qualified pending
+  Start/Seek lease release, and queue-admission atomicity for trim/loop/metadata
+  mutations.
+- Added deterministic streaming ownership and queue-full regressions in
+  `tests/transport/streaming_seek_test.cpp`.
+- Record: [`ORP258 Streaming Prefetch Realtime Sustain Fix`](docs/orp/ORP258%20Streaming%20Prefetch%20Realtime%20Sustain%20Fix.md).
+- Verification is compile-only in `build-orp256`; the downstream CTest,
+  Release, sanitizer, and TSan gates are documented in ORP258 and remain
+  unrun.
+
+
 ## ORP253 — CoreAudio output-only rate recovery
 
 **Date:** 2026-08-31  
