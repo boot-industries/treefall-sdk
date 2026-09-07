@@ -6,8 +6,14 @@ foreach(required_var source_dir binary_dir sdk_build_dir install_prefix)
 endforeach()
 
 file(REMOVE_RECURSE "${install_prefix}" "${binary_dir}")
+set(install_args
+  --install "${sdk_build_dir}"
+  --prefix "${install_prefix}")
+if(DEFINED build_type AND NOT build_type STREQUAL "")
+  list(APPEND install_args --config "${build_type}")
+endif()
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --install "${sdk_build_dir}" --prefix "${install_prefix}"
+  COMMAND "${CMAKE_COMMAND}" ${install_args}
   RESULT_VARIABLE install_result)
 if(install_result)
   message(FATAL_ERROR "SDK install failed with code ${install_result}")

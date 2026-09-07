@@ -33,10 +33,10 @@ public:
     auto output_buffers = block.output_buffers;
     const size_t num_channels = block.num_output_channels;
     const size_t num_frames = block.num_frames;
-    m_call_count.fetch_add(1, std::memory_order_relaxed);
-    m_last_num_channels = num_channels;
-    m_last_num_frames = num_frames;
+    m_last_num_channels.store(num_channels, std::memory_order_relaxed);
+    m_last_num_frames.store(num_frames, std::memory_order_relaxed);
     m_total_frames.fetch_add(num_frames, std::memory_order_relaxed);
+    m_call_count.fetch_add(1, std::memory_order_release);
 
     // Record timing for drift measurement
     auto now = std::chrono::steady_clock::now();
@@ -62,20 +62,33 @@ public:
   }
 
   int getCallCount() const {
-    return m_call_count.load(std::memory_order_relaxed);
+    return m_call_count.load(std::memory_order_acquire);
+  }
+
+  bool waitForCall(std::chrono::milliseconds timeout) const {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (getCallCount() == 0) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
   }
 
   void resetCallCount() {
     m_call_count.store(0, std::memory_order_relaxed);
     m_total_frames.store(0, std::memory_order_relaxed);
+    m_last_num_channels.store(0, std::memory_order_relaxed);
+    m_last_num_frames.store(0, std::memory_order_relaxed);
     m_start_time = std::chrono::steady_clock::time_point{};
   }
 
   size_t getLastNumChannels() const {
-    return m_last_num_channels;
+    return m_last_num_channels.load(std::memory_order_acquire);
   }
   size_t getLastNumFrames() const {
-    return m_last_num_frames;
+    return m_last_num_frames.load(std::memory_order_acquire);
   }
 
   uint64_t getTotalFrames() const {
@@ -98,8 +111,8 @@ private:
   std::atomic<int> m_call_count{0};
   std::atomic<uint64_t> m_total_frames{0};
   std::atomic<uint32_t> m_active_clip_count{0};
-  size_t m_last_num_channels{0};
-  size_t m_last_num_frames{0};
+  std::atomic<size_t> m_last_num_channels{0};
+  std::atomic<size_t> m_last_num_frames{0};
   std::chrono::steady_clock::time_point m_start_time{};
   std::chrono::steady_clock::time_point m_last_callback_time{};
 };
@@ -372,9 +385,10 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteSupports256FrameBuffers) {
   const uint32_t actual_frames = m_driver->getActiveRoute().actual_buffer_frames;
   ASSERT_GT(actual_frames, 0u);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ASSERT_TRUE(m_callback->waitForCall(std::chrono::seconds(2)))
+      << "Audio callback never fired";
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
   EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
-  EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
 }
 
 TEST_F(CoreAudioDriverTest, StopWhenNotRunning) {

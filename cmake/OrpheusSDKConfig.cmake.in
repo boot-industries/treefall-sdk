@@ -7,6 +7,10 @@ if(UNIX AND NOT APPLE)
   find_dependency(OpenSSL COMPONENTS Crypto)
 endif()
 
+if(UNIX AND NOT APPLE AND "@ORPHEUS_ENABLE_SHMUI_JUCE@" STREQUAL "ON")
+  find_dependency(CURL)
+endif()
+
 if("@ORPHEUS_SNDFILE_PROVIDER_RESOLVED@" STREQUAL "SndFile")
   find_dependency(SndFile CONFIG)
   if(NOT TARGET SndFile::sndfile)
@@ -18,6 +22,20 @@ elseif("@ORPHEUS_SNDFILE_PROVIDER_RESOLVED@" STREQUAL "PkgConfig")
   if(NOT TARGET PkgConfig::SNDFILE)
     message(FATAL_ERROR "OrpheusSDK requires PkgConfig::SNDFILE")
   endif()
+endif()
+
+if(CMAKE_CONFIGURATION_TYPES)
+  # A multi-config install contains the configuration selected by
+  # `cmake --install --config`. Map the other Visual Studio configurations to
+  # that same installed artifact so CMake does not reject missing locations.
+  set(_orpheus_sdk_imported_config "${CMAKE_BUILD_TYPE}")
+  if(NOT _orpheus_sdk_imported_config)
+    set(_orpheus_sdk_imported_config Release)
+  endif()
+  foreach(_orpheus_sdk_config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set(CMAKE_MAP_IMPORTED_CONFIG_${_orpheus_sdk_config}
+        "${_orpheus_sdk_imported_config}")
+  endforeach()
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/OrpheusSDKTargets.cmake")

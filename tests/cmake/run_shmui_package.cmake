@@ -44,7 +44,8 @@ if(producer_configure_result)
 endif()
 
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${producer_binary_dir}" --parallel
+  COMMAND "${CMAKE_COMMAND}" --build "${producer_binary_dir}"
+          --config "${build_type}" --parallel
   RESULT_VARIABLE producer_build_result)
 if(producer_build_result)
   message(FATAL_ERROR "ShmUI package producer build failed with code ${producer_build_result}")
@@ -88,14 +89,16 @@ if(consumer_configure_result)
 endif()
 
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${consumer_binary_dir}" --parallel
+  COMMAND "${CMAKE_COMMAND}" --build "${consumer_binary_dir}"
+          --config "${build_type}" --parallel
   RESULT_VARIABLE consumer_build_result)
 if(consumer_build_result)
   message(FATAL_ERROR "ShmUI package consumer build failed with code ${consumer_build_result}")
 endif()
 
 execute_process(
-  COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${consumer_binary_dir}" --output-on-failure
+  COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${consumer_binary_dir}"
+          --output-on-failure --build-config "${build_type}"
   RESULT_VARIABLE consumer_test_result)
 if(consumer_test_result)
   message(FATAL_ERROR

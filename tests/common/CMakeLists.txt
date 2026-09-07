@@ -68,3 +68,5 @@ add_test(
     NAME realtime_diagnostics_test
     COMMAND realtime_diagnostics_test
 )
+
+orpheus_stage_runtime_dlls_in_directory()

@@ -539,9 +539,9 @@ void WASAPIAudioDriver::clearCallback() noexcept {
 }
 
 void WASAPIAudioDriver::markTerminalFailure() noexcept {
-  running_.store(false, std::memory_order_release);
-  reinitialize_required_.store(true, std::memory_order_release);
   route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
+  reinitialize_required_.store(true, std::memory_order_release);
+  running_.store(false, std::memory_order_release);
   clearCallback();
 }
 
@@ -664,6 +664,10 @@ void WASAPIAudioDriver::cleanup() noexcept {
   planar_storage_.clear();
   resolved_ = {};
   initialized_.store(false, std::memory_order_release);
+}
+
+std::unique_ptr<IAudioDriver> createWASAPIAudioDriver() {
+  return std::make_unique<WASAPIAudioDriver>();
 }
 
 } // namespace orpheus

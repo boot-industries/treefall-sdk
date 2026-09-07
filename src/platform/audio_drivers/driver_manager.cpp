@@ -25,10 +25,13 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <windows.h>
+
+#include <propkeydef.h>
+
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <mmdeviceapi.h>
-#include <windows.h>
 #endif
 
 namespace orpheus {

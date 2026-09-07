@@ -133,3 +133,5 @@ add_test(
     NAME audio_graph_test
     COMMAND audio_graph_test
 )
+
+orpheus_stage_runtime_dlls_in_directory()

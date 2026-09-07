@@ -76,3 +76,5 @@ if(TARGET orpheus_routing)
 
   add_test(NAME scene_routing_test COMMAND scene_routing_test)
 endif()
+
+orpheus_stage_runtime_dlls_in_directory()
