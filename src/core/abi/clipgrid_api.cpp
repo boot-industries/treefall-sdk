@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "orpheus/abi.h"
+#include "treefall/abi.h"
 
 #include "abi/abi_internal.h"
 
@@ -173,4 +173,9 @@ orpheus_clipgrid_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_
     return nullptr;
   }
   return &kClipgridApiV1;
+}
+
+extern "C" TREEFALL_API const treefall_clipgrid_api_v1*
+treefall_clipgrid_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor) {
+  return orpheus_clipgrid_abi_v1(want_major, got_major, got_minor);
 }

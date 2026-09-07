@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "orpheus/abi.h"
+#include "treefall/abi.h"
 
 #include "abi/abi_internal.h"
 
@@ -96,4 +96,9 @@ orpheus_session_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_m
     return nullptr;
   }
   return &kSessionApiV1;
+}
+
+extern "C" TREEFALL_API const treefall_session_api_v1*
+treefall_session_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor) {
+  return orpheus_session_abi_v1(want_major, got_major, got_minor);
 }

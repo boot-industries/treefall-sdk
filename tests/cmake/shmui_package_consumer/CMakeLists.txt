@@ -22,7 +22,8 @@ FetchContent_MakeAvailable(JUCE)
 
 find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
 
-foreach(required_target Orpheus::core Orpheus::audio_utils Orpheus::shmui_juce)
+foreach(required_target Orpheus::core Orpheus::audio_utils Orpheus::shmui_juce
+                        Treefall::core Treefall::audio_utils Treefall::shmui_juce)
   if(NOT TARGET ${required_target})
     message(FATAL_ERROR "Installed package is missing ${required_target}")
   endif()
@@ -37,8 +38,8 @@ target_compile_features(orpheus_shmui_package_consumer PRIVATE cxx_std_20)
 target_link_libraries(orpheus_shmui_package_consumer PRIVATE
   Orpheus::core
   Orpheus::audio_utils
-  Orpheus::shmui_juce)
-
+  Orpheus::shmui_juce
+  Treefall::shmui_juce)
 if(WIN32)
   foreach(runtime_target
       Orpheus::orpheus_session

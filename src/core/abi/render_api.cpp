@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include "orpheus/abi.h"
 #include "orpheus/music_timing.h"
+#include "treefall/abi.h"
 
 #include "abi/abi_internal.h"
 #include "render/orpheus_wav.hpp"
@@ -292,4 +292,9 @@ orpheus_render_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_mi
     return nullptr;
   }
   return &kRenderApiV1;
+}
+
+extern "C" TREEFALL_API const treefall_render_api_v1*
+treefall_render_abi_v1(uint32_t want_major, uint32_t* got_major, uint32_t* got_minor) {
+  return orpheus_render_abi_v1(want_major, got_major, got_minor);
 }
