@@ -16,12 +16,12 @@ namespace {
 
 class AcceptanceCallback final : public orpheus::IAudioCallback {
 public:
-  void processAudio(const float**, float** outputs, size_t channels, size_t frames) override {
-    for (size_t channel = 0; channel < channels; ++channel) {
-      std::fill_n(outputs[channel], frames, 0.0f);
+  void processAudio(const orpheus::AudioProcessBlock& block) noexcept override {
+    for (uint16_t channel = 0; channel < block.num_output_channels; ++channel) {
+      std::fill_n(block.output_buffers[channel], block.num_frames, 0.0f);
     }
     callbacks_.fetch_add(1, std::memory_order_relaxed);
-    frames_.fetch_add(frames, std::memory_order_relaxed);
+    frames_.fetch_add(block.num_frames, std::memory_order_relaxed);
   }
 
   uint64_t callbacks() const {

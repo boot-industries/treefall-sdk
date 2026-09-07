@@ -130,14 +130,18 @@ TEST_F(CoreAudioSampleRateTransactionTest, ThirdPartyRateChangeIsNotOverwrittenD
   seedRates(api);
   api.suppressListenerDelivery();
 
-  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(30));
-  std::thread mutator([this] {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    api.thirdPartyRateMutation(kOutputDevice, 96000.0);
-  });
-  EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::SampleRateChangeFailed);
-  mutator.join();
+  CoreAudioSampleRateTransaction transaction(api, writePlans(true), std::chrono::milliseconds(100));
+  AudioRouteRuntimeOutcome result = AudioRouteRuntimeOutcome::BackendFailure;
+  std::thread transaction_thread([&] { result = transaction.begin(); });
 
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  while (api.writeLedger().size() < 2u && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  api.thirdPartyRateMutation(kOutputDevice, 96000.0);
+  transaction_thread.join();
+
+  ASSERT_EQ(result, AudioRouteRuntimeOutcome::SampleRateChangeFailed);
   const auto writes = api.writeLedger();
   ASSERT_EQ(writes.size(), 3u);
   EXPECT_EQ(writes[0].object_id, kOutputDevice);

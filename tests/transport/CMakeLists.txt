@@ -702,3 +702,5 @@ set_tests_properties(
 )
 endif()
 endif()
+
+orpheus_stage_runtime_dlls_in_directory()

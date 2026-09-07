@@ -32,6 +32,21 @@ enable_testing()
 function(add_orpheus_fixture target source)
   add_executable(${target} ${source})
   target_compile_features(${target} PRIVATE cxx_std_20)
+  if(WIN32)
+    foreach(runtime_target
+        Orpheus::orpheus_session
+        Orpheus::orpheus_clipgrid
+        Orpheus::orpheus_render)
+      if(TARGET ${runtime_target})
+        add_custom_command(TARGET ${target} POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                  $<TARGET_RUNTIME_DLLS:${target}>
+                  $<TARGET_FILE:${runtime_target}>
+                  $<TARGET_FILE_DIR:${target}>
+          COMMAND_EXPAND_LISTS)
+      endif()
+    endforeach()
+  endif()
   add_test(NAME ${target} COMMAND ${target})
 endfunction()
 

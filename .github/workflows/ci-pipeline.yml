@@ -62,8 +62,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get install -y \
-            libfontconfig1-dev libfreetype-dev libgtk-3-dev libx11-dev libxcomposite-dev \
-            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
+            libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype-dev \
+            libgtk-3-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev
 
       - name: Install libsndfile (macOS)
         if: matrix.os == 'macos-latest'
@@ -185,9 +186,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install libsndfile (core only, no mp3)
+      - name: Install libsndfile (core plus FLAC/Vorbis/Opus, no mp3)
         run: |
-          vcpkg install "libsndfile[core]:x64-windows"
+          vcpkg install "libsndfile[core,external-libs]:x64-windows"
           if ! vcpkg list | grep -q libsndfile; then
             echo "ERROR: libsndfile installation failed"; vcpkg list; exit 1
           fi
@@ -216,7 +217,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
         shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       - name: Package
         run: cmake --build build --config ${{ matrix.build_type }} --target package --parallel
