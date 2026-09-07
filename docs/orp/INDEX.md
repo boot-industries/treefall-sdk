@@ -8,10 +8,13 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors]] —
+  analysis of SDK strengths, architectural weaknesses, streaming seams,
+  autonomous robotics, and high-integrity expansion vectors (2026-09-06)
+
 - [[ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation]] —
   decoupled publisher/engine/app rebrand, open core vs. proprietary policy,
   hardware-scoped TR-40/TR-80 platform tiers, and operator packaging gates (2026-09-03)
-
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
   rate policy, safe nominal writes, SRC fallback, and verified-rate stream
   convergence (2026-08-31)
@@ -49,6 +52,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors](ORP255%20Strategic%20Architecture,%20Competitive%20Posture,%20and%20Expansion%20Vectors.md)
 - [ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation](ORP254%20Suite%20Commercialization,%20Rebrand%20Strategy,%20and%20Tier%20Segmentation.md)
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
@@ -76,4 +80,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-09-03
+**Last Generated:** 2026-09-06
