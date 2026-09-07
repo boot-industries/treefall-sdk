@@ -1,6 +1,6 @@
-# ORP255 Host-Neutral Multichannel Metering Contract
+# ORP257 Host-Neutral Multichannel Metering Contract
 
-**Status:** Implementation committed at `24cce0b4861b3bdb72fbb310ac1784482fc86e94`; feature branch delivery pending
+**Status:** Implementation committed at `24cce0b4861b3bdb72fbb310ac1784482fc86e94`; feature branch delivery pending; record renumbered to ORP257 to preserve the mainline ORP255 namespace
 **Date:** 2026-09-01
 **SDK:** 0.9.0; stable C ABI 1.0
 **Scope:** Host-neutral routing meters, bounded schema-3 telemetry, and C++ migration boundary
@@ -200,7 +200,7 @@ changed by this SDK branch.
 
 The neighboring ShmUI fine-segment source is commit
 `a714344d93e8e84ddb1c194a500f26655cf73149`. The adjacent SDK import/package
-handoff is commit `a5474085`. The ORP254 handoff reports Fine committed at 12
+handoff is commit `a5474085`. The ORP256 handoff reports Fine committed at 12
 grits and a downstream reported Debug gate of 754/754; that is downstream
 user-provided evidence, not an SDK test rerun here. The complete imported
 manifest in this branch, `packages/shmui-juce/shmui-juce-import.json`, records

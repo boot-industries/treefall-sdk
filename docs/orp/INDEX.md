@@ -16,11 +16,11 @@ Project documentation index for orpheus-sdk.
   decoupled publisher/engine/app rebrand, open core vs. proprietary policy,
   hardware-scoped TR-40/TR-80 platform tiers, and operator packaging gates (2026-09-03)
 
-- [[ORP255 Host-Neutral Multichannel Metering Contract]] — schema-3
+- [[ORP257 Host-Neutral Multichannel Metering Contract]] — schema-3
   canonical routing telemetry, logical group-output lanes, and migration
   boundary (2026-09-01)
 
-- [[ORP254 ShmUI Segmented Meter Import Handoff]] — governed segmented meter
+- [[ORP256 ShmUI Segmented Meter Import Handoff]] — governed segmented meter
   package import and downstream handoff (2026-08-30)
 
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
@@ -65,8 +65,8 @@ Project documentation index for orpheus-sdk.
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
-- [ORP255 Host-Neutral Multichannel Metering Contract](ORP255%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
-- [ORP254 ShmUI Segmented Meter Import Handoff](ORP254%20ShmUI%20Segmented%20Meter%20Import%20Handoff.md)
+- [ORP257 Host-Neutral Multichannel Metering Contract](ORP257%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
+- [ORP256 ShmUI Segmented Meter Import Handoff](ORP256%20ShmUI%20Segmented%20Meter%20Import%20Handoff.md)
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
 - [ORP175 ShmUI Operational State Contract Handoff](ORP175%20ShmUI%20Operational%20State%20Contract%20Handoff.md)

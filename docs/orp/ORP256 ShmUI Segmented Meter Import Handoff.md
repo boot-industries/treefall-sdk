@@ -1,6 +1,6 @@
-# ORP254 ShmUI Segmented Meter Import Handoff
+# ORP256 ShmUI Segmented Meter Import Handoff
 
-**Status:** Imported package handoff
+**Status:** Imported package handoff; record renumbered to ORP256 to preserve the mainline ORP254 namespace
 
 ## Decision
 
