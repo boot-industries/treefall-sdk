@@ -195,10 +195,7 @@ Use focused commits with the repository format:
 
 ```text
 type(scope): imperative description
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
-
 Keep the working tree clean, update documentation as part of completion, and
 verify that the intended commit reached `origin/main` when the task requires a
 mainline delivery.

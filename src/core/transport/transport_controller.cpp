@@ -260,8 +260,18 @@ TransportController::~TransportController() {
 
   size_t readIndex = m_commandReadIndex.load(std::memory_order_relaxed);
   const size_t writeIndex = m_commandWriteIndex.load(std::memory_order_acquire);
-  while (readIndex != writeIndex) {
-    const TransportCommand& command = m_commands[readIndex];
+  std::array<size_t, MAX_COMMANDS> unreadIndices{};
+  size_t unreadCount = 0;
+  while (readIndex != writeIndex && unreadCount < MAX_COMMANDS) {
+    unreadIndices[unreadCount++] = readIndex;
+    readIndex = (readIndex + 1) % MAX_COMMANDS;
+  }
+  while (unreadCount != 0) {
+    TransportCommand& command = m_commands[unreadIndices[--unreadCount]];
+    if (command.loopAnchorSource != nullptr) {
+      command.loopAnchorSource->rollbackLoopAnchorTransition(command.loopAnchorTransition);
+      command.loopAnchorSource = nullptr;
+    }
     if (command.type == TransportCommand::Type::Seek && command.seekSource &&
         command.seekPrime.pageMask != 0) {
       command.seekSource->releaseCommandPrime(command.seekPrime);
@@ -272,14 +282,10 @@ TransportController::~TransportController() {
         command.startSource && command.startPrime.pageMask != 0) {
       command.startSource->releaseCommandPrime(command.startPrime);
     }
-    if ((command.type == TransportCommand::Type::Start ||
-         command.type == TransportCommand::Type::StartWithGroupChoke ||
-         command.type == TransportCommand::Type::StartWithStopOthers ||
-         command.type == TransportCommand::Type::Seek) &&
-        command.sourceLifetime) {
+    if (command.sourceLifetime) {
       releaseSourceCommand(command.sourceLifetime);
+      command.sourceLifetime = nullptr;
     }
-    readIndex = (readIndex + 1) % MAX_COMMANDS;
   }
   releasePendingStartReservations();
   releasePendingSeekReservations();
@@ -1229,8 +1235,9 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    m_pendingStartReservations[m_pendingStartReservationCount++] = {command.startSource,
-                                                                    command.startPrime};
+    const int64_t primedStart = command.startContext ? command.startContext->trimInSamples : 0;
+    m_pendingStartReservations[m_pendingStartReservationCount++] = {
+        command.startSource, command.startPrime, primedStart};
   };
   const auto processStart = [&](const TransportCommand& command) -> uint32_t {
     if (command.requestTag != 0 && m_startSettlementSequenceExhausted) {
@@ -1262,7 +1269,7 @@ void TransportController::processCommands() {
   };
 
   while (readIndex != writeIndex) {
-    const TransportCommand& cmd = m_commands[readIndex];
+    TransportCommand& cmd = m_commands[readIndex];
 
     switch (cmd.type) {
     case TransportCommand::Type::Start:
@@ -1495,7 +1502,7 @@ void TransportController::processCommands() {
           PendingSeekReservation& pending = m_pendingSeekReservations[index];
           if (pending.source == cmd.seekSource) {
             pending.source->releaseCommandPrime(pending.prime);
-            pending = {cmd.handle, cmd.seekSource, cmd.seekPrime};
+            pending = {cmd.handle, cmd.seekSource, cmd.seekPrime, cmd.data.seekPosition};
             replaced = true;
             break;
           }
@@ -1504,7 +1511,7 @@ void TransportController::processCommands() {
           assert(m_pendingSeekReservationCount < MAX_ACTIVE_CLIPS);
           if (m_pendingSeekReservationCount < MAX_ACTIVE_CLIPS) {
             m_pendingSeekReservations[m_pendingSeekReservationCount++] = {
-                cmd.handle, cmd.seekSource, cmd.seekPrime};
+                cmd.handle, cmd.seekSource, cmd.seekPrime, cmd.data.seekPosition};
           } else {
             // The bound is implied by the active-voice ceiling. Retain
             // failure-atomic lifetime behavior even in a corrupted state.
@@ -1583,12 +1590,13 @@ void TransportController::processCommands() {
       break;
     }
 
-    if ((cmd.type == TransportCommand::Type::Start ||
-         cmd.type == TransportCommand::Type::StartWithGroupChoke ||
-         cmd.type == TransportCommand::Type::StartWithStopOthers ||
-         cmd.type == TransportCommand::Type::Seek) &&
-        cmd.sourceLifetime) {
+    if (cmd.loopAnchorSource != nullptr) {
+      cmd.loopAnchorSource->commitLoopAnchorTransition(cmd.loopAnchorTransition);
+      cmd.loopAnchorSource = nullptr;
+    }
+    if (cmd.sourceLifetime) {
       releaseSourceCommand(cmd.sourceLifetime);
+      cmd.sourceLifetime = nullptr;
     }
 
     readIndex = (readIndex + 1) % MAX_COMMANDS;
@@ -1625,25 +1633,70 @@ void TransportController::releaseActiveSource(SourceCommandLifetime* lifetime) n
 }
 
 void TransportController::releasePendingStartReservations() noexcept {
+  // OCC191: a Start prime must stay pinned until the consuming voice has
+  // actually read past the primed page. Releasing one block too early lets a
+  // competing command (seek/restart) retire the page before the first render
+  // consumed it, producing a silent-buffer underrun on the restart.
+  size_t kept = 0;
   for (size_t index = 0; index < m_pendingStartReservationCount; ++index) {
     PendingStartReservation& pending = m_pendingStartReservations[index];
-    if (pending.source && pending.prime.pageMask != 0) {
-      pending.source->releaseCommandPrime(pending.prime);
+    if (pending.source == nullptr || pending.prime.pageMask == 0) {
+      continue;
     }
-    pending = {};
+    const int64_t primeEnd =
+        pending.primedStart + static_cast<int64_t>(StreamingClipSource::kPageFrames);
+    bool consumed = true;
+    for (size_t voice = 0; voice < m_activeClipCount; ++voice) {
+      const ActiveClip& clip = m_activeClips[voice];
+      if (clip.handle == 0 || clip.source.get() != pending.source) {
+        continue;
+      }
+      // The primed page is consumed once every voice on this source has read
+      // past its end (sourcePosition is the fractional source cursor).
+      if (clip.sourcePosition < static_cast<double>(primeEnd)) {
+        consumed = false;
+        break;
+      }
+    }
+    if (consumed) {
+      pending.source->releaseCommandPrime(pending.prime);
+      pending = {};
+    } else {
+      m_pendingStartReservations[kept++] = pending;
+    }
   }
-  m_pendingStartReservationCount = 0;
+  m_pendingStartReservationCount = kept;
 }
 
 void TransportController::releasePendingSeekReservations() noexcept {
+  // OCC191: same consumption rule for accepted seeks — the seek prime pins the
+  // first-render page and must survive until the sought voice reads past it.
+  size_t kept = 0;
   for (size_t index = 0; index < m_pendingSeekReservationCount; ++index) {
     PendingSeekReservation& pending = m_pendingSeekReservations[index];
-    if (pending.source && pending.prime.pageMask != 0) {
-      pending.source->releaseCommandPrime(pending.prime);
+    if (pending.source == nullptr || pending.prime.pageMask == 0) {
+      continue;
     }
-    pending = {};
+    const int64_t primeEnd =
+        pending.primedStart + static_cast<int64_t>(StreamingClipSource::kPageFrames);
+    bool consumed = true;
+    for (size_t voice = 0; voice < m_activeClipCount; ++voice) {
+      const ActiveClip& clip = m_activeClips[voice];
+      if (clip.source.get() != pending.source || clip.handle != pending.handle ||
+          clip.sourcePosition >= static_cast<double>(primeEnd)) {
+        continue;
+      }
+      consumed = false;
+      break;
+    }
+    if (consumed) {
+      pending.source->releaseCommandPrime(pending.prime);
+      pending = {};
+    } else {
+      m_pendingSeekReservations[kept++] = pending;
+    }
   }
-  m_pendingSeekReservationCount = 0;
+  m_pendingSeekReservationCount = kept;
 }
 
 ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
@@ -2571,12 +2624,27 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
   // ORP134 G1: build the realtime playback source on the CONTROL thread. All
   // decode/resample/file I/O happens here (or on the stream worker) - the
   // audio thread only ever memcpy-reads the published source.
+  const auto prepareStreaming = [&](const std::shared_ptr<StreamingClipSource>& streaming) {
+    StreamingClipSource::LoopAnchorTransition transition{};
+    SessionGraphError result =
+        streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+    if (result != SessionGraphError::OK) {
+      return result;
+    }
+    result = reservation != nullptr
+                 ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
+                 : streaming->prefill(entry.trimInSamples);
+    if (result != SessionGraphError::OK) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      return result;
+    }
+    streaming->commitLoopAnchorTransition(transition);
+    return SessionGraphError::OK;
+  };
+
   if (entry.source) {
     if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source)) {
-      // Refires and starts synchronously pin their audible trim-IN page. When
-      // the steady worker window is full, the command-owned reservation uses
-      // the separate prime capacity and remains with the Start command.
-      return streaming->prefill(entry.trimInSamples, 1, reservation);
+      return prepareStreaming(streaming);
     }
     return SessionGraphError::OK;
   }
@@ -2599,18 +2667,29 @@ SessionGraphError TransportController::ensurePreparedSourceLocked(
     return SessionGraphError::OK;
   }
 
-  // Long file: stream through a fixed page ring. Prefill the window at the
-  // trim IN synchronously so playback starts without an initial underrun,
-  // then hand the source to the background worker for steady-state refills.
+  // Attach before publishing the source into the registry. If any preparation
+  // step fails, only the worker's weak reference remains and the source is
+  // destroyed without leaving a partially prepared registry entry.
   auto streaming = std::make_shared<StreamingClipSource>(entry.reader, numChannels, lengthFrames);
-  const SessionGraphError prefillResult = streaming->prefill(entry.trimInSamples);
-  if (prefillResult != SessionGraphError::OK) {
-    return prefillResult;
-  }
   if (!m_streamWorker) {
     m_streamWorker = std::make_unique<MediaStreamWorker>();
   }
   m_streamWorker->attach(streaming);
+  streaming->setDemand(entry.trimInSamples);
+
+  StreamingClipSource::LoopAnchorTransition transition{};
+  SessionGraphError result =
+      streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+  if (result != SessionGraphError::OK) {
+    return result;
+  }
+  result = reservation != nullptr ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
+                                  : streaming->prefill(entry.trimInSamples);
+  if (result != SessionGraphError::OK) {
+    streaming->rollbackLoopAnchorTransition(transition);
+    return result;
+  }
+  streaming->commitLoopAnchorTransition(transition);
   entry.source = streaming;
   return SessionGraphError::OK;
 }
@@ -2622,49 +2701,66 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
     return SessionGraphError::InvalidHandle;
   }
 
-  // Find clip in registered audio files (need to check file duration)
-  int64_t fileDurationSamples = 0;
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    fileDurationSamples = it->second.metadata.duration_samples;
-    for (uint32_t index = 0; index < it->second.segmentCount; ++index) {
-      const auto& segment = it->second.segments[index];
-      if (segment.startSample < trimInSamples || segment.endSample > trimOutSamples) {
-        return SessionGraphError::InvalidClipTrimPoints;
-      }
-    }
-  }
-
-  // Validate trim points
-  if (trimInSamples < 0 || trimInSamples >= fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
-  }
-
-  if (trimOutSamples <= trimInSamples || trimOutSamples > fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
-  }
-
-  // Store trim points persistently in AudioFileEntry
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
-      it->second.trimInSamples = trimInSamples;
-      it->second.trimOutSamples = trimOutSamples;
-    }
-  }
-
-  // Post command to audio thread for thread-safe update (ORP115)
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::UpdateTrim;
   cmd.handle = handle;
   cmd.data.trim.in = trimInSamples;
   cmd.data.trim.out = trimOutSamples;
-  return postCommand(cmd);
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+  const int64_t fileDurationSamples = it->second.metadata.duration_samples;
+  for (uint32_t index = 0; index < it->second.segmentCount; ++index) {
+    const auto& segment = it->second.segments[index];
+    if (segment.startSample < trimInSamples || segment.endSample > trimOutSamples) {
+      return SessionGraphError::InvalidClipTrimPoints;
+    }
+  }
+  if (trimInSamples < 0 || trimInSamples >= fileDurationSamples ||
+      trimOutSamples <= trimInSamples || trimOutSamples > fileDurationSamples) {
+    return SessionGraphError::InvalidClipTrimPoints;
+  }
+
+  StreamingClipSource* streaming = nullptr;
+  SourceCommandLifetime* lifetime = nullptr;
+  StreamingClipSource::LoopAnchorTransition transition{};
+  bool transitionPrepared = false;
+  if (it->second.loopEnabled && it->second.source) {
+    streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+    if (streaming != nullptr) {
+      const SessionGraphError prepareResult =
+          streaming->prepareLoopAnchorTransition(trimInSamples, true, transition);
+      if (prepareResult != SessionGraphError::OK) {
+        return prepareResult;
+      }
+      lifetime = it->second.commandLifetime.get();
+      if (lifetime == nullptr) {
+        streaming->rollbackLoopAnchorTransition(transition);
+        return SessionGraphError::InternalError;
+      }
+      transitionPrepared = true;
+      cmd.loopAnchorSource = streaming;
+      cmd.loopAnchorTransition = transition;
+      cmd.sourceLifetime = lifetime;
+      retainSourceCommand(lifetime);
+    }
+  }
+
+  const SessionGraphError postResult = postCommand(cmd);
+  if (postResult != SessionGraphError::OK) {
+    if (transitionPrepared) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      releaseSourceCommand(lifetime);
+    }
+    return postResult;
+  }
+
+  it->second.trimInSamples = trimInSamples;
+  it->second.trimOutSamples = trimOutSamples;
+  return SessionGraphError::OK;
 }
 
 SessionGraphError TransportController::updateClipFades(ClipHandle handle, double fadeInSeconds,
@@ -2816,27 +2912,57 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
 }
 
 SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool shouldLoop) {
-
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Store loop mode persistently in AudioFileEntry
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    it->second.loopEnabled = shouldLoop;
-  }
-
-  // Post command to audio thread for thread-safe update (ORP115)
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::UpdateLoop;
   cmd.handle = handle;
   cmd.data.booleanValue = shouldLoop;
-  return postCommand(cmd);
+
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
+  }
+
+  StreamingClipSource* streaming = nullptr;
+  SourceCommandLifetime* lifetime = nullptr;
+  StreamingClipSource::LoopAnchorTransition transition{};
+  bool transitionPrepared = false;
+  if (it->second.source) {
+    streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+  }
+  if (streaming != nullptr) {
+    const SessionGraphError prepareResult =
+        streaming->prepareLoopAnchorTransition(it->second.trimInSamples, shouldLoop, transition);
+    if (prepareResult != SessionGraphError::OK) {
+      return prepareResult;
+    }
+    lifetime = it->second.commandLifetime.get();
+    if (lifetime == nullptr) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      return SessionGraphError::InternalError;
+    }
+    transitionPrepared = true;
+    cmd.loopAnchorSource = streaming;
+    cmd.loopAnchorTransition = transition;
+    cmd.sourceLifetime = lifetime;
+    retainSourceCommand(lifetime);
+  }
+
+  const SessionGraphError postResult = postCommand(cmd);
+  if (postResult != SessionGraphError::OK) {
+    if (transitionPrepared) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      releaseSourceCommand(lifetime);
+    }
+    return postResult;
+  }
+
+  it->second.loopEnabled = shouldLoop;
+  return SessionGraphError::OK;
 }
 
 int64_t TransportController::getClipPosition(ClipHandle handle) const {
@@ -2889,8 +3015,6 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return SessionGraphError::InvalidHandle;
   }
 
-  // Validate metadata before applying changes (atomic operation)
-  // Get file duration for validation
   int64_t fileDurationSamples = 0;
   uint16_t fileChannels = 0;
   {
@@ -2903,17 +3027,12 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     fileChannels = it->second.metadata.num_channels;
   }
 
-  // Validate trim points
   int64_t trimOut = metadata.trimOutSamples;
   if (trimOut == 0) {
-    trimOut = fileDurationSamples; // Use file duration if not specified
+    trimOut = fileDurationSamples;
   }
-
-  if (metadata.trimInSamples < 0 || metadata.trimInSamples >= fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
-  }
-
-  if (trimOut <= metadata.trimInSamples || trimOut > fileDurationSamples) {
+  if (metadata.trimInSamples < 0 || metadata.trimInSamples >= fileDurationSamples ||
+      trimOut <= metadata.trimInSamples || trimOut > fileDurationSamples) {
     return SessionGraphError::InvalidClipTrimPoints;
   }
 
@@ -2929,34 +3048,23 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     }
   }
 
-  // Validate fade durations
-  int64_t clipDuration = trimOut - metadata.trimInSamples;
-  double clipDurationSeconds =
+  const int64_t clipDuration = trimOut - metadata.trimInSamples;
+  const double clipDurationSeconds =
       static_cast<double>(clipDuration) / static_cast<double>(m_sampleRate);
-
-  if (metadata.fadeInSeconds < 0.0 || metadata.fadeInSeconds > clipDurationSeconds) {
-    return SessionGraphError::InvalidFadeDuration;
-  }
-
-  if (metadata.fadeOutSeconds < 0.0 || metadata.fadeOutSeconds > clipDurationSeconds) {
-    return SessionGraphError::InvalidFadeDuration;
-  }
-  if (!std::isfinite(metadata.stopFadeOutSeconds) || metadata.stopFadeOutSeconds < 0.0 ||
+  if (metadata.fadeInSeconds < 0.0 || metadata.fadeInSeconds > clipDurationSeconds ||
+      metadata.fadeOutSeconds < 0.0 || metadata.fadeOutSeconds > clipDurationSeconds ||
+      !std::isfinite(metadata.stopFadeOutSeconds) || metadata.stopFadeOutSeconds < 0.0 ||
       metadata.stopFadeOutSeconds > clipDurationSeconds) {
     return SessionGraphError::InvalidFadeDuration;
   }
 
-  // Validate gain
-  if (!std::isfinite(metadata.gainDb)) {
+  if (!std::isfinite(metadata.gainDb) || !std::isfinite(metadata.pan) || metadata.pan < -1.0f ||
+      metadata.pan > 1.0f || !std::isfinite(metadata.playbackRate) ||
+      metadata.playbackRate < 0.25 || metadata.playbackRate > 4.0 ||
+      !std::isfinite(metadata.playDelaySeconds) || metadata.playDelaySeconds < 0.0 ||
+      metadata.playDelaySeconds > 99.9) {
     return SessionGraphError::InvalidParameter;
   }
-  if (!std::isfinite(metadata.pan) || metadata.pan < -1.0f || metadata.pan > 1.0f ||
-      !std::isfinite(metadata.playbackRate) || metadata.playbackRate < 0.25 ||
-      metadata.playbackRate > 4.0 || !std::isfinite(metadata.playDelaySeconds) ||
-      metadata.playDelaySeconds < 0.0 || metadata.playDelaySeconds > 99.9) {
-    return SessionGraphError::InvalidParameter;
-  }
-
   if (metadata.routingGroup >= m_config.numGroups ||
       fileChannels > m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
     return SessionGraphError::InvalidParameter;
@@ -2965,16 +3073,15 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
                            fileChannels)) {
     return SessionGraphError::InvalidParameter;
   }
+
   ClipDspProcessor preparedDsp;
   if (preparedDsp.prepare(metadata.dsp, m_sampleRate, fileChannels) != ClipDspValidationError::OK) {
     return SessionGraphError::InvalidParameter;
   }
 
-  // All validation passed - apply changes atomically
-  // Calculate fade sample counts
-  int64_t fadeInSampleCount =
+  const int64_t fadeInSampleCount =
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));
-  int64_t fadeOutSampleCount =
+  const int64_t fadeOutSampleCount =
       static_cast<int64_t>(metadata.fadeOutSeconds * static_cast<double>(m_sampleRate));
   const int64_t stopFadeOutSampleCount =
       static_cast<int64_t>(metadata.stopFadeOutSeconds * static_cast<double>(m_sampleRate));
@@ -2982,9 +3089,6 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
       static_cast<int64_t>(metadata.playDelaySeconds * static_cast<double>(m_sampleRate));
   const auto [panLeftGain, panRightGain] = panGains(metadata.pan, fileChannels);
 
-  // ORP127 G1: Apply to active voices via a command on the audio thread — no
-  // direct writes to the live voice array from the UI thread. Precompute linear
-  // gain here so the audio thread does no pow().
   TransportCommand cmd{};
   cmd.type = TransportCommand::Type::UpdateMetadata;
   cmd.handle = handle;
@@ -3013,45 +3117,69 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.segments = metadata.segments;
   cmd.dspProcessor = preparedDsp;
 
-  // Queue admission precedes the persistent commit. A full ring therefore
-  // cannot publish metadata that active voices did not receive, which is
-  // required when group choke compares registered and active routing groups.
-  {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
-      return SessionGraphError::ClipNotRegistered;
-    }
-    const SessionGraphError postResult = postCommand(cmd);
-    if (postResult != SessionGraphError::OK) {
-      return postResult;
-    }
-
-    it->second.trimInSamples = metadata.trimInSamples;
-    it->second.trimOutSamples = trimOut;
-    it->second.fadeInSeconds = metadata.fadeInSeconds;
-    it->second.fadeOutSeconds = metadata.fadeOutSeconds;
-    it->second.fadeInCurve = metadata.fadeInCurve;
-    it->second.fadeOutCurve = metadata.fadeOutCurve;
-    it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
-    it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
-    it->second.loopEnabled = metadata.loopEnabled;
-    it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
-    it->second.voiceMode = metadata.voiceMode;
-    it->second.gainDb = metadata.gainDb;
-    it->second.muted = metadata.muted;
-    it->second.pan = metadata.pan;
-    it->second.playbackRate = metadata.playbackRate;
-    it->second.playDelaySeconds = metadata.playDelaySeconds;
-    it->second.routingGroup = metadata.routingGroup;
-    it->second.sourceLayout = metadata.sourceLayout;
-    it->second.speakerPatchSize = metadata.speakerPatchSize;
-    it->second.speakerPatch = metadata.speakerPatch;
-    it->second.segmentCount = metadata.segmentCount;
-    it->second.segments = metadata.segments;
-    it->second.dsp = metadata.dsp;
+  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
+  auto it = m_audioFiles.find(handle);
+  if (it == m_audioFiles.end()) {
+    return SessionGraphError::ClipNotRegistered;
   }
 
+  StreamingClipSource* streaming = nullptr;
+  SourceCommandLifetime* lifetime = nullptr;
+  StreamingClipSource::LoopAnchorTransition transition{};
+  bool transitionPrepared = false;
+  if (it->second.source) {
+    streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
+  }
+  if (streaming != nullptr) {
+    const SessionGraphError prepareResult = streaming->prepareLoopAnchorTransition(
+        metadata.trimInSamples, metadata.loopEnabled, transition);
+    if (prepareResult != SessionGraphError::OK) {
+      return prepareResult;
+    }
+    lifetime = it->second.commandLifetime.get();
+    if (lifetime == nullptr) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      return SessionGraphError::InternalError;
+    }
+    transitionPrepared = true;
+    cmd.loopAnchorSource = streaming;
+    cmd.loopAnchorTransition = transition;
+    cmd.sourceLifetime = lifetime;
+    retainSourceCommand(lifetime);
+  }
+
+  const SessionGraphError postResult = postCommand(cmd);
+  if (postResult != SessionGraphError::OK) {
+    if (transitionPrepared) {
+      streaming->rollbackLoopAnchorTransition(transition);
+      releaseSourceCommand(lifetime);
+    }
+    return postResult;
+  }
+
+  it->second.trimInSamples = metadata.trimInSamples;
+  it->second.trimOutSamples = trimOut;
+  it->second.fadeInSeconds = metadata.fadeInSeconds;
+  it->second.fadeOutSeconds = metadata.fadeOutSeconds;
+  it->second.fadeInCurve = metadata.fadeInCurve;
+  it->second.fadeOutCurve = metadata.fadeOutCurve;
+  it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
+  it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
+  it->second.loopEnabled = metadata.loopEnabled;
+  it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
+  it->second.voiceMode = metadata.voiceMode;
+  it->second.gainDb = metadata.gainDb;
+  it->second.muted = metadata.muted;
+  it->second.pan = metadata.pan;
+  it->second.playbackRate = metadata.playbackRate;
+  it->second.playDelaySeconds = metadata.playDelaySeconds;
+  it->second.routingGroup = metadata.routingGroup;
+  it->second.sourceLayout = metadata.sourceLayout;
+  it->second.speakerPatchSize = metadata.speakerPatchSize;
+  it->second.speakerPatch = metadata.speakerPatch;
+  it->second.segmentCount = metadata.segmentCount;
+  it->second.segments = metadata.segments;
+  it->second.dsp = metadata.dsp;
   return SessionGraphError::OK;
 }
 

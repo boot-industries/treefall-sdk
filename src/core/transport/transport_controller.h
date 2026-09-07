@@ -109,6 +109,9 @@ struct TransportCommand {
   StreamingClipSource* seekSource{nullptr};
   StreamingClipSource::PrimeReservation seekPrime{};
 
+  StreamingClipSource* loopAnchorSource{nullptr};
+  StreamingClipSource::LoopAnchorTransition loopAnchorTransition{};
+
   union {
     struct {
       int64_t in;
@@ -547,6 +550,7 @@ private:
   struct PendingStartReservation {
     StreamingClipSource* source{nullptr};
     StreamingClipSource::PrimeReservation prime{};
+    int64_t primedStart{0}; // first primed page start (consumption marker)
   };
   std::array<PendingStartReservation, MAX_ACTIVE_CLIPS> m_pendingStartReservations{};
   size_t m_pendingStartReservationCount{0};
@@ -555,6 +559,7 @@ private:
     ClipHandle handle{0};
     StreamingClipSource* source{nullptr};
     StreamingClipSource::PrimeReservation prime{};
+    int64_t primedStart{0}; // first primed page start (consumption marker)
   };
   std::array<PendingSeekReservation, MAX_ACTIVE_CLIPS> m_pendingSeekReservations{};
   size_t m_pendingSeekReservationCount{0};
