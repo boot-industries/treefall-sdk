@@ -1,3 +1,4 @@
+#include <orpheus/audio_file_capabilities.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/audio_file_writer.h>
 #include <orpheus/audio_input.h>
@@ -11,13 +12,30 @@
 #endif
 
 int main() {
-  const bool has_sndfile =
-      sizeof(ORPHEUS_EXPECT_PROVIDER) > 1 &&
-      ORPHEUS_EXPECT_PROVIDER[0] != 'N';
+  const bool has_sndfile = sizeof(ORPHEUS_EXPECT_PROVIDER) > 1 && ORPHEUS_EXPECT_PROVIDER[0] != 'N';
   auto writer = orpheus::createAudioFileWriter();
   auto reader = orpheus::createAudioFileReader();
   if ((writer != nullptr) != has_sndfile || (reader != nullptr) != has_sndfile) {
     return 1;
+  }
+  const auto capabilities = orpheus::getAudioFileCapabilities();
+  if (capabilities.file_io_available != has_sndfile || capabilities.codecs.size() != 6u) {
+    return 6;
+  }
+  orpheus::AudioFileWriterConfig valid_config;
+  valid_config.format = orpheus::AudioFileFormat::WAV;
+  valid_config.sample_rate = 48000;
+  valid_config.num_channels = 2;
+  valid_config.sample_format = orpheus::AudioSampleFormat::Int16;
+  const auto preflight = orpheus::preflightAudioFileWrite(valid_config);
+  if (preflight !=
+      (has_sndfile ? orpheus::SessionGraphError::OK : orpheus::SessionGraphError::NotReady)) {
+    return 7;
+  }
+  const auto missing = orpheus::probeAudioFile("provider-matrix-definitely-missing-input.wav");
+  if (missing.error != (has_sndfile ? orpheus::SessionGraphError::InternalError
+                                    : orpheus::SessionGraphError::NotReady)) {
+    return 8;
   }
 
   orpheus::AudioInputStreamConfig config;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "audio_file_reader_libsndfile.h"
+#include "audio_file_format.h"
 #include <orpheus/media_integrity.h>
 
 #include <cstring>
@@ -38,7 +39,8 @@ Result<AudioFileMetadata> AudioFileReaderLibsndfile::open(const std::string& fil
   }
 
   // Validate format
-  if (m_info.frames <= 0 || m_info.samplerate <= 0 || m_info.channels <= 0) {
+  if (m_info.frames <= 0 || m_info.samplerate <= 0 || m_info.channels <= 0 ||
+      m_info.channels > UINT16_MAX) {
     sf_close(m_file);
     m_file = nullptr;
 
@@ -49,25 +51,9 @@ Result<AudioFileMetadata> AudioFileReaderLibsndfile::open(const std::string& fil
     return result;
   }
 
-  // Fill metadata
-  m_metadata.format = formatFromSndfile(m_info.format);
-  m_metadata.sample_rate = static_cast<uint32_t>(m_info.samplerate);
-  m_metadata.num_channels = static_cast<uint16_t>(m_info.channels);
-  m_metadata.duration_samples = m_info.frames;
-  m_metadata.codec = codecFromSndfile(m_info.format);
+  // Extract only representable metadata; unknown subformats retain bit depth 0.
+  m_metadata = audioFileMetadataFromSndfile(m_info);
   m_metadata.file_hash_sha256 = calculateFileHash(file_path);
-
-  // Determine bit depth (approximate from format)
-  int subformat = m_info.format & SF_FORMAT_SUBMASK;
-  if (subformat == SF_FORMAT_PCM_16) {
-    m_metadata.bit_depth = 16;
-  } else if (subformat == SF_FORMAT_PCM_24) {
-    m_metadata.bit_depth = 24;
-  } else if (subformat == SF_FORMAT_PCM_32 || subformat == SF_FORMAT_FLOAT) {
-    m_metadata.bit_depth = 32;
-  } else {
-    m_metadata.bit_depth = 16; // Default
-  }
 
   m_file_path = file_path;
   m_current_position.store(0, std::memory_order_release);
@@ -214,40 +200,6 @@ int64_t AudioFileReaderLibsndfile::getCurrentPosition() const {
 
 bool AudioFileReaderLibsndfile::isOpen() const {
   return m_is_open.load(std::memory_order_acquire);
-}
-
-AudioFileFormat AudioFileReaderLibsndfile::formatFromSndfile(int format) const {
-  int major = format & SF_FORMAT_TYPEMASK;
-
-  switch (major) {
-  case SF_FORMAT_WAV:
-    return AudioFileFormat::WAV;
-  case SF_FORMAT_AIFF:
-    return AudioFileFormat::AIFF;
-  case SF_FORMAT_FLAC:
-    return AudioFileFormat::FLAC;
-  default:
-    return AudioFileFormat::Unknown;
-  }
-}
-
-std::string AudioFileReaderLibsndfile::codecFromSndfile(int format) const {
-  int subformat = format & SF_FORMAT_SUBMASK;
-
-  switch (subformat) {
-  case SF_FORMAT_PCM_16:
-    return "PCM_16";
-  case SF_FORMAT_PCM_24:
-    return "PCM_24";
-  case SF_FORMAT_PCM_32:
-    return "PCM_32";
-  case SF_FORMAT_FLOAT:
-    return "FLOAT";
-  case SF_FORMAT_FLAC:
-    return "FLAC";
-  default:
-    return "UNKNOWN";
-  }
 }
 
 std::string AudioFileReaderLibsndfile::calculateFileHash(const std::string& file_path) const {
