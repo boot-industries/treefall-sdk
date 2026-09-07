@@ -483,7 +483,7 @@ TEST_F(StreamingSeekMatrixTest, CommandQueueSaturationRejectsBeforePriming) {
     ASSERT_EQ(transport->updateClipGain(1, 0.0f), SessionGraphError::OK);
   }
   EXPECT_EQ(transport->seekClip(1, static_cast<int64_t>(6.75 * static_cast<double>(rate))),
-            SessionGraphError::InternalError);
+            SessionGraphError::NotReady);
   transport->processAudio(buffers, 1, block);
   transport->processCallbacks();
   EXPECT_GT(transport->getClipPosition(1), priorPosition);
@@ -516,7 +516,7 @@ TEST_F(StreamingSeekMatrixTest, QueueFullTrimUpdatePreservesOldLoopAnchor) {
     ASSERT_EQ(transport->updateClipGain(1, before->gainDb), SessionGraphError::OK);
   }
   EXPECT_EQ(transport->updateClipTrimPoints(1, 3 * page + 100, before->trimOutSamples),
-            SessionGraphError::InternalError);
+            SessionGraphError::NotReady);
   const auto after = transport->getClipMetadata(1);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after->trimInSamples, before->trimInSamples);
@@ -550,7 +550,7 @@ TEST_F(StreamingSeekMatrixTest, QueueFullLoopTogglePreservesOldLoopAnchor) {
   for (size_t index = 0; index < 255; ++index) {
     ASSERT_EQ(transport->updateClipGain(1, before->gainDb), SessionGraphError::OK);
   }
-  EXPECT_EQ(transport->setClipLoopMode(1, false), SessionGraphError::InternalError);
+  EXPECT_EQ(transport->setClipLoopMode(1, false), SessionGraphError::NotReady);
   const auto after = transport->getClipMetadata(1);
   ASSERT_TRUE(after.has_value());
   EXPECT_TRUE(after->loopEnabled);
@@ -586,7 +586,7 @@ TEST_F(StreamingSeekMatrixTest, QueueFullMetadataUpdatePreservesOldLoopAnchor) {
   auto replacement = *before;
   replacement.trimInSamples = 3 * page + 100;
   replacement.gainDb = -3.0f;
-  EXPECT_EQ(transport->updateClipMetadata(1, replacement), SessionGraphError::InternalError);
+  EXPECT_EQ(transport->updateClipMetadata(1, replacement), SessionGraphError::NotReady);
   const auto after = transport->getClipMetadata(1);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after->trimInSamples, before->trimInSamples);
