@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import re
 import sys
@@ -13,6 +12,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CMAKE_PROJECT = ROOT / "CMakeLists.txt"
 
+# These are authored active claims. The offline renderer executable was retired;
+# its README is now the maintained installed public-API recipe and remains a
+# version-contract owner alongside the Treefall-facing example guidance.
 VERSION_TARGETS: tuple[tuple[pathlib.Path, re.Pattern[str], str], ...] = (
     (
         ROOT / "README.md",
@@ -40,6 +42,7 @@ VERSION_TARGETS: tuple[tuple[pathlib.Path, re.Pattern[str], str], ...] = (
         r"\g<1>{version}",
     ),
 )
+
 
 
 def project_version() -> str:
@@ -79,11 +82,6 @@ def check(version: str) -> int:
         if rendered != original:
             failures.append(str(path.relative_to(ROOT)))
 
-    metadata_path = ROOT / "release/orpheus-sdk.json"
-    if metadata_path.exists():
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if metadata.get("version") != version:
-            failures.append(str(metadata_path.relative_to(ROOT)))
 
     if failures:
         print(f"SDK version is {version}; divergent claims: {', '.join(failures)}", file=sys.stderr)

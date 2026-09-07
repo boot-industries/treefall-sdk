@@ -1,6 +1,6 @@
 {
   "packageManager": "pnpm@8.15.4",
-  "name": "orpheus-sdk",
+  "name": "treefall-sdk",
   "private": true,
   "version": "0.0.0",
   "description": "C++ SDK for professional audio applications.",
