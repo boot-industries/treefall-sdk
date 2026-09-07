@@ -128,6 +128,15 @@ public:
     uint16_t pageMask{0};
   };
 
+  struct LoopAnchorTransition {
+    static constexpr size_t kInactivePageIndex = kNumPages;
+
+    size_t previousPageIndex{kInactivePageIndex};
+    int64_t previousStart{-1};
+    size_t replacementPageIndex{kInactivePageIndex};
+    int64_t replacementStart{-1};
+  };
+
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
   /// from worker/control threads (guarded by an internal mutex).
   StreamingClipSource(std::shared_ptr<IAudioFileReader> reader, uint16_t numChannels,
@@ -152,9 +161,9 @@ public:
   /// newly published page or pin in reservation. An existing reservation may
   /// be extended, but a request spanning more than kCommandPrimePages pages is
   /// rejected before mutation.
-  /// Attached: waits for the worker to decode the missing pages (bounded by
-  /// kFillWaitTimeout, then falls back to a synchronous decode). Unattached:
-  /// synchronous decode.
+  /// Attached: waits for the worker to decode the missing pages. On timeout,
+  /// cancellation is acknowledged before the bounded synchronous fallback.
+  /// Unattached: synchronous decode.
   SessionGraphError primeForCommand(int64_t pos, size_t frames, PrimeReservation& reservation);
 
   /// CONTROL THREAD for rejected/unread-command cleanup, or AUDIO THREAD after
@@ -172,9 +181,8 @@ public:
   /// `commandReservation` is supplied, the mandatory page is pinned as a
   /// command-owned page so a caller publishing a command can use command-prime
   /// capacity when the steady window is full.
-  /// Attached: waits for the worker to fill the window (bounded by
-  /// kFillWaitTimeout, then falls back to a synchronous fill). Unattached:
-  /// synchronous fill. CONTROL/WORKER THREAD.
+  /// Attached: waits for the worker to fill the window; look-ahead remains
+  /// best effort after the bounded wait. Unattached: synchronous fill.
   SessionGraphError prefill(int64_t pos, size_t max_pages = kWindowPages,
                             PrimeReservation* commandReservation = nullptr);
 
@@ -187,22 +195,44 @@ public:
   /// THREAD ONLY.
   void serviceCommandDemand();
 
-  /// Pin the loop-restart page (the page covering `pos`, i.e. trim-IN) while
-  /// loop mode is enabled. The audio thread's loop boundary restarts playback
-  /// at trim-IN and cannot block or prime, so the page must already be
-  /// resident; this keeps it pinned against window retirement until
-  /// releaseLoopAnchor(). Re-anchors when `pos` changes. CONTROL THREAD ONLY.
-  SessionGraphError pinLoopAnchor(int64_t pos);
+  /// Prepare an exact loop-anchor ownership transition without changing the
+  /// current anchor. CONTROL THREAD ONLY.
+  SessionGraphError prepareLoopAnchorTransition(int64_t pos, bool enabled,
+                                                LoopAnchorTransition& transition);
 
-  /// Drop the loop-anchor pin. The page stays resident until the steady window
-  /// retires it normally. CONTROL THREAD ONLY.
-  void releaseLoopAnchor() noexcept;
+  /// Commit a prepared loop-anchor transition after its command is admitted.
+  /// CONTROL THREAD ONLY.
+  void commitLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
+
+  /// Roll back a prepared transition whose command was rejected or discarded.
+  /// CONTROL THREAD ONLY.
+  void rollbackLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
 
 private:
-  friend class MediaStreamWorker; // attach() sets m_attached; serviceCommandDemand() fills command primes
+  friend class MediaStreamWorker; // attach() sets m_attached; worker fills command primes
+  friend class StreamingClipSourceTestAccess;
 
   static constexpr uint32_t kClaimed = UINT32_MAX;
   static constexpr std::chrono::milliseconds kFillWaitTimeout{2000};
+
+  enum class CommandFillState : uint8_t {
+    Idle,
+    Pending,
+    Filling,
+    Succeeded,
+    Failed,
+    CancelRequested,
+    Cancelled
+  };
+
+  struct CommandFillRequest {
+    uint64_t generation{0};
+    int64_t start{-1};
+    int64_t frames{0};
+    CommandFillState state{CommandFillState::Idle};
+    uint16_t residentPinMask{0};
+    uint16_t freshPageMask{0};
+  };
 
   struct Page {
     // -1 == FREE, >= 0 == READY at that aligned frame. A nonzero guard makes
@@ -235,25 +265,24 @@ private:
   /// Decode the missing command pages into FREE command-pool pages (indices
   /// kWindowPages..kNumPages-1), pin them, and set the matching claimedMask
   /// bits. Caller holds m_readerMutex.
-  SessionGraphError decodeMissingIntoCommandPool(
-      const std::array<int64_t, kCommandPrimePages>& missingPages, size_t missingCount,
-      uint16_t& claimedMask);
+  SessionGraphError
+  decodeMissingIntoCommandPool(const std::array<int64_t, kCommandPrimePages>& missingPages,
+                               size_t missingCount, uint16_t& claimedMask);
 
   /// Undo exactly one READY-page pin acquired by a failed command-prime scan.
   void releaseReadyPin(Page& page) noexcept;
 
   std::shared_ptr<IAudioFileReader> m_reader; // worker/control threads only
   std::mutex m_readerMutex;                   // serializes prefill vs service
-  std::mutex m_fillMutex;                     // control-thread wait handshake
-  std::condition_variable m_fillCv;           // worker notifies after each pass
+  std::mutex m_fillMutex;                     // protects the command-fill request transaction
+  std::condition_variable m_fillCv;
   std::atomic<int64_t> m_demand{0};
   std::atomic<uint32_t> m_pendingCommandPrimes{0};
-  std::atomic<bool> m_attached{false};                  // set by MediaStreamWorker::attach
-  std::atomic<int64_t> m_commandDemandStart{-1};        // pending command fill request
-  std::atomic<int64_t> m_commandDemandFrames{0};
-  std::atomic<uint32_t> m_commandFillState{0};          // 0 idle, 1 done-ok, 2 done-failed
-  std::atomic<uint16_t> m_commandFillMask{0};           // worker-pinned pages (state==1)
-  std::atomic<int64_t> m_loopAnchorStart{-1};           // pinned loop-restart page (control thread)
+  std::atomic<bool> m_attached{false}; // set by MediaStreamWorker::attach
+  uint64_t m_nextCommandFillGeneration{1};
+  CommandFillRequest m_commandFillRequest{};
+  size_t m_loopAnchorPageIndex{kNumPages};
+  int64_t m_loopAnchorStart{-1};
   uint16_t m_numChannels;
   int64_t m_lengthFrames;
   Page m_pages[kNumPages];
