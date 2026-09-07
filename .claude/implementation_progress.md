@@ -60,8 +60,12 @@
 
 ---
 
-## ORP255 — Host-Neutral Multichannel Metering (2026-09-01)
+## ORP257 — Host-Neutral Multichannel Metering (2026-09-01)
 
+- **Integration remediation:** Rebased onto current `main`
+  (`ddf0b2d3a8c9686e9b8c646c337acb736a6d21f2`), retained the mainline ORP254
+  commercialization and ORP255 strategy records, resolved the Windows SDK
+  include ordering, and renumbered the pending records to ORP256 and ORP257.
 - **Branch:** `feat/orp255-host-neutral-multichannel-metering` in the isolated
   `../orpheus-sdk-orp255-metering` worktree.
 - **Implementation commit:** `24cce0b4861b3bdb72fbb310ac1784482fc86e94`.
@@ -77,7 +81,7 @@
 - **Review remediation:** Exact `publishFromRealtime(const&) noexcept`
   member-signature assertions now cover both in-tree and installed consumers;
   the maximum-topology allocation gate drives non-silent true-peak lanes; the
-  TSan query harness asserts bounds on coherent meter snapshots; and ORP254 now
+  TSan query harness asserts bounds on coherent meter snapshots; and ORP256 now
   distinguishes its upstream Fine source from the current imported manifest.
 - **Follow-up evidence:** Routing 58/58, realtime diagnostics 10/10,
   multichannel transport 10/10, transport controller 17/17, the installed
@@ -88,14 +92,13 @@
   average 6575.28 us), against a 10666.7 us budget. The full configured Debug
   CTest suite passed 80/80 in 341.21 seconds. Record:
 
-  `docs/orp/ORP255 Host-Neutral Multichannel Metering Contract.md`.
+  `docs/orp/ORP257 Host-Neutral Multichannel Metering Contract.md`.
 - **Windows portability:** Hosted Windows validation exposed existing Windows
   SDK include-order defects in `media_integrity.cpp` and `driver_manager.cpp`.
   Both now supply `windows.h` before dependent BCrypt/WASAPI declarations; the
   corrections are build-only with no metering-contract change.
-- **Scope boundary:** The remaining hosted Windows failures in WASAPI
   property-key declarations and session-test linkage are broader platform
-  baseline work outside ORP255. The PR retains only the safe include-order
+  baseline work outside ORP257. The PR retains only the safe include-order
   corrections; platform repair is a separate task.
 
 
