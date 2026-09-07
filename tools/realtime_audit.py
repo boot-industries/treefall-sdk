@@ -198,6 +198,24 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             pattern_sets=(HARD_REALTIME_SET,),
         ),
         ScanTarget(
+            "Transport command consumer",
+            root / "src/core/transport/transport_controller.cpp",
+            r"void\s+TransportController::processCommands\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "Transport command detach helper",
+            root / "src/core/transport/transport_controller.cpp",
+            r"void\s+TransportController::detachPendingCommands\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "Transport command release helper",
+            root / "src/core/transport/transport_controller.cpp",
+            r"void\s+TransportController::releaseCommandNode\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
             "Transport render path",
             root / "src/core/transport/transport_controller.cpp",
             r"void\s+TransportController::processAudio\s*\(",
@@ -222,6 +240,38 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
             pattern_sets=(HARD_REALTIME_SET,),
         ),
     ]
+    for function in (
+        "releaseSourceCommand",
+        "retainActiveSource",
+        "releaseActiveSource",
+        "releasePendingStartReservations",
+        "releasePendingSeekReservations",
+        "publishStartSettlement",
+        "startVoiceWithMode",
+        "addActiveClip",
+        "removeActiveVoice",
+        "restartVoiceInPlace",
+        "allocateVoiceId",
+        "allocateVoiceStartOrdinal",
+        "incrementIngressCounter",
+    ):
+        targets.append(
+            ScanTarget(
+                f"Transport consumer helper {function}",
+                root / "src/core/transport/transport_controller.cpp",
+                rf"(?:void|bool|uint32_t|uint64_t)\s+TransportController::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
+    for function in ("releaseCommandPrime", "commitLoopAnchorTransition"):
+        targets.append(
+            ScanTarget(
+                f"Streaming consumer lease helper {function}",
+                root / "src/core/transport/clip_source.cpp",
+                rf"void\s+StreamingClipSource::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
 
     if include_adjacent:
         dev = root.parent

@@ -191,6 +191,37 @@ static_assert(std::is_standard_layout_v<TransportCallbackTelemetry>);
 static_assert(std::is_trivially_copyable_v<ActiveVoiceSnapshotEntry>);
 static_assert(std::is_standard_layout_v<ActiveVoiceSnapshotEntry>);
 static_assert(std::is_trivially_copyable_v<ActiveVoiceSnapshot>);
+inline constexpr uint32_t kTransportCommandIngressTelemetrySchemaVersion = 1;
+inline constexpr uint32_t kTransportCommandIngressCapacity = 255;
+inline constexpr uint32_t kTransportCommandIngressMaxConcurrentCalls = UINT32_MAX;
+
+/// Cumulative bounded admission health for control-to-audio commands.
+/// Counter observations are independent and need not form a coherent snapshot
+/// while producers or the consumer are active.
+/// All counters saturate at UINT32_MAX and never reset. After quiescence, before
+/// saturation, attemptedCount equals admittedCount + slotUnavailableCount +
+/// publicationContentionCount + preparationRejectedCount. Processed accounting
+/// may temporarily precede admitted accounting while calls overlap. Queue drops
+/// are the saturated sum of slotUnavailableCount and publicationContentionCount;
+/// preparation rejection is not a queue drop. Invalid pre-admission arguments
+/// are not attempts. Valid use permits up to UINT32_MAX simultaneous command
+/// calls per controller, bounding widened counter compensation below overflow.
+struct TransportCommandIngressTelemetry {
+  uint32_t schemaVersion = kTransportCommandIngressTelemetrySchemaVersion;
+  uint8_t supported = 0;
+  uint8_t reserved[3]{};
+  uint32_t capacity = 0;
+  uint32_t maxConcurrentCalls = 0;
+  uint32_t attemptedCount = 0;
+  uint32_t admittedCount = 0;
+  uint32_t slotUnavailableCount = 0;
+  uint32_t publicationContentionCount = 0;
+  uint32_t preparationRejectedCount = 0;
+  uint32_t processedCount = 0;
+};
+
+static_assert(std::is_trivially_copyable_v<TransportCommandIngressTelemetry>);
+static_assert(std::is_standard_layout_v<TransportCommandIngressTelemetry>);
 static_assert(std::is_standard_layout_v<ActiveVoiceSnapshot>);
 /// Immutable construction contract for the transport renderer.
 ///
@@ -357,27 +388,29 @@ public:
 /// This interface provides real-time control over clip playback with
 /// sample-accurate timing and thread-safe operation.
 ///
-/// Threading contract (ORP133 G3 — this is the real, enforced contract):
+/// Threading contract:
 ///
-/// - **Control-mutating methods are single-producer.** startClip(),
-///   startClipWithGroupChoke(), stopClip(), stopAllClips(), stopOtherClips(),
-///   restartClip(), seekClip(), and every updateClip*/setClip* method post
-///   commands onto a lock-free
-///   single-producer/single-consumer (SPSC) queue drained by the audio thread.
-///   Exactly ONE control thread may call them — typically the host's UI/message
-///   thread. They are NOT safe to call concurrently from multiple threads: the
-///   SPSC producer side is unsynchronized by design. Hosts with multiple
-///   control sources (UI + MIDI + OSC + network remote) must funnel them
-///   through a single dispatcher thread before they reach this interface.
-///   (A first-class SDK multi-producer dispatcher is future work — ORP135.)
-///   Debug builds assert if commands are posted from more than one thread.
-/// - **Queries are lock-free readers of a published snapshot.** getClipState(),
-///   isClipPlaying(), getCurrentPosition(), getClipPosition(),
-///   getActiveVoiceCount(), isClipLooping(), and the getClip* metadata queries
-///   are safe from any thread, including concurrently with the control thread.
-/// - **setCallback(): control thread only**, and not concurrently with
-///   callback dispatch. Callbacks are invoked on the host's UI thread (from
-///   processCallbacks()), never the audio thread.
+/// - **Concurrent control producers need no external dispatcher or mutex.**
+///   startClip(), startClipWithGroupChoke(), stopClip(), stopAllClips(), panic(),
+///   stopOtherClips(), updateClipTrimPoints(), updateClipFades(), updateClipGain(),
+///   setClipLoopMode(), updateClipMetadata(), restartClip(), seekClip(), and the
+///   indirect seekToCuePoint() path use bounded MPSC admission.
+/// - **Whole control calls are not realtime-safe.** Registry-dependent
+///   preparation is internally serialized and can allocate, lock, or perform
+///   file I/O. Reclaiming a reused command payload is also control-side work.
+///   Only ownership acquisition/publication and audio consumption are bounded
+///   nonblocking primitives; this is not a wall-clock wait-free guarantee.
+/// - **255 usable nodes; at most 32 publication CAS attempts.** Admission order
+///   is successful publication order, preserving each producer's ordered calls,
+///   not a scheduler-independent total order for overlapping calls. Refusal
+///   returns NotReady without persistent metadata changes, peer choke, or tagged
+///   settlement. Preparation errors retain their separate error categories.
+/// - **Exactly one nonreentrant audio consumer and one callback/message pump.**
+///   processCallbacks() delivers host callbacks off the audio thread. setCallback()
+///   and destruction must be externally serialized against their relevant calls.
+/// - Snapshot queries are lock-free non-realtime readers; registry/metadata
+///   queries may acquire a mutex. Other setters retain their individual
+///   contracts. This does not extend SessionGraph, routing, or callback threading.
 ///
 /// Audio Thread Guarantees:
 /// - No allocations in audio callback
@@ -391,7 +424,7 @@ public:
 
   /// Start playback of a specific clip.
   ///
-  /// The one control thread resolves registered-source preparation
+  /// The calling control thread resolves registered-source preparation
   /// synchronously before publishing the next-render-boundary command. A
   /// registered streaming source whose trim-IN page cannot be prepared returns
   /// that error; it never falls back to the source-less historical default.
@@ -435,8 +468,8 @@ public:
   ///
   /// @return SessionGraphError::OK on success, or error code on failure
   ///
-  /// Thread-safe: callable from the control thread (posts onto the SPSC command
-  /// queue like the other stop methods). RT-safe on the audio side: no
+  /// Thread-safe: callable from concurrent control producers through the bounded
+  /// MPSC queue. RT-safe on the audio side: no
   /// allocations, no blocking — voices are evicted in place.
   virtual SessionGraphError panic() = 0;
 
@@ -864,9 +897,10 @@ public:
   /// application, callbacks, and genuine unexpected-miss underrun reporting
   /// remain bounded and real-time safe on the render thread.
   ///
-  /// Failure is atomic: InternalError means the command ring was full; NotReady
-  /// means no active voice or unavailable command-prime capacity; reader/cache
-  /// preparation errors propagate. In every failure case no command, cursor
+  /// Failure is atomic: NotReady can mean no active voice, unavailable
+  /// command-prime capacity, or queue capacity/publication-contention refusal.
+  /// Ingress telemetry distinguishes queue refusal from preparation rejection.
+  /// Reader/cache errors propagate. In every failure case no command, cursor
   /// change, ClipSeeked callback, or synthetic BufferUnderrun is produced.
   ///
   /// @param handle Clip handle
@@ -985,7 +1019,7 @@ public:
   /// Render one transport block into planar output buffers.
   ///
   /// This is the audio-thread entry point and the sole consumer of the
-  /// control-to-audio SPSC command ring. It is non-reentrant and must be called
+  /// control-to-audio MPSC command pool. It is non-reentrant and must be called
   /// by exactly one audio thread. The host must supply exactly
   /// getRenderConfig().outputChannels writable buffers and no more than
   /// getRenderConfig().maxBlockFrames frames per call.
@@ -1008,7 +1042,7 @@ public:
   /// The firing clip's registered source is fully prepared before peer mutation
   /// or command publication. A preparation failure is returned directly; it
   /// never falls back to a source-less default. The firing clip and peer choke
-  /// are then admitted as one bounded SPSC command. If the command ring is
+  /// are then admitted as one bounded MPSC command. If the command pool is
   /// full, the clip is unregistered/unavailable, or the realtime voice pool
   /// later refuses the start, no peer voice is changed.
   ///
@@ -1016,8 +1050,8 @@ public:
   /// handle and the same ClipMetadata::routingGroup begins its normal configured
   /// stop fade. Other groups and the firing handle are untouched.
   ///
-  /// Control thread only; this method shares the single-producer contract of
-  /// startClip() and the other control-mutating methods. The default preserves
+  /// Non-realtime control calls may be concurrent; registered-source preparation
+  /// is internally serialized as in startClip(). The default preserves
   /// source compatibility for external interface implementations; concrete
   /// controllers that do not override it report an unavailable capability.
   virtual SessionGraphError startClipWithGroupChoke(ClipHandle /*handle*/,
@@ -1046,6 +1080,15 @@ public:
   /// Lock-free non-realtime query. The default preserves source compatibility
   /// for recompiled custom implementations; it is not a C++ ABI guarantee.
   virtual ActiveVoiceSnapshot getActiveVoiceSnapshot() const noexcept {
+    return {};
+  }
+
+  /// Poll bounded control-to-audio command admission health.
+  /// Independent atomic observations, not a coherent multi-counter snapshot.
+  /// The default reports unsupported for recompiled custom implementations.
+  /// Adding this virtual requires a C++ rebuild; an old prebuilt subclass must
+  /// not receive this call. The stable C ABI tables are unchanged.
+  virtual TransportCommandIngressTelemetry getCommandIngressTelemetry() const noexcept {
     return {};
   }
 };

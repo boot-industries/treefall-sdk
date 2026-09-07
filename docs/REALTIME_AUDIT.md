@@ -27,6 +27,23 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   target; callbacks do not wait, allocate, or notify waiters.
 - Callback timing diagnostics are opt-in and default OFF. When enabled, the
   monitor lease remains held through timestamp conversion and publication.
+- The control-to-audio command ingress is a fixed 255-node MPSC admission pool.
+  Producers perform one bounded ownership scan and at most 32 publication CAS
+  attempts; the audio consumer exchanges the whole pending chain and reverses
+  it into a fixed scratch list for FIFO processing. Producer-side reuse may
+  reclaim retained payloads, but `processCommands()` and its detach/release
+  helpers must not allocate, lock, perform I/O, or invoke callbacks.
+- Static auditing explicitly targets `processCommands`, `detachPendingCommands`,
+  `releaseCommandNode`, and the command-lease/settlement cleanup helpers in
+  addition to `processAudio`. This lexical gate is a bounded source audit, not
+  a recursive call-graph proof.
+- Whole command calls are non-realtime: registry preparation and retained-payload
+  reclamation may lock, allocate, or perform I/O on the producer. The atomic
+  admission primitives are bounded, not a wall-clock wait-free guarantee.
+- Ingress counters saturate at `UINT32_MAX` with widened atomic backing and
+  bounded compensation. Valid use allows at most `UINT32_MAX` simultaneous
+  command calls per controller. Independent observations need not satisfy the
+  admission partition until callers and consumer are quiescent.
 
 ## Boundary and Lifetime Gates
 

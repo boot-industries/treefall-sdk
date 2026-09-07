@@ -23,7 +23,7 @@ class SessionGraph;
 } // namespace core
 
 /// Control-thread-owned token which pins a registered source while a Start or
-/// Seek command still carries a raw source pointer through the SPSC ring.
+/// Seek command still carries a raw source pointer through the bounded MPSC pool.
 struct SourceCommandLifetime {
   std::atomic<uint32_t> unread{0};
   std::atomic<uint32_t> active_voices{0};
@@ -347,6 +347,7 @@ public:
   TransportCallbackTelemetry getCallbackDeliveryTelemetry() const noexcept override;
   StartSettlementSnapshot getStartSettlementSnapshot() const noexcept override;
   ActiveVoiceSnapshot getActiveVoiceSnapshot() const noexcept override;
+  TransportCommandIngressTelemetry getCommandIngressTelemetry() const noexcept override;
   SessionGraphError restartClip(ClipHandle handle) override;
   SessionGraphError seekClip(ClipHandle handle, int64_t position) override;
 
@@ -423,13 +424,14 @@ private:
   ///
   /// Group-choke starts require a registered, available source so every
   /// pre-admission failure is reported before the atomic command is posted.
-  SessionGraphError makeStartContext(ClipHandle handle, bool requireRegisteredSource,
-                                     std::shared_ptr<ClipPlaybackContext>& context,
-                                     SourceCommandLifetime*& sourceLifetime,
-                                     StreamingClipSource*& startSource,
-                                     StreamingClipSource::PrimeReservation& startPrime);
+  SessionGraphError makeStartContextLocked(ClipHandle handle, bool requireRegisteredSource,
+                                           std::shared_ptr<ClipPlaybackContext>& context,
+                                           SourceCommandLifetime*& sourceLifetime,
+                                           StreamingClipSource*& startSource,
+                                           StreamingClipSource::PrimeReservation& startPrime,
+                                           bool& stopOthersOnPlay);
 
-  /// Process pending commands from UI thread
+  /// Process one detached FIFO batch from concurrent control producers.
   void processCommands();
 
   /// Find active clip by handle (returns first instance found)
@@ -516,16 +518,45 @@ private:
   void markLogicalGroupOutputUnmeasured() noexcept;
   static void mergeAudioMeter(AudioMeter& accumulated, const AudioMeter& current) noexcept;
 
-  /// Assert the documented single-control-thread producer contract.
-  void assertCommandProducer() const noexcept;
-
-  /// True when the SPSC ring has an available publisher slot.
-  bool commandQueueHasCapacity() const noexcept;
-
-  /// ORP127 G1: Post a command to the audio thread. Returns OK, or InternalError
-  /// if the SPSC command queue is full. Centralizes the write-index/full-check
-  /// dance that every UI-thread mutation entry point previously duplicated.
+  uint32_t acquireCommandNode() noexcept;
+  SessionGraphError publishCommandNode(uint32_t index) noexcept;
+  void cancelCommandNode(uint32_t index) noexcept;
+  void detachPendingCommands() noexcept;
+  void releaseCommandNode(uint32_t index) noexcept;
   SessionGraphError postCommand(const TransportCommand& command);
+  static void incrementIngressCounter(std::atomic<uint64_t>& counter) noexcept;
+  class CommandReservation {
+  public:
+    CommandReservation(TransportController& owner, uint32_t index) noexcept
+        : m_owner(owner), m_index(index) {}
+    ~CommandReservation() {
+      if (m_armed) {
+        if (m_preparing)
+          incrementIngressCounter(m_owner.m_ingressPreparationRejected);
+        m_owner.cancelCommandNode(m_index);
+      }
+    }
+    CommandReservation(const CommandReservation&) = delete;
+    CommandReservation& operator=(const CommandReservation&) = delete;
+    void disarm() noexcept {
+      m_armed = false;
+    }
+    SessionGraphError publish() noexcept {
+      const auto result = m_owner.publishCommandNode(m_index);
+      // Publication may already have been consumed and recycled. Only local
+      // guard state may be touched after the successful CAS.
+      m_preparing = false;
+      if (result == SessionGraphError::OK)
+        m_armed = false;
+      return result;
+    }
+
+  private:
+    TransportController& m_owner;
+    uint32_t m_index;
+    bool m_armed{true};
+    bool m_preparing{true};
+  };
 
   // Configuration
   core::SessionGraph* m_sessionGraph;
@@ -537,12 +568,29 @@ private:
   SessionDefaults m_sessionDefaults;
 
   // Lock-free command queue (UI → Audio thread)
-  static constexpr size_t MAX_COMMANDS = 256;
-  std::array<TransportCommand, MAX_COMMANDS> m_commands;
-  std::atomic<size_t> m_commandWriteIndex{0};
-  std::atomic<size_t> m_commandReadIndex{0};
+  static constexpr size_t MAX_COMMANDS = 255;
+  struct CommandNode {
+    TransportCommand command{};
+    std::atomic<uint8_t> ownership{0}; // 0 Free, 1 Owned
+    uint32_t next{UINT32_MAX};
+  };
+  std::array<CommandNode, MAX_COMMANDS> m_commandNodes;
+  std::atomic<uint32_t> m_pendingCommandHead{UINT32_MAX};
+  std::array<uint32_t, MAX_COMMANDS> m_commandScratch{};
+  size_t m_detachedCommandCount{0};
+  std::atomic<uint64_t> m_ingressAttempted{0};
+  std::atomic<uint64_t> m_ingressAdmitted{0};
+  std::atomic<uint64_t> m_ingressSlotUnavailable{0};
+  std::atomic<uint64_t> m_ingressPublicationContention{0};
+  std::atomic<uint64_t> m_ingressPreparationRejected{0};
+  std::atomic<uint64_t> m_ingressProcessed{0};
+  // Private deterministic interleaving seam, configured only by the test
+  // friend before producer threads start. Never called by the audio consumer.
+  using CommandPublicationTestHook = void (*)(void*, uint32_t, uint32_t, bool) noexcept;
+  CommandPublicationTestHook m_commandPublicationTestHook{nullptr};
+  void* m_commandPublicationTestState{nullptr};
 
-  // Active clips (audio thread only, no locks needed)
+  // Active clips (audio thread only, no locks needed).
   static constexpr size_t MAX_ACTIVE_CLIPS = 32;
   std::array<ActiveClip, MAX_ACTIVE_CLIPS> m_activeClips;
   size_t m_activeClipCount{0};
@@ -671,14 +719,6 @@ private:
   uint64_t m_callbackPostedSequence{0};
   uint64_t m_callbackDroppedCount{0};
   uint64_t m_callbackLastDroppedSequence{0};
-
-#ifndef NDEBUG
-  // ORP133 G3: Debug-only enforcement of the command queue's single-producer
-  // contract. The first thread to post a command is captured; any command
-  // posted from a different thread afterwards trips an assert. Compiled out in
-  // release builds (zero cost on the fast path).
-  mutable std::atomic<std::thread::id> m_commandProducerThread{};
-#endif
 
   // ORP127 G4: default clip-gain smoothing time. 5ms is a broadcast-console
   // norm (Yamaha CL/QL fader smoothing sits ~10ms); short enough to feel
