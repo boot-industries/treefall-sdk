@@ -54,7 +54,7 @@ foreach(consumer_namespace IN LISTS consumer_namespaces)
 endforeach()
 if(WIN32)
   foreach(runtime_target
-      Orpheus::orpheus_session Orpheus::orpheus_clipgrid Orpheus::orpheus_render)
+      orpheus_session orpheus_clipgrid orpheus_render)
     if(TARGET ${runtime_target})
       get_target_property(runtime_type ${runtime_target} TYPE)
       if(runtime_type STREQUAL "SHARED_LIBRARY")
