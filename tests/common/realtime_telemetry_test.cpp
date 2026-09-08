@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
-#include "../../src/core/common/spsc_observation.h"
 #include "../../src/core/common/realtime_counter.h"
+#include "../../src/core/common/spsc_observation.h"
 #include <gtest/gtest.h>
 #include <orpheus/realtime_telemetry.h>
 
 #include <atomic>
 #include <limits>
+#include <memory>
 #include <type_traits>
 using namespace orpheus;
 
 TEST(RealtimeTelemetryTest, CapturesAtExactBlockCadence) {
-  RealtimeTelemetry telemetry(3);
+  auto telemetryStorage = std::make_unique<RealtimeTelemetry>(3);
+  auto& telemetry = *telemetryStorage;
 
   EXPECT_FALSE(telemetry.beginRealtimeBlock(128, 48000));
   EXPECT_FALSE(telemetry.beginRealtimeBlock(128, 48000));
@@ -32,7 +34,8 @@ TEST(RealtimeTelemetryTest, CapturesAtExactBlockCadence) {
 }
 
 TEST(RealtimeTelemetryTest, RetainsFixedCapacityAndDropsNewestSnapshots) {
-  RealtimeTelemetry telemetry(1);
+  auto telemetryStorage = std::make_unique<RealtimeTelemetry>(1);
+  auto& telemetry = *telemetryStorage;
 
   for (size_t i = 0; i < kRealtimeTelemetryCapacity; ++i) {
     ASSERT_TRUE(telemetry.beginRealtimeBlock(64, 48000));
@@ -60,7 +63,8 @@ TEST(RealtimeTelemetryTest, RetainsFixedCapacityAndDropsNewestSnapshots) {
 }
 
 TEST(RealtimeTelemetryTest, ReusesDrainedSlotsWithoutReordering) {
-  RealtimeTelemetry telemetry(1);
+  auto telemetryStorage = std::make_unique<RealtimeTelemetry>(1);
+  auto& telemetry = *telemetryStorage;
 
   for (size_t cycle = 0; cycle < 3; ++cycle) {
     for (size_t i = 0; i < kRealtimeTelemetryCapacity; ++i) {
@@ -81,7 +85,8 @@ TEST(RealtimeTelemetryTest, ReusesDrainedSlotsWithoutReordering) {
 }
 
 TEST(RealtimeTelemetryTest, ClampsDecimationAndPublishesUnderrunDiagnostics) {
-  RealtimeTelemetry telemetry(0);
+  auto telemetryStorage = std::make_unique<RealtimeTelemetry>(0);
+  auto& telemetry = *telemetryStorage;
   EXPECT_EQ(telemetry.decimationBlocks(), 1u);
 
   telemetry.reportUnderrunFromRealtime();
@@ -100,8 +105,8 @@ TEST(RealtimeTelemetryTest, SlotSideSchemaStampingAndCanonicalAvailability) {
   static_assert(std::is_same_v<decltype(&RealtimeTelemetry::publishFromRealtime),
                                PublishFromRealtimeSignature>);
 
-
-  RealtimeTelemetry telemetry(1);
+  auto telemetryStorage = std::make_unique<RealtimeTelemetry>(1);
+  auto& telemetry = *telemetryStorage;
   ASSERT_TRUE(telemetry.beginRealtimeBlock(64, 48000));
   const RealtimeTelemetrySnapshot input{};
   ASSERT_TRUE(telemetry.publishFromRealtime(input));
@@ -109,22 +114,19 @@ TEST(RealtimeTelemetryTest, SlotSideSchemaStampingAndCanonicalAvailability) {
   RealtimeTelemetrySnapshot output;
   ASSERT_TRUE(telemetry.tryRead(output));
   EXPECT_EQ(output.schema_version, kRealtimeTelemetrySchemaVersion);
-  EXPECT_EQ(output.routing_meters.schema_version,
-            kRoutingMeterTelemetrySchemaVersion);
+  EXPECT_EQ(output.routing_meters.schema_version, kRoutingMeterTelemetrySchemaVersion);
   EXPECT_EQ(output.routing_meters.group_output_meters.schema_version,
             kGroupOutputMeterSnapshotSchemaVersion);
   EXPECT_EQ(output.routing_meters.availability, MeterAvailability::Unsupported);
   EXPECT_FALSE(telemetry.tryRead(output));
 }
 
-
 TEST(RealtimeTelemetryTest, ConcurrentPendingObservationNeverUnderflows) {
   std::atomic<uint64_t> read{0};
   std::atomic<uint64_t> write{1};
   bool advanced = false;
-  const size_t pending = detail::observeBoundedPending(
-      read, write, kRealtimeTelemetryCapacity,
-      [&]() noexcept {
+  const size_t pending =
+      detail::observeBoundedPending(read, write, kRealtimeTelemetryCapacity, [&]() noexcept {
         if (!advanced) {
           read.store(2, std::memory_order_release);
           write.store(2, std::memory_order_release);

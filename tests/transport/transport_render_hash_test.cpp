@@ -141,16 +141,15 @@ protected:
   uint64_t renderScenarioHash(size_t blockFrames) {
     EXPECT_EQ(kTotalFrames % blockFrames, 0u) << "block size must divide the render window";
 
-    TransportController transport(
+    auto transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-
-    EXPECT_EQ(transport.registerClipAudio(1, m_fixture1), SessionGraphError::OK);
-    EXPECT_EQ(transport.registerClipAudio(2, m_fixture2), SessionGraphError::OK);
-    EXPECT_EQ(transport.registerClipAudio(3, m_fixture3), SessionGraphError::OK);
+    EXPECT_EQ(transport->registerClipAudio(1, m_fixture1), SessionGraphError::OK);
+    EXPECT_EQ(transport->registerClipAudio(2, m_fixture2), SessionGraphError::OK);
+    EXPECT_EQ(transport->registerClipAudio(3, m_fixture3), SessionGraphError::OK);
 
     // Clip 2: trim + fades + gain. All metadata lands before the first
     // buffer, so every block size sees identical voice state.
-    auto meta = transport.getClipMetadata(2);
+    auto meta = transport->getClipMetadata(2);
     EXPECT_TRUE(meta.has_value());
     if (!meta)
       return 0;
@@ -162,17 +161,16 @@ protected:
     meta->fadeOutCurve = FadeCurve::Linear;
     meta->gainDb = -6.0f;
     meta->loopEnabled = false;
-    EXPECT_EQ(transport.updateClipMetadata(2, *meta),
-              SessionGraphError::OK);
-    EXPECT_EQ(transport.updateClipGain(3, 3.0f), SessionGraphError::OK);
+    EXPECT_EQ(transport->updateClipMetadata(2, *meta), SessionGraphError::OK);
+    EXPECT_EQ(transport->updateClipGain(3, 3.0f), SessionGraphError::OK);
 
-    EXPECT_EQ(transport.prepareClipAudio(1), SessionGraphError::OK);
-    EXPECT_EQ(transport.prepareClipAudio(2), SessionGraphError::OK);
-    EXPECT_EQ(transport.prepareClipAudio(3), SessionGraphError::OK);
+    EXPECT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+    EXPECT_EQ(transport->prepareClipAudio(2), SessionGraphError::OK);
+    EXPECT_EQ(transport->prepareClipAudio(3), SessionGraphError::OK);
 
-    EXPECT_EQ(transport.startClip(1), SessionGraphError::OK);
-    EXPECT_EQ(transport.startClip(2), SessionGraphError::OK);
-    EXPECT_EQ(transport.startClip(3), SessionGraphError::OK);
+    EXPECT_EQ(transport->startClip(1), SessionGraphError::OK);
+    EXPECT_EQ(transport->startClip(2), SessionGraphError::OK);
+    EXPECT_EQ(transport->startClip(3), SessionGraphError::OK);
 
     std::vector<float> left(blockFrames, 0.0f);
     std::vector<float> right(blockFrames, 0.0f);
@@ -188,11 +186,11 @@ protected:
 
     const size_t numBuffers = kTotalFrames / blockFrames;
     for (size_t i = 0; i < numBuffers; ++i) {
-      transport.processAudio(buffers, 2, blockFrames);
+      transport->processAudio(buffers, 2, blockFrames);
       streamL.insert(streamL.end(), left.begin(), left.end());
       streamR.insert(streamR.end(), right.begin(), right.end());
     }
-    transport.processCallbacks();
+    transport->processCallbacks();
 
     uint64_t hash = Fnv1a64(reinterpret_cast<const std::uint8_t*>(streamL.data()),
                             streamL.size() * sizeof(float), kFnv1a64Offset);
