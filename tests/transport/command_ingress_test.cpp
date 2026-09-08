@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -66,8 +67,8 @@ namespace {
 using namespace orpheus;
 using Access = TransportControllerTestAccess;
 constexpr uint32_t kCapacity = kTransportCommandIngressCapacity;
-TransportController makeTransport() {
-  return TransportController(
+std::unique_ptr<TransportController> makeTransport() {
+  return std::make_unique<TransportController>(
       nullptr, TransportConfig{.sampleRate = 48000, .outputChannels = 2, .maxBlockFrames = 64});
 }
 void drain(TransportController& transport) {
@@ -145,22 +146,22 @@ void forceContention(void* opaque, uint32_t index, uint32_t, bool published) noe
 TEST(CommandIngressTest, CapacityRecoveryAndEligibilityPrecedence) {
   auto transport = makeTransport();
   for (uint32_t i = 0; i < kCapacity; ++i)
-    ASSERT_EQ(transport.stopClip(1), SessionGraphError::OK);
-  EXPECT_EQ(transport.stopClip(1), SessionGraphError::NotReady);
-  const auto full = transport.getCommandIngressTelemetry();
+    ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  EXPECT_EQ(transport->stopClip(1), SessionGraphError::NotReady);
+  const auto full = transport->getCommandIngressTelemetry();
   EXPECT_EQ(full.attemptedCount, 256u);
   EXPECT_EQ(full.admittedCount, 255u);
   EXPECT_EQ(full.slotUnavailableCount, 1u);
-  EXPECT_EQ(transport.stopClip(0), SessionGraphError::InvalidHandle);
-  EXPECT_EQ(transport.startClipWithGroupChoke(88, 99), SessionGraphError::ClipNotRegistered);
-  EXPECT_EQ(transport.updateClipGain(88, -6), SessionGraphError::ClipNotRegistered);
-  EXPECT_EQ(transport.getCommandIngressTelemetry().attemptedCount, full.attemptedCount);
-  drain(transport);
-  EXPECT_EQ(transport.getCommandIngressTelemetry().processedCount, 255u);
-  EXPECT_EQ(transport.startClip(1, 99), SessionGraphError::OK);
-  drain(transport);
-  EXPECT_EQ(transport.getStartSettlementSnapshot().entries[0].requestTag, 99u);
-  checkPartition(transport);
+  EXPECT_EQ(transport->stopClip(0), SessionGraphError::InvalidHandle);
+  EXPECT_EQ(transport->startClipWithGroupChoke(88, 99), SessionGraphError::ClipNotRegistered);
+  EXPECT_EQ(transport->updateClipGain(88, -6), SessionGraphError::ClipNotRegistered);
+  EXPECT_EQ(transport->getCommandIngressTelemetry().attemptedCount, full.attemptedCount);
+  drain(*transport);
+  EXPECT_EQ(transport->getCommandIngressTelemetry().processedCount, 255u);
+  EXPECT_EQ(transport->startClip(1, 99), SessionGraphError::OK);
+  drain(*transport);
+  EXPECT_EQ(transport->getStartSettlementSnapshot().entries[0].requestTag, 99u);
+  checkPartition(*transport);
 }
 
 TEST(CommandIngressTest, DetachedBatchPreservesEachProducersSettlementOrder) {
@@ -170,15 +171,15 @@ TEST(CommandIngressTest, DetachedBatchPreservesEachProducersSettlementOrder) {
   for (size_t p = 0; p < producers.size(); ++p)
     producers[p] = std::thread([&, p] {
       for (size_t i = 0; i < 4; ++i)
-        results[p][i] = transport.startClip(p + 1, (uint64_t(p + 1) << 32) | (i + 1));
+        results[p][i] = transport->startClip(p + 1, (uint64_t(p + 1) << 32) | (i + 1));
     });
   for (auto& producer : producers)
     producer.join();
   for (const auto& row : results)
     for (auto result : row)
       ASSERT_EQ(result, SessionGraphError::OK);
-  drain(transport);
-  const auto snapshot = transport.getStartSettlementSnapshot();
+  drain(*transport);
+  const auto snapshot = transport->getStartSettlementSnapshot();
   ASSERT_EQ(snapshot.entryCount, 32u);
   std::array<uint32_t, 8> ordinal{};
   for (uint32_t i = 0; i < snapshot.entryCount; ++i) {
@@ -194,54 +195,54 @@ TEST(CommandIngressTest, DetachedBatchPreservesEachProducersSettlementOrder) {
 
 TEST(CommandIngressTest, PausedUnpublishedProducerAllowsHeadReuseWithoutFifoHole) {
   auto transport = makeTransport();
-  ASSERT_EQ(transport.startClip(1, 111), SessionGraphError::OK); // head H
+  ASSERT_EQ(transport->startClip(1, 111), SessionGraphError::OK); // head H
   Pause state;
-  Access::hook(transport, pausePublication, &state);
+  Access::hook(*transport, pausePublication, &state);
   SessionGraphError result = SessionGraphError::InternalError;
-  std::thread publisher([&] { result = transport.startClip(2, 333); });
+  std::thread publisher([&] { result = transport->startClip(2, 333); });
   const bool paused = awaitPause(state);
   if (paused) {
-    drain(transport); // Free H while the unpublished producer still remembers it.
-    EXPECT_EQ(transport.panic(), SessionGraphError::OK); // Reuse H as the new head.
+    drain(*transport); // Free H while the unpublished producer still remembers it.
+    EXPECT_EQ(transport->panic(), SessionGraphError::OK); // Reuse H as the new head.
   }
   releasePause(state);
   publisher.join();
-  Access::hook(transport, nullptr, nullptr);
+  Access::hook(*transport, nullptr, nullptr);
   ASSERT_TRUE(paused);
   ASSERT_EQ(result, SessionGraphError::OK);
-  drain(transport); // FIFO must panic first, then start handle 2.
-  const auto snapshot = transport.getActiveVoiceSnapshot();
+  drain(*transport); // FIFO must panic first, then start handle 2.
+  const auto snapshot = transport->getActiveVoiceSnapshot();
   ASSERT_EQ(snapshot.totalActiveVoiceCount, 1u);
   EXPECT_EQ(snapshot.entries[0].handle, 2u);
   EXPECT_EQ(snapshot.entries[0].newestStartRequestTag, 333u);
-  checkPartition(transport);
+  checkPartition(*transport);
 }
 
 TEST(CommandIngressTest, PublishedNodeCanBeConsumedAndReusedBeforePublisherReturns) {
   auto transport = makeTransport();
   Pause state;
   state.afterPublication = true;
-  Access::hook(transport, pausePublication, &state);
+  Access::hook(*transport, pausePublication, &state);
   SessionGraphError result = SessionGraphError::InternalError;
-  std::thread publisher([&] { result = transport.startClip(1, 41); });
+  std::thread publisher([&] { result = transport->startClip(1, 41); });
   const bool paused = awaitPause(state);
   if (paused) {
-    drain(transport);
-    EXPECT_EQ(transport.getCommandIngressTelemetry().processedCount, 1u);
-    EXPECT_EQ(transport.stopClip(999), SessionGraphError::OK);
-    drain(transport);
+    drain(*transport);
+    EXPECT_EQ(transport->getCommandIngressTelemetry().processedCount, 1u);
+    EXPECT_EQ(transport->stopClip(999), SessionGraphError::OK);
+    drain(*transport);
   }
   releasePause(state);
   publisher.join();
-  Access::hook(transport, nullptr, nullptr);
+  Access::hook(*transport, nullptr, nullptr);
   ASSERT_TRUE(paused);
   EXPECT_EQ(state.reusedIndex, state.index);
   EXPECT_EQ(result, SessionGraphError::OK);
-  const auto telemetry = transport.getCommandIngressTelemetry();
+  const auto telemetry = transport->getCommandIngressTelemetry();
   EXPECT_EQ(telemetry.admittedCount, 2u);
   EXPECT_EQ(telemetry.processedCount, 2u);
-  EXPECT_EQ(transport.getStartSettlementSnapshot().latestSequence, 1u);
-  checkPartition(transport);
+  EXPECT_EQ(transport->getStartSettlementSnapshot().latestSequence, 1u);
+  checkPartition(*transport);
 }
 
 TEST(CommandIngressTest, RetainedPayloadIsDestroyedOnlyByProducerReuse) {
@@ -258,48 +259,48 @@ TEST(CommandIngressTest, RetainedPayloadIsDestroyedOnlyByProducerReuse) {
         ++state->count;
         delete value;
       });
-  Access::retainPayload(transport, std::move(context));
+  Access::retainPayload(*transport, std::move(context));
   state->rendering = true;
-  drain(transport);
+  drain(*transport);
   state->rendering = false;
   EXPECT_EQ(state->count, 0u);
-  ASSERT_EQ(transport.stopClip(999), SessionGraphError::OK);
+  ASSERT_EQ(transport->stopClip(999), SessionGraphError::OK);
   EXPECT_EQ(state->count, 1u);
   EXPECT_FALSE(state->onAudio);
 }
 
 TEST(CommandIngressTest, ExceptionalPreparationCancelsAndCountsExactlyOnce) {
   auto transport = makeTransport();
-  EXPECT_THROW(Access::preparationException(transport), std::runtime_error);
-  const auto rejected = transport.getCommandIngressTelemetry();
+  EXPECT_THROW(Access::preparationException(*transport), std::runtime_error);
+  const auto rejected = transport->getCommandIngressTelemetry();
   EXPECT_EQ(rejected.attemptedCount, 1u);
   EXPECT_EQ(rejected.preparationRejectedCount, 1u);
   for (uint32_t i = 0; i < kCapacity; ++i)
-    ASSERT_EQ(transport.stopClip(1), SessionGraphError::OK);
-  checkPartition(transport);
+    ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  checkPartition(*transport);
 }
 
 TEST(CommandIngressTest, ConcurrentSaturationSurvivesSuspendedCompensation) {
   auto transport = makeTransport();
-  Access::seed(transport, UINT32_MAX - 2u);
+  Access::seed(*transport, UINT32_MAX - 2u);
   std::array<std::thread, 8> producers;
   const auto incrementConcurrently = [&] {
     for (auto& producer : producers)
       producer = std::thread([&] {
         for (size_t i = 0; i < 1000; ++i)
-          Access::increment(transport);
+          Access::increment(*transport);
       });
     for (auto& producer : producers)
       producer.join();
   };
   incrementConcurrently();
-  ASSERT_EQ(Access::raw(transport), UINT32_MAX);
-  Access::excess(transport); // A real fetch_add paused before its compensating fetch_sub.
+  ASSERT_EQ(Access::raw(*transport), UINT32_MAX);
+  Access::excess(*transport); // A real fetch_add paused before its compensating fetch_sub.
   incrementConcurrently();
-  EXPECT_EQ(transport.getCommandIngressTelemetry().attemptedCount, UINT32_MAX);
-  EXPECT_EQ(Access::raw(transport), uint64_t(UINT32_MAX) + 1);
-  Access::compensate(transport);
-  EXPECT_EQ(Access::raw(transport), UINT32_MAX);
+  EXPECT_EQ(transport->getCommandIngressTelemetry().attemptedCount, UINT32_MAX);
+  EXPECT_EQ(Access::raw(*transport), uint64_t(UINT32_MAX) + 1);
+  Access::compensate(*transport);
+  EXPECT_EQ(Access::raw(*transport), UINT32_MAX);
 }
 
 class RegisteredIngressTest : public ::testing::Test {

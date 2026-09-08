@@ -52,5 +52,21 @@ foreach(consumer_namespace IN LISTS consumer_namespaces)
     ${consumer_namespace}::transport ${consumer_namespace}::routing
     ${consumer_namespace}::audio_utils ${consumer_namespace}::audio_io)
 endforeach()
+if(WIN32)
+  foreach(runtime_target
+      Orpheus::orpheus_session Orpheus::orpheus_clipgrid Orpheus::orpheus_render)
+    if(TARGET ${runtime_target})
+      get_target_property(runtime_type ${runtime_target} TYPE)
+      if(runtime_type STREQUAL "SHARED_LIBRARY")
+        add_custom_command(TARGET orpheus_add_subdirectory_smoke POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                  $<TARGET_RUNTIME_DLLS:orpheus_add_subdirectory_smoke>
+                  $<TARGET_FILE:${runtime_target}>
+                  $<TARGET_FILE_DIR:orpheus_add_subdirectory_smoke>
+          COMMAND_EXPAND_LISTS)
+      endif()
+    endif()
+  endforeach()
+endif()
 enable_testing()
 add_test(NAME source_consumer_runtime COMMAND orpheus_add_subdirectory_smoke)

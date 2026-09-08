@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clip metadata, choking peers, retaining source leases, or settling rejected
   start tags. Registry-dependent validation, preparation, admission, and
   persistent commits share one control-thread transaction.
+- Package and stress fixtures allocate large fixed-capacity transport/telemetry
+  owners before rendering instead of exhausting the Windows default stack.
+  Source-consumer verification stages the actual legacy SDK runtime DLLs.
 
 - Registered streaming `startClip` and `startClipWithGroupChoke` preparation now
   pins their trim-IN first-render page with command-prime capacity when the
