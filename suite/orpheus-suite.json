@@ -4,7 +4,7 @@
   "suite_id": "orpheus-suite",
   "suite_version": "0.1.0",
   "release_channel": "development",
-  "manifest_revision": "2026-08-05",
+  "manifest_revision": "2026-09-09",
   "workspace": {
     "root_environment": "ORPHEUS_SUITE_WORKSPACE",
     "default_root": "..",
@@ -70,7 +70,7 @@
         "tools/"
       ],
       "compatibility": {
-        "api_line": "0.6.x",
+        "api_line": "0.9.x",
         "stable_c_abi": "1.0",
         "shmui_juce_contract": "0.6.0"
       },
@@ -82,10 +82,10 @@
           "exclude_paths": [
             "shmui-juce-import.json"
           ],
-          "expected_sha256": "f2b6641c53543deae341d7553c7a9949452b36fdf46017cd29b8cfe19380900a",
+          "expected_sha256": "482e6b5c01d7e749b9a09dfb6ade310c329ae5f53e66b060625b8a83c9a18751",
           "source_repository": "shmui",
-          "source_revision": "2b1e1977f887cf99b05eff9a2294647553e90ae8",
-          "current_source_revision": "2b1e1977f887cf99b05eff9a2294647553e90ae8",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -177,7 +177,7 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
           "source_repository": "shmui",
-          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -259,15 +259,15 @@
         "apps/fourtrack-mac/"
       ],
       "compatibility": {
-        "orpheus_sdk": ">=0.6.7 <0.7.0",
-        "shmui_contract": "0.5.0"
+        "orpheus_sdk": "0.9.0",
+        "shmui_contract": "0.6.0"
       },
       "dependency_pins": [
         {
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
+          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
         }
       ],
       "external_pins": [
@@ -284,10 +284,10 @@
           "id": "fourtrack-shmui-manifest",
           "path": "apps/fourtrack-mac/Generated/Shmui/manifest.json",
           "hash_type": "sha256-file-v1",
-          "expected_sha256": "a165e5aad550a9b073b22244cade3f1bbf8a329caadebb179c62b0d8732c9d60",
+          "expected_sha256": "86385b412bfcc28d38a8d0fbbbbd2d98d69f6a138af864644dc7d2dcd14ff3a8",
           "source_repository": "shmui",
-          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
-          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "juce/Source",
             "apps/www/styles/orpheus-tokens.css"
@@ -297,10 +297,10 @@
           "id": "fourtrack-shmui-tokens",
           "path": "apps/fourtrack-mac/Generated/Shmui/OrpheusDesignTokens.swift",
           "hash_type": "sha256-file-v1",
-          "expected_sha256": "13ddd076cc47e17ff807ab9d2c0c8a7e4656e339af63e3ec01d33fe5bee6da2c",
+          "expected_sha256": "f067569b9bb80f0c210b1f629e458ba1817ea4806c05bf08284bcbe4538c3592",
           "source_repository": "shmui",
-          "source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
-          "current_source_revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -330,7 +330,7 @@
           "command": [
             "ctest",
             "--test-dir",
-            "build-mac-tests",
+            "build-mac",
             "--output-on-failure"
           ],
           "tier": "full",
@@ -360,8 +360,8 @@
         "CMakeLists.txt"
       ],
       "compatibility": {
-        "orpheus_sdk": ">=0.6.7 <0.7.0",
-        "shmui_juce_contract": "0.5.0"
+        "orpheus_sdk": "0.9.0",
+        "shmui_juce_contract": "0.6.0"
       },
       "dependency_pins": [
         {
@@ -369,7 +369,7 @@
           "kind": "cmake-source-override",
           "config": "ORPHEUS_SDK_SOURCE_DIR",
           "workspace_path": "orpheus-sdk",
-          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
+          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
         },
         {
           "dependency": "shmui",
@@ -377,7 +377,7 @@
           "config": "SHMUI_JUCE_SOURCE_DIR",
           "workspace_path": "shmui",
           "configured_path": "shmui/juce",
-          "revision": "a7b94b8be49875c7adc0ed5d4617150bb1d18cfa"
+          "revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd"
         }
       ],
       "verification": [
@@ -387,7 +387,7 @@
           "command": [
             "ctest",
             "--test-dir",
-            "build-release",
+            "build",
             "--output-on-failure"
           ],
           "tier": "full",
@@ -419,15 +419,15 @@
         "CMakeLists.txt"
       ],
       "compatibility": {
-        "orpheus_sdk": ">=0.6.7 <0.7.0",
-        "shmui_juce_contract": "0.5.0"
+        "orpheus_sdk": "0.9.0",
+        "shmui_juce_contract": "0.6.0"
       },
       "dependency_pins": [
         {
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "582ab2e01723ccaa5e776845c5e774efecfc1c9d"
+          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
         }
       ],
       "verification": [
@@ -467,7 +467,7 @@
       "kind": "build-time",
       "required": true,
       "pin_policy": "exact consumer submodule revision",
-      "compatibility": ">=0.6.7 <0.7.0"
+      "compatibility": "0.9.0"
     },
     {
       "from": "orpheus-sdk",
@@ -475,7 +475,7 @@
       "kind": "build-time",
       "required": true,
       "pin_policy": "exact package or source-tree revision",
-      "compatibility": ">=0.6.7 <0.7.0"
+      "compatibility": "0.9.0"
     },
     {
       "from": "orpheus-sdk",
@@ -483,7 +483,7 @@
       "kind": "build-time",
       "required": true,
       "pin_policy": "exact consumer submodule revision",
-      "compatibility": ">=0.6.7 <0.7.0"
+      "compatibility": "0.9.0"
     },
     {
       "from": "shmui",
@@ -491,7 +491,7 @@
       "kind": "generated-source",
       "required": true,
       "pin_policy": "generated artifact provenance plus content hash",
-      "compatibility": "0.5.0"
+      "compatibility": "0.6.0"
     },
     {
       "from": "shmui",
@@ -499,7 +499,7 @@
       "kind": "build-time",
       "required": false,
       "pin_policy": "exact source-tree revision when override mode is used",
-      "compatibility": "0.5.0"
+      "compatibility": "0.6.0"
     }
   ],
   "release_policy": {
