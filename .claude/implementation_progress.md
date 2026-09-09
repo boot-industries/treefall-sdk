@@ -1564,3 +1564,11 @@ pnpm run build
 ---
 
 _This file is auto-maintained by Claude Code during ORP068 implementation._
+
+## 2026-09-09 Main Reconciliation
+
+- Repointed `origin` to `git@github.com:chrislyons/treefall-sdk.git` and fetched the renamed repository.
+- Merged remote `origin/main` (`0238eac1`) into local `main` with merge commit `7fd025bb`.
+- Preserved local commits `6809bac9` and `0fd475e8`, including the 23 local-only `docs/orp/` records and `treefall-sprint-prompt-corrected.md`.
+- Resolved the remote deletion of the local ORP record set by retaining the local `docs/orp/` tree. The only merge conflicts were `docs/orp/INDEX.md` and `docs/orp/ORP180 Web Contribution Harness Feasibility and Plan.md`; both kept the local versions. No unresolved conflicts remain.
+- Verified both local commits and the fetched remote tip are ancestors of `main`; the checkout is clean and `main` is ahead of `origin/main` by the reconciliation merge commit.

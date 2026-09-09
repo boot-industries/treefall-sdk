@@ -8,6 +8,10 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP260 SDK Main Reconciliation and Local ORP Preservation]] —
+  merged renamed remote main while preserving local commits and local-only
+  ORP records (2026-09-09)
+
 - [[ORP180 Web Contribution Harness Feasibility and Plan]] —
   web-embedded OMP harness feasibility, read-only onboarding surface vs.
   trust-gated contributor harness, and rejection of the public write funnel
@@ -68,6 +72,8 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP260 SDK Main Reconciliation and Local ORP Preservation](ORP260%20SDK%20Main%20Reconciliation%20and%20Local%20ORP%20Preservation.md)
+
 - [ORP180 Web Contribution Harness Feasibility and Plan](ORP180%20Web%20Contribution%20Harness%20Feasibility%20and%20Plan.md)
 - [ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors](ORP255%20Strategic%20Architecture,%20Competitive%20Posture,%20and%20Expansion%20Vectors.md)
 - [ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation](ORP254%20Suite%20Commercialization,%20Rebrand%20Strategy,%20and%20Tier%20Segmentation.md)
@@ -100,4 +106,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-09-07
+**Last Generated:** 2026-09-09
