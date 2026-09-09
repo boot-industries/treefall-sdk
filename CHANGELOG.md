@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- FLAC writer preflight rejects rates above libsndfile's 655350 Hz encoder
+  limit before creating a destination. Provider absence still returns
+  `NotReady`; WAV and AIFF retain their existing backend validation.
 - Transport queue refusal now returns `NotReady` without changing persistent
   clip metadata, choking peers, retaining source leases, or settling rejected
   start tags. Registry-dependent validation, preparation, admission, and

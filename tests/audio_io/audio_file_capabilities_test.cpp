@@ -53,6 +53,9 @@ TEST_F(AudioFileCapabilitiesTest, RegistrySeparatesPolicyFromProviderAvailabilit
 #else
   EXPECT_FALSE(capabilities.file_io_available);
   EXPECT_EQ(preflightAudioFileWrite(valid), SessionGraphError::NotReady);
+  valid.format = AudioFileFormat::FLAC;
+  valid.sample_rate = 655351;
+  EXPECT_EQ(preflightAudioFileWrite(valid), SessionGraphError::NotReady);
   EXPECT_EQ(probeAudioFile((directory / "missing.wav").string()).error,
             SessionGraphError::NotReady);
 #endif
@@ -92,6 +95,21 @@ TEST_F(AudioFileCapabilitiesTest, EmptyProbeIsInvalidEvenWithoutProvider) {
 }
 
 #if defined(ORPHEUS_AUDIO_FILE_CAPABILITIES_HAVE_SNDFILE)
+TEST_F(AudioFileCapabilitiesTest, BackendRefusesFlacRateBeforeCreatingFile) {
+  auto writer = createAudioFileWriter();
+  ASSERT_NE(writer, nullptr);
+  AudioFileWriterConfig config{AudioFileFormat::FLAC, 48000, 2, AudioSampleFormat::Int16};
+  ASSERT_EQ(preflightAudioFileWrite(config), SessionGraphError::OK);
+  ASSERT_EQ(writer->open((directory / "valid.flac").string(), config), SessionGraphError::OK);
+  ASSERT_EQ(writer->close(), SessionGraphError::OK);
+  config.sample_rate = 655351;
+  const auto destination = directory / "refused-rate.flac";
+  EXPECT_EQ(preflightAudioFileWrite(config), SessionGraphError::InvalidParameter);
+  EXPECT_EQ(writer->open(destination.string(), config), SessionGraphError::InvalidParameter);
+  EXPECT_FALSE(writer->isOpen());
+  EXPECT_FALSE(std::filesystem::exists(destination));
+}
+
 TEST_F(AudioFileCapabilitiesTest, BackendRefusesNineChannelFlacBeforeCreatingFile) {
   AudioFileWriterConfig config{AudioFileFormat::FLAC, 48000, 9, AudioSampleFormat::Int16};
   EXPECT_EQ(preflightAudioFileWrite(config), SessionGraphError::InvalidParameter);

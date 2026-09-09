@@ -30,7 +30,6 @@
 
 #include <array>
 #include <atomic>
-#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -290,9 +289,9 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
   EXPECT_EQ(RtGuardState::allocViolations(), 0u);
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 }
-// D3/H prepared-only ingress boundary.  The consumer contains only the
-// guarded processAudio call; all barriers, joins, observations and reporting
-// remain outside RtSection.
+// D3/H prepared-only ingress boundary. The Linux syscall gate traces from
+// process start, then validates only the consumer region between explicit
+// markers; thread startup and teardown remain outside the measured window.
 TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   constexpr size_t kProducers = 8;
   constexpr size_t kFrames = 64;
@@ -315,12 +314,13 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   std::array<float, kFrames> left{}, right{};
   float* output[]{left.data(), right.data()};
   std::array<std::array<SessionGraphError, kRounds * kPerRound>, kProducers> results{};
-  std::barrier begin(static_cast<std::ptrdiff_t>(kProducers + 1));
-  std::barrier end(static_cast<std::ptrdiff_t>(kProducers + 1));
-  std::barrier drained(static_cast<std::ptrdiff_t>(kProducers + 1));
+  std::atomic<size_t> ready{0};
+  std::atomic<size_t> completed{0};
+  std::atomic<size_t> roundStart{0};
+  std::atomic<bool> start{false};
   std::atomic<bool> done{false};
 #if defined(__linux__)
-  long consumerTid = 0;
+  std::atomic<long> consumerTid{0};
 #endif
   RtGuardState::reset();
   std::thread pump([&] {
@@ -331,28 +331,45 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   });
   std::thread consumer([&] {
 #if defined(__linux__)
-    consumerTid = static_cast<long>(::syscall(SYS_gettid));
+    consumerTid.store(static_cast<long>(::syscall(SYS_gettid)), std::memory_order_release);
+#endif
+    ready.fetch_add(1, std::memory_order_release);
+    while (!start.load(std::memory_order_acquire)) {
+    }
+#if defined(__linux__)
+    constexpr char kTraceBegin[] = "TREEFALL_MPSC_TRACE_BEGIN\n";
+    (void)::syscall(SYS_write, STDERR_FILENO, kTraceBegin, sizeof(kTraceBegin) - 1);
 #endif
     for (size_t round = 0; round < kRounds; ++round) {
-      begin.arrive_and_wait();
+      while (roundStart.load(std::memory_order_acquire) != round) {
+      }
       {
         RtSection section;
         transport->processAudio(output, 2, kFrames);
       }
-      end.arrive_and_wait();
+      while (completed.load(std::memory_order_acquire) != (round + 1) * kProducers) {
+      }
       {
         // All publishers returned: drain the rest before allowing node reuse.
         RtSection section;
         transport->processAudio(output, 2, kFrames);
       }
-      drained.arrive_and_wait();
+      roundStart.store(round + 1, std::memory_order_release);
     }
+#if defined(__linux__)
+    constexpr char kTraceEnd[] = "TREEFALL_MPSC_TRACE_END\n";
+    (void)::syscall(SYS_write, STDERR_FILENO, kTraceEnd, sizeof(kTraceEnd) - 1);
+#endif
   });
   std::array<std::thread, kProducers> producers;
   for (size_t p = 0; p < kProducers; ++p)
     producers[p] = std::thread([&, p] {
+      ready.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+      }
       for (size_t round = 0; round < kRounds; ++round) {
-        begin.arrive_and_wait();
+        while (roundStart.load(std::memory_order_acquire) != round) {
+        }
         for (size_t step = 0; step < kPerRound; ++step) {
           const size_t i = round * kPerRound + step;
           const size_t h = (p + i) % kProducers;
@@ -401,10 +418,14 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
             break;
           }
         }
-        end.arrive_and_wait();
-        drained.arrive_and_wait();
+        completed.fetch_add(1, std::memory_order_release);
+        while (roundStart.load(std::memory_order_acquire) == round) {
+        }
       }
     });
+  while (ready.load(std::memory_order_acquire) != kProducers + 1) {
+  }
+  start.store(true, std::memory_order_release);
   for (auto& producer : producers)
     producer.join();
   consumer.join();
@@ -423,8 +444,7 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   EXPECT_EQ(RtGuardState::allocViolations(), 0u);
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 #if defined(__linux__)
-  ASSERT_GT(consumerTid, 0);
-  std::cout << "MPSC_CONSUMER_TID=" << consumerTid << '\n';
+  std::cout << "MPSC_CONSUMER_TID=" << consumerTid.load(std::memory_order_acquire) << '\n';
 #endif
 }
 
