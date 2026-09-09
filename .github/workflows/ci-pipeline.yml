@@ -1,4 +1,4 @@
-name: Orpheus SDK CI Pipeline
+name: Treefall SDK CI Pipeline
 
 on:
   push:
@@ -139,14 +139,43 @@ jobs:
 
       - name: Test
         run: |
+          set +e
           if [ "${{ matrix.build_type }}" == "Debug" ] && [ "${{ matrix.sanitizers }}" == "ON" ]; then
             ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
               ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
           else
             ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
           fi
+          status=$?
+          mkdir -p build/ci-evidence
+          printf '%s\n' "$status" > build/ci-evidence/ctest-exit.txt
+          exit "$status"
         shell: bash
         timeout-minutes: 20
+      - name: Record offline evidence identity
+        if: always()
+        run: |
+          mkdir -p build/ci-evidence
+          cat > build/ci-evidence/identity.json <<EOF
+          {"runner":"${{ matrix.os }}","buildType":"${{ matrix.build_type }}","commit":"${{ github.sha }}"}
+          EOF
+          pkg-config --modversion sndfile > build/ci-evidence/libsndfile-version.txt
+
+      - name: Upload offline render evidence and CTest logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: offline-evidence-${{ matrix.os }}-${{ matrix.build_type }}
+          if-no-files-found: error
+          path: |
+            build/tests/find_package_build/offline-render-hashes.json
+            build/ci-evidence/**
+            build/CMakeCache.txt
+            build/OrpheusSDKConfig.cmake
+            build/CMakeFiles/**/CMakeCXXCompiler.cmake
+            build/**/Testing/Temporary/**
+            cmake_output.log
+
 
       - name: Build ShmUI-JUCE consumer without OpenGL
         if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Release'
@@ -160,15 +189,6 @@ jobs:
         shell: bash
         timeout-minutes: 10
 
-      - name: Upload test logs on failure
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        with:
-          name: ctest-logs-${{ matrix.os }}-${{ matrix.build_type }}
-          path: |
-            build/Testing/Temporary/LastTest.log
-            build/Testing/Temporary/CTestCostData.txt
-          if-no-files-found: ignore
 
   # ============================================================================
   # C++ Build, ABI, Installed-Package Test (Windows)
@@ -215,9 +235,39 @@ jobs:
         timeout-minutes: 15
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+        run: |
+          set +e
+          ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+          status=$?
+          mkdir -p build/ci-evidence
+          printf '%s\n' "$status" > build/ci-evidence/ctest-exit.txt
+          exit "$status"
         shell: bash
         timeout-minutes: 15
+      - name: Record offline evidence identity
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/ci-evidence
+          cat > build/ci-evidence/identity.json <<EOF
+          {"runner":"windows-2022","buildType":"${{ matrix.build_type }}","commit":"${{ github.sha }}"}
+          EOF
+          vcpkg list > build/ci-evidence/provider-versions.txt
+
+      - name: Upload offline render evidence and CTest logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: offline-evidence-windows-2022-${{ matrix.build_type }}
+          if-no-files-found: error
+          path: |
+            build/tests/find_package_build/offline-render-hashes.json
+            build/ci-evidence/**
+            build/CMakeCache.txt
+            build/OrpheusSDKConfig.cmake
+            build/CMakeFiles/**/CMakeCXXCompiler.cmake
+            build/**/Testing/Temporary/**
+
 
       - name: Package
         run: cmake --build build --config ${{ matrix.build_type }} --target package --parallel
@@ -225,6 +275,245 @@ jobs:
 
   # ============================================================================
   # C++ Linting
+  # ============================================================================
+  # Focused Linux ThreadSanitizer evidence (separate from ASan/UBSan)
+  # ============================================================================
+  linux-tsan:
+    name: Linux TSan ingress and realtime evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsndfile1-dev
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@d06b37b47cfd043ec794ffa3e40e0b6b5858a7ec  # v1
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+      - name: Configure TSan build
+        run: |
+          set -euo pipefail
+          mkdir -p build-tsan
+          cmake -S . -B build-tsan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DORP_WITH_TESTS=ON \
+            -DORPHEUS_ENABLE_REALTIME=ON \
+            -DORPHEUS_ENABLE_EXTENDED_TESTS=ON \
+            -DORP_BUILD_ABI_DYNAMIC=OFF \
+            -DORP_BUILD_SHARED_CORE=OFF \
+            -DORP_ENABLE_ASAN=OFF \
+            -DORP_ENABLE_UBSAN=OFF \
+            -DCMAKE_CXX_FLAGS='-fsanitize=thread -g' \
+            -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' 2>&1 | tee build-tsan/configure.log
+      - name: Build focused TSan targets
+        run: cmake --build build-tsan --parallel 4 --target command_ingress_test voice_state_tsan_test callback_loss_telemetry_test realtime_harness_test streaming_seek_test
+        timeout-minutes: 20
+      - name: Run focused TSan tests
+        run: |
+          set -euo pipefail
+          mkdir -p build-tsan/evidence
+          set +e
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 \
+            ctest --test-dir build-tsan --build-config Debug --output-on-failure -j 1 --timeout 300 \
+            -R '^(command_ingress_test|voice_state_tsan_test|callback_loss_telemetry_test|realtime_harness_test|streaming_seek_test)$' \
+            2>&1 | tee build-tsan/evidence/ctest.log
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > build-tsan/evidence/ctest-exit.txt
+          exit "$status"
+      - name: Record TSan attribution
+        if: always()
+        run: |
+          mkdir -p build-tsan/evidence
+          git rev-parse HEAD > build-tsan/evidence/commit.txt
+          cmake --system-information > build-tsan/evidence/cmake-system-information.txt
+          pkg-config --modversion sndfile > build-tsan/evidence/libsndfile-version.txt 2>&1 || true
+      - name: Upload TSan evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: linux-tsan-evidence
+          if-no-files-found: error
+          path: |
+            build-tsan/configure.log
+            build-tsan/CMakeCache.txt
+            build-tsan/CMakeFiles/**/CMakeCXXCompiler.cmake
+            build-tsan/evidence/**
+            build-tsan/Testing/Temporary/**
+
+  # ============================================================================
+  # Linux selected-consumer syscall evidence (unsanitized, separate from TSan)
+  # ============================================================================
+  linux-consumer-syscalls:
+    name: Linux consumer syscall evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERIFY_CONSUMER_IO: |
+        import pathlib, re, sys
+        try:
+            lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+            records = [line for line in lines if line.startswith("MPSC_CONSUMER_TID=")]
+            if len(records) != 1:
+                raise ValueError("expected exactly one consumer TID")
+            match = re.fullmatch(r"MPSC_CONSUMER_TID=([1-9][0-9]*)", records[0])
+            if match is None:
+                raise ValueError("malformed consumer TID")
+            trace = pathlib.Path(sys.argv[2] + "." + match.group(1))
+            payload = trace.read_text(encoding="utf-8")
+        except (OSError, ValueError, IndexError) as error:
+            print("Invalid consumer-I/O evidence: " + str(error), file=sys.stderr)
+            sys.exit(2)
+        if payload.strip():
+            print("Consumer I/O observed:\n" + payload, file=sys.stderr)
+            sys.exit(1)
+        print("Consumer " + match.group(1) + ": zero selected I/O syscalls")
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsndfile1-dev strace
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@d06b37b47cfd043ec794ffa3e40e0b6b5858a7ec  # v1
+        with:
+          cmake-version: ${{ env.CMAKE_VERSION }}
+      - name: Configure and build unsanitized harness
+        run: |
+          set -euo pipefail
+          mkdir -p build-io
+          cmake -S . -B build-io -DCMAKE_BUILD_TYPE=Debug \
+            -DORP_WITH_TESTS=ON -DORPHEUS_ENABLE_REALTIME=ON \
+            -DORPHEUS_ENABLE_EXTENDED_TESTS=ON -DORP_BUILD_ABI_DYNAMIC=OFF \
+            -DORP_BUILD_SHARED_CORE=OFF -DORP_ENABLE_ASAN=OFF -DORP_ENABLE_UBSAN=OFF \
+            2>&1 | tee build-io/configure.log
+          cmake --build build-io --parallel 4 --target realtime_harness_test
+      - name: Capture tool and build attribution
+        if: always()
+        run: |
+          mkdir -p build-io/evidence
+          git rev-parse HEAD > build-io/evidence/commit.txt
+          strace --version > build-io/evidence/strace-version.txt 2>&1 || true
+          uname -a > build-io/evidence/kernel.txt
+          cmake --system-information > build-io/evidence/cmake-system-information.txt
+          pkg-config --modversion sndfile > build-io/evidence/libsndfile-version.txt 2>&1 || true
+      - name: Prove detector rejects real I/O
+        run: |
+          set -euo pipefail
+          E="$PWD/build-io/evidence"
+          set +e
+          timeout 30s strace -ff -qq -e signal=none \
+            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
+            -o "$E/detector-selftest.trace" \
+            python3 -c 'import os,threading; fd=os.open("/dev/zero",os.O_RDONLY); out={}; t=threading.Thread(target=lambda: out.update(tid=threading.get_native_id(), byte=os.read(fd,1))); t.start(); t.join(); os.close(fd); assert out["byte"] == b"\0"; print("MPSC_CONSUMER_TID="+str(out["tid"]))' \
+            > "$E/detector-selftest.stdout" 2> "$E/detector-selftest.stderr"
+          run_status=$?
+          set -e
+          python3 -c "$VERIFY_CONSUMER_IO" "$E/detector-selftest.stdout" "$E/detector-selftest.trace" || parser_status=$?
+          : "${parser_status:=0}"
+          printf 'execution=%s\nparser=%s\n' "$run_status" "$parser_status" > "$E/detector-selftest.exit"
+          [[ "$run_status" -eq 0 ]] || { echo "positive control execution failed: $run_status"; exit 1; }
+          [[ "$parser_status" -eq 1 ]] || { echo "positive control parser must exit 1: $parser_status"; exit 1; }
+          tid="$(sed -n 's/^MPSC_CONSUMER_TID=//p' "$E/detector-selftest.stdout")"
+          test -n "$tid"
+          test -f "$E/detector-selftest.trace.$tid"
+          grep -q '^read(' "$E/detector-selftest.trace.$tid"
+      - name: Trace SDK consumer and require zero selected I/O
+        run: |
+          set -euo pipefail
+          E="$PWD/build-io/evidence"
+          set +e
+          timeout 300s strace -ff -qq -e signal=none \
+            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
+            -o "$E/consumer-io.trace" \
+            build-io/tests/transport/realtime_harness_test \
+            --gtest_filter=RealtimeHarnessTest.ConcurrentIngressAt96k64DoesNoIo \
+            > "$E/consumer-io.stdout" 2> "$E/consumer-io.stderr"
+          run_status=$?
+          set -e
+          set +e
+          python3 -c "$VERIFY_CONSUMER_IO" "$E/consumer-io.stdout" "$E/consumer-io.trace"
+          parser_status=$?
+          set -e
+          printf 'execution=%s\nparser=%s\n' "$run_status" "$parser_status" > "$E/consumer-io.exit"
+          [[ "$run_status" -eq 0 ]] || { echo "SDK harness failed: $run_status"; exit 1; }
+          [[ "$parser_status" -eq 0 ]] || { echo "SDK consumer-I/O parser failed: $parser_status"; exit 1; }
+      - name: Upload syscall evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: linux-consumer-syscall-evidence
+          if-no-files-found: error
+          path: |
+            build-io/configure.log
+            build-io/CMakeCache.txt
+            build-io/CMakeFiles/**/CMakeCXXCompiler.cmake
+            build-io/evidence/**
+            build-io/Testing/Temporary/**
+
+  # ============================================================================
+  # Aggregate the five native offline-render records exactly
+  # ============================================================================
+  offline-evidence:
+    name: Validate five-runner offline evidence
+    runs-on: ubuntu-latest
+    needs: [cpp-build-test, cpp-build-test-windows]
+    if: always()
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: offline-evidence-*
+          path: offline-evidence
+          merge-multiple: false
+      - name: Validate exact offline evidence set
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, re, sys
+          root = pathlib.Path("offline-evidence")
+          expected = {
+              ("ubuntu-latest", "Debug"), ("ubuntu-latest", "Release"),
+              ("macos-latest", "Debug"), ("windows-2022", "Debug"),
+              ("windows-2022", "Release"),
+          }
+          golden = "e59bff0bbf328128a96992e19b1047688227778480642251b1fa1f27f6b85eaa"
+          fields = {"schemaVersion","sampleRate","channels","sampleEncoding","frames","payloadBytes","goldenPcmSha256","renders"}
+          seen = []
+          for directory in sorted(p for p in root.iterdir() if p.is_dir()):
+              identity_files = list(directory.rglob("identity.json"))
+              hashes = list(directory.rglob("offline-render-hashes.json"))
+              if len(identity_files) != 1 or len(hashes) != 1:
+                  raise SystemExit(f"{directory}: expected one identity and one hash record")
+              identity = json.loads(identity_files[0].read_text())
+              if identity.get("commit") != os.environ["GITHUB_SHA"]:
+                  raise SystemExit(f"{directory}: evidence is from a different commit")
+              key = (identity.get("runner"), identity.get("buildType"))
+              if key in seen or key not in expected:
+                  raise SystemExit(f"unexpected or duplicate runner identity: {key}")
+              data = json.loads(hashes[0].read_text())
+              if set(data) != fields or data["schemaVersion"] != 1 or data["sampleRate"] != 48000 or data["channels"] != 2 or data["sampleEncoding"] != "pcm_s16le" or data["frames"] != 8450 or data["payloadBytes"] != 33800 or data["goldenPcmSha256"] != golden:
+                  raise SystemExit(f"{key}: schema or golden mismatch")
+              renders = data["renders"]
+              if len(renders) != 4 or {r.get("blockFrames") for r in renders} != {256,512,1024,2048}:
+                  raise SystemExit(f"{key}: missing or duplicate block sizes")
+              if any(set(r) != {"blockFrames","pcmSha256","wavSha256"} or r["pcmSha256"] != golden for r in renders):
+                  raise SystemExit(f"{key}: render hash mismatch")
+              if any(re.fullmatch(r"[0-9a-f]{64}", r["wavSha256"]) is None for r in renders):
+                  raise SystemExit(f"{key}: malformed complete WAV digest")
+              if len({r["wavSha256"] for r in renders}) != 1:
+                  raise SystemExit(f"{key}: WAV hashes differ within runner")
+              seen.append(key)
+          if set(seen) != expected:
+              raise SystemExit(f"required five identities missing: {sorted(expected - set(seen))}")
+          print("Validated exactly five native offline evidence records")
+          PY
+
   # ============================================================================
   cpp-lint:
     name: C++ Lint
@@ -354,19 +643,25 @@ jobs:
   ci-status:
     name: CI Status Check
     runs-on: ubuntu-latest
-    needs: [cpp-build-test, cpp-build-test-windows, cpp-lint]
+    needs: [cpp-build-test, cpp-build-test-windows, cpp-lint, linux-tsan, linux-consumer-syscalls, offline-evidence]
     if: always()
 
     steps:
       - name: Check all jobs succeeded
         run: |
-          if [[ "${{ needs.cpp-build-test.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test.result }}" == "cancelled" ]] || \
-             [[ "${{ needs.cpp-build-test-windows.result }}" == "failure" ]] || [[ "${{ needs.cpp-build-test-windows.result }}" == "cancelled" ]] || \
-             [[ "${{ needs.cpp-lint.result }}" == "failure" ]] || [[ "${{ needs.cpp-lint.result }}" == "cancelled" ]]; then
-            echo "One or more required jobs failed"
+          if [[ "${{ needs.cpp-build-test.result }}" != "success" ]] || \
+             [[ "${{ needs.cpp-build-test-windows.result }}" != "success" ]] || \
+             [[ "${{ needs.cpp-lint.result }}" != "success" ]] || \
+             [[ "${{ needs.linux-tsan.result }}" != "success" ]] || \
+             [[ "${{ needs.linux-consumer-syscalls.result }}" != "success" ]] || \
+             [[ "${{ needs.offline-evidence.result }}" != "success" ]]; then
+            echo "One or more required jobs failed or was skipped"
             echo "cpp-build-test: ${{ needs.cpp-build-test.result }}"
             echo "cpp-build-test-windows: ${{ needs.cpp-build-test-windows.result }}"
             echo "cpp-lint: ${{ needs.cpp-lint.result }}"
+            echo "linux-tsan: ${{ needs.linux-tsan.result }}"
+            echo "linux-consumer-syscalls: ${{ needs.linux-consumer-syscalls.result }}"
+            echo "offline-evidence: ${{ needs.offline-evidence.result }}"
             exit 1
           fi
           echo "✅ All CI checks passed"

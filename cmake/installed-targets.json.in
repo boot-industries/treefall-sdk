@@ -2,20 +2,20 @@
   "schemaVersion": 1,
   "sdkVersion": "@PROJECT_VERSION@",
   "required": [
-    {"target": "Orpheus::core", "scenario": "session, render, and ABI facade"},
-    {"target": "Orpheus::diagnostics", "scenario": "standalone diagnostics"},
-    {"target": "Orpheus::audio_utils", "scenario": "analysis, reader, writer, input, and SRC"},
-    {"target": "Orpheus::audio_io", "scenario": "dummy driver and host-neutral audio I/O"},
-    {"target": "Orpheus::audio_driver_manager", "scenario": "device enumeration and capability queries"},
-    {"target": "Orpheus::routing", "scenario": "routing matrix"},
-    {"target": "Orpheus::transport", "scenario": "transport and prepared clip sources"}
+    {"target": "@SDK_METADATA_NAMESPACE@::core", "scenario": "session, render, and ABI facade"},
+    {"target": "@SDK_METADATA_NAMESPACE@::diagnostics", "scenario": "standalone diagnostics"},
+    {"target": "@SDK_METADATA_NAMESPACE@::audio_utils", "scenario": "analysis, reader, writer, input, and SRC"},
+    {"target": "@SDK_METADATA_NAMESPACE@::audio_io", "scenario": "dummy driver and host-neutral audio I/O"},
+    {"target": "@SDK_METADATA_NAMESPACE@::audio_driver_manager", "scenario": "device enumeration and capability queries"},
+    {"target": "@SDK_METADATA_NAMESPACE@::routing", "scenario": "routing matrix"},
+    {"target": "@SDK_METADATA_NAMESPACE@::transport", "scenario": "transport and prepared clip sources"}
   ],
   "platformConditional": [
-    {"target": "Orpheus::audio_driver_coreaudio", "platform": "macOS"},
-    {"target": "Orpheus::audio_driver_wasapi", "platform": "Windows"}
+    {"target": "@SDK_METADATA_NAMESPACE@::audio_driver_coreaudio", "platform": "macOS"},
+    {"target": "@SDK_METADATA_NAMESPACE@::audio_driver_wasapi", "platform": "Windows"}
   ],
   "optional": [
-    {"target": "Orpheus::shmui_juce", "requires": ["juce::juce_core", "juce::juce_audio_basics", "juce::juce_audio_formats", "juce::juce_dsp", "juce::juce_gui_basics"], "feature": "ORPHEUS_ENABLE_SHMUI_JUCE"},
-    {"target": "Orpheus::shmui_juce_gl", "requires": ["juce::juce_opengl"], "feature": "SHMUI_JUCE_ENABLE_OPENGL"}
+    {"target": "@SDK_METADATA_NAMESPACE@::shmui_juce", "requires": ["juce::juce_core", "juce::juce_audio_basics", "juce::juce_audio_formats", "juce::juce_dsp", "juce::juce_gui_basics"], "feature": "ORPHEUS_ENABLE_SHMUI_JUCE"},
+    {"target": "@SDK_METADATA_NAMESPACE@::shmui_juce_gl", "requires": ["juce::juce_opengl"], "feature": "SHMUI_JUCE_ENABLE_OPENGL"}
   ]
 }

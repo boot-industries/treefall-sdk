@@ -1,13 +1,28 @@
 # SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.22)
 
-project(orpheus_find_package_smoke LANGUAGES CXX)
+project(orpheus_find_package_smoke LANGUAGES C CXX)
 
 if(NOT DEFINED ORPHEUS_REQUIRED_VERSION)
   message(FATAL_ERROR "ORPHEUS_REQUIRED_VERSION is required")
 endif()
 
-find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+if(NOT DEFINED TREEFALL_DISCOVERY_MODE)
+  set(TREEFALL_DISCOVERY_MODE legacy)
+endif()
+if(TREEFALL_DISCOVERY_MODE STREQUAL "treefall")
+  find_package(TreefallSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "legacy-first")
+  find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+  find_package(TreefallSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "treefall-first")
+  find_package(TreefallSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+  find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "legacy")
+  find_package(OrpheusSDK ${ORPHEUS_REQUIRED_VERSION} EXACT REQUIRED CONFIG)
+else()
+  message(FATAL_ERROR "Unknown discovery mode: ${TREEFALL_DISCOVERY_MODE}")
+endif()
 
 foreach(required_target
     Orpheus::core
@@ -31,7 +46,11 @@ enable_testing()
 
 function(add_orpheus_fixture target source)
   add_executable(${target} ${source})
-  target_compile_features(${target} PRIVATE cxx_std_20)
+  if(source MATCHES "\\.c$")
+    target_compile_features(${target} PRIVATE c_std_11)
+  else()
+    target_compile_features(${target} PRIVATE cxx_std_20)
+  endif()
   if(WIN32)
     foreach(runtime_target
         Orpheus::orpheus_session
@@ -76,6 +95,23 @@ target_link_libraries(orpheus_find_package_media_integrity PRIVATE Orpheus::audi
 
 add_orpheus_fixture(orpheus_find_package_writer_input writer_input.cpp)
 target_link_libraries(orpheus_find_package_writer_input PRIVATE Orpheus::audio_utils)
+
+add_orpheus_fixture(orpheus_find_package_offline_render offline_render.cpp)
+target_link_libraries(orpheus_find_package_offline_render
+  PRIVATE Orpheus::transport Orpheus::audio_utils)
+
+add_orpheus_fixture(treefall_find_package_compat treefall_compat.cpp)
+target_link_libraries(treefall_find_package_compat PRIVATE Treefall::transport Treefall::audio_utils)
+add_orpheus_fixture(treefall_find_package_compat_legacy_first treefall_compat.cpp)
+target_compile_definitions(treefall_find_package_compat_legacy_first PRIVATE TREEFALL_LEGACY_HEADER_FIRST=1)
+target_link_libraries(treefall_find_package_compat_legacy_first
+  PRIVATE Orpheus::transport Treefall::audio_utils)
+add_orpheus_fixture(treefall_find_package_abi treefall_abi.c)
+target_link_libraries(treefall_find_package_abi PRIVATE Treefall::core)
+add_orpheus_fixture(treefall_find_package_audio_utils treefall_audio_utils.cpp)
+target_link_libraries(treefall_find_package_audio_utils PRIVATE Treefall::audio_utils)
+add_orpheus_fixture(treefall_find_package_diagnostics treefall_diagnostics.cpp)
+target_link_libraries(treefall_find_package_diagnostics PRIVATE Treefall::diagnostics)
 
 add_orpheus_fixture(orpheus_find_package_transport_routing transport_routing.cpp)
 target_link_libraries(orpheus_find_package_transport_routing
