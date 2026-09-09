@@ -13,9 +13,12 @@ package/API names, and historical snapshots are compatibility identities.
 ## 2026-09-09 source adoption evidence
 
 `ORP-SUITE-20260909-001` retains published SDK `0238eac1721d820d16ba5390e0e4641391be1d59`.
-Local handoffs: ShmUI `186a740`, FourTrack `0c2962d5`, FreqFinder `1c85a45`,
-Clip Composer `0654754c` plus evidence `e5ac2b16`. No pushes or merges occurred.
-SDK rate correction `f5cc8ebc` is separate, not the consumer revision.
+Local handoffs: ShmUI branding `186a740` and governed-package fix `e48e712`;
+FourTrack adoption `0c2962d5` and runtime evidence `bba8c2f3`; FreqFinder
+`1c85a45`; Clip Composer adoption `0654754c` and runtime evidence `42bcc55d`.
+No pushes or merges occurred. SDK rate correction `f5cc8ebc`, governed import
+`7233b842`, callback wait `0a21e82b`, and syscall-harness cutover `6bea0011`
+are local and separate from the published consumer revision.
 AppleClang 21 / libsndfile 1.2.2: SDK correction passed 12 package gates,
 9 codec/static gates, provider-None and installed FLAC smoke. FourTrack passed
 331/331; Clip Composer passed 747 with one intentional skip and settled READY
@@ -24,12 +27,17 @@ formats in source and installed modes; each CTest passed 1/1, unsanitized.
 Repository PROGRESS files record exact commands, roots, limitations and evidence.
 
 Exact ShmUI generation, token checks, Swift consumer and registry checks passed.
-Mirror freshness **failed**: the published SDK CMakeLists carries different JUCE
-object dependency propagation and Linux CURL linkage from the exact upstream
-source. This is not formatter drift; no mirror/hash was patched to conceal it.
-Native screenshot capture failed; interactive playback/theme acceptance remains
-pending. Domain/manual deployment, hosted macOS callback progress, Linux syscall
-attribution and local capture initialization remain separate unresolved gates.
+The mirror drift was fixed at governed ShmUI source `e48e7129`: installed
+object-target JUCE properties and Linux CURL propagation now originate upstream.
+Sync/check and SDK manifest/package gates passed locally. The corrected callback
+fixture passed as part of the full CoreAudio fixture; a later isolated rerun
+encountered a device initialization rejection, so hosted confirmation remains required.
+Clip Composer exercised one shared button-0 transport through grid and Clip Edit.
+FourTrack imported and played a disposable track, opened all six theme/mode
+configurations, and passed named built-in microphone/speaker CoreAudio acceptance.
+Native pixel capture remains unavailable. Domain/manual deployment, hosted Linux
+syscall attribution, and hosted confirmation of the callback-wait correction
+remain unresolved; local capture initialization is closed on the named route.
 
 Suite validation and affected closure pass. Status/doctor report drift from the
 unchanged historical development snapshot; observation refuses the controller's
