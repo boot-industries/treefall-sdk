@@ -35,9 +35,11 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Review current records:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md).
-- **Review suite qualification:** [`ORP173`](docs/orp/ORP173%20Orpheus%20Suite%20v0.1.0%20Qualification%20and%20Release%20Gate%20Record.md)
-  records the observed development snapshot and pending candidate/stable gates.
+- **Review current contracts:** [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
+  [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) define the public support and
+  realtime posture.
+- **Historical qualification records:** ORP qualification and handoff records
+  remain local-only and are intentionally not part of the public checkout.
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
 
@@ -93,10 +95,9 @@ and a control worker verifies the physical devices and format. A refused rate
 restore, endpoint loss, or format change stops rendering; the driver never
 silently changes an endpoint or rate.
 
-See the [contract index](docs/orp/INDEX.md) and
-[`ORP172`](docs/orp/ORP172%20Non-Mutating%20CoreAudio%20Route%20Compatibility%20Handoff.md)
-for the current non-mutating route-compatibility probe and CoreAudio route-state
-handoff.
+See the [support matrix](docs/SUPPORT_MATRIX.md) and
+[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) for the current non-mutating
+route-compatibility probe and CoreAudio route-state handoff.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
@@ -199,12 +200,16 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 ```
 
 **Features:** 7 new APIs, 23 new data structures, 165+ new tests
-**Documentation:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md) for current and historical contract records.
+**Documentation:** Current public contracts are described in
+[`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
+[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md).
 
 ---
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
-**Current contracts:** See [`docs/orp/INDEX.md`](docs/orp/INDEX.md); release notes remain in [`CHANGELOG.md`](CHANGELOG.md).
+**Current contracts:** See [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
+[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); release notes remain in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ### Directional endpoint discovery and playback routing
 

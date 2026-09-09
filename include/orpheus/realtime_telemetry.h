@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <type_traits>
 
 namespace orpheus {
@@ -103,12 +104,15 @@ static_assert(std::is_standard_layout_v<RealtimeTelemetrySnapshot>);
 ///   threads before destroying it.
 ///
 /// The producer never allocates, locks, blocks, performs I/O, or overwrites an
-/// unread slot. A full ring drops the new snapshot and increments the drop
-/// count. The consumer owns all work performed after tryRead().
+/// unread slot. The fixed-capacity ring is allocated during construction; the
+/// realtime methods only copy into preallocated slots. A full ring drops the
+/// new snapshot and increments the drop count. The consumer owns all work
+/// performed after tryRead().
 class ORPHEUS_API RealtimeTelemetry {
 public:
   explicit RealtimeTelemetry(
       uint32_t decimationBlocks = kRealtimeTelemetryDefaultDecimationBlocks) noexcept;
+  ~RealtimeTelemetry() noexcept;
 
   RealtimeTelemetry(const RealtimeTelemetry&) = delete;
   RealtimeTelemetry& operator=(const RealtimeTelemetry&) = delete;
@@ -134,7 +138,9 @@ public:
   [[nodiscard]] size_t pendingSnapshotCount() const noexcept;
 
 private:
-  std::array<RealtimeTelemetrySnapshot, kRealtimeTelemetryCapacity> snapshots_{};
+  // The payload is intentionally heap-backed so stack construction of this
+  // bridge remains bounded after the multichannel meter schema expansion.
+  std::unique_ptr<RealtimeTelemetrySnapshot[]> snapshots_;
   std::atomic<uint64_t> write_index_{0};
   std::atomic<uint64_t> read_index_{0};
   std::atomic<uint64_t> dropped_snapshot_count_{0};
