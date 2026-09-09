@@ -25,12 +25,18 @@ Project documentation index for orpheus-sdk.
   decoupled publisher/engine/app rebrand, open core vs. proprietary policy,
   hardware-scoped TR-40/TR-80 platform tiers, and operator packaging gates (2026-09-03)
 
-- [[ORP257 Host-Neutral Multichannel Metering Contract]] — schema-3
+- [[ORP179 Host-Neutral Multichannel Metering Contract]] — schema-3
   canonical routing telemetry, logical group-output lanes, and migration
   boundary (2026-09-01)
 
-- [[ORP256 ShmUI Segmented Meter Import Handoff]] — governed segmented meter
-  package import and downstream handoff (2026-08-30)
+- [[ORP256 Public Offline Seam and Codec Preflight]] — installed-package
+  offline rendering, deterministic PCM, and codec capability preflight
+  (2026-09-07)
+- [[ORP257 High-Concurrency Control Ingress]] — bounded MPSC transport
+  commands, saturation telemetry, and realtime settlement preservation
+  (2026-09-07)
+- [[ORP261 ShmUI Segmented Meter Import Handoff]] — governed segmented meter
+  package import and downstream handoff (2026-09-09)
 - [[ORP258 Streaming Prefetch Realtime Sustain Fix]] — transactional worker
   command-page ownership, loop-anchor transitions, and source-scoped
   consumption-aware streaming primes (2026-09-07)
@@ -87,8 +93,10 @@ Project documentation index for orpheus-sdk.
 - [ORP259 Headless Linux ALSA and Robotics Wedge](ORP259%20Headless%20Linux%20ALSA%20and%20Robotics%20Wedge.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
-- [ORP257 Host-Neutral Multichannel Metering Contract](ORP257%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
-- [ORP256 ShmUI Segmented Meter Import Handoff](ORP256%20ShmUI%20Segmented%20Meter%20Import%20Handoff.md)
+- [ORP179 Host-Neutral Multichannel Metering Contract](ORP179%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
+- [ORP256 Public Offline Seam and Codec Preflight](ORP256%20Public%20Offline%20Seam%20and%20Codec%20Preflight.md)
+- [ORP257 High-Concurrency Control Ingress](ORP257%20High-Concurrency%20Control%20Ingress.md)
+- [ORP261 ShmUI Segmented Meter Import Handoff](ORP261%20ShmUI%20Segmented%20Meter%20Import%20Handoff.md)
 - [ORP128 CoreAudio Runtime Sample-Rate Resilience](ORP128%20CoreAudio%20Runtime%20Sample-Rate%20Resilience.md)
 - [ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff](ORP162%20CoreAudio%20Capture%20Channel%20Mapping%20and%20Downstream%20Pin%20Handoff.md)
 - [ORP175 ShmUI Operational State Contract Handoff](ORP175%20ShmUI%20Operational%20State%20Contract%20Handoff.md)
