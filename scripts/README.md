@@ -1,6 +1,6 @@
-# Orpheus SDK Scripts
+# Treefall SDK Scripts
 
-This directory contains automation scripts for development, validation, and deployment of the Orpheus SDK.
+This directory contains automation scripts for development, validation, and deployment of the Treefall SDK. Executable names remain Orpheus-compatible where noted below.
 
 ---
 
@@ -147,7 +147,7 @@ This directory contains automation scripts for development, validation, and depl
 open coverage-report/index.html
 ```
 
-**Current coverage (as of ORP077 Task 3.1):**
+**Historical coverage label:** The original report was recorded under ORP077 Task 3.1; the command remains a current Treefall SDK workflow.
 
 ```
 Overall coverage rate:
@@ -199,7 +199,7 @@ pnpm run format:cpp
 
 ## Phase Validation Scripts
 
-These scripts validate ORP068 phase completion gates.
+These scripts validate the repository's historical ORP068 phase gates; the identifiers are retained for traceability.
 
 ### `validate-phase0.sh`
 
@@ -542,7 +542,7 @@ exit 0
 - [Contributing Guide](../docs/CONTRIBUTING.md) - PR submission process
 - [Architecture Overview](../ARCHITECTURE.md) - SDK design principles
 - [Quick Start Guide](../docs/QUICK_START.md) - New developer onboarding
-- [ORP077 - SDK Core Quality Sprint](../docs/ORP/ORP077.md) - Implementation plan for validation scripts
+- **Local ORP077 record (ignored, not a public link):** historical implementation plan for validation scripts. See the tracked script descriptions above for the supported workflow.
 
 ---
 

@@ -2,9 +2,9 @@
 #pragma once
 
 #if defined(_WIN32)
-#if defined(ORPHEUS_BUILDING_DLL)
+#if defined(ORPHEUS_BUILDING_DLL) || defined(TREEFALL_BUILDING_DLL)
 #define ORPHEUS_API __declspec(dllexport)
-#elif defined(ORPHEUS_USING_DLL)
+#elif defined(ORPHEUS_USING_DLL) || defined(TREEFALL_USING_DLL)
 #define ORPHEUS_API __declspec(dllimport)
 #else
 #define ORPHEUS_API

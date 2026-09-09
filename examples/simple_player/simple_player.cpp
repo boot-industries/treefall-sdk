@@ -2,26 +2,27 @@
 // examples/simple_player/simple_player.cpp
 //
 // Simple Clip Player Example
-// Demonstrates basic audio file playback using the Orpheus SDK
+// Demonstrates basic audio file playback using the Treefall SDK
 
 #include <chrono>
 #include <iostream>
-#include <orpheus/audio_driver.h>
-#include <orpheus/audio_file_reader.h>
-#include <orpheus/transport_controller.h>
 #include <thread>
+#include <treefall/audio_driver.h>
+#include <treefall/audio_file_reader.h>
+#include <treefall/transport_controller.h>
 
-// Audio callback to connect driver to transport
-class SimpleAudioCallback : public orpheus::IAudioCallback {
+// Audio callback to connect driver to transport. This is the only audio-thread
+// entry point; control work, including callback dispatch, stays on main.
+class SimpleAudioCallback : public treefall::IAudioCallback {
 public:
-  explicit SimpleAudioCallback(orpheus::ITransportController* transport) : transport_(transport) {}
+  explicit SimpleAudioCallback(treefall::ITransportController* transport) : transport_(transport) {}
 
-  void processAudio(const orpheus::AudioProcessBlock& block) noexcept override {
+  void processAudio(const treefall::AudioProcessBlock& block) noexcept override {
     transport_->processAudio(block.output_buffers, block.num_output_channels, block.num_frames);
   }
 
 private:
-  orpheus::ITransportController* transport_;
+  treefall::ITransportController* transport_;
 };
 
 int main(int argc, char** argv) {
@@ -30,89 +31,85 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // 1. Open audio file
-  auto reader = orpheus::createAudioFileReader();
+  auto reader = treefall::createAudioFileReader();
+  if (!reader) {
+    std::cerr << "Audio file reader is unavailable" << std::endl;
+    return 1;
+  }
   auto open_result = reader->open(argv[1]);
-
   if (!open_result.isOk()) {
     std::cerr << "Failed to open audio file: " << open_result.errorMessage << std::endl;
     return 1;
   }
 
   const auto& metadata = *open_result;
-  std::cout << "\nLoaded: " << argv[1] << "\n";
-  std::cout << "Duration: " << metadata.durationSeconds() << " seconds\n";
-  std::cout << "Sample rate: " << metadata.sample_rate << " Hz\n";
-  std::cout << "Channels: " << metadata.num_channels << "\n\n";
+  std::cout << "\nLoaded: " << argv[1] << "\n"
+            << "Duration: " << metadata.durationSeconds() << " seconds\n"
+            << "Sample rate: " << metadata.sample_rate << " Hz\n"
+            << "Channels: " << metadata.num_channels << "\n\n";
 
-  // 2. Create transport controller
-  orpheus::TransportConfig config;
-  config.sample_rate = metadata.sample_rate;
-  config.buffer_size = 512;
-  config.num_outputs = 2;
-
-  auto transport = orpheus::createTransportController(nullptr, orpheus::TransportConfig{.sampleRate = static_cast<uint32_t>(config.sample_rate)});
-
-  if (transport->initialize(config) != orpheus::SessionGraphError::OK) {
-    std::cerr << "Failed to initialize transport" << std::endl;
+  treefall::TransportConfig config{
+      .sampleRate = metadata.sample_rate, .outputChannels = 2, .maxBlockFrames = 512};
+  auto transport = treefall::createTransportController(nullptr, config);
+  if (!transport) {
+    std::cerr << "Failed to create transport" << std::endl;
     return 1;
   }
 
-  // 3. Register audio clip
-  orpheus::ClipRegistration clip_reg;
-  clip_reg.audio_file_path = argv[1];
-  clip_reg.trim_in_samples = 0;
-  clip_reg.trim_out_samples = metadata.duration_samples;
-
-  auto clip_handle = transport->registerClipAudio(clip_reg);
-
-  if (!clip_handle.isValid()) {
-    std::cerr << "Failed to register audio clip" << std::endl;
+  constexpr treefall::ClipHandle clip_handle = 1;
+  if (transport->registerClipAudio(clip_handle, argv[1]) != treefall::SessionGraphError::OK ||
+      transport->prepareClipAudio(clip_handle) != treefall::SessionGraphError::OK) {
+    std::cerr << "Failed to register or prepare audio clip" << std::endl;
     return 1;
   }
 
-  // 4. Create and initialize audio driver
-#ifdef __APPLE__
-  auto driver = orpheus::createCoreAudioDriver();
+#ifdef ORPHEUS_ENABLE_COREAUDIO
+  auto driver = treefall::createCoreAudioDriver();
 #else
-  auto driver = orpheus::createDummyAudioDriver();
+  auto driver = treefall::createDummyAudioDriver();
   std::cout << "Note: Using dummy driver (no audio output on this platform)\n\n";
 #endif
+  if (!driver) {
+    std::cerr << "Audio driver is unavailable" << std::endl;
+    return 1;
+  }
 
-  orpheus::AudioDriverConfig driver_config;
-  driver_config.sample_rate = config.sample_rate;
-  driver_config.buffer_size = config.buffer_size;
-  driver_config.num_outputs = 2;
-
-  if (driver->initialize(driver_config) != orpheus::SessionGraphError::OK) {
+  treefall::AudioDriverConfig driver_config;
+  driver_config.sample_rate = config.sampleRate;
+  driver_config.buffer_size = static_cast<uint16_t>(config.maxBlockFrames);
+  driver_config.num_inputs = 0;
+  driver_config.num_outputs = static_cast<uint16_t>(config.outputChannels);
+  if (driver->initialize(driver_config) != treefall::SessionGraphError::OK) {
     std::cerr << "Failed to initialize audio driver" << std::endl;
     return 1;
   }
 
-  // 5. Set up audio callback
   SimpleAudioCallback callback(transport.get());
-
-  if (driver->start(&callback) != orpheus::SessionGraphError::OK) {
+  if (driver->start(&callback) != treefall::SessionGraphError::OK) {
     std::cerr << "Failed to start audio driver" << std::endl;
     return 1;
   }
 
-  // 6. Start playback
-  std::cout << "Playing..." << std::endl;
-
-  if (transport->startClip(clip_handle, 0) != orpheus::SessionGraphError::OK) {
+  const auto start_result = transport->startClip(clip_handle, 0);
+  if (start_result != treefall::SessionGraphError::OK) {
     std::cerr << "Failed to start clip playback" << std::endl;
     driver->stop();
     return 1;
   }
+  std::cout << "Playing..." << std::endl;
 
-  // Wait for playback to finish (duration + 500ms buffer)
-  std::this_thread::sleep_for(
-      std::chrono::milliseconds(static_cast<int>(metadata.durationSeconds() * 1000 + 500)));
+  // Keep callback delivery on this control thread while audio runs. The
+  // bounded pump interval also lets the clip complete without busy waiting.
+  const auto deadline =
+      std::chrono::steady_clock::now() +
+      std::chrono::milliseconds(static_cast<int>(metadata.durationSeconds() * 1000 + 500));
+  while (std::chrono::steady_clock::now() < deadline) {
+    transport->processCallbacks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  transport->processCallbacks();
 
-  // 7. Clean up
   driver->stop();
   std::cout << "Playback complete!\n" << std::endl;
-
   return 0;
 }

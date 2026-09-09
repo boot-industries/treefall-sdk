@@ -217,7 +217,7 @@ TEST_F(AtomicGroupChokeTest, QueueFullRejectionNeverChangesPeersAndIsRepeatable)
       ASSERT_EQ(transport->stopClip(1000 + command), SessionGraphError::OK)
           << "cycle " << cycle << ", command " << command;
     }
-    EXPECT_EQ(transport->startClipWithGroupChoke(3), SessionGraphError::InternalError)
+    EXPECT_EQ(transport->startClipWithGroupChoke(3), SessionGraphError::NotReady)
         << "cycle " << cycle;
 
     render();
@@ -267,7 +267,7 @@ TEST_F(AtomicGroupChokeTest, MetadataQueueRejectionKeepsPersistentAndActiveGroup
   for (size_t command = 0; command < 255; ++command) {
     ASSERT_EQ(transport->stopClip(1000 + command), SessionGraphError::OK);
   }
-  EXPECT_EQ(transport->updateClipMetadata(1, *rejectedMetadata), SessionGraphError::InternalError);
+  EXPECT_EQ(transport->updateClipMetadata(1, *rejectedMetadata), SessionGraphError::NotReady);
 
   const auto persistentAfterRejection = transport->getClipMetadata(1);
   ASSERT_TRUE(persistentAfterRejection.has_value());

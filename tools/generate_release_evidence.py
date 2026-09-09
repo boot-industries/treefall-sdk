@@ -65,8 +65,8 @@ def main() -> int:
     (output / "SHA256SUMS").write_text(checksum_text, encoding="utf-8")
 
     created = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    namespace_seed = f"orpheus-sdk:{version}:{os.environ.get('GITHUB_SHA', 'local')}"
-    namespace = f"https://orpheus-sdk.invalid/spdx/{uuid.uuid5(uuid.NAMESPACE_URL, namespace_seed)}"
+    namespace_seed = f"treefall-sdk:{version}:{os.environ.get('GITHUB_SHA', 'local')}"
+    namespace = f"https://treefall-sdk.invalid/spdx/{uuid.uuid5(uuid.NAMESPACE_URL, namespace_seed)}"
     files = []
     relationships = []
     for index, artifact in enumerate(artifacts, start=1):
@@ -80,7 +80,7 @@ def main() -> int:
         )
         relationships.append(
             {
-                "spdxElementId": "SPDXRef-Package-OrpheusSDK",
+                "spdxElementId": "SPDXRef-Package-TreefallSDK",
                 "relationshipType": "CONTAINS",
                 "relatedSpdxElement": spdx_id,
             }
@@ -101,13 +101,13 @@ def main() -> int:
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
-        "name": f"orpheus-sdk-{version}",
+        "name": f"treefall-sdk-{version}",
         "documentNamespace": namespace,
         "creationInfo": {"created": created, "creators": ["Tool: generate_release_evidence.py"]},
         "packages": [
             {
-                "SPDXID": "SPDXRef-Package-OrpheusSDK",
-                "name": "orpheus-sdk",
+                "SPDXID": "SPDXRef-Package-TreefallSDK",
+                "name": "treefall-sdk",
                 "versionInfo": version,
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": True,
@@ -119,7 +119,7 @@ def main() -> int:
         "files": files,
         "relationships": relationships,
     }
-    (output / "orpheus-sdk.spdx.json").write_text(
+    (output / "treefall-sdk.spdx.json").write_text(
         json.dumps(sbom, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
@@ -136,12 +136,16 @@ def main() -> int:
                 "internalParameters": {},
                 "resolvedDependencies": [
                     {
-                        "uri": f"git+https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'local/orpheus-sdk')}@{os.environ.get('GITHUB_SHA', 'local')}"
+                        "uri": f"git+https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'chrislyons/treefall-sdk')}@{os.environ.get('GITHUB_SHA', 'local')}"
                     }
                 ],
             },
             "runDetails": {
-                "builder": {"id": "https://github.com/actions/runner"},
+                "builder": {
+                    "id": "https://github.com/actions/runner"
+                    if os.environ.get("GITHUB_ACTIONS") == "true"
+                    else "urn:treefall-sdk:local-build"
+                },
                 "metadata": {
                     "invocationId": os.environ.get("GITHUB_RUN_ID", "local"),
                     "startedOn": created,
@@ -149,7 +153,7 @@ def main() -> int:
             },
         },
     }
-    (output / "orpheus-sdk.provenance.json").write_text(
+    (output / "treefall-sdk.provenance.json").write_text(
         json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return 0
