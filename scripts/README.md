@@ -1,6 +1,6 @@
 # Treefall SDK Scripts
 
-This directory contains automation scripts for development, validation, and deployment of the Treefall SDK. The repository and executable names remain Orpheus-compatible where noted below.
+This directory contains automation scripts for development, validation, and deployment of the Treefall SDK. Executable names remain Orpheus-compatible where noted below.
 
 ---
 

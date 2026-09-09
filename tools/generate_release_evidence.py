@@ -136,7 +136,7 @@ def main() -> int:
                 "internalParameters": {},
                 "resolvedDependencies": [
                     {
-                        "uri": f"git+https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'chrislyons/orpheus-sdk')}@{os.environ.get('GITHUB_SHA', 'local')}"
+                        "uri": f"git+https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'chrislyons/treefall-sdk')}@{os.environ.get('GITHUB_SHA', 'local')}"
                     }
                 ],
             },

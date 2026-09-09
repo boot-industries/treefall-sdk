@@ -5,7 +5,7 @@
 **Professional audio SDK for broadcast, live performance, and DAW applications**
 
 Treefall is the public product identity for this host-neutral C++20 SDK. The
-repository, native libraries, executable names, and canonical `orpheus` C++
+native libraries, executable names, and canonical `orpheus` C++
 namespace remain compatible with existing consumers. Treefall provides
 deterministic session/transport control, sample-accurate clip playback, and
 real-time audio infrastructure.
@@ -20,8 +20,8 @@ value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 
 ```bash
 # Clone repository
-git clone https://github.com/chrislyons/orpheus-sdk.git
-cd orpheus-sdk
+git clone https://github.com/chrislyons/treefall-sdk.git
+cd treefall-sdk
 
 # Build SDK (Debug with AddressSanitizer)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

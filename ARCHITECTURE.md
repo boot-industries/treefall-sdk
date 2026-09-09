@@ -6,7 +6,7 @@
 **Last Updated:** October 26, 2025
 **Status:** Authoritative
 
-Treefall is a professional audio SDK built around a deterministic, host-neutral C++20 core library with optional adapter layers for different integration scenarios. “Orpheus” remains the repository, native-library, executable, and canonical C++ compatibility identity. The architecture prioritizes offline-first operation, sample-accurate determinism, and broadcast-safe real-time processing.
+Treefall is a professional audio SDK built around a deterministic, host-neutral C++20 core library with optional adapter layers for different integration scenarios. “Orpheus” remains the native-library, executable, and canonical C++ compatibility identity. The architecture prioritizes offline-first operation, sample-accurate determinism, and broadcast-safe real-time processing.
 
 ---
 
