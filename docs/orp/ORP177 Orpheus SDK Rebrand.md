@@ -1,5 +1,55 @@
 ## ORP177 ORPHEUS SDK REBRAND
 
+## Current decision and acceptance — 2026-09-09
+
+**Status: SDK implementation delivered; qualification and rebrand handoff pending.**
+The selected public identities are **Treefall SDK** and **Treefall Suite**.
+Canonical repository: `https://github.com/chrislyons/treefall-sdk`;
+homepage: `https://treefall.dev`. Existing history and the physical SDK checkout
+are retained. ORP180 is the documentation/community/harness strategy authority;
+this synchronization does not implement that strategy or establish domain delivery.
+
+`ORP-SUITE-20260909-001` adopts published
+`0238eac1721d820d16ba5390e0e4641391be1d59` across the three consumers.
+The local FLAC encoder-rate correction is separate and unmerged; it does not
+advance that source identity. No reconciliation or ORP180 strategy commits
+are included in the adoption pin, and no push or merge is authorized.
+
+Preserved compatibility: `third_party/orpheus-sdk`, OrpheusSDK, Orpheus::,
+orpheus::, existing C ABI exports, ORPHEUS_* configuration, suite IDs/schema,
+generated tokens, app names, bundle/plugin IDs, and persisted paths. Additive
+Treefall APIs coexist with them; **no legacy removal is scheduled**.
+All C++ consumers must rebuild matching headers/libraries for appended
+`ITransportController::getCommandIngressTelemetry`; old binaries are not evidence.
+
+Local source handoffs now update ShmUI SDK references, both app submodule URLs
+and pins, FourTrack Swift provenance/0.6.0 contract, and app About credits.
+Their build/runtime and remote-publication acceptance remains separately pending
+until the execution ledger supplies actual results. FreqFinder retains its old
+Help handler: the intended Treefall manual route failed DNS resolution and must
+serve the actual manual before migration. Homepage branding is not domain
+deployment evidence. FourTrack's independent fourtrack.audio site is unchanged.
+
+SDK-owned unresolved gates, each independent:
+
+| Gate | Existing evidence | Requalification and scope |
+|---|---|---|
+| Hosted macOS callback progress | Run 34359783933: one callback against >5; full CTest 81/82. Local test now waits for six callbacks with a two-second deadline and passed the full CoreAudio fixture. | Hosted rerun of the same six-callback assertion at the eventual published revision; blocks hosted macOS full-suite qualification |
+| Linux syscall attribution | Selected TID 3294 in `RealtimeHarnessTest.ConcurrentIngressAt96k64DoesNoIo`: CPU-online open/read/close plus anonymous mmap. These occur in whole-thread tracing around `std::barrier`; the harness now uses allocation-free atomic phase coordination and the focused test passed locally in 298 ms. | Preserve raw trace/positive control and rerun exact unsanitized Linux syscall gate; local Docker daemon was unavailable. Blocks zero-I/O qualification until Linux trace passes |
+| Local capture initialization | Closed locally on BuiltInMicrophoneDevice → BuiltInSpeakerDevice, 44.1 kHz, strict stereo: 172 callbacks/88,064 frames, non-silent input, zero render/FIFO/conversion failures, Healthy route. | Re-run at eventual published revision; other device routes remain separately unqualified |
+
+Raw Linux evidence is preserved under
+`/tmp/treefall-suite-sync.m8YGjQ/evidence/linux-consumer-syscalls`;
+ORP257 records exact files and attribution. No assertions or syscall allowances
+were weakened. Dummy/hosted/silent capture does not close these gates.
+Windows hardware promotion, ALSA, treefall-lint, ROS 2, and public release remain
+out of scope. Sources: PR #258 and run 34359783933 in the canonical repository.
+
+## Historical strategy narrative
+
+The recommendations and placeholder choices below are historical; the current
+decision above supersedes them, without rewriting their original rationale.
+
 A rebrand is technically feasible. The audio engine, realtime guarantees, session model, and DSP architecture do not need to change.
 
 However, a **full technical rename is not cosmetic**. “Orpheus” is embedded in:
