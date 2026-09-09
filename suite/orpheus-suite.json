@@ -84,8 +84,8 @@
           ],
           "expected_sha256": "482e6b5c01d7e749b9a09dfb6ade310c329ae5f53e66b060625b8a83c9a18751",
           "source_repository": "shmui",
-          "source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
-          "current_source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -177,7 +177,7 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
           "source_repository": "shmui",
-          "source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -286,8 +286,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "86385b412bfcc28d38a8d0fbbbbd2d98d69f6a138af864644dc7d2dcd14ff3a8",
           "source_repository": "shmui",
-          "source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
-          "current_source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "juce/Source",
             "apps/www/styles/orpheus-tokens.css"
@@ -299,8 +299,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "f067569b9bb80f0c210b1f629e458ba1817ea4806c05bf08284bcbe4538c3592",
           "source_repository": "shmui",
-          "source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
-          "current_source_revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc",
+          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -377,7 +377,7 @@
           "config": "SHMUI_JUCE_SOURCE_DIR",
           "workspace_path": "shmui",
           "configured_path": "shmui/juce",
-          "revision": "cd83c31b14535e0f6f5ae38327b5245d3a80ecdc"
+          "revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd"
         }
       ],
       "verification": [
