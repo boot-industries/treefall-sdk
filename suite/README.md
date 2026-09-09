@@ -1,10 +1,55 @@
-# Orpheus Suite synchronization and release management
+# Treefall Suite synchronization and release management
 
-This directory is the versioned suite coordination contract. The Orpheus SDK
+This directory is the versioned suite coordination contract. The Treefall SDK
 repository is the system of record because it already owns the cross-cutting
 release tooling and generated ShmUI-JUCE manifest check. The suite is **not** a
 new superproject: FourTrack and Clip Composer retain their application-owned
 SDK submodules, while FreqFinder retains its package/source resolution modes.
+
+Operational identifiers remain `orpheus-suite`, `orpheus-sdk`,
+`ORPHEUS_SUITE_WORKSPACE`, and `.orpheus-suite-workspace`; schema, graph IDs,
+package/API names, and historical snapshots are compatibility identities.
+
+## 2026-09-09 source adoption evidence
+
+`ORP-SUITE-20260909-001` retains published SDK `0238eac1721d820d16ba5390e0e4641391be1d59`.
+Local handoffs: ShmUI branding `186a740` and governed-package fix `e48e712`;
+FourTrack adoption `0c2962d5` and runtime evidence `bba8c2f3`; FreqFinder
+`1c85a45`; Clip Composer adoption `0654754c` and runtime evidence `42bcc55d`.
+No pushes or merges occurred. SDK rate correction `f5cc8ebc`, governed import
+`7233b842`, callback wait `0a21e82b`, and syscall-harness cutover `6bea0011`
+are local and separate from the published consumer revision.
+AppleClang 21 / libsndfile 1.2.2: SDK correction passed 12 package gates,
+9 codec/static gates, provider-None and installed FLAC smoke. FourTrack passed
+331/331; Clip Composer passed 747 with one intentional skip and settled READY
+on built-in speakers, 48 kHz, actual 512 frames. FreqFinder built all three
+formats in source and installed modes; each CTest passed 1/1, unsanitized.
+Repository PROGRESS files record exact commands, roots, limitations and evidence.
+
+Exact ShmUI generation, token checks, Swift consumer and registry checks passed.
+The mirror drift was fixed at governed ShmUI source `e48e7129`: installed
+object-target JUCE properties and Linux CURL propagation now originate upstream.
+Sync/check and SDK manifest/package gates passed locally. The corrected callback
+fixture passed as part of the full CoreAudio fixture; a later isolated rerun
+encountered a device initialization rejection, so hosted confirmation remains required.
+Clip Composer exercised one shared button-0 transport through grid and Clip Edit.
+FourTrack imported and played a disposable track, opened all six theme/mode
+configurations, and passed named built-in microphone/speaker CoreAudio acceptance.
+Native pixel capture remains unavailable. Hosted run 34390244873 showed the
+whole-thread syscall trace included CPU-topology reads and a malloc-arena
+`mmap` from `std::thread` startup before the measured callback window. Hosted
+ptrace policy also rejected late attachment to the consumer. The gate now uses
+parent-mode tracing and validates only the region between explicit consumer
+markers surrounding the atomic phase coordination and `processAudio` calls.
+Hosted confirmation of that trace boundary and the callback wait remain
+unresolved. Domain/manual deployment remains unresolved; local
+capture initialization is closed on the named route.
+
+Suite validation and affected closure pass. Status/doctor report drift from the
+unchanged historical development snapshot; observation refuses the controller's
+own active suite root. Publication/reachability and clean isolated observation
+remain pending. No snapshot/channel pointer was changed. Raw command evidence:
+`/tmp/treefall-suite-sync.m8YGjQ/evidence/suite-{status,doctor,snapshot}.json`.
 
 ## Decision
 
@@ -36,7 +81,7 @@ The manifest edges are based on repository evidence, not repository names:
 | `shmui` | `orpheus-sdk` | `shmui/scripts/sync-juce.sh` identifies `shmui/juce/Source` as the source of truth and mirrors it to `orpheus-sdk/packages/shmui-juce`. |
 | `orpheus-sdk` | `fourtrack` | `fourtrack/.gitmodules` and `fourtrack/CMakeLists.txt` consume `third_party/orpheus-sdk`. |
 | `orpheus-sdk` | `clip-composer` | `clip-composer/.gitmodules` and `clip-composer/CMakeLists.txt` consume `third_party/orpheus-sdk`. |
-| `orpheus-sdk` | `freqfinder` | `freqfinder/CMakeLists.txt` supports an installed package or `ORPHEUS_SDK_SOURCE_DIR`; the observed `build-release/CMakeCache.txt` uses the source override. |
+| `orpheus-sdk` | `freqfinder` | `freqfinder/CMakeLists.txt` supports an installed package or `ORPHEUS_SDK_SOURCE_DIR`; the qualified `build/CMakeCache.txt` uses an explicit immutable source override. |
 | `shmui` | `fourtrack` | `fourtrack/apps/fourtrack-mac/Generated/Shmui/provenance.json` records the ShmUI revision, SDK revision, token contract, and generated manifest hash. |
 | `shmui` | `freqfinder` | `freqfinder/CMakeLists.txt` supports `SHMUI_JUCE_SOURCE_DIR`; the observed cache resolves the sibling `shmui/juce`. |
 
