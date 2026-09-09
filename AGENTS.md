@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Orpheus SDK Agent Guide
+# Treefall SDK Agent Guide
 
 This file applies to the entire repository. It records repository-specific
 engineering and verification rules for automated contributors. Human-facing
@@ -8,8 +8,11 @@ product and integration guidance remains in `README.md` and `docs/`.
 
 ## Mission and boundaries
 
-Orpheus is a host-neutral C++20 audio SDK. Optimize for deterministic behavior,
-realtime safety, installed-package usability, and truthful capability reporting.
+Treefall is the public product identity for this host-neutral C++20 audio SDK.
+The repository, native target names, executable names, and canonical `orpheus`
+C++ namespace remain technical compatibility identities. Optimize for
+deterministic behavior, realtime safety, installed-package usability, and
+truthful capability reporting.
 
 - SDK core owns reusable transport, routing, media, session, audio I/O,
   diagnostics, and host-neutral workflow contracts.
@@ -21,27 +24,20 @@ realtime safety, installed-package usability, and truthful capability reporting.
 - Model downstream requirements with SDK-owned fixtures. Do not add app-specific
   policy to core to make a fixture pass.
 
-The ORP141 completion and child-team handoff is recorded in
-`docs/orp/ORP143 Reliability and Adoption Sprint Completion and Child-App Handoff.md`.
-`docs/orp/ORP142 Downstream Consumer Adoption Notes.md` remains the non-binding
-adoption guide.
+Historical completion and child-team handoff records are ignored local
+provenance. They are not required public documentation links or build inputs.
 
-Current FourTrack-facing SDK contracts are:
-
-- `docs/orp/ORP154 Sequencer Trigger Voice Primitive.md` for the standalone
-  one-shot voice utility;
-- `docs/orp/ORP155 FourTrack Recorder Adoption Friction - CoreAudio and Routing Contracts.md`
-  for directional endpoints, isolated routing meters, and capture telemetry;
-- `docs/orp/ORP156 ORP155 Implementation Handoff.md` for verification and
-  delivery evidence.
-- `docs/orp/ORP162 CoreAudio Capture Channel Mapping and Downstream Pin Handoff.md`
-  for the AUHAL capture-map correction, SDK 0.6.7 release, and child-app pins.
+Current downstream-facing SDK contracts are defined by the installed public
+headers, `README.md`, `ARCHITECTURE.md`, and `docs/SUPPORT_MATRIX.md`.
+Historical FourTrack handoffs remain local provenance and retain their original
+identifiers and claims.
 
 ## Sources of truth
 
-- Version: `project(orpheus VERSION ...)` in `CMakeLists.txt`.
-- Current release: SDK 0.6.7 with stable C ABI 1.0 and governed ShmUI-JUCE
-  design-token contract 0.6.0.
+- Current source version: SDK 0.9.0 with stable C ABI 1.0. The root CMake project
+  remains technically named `orpheus`; Treefall is the active product identity.
+- Compatibility package/configuration names: `TreefallSDK` and `OrpheusSDK`;
+  both resolve the same physical target graph.
 - Platform/backend support: `docs/SUPPORT_MATRIX.md`.
 - Installed target manifest: generated package metadata and the clean-prefix
   fixture under `tests/cmake/find_package/`.
@@ -120,6 +116,19 @@ Documented installed targets include:
 `Orpheus::shmui_juce`; OpenGL is opt-in through
 `SHMUI_JUCE_ENABLE_OPENGL` and `Orpheus::shmui_juce_gl`.
 
+Treefall compatibility rules:
+
+- New integrations may use `Treefall::` targets, `include/treefall/...`
+  forwarding headers, and the `treefall` namespace alias. Existing `Orpheus::`
+  targets, `include/orpheus/...` headers, and `orpheus` code remain supported.
+- `TREEFALL_*` macros/types and `treefall_*` C wrappers are additive over the
+  stable C ABI 1.0 tables and layouts. Keep all old C exports indefinitely
+  during ABI 1.0.
+- An appended C++ virtual method is source-compatible only after rebuilding
+  consumers and subclasses with the matching headers. It is not safe to call
+  through an old prebuilt C++ subclass. Legacy removal requires a separately
+  approved major migration; do not invent a deprecation deadline.
+
 ## Realtime rules
 
 Audio callbacks must not allocate, lock, perform file/network I/O, log, own
@@ -172,8 +181,9 @@ and real error paths over source-text or plumbing assertions.
 - Keep fixtures deterministic and full-suite safe.
 - Session schema changes must update both `tests/fixtures/session/` and
   `tools/fixtures/` golden sets.
-- Public contract changes update headers, package fixtures, migration/handoff
-  guidance, and the appropriate `docs/orp/ORP1NN ...` record together.
+- Public contract changes update headers, package fixtures, and migration
+  guidance. Applicable local contract records may be updated separately; ORP
+  records are ignored provenance and must not be linked from public docs.
 - External factual claims in documentation require IEEE-style citations.
 - Do not claim verification that was not directly observed.
 

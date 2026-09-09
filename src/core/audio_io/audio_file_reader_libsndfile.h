@@ -28,12 +28,6 @@ public:
   bool isOpen() const override;
 
 private:
-  /// Convert libsndfile format to our enum
-  AudioFileFormat formatFromSndfile(int format) const;
-
-  /// Convert libsndfile format to codec string
-  std::string codecFromSndfile(int format) const;
-
   /// Calculate the file's SHA-256 through the platform provider.
   std::string calculateFileHash(const std::string& file_path) const;
 

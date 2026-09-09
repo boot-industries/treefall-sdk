@@ -28,18 +28,25 @@
 #include "../../src/core/routing/routing_matrix.h"
 #include "../../src/core/transport/transport_controller.h"
 
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <memory>
 #include <new>
 #include <string>
 #include <thread>
 #include <vector>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 
 // MSVC's <cmath> does not define M_PI without _USE_MATH_DEFINES; guard it so
 // the Windows build resolves the constant. Matches the codebase's M_PI_2 guard.
@@ -275,12 +282,150 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
   // Strict gate: no media I/O on the audio thread. Any regression that
   // reintroduces callback-time decoding blows straight through this bound
   // (the debt era measured ~4.9 MB here).
+
   EXPECT_LT(readCalls, 8u) << "file I/O observed inside the audio callback";
   EXPECT_LT(readBytes, 4096u) << "file I/O observed inside the audio callback";
 
   // And the file-backed render path must stay allocation-free too.
   EXPECT_EQ(RtGuardState::allocViolations(), 0u);
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+}
+// D3/H prepared-only ingress boundary.  The consumer contains only the
+// guarded processAudio call; all barriers, joins, observations and reporting
+// remain outside RtSection.
+TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
+  constexpr size_t kProducers = 8;
+  constexpr size_t kFrames = 64;
+  constexpr size_t kRounds = 8;
+  constexpr size_t kPerRound = 128;
+  auto transport = std::make_unique<TransportController>(
+      nullptr, TransportConfig{.sampleRate = 96000, .outputChannels = 2, .maxBlockFrames = 64});
+  std::array<ClipHandle, kProducers> handles{};
+  std::array<ClipMetadata, kProducers> metadata{};
+  for (size_t p = 0; p < kProducers; ++p) {
+    handles[p] = static_cast<ClipHandle>(p + 1);
+    const auto path = writeSineWav(m_tempDir, "mpsc_rt_" + std::to_string(p) + ".wav",
+                                   180.0f + static_cast<float>(p) * 23.0f, 2.0f, 96000);
+    ASSERT_EQ(transport->registerClipAudio(handles[p], path), SessionGraphError::OK);
+    ASSERT_EQ(transport->prepareClipAudio(handles[p]), SessionGraphError::OK);
+    const auto registered = transport->getClipMetadata(handles[p]);
+    ASSERT_TRUE(registered.has_value());
+    metadata[p] = *registered;
+  }
+  std::array<float, kFrames> left{}, right{};
+  float* output[]{left.data(), right.data()};
+  std::array<std::array<SessionGraphError, kRounds * kPerRound>, kProducers> results{};
+  std::barrier begin(static_cast<std::ptrdiff_t>(kProducers + 1));
+  std::barrier end(static_cast<std::ptrdiff_t>(kProducers + 1));
+  std::barrier drained(static_cast<std::ptrdiff_t>(kProducers + 1));
+  std::atomic<bool> done{false};
+#if defined(__linux__)
+  long consumerTid = 0;
+#endif
+  RtGuardState::reset();
+  std::thread pump([&] {
+    while (!done.load(std::memory_order_acquire)) {
+      transport->processCallbacks();
+      (void)transport->getActiveVoiceSnapshot();
+    }
+  });
+  std::thread consumer([&] {
+#if defined(__linux__)
+    consumerTid = static_cast<long>(::syscall(SYS_gettid));
+#endif
+    for (size_t round = 0; round < kRounds; ++round) {
+      begin.arrive_and_wait();
+      {
+        RtSection section;
+        transport->processAudio(output, 2, kFrames);
+      }
+      end.arrive_and_wait();
+      {
+        // All publishers returned: drain the rest before allowing node reuse.
+        RtSection section;
+        transport->processAudio(output, 2, kFrames);
+      }
+      drained.arrive_and_wait();
+    }
+  });
+  std::array<std::thread, kProducers> producers;
+  for (size_t p = 0; p < kProducers; ++p)
+    producers[p] = std::thread([&, p] {
+      for (size_t round = 0; round < kRounds; ++round) {
+        begin.arrive_and_wait();
+        for (size_t step = 0; step < kPerRound; ++step) {
+          const size_t i = round * kPerRound + step;
+          const size_t h = (p + i) % kProducers;
+          const auto handle = handles[h];
+          const StartRequestTag tag = (static_cast<uint64_t>(p + 1) << 48) | (i + 1);
+          auto& result = results[p][i];
+          switch (i % 13) {
+          case 0:
+            result = transport->startClip(handle, tag);
+            break;
+          case 1:
+            result = transport->startClipWithGroupChoke(handle, tag);
+            break;
+          case 2:
+            result = transport->stopClip(handle);
+            break;
+          case 3:
+            result = transport->stopAllClips();
+            break;
+          case 4:
+            result = transport->panic();
+            break;
+          case 5:
+            result = transport->stopOtherClips(handle);
+            break;
+          case 6:
+            result = transport->updateClipTrimPoints(handle, 0, 96000);
+            break;
+          case 7:
+            result = transport->updateClipFades(handle, 0, 0, FadeCurve::Linear, FadeCurve::Linear);
+            break;
+          case 8:
+            result = transport->updateClipGain(handle, -3);
+            break;
+          case 9:
+            result = transport->setClipLoopMode(handle, (i & 1) != 0);
+            break;
+          case 10:
+            result = transport->updateClipMetadata(handle, metadata[h]);
+            break;
+          case 11:
+            result = transport->restartClip(handle);
+            break;
+          case 12:
+            result = transport->seekClip(handle, static_cast<int64_t>(i * 5));
+            break;
+          }
+        }
+        end.arrive_and_wait();
+        drained.arrive_and_wait();
+      }
+    });
+  for (auto& producer : producers)
+    producer.join();
+  consumer.join();
+  done.store(true, std::memory_order_release);
+  pump.join();
+  transport->processCallbacks();
+  for (const auto& row : results)
+    for (auto result : row)
+      EXPECT_TRUE(result == SessionGraphError::OK || result == SessionGraphError::NotReady);
+  const auto telemetry = transport->getCommandIngressTelemetry();
+  EXPECT_EQ(telemetry.processedCount, telemetry.admittedCount);
+  EXPECT_EQ(telemetry.attemptedCount, telemetry.admittedCount + telemetry.slotUnavailableCount +
+                                          telemetry.publicationContentionCount +
+                                          telemetry.preparationRejectedCount);
+  EXPECT_GT(telemetry.admittedCount, kTransportCommandIngressCapacity);
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+#if defined(__linux__)
+  ASSERT_GT(consumerTid, 0);
+  std::cout << "MPSC_CONSUMER_TID=" << consumerTid << '\n';
+#endif
 }
 
 // ============================================================================

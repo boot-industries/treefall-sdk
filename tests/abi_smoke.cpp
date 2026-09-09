@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "orpheus/abi.h"
+#include "treefall/abi.h"
+#include "treefall/errors.h"
 
 #include <array>
 #include <cstring>
@@ -8,6 +10,70 @@
 
 #include <gtest/gtest.h>
 #include <limits>
+
+namespace {
+int g_log_calls = 0;
+int g_telemetry_calls = 0;
+void SmokeLogger(orpheus_log_level, const char*, void* user_data) {
+  ++*static_cast<int*>(user_data);
+}
+void SmokeTelemetry(const char*, const char*, void* user_data) {
+  ++*static_cast<int*>(user_data);
+}
+} // namespace
+
+TEST(AbiCompatibilityTest, TreefallFactoriesAreTheLegacyTables) {
+  ASSERT_EQ(orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
+            treefall_session_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr));
+  ASSERT_EQ(orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
+            treefall_clipgrid_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr));
+  ASSERT_EQ(orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
+            treefall_render_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr));
+}
+
+TEST(AbiCompatibilityTest, BothNamesRejectWrongMajor) {
+  EXPECT_EQ(orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+  EXPECT_EQ(treefall_session_abi_v1(TREEFALL_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+  EXPECT_EQ(orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+  EXPECT_EQ(treefall_clipgrid_abi_v1(TREEFALL_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+  EXPECT_EQ(orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+  EXPECT_EQ(treefall_render_abi_v1(TREEFALL_ABI_MAJOR + 1, nullptr, nullptr), nullptr);
+}
+
+TEST(AbiCompatibilityTest, CrossNameHandlesAndCallbacksShareModuleState) {
+  const auto* legacy_session = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  const auto* treefall_session = treefall_session_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr);
+  const auto* legacy_clipgrid = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  const auto* treefall_clipgrid = treefall_clipgrid_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr);
+  ASSERT_NE(legacy_session, nullptr);
+  ASSERT_NE(treefall_session, nullptr);
+  ASSERT_NE(legacy_clipgrid, nullptr);
+  ASSERT_NE(treefall_clipgrid, nullptr);
+
+  treefall_session_handle session{};
+  ASSERT_EQ(treefall_session->create(&session), TREEFALL_STATUS_OK);
+  treefall_track_handle track{};
+  const treefall_track_desc desc{"cross-name"};
+  ASSERT_EQ(legacy_session->add_track(session, &desc, &track), TREEFALL_STATUS_OK);
+  treefall_clip_handle clip{};
+  const treefall_clip_desc clip_desc{"cross-clip", 0.0, 1.0, 0};
+  ASSERT_EQ(treefall_clipgrid->add_clip(session, track, &clip_desc, &clip), TREEFALL_STATUS_OK);
+  EXPECT_EQ(legacy_clipgrid->set_clip_length(session, clip, 2.0), ORPHEUS_STATUS_OK);
+  legacy_session->destroy(session);
+
+  g_log_calls = 0;
+  g_telemetry_calls = 0;
+  orpheus_set_logger(SmokeLogger, &g_log_calls);
+  orpheus::Log(ORPHEUS_LOG_LEVEL_INFO, "cross-name");
+  treefall_set_logger(nullptr, nullptr);
+  EXPECT_EQ(g_log_calls, 1);
+  treefall_set_telemetry_callback(SmokeTelemetry, &g_telemetry_calls);
+  orpheus::EmitTelemetry("cross-name", "{}");
+  orpheus_set_telemetry_callback(nullptr, nullptr);
+  EXPECT_EQ(g_telemetry_calls, 1);
+  EXPECT_STREQ(treefall_status_to_string(TREEFALL_STATUS_OK),
+               orpheus_status_to_string(ORPHEUS_STATUS_OK));
+}
 
 namespace orpheus::tests {
 

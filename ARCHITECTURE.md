@@ -6,7 +6,7 @@
 **Last Updated:** October 26, 2025
 **Status:** Authoritative
 
-Orpheus is a professional audio SDK built around a deterministic, host-neutral C++20 core library with optional adapter layers for different integration scenarios. The architecture prioritizes offline-first operation, sample-accurate determinism, and broadcast-safe real-time processing.
+Treefall is a professional audio SDK built around a deterministic, host-neutral C++20 core library with optional adapter layers for different integration scenarios. “Orpheus” remains the native-library, executable, and canonical C++ compatibility identity. The architecture prioritizes offline-first operation, sample-accurate determinism, and broadcast-safe real-time processing.
 
 ---
 
@@ -29,7 +29,7 @@ Orpheus is a professional audio SDK built around a deterministic, host-neutral C
 
 ## Design Principles
 
-The Orpheus SDK is built on four non-negotiable principles:
+The Treefall SDK is built on four non-negotiable principles:
 
 1. **Offline-first** – No runtime network calls for core features. All essential functionality works without internet connectivity.
 
@@ -41,11 +41,29 @@ The Orpheus SDK is built on four non-negotiable principles:
 
 These principles guide all architectural decisions and feature implementations.
 
+## Treefall compatibility boundary
+
+Treefall is the active product and package identity; Orpheus remains the
+technical compatibility identity. `TreefallSDK` and `OrpheusSDK` package
+discovery resolve the same physical export set. New consumers may use
+`Treefall::` targets, `include/treefall/...` forwarding headers, and the
+`treefall` C++ namespace alias; existing `Orpheus::` targets,
+`include/orpheus/...` headers, and `orpheus` namespace code remain valid.
+
+The stable C ABI remains major 1, minor 0. `TREEFALL_*` typedefs/macros and
+`treefall_*` ABI, status, logger, and telemetry wrappers are additive aliases
+or forwarding entry points over the existing C tables, layouts, and state.
+Legacy C names remain available throughout ABI 1.0. An appended C++ virtual
+extension preserves source compatibility for recompiled implementations, but
+all C++ consumers and subclasses must be rebuilt against the matching headers.
+There is no scheduled legacy-removal release; removal requires a separately
+approved major migration.
+
 ---
 
 ## System Architecture
 
-Orpheus is organized into distinct layers, each with clear responsibilities:
+Treefall is organized into distinct layers, each with clear responsibilities:
 
 ```mermaid
 graph TD
@@ -158,7 +176,9 @@ Version compatibility helpers:
 
 #### 7. ORP134 Platform Primitives (2026-07-09)
 
-Additive public surfaces from the hardening program (details: `docs/orp/ORP137`):
+Additive public surfaces from the hardening program are recorded in local ORP
+engineering provenance; the tracked public headers and support matrix are the
+active contract.
 
 - **Clip sources** (`src/core/transport/clip_source.h`, internal) – prepared/
   streaming PCM views; the audio thread no longer reads files (ORP134 G1)
@@ -283,8 +303,8 @@ git submodule and bump the pin to pick up SDK changes:
 ### Orpheus Clip Composer (OCC) — external repo
 
 **Status:** extracted from this repo's former `apps/clip-composer/`
-subdirectory on 2026-07-09 (archival report: `docs/orp/ORP131`). Its build,
-CI, and OCC documentation live in the Clip Composer repository.
+subdirectory on 2026-07-09. Its build, CI, and OCC documentation live in the
+Clip Composer repository; the archival reference is retained as local provenance.
 
 Professional soundboard application for broadcast, theater, and live performance.
 
@@ -405,9 +425,13 @@ ASAN_OPTIONS=detect_leaks=1 ctest --test-dir build
 
 ## Threading Model
 
-Orpheus follows a strict two-thread model for real-time safety.
+Treefall separates one nonreentrant audio consumer and one callback/message pump
+from concurrent control producers. UI, MIDI, OSC, and automation threads may post
+commands directly; registry-dependent preparation remains internally serialized
+control/background work, not realtime work. SessionGraph and routing keep their
+own threading contracts.
 
-### UI Thread
+### Control and Message Threads
 
 **Responsibilities:**
 
@@ -452,15 +476,16 @@ Orpheus follows a strict two-thread model for real-time safety.
 
 ### Communication Patterns
 
-**UI → Audio Thread:**
+**Concurrent Control Producers → Audio Thread:**
 
-- Lock-free SPSC command queue (`TransportCommand` ring): every control
-  mutation (start/stop/update trim/fade/gain/loop/metadata/restart/seek) is
-  posted through a single `postCommand()` choke point and applied by the audio
-  thread in `processCommands()`.
-- **Single-producer contract (ORP133 G3):** exactly one control thread may
-  post commands. Hosts with multiple control sources (UI + MIDI + OSC) must
-  funnel them through one dispatcher. Debug builds assert on violation.
+- Lock-free bounded MPSC command ingress for control calls from UI, MIDI, OSC,
+  and automation. Successful publication order defines concurrent admission
+  order; the audio consumer detaches a batch and processes it FIFO without
+  allocation or blocking.
+- Control-side source preparation may allocate, lock, and perform file I/O before
+  publication. This preparation is never performed by the audio consumer.
+- The ingress capacity is 255 usable nodes. Full-capacity and bounded-publication
+  refusal return `NotReady` and are observable through ingress telemetry.
 
 **Audio → UI Thread:**
 
@@ -468,10 +493,12 @@ Orpheus follows a strict two-thread model for real-time safety.
   `std::function` on the audio thread. `processCallbacks()` translates events
   into `ITransportCallback` virtuals (`onClipStarted`, `onClipStopped`,
   `onClipLooped`, `onClipRestarted`, `onClipSeeked`, `onBufferUnderrun`) on
-  the host's UI thread (typically from a UI timer).
+  the host's UI thread (typically from a UI timer). This reverse-direction
+  callback queue remains SPSC; it is distinct from the bounded MPSC command
+  ingress described above.
 - Queries (`getClipState`, `getClipPosition`, voice counts) read a
-  double-buffered voice snapshot published by the audio thread (ORP127 G1) —
-  safe from any thread.
+  coherent atomic voice snapshot published by the audio thread —
+  lock-free for non-realtime readers.
 
 ### Verification
 
@@ -546,7 +573,7 @@ cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
 **Status:** Complete, production-ready
 **Test Coverage:** 165+ new tests (98%+ pass rate)
 
-Orpheus SDK has been extended with 7 major features for professional workflows:
+Treefall SDK has been extended with 7 major features for professional workflows:
 
 ### 1. Routing Matrix Architecture
 
@@ -747,15 +774,15 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 
 ## Related Documentation
 
-### Getting Started
-
-- [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
-- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current and historical documentation index
+- [README.md](README.md) – Quick start guide and compatibility overview
+- [SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) – active platform and capability posture
+- [REALTIME_AUDIT.md](docs/REALTIME_AUDIT.md) – realtime safety audit and constraints
 
 ### Current Contracts
 
-- [ORP171 – CoreAudio Route-State Contract Handoff](docs/orp/ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md) – directional CoreAudio route contract and downstream handoff.
-- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current SDK contract records.
+- Installed public headers and CMake package fixtures define the shipped API.
+- Historical route handoffs and ORP contract records remain local provenance;
+  they are intentionally not linked and are not required for a public checkout.
 
 ### Application Documentation
 

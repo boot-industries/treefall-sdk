@@ -1,4 +1,4 @@
-name: Orpheus SDK Release Artifacts
+name: Treefall SDK Release Artifacts
 
 on:
   push:
@@ -19,7 +19,12 @@ jobs:
           fetch-depth: 0
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsndfile1-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsndfile1-dev libasound2-dev libcurl4-openssl-dev libfontconfig1-dev \
+            libfreetype-dev libgtk-3-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
 
       - name: Configure release
         run: >-
@@ -43,16 +48,16 @@ jobs:
           python3 tools/generate_release_evidence.py
           --root .
           --output build-release-artifact/evidence
-          build-release-artifact/orpheus-sdk-*.zip
+          build-release-artifact/treefall-sdk-*.zip
 
       - name: Upload release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: orpheus-sdk-release-${{ github.ref_name }}
+          name: treefall-sdk-release-${{ github.ref_name }}
           if-no-files-found: error
           path: |
-            build-release-artifact/orpheus-sdk-*.zip
-            build-release-artifact/orpheus-sdk-*.zip.sha256
+            build-release-artifact/treefall-sdk-*.zip
+            build-release-artifact/treefall-sdk-*.zip.sha256
             build-release-artifact/evidence/SHA256SUMS
-            build-release-artifact/evidence/orpheus-sdk.spdx.json
-            build-release-artifact/evidence/orpheus-sdk.provenance.json
+            build-release-artifact/evidence/treefall-sdk.spdx.json
+            build-release-artifact/evidence/treefall-sdk.provenance.json

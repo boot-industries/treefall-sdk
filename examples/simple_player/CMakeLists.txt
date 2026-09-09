@@ -8,19 +8,19 @@ cmake_minimum_required(VERSION 3.20)
 add_executable(simple_player simple_player.cpp)
 target_compile_features(simple_player PRIVATE cxx_std_20)
 
-# Link against Orpheus SDK
+# Link against the Treefall compatibility targets. These aliases resolve to
+# the canonical Orpheus targets in both source and installed-package builds.
 target_link_libraries(simple_player PRIVATE
-  orpheus_transport
-  orpheus_audio_io
+  Treefall::transport
+  Treefall::audio_io
 )
 
 # Platform-specific audio drivers
-if(APPLE)
-  target_link_libraries(simple_player PRIVATE orpheus_audio_driver_coreaudio)
-elseif(WIN32)
-  if(TARGET orpheus_audio_driver_wasapi)
-    target_link_libraries(simple_player PRIVATE orpheus_audio_driver_wasapi)
-  endif()
+if(TARGET Treefall::audio_driver_coreaudio)
+  target_link_libraries(simple_player PRIVATE Treefall::audio_driver_coreaudio)
+  target_compile_definitions(simple_player PRIVATE ORPHEUS_ENABLE_COREAUDIO)
+elseif(WIN32 AND TARGET Treefall::audio_driver_wasapi)
+  target_link_libraries(simple_player PRIVATE Treefall::audio_driver_wasapi)
 endif()
 
 # Compiler warnings

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <memory>
 #include <orpheus/realtime_telemetry.h>
 #include <orpheus/session_graph.h>
 #include <orpheus/transport_controller.h>
@@ -14,7 +15,6 @@ using PublishFromRealtimeSignature =
     bool (orpheus::RealtimeTelemetry::*)(const orpheus::RealtimeTelemetrySnapshot&) noexcept;
 static_assert(std::is_same_v<decltype(&orpheus::RealtimeTelemetry::publishFromRealtime),
                              PublishFromRealtimeSignature>);
-
 
 int main() {
   orpheus::core::SessionGraph graph;
@@ -34,32 +34,29 @@ int main() {
     return 1;
   }
 
-  orpheus::RealtimeTelemetry telemetry(2);
-  if (telemetry.beginRealtimeBlock(128, 48000) ||
-      !telemetry.beginRealtimeBlock(128, 48000)) {
+  auto telemetryStorage = std::make_unique<orpheus::RealtimeTelemetry>(2);
+  auto& telemetry = *telemetryStorage;
+  if (telemetry.beginRealtimeBlock(128, 48000) || !telemetry.beginRealtimeBlock(128, 48000)) {
     return 2;
   }
-
-  const orpheus::RealtimeTelemetrySnapshot input = [] {
-    orpheus::RealtimeTelemetrySnapshot snapshot;
-    snapshot.position = orpheus::TimePoint::fromSamples(256);
-    snapshot.active_voice_count = 3;
-    snapshot.routing_meters.availability = orpheus::MeterAvailability::Measured;
-    snapshot.routing_meters.schema_version = 99;
-    snapshot.routing_meters.group_output_meters.schema_version = 99;
-    return snapshot;
-  }();
+  auto inputStorage = std::make_unique<orpheus::RealtimeTelemetrySnapshot>();
+  auto& input = *inputStorage;
+  input.position = orpheus::TimePoint::fromSamples(256);
+  input.active_voice_count = 3;
+  input.routing_meters.availability = orpheus::MeterAvailability::Measured;
+  input.routing_meters.schema_version = 99;
+  input.routing_meters.group_output_meters.schema_version = 99;
   if (!telemetry.publishFromRealtime(input)) {
     return 3;
   }
 
-  orpheus::RealtimeTelemetrySnapshot output;
+  auto outputStorage = std::make_unique<orpheus::RealtimeTelemetrySnapshot>();
+  auto& output = *outputStorage;
   if (!telemetry.tryRead(output) || output.position.samples() != 256 ||
       output.active_voice_count != 3 || output.diagnostics.callback_count != 2 ||
       output.diagnostics.samples_processed != 256 ||
       output.schema_version != orpheus::kRealtimeTelemetrySchemaVersion ||
-      output.routing_meters.schema_version !=
-          orpheus::kRoutingMeterTelemetrySchemaVersion ||
+      output.routing_meters.schema_version != orpheus::kRoutingMeterTelemetrySchemaVersion ||
       output.routing_meters.group_output_meters.schema_version !=
           orpheus::kGroupOutputMeterSnapshotSchemaVersion ||
       output.routing_meters.availability != orpheus::MeterAvailability::Measured) {

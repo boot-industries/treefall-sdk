@@ -49,10 +49,14 @@ if(NOT ORPHEUS_SNDFILE_PROVIDER STREQUAL "None")
 endif()
 
 
-# Build audio utilities with available components
-set(ORPHEUS_AUDIO_UTILS_SOURCES)
+ # Build audio utilities with available components
+ set(ORPHEUS_AUDIO_UTILS_SOURCES)
 
-# ORP127 G6: host-neutral, dependency-free sample-rate conversion. Always built.
+ # Public codec capability/preflight API is always available; provider-specific
+ # probing is compiled in when a real libsndfile target is selected.
+ list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES audio_file_capabilities.cpp)
+
+ # ORP127 G6: host-neutral, dependency-free sample-rate conversion. Always built.
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES polyphase_resampler.cpp)
 list(APPEND ORPHEUS_AUDIO_UTILS_SOURCES directional_sample_rate_converter.cpp)
 
@@ -109,6 +113,10 @@ target_include_directories(orpheus_audio_utils
     PRIVATE
         ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
 )
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
+    target_compile_definitions(orpheus_audio_utils PRIVATE
+        ORPHEUS_AUDIO_FILE_CAPABILITIES_HAVE_SNDFILE)
+endif()
 
 if(_orpheus_sndfile_target)
     target_link_libraries(orpheus_audio_utils PUBLIC ${_orpheus_sndfile_target})

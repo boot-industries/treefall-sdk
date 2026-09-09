@@ -64,5 +64,8 @@ _orpheus_sdk_alias(Orpheus::audio_driver_wasapi Orpheus::orpheus_audio_driver_wa
 _orpheus_sdk_alias(Orpheus::shmui_juce Orpheus::orpheus_shmui_juce)
 _orpheus_sdk_alias(Orpheus::shmui_juce_gl Orpheus::orpheus_shmui_juce_gl)
 
+include("${CMAKE_CURRENT_LIST_DIR}/TreefallCompatibility.cmake")
+treefall_register_compatibility_targets()
+
 check_required_components(OrpheusSDK)
 

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT
+@PACKAGE_INIT@
+
+# Resolve the canonical config from this same installation/build, never another prefix.
+set(_treefall_find_package_name "${CMAKE_FIND_PACKAGE_NAME}")
+set(CMAKE_FIND_PACKAGE_NAME OrpheusSDK)
+set(OrpheusSDK_FIND_QUIETLY "${TreefallSDK_FIND_QUIETLY}")
+set(OrpheusSDK_FIND_REQUIRED "${TreefallSDK_FIND_REQUIRED}")
+set(OrpheusSDK_FIND_COMPONENTS "${TreefallSDK_FIND_COMPONENTS}")
+foreach(_treefall_component IN LISTS TreefallSDK_FIND_COMPONENTS)
+  set(OrpheusSDK_FIND_REQUIRED_${_treefall_component}
+      "${TreefallSDK_FIND_REQUIRED_${_treefall_component}}")
+endforeach()
+set(OrpheusSDK_FOUND TRUE)
+include("${CMAKE_CURRENT_LIST_DIR}/@TREEFALL_ORPHEUS_CONFIG_RELATIVE@")
+set(CMAKE_FIND_PACKAGE_NAME "${_treefall_find_package_name}")
+set(TreefallSDK_FOUND "${OrpheusSDK_FOUND}")
+if(NOT OrpheusSDK_FOUND)
+  set(TreefallSDK_NOT_FOUND_MESSAGE "${OrpheusSDK_NOT_FOUND_MESSAGE}")
+  return()
+endif()
+foreach(_treefall_variable VERSION C_ABI_MAJOR C_ABI_MINOR INCLUDE_DIR)
+  set(TreefallSDK_${_treefall_variable} "${OrpheusSDK_${_treefall_variable}}")
+endforeach()
+foreach(_treefall_component IN LISTS TreefallSDK_FIND_COMPONENTS)
+  set(TreefallSDK_${_treefall_component}_FOUND "${OrpheusSDK_${_treefall_component}_FOUND}")
+endforeach()
+check_required_components(TreefallSDK)
