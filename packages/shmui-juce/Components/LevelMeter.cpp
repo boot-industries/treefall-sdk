@@ -10,8 +10,8 @@
 */
 
 #include "LevelMeter.h"
+#include <algorithm>
 #include <cmath>
-
 namespace shmui {
 
 class LevelMeter::ShowingStateWatcher final : public juce::ComponentMovementWatcher {
@@ -39,11 +39,14 @@ LevelMeter::LevelMeter() : LevelMeter(1) {}
 LevelMeter::LevelMeter(int numChannels)
     : m_numChannels(juce::jlimit(1, MAX_CHANNELS, numChannels)) {
   for (int i = 0; i < MAX_CHANNELS; ++i) {
-    m_inputLevels[i].store(0.0f);
+    m_inputLevelPairs[i].store(packLevelPair({}), std::memory_order_relaxed);
     m_displayLevels[i] = 0.0f;
+    m_displayRmsLevels[i] = 0.0f;
     m_peakHolds[i] = 0.0f;
     m_peakHoldTimes[i] = 0;
     m_clipped[i] = false;
+    m_peakRmsNeedleDb[i] = m_minDB;
+    m_peakRmsNeedleTimes[i] = 0;
   }
 
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
@@ -60,18 +63,69 @@ LevelMeter::~LevelMeter() {
   removeDefaultThemeListener(this);
 }
 
+uint64_t LevelMeter::packLevelPair(LevelPair pair) noexcept {
+  const auto peakBits = static_cast<uint64_t>(std::bit_cast<uint32_t>(pair.peak));
+  const auto rmsBits = static_cast<uint64_t>(std::bit_cast<uint32_t>(pair.rms));
+  return (peakBits << 32U) | rmsBits;
+}
+
+LevelMeter::LevelPair LevelMeter::unpackLevelPair(uint64_t packed) noexcept {
+  return {std::bit_cast<float>(static_cast<uint32_t>(packed >> 32U)),
+          std::bit_cast<float>(static_cast<uint32_t>(packed))};
+}
+
+LevelMeter::SegmentLayout LevelMeter::calculateSegmentLayout(float signalAxisLength,
+                                                             float segmentLength,
+                                                             float requestedGap,
+                                                             float displayScale) noexcept {
+  const auto finiteOr = [](float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+  };
+  const float safeLength = juce::jlimit(
+      1.0f, 1000.0f, std::isfinite(segmentLength) && segmentLength > 0.0f ? segmentLength : 4.0f);
+  const float safeGap = juce::jlimit(0.0f, 1000.0f, finiteOr(requestedGap, 1.0f));
+  const float safeScale = juce::jlimit(
+      0.001f, 1000.0f, std::isfinite(displayScale) && displayScale > 0.0f ? displayScale : 1.0f);
+  const float resolvedGap = safeGap > 0.0f ? std::ceil(safeGap * safeScale) / safeScale : 0.0f;
+  const float safeAxisLength = juce::jmax(0.0f, finiteOr(signalAxisLength, 0.0f));
+  const float pitch = safeLength + resolvedGap;
+  const float requestedCount =
+      pitch > 0.0f ? std::floor((safeAxisLength + resolvedGap) / pitch) : 0.0f;
+  const int count = static_cast<int>(
+      juce::jlimit(0.0f, 1024.0f, std::isfinite(requestedCount) ? requestedCount : 0.0f));
+  const float occupied = count > 0 ? count * safeLength + (count - 1) * resolvedGap : 0.0f;
+  return {count, safeLength, resolvedGap, juce::jmax(0.0f, (safeAxisLength - occupied) * 0.5f)};
+}
+
 //==============================================================================
 void LevelMeter::setLevel(int channel, float level) {
-  if (channel >= 0 && channel < m_numChannels) {
-    const float safeLevel = std::isfinite(level) ? juce::jmax(0.0f, level) : 0.0f;
-    m_inputLevels[static_cast<size_t>(channel)].store(safeLevel, std::memory_order_relaxed);
-  }
+  setLevelPair(channel, level, level);
 }
 
 void LevelMeter::setLevelDB(int channel, float dB) {
-  const float safeDb =
-      std::isfinite(dB) ? juce::jlimit(-200.0f, 200.0f, dB) : (dB > 0.0f ? 200.0f : -200.0f);
-  setLevel(channel, std::pow(10.0f, safeDb / 20.0f));
+  setLevelPairDB(channel, dB, dB);
+}
+
+void LevelMeter::setLevelPair(int channel, float peakLevel, float rmsLevel) {
+  if (channel < 0 || channel >= m_numChannels)
+    return;
+
+  const auto sanitize = [](float level) {
+    return std::isfinite(level) ? juce::jmax(0.0f, level) : 0.0f;
+  };
+  const float peak = sanitize(peakLevel);
+  const float rms = juce::jmin(peak, sanitize(rmsLevel));
+  m_inputLevelPairs[static_cast<size_t>(channel)].store(packLevelPair({peak, rms}),
+                                                        std::memory_order_relaxed);
+}
+
+void LevelMeter::setLevelPairDB(int channel, float peakDb, float rmsDb) {
+  const auto linearFromDb = [](float dB) {
+    const float safeDb =
+        std::isfinite(dB) ? juce::jlimit(-200.0f, 200.0f, dB) : (dB > 0.0f ? 200.0f : -200.0f);
+    return std::pow(10.0f, safeDb / 20.0f);
+  };
+  setLevelPair(channel, linearFromDb(peakDb), linearFromDb(rmsDb));
 }
 
 void LevelMeter::setLevels(const std::vector<float>& levels) {
@@ -85,11 +139,14 @@ void LevelMeter::reset() {
     return;
 
   for (int i = 0; i < m_numChannels; ++i) {
-    m_inputLevels[static_cast<size_t>(i)].store(0.0f, std::memory_order_relaxed);
+    m_inputLevelPairs[static_cast<size_t>(i)].store(packLevelPair({}), std::memory_order_relaxed);
     m_displayLevels[static_cast<size_t>(i)] = 0.0f;
+    m_displayRmsLevels[static_cast<size_t>(i)] = 0.0f;
     m_peakHolds[static_cast<size_t>(i)] = 0.0f;
     m_peakHoldTimes[static_cast<size_t>(i)] = 0;
     m_clipped[static_cast<size_t>(i)] = false;
+    m_peakRmsNeedleDb[static_cast<size_t>(i)] = m_minDB;
+    m_peakRmsNeedleTimes[static_cast<size_t>(i)] = 0;
   }
   repaint();
 }
@@ -119,6 +176,10 @@ void LevelMeter::setBallistics(MeterBallistics ballistics) {
   case MeterBallistics::PPM:
     m_attackCoeff = 0.8f;
     m_releaseCoeff = 0.02f;
+    break;
+  case MeterBallistics::PeakRms:
+    m_attackCoeff = 1.0f;
+    m_releaseCoeff = 0.0f;
     break;
   }
 }
@@ -190,6 +251,17 @@ void LevelMeter::sanitizeStyle() {
   m_style.meterGap = juce::jmax(0.0f, finiteOr(m_style.meterGap, 2.0f));
   m_style.cornerRadius = juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.cornerRadius, 2.0f));
   m_style.peakHoldWidth = juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.peakHoldWidth, 2.0f));
+  m_style.segmentLength = juce::jlimit(
+      1.0f, 1000.0f,
+      std::isfinite(m_style.segmentLength) && m_style.segmentLength > 0.0f ? m_style.segmentLength
+                                                                           : 4.0f);
+  m_style.segmentGap = juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.segmentGap, 1.0f));
+  m_style.greenToYellowTransitionSegments =
+      juce::jlimit(0, 256, m_style.greenToYellowTransitionSegments);
+  m_style.peakRmsNeedleWidth =
+      juce::jlimit(0.0f, 1000.0f, finiteOr(m_style.peakRmsNeedleWidth, 2.0f));
+  m_style.peakRmsNeedleReleaseDbPerSecond =
+      juce::jlimit(0.0f, 200.0f, finiteOr(m_style.peakRmsNeedleReleaseDbPerSecond, 14.5f));
 }
 
 void LevelMeter::clearClip() {
@@ -370,12 +442,41 @@ void LevelMeter::updateMeter() {
   const int64_t currentTime = juce::Time::currentTimeMillis();
 
   for (int ch = 0; ch < m_numChannels; ++ch) {
-    const float inputLevel = m_inputLevels[static_cast<size_t>(ch)].load(std::memory_order_relaxed);
-    const float inputNorm = linearToNormalized(inputLevel);
+    const auto pair =
+        unpackLevelPair(m_inputLevelPairs[static_cast<size_t>(ch)].load(std::memory_order_relaxed));
+    const float inputNorm = linearToNormalized(pair.peak);
+    const float rmsNorm = linearToNormalized(pair.rms);
+    m_displayRmsLevels[static_cast<size_t>(ch)] = rmsNorm;
     float& displayLevel = m_displayLevels[static_cast<size_t>(ch)];
 
-    const float coeff = inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff;
-    displayLevel = juce::jlimit(0.0f, 1.0f, displayLevel + (inputNorm - displayLevel) * coeff);
+    if (m_ballistics == MeterBallistics::PeakRms) {
+      // The segmented fill is intentionally unsmoothed. The separate needle
+      // supplies the only release motion in this presentation.
+      displayLevel = inputNorm;
+
+      float& needleDb = m_peakRmsNeedleDb[static_cast<size_t>(ch)];
+      int64_t& needleTime = m_peakRmsNeedleTimes[static_cast<size_t>(ch)];
+      const int64_t elapsed = currentTime - needleTime;
+      if (needleTime == 0 || elapsed <= 0 || elapsed >= 250) {
+        // A first timer tick or a suspended UI clock only seeds timing. It
+        // must not synthesize a release across an arbitrary gap.
+        needleTime = currentTime;
+      } else {
+        const float peakDb = normalizedToDB(inputNorm);
+        const float rmsDb = normalizedToDB(rmsNorm);
+        if (peakDb > needleDb) {
+          needleDb = peakDb;
+        } else {
+          needleDb = juce::jmax(rmsDb, needleDb - m_style.peakRmsNeedleReleaseDbPerSecond *
+                                                      static_cast<float>(elapsed) / 1000.0f);
+        }
+        needleTime = currentTime;
+      }
+      needleDb = juce::jlimit(m_minDB, m_maxDB, std::isfinite(needleDb) ? needleDb : m_minDB);
+    } else {
+      const float coeff = inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff;
+      displayLevel = juce::jlimit(0.0f, 1.0f, displayLevel + (inputNorm - displayLevel) * coeff);
+    }
 
     if (displayLevel >= m_peakHolds[static_cast<size_t>(ch)]) {
       m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
@@ -439,12 +540,136 @@ juce::Colour LevelMeter::getColorForLevel(float normalized) const {
   return m_style.meterColorLow.interpolatedWith(m_style.meterColorMid, t * t);
 }
 
+juce::Colour LevelMeter::getSegmentColorForLevel(float dB, int greenIndex,
+                                                 int greenSegmentCount) const {
+  if (dB >= m_style.clipThreshold)
+    return m_style.clipColor;
+  if (dB >= m_style.redThreshold)
+    return m_style.meterColorHigh;
+  if (dB >= m_style.yellowThreshold) {
+    const float denominator = juce::jmax(0.001f, m_style.redThreshold - m_style.yellowThreshold);
+    const float t = juce::jlimit(0.0f, 1.0f, (dB - m_style.yellowThreshold) / denominator);
+    return m_style.meterColorMid.interpolatedWith(m_style.meterColorHigh, t);
+  }
+
+  const int transitionCount =
+      juce::jmin(m_style.greenToYellowTransitionSegments, greenSegmentCount);
+  if (transitionCount > 0 && greenIndex >= greenSegmentCount - transitionCount) {
+    const int transitionIndex = greenIndex - (greenSegmentCount - transitionCount);
+    const float t = static_cast<float>(transitionIndex + 1) / static_cast<float>(transitionCount);
+    return m_style.meterColorLow.interpolatedWith(m_style.meterColorMid, t);
+  }
+  return m_style.meterColorLow;
+}
+
+void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> trackBounds,
+                                    int channel) {
+  const float peakLevel = juce::jlimit(
+      0.0f, 1.0f, std::isfinite(m_displayLevels[channel]) ? m_displayLevels[channel] : 0.0f);
+  const float rmsLevel = juce::jlimit(
+      0.0f, 1.0f, std::isfinite(m_displayRmsLevels[channel]) ? m_displayRmsLevels[channel] : 0.0f);
+  const bool clipped = m_clipped[channel];
+
+  g.setColour(m_style.backgroundColor.brighter(0.1f));
+  g.fillRoundedRectangle(trackBounds, m_style.cornerRadius);
+
+  const auto contentBounds = trackBounds.reduced(1.0f);
+  const float signalAxisLength =
+      m_isVertical ? contentBounds.getHeight() : contentBounds.getWidth();
+  const float displayScale =
+      std::isfinite(getDesktopScaleFactor()) && getDesktopScaleFactor() > 0.0f
+          ? getDesktopScaleFactor()
+          : 1.0f;
+  const auto layout = calculateSegmentLayout(signalAxisLength, m_style.segmentLength,
+                                             m_style.segmentGap, displayScale);
+  const float peakDb = normalizedToDB(peakLevel);
+  const float rmsDb = normalizedToDB(rmsLevel);
+  const auto segmentDb = [&](int index) {
+    const float offset =
+        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+    const float normalized =
+        signalAxisLength > 0.0f
+            ? juce::jlimit(0.0f, 1.0f, (offset + layout.bodyLength * 0.5f) / signalAxisLength)
+            : 0.0f;
+    return normalizedToDB(normalized);
+  };
+
+  int greenSegmentCount = 0;
+  for (int index = 0; index < layout.count; ++index) {
+    if (segmentDb(index) < m_style.yellowThreshold)
+      ++greenSegmentCount;
+  }
+
+  const auto snapToPixel = [displayScale](float value) {
+    return std::round(value * displayScale) / displayScale;
+  };
+  bool hasLitSegment = false;
+  float topLitDb = m_minDB;
+  int greenIndex = 0;
+  for (int index = 0; index < layout.count; ++index) {
+    const float dB = segmentDb(index);
+    const bool isGreen = dB < m_style.yellowThreshold;
+    const int colorGreenIndex = greenIndex;
+    if (isGreen)
+      ++greenIndex;
+    if (dB > peakDb)
+      continue;
+
+    const float offset =
+        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+    g.setColour(getSegmentColorForLevel(dB, colorGreenIndex, greenSegmentCount));
+    if (m_isVertical) {
+      const float bottom = snapToPixel(contentBounds.getBottom() - offset);
+      const float top = snapToPixel(bottom - layout.bodyLength);
+      g.fillRect(contentBounds.getX(), juce::jmin(top, bottom), contentBounds.getWidth(),
+                 std::abs(bottom - top));
+    } else {
+      const float left = snapToPixel(contentBounds.getX() + offset);
+      const float right = snapToPixel(left + layout.bodyLength);
+      g.fillRect(juce::jmin(left, right), contentBounds.getY(), std::abs(right - left),
+                 contentBounds.getHeight());
+    }
+    hasLitSegment = true;
+    topLitDb = dB;
+  }
+
+  const bool isSilent = peakDb <= m_minDB && rmsDb <= m_minDB;
+  if (m_style.showPeakRmsNeedle && !isSilent) {
+    const float rawNeedleDb = m_peakRmsNeedleDb[static_cast<size_t>(channel)];
+    const float drawnDb = hasLitSegment ? juce::jmax(rawNeedleDb, topLitDb) : rawNeedleDb;
+    const float needleNormalized = dbToNormalized(drawnDb);
+    g.setColour(m_style.peakHoldColor);
+    if (m_isVertical) {
+      const float center =
+          snapToPixel(contentBounds.getBottom() - contentBounds.getHeight() * needleNormalized);
+      g.fillRect(contentBounds.getX(), center - m_style.peakRmsNeedleWidth * 0.5f,
+                 contentBounds.getWidth(), m_style.peakRmsNeedleWidth);
+    } else {
+      const float center =
+          snapToPixel(contentBounds.getX() + contentBounds.getWidth() * needleNormalized);
+      g.fillRect(center - m_style.peakRmsNeedleWidth * 0.5f, contentBounds.getY(),
+                 m_style.peakRmsNeedleWidth, contentBounds.getHeight());
+    }
+  }
+
+  if (m_style.showClipIndicator && clipped) {
+    const auto clipBounds =
+        m_isVertical ? trackBounds.removeFromTop(6.0f) : trackBounds.removeFromRight(6.0f);
+    g.setColour(m_style.clipColor);
+    g.fillRoundedRectangle(clipBounds, m_style.cornerRadius);
+  }
+}
+
 void LevelMeter::drawMeter(juce::Graphics& g, juce::Rectangle<float> trackBounds, int channel) {
   const float displayLevel = juce::jlimit(
       0.0f, 1.0f, std::isfinite(m_displayLevels[channel]) ? m_displayLevels[channel] : 0.0f);
   const float peakHold =
       juce::jlimit(0.0f, 1.0f, std::isfinite(m_peakHolds[channel]) ? m_peakHolds[channel] : 0.0f);
   const bool clipped = m_clipped[channel];
+  if (m_style.fillStyle == MeterFillStyle::Segmented) {
+    drawSegmentedMeter(g, trackBounds, channel);
+    return;
+  }
 
   g.setColour(m_style.backgroundColor.brighter(0.1f));
   g.fillRoundedRectangle(trackBounds, m_style.cornerRadius);

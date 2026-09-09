@@ -26,6 +26,8 @@
 #include "../Utils/ShmuiTheme.h"
 #include <JuceHeader.h>
 #include <array>
+#include <atomic>
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -37,9 +39,10 @@ namespace shmui {
  * @brief Meter ballistics type.
  */
 enum class MeterBallistics {
-  Peak, ///< Fast response, slow release (digital peak)
-  VU,   ///< VU meter ballistics (300ms integration)
-  PPM   ///< PPM meter ballistics (fast attack, slow decay)
+  Peak,    ///< Fast response, slow release (digital peak)
+  VU,      ///< VU meter ballistics (300ms integration)
+  PPM,     ///< PPM meter ballistics (fast attack, slow decay)
+  PeakRms, ///< Raw peak with a peak/RMS release needle
 };
 
 //==============================================================================
@@ -55,6 +58,13 @@ struct LevelEvent {
   int channel = 0;         ///< channel (or group index when used in MeterGroup)
   float peakDb = 0.0f;     ///< level in dBFS at the event
   uint32_t tag = 0;        ///< optional app payload (e.g. clip index)
+};
+
+//==============================================================================
+/** @brief Fill presentation for the meter body. */
+enum class MeterFillStyle {
+  Continuous, ///< Existing continuous threshold gradient
+  Segmented,  ///< Fixed-position LED grits
 };
 
 //==============================================================================
@@ -87,6 +97,16 @@ struct LevelMeterStyle {
   bool showScale = true;
   bool showTicks = true;
   float peakHoldWidth = 2.0f;
+
+  // Segmented Peak/RMS presentation. Defaults preserve the existing continuous
+  // meter for consumers that do not opt in.
+  MeterFillStyle fillStyle = MeterFillStyle::Continuous;
+  float segmentLength = 4.0f;
+  float segmentGap = 1.0f;
+  int greenToYellowTransitionSegments = 0;
+  bool showPeakRmsNeedle = false;
+  float peakRmsNeedleWidth = 2.0f;
+  float peakRmsNeedleReleaseDbPerSecond = 14.5f;
   [[nodiscard]] static LevelMeterStyle
   fromPresentation(const tokens::meter::Presentation& presentation) {
     LevelMeterStyle style;
@@ -153,6 +173,17 @@ public:
    * @param dB Level in decibels (-inf to 0+)
    */
   void setLevelDB(int channel, float dB);
+
+  /**
+   * @brief Set peak and RMS levels for a channel (thread-safe).
+   *
+   * The two readings are published as one lock-free atomic value, so the
+   * visible meter never observes a peak from one block and RMS from another.
+   */
+  void setLevelPair(int channel, float peakLevel, float rmsLevel);
+
+  /** Set paired peak and RMS levels in dB (thread-safe). */
+  void setLevelPairDB(int channel, float peakDb, float rmsDb);
 
   /**
    * @brief Set levels for all channels at once.
@@ -343,9 +374,31 @@ public:
   void resized() override;
   void mouseDown(const juce::MouseEvent& e) override;
 
+  friend class LevelMeterTestAccess;
+
 private:
   //==============================================================================
   class ShowingStateWatcher;
+
+  struct LevelPair {
+    float peak = 0.0f;
+    float rms = 0.0f;
+  };
+
+  struct SegmentLayout {
+    int count = 0;
+    float bodyLength = 0.0f;
+    float gap = 0.0f;
+    float leadingInset = 0.0f;
+  };
+
+  static_assert(std::atomic<uint64_t>::is_always_lock_free,
+                "LevelMeter paired level publication must be lock-free");
+
+  static uint64_t packLevelPair(LevelPair pair) noexcept;
+  static LevelPair unpackLevelPair(uint64_t packed) noexcept;
+  static SegmentLayout calculateSegmentLayout(float signalAxisLength, float segmentLength,
+                                              float requestedGap, float displayScale) noexcept;
 
   void timerCallback() override;
   void updateTimerState();
@@ -355,6 +408,8 @@ private:
   float dbToNormalized(float dB) const;
   float normalizedToDB(float normalized) const;
   juce::Colour getColorForLevel(float normalized) const;
+  juce::Colour getSegmentColorForLevel(float dB, int greenIndex, int greenSegmentCount) const;
+  void drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel);
   void drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel);
   void drawScale(juce::Graphics& g, juce::Rectangle<float> bounds);
 
@@ -378,11 +433,16 @@ private:
   int m_peakHoldTimeMs = 2000;
 
   // Per-channel state (thread-safe via atomics)
-  std::array<std::atomic<float>, MAX_CHANNELS> m_inputLevels{}; // Input levels (linear)
-  std::array<float, MAX_CHANNELS> m_displayLevels{};            // Smoothed display levels
-  std::array<float, MAX_CHANNELS> m_peakHolds{};                // Peak hold values
-  std::array<int64_t, MAX_CHANNELS> m_peakHoldTimes{};          // Peak hold timestamps
-  std::array<bool, MAX_CHANNELS> m_clipped{};                   // Clip indicators
+  // Per-channel state. Producers publish peak/RMS pairs in one lock-free
+  // atomic; all display state remains message-thread only.
+  std::array<std::atomic<uint64_t>, MAX_CHANNELS> m_inputLevelPairs{};
+  std::array<float, MAX_CHANNELS> m_displayLevels{}; // Smoothed/raw peak
+  std::array<float, MAX_CHANNELS> m_displayRmsLevels{};
+  std::array<float, MAX_CHANNELS> m_peakHolds{};       // Peak hold values
+  std::array<int64_t, MAX_CHANNELS> m_peakHoldTimes{}; // Peak hold timestamps
+  std::array<bool, MAX_CHANNELS> m_clipped{};          // Clip indicators
+  std::array<float, MAX_CHANNELS> m_peakRmsNeedleDb{};
+  std::array<int64_t, MAX_CHANNELS> m_peakRmsNeedleTimes{};
 
   // Ballistics parameters
   float m_attackCoeff = 0.0f;
