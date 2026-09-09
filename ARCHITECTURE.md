@@ -750,12 +750,14 @@ Orpheus SDK has been extended with 7 major features for professional workflows:
 ### Getting Started
 
 - [README.md](README.md) – Quick start guide (build SDK in <10 minutes)
-- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current and historical documentation index
+- [SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) – public platform and capability posture
 
 ### Current Contracts
 
-- [ORP171 – CoreAudio Route-State Contract Handoff](docs/orp/ORP171%20FourTrack%20Multi-Device%20CoreAudio%20Route-State%20Contract%20Handoff.md) – directional CoreAudio route contract and downstream handoff.
-- [docs/orp/INDEX.md](docs/orp/INDEX.md) – current SDK contract records.
+- [REALTIME_AUDIT.md](docs/REALTIME_AUDIT.md) – realtime safety audit and constraints
+- [SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) – supported targets and package contract
+- Historical ORP handoffs remain local-only and are intentionally not linked from
+  the public checkout.
 
 ### Application Documentation
 
