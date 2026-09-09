@@ -135,7 +135,7 @@ jobs:
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
-        timeout-minutes: 10
+        timeout-minutes: 20
 
       - name: Test
         run: |
@@ -364,7 +364,14 @@ jobs:
             if match is None:
                 raise ValueError("malformed consumer TID")
             trace = pathlib.Path(sys.argv[2] + "." + match.group(1))
-            payload = trace.read_text(encoding="utf-8")
+            trace_lines = trace.read_text(encoding="utf-8").splitlines()
+            if len(sys.argv) == 4 and sys.argv[3] == "window":
+                begin = [i for i, line in enumerate(trace_lines) if "TREEFALL_MPSC_TRACE_BEGIN" in line]
+                end = [i for i, line in enumerate(trace_lines) if "TREEFALL_MPSC_TRACE_END" in line]
+                if len(begin) != 1 or len(end) != 1 or begin[0] >= end[0]:
+                    raise ValueError("expected one ordered consumer trace window")
+                trace_lines = trace_lines[begin[0] + 1:end[0]]
+            payload = "\n".join(trace_lines)
         except (OSError, ValueError, IndexError) as error:
             print("Invalid consumer-I/O evidence: " + str(error), file=sys.stderr)
             sys.exit(2)
@@ -428,60 +435,23 @@ jobs:
         run: |
           set -euo pipefail
           E="$PWD/build-io/evidence"
-          trace_gate="$E/consumer-io.start"
-          rm -f "$trace_gate"
-          TREEFALL_MPSC_TRACE_GATE="$trace_gate" \
+          set +e
+          timeout 300s strace -ff -qq -e signal=none \
+            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
+            -o "$E/consumer-io.trace" \
             build-io/tests/transport/realtime_harness_test \
             --gtest_filter=RealtimeHarnessTest.ConcurrentIngressAt96k64DoesNoIo \
-            > "$E/consumer-io.stdout" 2> "$E/consumer-io.stderr" &
-          test_pid=$!
-          tid=""
-          for _ in $(seq 1 3000); do
-            tid="$(sed -n 's/^MPSC_CONSUMER_TID=//p' "$E/consumer-io.stdout")"
-            [[ -n "$tid" ]] && break
-            kill -0 "$test_pid" 2>/dev/null || break
-            sleep 0.01
-          done
-          [[ -n "$tid" ]] || {
-            wait "$test_pid" || true
-            echo "SDK harness did not publish a consumer TID"
-            exit 1
-          }
-          strace -qq -e signal=none \
-            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
-            -o "$E/consumer-io.trace.$tid" -p "$tid" &
-          trace_pid=$!
-          attached=false
-          for _ in $(seq 1 3000); do
-            tracer_pid="$(sed -n 's/^TracerPid:[[:space:]]*//p' "/proc/$tid/status" 2>/dev/null || true)"
-            if [[ "$tracer_pid" == "$trace_pid" ]]; then
-              attached=true
-              break
-            fi
-            kill -0 "$trace_pid" 2>/dev/null || break
-            sleep 0.01
-          done
-          if [[ "$attached" != true ]]; then
-            touch "$trace_gate"
-            wait "$test_pid" || true
-            wait "$trace_pid" || true
-            echo "strace did not attach to consumer $tid"
-            exit 1
-          fi
-          touch "$trace_gate"
-          set +e
-          wait "$test_pid"
+            > "$E/consumer-io.stdout" 2> "$E/consumer-io.stderr"
           run_status=$?
-          wait "$trace_pid"
-          trace_status=$?
-          python3 -c "$VERIFY_CONSUMER_IO" "$E/consumer-io.stdout" "$E/consumer-io.trace"
+          set -e
+          set +e
+          python3 -c "$VERIFY_CONSUMER_IO" \
+            "$E/consumer-io.stdout" "$E/consumer-io.trace" window
           parser_status=$?
           set -e
-          rm -f "$trace_gate"
-          printf 'execution=%s\ntrace=%s\nparser=%s\n' \
-            "$run_status" "$trace_status" "$parser_status" > "$E/consumer-io.exit"
+          printf 'execution=%s\nparser=%s\n' \
+            "$run_status" "$parser_status" > "$E/consumer-io.exit"
           [[ "$run_status" -eq 0 ]] || { echo "SDK harness failed: $run_status"; exit 1; }
-          [[ "$trace_status" -eq 0 ]] || { echo "strace failed: $trace_status"; exit 1; }
           [[ "$parser_status" -eq 0 ]] || { echo "SDK consumer-I/O parser failed: $parser_status"; exit 1; }
       - name: Upload syscall evidence
         if: always()
