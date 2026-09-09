@@ -775,7 +775,8 @@ Treefall SDK has been extended with 7 major features for professional workflows:
 ## Related Documentation
 
 - [README.md](README.md) – Quick start guide and compatibility overview
-- `docs/SUPPORT_MATRIX.md` – active support and availability posture
+- [SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) – active platform and capability posture
+- [REALTIME_AUDIT.md](docs/REALTIME_AUDIT.md) – realtime safety audit and constraints
 
 ### Current Contracts
 

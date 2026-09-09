@@ -8,8 +8,15 @@
 namespace orpheus {
 
 RealtimeTelemetry::RealtimeTelemetry(uint32_t decimationBlocks) noexcept {
+  try {
+    snapshots_ = std::make_unique<RealtimeTelemetrySnapshot[]>(kRealtimeTelemetryCapacity);
+  } catch (...) {
+    // The bridge has no throwing constructor contract. A failed control-thread
+    // allocation leaves publishing unavailable without affecting the callback.
+  }
   setDecimationBlocks(decimationBlocks);
 }
+RealtimeTelemetry::~RealtimeTelemetry() noexcept = default;
 
 bool RealtimeTelemetry::beginRealtimeBlock(uint32_t bufferFrames, uint32_t sampleRate) noexcept {
   diagnostics_.recordCallback(bufferFrames, sampleRate);
@@ -29,6 +36,9 @@ void RealtimeTelemetry::reportUnderrunFromRealtime() noexcept {
 }
 
 bool RealtimeTelemetry::publishFromRealtime(const RealtimeTelemetrySnapshot& snapshot) noexcept {
+  if (!snapshots_) {
+    return false;
+  }
   const uint64_t writeIndex = write_index_.load(std::memory_order_relaxed);
   const uint64_t readIndex = read_index_.load(std::memory_order_acquire);
   const uint64_t sequence = next_sequence_;
@@ -50,6 +60,9 @@ bool RealtimeTelemetry::publishFromRealtime(const RealtimeTelemetrySnapshot& sna
 }
 
 bool RealtimeTelemetry::tryRead(RealtimeTelemetrySnapshot& snapshot) noexcept {
+  if (!snapshots_) {
+    return false;
+  }
   const uint64_t readIndex = read_index_.load(std::memory_order_relaxed);
   const uint64_t writeIndex = write_index_.load(std::memory_order_acquire);
   if (readIndex == writeIndex) {
@@ -74,7 +87,9 @@ uint64_t RealtimeTelemetry::droppedSnapshotCount() const noexcept {
 }
 
 size_t RealtimeTelemetry::pendingSnapshotCount() const noexcept {
-  return detail::observeBoundedPending(read_index_, write_index_, kRealtimeTelemetryCapacity);
+  return snapshots_
+             ? detail::observeBoundedPending(read_index_, write_index_, kRealtimeTelemetryCapacity)
+             : 0;
 }
 
 } // namespace orpheus

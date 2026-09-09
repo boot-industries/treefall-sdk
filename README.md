@@ -39,12 +39,11 @@ ctest --test-dir build --output-on-failure
 
 **Next Steps:**
 
-- **Review current contract guidance:** See the tracked headers, `ARCHITECTURE.md`,
-  and `docs/SUPPORT_MATRIX.md`. Historical ORP records are local, ignored
-  engineering records and are not required for a public checkout.
-- **Review suite qualification:** Historical qualification records remain local
-  provenance only; the active support posture is maintained in
-  `docs/SUPPORT_MATRIX.md`.
+- **Review current contracts:** [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
+  [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) define the active platform, capability,
+  and realtime posture.
+- **Historical qualification records:** ORP qualification and handoff records
+  remain local provenance only and are intentionally not part of the public checkout.
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
 
@@ -123,9 +122,10 @@ to another endpoint. During an active route, listeners close the render gate
 and a control worker verifies the physical devices and format. A refused rate
 restore, endpoint loss, or format change stops rendering; the driver never
 silently changes an endpoint or rate.
-See the tracked `ARCHITECTURE.md` and `docs/SUPPORT_MATRIX.md` for active
-contracts and support posture. The referenced route-compatibility handoff is a
-local ORP engineering record, intentionally not linked from the public README.
+See the tracked `ARCHITECTURE.md`, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md),
+and [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) for active contracts and support
+posture. The referenced route-compatibility handoff is a local ORP engineering
+record, intentionally not linked from the public README.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
@@ -229,14 +229,16 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 
 **Features:** 7 new APIs, 23 new data structures, 165+ new tests
 **Documentation:** Active guidance is maintained in the public headers,
-`ARCHITECTURE.md`, and `docs/SUPPORT_MATRIX.md`; local ORP records remain
-explicitly non-public provenance.
+`ARCHITECTURE.md`, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md), and
+[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); local ORP records remain explicitly
+non-public provenance.
 
 ---
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
-**Current contracts:** See the public headers and `docs/SUPPORT_MATRIX.md`;
-release notes remain in [`CHANGELOG.md`](CHANGELOG.md).
+**Current contracts:** See the public headers, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md),
+and [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); release notes remain in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ### Directional endpoint discovery and playback routing
 
