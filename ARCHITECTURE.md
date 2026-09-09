@@ -296,8 +296,8 @@ The `apps/` directory contains **in-tree development apps only**:
 **Production applications are external consumers** that vendor this SDK as a
 git submodule and bump the pin to pick up SDK changes:
 
-- **Clip Composer** ([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer))
-- **FourTrack** (`chrislyons/fourtrack`)
+- **Clip Composer** ([`boot-industries/clip-composer`](https://github.com/boot-industries/clip-composer))
+- **FourTrack** (`boot-industries/fourtrack`)
 - **FreqFinder** (`~/dev/freqfinder`)
 
 ### Orpheus Clip Composer (OCC) — external repo
@@ -786,7 +786,7 @@ Treefall SDK has been extended with 7 major features for professional workflows:
 
 ### Application Documentation
 
-- [Clip Composer repo](https://github.com/chrislyons/clip-composer) – application source, OCC docs, and release history (external)
+- [Clip Composer repo](https://github.com/boot-industries/clip-composer) – application source, OCC docs, and release history (external)
 
 ### Developer Tools
 

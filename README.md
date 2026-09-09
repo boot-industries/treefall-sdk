@@ -20,7 +20,7 @@ value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 
 ```bash
 # Clone repository
-git clone https://github.com/chrislyons/treefall-sdk.git
+git clone https://github.com/boot-industries/treefall-sdk.git
 cd treefall-sdk
 
 # Build SDK (Debug with AddressSanitizer)
@@ -500,7 +500,7 @@ claude-code
 #### Clip Composer Instance (Application Development)
 
 **Clip Composer is an external downstream repository** —
-[`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
+[`boot-industries/clip-composer`](https://github.com/boot-industries/clip-composer)
 (local checkout: `~/dev/clip-composer`). It consumes this SDK as a git
 submodule at `third_party/orpheus-sdk`. The former in-tree
 `apps/clip-composer/` subdirectory was archived on 2026-07-09; the archival
@@ -580,7 +580,7 @@ The Treefall SDK provides the foundation for a family of professional audio appl
 
 **Professional soundboard for broadcast, theater, and live performance**
 
-- **Repo:** [`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
+- **Repo:** [`boot-industries/clip-composer`](https://github.com/boot-industries/clip-composer)
   — a standalone downstream repository that consumes this SDK as a git
   submodule (`third_party/orpheus-sdk`). Extracted from this repo's former
   `apps/clip-composer/` subdirectory on 2026-07-09 (archival record retained as
@@ -595,7 +595,7 @@ The Treefall SDK provides the foundation for a family of professional audio appl
 
 **Portastudio-style multitrack recorder for macOS/iOS**
 
-- **Repo:** `chrislyons/fourtrack` (local: `~/dev/fourtrack`) — consumes this
+- **Repo:** `boot-industries/fourtrack` (local: `~/dev/fourtrack`) — consumes this
   SDK as a git submodule; exercises the SDK's host-neutral routing matrix,
   readers, CoreAudio directional input capture, capture telemetry, and
   allocation-free trigger voice.
@@ -631,7 +631,7 @@ Historical ORP files use the workspace PREFIX convention but remain ignored
 local records rather than shipped documentation.
 
 **OCC Docs (Clip Composer):** live in the external Clip Composer repo
-([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer),
+([`boot-industries/clip-composer`](https://github.com/boot-industries/clip-composer),
 `docs/occ/`) — not in this repository.
 
 Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` — see the workspace `AGENTS.md` for full conventions.
@@ -642,7 +642,7 @@ Documentation follows workspace pattern `docs/<prefix>/<PREFIX><NUM>.(md|mdx)` �
 - [`ROADMAP.md`](ROADMAP.md) – planned milestones and long-term initiatives.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) – design considerations for the modular
   core.
-- [Clip Composer repo](https://github.com/chrislyons/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
+- [Clip Composer repo](https://github.com/boot-industries/clip-composer) – Orpheus Clip Composer application + OCC documentation (external)
 - [`AGENTS.md`](AGENTS.md) – coding assistant and repository workflow guidelines
 
 ## Contributing

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chrislyons/orpheus-sdk/suite/orpheus-suite.schema.json",
+  "$id": "https://github.com/boot-industries/treefall-sdk/suite/orpheus-suite.schema.json",
   "title": "Orpheus Suite Manifest",
   "description": "Versioned source, dependency, provenance, verification, and release contract for the Orpheus Suite.",
   "type": "object",

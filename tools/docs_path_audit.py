@@ -6,7 +6,7 @@ Keeps the ORP133 documentation truth pass from rotting. Fails on:
 
 1. Internal markdown links in LIVE docs that point at nonexistent paths.
 2. References to ``apps/clip-composer`` — the app was extracted to the
-   external ``chrislyons/clip-composer`` repository (ORP131). Historical
+   external ``boot-industries/clip-composer`` repository (ORP131). Historical
    mentions are allowed only when the same line clearly labels them as such
    (``former``/``archiv``/``extracted``/``ORP131``).
 3. References to CMake options that do not exist in the root CMakeLists.txt
@@ -170,7 +170,7 @@ def check_patterns(doc: Path, valid_tokens: set[str]) -> list[Violation]:
                     lineno,
                     "extracted-app-path",
                     "apps/clip-composer is external (ORP131); label historical mentions "
-                    "as former/archived or point at chrislyons/clip-composer",
+                    "as former/archived or point at boot-industries/clip-composer",
                 )
             )
         for token in CMAKE_OPTION_RE.findall(line):

@@ -90,7 +90,7 @@ future applications requiring sample-accurate, low-latency performance.
 
 - See `docs/orp/` for the ORP068/ORP069/ORP070 integration and enhancement plans
 - OCC specifications (OCC027/OCC029/OCC030) live in the external Clip Composer
-  repo (`chrislyons/clip-composer`, `docs/occ/`)
+  repo (`boot-industries/clip-composer`, `docs/occ/`)
 
 ## Milestone M3 – Feature Expansion
 
@@ -172,5 +172,5 @@ downstream consumer is asking:
 - `docs/orp/ORP132` – SDK Hardening & Platform Roadmap master index
   (ORP133 NOW / ORP134 NEXT / ORP135 LATER / ORP136 verification)
 - Clip Composer design documentation (OCC021/OCC026/OCC029, progress reports)
-  lives in the external Clip Composer repo (`chrislyons/clip-composer`,
+  lives in the external Clip Composer repo (`boot-industries/clip-composer`,
   `docs/occ/`)

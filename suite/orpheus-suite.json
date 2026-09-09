@@ -56,9 +56,9 @@
       "id": "orpheus-sdk",
       "path": "orpheus-sdk",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/treefall-sdk.git",
+        "fetch_url": "https://github.com/boot-industries/treefall-sdk.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/treefall-sdk.git",
+        "push_url": "https://github.com/boot-industries/treefall-sdk.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -154,7 +154,7 @@
       "id": "shmui",
       "path": "shmui",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/shmui.git",
+        "fetch_url": "https://github.com/boot-industries/shmui.git",
         "fetch_remote": "origin",
         "push_url": null,
         "push_remote": null
@@ -246,9 +246,9 @@
       "id": "fourtrack",
       "path": "fourtrack",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/fourtrack.git",
+        "fetch_url": "https://github.com/boot-industries/fourtrack.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/fourtrack.git",
+        "push_url": "https://github.com/boot-industries/fourtrack.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -347,9 +347,9 @@
       "id": "freqfinder",
       "path": "freqfinder",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/freqfinder.git",
+        "fetch_url": "https://github.com/boot-industries/freqfinder.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/freqfinder.git",
+        "push_url": "https://github.com/boot-industries/freqfinder.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -406,9 +406,9 @@
       "id": "clip-composer",
       "path": "clip-composer",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/clip-composer.git",
+        "fetch_url": "https://github.com/boot-industries/clip-composer.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/clip-composer.git",
+        "push_url": "https://github.com/boot-industries/clip-composer.git",
         "push_remote": "origin"
       },
       "default_branch": "main",

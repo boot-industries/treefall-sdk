@@ -642,7 +642,7 @@ jobs:
   # See docs/DECISION_PACKAGES.md for rationale (C++ SDK focus)
   #
   # NOTE: Clip Composer application tests removed — the app was extracted to its
-  # own repository (github.com/chrislyons/clip-composer) on 2026-07-09 and now
+  # own repository (github.com/boot-industries/clip-composer) on 2026-07-09 and now
   # consumes the SDK as a submodule. Its CI lives in that repo. See ORP131.
   # ============================================================================
 
