@@ -65,15 +65,19 @@ public:
     return m_call_count.load(std::memory_order_acquire);
   }
 
-  bool waitForCall(std::chrono::milliseconds timeout) const {
+  bool waitForCallCount(int minimum, std::chrono::milliseconds timeout) const {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (getCallCount() == 0) {
+    while (getCallCount() < minimum) {
       if (std::chrono::steady_clock::now() >= deadline) {
         return false;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return true;
+  }
+
+  bool waitForCall(std::chrono::milliseconds timeout) const {
+    return waitForCallCount(1, timeout);
   }
 
   void resetCallCount() {
@@ -385,8 +389,7 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteSupports256FrameBuffers) {
   const uint32_t actual_frames = m_driver->getActiveRoute().actual_buffer_frames;
   ASSERT_GT(actual_frames, 0u);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-  ASSERT_TRUE(m_callback->waitForCall(std::chrono::seconds(2)))
-      << "Audio callback never fired";
+  ASSERT_TRUE(m_callback->waitForCall(std::chrono::seconds(2))) << "Audio callback never fired";
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
   EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
 }
@@ -427,11 +430,10 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
-  // Wait for a few callbacks (512 frames @ 48kHz = ~10.7ms per callback)
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  // Should have been called multiple times
-  EXPECT_GT(m_callback->getCallCount(), 5);
+  // Require sustained callback progress while tolerating hosted-runner startup
+  // latency. Six 512-frame callbacks represent about 64 ms at 48 kHz.
+  ASSERT_TRUE(m_callback->waitForCallCount(6, std::chrono::seconds(2)))
+      << "Audio callback stalled after " << m_callback->getCallCount() << " calls";
 
   // Verify callback parameters
   EXPECT_EQ(m_callback->getLastNumChannels(), config.num_outputs);
