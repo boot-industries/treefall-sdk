@@ -37,10 +37,12 @@ FourTrack imported and played a disposable track, opened all six theme/mode
 configurations, and passed named built-in microphone/speaker CoreAudio acceptance.
 Native pixel capture remains unavailable. Hosted run 34390244873 showed the
 whole-thread syscall trace included CPU-topology reads and a malloc-arena
-`mmap` from `std::thread` startup before the measured callback window. The gate
-now attaches to the published consumer TID after startup and before
-`processAudio`; hosted confirmation of that trace boundary and the callback
-wait remain unresolved. Domain/manual deployment remains unresolved; local
+`mmap` from `std::thread` startup before the measured callback window. Hosted
+ptrace policy also rejected late attachment to the consumer. The gate now uses
+parent-mode tracing and validates only the region between explicit consumer
+markers surrounding the atomic phase coordination and `processAudio` calls.
+Hosted confirmation of that trace boundary and the callback wait remain
+unresolved. Domain/manual deployment remains unresolved; local
 capture initialization is closed on the named route.
 
 Suite validation and affected closure pass. Status/doctor report drift from the
