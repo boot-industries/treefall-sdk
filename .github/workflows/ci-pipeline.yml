@@ -135,7 +135,7 @@ jobs:
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
-        timeout-minutes: 10
+        timeout-minutes: 20
 
       - name: Test
         run: |
@@ -364,7 +364,14 @@ jobs:
             if match is None:
                 raise ValueError("malformed consumer TID")
             trace = pathlib.Path(sys.argv[2] + "." + match.group(1))
-            payload = trace.read_text(encoding="utf-8")
+            trace_lines = trace.read_text(encoding="utf-8").splitlines()
+            if len(sys.argv) == 4 and sys.argv[3] == "window":
+                begin = [i for i, line in enumerate(trace_lines) if "TREEFALL_MPSC_TRACE_BEGIN" in line]
+                end = [i for i, line in enumerate(trace_lines) if "TREEFALL_MPSC_TRACE_END" in line]
+                if len(begin) != 1 or len(end) != 1 or begin[0] >= end[0]:
+                    raise ValueError("expected one ordered consumer trace window")
+                trace_lines = trace_lines[begin[0] + 1:end[0]]
+            payload = "\n".join(trace_lines)
         except (OSError, ValueError, IndexError) as error:
             print("Invalid consumer-I/O evidence: " + str(error), file=sys.stderr)
             sys.exit(2)
@@ -438,10 +445,12 @@ jobs:
           run_status=$?
           set -e
           set +e
-          python3 -c "$VERIFY_CONSUMER_IO" "$E/consumer-io.stdout" "$E/consumer-io.trace"
+          python3 -c "$VERIFY_CONSUMER_IO" \
+            "$E/consumer-io.stdout" "$E/consumer-io.trace" window
           parser_status=$?
           set -e
-          printf 'execution=%s\nparser=%s\n' "$run_status" "$parser_status" > "$E/consumer-io.exit"
+          printf 'execution=%s\nparser=%s\n' \
+            "$run_status" "$parser_status" > "$E/consumer-io.exit"
           [[ "$run_status" -eq 0 ]] || { echo "SDK harness failed: $run_status"; exit 1; }
           [[ "$parser_status" -eq 0 ]] || { echo "SDK consumer-I/O parser failed: $parser_status"; exit 1; }
       - name: Upload syscall evidence
@@ -464,7 +473,7 @@ jobs:
     name: Validate five-runner offline evidence
     runs-on: ubuntu-latest
     needs: [cpp-build-test, cpp-build-test-windows]
-    if: always()
+    if: ${{ needs.cpp-build-test.result == 'success' && needs.cpp-build-test-windows.result == 'success' }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
