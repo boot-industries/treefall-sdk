@@ -61,11 +61,11 @@ public:
     m_active_clip_count.store(count, std::memory_order_relaxed);
   }
 
-  int getCallCount() const {
+  size_t getCallCount() const {
     return m_call_count.load(std::memory_order_acquire);
   }
 
-  bool waitForCallCount(int minimum, std::chrono::milliseconds timeout) const {
+  bool waitForCallCount(size_t minimum, std::chrono::milliseconds timeout) const {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (getCallCount() < minimum) {
       if (std::chrono::steady_clock::now() >= deadline) {
@@ -112,7 +112,7 @@ public:
   }
 
 private:
-  std::atomic<int> m_call_count{0};
+  std::atomic<size_t> m_call_count{0};
   std::atomic<uint64_t> m_total_frames{0};
   std::atomic<uint32_t> m_active_clip_count{0};
   std::atomic<size_t> m_last_num_channels{0};
