@@ -37,6 +37,8 @@ ORPHEUS_API AudioFileCapabilities getAudioFileCapabilities() noexcept;
 /// FLAC) -> InvalidParameter; absent provider -> NotReady; backend refusal ->
 /// InvalidParameter; acceptance -> OK. Opening a destination may still fail
 /// with InternalError independently of successful preflight.
+/// With libsndfile present, FLAC rates above its encoder limit of 655350 Hz
+/// are refused before destination creation; WAV/AIFF retain backend validation.
 ORPHEUS_API SessionGraphError preflightAudioFileWrite(const AudioFileWriterConfig& config) noexcept;
 /// Background/control-only header probe; does not decode, hash, or create media.
 /// Successful metadata has an empty file_hash_sha256; unknown bit depth is zero.

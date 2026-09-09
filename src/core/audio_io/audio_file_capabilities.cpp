@@ -123,6 +123,9 @@ SessionGraphError preflightAudioFileWrite(const AudioFileWriterConfig& config) n
     return SessionGraphError::InvalidParameter;
   }
 #if defined(ORPHEUS_AUDIO_FILE_CAPABILITIES_HAVE_SNDFILE)
+  // sf_format_check accepts rates that the FLAC encoder cannot initialize.
+  if (config.format == AudioFileFormat::FLAC && config.sample_rate > 655350)
+    return SessionGraphError::InvalidParameter;
   SF_INFO info{};
   info.samplerate = static_cast<int>(config.sample_rate);
   info.channels = config.num_channels;
