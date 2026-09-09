@@ -56,9 +56,9 @@
       "id": "orpheus-sdk",
       "path": "orpheus-sdk",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/orpheus-sdk.git",
+        "fetch_url": "https://github.com/chrislyons/treefall-sdk.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/orpheus-sdk.git",
+        "push_url": "https://github.com/chrislyons/treefall-sdk.git",
         "push_remote": "origin"
       },
       "default_branch": "main",

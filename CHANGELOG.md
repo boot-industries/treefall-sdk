@@ -1068,7 +1068,6 @@ None. v1.0 is fully backward compatible with v0.x.
 **Support:**
 
 - Documentation: `docs/`
-- Issues: https://github.com/yourusername/orpheus-sdk/issues
-- Discussions: https://github.com/yourusername/orpheus-sdk/discussions
+- Issues: https://github.com/chrislyons/treefall-sdk/issues
 
 **License:** MIT
