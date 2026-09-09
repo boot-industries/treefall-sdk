@@ -428,21 +428,60 @@ jobs:
         run: |
           set -euo pipefail
           E="$PWD/build-io/evidence"
-          set +e
-          timeout 300s strace -ff -qq -e signal=none \
-            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
-            -o "$E/consumer-io.trace" \
+          trace_gate="$E/consumer-io.start"
+          rm -f "$trace_gate"
+          TREEFALL_MPSC_TRACE_GATE="$trace_gate" \
             build-io/tests/transport/realtime_harness_test \
             --gtest_filter=RealtimeHarnessTest.ConcurrentIngressAt96k64DoesNoIo \
-            > "$E/consumer-io.stdout" 2> "$E/consumer-io.stderr"
-          run_status=$?
-          set -e
+            > "$E/consumer-io.stdout" 2> "$E/consumer-io.stderr" &
+          test_pid=$!
+          tid=""
+          for _ in $(seq 1 3000); do
+            tid="$(sed -n 's/^MPSC_CONSUMER_TID=//p' "$E/consumer-io.stdout")"
+            [[ -n "$tid" ]] && break
+            kill -0 "$test_pid" 2>/dev/null || break
+            sleep 0.01
+          done
+          [[ -n "$tid" ]] || {
+            wait "$test_pid" || true
+            echo "SDK harness did not publish a consumer TID"
+            exit 1
+          }
+          strace -qq -e signal=none \
+            -e trace=%file,%network,%desc,%ipc,io_uring_setup,io_uring_enter,io_uring_register \
+            -o "$E/consumer-io.trace.$tid" -p "$tid" &
+          trace_pid=$!
+          attached=false
+          for _ in $(seq 1 3000); do
+            tracer_pid="$(sed -n 's/^TracerPid:[[:space:]]*//p' "/proc/$tid/status" 2>/dev/null || true)"
+            if [[ "$tracer_pid" == "$trace_pid" ]]; then
+              attached=true
+              break
+            fi
+            kill -0 "$trace_pid" 2>/dev/null || break
+            sleep 0.01
+          done
+          if [[ "$attached" != true ]]; then
+            touch "$trace_gate"
+            wait "$test_pid" || true
+            wait "$trace_pid" || true
+            echo "strace did not attach to consumer $tid"
+            exit 1
+          fi
+          touch "$trace_gate"
           set +e
+          wait "$test_pid"
+          run_status=$?
+          wait "$trace_pid"
+          trace_status=$?
           python3 -c "$VERIFY_CONSUMER_IO" "$E/consumer-io.stdout" "$E/consumer-io.trace"
           parser_status=$?
           set -e
-          printf 'execution=%s\nparser=%s\n' "$run_status" "$parser_status" > "$E/consumer-io.exit"
+          rm -f "$trace_gate"
+          printf 'execution=%s\ntrace=%s\nparser=%s\n' \
+            "$run_status" "$trace_status" "$parser_status" > "$E/consumer-io.exit"
           [[ "$run_status" -eq 0 ]] || { echo "SDK harness failed: $run_status"; exit 1; }
+          [[ "$trace_status" -eq 0 ]] || { echo "strace failed: $trace_status"; exit 1; }
           [[ "$parser_status" -eq 0 ]] || { echo "SDK consumer-I/O parser failed: $parser_status"; exit 1; }
       - name: Upload syscall evidence
         if: always()

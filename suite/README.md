@@ -35,9 +35,13 @@ encountered a device initialization rejection, so hosted confirmation remains re
 Clip Composer exercised one shared button-0 transport through grid and Clip Edit.
 FourTrack imported and played a disposable track, opened all six theme/mode
 configurations, and passed named built-in microphone/speaker CoreAudio acceptance.
-Native pixel capture remains unavailable. Domain/manual deployment, hosted Linux
-syscall attribution, and hosted confirmation of the callback-wait correction
-remain unresolved; local capture initialization is closed on the named route.
+Native pixel capture remains unavailable. Hosted run 34390244873 showed the
+whole-thread syscall trace included CPU-topology reads and a malloc-arena
+`mmap` from `std::thread` startup before the measured callback window. The gate
+now attaches to the published consumer TID after startup and before
+`processAudio`; hosted confirmation of that trace boundary and the callback
+wait remain unresolved. Domain/manual deployment remains unresolved; local
+capture initialization is closed on the named route.
 
 Suite validation and affected closure pass. Status/doctor report drift from the
 unchanged historical development snapshot; observation refuses the controller's
