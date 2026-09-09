@@ -35,6 +35,11 @@ Project documentation index for orpheus-sdk.
   command-page ownership, loop-anchor transitions, and source-scoped
   consumption-aware streaming primes (2026-09-07)
 
+- [[ORP259 Headless Linux ALSA and Robotics Wedge]] — gated first Linux
+  provider, headless asset linter, and optional ROS 2 adapter plan; discovery
+  and device-backed acceptance prerequisites remain open (reconstructed
+  2026-09-09)
+
 - [[ORP253 CoreAudio Output-Only Rate Recovery]] — output-only CoreAudio
   rate policy, safe nominal writes, SRC fallback, and verified-rate stream
   convergence (2026-08-31)
@@ -79,6 +84,7 @@ Project documentation index for orpheus-sdk.
 - [ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation](ORP254%20Suite%20Commercialization,%20Rebrand%20Strategy,%20and%20Tier%20Segmentation.md)
 - [ORP253 CoreAudio Output-Only Rate Recovery](ORP253%20CoreAudio%20Output-Only%20Rate%20Recovery.md)
 - [ORP258 Streaming Prefetch Realtime Sustain Fix](ORP258%20Streaming%20Prefetch%20Realtime%20Sustain%20Fix.md)
+- [ORP259 Headless Linux ALSA and Robotics Wedge](ORP259%20Headless%20Linux%20ALSA%20and%20Robotics%20Wedge.md)
 - [ORP252 Tagged Start Settlement Contract](ORP252%20Tagged%20Start%20Settlement%20Contract.md)
 - [ORP251 CoreAudio AudioOutputUnitStart Status Telemetry](ORP251%20CoreAudio%20AudioOutputUnitStart%20Status%20Telemetry.md)
 - [ORP257 Host-Neutral Multichannel Metering Contract](ORP257%20Host-Neutral%20Multichannel%20Metering%20Contract.md)
