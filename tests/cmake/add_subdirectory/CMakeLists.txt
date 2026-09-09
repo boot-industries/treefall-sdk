@@ -26,6 +26,18 @@ set(ORP_ENABLE_UBSAN OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${ORPHEUS_SDK_SOURCE_DIR} ${CMAKE_BINARY_DIR}/orpheus_sdk_build)
 
+if(NOT DEFINED TREEFALL_DISCOVERY_MODE OR TREEFALL_DISCOVERY_MODE STREQUAL "legacy")
+  set(consumer_namespaces Orpheus)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "treefall")
+  set(consumer_namespaces Treefall)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "legacy-first")
+  set(consumer_namespaces Orpheus Treefall)
+elseif(TREEFALL_DISCOVERY_MODE STREQUAL "treefall-first")
+  set(consumer_namespaces Treefall Orpheus)
+else()
+  message(FATAL_ERROR "Unknown source consumption mode: ${TREEFALL_DISCOVERY_MODE}")
+endif()
+
 # The five modules FourTrack links must all be reachable as aliases when the SDK
 # is added as a subdirectory (ORP127 downstream-consumer requirement).
 foreach(_tgt Orpheus::transport Orpheus::routing Orpheus::audio_utils Orpheus::diagnostics)
@@ -35,9 +47,26 @@ foreach(_tgt Orpheus::transport Orpheus::routing Orpheus::audio_utils Orpheus::d
 endforeach()
 
 add_executable(orpheus_add_subdirectory_smoke main.cpp)
-target_link_libraries(orpheus_add_subdirectory_smoke
-  PRIVATE
-    Orpheus::transport
-    Orpheus::routing
-    Orpheus::audio_utils
-    Orpheus::audio_io)
+foreach(consumer_namespace IN LISTS consumer_namespaces)
+  target_link_libraries(orpheus_add_subdirectory_smoke PRIVATE
+    ${consumer_namespace}::transport ${consumer_namespace}::routing
+    ${consumer_namespace}::audio_utils ${consumer_namespace}::audio_io)
+endforeach()
+if(WIN32)
+  foreach(runtime_target
+      orpheus_session orpheus_clipgrid orpheus_render)
+    if(TARGET ${runtime_target})
+      get_target_property(runtime_type ${runtime_target} TYPE)
+      if(runtime_type STREQUAL "SHARED_LIBRARY")
+        add_custom_command(TARGET orpheus_add_subdirectory_smoke POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                  $<TARGET_RUNTIME_DLLS:orpheus_add_subdirectory_smoke>
+                  $<TARGET_FILE:${runtime_target}>
+                  $<TARGET_FILE_DIR:orpheus_add_subdirectory_smoke>
+          COMMAND_EXPAND_LISTS)
+      endif()
+    endif()
+  endforeach()
+endif()
+enable_testing()
+add_test(NAME source_consumer_runtime COMMAND orpheus_add_subdirectory_smoke)

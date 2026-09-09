@@ -28,10 +28,6 @@ public:
   AudioFileMetadata metadata() const override;
 
 private:
-  /// Map (container, sample format) to a libsndfile format word.
-  /// Returns 0 for unsupported combinations.
-  static int sndfileFormatFor(AudioFileFormat format, AudioSampleFormat sampleFormat);
-
   // File state
   SNDFILE* m_file;
   SF_INFO m_info;

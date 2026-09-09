@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "audio_file_writer_libsndfile.h"
-
+#include "audio_file_format.h"
 #include <cstring>
+#include <orpheus/audio_file_capabilities.h>
 
 namespace orpheus {
 
@@ -12,46 +13,6 @@ AudioFileWriterLibsndfile::AudioFileWriterLibsndfile() : m_file(nullptr) {
 AudioFileWriterLibsndfile::~AudioFileWriterLibsndfile() {
   close();
 }
-
-int AudioFileWriterLibsndfile::sndfileFormatFor(AudioFileFormat format,
-                                                AudioSampleFormat sampleFormat) {
-  int major = 0;
-  switch (format) {
-  case AudioFileFormat::WAV:
-    major = SF_FORMAT_WAV;
-    break;
-  case AudioFileFormat::AIFF:
-    major = SF_FORMAT_AIFF;
-    break;
-  case AudioFileFormat::FLAC:
-    major = SF_FORMAT_FLAC;
-    break;
-  default:
-    return 0; // Unsupported container
-  }
-
-  int sub = 0;
-  switch (sampleFormat) {
-  case AudioSampleFormat::Int16:
-    sub = SF_FORMAT_PCM_16;
-    break;
-  case AudioSampleFormat::Int24:
-    sub = SF_FORMAT_PCM_24;
-    break;
-  case AudioSampleFormat::Float32:
-    // FLAC is integer-only; float subformat is invalid there.
-    if (format == AudioFileFormat::FLAC) {
-      return 0;
-    }
-    sub = SF_FORMAT_FLOAT;
-    break;
-  default:
-    return 0;
-  }
-
-  return major | sub;
-}
-
 SessionGraphError AudioFileWriterLibsndfile::open(const std::string& file_path,
                                                   const AudioFileWriterConfig& config) {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -62,32 +23,16 @@ SessionGraphError AudioFileWriterLibsndfile::open(const std::string& file_path,
     m_file = nullptr;
     m_is_open.store(false, std::memory_order_release);
   }
-
-  if (file_path.empty() || config.sample_rate == 0 || config.num_channels == 0) {
+  if (file_path.empty())
     return SessionGraphError::InvalidParameter;
-  }
-
-  // Distinguish "unsupported container" from "invalid combination".
-  const bool containerSupported = config.format == AudioFileFormat::WAV ||
-                                  config.format == AudioFileFormat::AIFF ||
-                                  config.format == AudioFileFormat::FLAC;
-  if (!containerSupported) {
-    return SessionGraphError::NotSupported;
-  }
-
-  const int sfFormat = sndfileFormatFor(config.format, config.sample_format);
-  if (sfFormat == 0) {
-    return SessionGraphError::InvalidParameter; // e.g. FLAC + Float32
-  }
+  const auto preflight = preflightAudioFileWrite(config);
+  if (preflight != SessionGraphError::OK)
+    return preflight;
 
   std::memset(&m_info, 0, sizeof(m_info));
   m_info.samplerate = static_cast<int>(config.sample_rate);
   m_info.channels = static_cast<int>(config.num_channels);
-  m_info.format = sfFormat;
-
-  if (!sf_format_check(&m_info)) {
-    return SessionGraphError::InvalidParameter;
-  }
+  m_info.format = sndfileFormatFor(config.format, config.sample_format);
 
   m_file = sf_open(file_path.c_str(), SFM_WRITE, &m_info);
   if (!m_file) {

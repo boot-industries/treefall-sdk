@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "orpheus/errors.h"
+#include "treefall/errors.h"
 
 #include <atomic>
 #include <string>
@@ -59,6 +59,19 @@ void orpheus_set_telemetry_callback(orpheus_telemetry_callback callback, void* u
 }
 
 } // extern "C"
+
+extern "C" TREEFALL_API const char* treefall_status_to_string(treefall_status status) {
+  return orpheus_status_to_string(status);
+}
+
+extern "C" TREEFALL_API void treefall_set_logger(treefall_log_callback callback, void* user_data) {
+  orpheus_set_logger(callback, user_data);
+}
+
+extern "C" TREEFALL_API void treefall_set_telemetry_callback(treefall_telemetry_callback callback,
+                                                             void* user_data) {
+  orpheus_set_telemetry_callback(callback, user_data);
+}
 
 namespace orpheus {
 

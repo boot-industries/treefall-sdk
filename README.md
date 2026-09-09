@@ -1,10 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Orpheus SDK
+# Treefall SDK
 
 **Professional audio SDK for broadcast, live performance, and DAW applications**
 
-Orpheus is a host-neutral C++20 SDK that provides deterministic session/transport control, sample-accurate clip playback, and real-time audio infrastructure. Built for 24/7 broadcast reliability with zero-allocation audio threads and lock-free command processing.
+Treefall is the public product identity for this host-neutral C++20 SDK. The
+repository, native libraries, executable names, and canonical `orpheus` C++
+namespace remain compatible with existing consumers. Treefall provides
+deterministic session/transport control, sample-accurate clip playback, and
+real-time audio infrastructure.
 
 **Current version:** 0.9.0 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
 value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
@@ -12,7 +16,7 @@ value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 
 ## ⚡ Quick Start
 
-**New to Orpheus SDK?** Get up and running in under 5 minutes:
+**New to Treefall SDK?** Get up and running in under 5 minutes:
 
 ```bash
 # Clone repository
@@ -36,12 +40,28 @@ ctest --test-dir build --output-on-failure
 **Next Steps:**
 
 - **Review current contracts:** [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
-  [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) define the public support and
-  realtime posture.
+  [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) define the active platform, capability,
+  and realtime posture.
 - **Historical qualification records:** ORP qualification and handoff records
-  remain local-only and are intentionally not part of the public checkout.
+  remain local provenance only and are intentionally not part of the public checkout.
 - **View Changelog:** See [`CHANGELOG.md`](CHANGELOG.md)
 
+
+## Compatibility names
+
+The installed package is available as both `TreefallSDK` and `OrpheusSDK`, and
+both discovery paths expose the same underlying libraries. New integrations may
+use `Treefall::` targets, `include/treefall/...` forwarding headers, and
+`treefall` as the C++ namespace alias. Existing `Orpheus::` targets,
+`include/orpheus/...` headers, and the `orpheus` namespace remain supported.
+
+The C ABI remains version 1.0. Treefall C typedefs, `TREEFALL_*` macros, and
+`treefall_*` ABI/error/logger/telemetry wrappers are additive entry points over
+the existing tables and state; old `orpheus_*` names and layouts remain
+available. An appended C++ virtual extension preserves source compatibility for
+recompiled implementations, but every C++ consumer and subclass must be
+rebuilt against the matching headers. No legacy surface has a removal date;
+removal requires a separately approved major migration.
 
 ## Lightweight Integration Targets
 
@@ -49,15 +69,23 @@ For downstream integrations that only need diagnostics or audio utilities, link 
 thin targets instead of the full session/transport stack:
 
 ```cmake
+find_package(TreefallSDK CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Treefall::diagnostics Treefall::audio_utils)
+```
+
+The legacy spelling remains equivalent:
+
+```cmake
 find_package(OrpheusSDK CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 ```
 
-- `Orpheus::diagnostics` exposes `performance_monitor.h` and `loudness_meter.h`. Use
+- `Treefall::diagnostics` (also `Orpheus::diagnostics`) exposes
+  `performance_monitor.h` and `loudness_meter.h`. Use
   `createStandalonePerformanceMonitor()` when no `SessionGraph` is involved.
-- `Orpheus::audio_utils` exposes file I/O and format-conversion helpers plus
-  `trigger_voice.h`, the allocation-free one-shot voice utility used by
-  host-owned sequencers and generated tracks.
+- `Treefall::audio_utils` (also `Orpheus::audio_utils`) exposes file I/O and
+  format-conversion helpers plus `trigger_voice.h`, the allocation-free one-shot
+  voice utility used by host-owned sequencers and generated tracks.
 
 ## CoreAudio Route Reliability
 
@@ -94,10 +122,10 @@ to another endpoint. During an active route, listeners close the render gate
 and a control worker verifies the physical devices and format. A refused rate
 restore, endpoint loss, or format change stops rendering; the driver never
 silently changes an endpoint or rate.
-
-See the [support matrix](docs/SUPPORT_MATRIX.md) and
-[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) for the current non-mutating
-route-compatibility probe and CoreAudio route-state handoff.
+See the tracked `ARCHITECTURE.md`, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md),
+and [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md) for active contracts and support
+posture. The referenced route-compatibility handoff is a local ORP engineering
+record, intentionally not linked from the public README.
 
 Windows/WASAPI is not yet a release-supported backend. The implementation is
 present, but hosted Windows package/ABI proof and a real-device acceptance
@@ -119,7 +147,7 @@ artifact remain required; see the [support posture in `AGENTS.md`](AGENTS.md#sou
 - [Demo Workflows](#demo-workflows)
   - [Standalone Demo Host](#standalone-demo-host)
   - [Render a Click Track](#render-a-click-track)
-- [Applications Built on Orpheus SDK](#applications-built-on-orpheus-sdk)
+- [Applications Built on Treefall SDK](#applications-built-on-treefall-sdk)
 - [Tooling & Quality](#tooling--quality)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
@@ -200,15 +228,16 @@ routing->setClipOutputBus(clipHandle, 2);  // Route to channels 5-6
 ```
 
 **Features:** 7 new APIs, 23 new data structures, 165+ new tests
-**Documentation:** Current public contracts are described in
-[`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
-[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md).
+**Documentation:** Active guidance is maintained in the public headers,
+`ARCHITECTURE.md`, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md), and
+[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); local ORP records remain explicitly
+non-public provenance.
 
 ---
 
 **See:** [`CHANGELOG.md`](CHANGELOG.md) for full release notes
-**Current contracts:** See [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md) and
-[`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); release notes remain in
+**Current contracts:** See the public headers, [`SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md),
+and [`REALTIME_AUDIT.md`](docs/REALTIME_AUDIT.md); release notes remain in
 [`CHANGELOG.md`](CHANGELOG.md).
 
 ### Directional endpoint discovery and playback routing
@@ -255,7 +284,7 @@ must not perform realtime work.
 
 ## Overview
 
-The Orpheus SDK provides deterministic session/transport control for professional audio applications. Built for broadcast and live performance with 24/7 reliability.
+The Treefall SDK provides deterministic session/transport control for professional audio applications. Built for broadcast and live performance with 24/7 reliability.
 
 **Key Design Principles:**
 
@@ -284,7 +313,13 @@ The Orpheus SDK provides deterministic session/transport control for professiona
   producer paths never enter installed exports.
 - **Platform drivers** – CoreAudio (supported), Dummy (supported); WASAPI and
   Linux device backends are not yet release-supported
-- **Dummy driver** – Testing and offline rendering
+- **Offline render-to-disk** – Call public transport `processAudio` synchronously,
+  then interleave/write after each call returns. The
+  [installed offline recipe](examples/offline_renderer/README.md) uses no device,
+  sleeps, or callback-time file I/O.
+- **Codec preflight** – Query SDK format policy and exact writer tuples before
+  allocating media objects; separately probe actual file headers on a background thread.
+- **Dummy driver** – Timed device-loop simulation for testing, not the offline seam.
 - **Device selection** – Direction-specific stable input/output IDs; persistent
   CoreAudio DeviceUIDs and owned duplex aggregates (ORP155)
 - **Capture and rate diagnostics** – Factory-visible saturating input-render
@@ -390,13 +425,14 @@ configuration:
 - **Real-time audio infrastructure** (M2 modules, enabled by default):
 
   ```sh
-  # Disable if you only need offline rendering
-  cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=OFF
+  # Required for the public transport-to-disk offline recipe as well as playback
+  cmake -S . -B build -DORPHEUS_ENABLE_REALTIME=ON
   ```
 
   Includes:
   - `orpheus_transport` – Lock-free transport controller for clip playback
-  - `orpheus_audio_io` – Audio file reader and dummy driver (requires libsndfile)
+  - `orpheus_audio_utils` – Audio analysis and file I/O (file I/O requires libsndfile)
+  - `orpheus_audio_io` – Host-neutral audio I/O and Dummy driver
 
   **Install libsndfile:** `brew install libsndfile` (macOS) or `vcpkg install libsndfile` (Windows)
 
@@ -459,7 +495,7 @@ claude-code
 - Transport, routing, session management
 - SDK-level tests and benchmarks
 - Cross-platform compatibility
-- Documentation in `docs/orp/`
+- Documentation in tracked public guidance (`ARCHITECTURE.md`, `docs/`); local ORP records are not required.
 
 #### Clip Composer Instance (Application Development)
 
@@ -467,8 +503,8 @@ claude-code
 [`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
 (local checkout: `~/dev/clip-composer`). It consumes this SDK as a git
 submodule at `third_party/orpheus-sdk`. The former in-tree
-`apps/clip-composer/` subdirectory was archived on 2026-07-09 (see
-`docs/orp/ORP131`).
+`apps/clip-composer/` subdirectory was archived on 2026-07-09; the archival
+record is local provenance only.
 
 **Use the Clip Composer repo for:**
 
@@ -536,9 +572,9 @@ To experiment with `clang-tidy` locally, configure a build with
 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and invoke `clang-tidy -p build` (or the
 LLVM `run-clang-tidy.py` helper) on the files you want to inspect.
 
-## Applications Built on Orpheus SDK
+## Applications Built on Treefall SDK
 
-The Orpheus SDK provides the foundation for a family of professional audio applications:
+The Treefall SDK provides the foundation for a family of professional audio applications:
 
 ### Orpheus Clip Composer (OCC) — external repo
 
@@ -547,8 +583,8 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 - **Repo:** [`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer)
   — a standalone downstream repository that consumes this SDK as a git
   submodule (`third_party/orpheus-sdk`). Extracted from this repo's former
-  `apps/clip-composer/` subdirectory on 2026-07-09 (archival report:
-  `docs/orp/ORP131`).
+  `apps/clip-composer/` subdirectory on 2026-07-09 (archival record retained as
+  local provenance).
 - **Features:** Clip triggering (384 buttons, 960-slot capacity), waveform editing, multi-channel routing, operator modes, cue-bus audition
 - **Market:** Broadcast playout, theater sound design, live performance
 - **Documentation:** `docs/occ/` in the Clip Composer repo (not here)
@@ -588,13 +624,11 @@ The Orpheus SDK provides the foundation for a family of professional audio appli
 **ORP Docs (SDK):**
 **PREFIX:** ORP
 **Next Doc:** ORP138
-**Location:** `docs/orp/`
-
-**Discovery command:**
-
-```bash
-ls -1 docs/orp/ | sort
-```
+**Local ORP records:** The SDK maintains ignored engineering records for
+historical planning and handoff provenance. They are not public documentation
+links and are not required to build or consume the SDK.
+Historical ORP files use the workspace PREFIX convention but remain ignored
+local records rather than shipped documentation.
 
 **OCC Docs (Clip Composer):** live in the external Clip Composer repo
 ([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer),

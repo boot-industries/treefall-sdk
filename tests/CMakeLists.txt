@@ -207,6 +207,7 @@ add_test(NAME cmake_find_package
     -Dbuild_type=$<CONFIG>
     -Dsource_dir=${FIND_PACKAGE_SOURCE_DIR}
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}
+    -Drun_discovery_matrix=ON
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 
 set(PACKAGE_RUNTIME_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/package_runtime_consumer)
@@ -221,6 +222,7 @@ add_test(NAME cmake_package_runtime_consumer
     -Dbuild_type=$<CONFIG>
     -Dsource_dir=${PACKAGE_RUNTIME_SOURCE_DIR}
     -Dbinary_dir=${PACKAGE_RUNTIME_BINARY_DIR}
+    -Drun_discovery_matrix=ON
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 
 if(PROJECT_VERSION_MAJOR EQUAL 0 AND PROJECT_VERSION_MINOR GREATER 0)
@@ -242,6 +244,19 @@ if(PROJECT_VERSION_MAJOR EQUAL 0 AND PROJECT_VERSION_MINOR GREATER 0)
       -Dbinary_dir=${PACKAGE_REJECTION_BINARY_DIR}
       -Dexpect_configure_failure=ON
       -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
+  add_test(NAME cmake_treefall_package_rejects_previous_minor
+    COMMAND ${CMAKE_COMMAND}
+      -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+      -Dinstall_prefix=${PACKAGE_REJECTION_INSTALL_DIR}-treefall
+      -Drequired_version=${PREVIOUS_MINOR_VERSION}
+      -Dbuild_type=$<CONFIG>
+      -Dsource_dir=${PACKAGE_RUNTIME_SOURCE_DIR}
+      -Dbinary_dir=${PACKAGE_REJECTION_BINARY_DIR}-treefall
+      -Dpackage_name=TreefallSDK
+      -Dexpect_configure_failure=ON
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
+  set_tests_properties(cmake_treefall_package_rejects_previous_minor
+    PROPERTIES LABELS "extended;package")
 endif()
 set(RETIRED_ENUM_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/cmake/retired_enum_rejection)
 set(RETIRED_ENUM_BINARY_DIR ${CMAKE_BINARY_DIR}/tests/retired_enum_rejection_build)
@@ -283,6 +298,7 @@ add_test(NAME cmake_add_subdirectory
     -Dsource_dir=${ADD_SUBDIR_SOURCE_DIR}
     -Dbinary_dir=${ADD_SUBDIR_BINARY_DIR}
     -Dsdk_source_dir=${CMAKE_SOURCE_DIR}
+    -Drun_discovery_matrix=ON
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_add_subdirectory.cmake)
 
 # ORP157: build the optional ShmUI package with its intended JUCE dependency,

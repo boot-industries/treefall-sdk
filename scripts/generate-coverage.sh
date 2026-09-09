@@ -1,6 +1,6 @@
 #!/bin/bash
-# Generate code coverage reports for Orpheus SDK tests
-# Part of ORP077 Task 3.1: Improve Test Reporting
+# Generate code coverage reports for Treefall SDK tests
+# Historical task label retained for traceability: ORP077 Task 3.1: Improve Test Reporting
 
 set -e
 
@@ -10,7 +10,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== Orpheus SDK Code Coverage Report Generator ===${NC}"
+echo -e "${GREEN}=== Treefall SDK Code Coverage Report Generator ===${NC}"
 echo ""
 
 # Check dependencies
@@ -76,7 +76,7 @@ echo ""
 echo -e "${YELLOW}Step 5: Generate HTML report${NC}"
 genhtml coverage_filtered.info \
         --output-directory "${COVERAGE_DIR}" \
-        --title "Orpheus SDK Code Coverage" \
+        --title "Treefall SDK Code Coverage" \
         --legend \
         --show-details \
         --rc branch_coverage=1 \

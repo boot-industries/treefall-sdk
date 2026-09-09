@@ -2,7 +2,7 @@
 
 **Purpose:** Demonstrates soundboard-style playback with multiple simultaneous clips
 
-This example shows how to use the Orpheus SDK for real-time multi-clip triggering, similar to professional soundboard applications like SpotOn, QLab, or Clip Composer.
+This example shows how to use the Treefall SDK for real-time multi-clip triggering, similar to professional soundboard applications like SpotOn, QLab, or Clip Composer.
 
 ## Features Demonstrated
 
@@ -117,7 +117,7 @@ Layer loops and samples to sketch musical ideas.
 
 ### Multi-Clip Mixing
 
-The Orpheus SDK automatically mixes all playing clips:
+The Treefall SDK automatically mixes all playing clips:
 
 ```cpp
 // All clips are mixed together by the transport
@@ -126,26 +126,23 @@ transport->startClip(clip2_handle, 0);  // Start second clip (mixed with first)
 transport->startClip(clip3_handle, 0);  // Start third clip (mixed with both)
 ```
 
-No manual mixing code needed - the SDK handles it!
+No manual mixing code is needed - the SDK handles it.
 
 ### Sample Rate Handling
 
 Different audio files may have different sample rates:
 
 ```cpp
-// Find highest sample rate across all clips
-uint32_t max_sample_rate = 48000;
-for (auto& file : audio_files) {
-  if (file.sample_rate > max_sample_rate) {
-    max_sample_rate = file.sample_rate;
-  }
+uint32_t maxSampleRate = 48000;
+for (const auto& file : audio_files) {
+  maxSampleRate = std::max(maxSampleRate, file.sample_rate);
 }
 
-// Configure transport with max sample rate
-config.sample_rate = max_sample_rate;
+treefall::TransportConfig config{
+    .sampleRate = maxSampleRate, .outputChannels = 2, .maxBlockFrames = 512};
 ```
 
-**Note:** Current SDK version (M2) doesn't resample - all clips must match transport sample rate. Future versions will add automatic resampling.
+**Note:** All clips must match the transport sample rate.
 
 ### Stop All Clips (Panic Button)
 
@@ -187,10 +184,9 @@ This is **sample-accurate** and **instant** - no fade-outs or delays.
 - No clip groups or routing
 - Simple blocking console I/O (not ideal for real-time)
 
-For advanced features (routing, gain, fades, looping), see the **Orpheus Clip Composer** application.
 
 ## Troubleshooting
-
+For advanced features (routing, gain, fades, looping), see the **Orpheus Clip Composer** application.
 **Problem: "Failed to load <file>"**
 
 - Check file exists and path is correct
@@ -241,11 +237,11 @@ The example follows this pattern:
 **For more examples:**
 
 - `simple_player` - Basic single-clip playback
-- `offline_renderer` - Non-real-time rendering to WAV files
+- `../offline_renderer/README.md` - Installed public-API offline rendering recipe (no executable)
 
 **For production-ready soundboard:**
 
-- [Orpheus Clip Composer](../../apps/clip-composer/) - Professional soundboard with 960 clips, routing, GUI
+- [Orpheus Clip Composer](https://github.com/chrislyons/clip-composer) - Professional soundboard with 960 clips, routing, GUI
 
 **For SDK documentation:**
 

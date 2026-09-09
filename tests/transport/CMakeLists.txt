@@ -36,12 +36,12 @@ target_link_libraries(clip_dsp_test
 )
 add_test(NAME clip_dsp_test COMMAND clip_dsp_test)
 
-# ORP133 G3: debug-build single-producer contract assertion (death test)
-add_executable(command_producer_assert_test
-    command_producer_assert_test.cpp
+# Bounded multi-producer command-ingress regressions (D3).
+add_executable(command_ingress_test
+    command_ingress_test.cpp
 )
 
-target_link_libraries(command_producer_assert_test
+target_link_libraries(command_ingress_test
     PRIVATE
         orpheus_transport
         orpheus_audio_io
@@ -49,16 +49,17 @@ target_link_libraries(command_producer_assert_test
         GTest::gtest
 )
 
-target_include_directories(command_producer_assert_test
+target_include_directories(command_ingress_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/core
 )
 
 add_test(
-    NAME command_producer_assert_test
-    COMMAND command_producer_assert_test
+    NAME command_ingress_test
+    COMMAND command_ingress_test
 )
+set_tests_properties(command_ingress_test PROPERTIES LABELS "fast;unit")
 
 # Fade processing tests
 add_executable(fade_processing_test
