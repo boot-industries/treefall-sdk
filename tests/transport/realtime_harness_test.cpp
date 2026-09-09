@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -289,9 +290,9 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
   EXPECT_EQ(RtGuardState::allocViolations(), 0u);
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 }
-// D3/H prepared-only ingress boundary.  The consumer contains only the
-// guarded processAudio call; all barriers, joins, observations and reporting
-// remain outside RtSection.
+// D3/H prepared-only ingress boundary. The Linux syscall gate attaches after
+// std::thread startup so the measured consumer window contains only the atomic
+// phase coordination and guarded processAudio calls.
 TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   constexpr size_t kProducers = 8;
   constexpr size_t kFrames = 64;
@@ -320,7 +321,7 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   std::atomic<bool> start{false};
   std::atomic<bool> done{false};
 #if defined(__linux__)
-  long consumerTid = 0;
+  std::atomic<long> consumerTid{0};
 #endif
   RtGuardState::reset();
   std::thread pump([&] {
@@ -331,7 +332,7 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   });
   std::thread consumer([&] {
 #if defined(__linux__)
-    consumerTid = static_cast<long>(::syscall(SYS_gettid));
+    consumerTid.store(static_cast<long>(::syscall(SYS_gettid)), std::memory_order_release);
 #endif
     ready.fetch_add(1, std::memory_order_release);
     while (!start.load(std::memory_order_acquire)) {
@@ -417,6 +418,23 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
     });
   while (ready.load(std::memory_order_acquire) != kProducers + 1) {
   }
+#if defined(__linux__)
+  const char* traceGate = std::getenv("TREEFALL_MPSC_TRACE_GATE");
+  bool traceGateTimedOut = false;
+  if (traceGate != nullptr) {
+    while (consumerTid.load(std::memory_order_acquire) <= 0) {
+    }
+    std::cout << "MPSC_CONSUMER_TID=" << consumerTid.load(std::memory_order_acquire) << std::endl;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (!std::filesystem::exists(traceGate)) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        traceGateTimedOut = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+#endif
   start.store(true, std::memory_order_release);
   for (auto& producer : producers)
     producer.join();
@@ -436,8 +454,9 @@ TEST_F(RealtimeHarnessTest, ConcurrentIngressAt96k64DoesNoIo) {
   EXPECT_EQ(RtGuardState::allocViolations(), 0u);
   EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 #if defined(__linux__)
-  ASSERT_GT(consumerTid, 0);
-  std::cout << "MPSC_CONSUMER_TID=" << consumerTid << '\n';
+  EXPECT_FALSE(traceGateTimedOut) << "Timed out waiting for the syscall tracer";
+  if (traceGate == nullptr)
+    std::cout << "MPSC_CONSUMER_TID=" << consumerTid.load(std::memory_order_acquire) << '\n';
 #endif
 }
 
