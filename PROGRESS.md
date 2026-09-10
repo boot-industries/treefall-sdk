@@ -1,5 +1,48 @@
 # Progress
 
+## Suite synchronization and temporal correctness — 2026-09-10
+
+Shared change `ORP-SUITE-20260910-001` uses published runtime baseline
+`ca949b2e0af63346d92bb6f2a51ac3c746c2745b` and governed ShmUI source
+`f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6`, token contract `0.6.0`.
+The existing SDK mirror passes unchanged. Consumer pins/provenance and suite
+remote/hash metadata are synchronized on local working branches; the original
+dirty Clip Composer checkout is preserved, with its update isolated.
+Publication, original Clip Composer integration and a new reachable suite
+snapshot remain separate from this local handoff.
+
+Observed verification:
+
+- SDK clean-prefix package, realtime audit, docs audit, ShmUI manifest and suite
+  manifest gates: 5/5 passed (11.84 s).
+- Suite quick checks: 5/5 passed. ShmUI token/Swift consumer and registry closure
+  passed; registry closure covered 56 items and 66 files.
+- FourTrack: exact Swift provenance passed, SwiftUI/bridge/core rebuilt,
+  333/333 CTest cases passed (17.61 s). Mock CLI four/eight-track record/bounce
+  smoke each produced 2,048 samples at 48 kHz.
+- FreqFinder: Release Standalone/AU/VST3 built and CTest passed 1/1 (1.66 s);
+  Debug CTest passed 1/1 (12.15 s). Debug VST3 manifest helper still fails
+  because ASan is loaded too late, including with the suggested runtime
+  environment on the outer build.
+- Clip Composer's isolated full build and CTest passed 747 tests, zero failed,
+  one intentional CPU-performance skip (748 entries, 335.56 s). Its original
+  staged/unstaged meter checkout remains untouched and not integrated.
+
+Reconnaissance and digital-metering research are recorded in ORP255 §9.
+The canonical public `ARCHITECTURE.md` temporal contract and all five active
+repository guides now make phase integrity, continuously coherent visuals and
+demand-driven resource use joint release gates. Existing sample-accurate locks,
+`AudioProcessBlock` timestamps, and directional latency validity are foundations
+to extend, not replace.
+
+A compiled telemetry experiment confirmed first publication at callback 8
+(85.333 ms of 48 kHz/512-frame audio), 64 queued snapshots and one drop after
+520 callbacks without a consumer. Per-block publication already works
+(10.667 ms); the current snapshot occupies 18,808 bytes on this arm64 build.
+This demonstrates publication behavior, not physical screen latency.
+No timing implementation, audible-to-photon measurement, thermal qualification,
+Windows backend promotion, or phase-coherence regression claim is made here.
+
 ## Windows CI baseline repair — 2026-09-02
 
 **Status:** Implementation committed on `fix/windows-ci-baseline`; hosted rerun
