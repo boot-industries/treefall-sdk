@@ -22,11 +22,11 @@ public:
   void componentMovedOrResized(bool, bool) override {}
 
   void componentPeerChanged() override {
-    m_owner.updateTimerState();
+    m_owner.updateDisplaySync();
   }
 
   void componentVisibilityChanged() override {
-    m_owner.updateTimerState();
+    m_owner.updateDisplaySync();
   }
 
 private:
@@ -46,7 +46,6 @@ LevelMeter::LevelMeter(int numChannels)
     m_peakHoldTimes[i] = 0;
     m_clipped[i] = false;
     m_peakRmsNeedleDb[i] = m_minDB;
-    m_peakRmsNeedleTimes[i] = 0;
   }
 
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
@@ -54,12 +53,13 @@ LevelMeter::LevelMeter(int numChannels)
   setBallistics(MeterBallistics::Peak);
   addDefaultThemeListener(this);
   m_showingStateWatcher = std::make_unique<ShowingStateWatcher>(*this);
-  updateTimerState();
+  updateDisplaySync();
 }
 
 LevelMeter::~LevelMeter() {
+  cancelPendingUpdate();
   m_showingStateWatcher.reset();
-  stopTimer();
+  m_displaySync = {};
   removeDefaultThemeListener(this);
 }
 
@@ -138,16 +138,25 @@ void LevelMeter::reset() {
   if (!requireMessageThread())
     return;
 
+  if (m_pendingClipMask != 0) {
+    juce::Component::SafePointer<LevelMeter> safeThis(this);
+    handleAsyncUpdate();
+    if (safeThis == nullptr)
+      return;
+  }
+
   for (int i = 0; i < m_numChannels; ++i) {
     m_inputLevelPairs[static_cast<size_t>(i)].store(packLevelPair({}), std::memory_order_relaxed);
+    m_paintedLevelPairs[static_cast<size_t>(i)] = packLevelPair({});
     m_displayLevels[static_cast<size_t>(i)] = 0.0f;
     m_displayRmsLevels[static_cast<size_t>(i)] = 0.0f;
     m_peakHolds[static_cast<size_t>(i)] = 0.0f;
     m_peakHoldTimes[static_cast<size_t>(i)] = 0;
     m_clipped[static_cast<size_t>(i)] = false;
     m_peakRmsNeedleDb[static_cast<size_t>(i)] = m_minDB;
-    m_peakRmsNeedleTimes[static_cast<size_t>(i)] = 0;
   }
+  m_lastMeterUpdateMs = 0.0;
+  m_animationActive = false;
   repaint();
 }
 
@@ -155,8 +164,10 @@ void LevelMeter::reset() {
 void LevelMeter::setNumChannels(int numChannels) {
   if (!requireMessageThread())
     return;
-  m_numChannels = juce::jlimit(1, MAX_CHANNELS, numChannels);
+  juce::Component::SafePointer<LevelMeter> safeThis(this);
   reset();
+  if (safeThis != nullptr)
+    m_numChannels = juce::jlimit(1, MAX_CHANNELS, numChannels);
 }
 
 void LevelMeter::setBallistics(MeterBallistics ballistics) {
@@ -267,6 +278,11 @@ void LevelMeter::sanitizeStyle() {
 void LevelMeter::clearClip() {
   if (!requireMessageThread())
     return;
+  // Deliver a latched crossing before clearing permits another one.
+  juce::Component::SafePointer<LevelMeter> safeThis(this);
+  handleAsyncUpdate();
+  if (safeThis == nullptr)
+    return;
   for (int i = 0; i < m_numChannels; ++i)
     m_clipped[static_cast<size_t>(i)] = false;
   repaint();
@@ -329,12 +345,29 @@ void LevelMeter::setEventTag(uint32_t tag) {
     m_eventTag = tag;
 }
 
-void LevelMeter::recordEvent(int channel, float peakDb) {
-  LevelEvent ev;
-  ev.timestampMs = juce::Time::currentTimeMillis();
-  ev.channel = channel;
-  ev.peakDb = peakDb;
-  ev.tag = m_eventTag;
+void LevelMeter::handleAsyncUpdate() {
+  cancelPendingUpdate();
+  const auto pending = m_pendingClipMask;
+  if (pending == 0)
+    return;
+  const auto events = m_pendingClipEvents;
+  m_pendingClipMask = 0;
+  juce::Component::SafePointer<LevelMeter> safeThis(this);
+  for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
+    if ((pending & (uint32_t{1} << ch)) == 0)
+      continue;
+    if (onClip) {
+      onClip(ch);
+      if (safeThis == nullptr)
+        return;
+    }
+    recordEvent(events[static_cast<size_t>(ch)]);
+    if (safeThis == nullptr)
+      return;
+  }
+}
+
+void LevelMeter::recordEvent(const LevelEvent& ev) {
 
   if (!m_history.empty()) {
     m_history[static_cast<size_t>(m_historyHead)] = ev;
@@ -352,6 +385,10 @@ void LevelMeter::recordEvent(int channel, float peakDb) {
 
 //==============================================================================
 void LevelMeter::paint(juce::Graphics& g) {
+  // Latch at the actual draw, not an earlier timer tick. A publication arriving
+  // after the repaint request still belongs in this frame.
+  updateMeter();
+
   auto bounds = getLocalBounds().toFloat();
 
   // Background
@@ -414,40 +451,55 @@ void LevelMeter::mouseDown(const juce::MouseEvent& e) {
 }
 
 //==============================================================================
-void LevelMeter::timerCallback() {
+void LevelMeter::repaintIfNeeded() {
+  if (m_animationActive) {
+    repaint();
+    return;
+  }
+  for (int ch = 0; ch < m_numChannels; ++ch) {
+    const auto index = static_cast<size_t>(ch);
+    if (m_inputLevelPairs[index].load(std::memory_order_relaxed) != m_paintedLevelPairs[index] ||
+        (m_style.showPeakHold && m_peakHolds[index] > m_displayLevels[index] &&
+         juce::Time::getMillisecondCounterHiRes() - m_peakHoldTimes[index] > m_peakHoldTimeMs)) {
+      repaint();
+      return;
+    }
+  }
+}
+
+void LevelMeter::updateDisplaySync() {
   if (!requireMessageThread())
     return;
   if (!isShowing()) {
-    updateTimerState();
-    return;
+    m_displaySync = {};
+    m_lastMeterUpdateMs = 0.0;
+  } else if (m_displaySync.isEmpty()) {
+    m_displaySync = juce::VBlankAttachment(this, [this](double) { repaintIfNeeded(); });
   }
-
-  juce::Component::SafePointer<LevelMeter> safeThis(this);
-  updateMeter();
-  if (safeThis == nullptr)
-    return;
-  repaint();
-}
-
-void LevelMeter::updateTimerState() {
-  if (!requireMessageThread())
-    return;
-  if (isShowing())
-    startTimerHz(60);
-  else
-    stopTimer();
 }
 
 void LevelMeter::updateMeter() {
-  const int64_t currentTime = juce::Time::currentTimeMillis();
+  const double currentTime = juce::Time::getMillisecondCounterHiRes();
+  const bool firstUpdate = m_lastMeterUpdateMs == 0.0;
+  const double elapsed = firstUpdate ? 0.0 : currentTime - m_lastMeterUpdateMs;
+  m_lastMeterUpdateMs = currentTime;
+  m_animationActive = false;
+  const float elapsedTicks =
+      firstUpdate ? 1.0f : static_cast<float>(juce::jlimit(0.0, 15.0, elapsed * 60.0 / 1000.0));
+  const auto timeAdjustedCoefficient = [elapsedTicks](float coefficient) {
+    return coefficient >= 1.0f ? 1.0f : 1.0f - std::pow(1.0f - coefficient, elapsedTicks);
+  };
 
   for (int ch = 0; ch < m_numChannels; ++ch) {
-    const auto pair =
-        unpackLevelPair(m_inputLevelPairs[static_cast<size_t>(ch)].load(std::memory_order_relaxed));
+    const auto index = static_cast<size_t>(ch);
+    const auto packed = m_inputLevelPairs[index].load(std::memory_order_relaxed);
+    m_paintedLevelPairs[index] = packed;
+    const auto pair = unpackLevelPair(packed);
     const float inputNorm = linearToNormalized(pair.peak);
     const float rmsNorm = linearToNormalized(pair.rms);
     m_displayRmsLevels[static_cast<size_t>(ch)] = rmsNorm;
     float& displayLevel = m_displayLevels[static_cast<size_t>(ch)];
+    const float previousLevel = displayLevel;
 
     if (m_ballistics == MeterBallistics::PeakRms) {
       // The segmented fill is intentionally unsmoothed. The separate needle
@@ -455,28 +507,34 @@ void LevelMeter::updateMeter() {
       displayLevel = inputNorm;
 
       float& needleDb = m_peakRmsNeedleDb[static_cast<size_t>(ch)];
-      int64_t& needleTime = m_peakRmsNeedleTimes[static_cast<size_t>(ch)];
-      const int64_t elapsed = currentTime - needleTime;
-      if (needleTime == 0 || elapsed <= 0 || elapsed >= 250) {
-        // A first timer tick or a suspended UI clock only seeds timing. It
-        // must not synthesize a release across an arbitrary gap.
-        needleTime = currentTime;
-      } else {
-        const float peakDb = normalizedToDB(inputNorm);
-        const float rmsDb = normalizedToDB(rmsNorm);
-        if (peakDb > needleDb) {
-          needleDb = peakDb;
-        } else {
-          needleDb = juce::jmax(rmsDb, needleDb - m_style.peakRmsNeedleReleaseDbPerSecond *
-                                                      static_cast<float>(elapsed) / 1000.0f);
-        }
-        needleTime = currentTime;
+      const float peakDb = normalizedToDB(inputNorm);
+      const float rmsDb = normalizedToDB(rmsNorm);
+      if (peakDb >= needleDb) {
+        needleDb = peakDb;
+      } else if (elapsed > 0.0 && elapsed < 250.0) {
+        // Do not invent release motion across suspension, or let a steady
+        // peak alternate between decay and re-attack on successive frames.
+        needleDb = juce::jmax(peakDb, rmsDb,
+                              needleDb - m_style.peakRmsNeedleReleaseDbPerSecond *
+                                             static_cast<float>(elapsed) / 1000.0f);
       }
       needleDb = juce::jlimit(m_minDB, m_maxDB, std::isfinite(needleDb) ? needleDb : m_minDB);
-    } else {
-      const float coeff = inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff;
+      m_animationActive |= m_style.showPeakRmsNeedle && needleDb > peakDb;
+    } else if (inputNorm != displayLevel) {
+      const float coeff =
+          timeAdjustedCoefficient(inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff);
       displayLevel = juce::jlimit(0.0f, 1.0f, displayLevel + (inputNorm - displayLevel) * coeff);
+      // Terminate at float precision instead of repainting forever at rest.
+      if (std::abs(displayLevel - inputNorm) <= 1.0e-6f)
+        displayLevel = inputNorm;
+      m_animationActive |= displayLevel != inputNorm;
     }
+
+    // A stable meter need not repaint. Start hold expiry when it actually
+    // falls, rather than treating the last unchanged paint as the end of the
+    // peak.
+    if (m_peakHolds[index] == previousLevel && displayLevel < previousLevel)
+      m_peakHoldTimes[index] = currentTime;
 
     if (displayLevel >= m_peakHolds[static_cast<size_t>(ch)]) {
       m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
@@ -488,20 +546,17 @@ void LevelMeter::updateMeter() {
     const float clipThreshNorm = dbToNormalized(m_style.clipThreshold);
     if (inputNorm >= clipThreshNorm && !m_clipped[static_cast<size_t>(ch)]) {
       m_clipped[static_cast<size_t>(ch)] = true;
-      if (onClip) {
-        juce::Component::SafePointer<LevelMeter> safeThis(this);
-        onClip(ch);
-        if (safeThis == nullptr)
-          return;
-      }
-      {
-        juce::Component::SafePointer<LevelMeter> safeThis(this);
-        recordEvent(ch, normalizedToDB(inputNorm));
-        if (safeThis == nullptr)
-          return;
+      // User callbacks can destroy the component. Keep them outside JUCE's
+      // paint stack, but retain the crossing's time and tag, not delivery time.
+      if (onClip || onLevelEvent || !m_history.empty()) {
+        m_pendingClipEvents[index] = {juce::Time::currentTimeMillis(), ch,
+                                      normalizedToDB(inputNorm), m_eventTag};
+        m_pendingClipMask |= uint32_t{1} << ch;
       }
     }
   }
+  if (m_pendingClipMask != 0)
+    triggerAsyncUpdate();
 }
 
 float LevelMeter::linearToNormalized(float linear) const {
