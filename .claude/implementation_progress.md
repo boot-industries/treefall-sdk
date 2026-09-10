@@ -1580,3 +1580,16 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
 - Fixed `tools/docs_path_audit.py` to normalize `Path.relative_to(root)` with `.as_posix()` before applying historical-path filters. Local audit passed.
 - Pushed `914d49e5` (`fix(ci): normalize documentation audit paths`). GitHub Actions run `34422712595` passed all native builds/tests, lint, syscall evidence, TSan evidence, offline evidence aggregation, and the required CI status check. The prior cancelled run was superseded by this successful run.
 - No historical `docs/orp/` records were read or modified. No SDK runtime behavior or dependency pins changed.
+
+## 2026-09-10 Branch resolution
+
+- Pruned 23 stale local branches and 21 merged remote branches while exempting
+  every `safety/*` ref.
+- Removed three clean worktrees attached to merged branches. Preserved the
+  PR #238 controller worktree because it contains an unrelated modified
+  `AGENTS.md`.
+- Created and pushed
+  `safety/2026-09-10-treefall-frontend-green` at `b8c8b875`.
+- Recorded all unresolved local and remote branches, unique commit counts,
+  linked worktrees, and active pull requests in
+  `docs/ORP/ORP262 Branch Resolution and Outstanding Work Register.md`.

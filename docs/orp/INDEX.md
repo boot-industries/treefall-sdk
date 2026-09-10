@@ -8,6 +8,10 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP262 Branch Resolution and Outstanding Work Register]] —
+  pruned merged local and remote branches, preserved exempt safety refs, and
+  inventoried unresolved branches and active pull requests (2026-09-10)
+
 - [[ORP260 SDK Main Reconciliation and Local ORP Preservation]] —
   merged renamed remote main while preserving local commits and local-only
   ORP records (2026-09-09)
@@ -82,6 +86,8 @@ Project documentation index for orpheus-sdk.
   handling contract
 
 ## Records
+
+- [ORP262 Branch Resolution and Outstanding Work Register](ORP262%20Branch%20Resolution%20and%20Outstanding%20Work%20Register.md)
 
 - [ORP260 SDK Main Reconciliation and Local ORP Preservation](ORP260%20SDK%20Main%20Reconciliation%20and%20Local%20ORP%20Preservation.md)
 
