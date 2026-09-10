@@ -4,7 +4,7 @@
   "suite_id": "orpheus-suite",
   "suite_version": "0.1.0",
   "release_channel": "development",
-  "manifest_revision": "2026-09-09",
+  "manifest_revision": "2026-09-10",
   "workspace": {
     "root_environment": "ORPHEUS_SUITE_WORKSPACE",
     "default_root": "..",
@@ -56,9 +56,9 @@
       "id": "orpheus-sdk",
       "path": "orpheus-sdk",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/treefall-sdk.git",
+        "fetch_url": "https://github.com/boot-industries/treefall-sdk.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/treefall-sdk.git",
+        "push_url": "https://github.com/boot-industries/treefall-sdk.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -82,10 +82,10 @@
           "exclude_paths": [
             "shmui-juce-import.json"
           ],
-          "expected_sha256": "482e6b5c01d7e749b9a09dfb6ade310c329ae5f53e66b060625b8a83c9a18751",
+          "expected_sha256": "d0caa5f0daaa2324eae5c2c977e7c68fee7384f2b5eb836a08534f128370e3f3",
           "source_repository": "shmui",
-          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
-          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
+          "current_source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
           "source_paths": [
             "juce/Source",
             "juce/CMakeLists.txt"
@@ -154,7 +154,7 @@
       "id": "shmui",
       "path": "shmui",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/shmui.git",
+        "fetch_url": "https://github.com/boot-industries/shmui.git",
         "fetch_remote": "origin",
         "push_url": null,
         "push_remote": null
@@ -177,7 +177,7 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "af404565143f6bb59b380ca10a79cd8fce5ebaf8d762730cf6f88a70f06f075c",
           "source_repository": "shmui",
-          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -246,9 +246,9 @@
       "id": "fourtrack",
       "path": "fourtrack",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/fourtrack.git",
+        "fetch_url": "https://github.com/boot-industries/fourtrack.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/fourtrack.git",
+        "push_url": "https://github.com/boot-industries/fourtrack.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -267,7 +267,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
+          "revision": "ca949b2e0af63346d92bb6f2a51ac3c746c2745b"
         }
       ],
       "external_pins": [
@@ -286,8 +286,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "86385b412bfcc28d38a8d0fbbbbd2d98d69f6a138af864644dc7d2dcd14ff3a8",
           "source_repository": "shmui",
-          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
-          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
+          "current_source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
           "source_paths": [
             "juce/Source",
             "apps/www/styles/orpheus-tokens.css"
@@ -299,8 +299,8 @@
           "hash_type": "sha256-file-v1",
           "expected_sha256": "f067569b9bb80f0c210b1f629e458ba1817ea4806c05bf08284bcbe4538c3592",
           "source_repository": "shmui",
-          "source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
-          "current_source_revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd",
+          "source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
+          "current_source_revision": "f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6",
           "source_paths": [
             "apps/www/styles/orpheus-tokens.css"
           ]
@@ -347,9 +347,9 @@
       "id": "freqfinder",
       "path": "freqfinder",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/freqfinder.git",
+        "fetch_url": "https://github.com/boot-industries/freqfinder.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/freqfinder.git",
+        "push_url": "https://github.com/boot-industries/freqfinder.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -369,7 +369,7 @@
           "kind": "cmake-source-override",
           "config": "ORPHEUS_SDK_SOURCE_DIR",
           "workspace_path": "orpheus-sdk",
-          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
+          "revision": "ca949b2e0af63346d92bb6f2a51ac3c746c2745b"
         },
         {
           "dependency": "shmui",
@@ -377,7 +377,7 @@
           "config": "SHMUI_JUCE_SOURCE_DIR",
           "workspace_path": "shmui",
           "configured_path": "shmui/juce",
-          "revision": "e48e7129b148d9ac09bf84cd47c5744c657372dd"
+          "revision": "1e8f6de2849258f71f3184b239bec1d0222738ae"
         }
       ],
       "verification": [
@@ -406,9 +406,9 @@
       "id": "clip-composer",
       "path": "clip-composer",
       "remote": {
-        "fetch_url": "https://github.com/chrislyons/clip-composer.git",
+        "fetch_url": "https://github.com/boot-industries/clip-composer.git",
         "fetch_remote": "origin",
-        "push_url": "https://github.com/chrislyons/clip-composer.git",
+        "push_url": "https://github.com/boot-industries/clip-composer.git",
         "push_remote": "origin"
       },
       "default_branch": "main",
@@ -427,7 +427,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "0238eac1721d820d16ba5390e0e4641391be1d59"
+          "revision": "ca949b2e0af63346d92bb6f2a51ac3c746c2745b"
         }
       ],
       "verification": [
