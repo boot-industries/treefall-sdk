@@ -36,6 +36,12 @@ Measured on this M2 workstation:
   paint-safe destruction regressions. SDK multichannel and diagnostics tests
   passed 10/10 each. Realtime harness passed 11 cases with the Linux `/proc`
   file-I/O case skipped on macOS.
+- The release deadline fixture now distinguishes DSP execution cost from shared
+  runner preemption. It enforces maximum per-thread CPU time plus wall-clock p99
+  against the callback deadline and still reports wall-clock maximum. The local
+  Release check passed sample-peak at 4,922 us maximum thread CPU / 2,500.29 us
+  wall p99 and true-peak at 3,340 us maximum thread CPU / 3,351.38 us wall p99,
+  against a 10,666.67 us deadline.
 
 Final SDK verification: `cmake --build build --parallel 6` and the complete
 configured CTest suite passed **82/82** in **205.13 s**, including clean-prefix
