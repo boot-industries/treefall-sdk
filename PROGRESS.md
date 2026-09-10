@@ -5,11 +5,11 @@
 Corrected the actual number flow, rather than requiring downstream timer
 workarounds. Default telemetry now publishes each completed callback instead
 of every eighth. Governed ShmUI source
-`dd418a5540408f081d4bd54ea52122ada98f8f11` late-latches meter pairs in `paint()`,
+`5502863957ce7d59f04a76b3808eac8b187f40f8` late-latches meter pairs in `paint()`,
 uses display synchronization instead of an independent meter timer, and avoids
 unchanged/hidden repaint work. Waveform playhead invalidation no longer waits
 for an additional throttle timer. Import hash:
-`a8a1ecf98a4e8a55c9b1eeba5fc99881fdfcb1ee4929764fd6d87190f801adf4`.
+`d8a542e85681c7475e8f0d217b1d00be1025d8dbf88013c9a96fa2aa39ef6f0e`.
 
 Both regressions were observed before fixing: the first rendered interval
 returned no telemetry, and the first actual meter paint showed stale pixels.

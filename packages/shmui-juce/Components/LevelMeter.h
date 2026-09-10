@@ -324,8 +324,8 @@ public:
   /**
    * @brief Enable a ring buffer of level events with the given capacity.
    *
-   * Pre-allocates so appends are allocation-free. Events are recorded on the
-   * message thread (from the meter's timer), so no audio-thread work is added.
+   * Pre-allocates so appends are allocation-free. Events are recorded through
+   * deferred message-thread dispatch, so no audio-thread work is added.
    * Call once from the message thread before use.
    */
   void enableHistory(int capacity);
