@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-#include "../../src/core/transport/transport_controller.h"
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
+#include "../../src/core/transport/transport_controller.h"
 #include <orpheus/channel_format.h>
 
 #include <gtest/gtest.h>
@@ -31,8 +31,8 @@ namespace {
 constexpr uint32_t kSampleRate = 48000;
 RoutingConfig routingConfigForTransport(const TransportConfig& config) {
   RoutingConfig routing;
-  routing.num_channels = static_cast<RoutingChannelIndex>(
-      config.maxActiveVoices * config.maxSourceChannels);
+  routing.num_channels =
+      static_cast<RoutingChannelIndex>(config.maxActiveVoices * config.maxSourceChannels);
   routing.num_groups = static_cast<RoutingGroupIndex>(config.numGroups);
   routing.num_outputs = static_cast<RoutingOutputIndex>(config.outputChannels);
   routing.sample_rate = config.sampleRate;
@@ -48,16 +48,14 @@ RoutingConfig routingConfigForTransport(const TransportConfig& config) {
 
 class FailingRoutingMatrix final : public RoutingMatrix {
 public:
-  SessionGraphError processRouting(const float* const*, float* const*,
-                                   uint32_t) override {
+  SessionGraphError processRouting(const float* const*, float* const*, uint32_t) override {
     return SessionGraphError::InternalError;
   }
 };
 
 class LegacyRoutingMatrix final : public RoutingMatrix {
 public:
-  void copyGroupOutputMeterSnapshot(
-      GroupOutputMeterSnapshot& destination) const noexcept override {
+  void copyGroupOutputMeterSnapshot(GroupOutputMeterSnapshot& destination) const noexcept override {
     destination = {};
   }
 };
@@ -67,12 +65,10 @@ constexpr size_t kFrames = 64;
 class MultichannelTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    filePath = (std::filesystem::temp_directory_path() /
-                "orpheus_multichannel_transport_test.wav")
+    filePath = (std::filesystem::temp_directory_path() / "orpheus_multichannel_transport_test.wav")
                    .string();
-    stereoPath = (std::filesystem::temp_directory_path() /
-                  "orpheus_stereo_route_test.wav")
-                     .string();
+    stereoPath =
+        (std::filesystem::temp_directory_path() / "orpheus_stereo_route_test.wav").string();
     writeFixture(filePath, kChannels);
     writeFixture(stereoPath, 2);
   }
@@ -83,8 +79,7 @@ protected:
     std::filesystem::remove(stereoPath, error);
   }
 
-  void writeFixture(const std::string& path, uint16_t channels,
-                    int16_t firstSample = 2048) const {
+  void writeFixture(const std::string& path, uint16_t channels, int16_t firstSample = 2048) const {
     constexpr uint16_t bitsPerSample = 16;
     const uint16_t blockAlign = channels * (bitsPerSample / 8);
     const uint32_t dataSize = static_cast<uint32_t>(kFrames * blockAlign);
@@ -110,8 +105,7 @@ protected:
 
     for (size_t frame = 0; frame < kFrames; ++frame) {
       for (uint16_t channel = 0; channel < channels; ++channel) {
-        const int16_t sample =
-            static_cast<int16_t>((channel + 1) * firstSample);
+        const int16_t sample = static_cast<int16_t>((channel + 1) * firstSample);
         file.write(reinterpret_cast<const char*>(&sample), sizeof(sample));
       }
     }
@@ -156,12 +150,9 @@ TEST_F(MultichannelTransportTest, RequiresExplicitSMPTEBundleAndPreservesEightCh
   metadata->sourceLayout = format.layout;
   metadata->speakerPatchSize = format.num_channels;
   const auto wrongBed = ChannelFormat::Surround71();
-  std::copy_n(wrongBed.channel_map.begin(), wrongBed.num_channels,
-              metadata->speakerPatch.begin());
-  EXPECT_EQ(transport->updateClipMetadata(1, *metadata),
-            SessionGraphError::InvalidParameter);
-  std::copy_n(format.channel_map.begin(), format.num_channels,
-              metadata->speakerPatch.begin());
+  std::copy_n(wrongBed.channel_map.begin(), wrongBed.num_channels, metadata->speakerPatch.begin());
+  EXPECT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::InvalidParameter);
+  std::copy_n(format.channel_map.begin(), format.num_channels, metadata->speakerPatch.begin());
   ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
   ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
 
@@ -191,10 +182,8 @@ TEST_F(MultichannelTransportTest, RoutesStereoThroughLogicalGroupToSelectedOutpu
   auto transport = createTransportController(nullptr, config);
   ASSERT_NE(transport, nullptr);
   ASSERT_EQ(transport->registerClipAudio(2, stereoPath), SessionGraphError::OK);
-  ASSERT_EQ(transport->setGroupOutputBus(3, OutputBusRoute{6, 2}),
-            SessionGraphError::OK);
-  EXPECT_EQ(transport->getGroupOutputBus(3),
-            std::optional<OutputBusRoute>(OutputBusRoute{6, 2}));
+  ASSERT_EQ(transport->setGroupOutputBus(3, OutputBusRoute{6, 2}), SessionGraphError::OK);
+  EXPECT_EQ(transport->getGroupOutputBus(3), std::optional<OutputBusRoute>(OutputBusRoute{6, 2}));
 
   auto metadata = transport->getClipMetadata(2);
   ASSERT_TRUE(metadata.has_value());
@@ -244,7 +233,6 @@ TEST(MultichannelTransportConfigTest, RejectsUnsupportedRealtimeBounds) {
   EXPECT_EQ(createTransportController(nullptr, config), nullptr);
 }
 
-
 TEST(ChannelFormatTest, DistinguishesSMPTE51StereoBundleFromSurround71Bed) {
   const auto programme = ChannelFormat::SMPTE51Stereo();
   const std::array<Speaker, 8> expectedProgramme = {
@@ -280,10 +268,8 @@ TEST_F(MultichannelTransportTest, PublishesIndependentLogicalGroupOutputTelemetr
   config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
   auto transport = createTransportController(nullptr, config);
   ASSERT_NE(transport, nullptr);
-  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}),
-            SessionGraphError::OK);
-  ASSERT_EQ(transport->setGroupOutputBus(1, OutputBusRoute{0, 1}),
-            SessionGraphError::OK);
+  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  ASSERT_EQ(transport->setGroupOutputBus(1, OutputBusRoute{0, 1}), SessionGraphError::OK);
   ASSERT_EQ(transport->registerClipAudio(10, group0Path), SessionGraphError::OK);
   ASSERT_EQ(transport->registerClipAudio(11, group1Path), SessionGraphError::OK);
 
@@ -295,18 +281,15 @@ TEST_F(MultichannelTransportTest, PublishesIndependentLogicalGroupOutputTelemetr
   group0Metadata->loopEnabled = true;
   group1Metadata->routingGroup = 1;
   group1Metadata->loopEnabled = true;
-  ASSERT_EQ(transport->updateClipMetadata(10, *group0Metadata),
-            SessionGraphError::OK);
-  ASSERT_EQ(transport->updateClipMetadata(11, *group1Metadata),
-            SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipMetadata(10, *group0Metadata), SessionGraphError::OK);
+  ASSERT_EQ(transport->updateClipMetadata(11, *group1Metadata), SessionGraphError::OK);
   ASSERT_EQ(transport->startClip(10), SessionGraphError::OK);
   ASSERT_EQ(transport->startClip(11), SessionGraphError::OK);
 
   auto* telemetry = transport->getRealtimeTelemetry();
   ASSERT_NE(telemetry, nullptr);
-  telemetry->setDecimationBlocks(1);
-  std::vector<std::vector<float>> outputStorage(
-      config.outputChannels, std::vector<float>(kFrames, 0.0f));
+  std::vector<std::vector<float>> outputStorage(config.outputChannels,
+                                                std::vector<float>(kFrames, 0.0f));
   std::vector<float*> outputs;
   for (auto& lane : outputStorage) {
     outputs.push_back(lane.data());
@@ -316,8 +299,7 @@ TEST_F(MultichannelTransportTest, PublishesIndependentLogicalGroupOutputTelemetr
   RealtimeTelemetrySnapshot snapshot;
   ASSERT_TRUE(telemetry->tryRead(snapshot));
   ASSERT_EQ(snapshot.routing_meters.availability, MeterAvailability::Measured);
-  ASSERT_EQ(snapshot.routing_meters.group_output_meters.availability,
-            MeterAvailability::Measured);
+  ASSERT_EQ(snapshot.routing_meters.group_output_meters.availability, MeterAvailability::Measured);
   ASSERT_EQ(snapshot.routing_meters.group_output_meters.coherent, 1);
   ASSERT_EQ(snapshot.routing_meters.group_output_meters.group_count, 2);
   const auto& group0 = snapshot.routing_meters.group_output_meters.groups[0];
@@ -356,8 +338,8 @@ TEST_F(MultichannelTransportTest, RetainsPeakAcrossTelemetryDecimationAndDrop) {
   auto* telemetry = transport->getRealtimeTelemetry();
   ASSERT_NE(telemetry, nullptr);
   telemetry->setDecimationBlocks(1);
-  std::vector<std::vector<float>> outputStorage(
-      config.outputChannels, std::vector<float>(kFrames, 0.0f));
+  std::vector<std::vector<float>> outputStorage(config.outputChannels,
+                                                std::vector<float>(kFrames, 0.0f));
   std::vector<float*> outputs;
   for (auto& lane : outputStorage) {
     outputs.push_back(lane.data());
@@ -385,8 +367,7 @@ TEST_F(MultichannelTransportTest, RetainsPeakAcrossTelemetryDecimationAndDrop) {
   RealtimeTelemetrySnapshot recovered;
   ASSERT_TRUE(telemetry->tryRead(recovered));
   EXPECT_EQ(recovered.sequence, kRealtimeTelemetryCapacity + 3);
-  EXPECT_GT(recovered.routing_meters.master_aggregate_meter.peak_db,
-            kAudioMeterSilenceDb);
+  EXPECT_GT(recovered.routing_meters.master_aggregate_meter.peak_db, kAudioMeterSilenceDb);
   EXPECT_EQ(recovered.routing_meters.peak_window_frames, 3 * kFrames);
   EXPECT_FALSE(telemetry->tryRead(recovered));
 }
@@ -404,14 +385,13 @@ TEST(MultichannelTransportMeteringTest, CanonicalAvailabilityMarksRoutingFailure
   auto* controller = dynamic_cast<TransportController*>(transport.get());
   ASSERT_NE(controller, nullptr);
   auto failing = std::make_unique<FailingRoutingMatrix>();
-  ASSERT_EQ(failing->initialize(routingConfigForTransport(config)),
-            SessionGraphError::OK);
+  ASSERT_EQ(failing->initialize(routingConfigForTransport(config)), SessionGraphError::OK);
   TransportControllerTestAccess::replaceRoutingMatrix(*controller, std::move(failing));
 
   auto* telemetry = transport->getRealtimeTelemetry();
   telemetry->setDecimationBlocks(1);
-  std::vector<std::vector<float>> outputStorage(
-      config.outputChannels, std::vector<float>(kFrames, 0.0f));
+  std::vector<std::vector<float>> outputStorage(config.outputChannels,
+                                                std::vector<float>(kFrames, 0.0f));
   std::vector<float*> outputs;
   for (auto& lane : outputStorage) {
     outputs.push_back(lane.data());
@@ -423,10 +403,8 @@ TEST(MultichannelTransportMeteringTest, CanonicalAvailabilityMarksRoutingFailure
   EXPECT_EQ(snapshot.routing_meters.availability, MeterAvailability::Unmeasured);
   EXPECT_EQ(snapshot.routing_meters.peak_window_frames, 0u);
   EXPECT_EQ(snapshot.routing_meters.rms_window_frames, 0u);
-  EXPECT_EQ(snapshot.routing_meters.group_aggregate_availability[0],
-            MeterAvailability::Unmeasured);
-  EXPECT_EQ(snapshot.routing_meters.master_aggregate_availability,
-            MeterAvailability::Unmeasured);
+  EXPECT_EQ(snapshot.routing_meters.group_aggregate_availability[0], MeterAvailability::Unmeasured);
+  EXPECT_EQ(snapshot.routing_meters.master_aggregate_availability, MeterAvailability::Unmeasured);
   EXPECT_EQ(snapshot.routing_meters.post_master_output_availability[0],
             MeterAvailability::Unmeasured);
   EXPECT_EQ(snapshot.group_count, 1u);
@@ -446,14 +424,13 @@ TEST(MultichannelTransportMeteringTest,
   auto* controller = dynamic_cast<TransportController*>(transport.get());
   ASSERT_NE(controller, nullptr);
   auto legacy = std::make_unique<LegacyRoutingMatrix>();
-  ASSERT_EQ(legacy->initialize(routingConfigForTransport(config)),
-            SessionGraphError::OK);
+  ASSERT_EQ(legacy->initialize(routingConfigForTransport(config)), SessionGraphError::OK);
   TransportControllerTestAccess::replaceRoutingMatrix(*controller, std::move(legacy));
 
   auto* telemetry = transport->getRealtimeTelemetry();
   telemetry->setDecimationBlocks(1);
-  std::vector<std::vector<float>> outputStorage(
-      config.outputChannels, std::vector<float>(kFrames, 0.0f));
+  std::vector<std::vector<float>> outputStorage(config.outputChannels,
+                                                std::vector<float>(kFrames, 0.0f));
   std::vector<float*> outputs;
   for (auto& lane : outputStorage) {
     outputs.push_back(lane.data());
@@ -463,10 +440,8 @@ TEST(MultichannelTransportMeteringTest,
   RealtimeTelemetrySnapshot snapshot;
   ASSERT_TRUE(telemetry->tryRead(snapshot));
   EXPECT_EQ(snapshot.routing_meters.availability, MeterAvailability::Measured);
-  EXPECT_EQ(snapshot.routing_meters.group_aggregate_availability[0],
-            MeterAvailability::Measured);
-  EXPECT_EQ(snapshot.routing_meters.master_aggregate_availability,
-            MeterAvailability::Measured);
+  EXPECT_EQ(snapshot.routing_meters.group_aggregate_availability[0], MeterAvailability::Measured);
+  EXPECT_EQ(snapshot.routing_meters.master_aggregate_availability, MeterAvailability::Measured);
   EXPECT_EQ(snapshot.routing_meters.post_master_output_availability[0],
             MeterAvailability::Measured);
   EXPECT_EQ(snapshot.routing_meters.group_output_meters.availability,
@@ -493,8 +468,7 @@ TEST_F(MultichannelTransportTest, CanonicalFrameStampsSchemas) {
   RealtimeTelemetrySnapshot snapshot;
   ASSERT_TRUE(telemetry->tryRead(snapshot));
   EXPECT_EQ(snapshot.schema_version, kRealtimeTelemetrySchemaVersion);
-  EXPECT_EQ(snapshot.routing_meters.schema_version,
-            kRoutingMeterTelemetrySchemaVersion);
+  EXPECT_EQ(snapshot.routing_meters.schema_version, kRoutingMeterTelemetrySchemaVersion);
   EXPECT_EQ(snapshot.routing_meters.group_output_meters.schema_version,
             kGroupOutputMeterSnapshotSchemaVersion);
 }

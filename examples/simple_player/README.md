@@ -173,4 +173,4 @@ For deterministic non-real-time composition, see `../offline_renderer/README.md`
 ---
 
 **Last Updated:** October 26, 2025
-**SDK Version:** 0.9.0
+**SDK Version:** 0.9.1

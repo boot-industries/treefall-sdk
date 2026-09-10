@@ -64,7 +64,6 @@ WaveformEditor::WaveformEditor() {
 
 WaveformEditor::~WaveformEditor() {
   removeDefaultThemeListener(this);
-  m_playheadRepaint.cancel();
   m_loadGeneration.fetch_add(1, std::memory_order_acq_rel);
   while (!m_loadPool.removeAllJobs(true, 5000)) {
   }
@@ -210,7 +209,9 @@ void WaveformEditor::setPlayheadPosition(int64_t samplePosition) {
     m_playheadPosition = clamped;
     if (m_followMode != FollowMode::Off)
       followPlayhead();
-    m_playheadRepaint.requestRepaint();
+    // JUCE already coalesces invalidations before painting. A second timer
+    // here delays the newest playhead even when the display is ready.
+    repaint();
   }
 }
 

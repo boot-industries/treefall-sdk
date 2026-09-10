@@ -24,6 +24,18 @@ truthful capability reporting.
 - Model downstream requirements with SDK-owned fixtures. Do not add app-specific
   policy to core to make a fixture pass.
 
+## Suite temporal coherence
+
+`ARCHITECTURE.md` §Temporal Coherence is a release requirement for the SDK,
+ShmUI and every child app. Preserve phase/sample integrity and realtime safety
+while eliminating stale meters, counter stutter and delayed interaction.
+Reuse existing sample/host timestamps and latency validity; do not create a
+competing clock. Carry freshness and discontinuities through bounded transfers.
+Demand-driven work must reduce wakeups/CPU without reducing live responsiveness.
+Verify worst-case timing and resource behavior under load, not just average FPS.
+Known time-coherence failures block release; policy adoption is not proof that
+the current implementation meets the requirement.
+
 Historical completion and child-team handoff records are ignored local
 provenance. They are not required public documentation links or build inputs.
 
@@ -34,7 +46,7 @@ identifiers and claims.
 
 ## Sources of truth
 
-- Current source version: SDK 0.9.0 with stable C ABI 1.0. The root CMake project
+- Current source version: SDK 0.9.1 with stable C ABI 1.0. The root CMake project
   remains technically named `orpheus`; Treefall is the active product identity.
 - Compatibility package/configuration names: `TreefallSDK` and `OrpheusSDK`;
   both resolve the same physical target graph.

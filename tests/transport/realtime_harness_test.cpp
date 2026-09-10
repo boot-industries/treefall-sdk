@@ -42,8 +42,12 @@
 #include <string>
 #include <thread>
 #include <vector>
-#if defined(__linux__)
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_info.h>
+#elif defined(__linux__)
 #include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -63,6 +67,31 @@ namespace {
 
 constexpr uint32_t kSampleRate = 48000;
 constexpr size_t kBufferFrames = 512;
+
+#if defined(__APPLE__)
+double currentThreadCpuMicros() noexcept {
+  thread_basic_info_data_t info{};
+  mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+  const thread_t thread = mach_thread_self();
+  const kern_return_t result =
+      thread_info(thread, THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&info), &count);
+  mach_port_deallocate(mach_task_self(), thread);
+  if (result != KERN_SUCCESS) {
+    return -1.0;
+  }
+  return static_cast<double>(info.user_time.seconds + info.system_time.seconds) * 1'000'000.0 +
+         static_cast<double>(info.user_time.microseconds + info.system_time.microseconds);
+}
+#elif defined(__linux__)
+double currentThreadCpuMicros() noexcept {
+  timespec value{};
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &value) != 0) {
+    return -1.0;
+  }
+  return static_cast<double>(value.tv_sec) * 1'000'000.0 +
+         static_cast<double>(value.tv_nsec) / 1'000.0;
+}
+#endif
 
 // Minimal WAV writer (16-bit PCM stereo) — mirrors multi_clip_stress_test.
 std::string writeSineWav(const std::filesystem::path& dir, const std::string& name, float freq,
@@ -827,8 +856,16 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
 
     std::vector<double> durations;
     durations.reserve(kCallbacks);
+#if defined(__APPLE__) || defined(__linux__)
+    std::vector<double> cpuDurations;
+    cpuDurations.reserve(kCallbacks);
+#endif
     RtGuardState::reset();
     for (int callback = 0; callback < kCallbacks; ++callback) {
+#if defined(__APPLE__) || defined(__linux__)
+      const double cpuStart = currentThreadCpuMicros();
+      ASSERT_GE(cpuStart, 0.0);
+#endif
       const auto start = std::chrono::steady_clock::now();
       {
         RtSection section;
@@ -837,6 +874,11 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
       }
       const auto end = std::chrono::steady_clock::now();
       durations.push_back(std::chrono::duration<double, std::micro>(end - start).count());
+#if defined(__APPLE__) || defined(__linux__)
+      const double cpuEnd = currentThreadCpuMicros();
+      ASSERT_GE(cpuEnd, cpuStart);
+      cpuDurations.push_back(cpuEnd - cpuStart);
+#endif
     }
 
     std::sort(durations.begin(), durations.end());
@@ -848,13 +890,24 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     const double p99 = durations[(durations.size() * 99) / 100];
     const double maximum = durations.back();
     const double budget = (static_cast<double>(kBufferFrames) * 1'000'000.0) / kSampleRate;
-    std::cout << "[RT Harness] max topology " << label << ": avg " << average << " us, p99 " << p99
-              << " us, max " << maximum << " us, budget " << budget << " us\n";
+    std::cout << "[RT Harness] max topology " << label << ": wall avg " << average << " us, p99 "
+              << p99 << " us, max " << maximum << " us, budget " << budget << " us\n";
     EXPECT_EQ(RtGuardState::allocViolations(), 0u);
     EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 #if defined(NDEBUG)
     if (!kUnderSanitizer) {
+#if defined(__APPLE__) || defined(__linux__)
+      std::sort(cpuDurations.begin(), cpuDurations.end());
+      const double cpuMaximum = cpuDurations.back();
+      std::cout << "[RT Harness] max topology " << label << ": thread CPU max " << cpuMaximum
+                << " us\n";
+      EXPECT_LT(cpuMaximum, budget)
+          << label << " maximum thread CPU exceeded the 512-frame/48 kHz callback budget";
+      EXPECT_LT(p99, budget) << label
+                             << " wall-clock p99 exceeded the 512-frame/48 kHz callback budget";
+#else
       EXPECT_LT(maximum, budget) << label << " exceeded the 512-frame/48 kHz callback budget";
+#endif
     }
 #endif
   };
