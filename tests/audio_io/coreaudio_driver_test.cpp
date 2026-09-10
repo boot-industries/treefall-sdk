@@ -454,7 +454,8 @@ TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ASSERT_TRUE(m_callback->waitForCallCount(6, std::chrono::seconds(2)))
+      << "Audio callback stalled after " << m_callback->getCallCount() << " calls";
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
 
   EXPECT_EQ(monitor->getMetrics().activeClipCount, 7u);
