@@ -16,6 +16,13 @@ consumers against matching SDK and ShmUI headers and libraries. This release
 does not change audio buffering, audio processing order, or supported backend
 tiers.
 
+### Changed
+
+- The maximum-topology release fixture now separates executor cost from shared
+  runner scheduling: maximum per-thread CPU time remains strictly below the
+  callback deadline, while wall-clock p99 detects sustained deadline misses.
+  Wall-clock maximum remains reported for diagnosis.
+
 ### Fixed
 
 - Realtime telemetry publishes each completed audio callback by default instead
