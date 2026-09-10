@@ -1,5 +1,53 @@
 # Progress
 
+## Upstream meter publication and presentation fix — 2026-09-10
+
+Corrected the actual number flow, rather than requiring downstream timer
+workarounds. Default telemetry now publishes each completed callback instead
+of every eighth. Governed ShmUI source
+`dd418a5540408f081d4bd54ea52122ada98f8f11` late-latches meter pairs in `paint()`,
+uses display synchronization instead of an independent meter timer, and avoids
+unchanged/hidden repaint work. Waveform playhead invalidation no longer waits
+for an additional throttle timer. Import hash:
+`a8a1ecf98a4e8a55c9b1eeba5fc99881fdfcb1ee4929764fd6d87190f801adf4`.
+
+Both regressions were observed before fixing: the first rendered interval
+returned no telemetry, and the first actual meter paint showed stale pixels.
+Both pass after fixing. Clip indicators latch in the current paint; bounded
+notifications preserve detection time and run outside the paint stack so user
+callbacks can safely destroy the component. Monotonic elapsed-time ballistics
+remove refresh-rate dependence and steady-peak needle oscillation.
+
+Measured on this M2 workstation:
+
+- Eight channels/eight prepared voices, 44.1 kHz, 512 frames, Debug SDK:
+  first publication moved from callback 8 to callback 1, removing seven
+  withheld intervals (81.270 ms). Interval durations are not photon latency.
+- Across 1,024 timed callbacks after warmup: old-cadence median 1,621.583 us;
+  default-per-block median 1,630.833 us, p99 2,027.125 us, max 2,247.958 us,
+  against an 11,609.977 us callback deadline. Audio PCM hash was identical
+  (`f64a6980912cc383`), with zero guarded C++ allocation/deallocation violations.
+- Native eight-meter smoke: prior component performed 336 unchanged paints in
+  about one second (128.961 ms process CPU). Final corrected smoke performed
+  zero unchanged paints (24.913 ms process CPU), eight paints after updating all
+  eight levels, and zero hidden paints. Harness/event-loop CPU is included;
+  this is not a sustained thermal qualification.
+- ShmUI's four native boundary fixtures passed, including immediate-pixel and
+  paint-safe destruction regressions. SDK multichannel and diagnostics tests
+  passed 10/10 each. Realtime harness passed 11 cases with the Linux `/proc`
+  file-I/O case skipped on macOS.
+
+Final SDK verification: `cmake --build build --parallel 6` and the complete
+configured CTest suite passed **82/82** in **205.13 s**, including clean-prefix
+package consumers, strict realtime audit, governed import and native ShmUI
+fixtures. The temporary rendering/flow executables, source trees and compiler
+database link were removed after recording their results.
+
+The existing event FIFO/drop semantics and interval-peak retention are unchanged.
+No downstream application source or SDK pin was modified during this correction.
+Existing application binaries must be rebuilt against the corrected upstream
+headers/libraries; no universal end-to-end zero-latency claim is made.
+
 ## Suite synchronization and temporal correctness — 2026-09-10
 
 Shared change `ORP-SUITE-20260910-001` uses published runtime baseline

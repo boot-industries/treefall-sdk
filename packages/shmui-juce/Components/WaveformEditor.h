@@ -21,7 +21,6 @@
 
 #pragma once
 
-#include "../Utils/ColorUtils.h"
 #include "../Utils/DesignTokens.h"
 #include "../Utils/Interpolation.h"
 #include "../Utils/RepaintThrottle.h"
@@ -509,13 +508,10 @@ private:
   float m_zoomLevel = 1.0f;
   float m_scrollPosition = 0.0f;
 
-  // Play-follow (G6). Playhead-advance repaints are coalesced through a
-  // shared RepaintThrottle (G9) so rapid setPlayheadPosition() calls don't
-  // each force a full repaint at high update rates.
+  // Play-follow (G6). Playhead invalidation uses JUCE's native coalescing.
   FollowMode m_followMode = FollowMode::Off;
   float m_followThrottleHz = 30.0f;
   int64_t m_lastFollowMs = 0;
-  RepaintThrottle m_playheadRepaint{*this, 60.0f};
 
   // Interaction state
   DragHandle m_draggedHandle = DragHandle::None;
