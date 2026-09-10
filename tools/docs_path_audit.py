@@ -122,8 +122,8 @@ def iter_docs(root: Path) -> list[Path]:
     return [
         doc
         for doc in docs
-        if str(doc.relative_to(root)) not in HISTORICAL_DOCS
-        and not str(doc.relative_to(root)).startswith(HISTORICAL_DOC_PREFIXES)
+        if doc.relative_to(root).as_posix() not in HISTORICAL_DOCS
+        and not doc.relative_to(root).as_posix().startswith(HISTORICAL_DOC_PREFIXES)
     ]
 
 
