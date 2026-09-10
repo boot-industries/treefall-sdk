@@ -19,9 +19,9 @@ tiers.
 ### Changed
 
 - The maximum-topology release fixture now separates executor cost from shared
-  runner scheduling: maximum per-thread CPU time remains strictly below the
-  callback deadline, while wall-clock p99 detects sustained deadline misses.
-  Wall-clock maximum remains reported for diagnosis.
+  runner scheduling where high-resolution thread clocks are available: macOS
+  and Linux enforce maximum thread CPU plus wall-clock p99; Windows retains its
+  strict wall-clock maximum. Every platform reports wall average, p99, and max.
 
 ### Fixed
 
