@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-10
+
+Treefall SDK patch release; stable C ABI 1.0 is retained. Rebuild all C++
+consumers against matching SDK and ShmUI headers and libraries. This release
+does not change audio buffering, audio processing order, or supported backend
+tiers.
+
 ### Fixed
 
 - Realtime telemetry publishes each completed audio callback by default instead
