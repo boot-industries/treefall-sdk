@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-10
+
+Treefall SDK patch release; stable C ABI 1.0 is retained. Rebuild all C++
+consumers against matching SDK and ShmUI headers and libraries. This release
+does not change audio buffering, audio processing order, or supported backend
+tiers.
+
+### Changed
+
+- The maximum-topology release fixture now separates executor cost from shared
+  runner scheduling where high-resolution thread clocks are available: macOS
+  and Linux enforce maximum thread CPU plus wall-clock p99; Windows retains its
+  strict wall-clock maximum. Every platform reports wall average, p99, and max.
+
+### Fixed
+
+- Realtime telemetry publishes each completed audio callback by default instead
+  of withholding seven additional callbacks. Explicit diagnostic decimation
+  remains available; interval-peak accumulation and overflow accounting remain
+  unchanged.
+- Governed ShmUI meters consume the newest paired values at paint time and use
+  display-synchronized, demand-driven repainting instead of an independent
+  60 Hz display-state timer. First-paint peak/clip indication is immediate;
+  elapsed-time ballistics avoid refresh-rate-dependent response and steady-peak
+  needle jitter. Clip callbacks dispatch outside the paint stack while retaining
+  the detected crossing's timestamp.
+- Shared waveform playhead updates use JUCE's native invalidation coalescing,
+  removing the additional repaint-throttle timer. Rebuild C++ consumers with
+  matching SDK and ShmUI headers/libraries.
+
 ## [0.9.0] - 2026-09-09
 
 Treefall SDK component release; stable C ABI 1.0 is retained. Rebuild all C++

@@ -22,8 +22,9 @@ Project documentation index for orpheus-sdk.
   (2026-09-07)
 
 - [[ORP255 Strategic Architecture, Competitive Posture, and Expansion Vectors]] —
-  analysis of SDK strengths, architectural weaknesses, streaming seams,
-  autonomous robotics, and high-integrity expansion vectors (2026-09-06)
+  SDK strengths and expansion vectors; §9 adds the 2026-09-10 temporal
+  correctness, phase coherence, ShmUI responsiveness and digital-metering
+  research priority, superseding the earlier sprint order.
 
 - [[ORP254 Suite Commercialization, Rebrand Strategy, and Tier Segmentation]] —
   decoupled publisher/engine/app rebrand, open core vs. proprietary policy,
