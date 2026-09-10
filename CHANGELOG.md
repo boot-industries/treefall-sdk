@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-09
+
+Treefall SDK component release; stable C ABI 1.0 is retained. Rebuild all C++
+consumers against matching headers and libraries; do not mix old and new C++
+binaries. This release does not promote Orpheus-Suite snapshots or expand the
+backend support tiers documented in `docs/SUPPORT_MATRIX.md`.
+
 ### Fixed
 
 - FLAC writer preflight rejects rates above libsndfile's 655350 Hz encoder
