@@ -46,7 +46,7 @@ identifiers and claims.
 
 ## Sources of truth
 
-- Current source version: SDK 0.9.0 with stable C ABI 1.0. The root CMake project
+- Current source version: SDK 0.9.1 with stable C ABI 1.0. The root CMake project
   remains technically named `orpheus`; Treefall is the active product identity.
 - Compatibility package/configuration names: `TreefallSDK` and `OrpheusSDK`;
   both resolve the same physical target graph.
