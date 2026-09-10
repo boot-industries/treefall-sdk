@@ -1572,3 +1572,11 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
 - Preserved local commits `6809bac9` and `0fd475e8`, including the 23 local-only `docs/orp/` records and `treefall-sprint-prompt-corrected.md`.
 - Resolved the remote deletion of the local ORP record set by retaining the local `docs/orp/` tree. The only merge conflicts were `docs/orp/INDEX.md` and `docs/orp/ORP180 Web Contribution Harness Feasibility and Plan.md`; both kept the local versions. No unresolved conflicts remain.
 - Verified both local commits and the fetched remote tip are ancestors of `main`; the checkout is clean and `main` is ahead of `origin/main` by the reconciliation merge commit.
+
+## 2026-09-10 CI cleanup
+
+- Investigated the red and cancelled checks visible on the `treefall-sdk` main commit history. Commit `3f6a696cdb3bf78af679319d370bf467222fa8b8` is green across its full native CI matrix and is an ancestor of the later suite-fix commits; the earlier red checks are superseded debugging iterations, not current failures.
+- Re-ran the cancelled CI for the current ShmUI segmented-meter commit. Its Windows Release leg exposed a real cross-platform audit bug: `docs_path_audit.py` compared Windows backslash paths against POSIX historical prefixes.
+- Fixed `tools/docs_path_audit.py` to normalize `Path.relative_to(root)` with `.as_posix()` before applying historical-path filters. Local audit passed.
+- Pushed `914d49e5` (`fix(ci): normalize documentation audit paths`). GitHub Actions run `34422712595` passed all native builds/tests, lint, syscall evidence, TSan evidence, offline evidence aggregation, and the required CI status check. The prior cancelled run was superseded by this successful run.
+- No historical `docs/orp/` records were read or modified. No SDK runtime behavior or dependency pins changed.
