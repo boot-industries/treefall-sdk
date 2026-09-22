@@ -33,7 +33,7 @@ The project now uses **sprint-level ORP documents** for focused feature work, ra
 
 **Next Available:** ORP098
 
-**Documentation:** See `docs/ORP/INDEX.md` for complete ORP catalog
+**Documentation:** See `docs/orp/ORP.md` for complete ORP catalog
 
 ### OCC (Clip Composer) Development
 
@@ -57,7 +57,7 @@ git submodule. OCC docs, build, CI, and `.claude/` tooling live in that repo. Se
 
 ### For Starting New Work
 
-1. Check **[../docs/ORP/INDEX.md](../docs/ORP/INDEX.md)** for next available ORP number (currently ORP098)
+1. Check **[../docs/orp/ORP.md](../docs/orp/ORP.md)** for next available ORP number (currently ORP098)
 2. Review recent commits: `git log --oneline -10`
 3. Check current branch: `git branch --show-current`
 4. Review **[../AGENTS.md](../AGENTS.md)** for repository conventions
@@ -99,7 +99,7 @@ pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 
 **Purpose:** Authoritative feature specifications
 **Contents:** Sprint-level design documents (ORP093+)
-**Index:** See `docs/ORP/INDEX.md`
+**Index:** See `docs/orp/ORP.md`
 
 ### OCC docs (moved to the Clip Composer repo)
 
@@ -115,7 +115,7 @@ pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 
 1. Review recent commits: `git log --oneline -10`
 2. Check current branch: `git branch --show-current`
-3. Identify next ORP number from `docs/ORP/INDEX.md`
+3. Identify next ORP number from `docs/orp/ORP.md`
 4. Create feature branch if needed
 5. Review `AGENTS.md` for build/test commands
 
@@ -125,7 +125,7 @@ pin in the OCC repo to pick up SDK changes. See `docs/orp/ORP131`.
 2. Run tests frequently: `ctest --test-dir build --output-on-failure`
 3. Check linting: See `docs/repo-commands.html` for commands
 4. Document decisions in ORP documents
-5. Update `docs/ORP/INDEX.md` when creating new ORPs
+5. Update `docs/orp/ORP.md` when creating new ORPs
 
 ### Completing Work
 
@@ -534,7 +534,7 @@ gh pr view --web
 **Purpose:** Sprint-level feature specifications
 **Location:** `docs/ORP/`
 **Naming:** `ORP[number] [optional-title].md` (e.g., ORP093.md, ORP094.md)
-**Index:** See `docs/ORP/INDEX.md` for catalog
+**Index:** See `docs/orp/ORP.md` for catalog
 **Style:** Problem statement, technical requirements, acceptance criteria
 **Update:** Create new ORP for each significant feature or architectural change
 
@@ -560,14 +560,14 @@ gh pr view --web
 1. **Review recent work:** `git log --oneline -10`
 2. **Check current branch:** `git branch --show-current`
 3. **Read AGENTS.md** for repository conventions and build commands
-4. **Check ORP INDEX** (`docs/ORP/INDEX.md`) for next available number
+4. **Check ORP INDEX** (`docs/orp/ORP.md`) for next available number
 
 ### During Development
 
 1. Follow patterns in AGENTS.md (offline-first, deterministic, host-neutral)
 2. Run tests frequently
 3. Document significant work in new ORP documents
-4. Update `docs/ORP/INDEX.md` when creating new ORPs
+4. Update `docs/orp/ORP.md` when creating new ORPs
 
 ### Before Creating a PR
 
@@ -597,7 +597,7 @@ gh pr view --web
 - `AGENTS.md` - Development guide (must-read)
 - `docs/repo-commands.html` - Command reference
 - `CMakeLists.txt` - Build configuration
-- `docs/ORP/INDEX.md` - ORP document catalog
+- `docs/orp/ORP.md` - ORP document catalog
 
 **Main Branch:** `main` (production-ready code)
 
