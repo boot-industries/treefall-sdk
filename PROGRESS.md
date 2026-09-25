@@ -1,5 +1,104 @@
 # Progress
 
+## Upstream meter publication and presentation fix — 2026-09-10
+
+Corrected the actual number flow, rather than requiring downstream timer
+workarounds. Default telemetry now publishes each completed callback instead
+of every eighth. Governed ShmUI source
+`5502863957ce7d59f04a76b3808eac8b187f40f8` late-latches meter pairs in `paint()`,
+uses display synchronization instead of an independent meter timer, and avoids
+unchanged/hidden repaint work. Waveform playhead invalidation no longer waits
+for an additional throttle timer. Import hash:
+`d8a542e85681c7475e8f0d217b1d00be1025d8dbf88013c9a96fa2aa39ef6f0e`.
+
+Both regressions were observed before fixing: the first rendered interval
+returned no telemetry, and the first actual meter paint showed stale pixels.
+Both pass after fixing. Clip indicators latch in the current paint; bounded
+notifications preserve detection time and run outside the paint stack so user
+callbacks can safely destroy the component. Monotonic elapsed-time ballistics
+remove refresh-rate dependence and steady-peak needle oscillation.
+
+Measured on this M2 workstation:
+
+- Eight channels/eight prepared voices, 44.1 kHz, 512 frames, Debug SDK:
+  first publication moved from callback 8 to callback 1, removing seven
+  withheld intervals (81.270 ms). Interval durations are not photon latency.
+- Across 1,024 timed callbacks after warmup: old-cadence median 1,621.583 us;
+  default-per-block median 1,630.833 us, p99 2,027.125 us, max 2,247.958 us,
+  against an 11,609.977 us callback deadline. Audio PCM hash was identical
+  (`f64a6980912cc383`), with zero guarded C++ allocation/deallocation violations.
+- Native eight-meter smoke: prior component performed 336 unchanged paints in
+  about one second (128.961 ms process CPU). Final corrected smoke performed
+  zero unchanged paints (24.913 ms process CPU), eight paints after updating all
+  eight levels, and zero hidden paints. Harness/event-loop CPU is included;
+  this is not a sustained thermal qualification.
+- ShmUI's four native boundary fixtures passed, including immediate-pixel and
+  paint-safe destruction regressions. SDK multichannel and diagnostics tests
+  passed 10/10 each. Realtime harness passed 11 cases with the Linux `/proc`
+  file-I/O case skipped on macOS.
+- The release deadline fixture now distinguishes DSP execution cost from shared
+  runner preemption on macOS and Linux by enforcing maximum per-thread CPU plus
+  wall-clock p99 against the callback deadline; Windows retains strict
+  wall-clock maximum because `GetThreadTimes` advances at a 15.625 ms quantum on
+  the hosted runner. Every platform still reports wall-clock maximum. The local
+  macOS Release check passed sample-peak at 4,922 us maximum thread CPU /
+  2,500.29 us wall p99 and true-peak at 3,340 us maximum thread CPU /
+  3,351.38 us wall p99, against a 10,666.67 us deadline.
+
+Final SDK verification: `cmake --build build --parallel 6` and the complete
+configured CTest suite passed **82/82** in **205.13 s**, including clean-prefix
+package consumers, strict realtime audit, governed import and native ShmUI
+fixtures. The temporary rendering/flow executables, source trees and compiler
+database link were removed after recording their results.
+
+The existing event FIFO/drop semantics and interval-peak retention are unchanged.
+No downstream application source or SDK pin was modified during this correction.
+Existing application binaries must be rebuilt against the corrected upstream
+headers/libraries; no universal end-to-end zero-latency claim is made.
+
+## Suite synchronization and temporal correctness — 2026-09-10
+
+Shared change `ORP-SUITE-20260910-001` uses published runtime baseline
+`ca949b2e0af63346d92bb6f2a51ac3c746c2745b` and governed ShmUI source
+`f41fbd3fe4326a37d025a6c97a74c84cfa6ea2b6`, token contract `0.6.0`.
+The existing SDK mirror passes unchanged. Consumer pins/provenance and suite
+remote/hash metadata are synchronized on local working branches; the original
+dirty Clip Composer checkout is preserved, with its update isolated.
+Publication, original Clip Composer integration and a new reachable suite
+snapshot remain separate from this local handoff.
+
+Observed verification:
+
+- SDK clean-prefix package, realtime audit, docs audit, ShmUI manifest and suite
+  manifest gates: 5/5 passed (11.84 s).
+- Suite quick checks: 5/5 passed. ShmUI token/Swift consumer and registry closure
+  passed; registry closure covered 56 items and 66 files.
+- FourTrack: exact Swift provenance passed, SwiftUI/bridge/core rebuilt,
+  333/333 CTest cases passed (17.61 s). Mock CLI four/eight-track record/bounce
+  smoke each produced 2,048 samples at 48 kHz.
+- FreqFinder: Release Standalone/AU/VST3 built and CTest passed 1/1 (1.66 s);
+  Debug CTest passed 1/1 (12.15 s). Debug VST3 manifest helper still fails
+  because ASan is loaded too late, including with the suggested runtime
+  environment on the outer build.
+- Clip Composer's isolated full build and CTest passed 747 tests, zero failed,
+  one intentional CPU-performance skip (748 entries, 335.56 s). Its original
+  staged/unstaged meter checkout remains untouched and not integrated.
+
+Reconnaissance and digital-metering research are recorded in ORP255 §9.
+The canonical public `ARCHITECTURE.md` temporal contract and all five active
+repository guides now make phase integrity, continuously coherent visuals and
+demand-driven resource use joint release gates. Existing sample-accurate locks,
+`AudioProcessBlock` timestamps, and directional latency validity are foundations
+to extend, not replace.
+
+A compiled telemetry experiment confirmed first publication at callback 8
+(85.333 ms of 48 kHz/512-frame audio), 64 queued snapshots and one drop after
+520 callbacks without a consumer. Per-block publication already works
+(10.667 ms); the current snapshot occupies 18,808 bytes on this arm64 build.
+This demonstrates publication behavior, not physical screen latency.
+No timing implementation, audible-to-photon measurement, thermal qualification,
+Windows backend promotion, or phase-coherence regression claim is made here.
+
 ## Windows CI baseline repair — 2026-09-02
 
 **Status:** Implementation committed on `fix/windows-ci-baseline`; hosted rerun

@@ -2,17 +2,23 @@
 
 # Architecture Overview
 
-**Document Version:** 2.0
-**Last Updated:** October 26, 2025
+**Document Version:** 2.1
+**Last Updated:** September 10, 2026
 **Status:** Authoritative
 
 Treefall is a professional audio SDK built around a deterministic, host-neutral C++20 core library with optional adapter layers for different integration scenarios. “Orpheus” remains the native-library, executable, and canonical C++ compatibility identity. The architecture prioritizes offline-first operation, sample-accurate determinism, and broadcast-safe real-time processing.
+
+The temporal-coherence requirements below are current policy. Older milestone
+descriptions later in this document are historical architecture context, not
+capability or release evidence; use installed headers and
+[the support matrix](docs/SUPPORT_MATRIX.md) for current supported behavior.
 
 ---
 
 ## Table of Contents
 
 - [Design Principles](#design-principles)
+- [Temporal Coherence](#temporal-coherence)
 - [System Architecture](#system-architecture)
 - [Core Library](#core-library-src--include)
 - [Shared App Packages](#shared-app-packages-packages)
@@ -40,6 +46,112 @@ The Treefall SDK is built on four non-negotiable principles:
 4. **Broadcast-safe** – 24/7 reliability with no allocations in audio threads, no blocking operations in real-time paths.
 
 These principles guide all architectural decisions and feature implementations.
+
+## Temporal Coherence
+
+**Suite-wide release requirement, established 2026-09-10.** The SDK, ShmUI and
+every child application must behave as one responsive physical instrument.
+Temporal incoherence is a release blocker, not optional UI polish. This is an
+acceptance requirement; it is not a claim that all existing paths are qualified.
+
+- Preserve sample-accurate audio alignment, phase-coherent paths and uninterrupted
+  realtime processing. Shared clocks do not erase differential filtering,
+  resampling or processing delay. Declare and verify those delays.
+- Reuse canonical integer sample time, `AudioProcessBlock` device/host timestamps
+  and discontinuity, and directional `AudioLatencyBreakdown`. Correlate render,
+  capture, audible output, observation and display time explicitly. Unknown
+  clock/latency terms remain unknown; never manufacture zero latency.
+- Carry freshness, measurement intervals and discontinuities across thread
+  boundaries. Preserve interval peaks and ordered transport events while
+  coalescing replaceable current state. No unread-slot overwrite or audio-thread
+  backpressure is permitted.
+- Counters, playheads, meters and control feedback must be coherent for their
+  intended presentation frame. Immediate input feedback must not impersonate
+  confirmed audio execution. Do not hide visual lateness by delaying audio.
+- ShmUI owns shared presentation behavior; apps own their frame scheduling and
+  view models. Avoid serial producer/component polling delays, cosmetic attack
+  lag and duplicate ballistics. Keep intentional measurement windows distinct
+  from unwanted presentation delay.
+- Schedule by demand and deadlines: audio at its required cadence, visible motion
+  at display cadence, static state on change, background analysis only as needed.
+  Stop unused rendering/analysis work without disabling live input meters,
+  accumulating stale telemetry, or disturbing transport event reconciliation.
+  Never replace polling with callback-side locks, dispatch allocations or I/O.
+- Qualify responsiveness and efficiency together: audio/phase invariants,
+  observation age, frame deadlines, counter continuity, transient retention,
+  CPU time, wakeups and sustained thermal behavior. Cover load, interaction,
+  live-input idle, hidden/show, route changes and long-running operation.
+  Percentile summaries cannot conceal worst-case hitches or stale state.
+
+The SDK owns host-neutral timing evidence and bounded transfer; ShmUI and apps
+must carry that evidence to actual presentation. Software timing checks do not
+substitute for audible-to-photon hardware acceptance or prove universal zero
+latency. Every observed coherence failure requires resolution before release
+within the declared support envelope.
+
+### Clock-domain integrity
+
+Build on `AudioProcessBlock` and existing frame planners. Every timing
+observation must identify its clock domain and timestamp reference point,
+sample position and applicable rate, clock/route epoch, transport segment,
+validity/discontinuity/uncertainty, observation sequence and measurement interval.
+Device time advances during transport stop; transport may seek, loop or reverse.
+Conversions are valid only within declared segments. Never compare unrelated
+clocks or add output latency without knowing whether the timestamp includes it.
+
+### Atomic observation publication
+
+A reader receives immutable, internally consistent state, not a collection of
+independently changing atomic fields. Plan each display frame for one target
+presentation time using compatible observations from the same valid epoch.
+Peak, RMS, loudness and counters retain their different measurement semantics;
+coherence does not require an identical window for every instrument.
+Project counters only through valid transport mappings; never predict meter
+amplitudes or silently extrapolate through discontinuities.
+
+| Information | Required delivery contract |
+| --- | --- |
+| Replaceable current state | Freshest coherent state, bounded reader work and explicit age. |
+| Peak measurements | Extrema over declared intervals, with coverage gaps reported. |
+| Transport outcomes | Ordered events, explicit loss detection and authoritative reconciliation. |
+| Session log records | Event-time/cause/session correlation and explicit ordering/loss; writing time is not event time. |
+
+Every retry loop and copy volume must have a bound. Stall consumers, overflow
+queues and change routes concurrently; verify recovery without stale-state
+replay, lost transients, unsafe overwrite or audio-thread backpressure.
+
+### Independent signal-path and resource acceptance
+
+Preserve existing sample-accurate locks. Verify differential delay, drift and
+frequency-dependent phase across routing, DSP and resampling using impulses,
+coherent multitone/sweep measurements, and null tests only where identical
+outputs are expected. A scalar delay cannot correct arbitrary phase response;
+a shared sample rate does not establish coherent summing.
+
+Declare the supported hardware/workload envelope and enforce audio deadlines,
+phase/alignment invariants, frame deadlines, maximum observation age, counter
+continuity, transient retention, discontinuity recovery, CPU time, wakeups,
+allocations and sustained thermal behavior. Hidden rendering stops; required
+audio/event accounting continues. Low CPU obtained by sluggish presentation
+fails acceptance.
+
+### Session logging is a first-class temporal surface
+
+Preserve event time, clock/route epoch, transport segment, sequence, session
+identity and causality independently of collection/serialization/write time.
+Correlate wall-clock display timestamps off the realtime path; wall-clock
+adjustments must not reorder monotonic events. Do not infer a total causal
+order across uncorrelated clocks. Report gaps, truncation and persistence
+failures explicitly; a successful enqueue is not proof of durable storage.
+Bound collection, queue capacity, batching and log-view updates. Serialization,
+disk I/O and retention policy remain off the audio thread; app-owned logging
+and log viewers must not compromise audio or presentation deadlines. Preserve
+privacy/redaction boundaries.
+
+Use **temporal coherence**, **clock-domain integrity**, and **atomic observation
+publication** as precise terms. “Atomic time” is not an API name or an
+instantaneous-behavior claim. Time defines the meaning of an observation; it is
+not metadata that can be attached after its causal context has been discarded.
 
 ## Treefall compatibility boundary
 
@@ -797,4 +909,4 @@ Treefall SDK has been extended with 7 major features for professional workflows:
 **Document Status:** Authoritative
 **Maintained By:** SDK Core Team
 **Next Review:** After v1.0.0 stable release
-**Last Updated:** August 4, 2026
+**Last Updated:** September 10, 2026

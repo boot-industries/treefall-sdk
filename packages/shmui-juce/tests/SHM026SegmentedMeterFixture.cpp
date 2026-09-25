@@ -109,6 +109,61 @@ juce::Colour expectedSegmentColour(const shmui::LevelMeterStyle& style, float db
   return style.meterColorLow;
 }
 
+void requireFirstPaintUsesNewestNumbers() {
+  shmui::LevelMeter meter;
+  meter.setBounds(0, 0, 20, 100);
+  meter.setDBRange(-60.0f, 0.0f);
+  meter.setBallistics(shmui::MeterBallistics::PeakRms);
+  auto style = meter.getStyle();
+  style.backgroundColor = juce::Colours::black;
+  style.meterColorLow = juce::Colours::lime;
+  style.meterColorMid = juce::Colours::lime;
+  style.meterColorHigh = juce::Colours::lime;
+  style.meterWidth = 20.0f;
+  style.showScale = false;
+  style.showTicks = false;
+  style.showPeakHold = false;
+  style.showClipIndicator = false;
+  style.cornerRadius = 0.0f;
+  meter.setStyle(style);
+
+  juce::Image image(juce::Image::ARGB, 20, 100, true);
+  juce::Graphics graphics(image);
+  meter.paintEntireComponent(graphics, true);
+  meter.setLevelPair(0, 1.0f, 0.25f);
+  // No dispatch pumping: the first available paint must not need a timer tick.
+  meter.paintEntireComponent(graphics, true);
+  auto pixel = image.getPixelAt(10, 50);
+  require(pixel.getGreen() > 200 && pixel.getRed() < 20,
+          "the first paint shows the newly published peak without a timer wait");
+
+  meter.setLevelPair(0, 0.0f, 0.0f);
+  meter.paintEntireComponent(graphics, true);
+  pixel = image.getPixelAt(10, 50);
+  require(pixel.getGreen() < 100, "a later paint does not replay the previous interval's raw peak");
+}
+
+void requireClipCallbackCanDestroyMeterAfterPaint() {
+  auto meter = std::make_unique<shmui::LevelMeter>();
+  meter->setBounds(0, 0, 20, 100);
+  meter->setLevel(0, 2.0f);
+  bool painting = true;
+  meter->onClip = [&](int) {
+    require(!painting, "clip callbacks must not destroy a component inside "
+                       "JUCE's paint stack");
+    if (!painting)
+      meter.reset();
+  };
+  juce::Image image(juce::Image::ARGB, 20, 100, true);
+  juce::Graphics graphics(image);
+  meter->paintEntireComponent(graphics, true);
+  painting = false;
+  require(meter != nullptr && meter->hasClipped(),
+          "the clip indicator latches in the current paint");
+  require(pumpUntil([&] { return meter == nullptr; }, 500),
+          "the deferred clip callback can safely destroy the meter");
+}
+
 void requireLegacyContinuousPairInput() {
   juce::Component host;
   shmui::LevelMeter meter;
@@ -295,6 +350,8 @@ int main() {
   juce::ScopedJuceInitialiser_GUI juceRuntime;
 
   requireLegacyContinuousPairInput();
+  requireFirstPaintUsesNewestNumbers();
+  requireClipCallbackCanDestroyMeterAfterPaint();
   requirePackedPairPublication();
   requireSegmentedRenderingAndNeedle();
   requireSanitizedSegmentStyle();

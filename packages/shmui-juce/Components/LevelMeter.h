@@ -145,7 +145,7 @@ struct LevelMeterStyle {
  * Supports mono, stereo, or multi-channel operation.
  * Thread-safe level updates via atomic values.
  */
-class LevelMeter : public juce::Component, private juce::Timer, public ThemeListener {
+class LevelMeter : public juce::Component, public ThemeListener, private juce::AsyncUpdater {
 public:
   //==============================================================================
   /** Create a level meter (mono by default). */
@@ -324,8 +324,8 @@ public:
   /**
    * @brief Enable a ring buffer of level events with the given capacity.
    *
-   * Pre-allocates so appends are allocation-free. Events are recorded on the
-   * message thread (from the meter's timer), so no audio-thread work is added.
+   * Pre-allocates so appends are allocation-free. Events are recorded through
+   * deferred message-thread dispatch, so no audio-thread work is added.
    * Call once from the message thread before use.
    */
   void enableHistory(int capacity);
@@ -400,9 +400,10 @@ private:
   static SegmentLayout calculateSegmentLayout(float signalAxisLength, float segmentLength,
                                               float requestedGap, float displayScale) noexcept;
 
-  void timerCallback() override;
-  void updateTimerState();
+  void repaintIfNeeded();
+  void updateDisplaySync();
   void updateMeter();
+  void handleAsyncUpdate() override;
   void sanitizeStyle();
   float linearToNormalized(float linear) const;
   float dbToNormalized(float dB) const;
@@ -424,6 +425,9 @@ private:
   bool m_usesDefaultThemeStyle = true;
 
   std::unique_ptr<ShowingStateWatcher> m_showingStateWatcher;
+  juce::VBlankAttachment m_displaySync;
+  double m_lastMeterUpdateMs = 0.0;
+  bool m_animationActive = false;
 
   // dB range
   float m_minDB = -60.0f;
@@ -436,13 +440,15 @@ private:
   // Per-channel state. Producers publish peak/RMS pairs in one lock-free
   // atomic; all display state remains message-thread only.
   std::array<std::atomic<uint64_t>, MAX_CHANNELS> m_inputLevelPairs{};
+  std::array<uint64_t, MAX_CHANNELS> m_paintedLevelPairs{};
   std::array<float, MAX_CHANNELS> m_displayLevels{}; // Smoothed/raw peak
   std::array<float, MAX_CHANNELS> m_displayRmsLevels{};
-  std::array<float, MAX_CHANNELS> m_peakHolds{};       // Peak hold values
-  std::array<int64_t, MAX_CHANNELS> m_peakHoldTimes{}; // Peak hold timestamps
-  std::array<bool, MAX_CHANNELS> m_clipped{};          // Clip indicators
+  std::array<float, MAX_CHANNELS> m_peakHolds{};      // Peak hold values
+  std::array<double, MAX_CHANNELS> m_peakHoldTimes{}; // Monotonic milliseconds
+  std::array<bool, MAX_CHANNELS> m_clipped{};         // Clip indicators
   std::array<float, MAX_CHANNELS> m_peakRmsNeedleDb{};
-  std::array<int64_t, MAX_CHANNELS> m_peakRmsNeedleTimes{};
+  std::array<LevelEvent, MAX_CHANNELS> m_pendingClipEvents{};
+  uint32_t m_pendingClipMask = 0;
 
   // Ballistics parameters
   float m_attackCoeff = 0.0f;
@@ -455,7 +461,7 @@ private:
   int m_historyHead = 0;
   int m_historyCount = 0;
   uint32_t m_eventTag = 0;
-  void recordEvent(int channel, float peakDb);
+  void recordEvent(const LevelEvent& event);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LevelMeter)
 };

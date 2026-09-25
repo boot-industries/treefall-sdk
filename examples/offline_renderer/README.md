@@ -1,6 +1,6 @@
 # Offline rendering with the Treefall SDK
 
-**SDK Version:** 0.9.0
+**SDK Version:** 0.9.1
 
 The SDK does not ship an `IOfflineRenderer` or `OfflineRenderJob` API, and it does not provide an `offline_renderer` executable. Offline work is a normal control-side composition of the installed public interfaces:
 
