@@ -21,8 +21,9 @@ inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 3;
 /// Schema version for the canonical routing-meter payload.
 inline constexpr uint32_t kRoutingMeterTelemetrySchemaVersion = 1;
 
-/// Default cadence: retain one snapshot after every eight audio callbacks.
-inline constexpr uint32_t kRealtimeTelemetryDefaultDecimationBlocks = 8;
+/// Publish each completed audio callback by default; visual consumers must not
+/// wait behind diagnostic decimation. Hosts may explicitly opt into a slower cadence.
+inline constexpr uint32_t kRealtimeTelemetryDefaultDecimationBlocks = 1;
 /// Maximum logical groups carried by the legacy fields in one telemetry snapshot.
 inline constexpr size_t kRealtimeTelemetryMaxGroups = 16;
 /// Maximum routing output lanes carried by one telemetry snapshot.

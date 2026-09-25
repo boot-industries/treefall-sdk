@@ -10,7 +10,7 @@ namespace remain compatible with existing consumers. Treefall provides
 deterministic session/transport control, sample-accurate clip playback, and
 real-time audio infrastructure.
 
-**Current version:** 0.9.0 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
+**Current version:** 0.9.1 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
 value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 `tools/version_contract.py` synchronizes public claims and CI rejects drift.
 
