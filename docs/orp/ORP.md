@@ -12,6 +12,10 @@ Project documentation index for orpheus-sdk.
   pruned merged local and remote branches, preserved exempt safety refs, and
   inventoried unresolved branches and active pull requests (2026-09-10)
 
+- [[ORP263 SDK Resilience, Responsiveness, and Architecture Review]] —
+  source-grounded resilience, realtime, lifecycle, ABI, package, and dependency review
+  with ranked findings and execution criteria (2026-09-25)
+
 - [[ORP260 SDK Main Reconciliation and Local ORP Preservation]] —
   merged renamed remote main while preserving local commits and local-only
   ORP records (2026-09-09)
@@ -89,6 +93,7 @@ Project documentation index for orpheus-sdk.
 
 - [ORP262 Branch Resolution and Outstanding Work Register](ORP262%20Branch%20Resolution%20and%20Outstanding%20Work%20Register.md)
 
+- [ORP263 SDK Resilience, Responsiveness, and Architecture Review](ORP263%20SDK%20Resilience,%20Responsiveness,%20and%20Architecture%20Review.md)
 - [ORP260 SDK Main Reconciliation and Local ORP Preservation](ORP260%20SDK%20Main%20Reconciliation%20and%20Local%20ORP%20Preservation.md)
 
 - [ORP180 Web Contribution Harness Feasibility and Plan](ORP180%20Web%20Contribution%20Harness%20Feasibility%20and%20Plan.md) — strategy home for contract-driven SDK docs, GitHub-backed community, read-only assistance, and vetted contributions (consolidated 2026-09-09)
