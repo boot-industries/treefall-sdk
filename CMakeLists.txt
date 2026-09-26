@@ -216,7 +216,7 @@ install(FILES
 install(DIRECTORY include/treefall DESTINATION include)
 install(DIRECTORY "${TREEFALL_GENERATED_INCLUDE_DIR}/" DESTINATION include/treefall)
 
-install(TARGETS orpheus_session orpheus_clipgrid orpheus_render
+install(TARGETS orpheus_abi_runtime orpheus_session orpheus_clipgrid orpheus_render
   EXPORT OrpheusSDKTargets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

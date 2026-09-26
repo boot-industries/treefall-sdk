@@ -22,6 +22,32 @@ typedef struct orpheus_transport_state {
   int32_t is_playing;
 } orpheus_transport_state;
 
+// ---------------------------------------------------------------------------
+// Session handle contract
+// ---------------------------------------------------------------------------
+// A session handle must come from the matching `create` entry point and remains
+// valid until its `destroy` runs. Every session handle is validated against a
+// runtime registry before it is cast or dereferenced:
+//   * a null handle passed to any status-returning operation yields
+//     ORPHEUS_STATUS_INVALID_ARGUMENT;
+//   * a non-null handle that is not currently registered - fabricated, foreign
+//     to this ABI, or already destroyed - yields ORPHEUS_STATUS_NOT_FOUND.
+// Neither case dereferences the handle.
+//
+// `destroy` returns no status. It is an idempotent no-op for a null, unknown, or
+// already-destroyed handle, and deletes the session only on the first call.
+//
+// Concurrent use of *distinct* handles is supported. Using one handle
+// concurrently with its own `destroy` is not supported.
+//
+// When the ABI libraries are built shared (the default), the registry is shared
+// across them, so a handle created through one ABI library is valid in the
+// others. In a static build the registry is per final link unit, so that
+// cross-library sharing is not provided.
+//
+// A generation-token handle representation would additionally reject a
+// destroyed handle whose address is later reused by a new session. That
+// redesign is out of scope; an address-keyed registry cannot detect that reuse.
 struct orpheus_session_handle_t;
 struct orpheus_track_handle_t;
 struct orpheus_clip_handle_t;

@@ -21,6 +21,8 @@ orpheus_enable_warnings(orpheus_minhost)
 if(ORP_BUILD_SHARED_CORE)
   add_custom_command(TARGET orpheus_minhost POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:orpheus_abi_runtime> $<TARGET_FILE_DIR:orpheus_minhost>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:orpheus_session> $<TARGET_FILE_DIR:orpheus_minhost>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:orpheus_clipgrid> $<TARGET_FILE_DIR:orpheus_minhost>
