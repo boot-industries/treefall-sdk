@@ -6,10 +6,13 @@
 // A dedicated export macro: the three ABI libraries force-define
 // ORPHEUS_BUILDING_DLL for themselves, so ORPHEUS_API would make each of them
 // expect their own definition of a symbol the runtime library owns.
+//
+// Only the exporting state is annotated. A static build must not mark its own
+// definitions dllimport, and shared consumers link the runtime's import library
+// through the target graph without needing the annotation, matching how
+// ORPHEUS_USING_DLL is deliberately not propagated in src/CMakeLists.txt.
 #if defined(_WIN32) && defined(ORPHEUS_ABI_RUNTIME_BUILDING_DLL)
 #define ORPHEUS_ABI_RUNTIME_API __declspec(dllexport)
-#elif defined(_WIN32)
-#define ORPHEUS_ABI_RUNTIME_API __declspec(dllimport)
 #else
 #define ORPHEUS_ABI_RUNTIME_API
 #endif
