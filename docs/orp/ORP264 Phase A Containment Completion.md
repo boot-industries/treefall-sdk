@@ -95,6 +95,15 @@ crashed rather than returning a status. The runtime is an internal artifact and
 is deliberately absent from `installed-targets.json.in`, the installed-target
 manifest assertion, and the documented `Orpheus::` target list.
 
+The runtime's export macro annotates only the exporting state. A first attempt
+used a two-state `dllexport`/`dllimport` macro and failed the Windows CI legs
+with `warning C4273: 'RegisterSession': inconsistent dll linkage` in the nested
+static SDK sub-builds, because a static build must never mark its own
+definitions `dllimport`. The fix mirrors the repository convention of
+`include/orpheus/export.h`: only the exporting state is annotated, and shared
+consumers link the runtime import library through the target graph without an
+annotation, exactly as `ORPHEUS_USING_DLL` is deliberately not propagated.
+
 ### F-04 — CoreAudio output shape validated before the first write
 
 The leading `memset` loop over advertised `mDataByteSize` was deleted from
@@ -147,9 +156,19 @@ the same for the null-lane case. All 58 routing tests pass after.
    (`src/core/session/session_graph.cpp:531-535`) is a pure scalar read; the
    guard is defense-in-depth, and the reachable crash class is proven by the
    fabricated, foreign, and destroyed-handle assertions instead.
-4. Windows shared-build link and DLL staging for the new runtime artifact are
-   evidenced only by the Windows CI legs, not by a local run on this macOS
-   host.
+4. Windows shared-build link and DLL staging for the new runtime artifact were
+   verified only by the Windows CI legs, not by a local run on this macOS host.
+   That limitation is now discharged for the two `windows-2022` legs, which
+   pass at the head commit; the physical WASAPI device evidence that gates
+   support-tier promotion is unaffected and still outstanding.
 5. Linux TSan evidence for the new registry surface was not collected on this
-   macOS host; the concurrency regression is present and runs in the suite, but
-   the sanitizer verdict comes from CI.
+   macOS host. The `Linux TSan ingress and realtime evidence` CI job covers it
+   and passes at the head commit.
+6. Three full-suite runs each surfaced one different transient failure
+   (`transport_integration_test`, `waveform_processor_test`,
+   `streaming_seek_test`, and once `coreaudio_driver_test`). Each passes
+   repeatedly in isolation, none shares code with the changed surfaces, and the
+   unmodified baseline reproduces the same class of failure under full-suite
+   load. A clean 82/82 Release run is recorded. These are pre-existing
+   load-dependent flakes, not regressions, and no test was weakened to
+   accommodate them.
