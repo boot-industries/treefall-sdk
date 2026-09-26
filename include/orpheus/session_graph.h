@@ -220,8 +220,13 @@ struct SessionTrackSnapshot {
 /// Time values are canonical sample-domain values at render_sample_rate_hz.
 /// Runtime transport, scene-trigger, marker, and playlist state are deliberately
 /// excluded from the transactional edit domain.
+///
+/// Schema 1 snapshots are still accepted; their allocator watermarks are
+/// derived from the TrackId/ClipId values they contain. Because schema 2
+/// appends fields, this type is not binary compatible with schema 1: every
+/// C++ consumer must be rebuilt against the header that declares it.
 struct SessionGraphSnapshot {
-  static constexpr std::uint32_t kSchemaVersion = 1u;
+  static constexpr std::uint32_t kSchemaVersion = 2u;
 
   std::uint32_t schema_version{kSchemaVersion};
   SessionId session_id{};
@@ -234,6 +239,11 @@ struct SessionGraphSnapshot {
   TimeRange session_range{};
   std::vector<SessionTrackSnapshot> tracks;
   std::vector<ClipId> clip_assignments;
+
+  /// Next raw TrackId/ClipId this graph will hand out. Restoring a snapshot
+  /// never lowers a live graph's watermark below any value it already issued.
+  std::uint64_t next_track_id_raw{1u};
+  std::uint64_t next_clip_id_raw{1u};
 };
 
 class SessionGraph {

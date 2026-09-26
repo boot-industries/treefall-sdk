@@ -96,9 +96,45 @@ int main() {
       groupMeters.coherent == 0 || groupMeters.group_count != 1 ||
       groupMeters.groups[0].logical_lane_count != 2 ||
       groupMeters.groups[0].raw_block_frames != orpheus::kRoutingSliceFrames ||
-      groupMeters.groups[0].lane_meters[0].peak_db <=
-          orpheus::kAudioMeterSilenceDb) {
+      groupMeters.groups[0].lane_meters[0].peak_db <= orpheus::kAudioMeterSilenceDb) {
     return 11;
+  }
+
+  // A malformed output shape is a no-touch return: the measured publication
+  // established above must survive both rejection paths unchanged.
+  const orpheus::GroupOutputMeterSnapshot measuredMeters = groupMeters;
+  std::vector<float> leftAgain(frames, -999.0f);
+  std::vector<float> rightAgain(frames, -999.0f);
+  if (routing->processRouting(inputs, nullptr, frames) !=
+      orpheus::SessionGraphError::InvalidParameter) {
+    return 12;
+  }
+  orpheus::GroupOutputMeterSnapshot afterNullMaster;
+  routing->copyGroupOutputMeterSnapshot(afterNullMaster);
+  if (afterNullMaster.coherent != measuredMeters.coherent ||
+      afterNullMaster.availability != measuredMeters.availability ||
+      afterNullMaster.render_sequence != measuredMeters.render_sequence ||
+      afterNullMaster.routing_topology_revision != measuredMeters.routing_topology_revision ||
+      afterNullMaster.groups[0].availability != measuredMeters.groups[0].availability ||
+      afterNullMaster.groups[0].lane_meters[0].peak_db !=
+          measuredMeters.groups[0].lane_meters[0].peak_db) {
+    return 12;
+  }
+  float* nullLane[2] = {leftAgain.data(), nullptr};
+  if (routing->processRouting(inputs, nullLane, frames) !=
+      orpheus::SessionGraphError::InvalidParameter) {
+    return 13;
+  }
+  orpheus::GroupOutputMeterSnapshot afterNullLane;
+  routing->copyGroupOutputMeterSnapshot(afterNullLane);
+  if (afterNullLane.coherent != measuredMeters.coherent ||
+      afterNullLane.availability != measuredMeters.availability ||
+      afterNullLane.render_sequence != measuredMeters.render_sequence ||
+      afterNullLane.routing_topology_revision != measuredMeters.routing_topology_revision ||
+      afterNullLane.groups[0].availability != measuredMeters.groups[0].availability ||
+      afterNullLane.groups[0].lane_meters[0].peak_db !=
+          measuredMeters.groups[0].lane_meters[0].peak_db) {
+    return 13;
   }
 
   const auto initialRouting = routing->getRoutingControlSnapshot();

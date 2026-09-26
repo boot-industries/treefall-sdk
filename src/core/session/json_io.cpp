@@ -58,6 +58,14 @@ std::string ReadTextFile(const std::filesystem::path& path) {
   return buffer.str();
 }
 
+// A primary document written by a newer SDK is never substituted with an
+// older backup. This type never escapes the translation unit: every exported
+// entry point converts it back to the public std::runtime_error contract.
+class UnsupportedSessionSchema final : public std::runtime_error {
+public:
+  UnsupportedSessionSchema() : std::runtime_error("Unsupported session schema_version") {}
+};
+
 void SyncFile(std::FILE* file, const std::filesystem::path& path) {
   if (std::fflush(file) != 0) {
     throw std::runtime_error("Failed to flush session: " + path.string());
@@ -178,14 +186,16 @@ std::string SanitizeSessionName(const std::string& session_name) {
 
 } // namespace
 
-SessionGraph ParseSession(const std::string& json_text) {
+namespace {
+
+SessionGraph parseSessionDocument(const std::string& json_text) {
   JsonParser parser(json_text);
   const JsonValue root = parser.Parse();
   const JsonValue& object = ExpectObject(root, "session root");
   if (auto schema_it = object.object.find("schema_version"); schema_it != object.object.end()) {
     const double version = RequireNumber(schema_it->second, "schema_version");
     if (version != 0.0 && version != static_cast<double>(kCurrentSessionSchemaVersion)) {
-      throw std::runtime_error("Unsupported session schema_version");
+      throw UnsupportedSessionSchema();
     }
   }
 
@@ -301,6 +311,16 @@ SessionGraph ParseSession(const std::string& json_text) {
 
   session.commit_clip_grid();
   return session;
+}
+
+} // namespace
+
+SessionGraph ParseSession(const std::string& json_text) {
+  try {
+    return parseSessionDocument(json_text);
+  } catch (const UnsupportedSessionSchema& error) {
+    throw std::runtime_error(error.what());
+  }
 }
 
 std::string SerializeSession(const SessionGraph& session) {
@@ -487,7 +507,11 @@ std::string SerializeSession(const SessionGraph& session) {
 
 SessionLoadResult LoadSessionWithRecovery(const std::string& path) {
   try {
-    return {ParseSession(ReadTextFile(path)), false, path};
+    return {parseSessionDocument(ReadTextFile(path)), false, path};
+  } catch (const UnsupportedSessionSchema& error) {
+    // The primary document is authoritative. A future schema is never
+    // downgraded to an older backup.
+    throw std::runtime_error(error.what());
   } catch (const std::exception& primaryError) {
     const std::filesystem::path backup = std::filesystem::path(path).concat(".bak");
     try {

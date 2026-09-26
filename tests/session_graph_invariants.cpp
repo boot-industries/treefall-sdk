@@ -176,7 +176,7 @@ TEST(SessionGraphTransactions, CoalescesStableIdEditsIntoOneRevision) {
   EXPECT_EQ(snapshot.clip_assignments, (std::vector<ClipId>{clip_id}));
 }
 
-TEST(SessionGraphTransactions, DestructionRollsBackStateAndIdWatermarks) {
+TEST(SessionGraphTransactions, DestructionRollsBackStateWithoutRegressingIdWatermarks) {
   SessionGraph session;
   const TrackId first_id = session.create_track("Existing");
   const std::uint64_t base_revision = session.revision();
@@ -192,7 +192,118 @@ TEST(SessionGraphTransactions, DestructionRollsBackStateAndIdWatermarks) {
   EXPECT_EQ(session.name(), "Session");
   ASSERT_EQ(session.tracks().size(), 1u);
   EXPECT_EQ(session.tracks()[0]->id(), first_id);
-  EXPECT_EQ(session.create_track("Replacement"), rolled_back_id);
+  const TrackId replacement_id = session.create_track("Replacement");
+  EXPECT_GT(replacement_id.raw(), rolled_back_id.raw());
+}
+
+TEST(SessionGraphTransactions, RemovedIdsAreNeverReallocatedAfterRollback) {
+  SessionGraph session;
+  const TrackId removed_track = session.create_track("Removed");
+  const TrackId survivor = session.create_track("Survivor");
+  ASSERT_TRUE(session.remove_track(removed_track));
+  ASSERT_EQ(session.tracks().size(), 1u);
+
+  TrackId provisional_track;
+  {
+    auto transaction = session.begin_transaction();
+    provisional_track = session.create_track("Provisional");
+  }
+  const TrackId after_rollback_track = session.create_track("After rollback");
+  EXPECT_GT(after_rollback_track.raw(), provisional_track.raw());
+
+  const ClipId removed_clip = session.create_clip(
+      survivor, "Removed clip", TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000));
+  ASSERT_TRUE(session.remove_clip(removed_clip));
+
+  ClipId provisional_clip;
+  {
+    auto transaction = session.begin_transaction();
+    provisional_clip =
+        session.create_clip(survivor, "Provisional clip",
+                            TimeRange::fromStartLength(TimePoint::fromSamples(48000), 48000));
+  }
+  const ClipId after_rollback_clip =
+      session.create_clip(survivor, "After rollback clip",
+                          TimeRange::fromStartLength(TimePoint::fromSamples(96000), 48000));
+  EXPECT_GT(after_rollback_clip.raw(), provisional_clip.raw());
+}
+
+TEST(SessionGraphTransactions, RestoreOfOlderSnapshotDoesNotRegressAllocator) {
+  SessionGraph session;
+  const TrackId first_track = session.create_track("First");
+  const ClipId first_clip = session.create_clip(
+      first_track, "First clip", TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000));
+  const SessionGraphSnapshot before = session.snapshot();
+
+  const TrackId second_track = session.create_track("Second");
+  const ClipId second_clip = session.create_clip(
+      first_track, "Second clip", TimeRange::fromStartLength(TimePoint::fromSamples(48000), 48000));
+  EXPECT_GT(second_track.raw(), first_track.raw());
+  EXPECT_GT(second_clip.raw(), first_clip.raw());
+
+  session.restore(before);
+  ASSERT_EQ(session.tracks().size(), 1u);
+  EXPECT_EQ(session.tracks()[0]->id(), first_track);
+  EXPECT_GT(session.create_track("After restore").raw(), second_track.raw());
+  EXPECT_GT(session
+                .create_clip(first_track, "Clip after restore",
+                             TimeRange::fromStartLength(TimePoint::fromSamples(96000), 48000))
+                .raw(),
+            second_clip.raw());
+}
+
+TEST(SessionGraphTransactions, PersistedSnapshotRestoresAboveItsWatermark) {
+  SessionGraph source;
+  const TrackId track = source.create_track("Track");
+  static_cast<void>(source.create_clip(
+      track, "Clip", TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000)));
+  static_cast<void>(source.create_track("Second"));
+  const SessionGraphSnapshot before = source.snapshot();
+
+  // A fresh graph's own watermark is 1. Restoring must raise it to the
+  // persisted one, so the first allocation the restored graph hands out is the
+  // persisted next ID rather than a reuse of a lower value.
+  SessionGraph destination;
+  destination.restore(before);
+  EXPECT_EQ(destination.create_track("Restored").raw(), before.next_track_id_raw);
+  EXPECT_EQ(destination
+                .create_clip(track, "Restored clip",
+                             TimeRange::fromStartLength(TimePoint::fromSamples(48000), 48000))
+                .raw(),
+            before.next_clip_id_raw);
+  EXPECT_GT(before.next_track_id_raw, 1u);
+  EXPECT_GT(before.next_clip_id_raw, 1u);
+}
+
+TEST(SessionGraphTransactions, LegacySnapshotRestoresUsingExtantIds) {
+  SessionGraph source;
+  const TrackId track = source.create_track("Track");
+  const ClipId clip = source.create_clip(
+      track, "Clip", TimeRange::fromStartLength(TimePoint::fromSamples(0), 48000));
+  SessionGraphSnapshot legacy = source.snapshot();
+  legacy.next_track_id_raw = 50u;
+  legacy.next_clip_id_raw = 60u;
+  legacy.schema_version = 1u;
+  legacy.next_track_id_raw = 0u;
+  legacy.next_clip_id_raw = 0u;
+
+  SessionGraph destination;
+  destination.restore(legacy);
+  // The version-1 path must ignore the persisted watermark for both allocators
+  // and derive them from the IDs the snapshot actually carries.
+  EXPECT_EQ(destination.create_track("Restored").raw(), track.raw() + 1u);
+  EXPECT_EQ(destination
+                .create_clip(track, "Restored clip",
+                             TimeRange::fromStartLength(TimePoint::fromSamples(48000), 48000))
+                .raw(),
+            clip.raw() + 1u);
+
+  SessionGraphSnapshot too_old = source.snapshot();
+  too_old.schema_version = 0u;
+  EXPECT_THROW(destination.restore(too_old), std::invalid_argument);
+  SessionGraphSnapshot too_new = source.snapshot();
+  too_new.schema_version = SessionGraphSnapshot::kSchemaVersion + 1u;
+  EXPECT_THROW(destination.restore(too_new), std::invalid_argument);
 }
 
 TEST(SessionGraphTransactions, RestoreProvidesUndoRedoWithoutReusingOldRevision) {

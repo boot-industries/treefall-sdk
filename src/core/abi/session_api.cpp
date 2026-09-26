@@ -3,10 +3,12 @@
 
 #include "abi/abi_internal.h"
 
+#include <memory>
+
 #include <string>
 
 using orpheus::abi_internal::GuardAbiCall;
-using orpheus::abi_internal::ToSession;
+using orpheus::abi_internal::ResolveSessionHandle;
 using orpheus::abi_internal::ToTrack;
 
 namespace {
@@ -16,15 +18,21 @@ orpheus_status SessionCreate(orpheus_session_handle* out_session) {
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session = new orpheus::core::SessionGraph();
-    *out_session = reinterpret_cast<orpheus_session_handle>(session);
+    auto session = std::make_unique<orpheus::core::SessionGraph>();
+    orpheus_session_handle handle = nullptr;
+    if (!orpheus::abi_internal::RegisterSession(session.get(), handle)) {
+      return ORPHEUS_STATUS_OUT_OF_MEMORY;
+    }
+    session.release();
+    *out_session = handle;
     return ORPHEUS_STATUS_OK;
   });
 }
 
 void SessionDestroy(orpheus_session_handle session) {
-  auto* ptr = ToSession(session);
-  delete ptr;
+  // Unregister and delete under one lock, so a null, unknown, or
+  // already-destroyed handle is an idempotent no-op.
+  delete orpheus::abi_internal::UnregisterSession(session);
 }
 
 orpheus_status SessionAddTrack(orpheus_session_handle session, const orpheus_track_desc* desc,
@@ -33,7 +41,11 @@ orpheus_status SessionAddTrack(orpheus_session_handle session, const orpheus_tra
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     const std::string name = desc->name != nullptr ? desc->name : "";
     orpheus::core::Track* track = session_ptr->add_track(name);
     *out_track = reinterpret_cast<orpheus_track_handle>(track);
@@ -46,7 +58,11 @@ orpheus_status SessionRemoveTrack(orpheus_session_handle session, orpheus_track_
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* track_ptr = ToTrack(track);
     if (!session_ptr->remove_track(track_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -60,7 +76,12 @@ orpheus_status SessionSetTempo(orpheus_session_handle session, double bpm) {
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    ToSession(session)->set_tempo(bpm);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
+    session_ptr->set_tempo(bpm);
     return ORPHEUS_STATUS_OK;
   });
 }
@@ -70,12 +91,18 @@ orpheus_status SessionGetTransportState(orpheus_session_handle session,
   if (session == nullptr || out_state == nullptr) {
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
-  auto* session_ptr = ToSession(session);
-  const auto state = session_ptr->transport_state();
-  out_state->tempo_bpm = state.tempo_bpm;
-  out_state->position_beats = state.position_beats;
-  out_state->is_playing = state.is_playing ? 1 : 0;
-  return ORPHEUS_STATUS_OK;
+  return GuardAbiCall([&]() -> orpheus_status {
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
+    const auto state = session_ptr->transport_state();
+    out_state->tempo_bpm = state.tempo_bpm;
+    out_state->position_beats = state.position_beats;
+    out_state->is_playing = state.is_playing ? 1 : 0;
+    return ORPHEUS_STATUS_OK;
+  });
 }
 
 const orpheus_session_api_v1 kSessionApiV1{

@@ -85,6 +85,15 @@ public:
   void setInputRenderFailuresForTesting(uint64_t count) noexcept;
   void incrementInputRenderFailuresForTesting() noexcept;
 
+  /// Test-only entry point for the static AudioUnit render callback. The
+  /// production AudioUnit installs renderCallback directly; this wrapper lets
+  /// injected-shape tests exercise the same code path without hardware.
+  static OSStatus renderCallbackForTesting(void* in_ref_con,
+                                           AudioUnitRenderActionFlags* io_action_flags,
+                                           const AudioTimeStamp* in_time_stamp,
+                                           UInt32 in_bus_number, UInt32 in_number_frames,
+                                           AudioBufferList* io_data);
+
 private:
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,

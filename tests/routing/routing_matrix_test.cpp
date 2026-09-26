@@ -3,7 +3,6 @@
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
 
-
 #include <array>
 #include <atomic>
 #include <limits>
@@ -35,7 +34,6 @@ public:
   }
 };
 } // namespace orpheus
-
 
 class RoutingMatrixTest : public ::testing::Test {
 protected:
@@ -1416,10 +1414,8 @@ TEST_F(RoutingMatrixTest, GroupOutputMeterFrameUsesPostGroupLogicalLanes) {
   ASSERT_EQ(snapshot.coherent, 1);
   ASSERT_EQ(snapshot.groups[0].availability, MeterAvailability::Measured);
   ASSERT_EQ(snapshot.groups[0].logical_lane_count, 2);
-  const float legacyPeak =
-      std::pow(10.0f, matrix->getGroupMeter(0).peak_db / 20.0f);
-  const float logicalPeak =
-      std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
+  const float legacyPeak = std::pow(10.0f, matrix->getGroupMeter(0).peak_db / 20.0f);
+  const float logicalPeak = std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
   EXPECT_NEAR(legacyPeak, 0.5f, 0.001f);
   EXPECT_NEAR(logicalPeak, 0.5f * std::pow(10.0f, -6.0f / 20.0f), 0.001f);
   EXPECT_LT(logicalPeak, legacyPeak);
@@ -1607,7 +1603,6 @@ TEST_F(RoutingMatrixTest, RoutingTopologyRevisionResetsOnInitialize) {
   EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], 0.25f, 0.001f);
 }
 
-
 TEST_F(RoutingMatrixTest, TruePeakMeterStateResetsOnSilenceMuteAndTopologyChange) {
   config.num_channels = 1;
   config.num_groups = 1;
@@ -1682,8 +1677,7 @@ TEST_F(RoutingMatrixTest, TruePeakImpulseProcessesTrailingZeros) {
     const float* secondInputs[1] = {second.data()};
     std::vector<float> secondOutput(1, 0.0f);
     float* secondOutputs[1] = {secondOutput.data()};
-    EXPECT_EQ(localMatrix->processRouting(secondInputs, secondOutputs, 1),
-              SessionGraphError::OK);
+    EXPECT_EQ(localMatrix->processRouting(secondInputs, secondOutputs, 1), SessionGraphError::OK);
     GroupOutputMeterSnapshot snapshot;
     localMatrix->copyGroupOutputMeterSnapshot(snapshot);
     return std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
@@ -1748,12 +1742,10 @@ TEST_F(RoutingMatrixTest, ConfigurationAndSnapshotValidationAreFailureAtomic) {
 
   auto invalidChannel = valid;
   invalidChannel.gain_db = std::numeric_limits<float>::quiet_NaN();
-  EXPECT_EQ(matrix->configureChannel(0, invalidChannel),
-            SessionGraphError::InvalidParameter);
+  EXPECT_EQ(matrix->configureChannel(0, invalidChannel), SessionGraphError::InvalidParameter);
   invalidChannel = valid;
   invalidChannel.pan = std::numeric_limits<float>::infinity();
-  EXPECT_EQ(matrix->configureChannel(0, invalidChannel),
-            SessionGraphError::InvalidParameter);
+  EXPECT_EQ(matrix->configureChannel(0, invalidChannel), SessionGraphError::InvalidParameter);
   const auto afterConfigure = matrix->saveSnapshot("after configure");
   EXPECT_EQ(afterConfigure.channels[0].group_index, before.channels[0].group_index);
   EXPECT_EQ(afterConfigure.channels[0].output_channel, before.channels[0].output_channel);
@@ -1801,8 +1793,7 @@ TEST_F(RoutingMatrixTest, LufsModePreservesLegacyProxyAndLogicalSamplePeak) {
   const AudioMeter legacy = matrix->getGroupMeter(0);
   GroupOutputMeterSnapshot snapshot;
   matrix->copyGroupOutputMeterSnapshot(snapshot);
-  const float logicalPeak =
-      std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
+  const float logicalPeak = std::pow(10.0f, snapshot.groups[0].lane_meters[0].peak_db / 20.0f);
   EXPECT_EQ(snapshot.groups[0].peak_definition, MeterPeakDefinition::SamplePeak);
   EXPECT_NEAR(logicalPeak, 0.5f, 0.001f);
   EXPECT_LT(legacy.peak_db, snapshot.groups[0].lane_meters[0].peak_db);
@@ -1817,32 +1808,83 @@ int main(int argc, char** argv) {
   return RUN_ALL_TESTS();
 }
 
+namespace {
+// True when every published field of a meter snapshot is unchanged. Compares
+// fields rather than object representation: AudioMeter has a user-provided
+// constructor and padding, so the trivially-copyable snapshot's padding is
+// neither guaranteed to be initialized nor preserved by a copy.
+bool meterSnapshotsMatch(const GroupOutputMeterSnapshot& lhs, const GroupOutputMeterSnapshot& rhs) {
+  if (lhs.schema_version != rhs.schema_version || lhs.coherent != rhs.coherent ||
+      lhs.availability != rhs.availability || lhs.group_count != rhs.group_count ||
+      lhs.render_sequence != rhs.render_sequence ||
+      lhs.routing_topology_revision != rhs.routing_topology_revision) {
+    return false;
+  }
+  for (size_t group = 0; group < kRoutingControlMaxGroups; ++group) {
+    if (lhs.groups[group].routing_output_start != rhs.groups[group].routing_output_start ||
+        lhs.groups[group].logical_lane_count != rhs.groups[group].logical_lane_count ||
+        lhs.groups[group].availability != rhs.groups[group].availability ||
+        lhs.groups[group].peak_definition != rhs.groups[group].peak_definition ||
+        lhs.groups[group].raw_block_frames != rhs.groups[group].raw_block_frames) {
+      return false;
+    }
+    for (size_t lane = 0; lane < kRoutingMaxOutputs; ++lane) {
+      const AudioMeter& a = lhs.groups[group].lane_meters[lane];
+      const AudioMeter& b = rhs.groups[group].lane_meters[lane];
+      if (a.peak_db != b.peak_db || a.rms_db != b.rms_db || a.clipping != b.clipping ||
+          a.clip_count != b.clip_count) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+} // namespace
+
 TEST_F(RoutingMatrixTest, MalformedOutputShapeIsNoTouch) {
   ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
   std::vector<float> left(BUFFER_SIZE, 13.0f);
   std::vector<float> right(BUFFER_SIZE, 13.0f);
   float* outputs[2] = {left.data(), right.data()};
 
+  // One valid render establishes a measured, coherent publication. Every
+  // rejected call below must leave that publication byte-for-byte identical
+  // in its published fields.
+  ASSERT_EQ(matrix->processRouting(nullptr, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  GroupOutputMeterSnapshot measured{};
+  matrix->copyGroupOutputMeterSnapshot(measured);
+  ASSERT_NE(measured.coherent, 0u);
+  ASSERT_EQ(measured.availability, MeterAvailability::Measured);
+
   EXPECT_EQ(matrix->processRouting(nullptr, nullptr, BUFFER_SIZE),
             SessionGraphError::InvalidParameter);
-  EXPECT_EQ(matrix->processRouting(nullptr, outputs, BUFFER_SIZE),
-            SessionGraphError::OK);
-  for (float sample : left) {
-    EXPECT_FLOAT_EQ(sample, 0.0f);
-  }
-  for (float sample : right) {
-    EXPECT_FLOAT_EQ(sample, 0.0f);
-  }
+  GroupOutputMeterSnapshot after_null_master{};
+  matrix->copyGroupOutputMeterSnapshot(after_null_master);
+  EXPECT_TRUE(meterSnapshotsMatch(measured, after_null_master));
 
   left.assign(BUFFER_SIZE, 13.0f);
   right.assign(BUFFER_SIZE, 13.0f);
   float* null_lane[2] = {left.data(), nullptr};
   EXPECT_EQ(matrix->processRouting(nullptr, null_lane, BUFFER_SIZE),
             SessionGraphError::InvalidParameter);
+  GroupOutputMeterSnapshot after_null_lane{};
+  matrix->copyGroupOutputMeterSnapshot(after_null_lane);
+  EXPECT_TRUE(meterSnapshotsMatch(measured, after_null_lane));
   for (float sample : left) {
     EXPECT_FLOAT_EQ(sample, 13.0f);
   }
   for (float sample : right) {
     EXPECT_FLOAT_EQ(sample, 13.0f);
+  }
+
+  // Null input lanes remain valid and still produce a measured render.
+  left.assign(BUFFER_SIZE, 13.0f);
+  right.assign(BUFFER_SIZE, 13.0f);
+  EXPECT_EQ(matrix->processRouting(nullptr, outputs, BUFFER_SIZE), SessionGraphError::OK);
+  for (float sample : left) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
+  }
+  for (float sample : right) {
+    EXPECT_FLOAT_EQ(sample, 0.0f);
   }
 }

@@ -37,6 +37,7 @@ target_link_libraries(orpheus_package_runtime_consumer PRIVATE
 
 if(WIN32)
   foreach(runtime_target
+      Orpheus::orpheus_abi_runtime
       Orpheus::orpheus_session
       Orpheus::orpheus_clipgrid
       Orpheus::orpheus_render)
