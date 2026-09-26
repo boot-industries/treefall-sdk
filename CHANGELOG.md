@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Loading a session whose primary document advertises a newer schema version
+  now fails with a hard error instead of silently falling back to the `.bak`
+  file. A primary document is authoritative; malformed, truncated, missing, and
+  unreadable primaries continue to recover from the backup as before.
+
+- `SessionGraph` allocator watermarks are now monotonic across transaction
+  rollback and snapshot restore. A `TrackId` or `ClipId` that was issued and
+  then rolled back or restored away is never handed out again.
+  `SessionGraphSnapshot` is now schema 2 and appends two watermark fields, so
+  every C++ consumer must be rebuilt against the matching header; the stable C
+  ABI 1.0 tables and their layouts are unchanged.
+
+- Every C ABI session handle is now validated through a shared runtime registry
+  before it is cast or dereferenced. Fabricated, foreign, and already-destroyed
+  handles return `ORPHEUS_STATUS_NOT_FOUND` instead of dereferencing invalid
+  memory, a null handle returns `ORPHEUS_STATUS_INVALID_ARGUMENT`, and `destroy`
+  is an idempotent no-op that also unregisters the handle. The contract is
+  published on the handle typedefs in both `<orpheus/abi.h>` and
+  `<treefall/abi.h>`.
+
+- The CoreAudio render callback now completes output-shape validation before its
+  first write, so a malformed `AudioBufferList` no longer has its caller-owned
+  buffers cleared before being rejected. A valid callback that fails admission
+  or conversion now clears exactly `frames * sizeof(float)` per configured
+  output lane rather than each buffer's advertised byte size.
+
+- Routing's malformed-output rejection no longer mutates meter publication
+  state. A null `master_output` or a null configured output lane is now a true
+  no-touch return: routing control state, the group-output meter snapshot, and
+  telemetry are all left unchanged.
+
 ## [0.9.1] - 2026-09-10
 
 Treefall SDK patch release; stable C ABI 1.0 is retained. Rebuild all C++

@@ -8,6 +8,11 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP264 Phase A Containment Completion]] —
+  contained ORP263 findings F-01 through F-05 across session loading, allocator
+  monotonicity, C ABI handle validation, CoreAudio output validation, and
+  routing meter publication (2026-09-26)
+
 - [[ORP262 Branch Resolution and Outstanding Work Register]] —
   pruned merged local and remote branches, preserved exempt safety refs, and
   inventoried unresolved branches and active pull requests (2026-09-10)
@@ -91,6 +96,7 @@ Project documentation index for orpheus-sdk.
 
 ## Records
 
+- [ORP264 Phase A Containment Completion](ORP264%20Phase%20A%20Containment%20Completion.md)
 - [ORP262 Branch Resolution and Outstanding Work Register](ORP262%20Branch%20Resolution%20and%20Outstanding%20Work%20Register.md)
 
 - [ORP263 SDK Resilience, Responsiveness, and Architecture Review](ORP263%20SDK%20Resilience,%20Responsiveness,%20and%20Architecture%20Review.md)
