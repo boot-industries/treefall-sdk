@@ -4,6 +4,7 @@
 #include "treefall/errors.h"
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -272,6 +273,43 @@ int main() {
     orpheus_session_handle handle = nullptr;
     if (old_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr)->create(&handle) != ORPHEUS_STATUS_OK)
       throw std::runtime_error("Cross-name session create failed");
+
+    // One registry instance must be shared by all three ABI shared libraries, so
+    // a session created through the session module validates in the clipgrid and
+    // render modules. This fails outright if the registry is not one library.
+    auto old_clipgrid =
+        reinterpret_cast<const orpheus_clipgrid_api_v1* (*)(uint32_t, uint32_t*, uint32_t*)>(
+            LoadSymbol(handles[1], "orpheus_clipgrid_abi_v1"));
+    auto old_render =
+        reinterpret_cast<const orpheus_render_api_v1* (*)(uint32_t, uint32_t*, uint32_t*)>(
+            LoadSymbol(handles[2], "orpheus_render_abi_v1"));
+    const orpheus_track_desc track_desc{"cross-dso"};
+    orpheus_track_handle track = nullptr;
+    if (old_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr)->add_track(handle, &track_desc, &track) !=
+        ORPHEUS_STATUS_OK)
+      throw std::runtime_error("Cross-DSO add_track failed");
+    const orpheus_clip_desc clip_desc{"cross-dso", 0.0, 1.0, 0};
+    orpheus_clip_handle clip = nullptr;
+    if (old_clipgrid(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
+            ->add_clip(handle, track, &clip_desc, &clip) != ORPHEUS_STATUS_OK)
+      throw std::runtime_error("Cross-DSO add_clip failed: the session registry is not shared");
+    const fs::path render_output = fs::temp_directory_path() / "abi_link_cross_dso.json";
+    if (old_render(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
+            ->render_tracks(handle, render_output.string().c_str()) != ORPHEUS_STATUS_OK)
+      throw std::runtime_error(
+          "Cross-DSO render_tracks failed: the session registry is not shared");
+    std::error_code ignored;
+    fs::remove(render_output, ignored);
+
+    // The same validation applies across module boundaries.
+    const auto fabricated = reinterpret_cast<orpheus_session_handle>(static_cast<uintptr_t>(0x1));
+    if (old_clipgrid(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
+            ->add_clip(fabricated, track, &clip_desc, &clip) != ORPHEUS_STATUS_NOT_FOUND)
+      throw std::runtime_error("Cross-DSO fabricated handle was not rejected");
+    new_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr)->destroy(handle);
+    if (old_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr)->set_tempo(handle, 120.0) !=
+        ORPHEUS_STATUS_NOT_FOUND)
+      throw std::runtime_error("Cross-DSO destroyed handle was not rejected");
     new_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr)->destroy(handle);
   } catch (const std::exception& ex) {
     std::cerr << "ABI link smoke failed: " << ex.what() << std::endl;

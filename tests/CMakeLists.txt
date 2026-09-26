@@ -8,6 +8,7 @@ function(orpheus_stage_runtime_dlls_in_directory)
         add_custom_command(TARGET ${_orpheus_target} POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
                   $<TARGET_RUNTIME_DLLS:${_orpheus_target}>
+                  $<TARGET_FILE:orpheus_abi_runtime>
                   $<TARGET_FILE:orpheus_session>
                   $<TARGET_FILE:orpheus_clipgrid>
                   $<TARGET_FILE:orpheus_render>

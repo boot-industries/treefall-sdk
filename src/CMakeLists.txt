@@ -57,6 +57,35 @@ target_include_directories(orpheus_core_runtime
 )
 set_target_properties(orpheus_core_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Shared C ABI session handle registry. Linked privately by the three ABI
+# libraries so a handle created through one shared library validates in the
+# others. Internal artifact: never added to ORPHEUS_CORE_TARGETS, the installed
+# target manifest, or the documented Orpheus:: target list.
+add_library(orpheus_abi_runtime ${ORPHEUS_LIBRARY_TYPE}
+  core/abi/abi_runtime.cpp
+)
+target_compile_features(orpheus_abi_runtime PUBLIC cxx_std_20)
+target_include_directories(orpheus_abi_runtime
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/core
+)
+set_target_properties(orpheus_abi_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(ORPHEUS_THREADS_TARGET)
+  # PRIVATE: std::mutex is a detail of abi_runtime.cpp, so no installed consumer
+  # inherits a Threads dependency through this target's link interface.
+  target_link_libraries(orpheus_abi_runtime PRIVATE ${ORPHEUS_THREADS_TARGET})
+endif()
+if(WIN32 AND ORP_BUILD_SHARED_CORE)
+  # This target owns the registry symbols. ORPHEUS_API cannot be used for them
+  # because the ABI libraries define ORPHEUS_BUILDING_DLL for themselves.
+  target_compile_definitions(orpheus_abi_runtime
+    PRIVATE ORPHEUS_ABI_RUNTIME_BUILDING_DLL)
+  set_target_properties(orpheus_abi_runtime PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+endif()
+
 add_library(orpheus_session ${ORPHEUS_LIBRARY_TYPE}
   core/abi/session_api.cpp
 )
@@ -113,6 +142,7 @@ include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
 orpheus_enable_warnings(orpheus_diagnostics_objects)
 orpheus_enable_warnings(orpheus_channel_format_objects)
 orpheus_enable_warnings(orpheus_core_runtime)
+orpheus_enable_warnings(orpheus_abi_runtime)
 foreach(target ${ORPHEUS_CORE_TARGETS})
   orpheus_enable_warnings(${target})
 endforeach()
@@ -121,6 +151,7 @@ orpheus_enable_warnings(orpheus_diagnostics)
 orpheus_enable_sanitizers(orpheus_diagnostics_objects)
 orpheus_enable_sanitizers(orpheus_channel_format_objects)
 orpheus_enable_sanitizers(orpheus_core_runtime)
+orpheus_enable_sanitizers(orpheus_abi_runtime)
 foreach(target ${ORPHEUS_CORE_TARGETS})
   orpheus_enable_sanitizers(${target})
 endforeach()
@@ -136,7 +167,14 @@ if(WIN32 AND ORP_BUILD_SHARED_CORE)
   endforeach()
 endif()
 
+# Internal: not part of ORPHEUS_CORE_TARGETS, so this does not become a required
+# public contract of Orpheus::core.
+foreach(abi_target orpheus_session orpheus_clipgrid orpheus_render)
+  target_link_libraries(${abi_target} PRIVATE orpheus_abi_runtime)
+endforeach()
+
 # M2: Real-time infrastructure modules
+
 if(ORPHEUS_ENABLE_REALTIME)
   add_subdirectory(core/transport)
   list(APPEND ORPHEUS_CORE_TARGETS orpheus_transport)

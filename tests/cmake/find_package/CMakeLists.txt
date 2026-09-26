@@ -53,6 +53,7 @@ function(add_orpheus_fixture target source)
   endif()
   if(WIN32)
     foreach(runtime_target
+        Orpheus::orpheus_abi_runtime
         Orpheus::orpheus_session
         Orpheus::orpheus_clipgrid
         Orpheus::orpheus_render)

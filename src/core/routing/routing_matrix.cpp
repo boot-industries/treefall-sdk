@@ -932,16 +932,10 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   const int cfg_idx = m_active_config_idx.load(std::memory_order_acquire);
   const RoutingConfig& cfg = m_config_buffers[cfg_idx];
   if (master_output == nullptr) {
-    m_group_output_meter_availability.store(static_cast<uint8_t>(MeterAvailability::Unmeasured),
-                                            std::memory_order_release);
-    m_group_output_meter_coherent.store(0, std::memory_order_release);
     return SessionGraphError::InvalidParameter;
   }
   for (RoutingOutputIndex out = 0; out < cfg.num_outputs; ++out) {
     if (master_output[out] == nullptr) {
-      m_group_output_meter_availability.store(static_cast<uint8_t>(MeterAvailability::Unmeasured),
-                                              std::memory_order_release);
-      m_group_output_meter_coherent.store(0, std::memory_order_release);
       return SessionGraphError::InvalidParameter;
     }
   }

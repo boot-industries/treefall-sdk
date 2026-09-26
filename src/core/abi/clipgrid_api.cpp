@@ -6,10 +6,10 @@
 #include <string>
 
 using orpheus::abi_internal::GuardAbiCall;
+using orpheus::abi_internal::ResolveSessionHandle;
 using orpheus::abi_internal::SessionOwnsClip;
 using orpheus::abi_internal::SessionOwnsTrack;
 using orpheus::abi_internal::ToClip;
-using orpheus::abi_internal::ToSession;
 using orpheus::abi_internal::ToTrack;
 
 namespace {
@@ -20,7 +20,11 @@ orpheus_status ClipgridAddClip(orpheus_session_handle session, orpheus_track_han
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* track_ptr = ToTrack(track);
     if (!SessionOwnsTrack(*session_ptr, track_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -38,7 +42,11 @@ orpheus_status ClipgridRemoveClip(orpheus_session_handle session, orpheus_clip_h
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* clip_ptr = ToClip(clip);
     if (!session_ptr->remove_clip(clip_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -53,7 +61,11 @@ orpheus_status ClipgridSetClipStart(orpheus_session_handle session, orpheus_clip
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* clip_ptr = ToClip(clip);
     if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -69,7 +81,11 @@ orpheus_status ClipgridSetClipLength(orpheus_session_handle session, orpheus_cli
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* clip_ptr = ToClip(clip);
     if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -85,7 +101,11 @@ orpheus_status ClipgridSetClipScene(orpheus_session_handle session, orpheus_clip
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     auto* clip_ptr = ToClip(clip);
     if (!SessionOwnsClip(*session_ptr, clip_ptr)) {
       return ORPHEUS_STATUS_NOT_FOUND;
@@ -100,7 +120,12 @@ orpheus_status ClipgridCommit(orpheus_session_handle session) {
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    ToSession(session)->commit_clip_grid();
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
+    session_ptr->commit_clip_grid();
     return ORPHEUS_STATUS_OK;
   });
 }
@@ -111,7 +136,11 @@ orpheus_status ClipgridTriggerScene(orpheus_session_handle session,
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     orpheus::core::QuantizationWindow window;
     window.grid_beats = desc->quant.grid_beats;
     window.tolerance_beats = desc->quant.tolerance_beats;
@@ -126,7 +155,11 @@ orpheus_status ClipgridEndScene(orpheus_session_handle session,
     return ORPHEUS_STATUS_INVALID_ARGUMENT;
   }
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_ptr = ToSession(session);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
     orpheus::core::QuantizationWindow window;
     window.grid_beats = desc->quant.grid_beats;
     window.tolerance_beats = desc->quant.tolerance_beats;
@@ -142,7 +175,12 @@ orpheus_status ClipgridCommitArrangement(orpheus_session_handle session,
   }
   return GuardAbiCall([&]() -> orpheus_status {
     const double fallback = desc != nullptr ? desc->fallback_scene_length_beats : 0.0;
-    ToSession(session)->commit_arrangement(fallback);
+    orpheus::core::SessionGraph* session_ptr = nullptr;
+    const orpheus_status status = ResolveSessionHandle(session, session_ptr);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
+    }
+    session_ptr->commit_arrangement(fallback);
     return ORPHEUS_STATUS_OK;
   });
 }

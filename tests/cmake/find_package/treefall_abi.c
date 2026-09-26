@@ -66,6 +66,27 @@ int main(void) {
   }
   treefall_session->destroy((treefall_session_handle)old_session);
 
+  /* Handle validation is observable from C: a fabricated handle is NOT_FOUND, a
+   * null handle is INVALID_ARGUMENT, and a handle retained after destroy is
+   * NOT_FOUND. The registry is shared across the ABI names. */
+  orpheus_session_handle retained = 0;
+  if (legacy_session->create(&retained) != ORPHEUS_STATUS_OK) {
+    return 9;
+  }
+  legacy_session->destroy(retained);
+  if (legacy_session->set_tempo((orpheus_session_handle)(uintptr_t)1, 120.0) !=
+      ORPHEUS_STATUS_NOT_FOUND) {
+    return 10;
+  }
+  if (legacy_session->set_tempo(0, 120.0) != ORPHEUS_STATUS_INVALID_ARGUMENT) {
+    return 11;
+  }
+  if (treefall_session->set_tempo((treefall_session_handle)retained, 120.0) !=
+      TREEFALL_STATUS_NOT_FOUND) {
+    return 12;
+  }
+  legacy_session->destroy(retained);
+
   treefall_set_logger(logger, &logger_calls);
   orpheus_set_logger(0, 0);
   treefall_set_telemetry_callback(telemetry, &telemetry_calls);

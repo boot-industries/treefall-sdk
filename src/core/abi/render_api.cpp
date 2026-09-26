@@ -166,9 +166,11 @@ orpheus_status RenderTracks(orpheus_session_handle session, const char* out_path
   }
 
   return GuardAbiCall([&]() -> orpheus_status {
-    auto* session_graph = orpheus::abi_internal::ToSession(session);
-    if (session_graph == nullptr) {
-      return ORPHEUS_STATUS_INVALID_ARGUMENT;
+    orpheus::core::SessionGraph* session_graph = nullptr;
+    const orpheus_status status =
+        orpheus::abi_internal::ResolveSessionHandle(session, session_graph);
+    if (status != ORPHEUS_STATUS_OK) {
+      return status;
     }
 
     const auto& tracks = session_graph->tracks();

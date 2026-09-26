@@ -23,6 +23,12 @@ typedef orpheus_session_api_v1 treefall_session_api_v1;
 typedef orpheus_clipgrid_api_v1 treefall_clipgrid_api_v1;
 typedef orpheus_render_api_v1 treefall_render_api_v1;
 
+// The treefall_*_handle_t names are the same physical handles as the
+// orpheus_*_handle_t names declared in <orpheus/abi.h>. A session handle
+// created through either ABI name is valid in both, and the handle contract
+// documented there applies unchanged: null is ORPHEUS_STATUS_INVALID_ARGUMENT,
+// an unregistered non-null handle is ORPHEUS_STATUS_NOT_FOUND, and `destroy` is
+// an idempotent no-op that is shared across the ABI names.
 typedef struct orpheus_session_handle_t treefall_session_handle_t;
 typedef struct orpheus_track_handle_t treefall_track_handle_t;
 typedef struct orpheus_clip_handle_t treefall_clip_handle_t;
