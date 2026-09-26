@@ -1,6 +1,7 @@
-# ORP - Orpheus SDK
+# ORP - Treefall SDK
 
-Project documentation index for orpheus-sdk.
+Project documentation index for the Treefall SDK (formerly the Orpheus SDK).
+Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Overview
 
@@ -247,7 +248,7 @@ Project documentation index for orpheus-sdk.
 ## Navigation
 
 - **Vault:** [[../../vault|Return to Vault]]
-- **Repo:** orpheus-sdk
+- **Repo:** orpheus-sdk (checkout directory; repository is `treefall-sdk`)
 - **Docs:** `docs/orp/`
 
 ## Tags

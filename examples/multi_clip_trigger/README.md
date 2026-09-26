@@ -17,7 +17,7 @@ This example shows how to use the Treefall SDK for real-time multi-clip triggeri
 ## Building
 
 ```bash
-cd /path/to/orpheus-sdk
+cd /path/to/treefall-sdk
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DORPHEUS_BUILD_EXAMPLES=ON
 cmake --build build --target multi_clip_trigger
 ```

@@ -71,7 +71,7 @@ struct AudioDeviceInfo {
 /// Audio driver manager for device enumeration and selection
 ///
 /// This interface provides runtime audio device enumeration, configuration,
-/// and hot-swap capabilities for the Orpheus SDK.
+/// and hot-swap capabilities for the Treefall SDK.
 ///
 /// Thread Safety:
 /// - enumerateDevices(), getDeviceInfo(), setActiveDevice(): control/UI thread only

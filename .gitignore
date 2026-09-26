@@ -27,7 +27,7 @@ __pycache__/
 # Platform-specific clutter
 .DS_Store
 Thumbs.db
-# === Orpheus SDK defaults ===
+# === Treefall SDK defaults ===
 node_modules/
 **/node_modules/
 .pnpm-store/

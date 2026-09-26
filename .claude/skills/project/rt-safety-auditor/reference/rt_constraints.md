@@ -1,14 +1,14 @@
-# Orpheus SDK Real-Time Constraints
+# Treefall SDK Real-Time Constraints
 
 **Version:** 1.0
 **Last Updated:** 2025-10-18
-**Authority:** Orpheus SDK Core Principles (AGENTS.md)
+**Authority:** Treefall SDK Core Principles (AGENTS.md)
 
 ---
 
 ## Executive Summary
 
-Orpheus SDK enforces strict real-time safety requirements to guarantee broadcast-safe performance:
+Treefall SDK enforces strict real-time safety requirements to guarantee broadcast-safe performance:
 
 - **24/7 reliability** (>100 hour mean time between failures)
 - **<5ms latency** (ASIO/CoreAudio round-trip)
@@ -409,7 +409,7 @@ void backgroundThread() {
 
 ## References
 
-- [Orpheus SDK AGENTS.md](../../../../../AGENTS.md) - Core principles
+- [Treefall SDK AGENTS.md](../../../../../AGENTS.md) - Core principles
 - JUCE Framework Real-Time Safety Guide [1]
 - Ross Bencina - "Real-time audio programming 101" [2]
 - Timur Doumler - "Want fast C++? Know your hardware!" [3]

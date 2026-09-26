@@ -97,7 +97,7 @@ target_link_libraries(orpheus_wave_finder_app
     occ_app_platform
 )
 
-# Link Orpheus SDK modules
+# Link Treefall SDK modules
 target_link_libraries(orpheus_wave_finder_app
   PRIVATE
     orpheus_transport
