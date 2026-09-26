@@ -600,6 +600,8 @@ public:
   ///
   /// @note Zero allocations, lock-free, real-time safe
   /// @note Input buffers can be nullptr for channels with no audio
+  /// @note A malformed output shape is a no-touch return: routing control
+  ///       state, group-output meter publication, and telemetry are unchanged.
   /// @note FTR028: num_frames may be arbitrarily large. Internally the matrix
   ///       processes the buffer in slices of at most kRoutingSliceFrames
   ///       (== maxBlockFrames()); this chunking is allocation-free and
