@@ -278,11 +278,15 @@ SessionGraphSnapshot SessionGraph::snapshot() const {
   }
 
   result.clip_assignments = clip_assignment_ids();
+  result.next_track_id_raw = track_ids_.nextRaw();
+  result.next_clip_id_raw = clip_ids_.nextRaw();
   return result;
 }
 
 void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
-  if (state.schema_version != SessionGraphSnapshot::kSchemaVersion) {
+  constexpr std::uint32_t kMinimumSupportedSchemaVersion = 1u;
+  if (state.schema_version < kMinimumSupportedSchemaVersion ||
+      state.schema_version > SessionGraphSnapshot::kSchemaVersion) {
     throw std::invalid_argument("Unsupported session graph snapshot schema");
   }
   if (!state.session_id.isValid() || state.session_id != session_id_) {
@@ -301,8 +305,17 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
 
   std::vector<std::unique_ptr<Track>> rebuilt_tracks;
   rebuilt_tracks.reserve(state.tracks.size());
-  IdAllocator<TrackId> rebuilt_track_ids;
-  IdAllocator<ClipId> rebuilt_clip_ids;
+  // Restoring must never lower a live watermark: an ID issued and then rolled
+  // back or restored away stays spent. Schema 1 carries no watermark, so it
+  // seeds from the live value and relies on reserveThrough() below to supply
+  // max(extant) + 1 for every allocator.
+  const bool carries_watermarks = state.schema_version >= 2u;
+  IdAllocator<TrackId> rebuilt_track_ids(
+      carries_watermarks ? std::max(state.next_track_id_raw, track_ids_.nextRaw())
+                         : track_ids_.nextRaw());
+  IdAllocator<ClipId> rebuilt_clip_ids(carries_watermarks
+                                           ? std::max(state.next_clip_id_raw, clip_ids_.nextRaw())
+                                           : clip_ids_.nextRaw());
   std::unordered_set<std::uint64_t> seen_track_ids;
   std::unordered_set<std::uint64_t> seen_clip_ids;
 

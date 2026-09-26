@@ -33,6 +33,23 @@ int main() {
       graphSnapshot.tracks.front().clips.front().range != clipRange) {
     return 1;
   }
+  // An installed consumer must be rebuilt against the schema-2 layout and must
+  // observe the allocator watermarks the snapshot now carries.
+  if (graphSnapshot.schema_version != orpheus::core::SessionGraphSnapshot::kSchemaVersion ||
+      graphSnapshot.next_track_id_raw != 2u || graphSnapshot.next_clip_id_raw != 2u) {
+    return 7;
+  }
+  orpheus::core::SessionGraph restored;
+
+  // The destination has already issued IDs of its own, so restoring the older
+  if (restored.create_track("Pre-restore one").raw() != 1u ||
+      restored.create_track("Pre-restore two").raw() != 2u) {
+    return 8;
+  }
+  restored.restore(graphSnapshot);
+  if (restored.create_track("Installed consumer restore").raw() != 3u) {
+    return 8;
+  }
 
   auto telemetryStorage = std::make_unique<orpheus::RealtimeTelemetry>(2);
   auto& telemetry = *telemetryStorage;

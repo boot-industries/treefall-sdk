@@ -17,6 +17,10 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   counts, and bounded frame counts before draining commands or writing output.
   Invalid shapes are no-touch returns; a valid zero-frame block still advances
   bounded control state.
+- Output-shape validation completes before the first write to caller-owned
+  buffers, and a valid callback that fails admission or conversion clears
+  exactly `frames * sizeof(float)` per configured output lane rather than each
+  buffer's advertised byte size.
 - Any-thread pending observations are clamped to queue capacity, and cumulative
   sequence/drop diagnostics saturate rather than wrap.
 - Registered transport sources remain pinned by unread commands, active voices,

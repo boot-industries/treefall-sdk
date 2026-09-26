@@ -3,6 +3,11 @@
 
 include(CMakeFindDependencyMacro)
 
+# orpheus_abi_runtime is an internal artifact whose link interface carries
+# Threads::Threads in a static build, so consumers must resolve it themselves.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_dependency(Threads)
+
 if(UNIX AND NOT APPLE)
   find_dependency(OpenSSL COMPONENTS Crypto)
 endif()

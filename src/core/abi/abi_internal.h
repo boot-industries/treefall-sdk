@@ -5,6 +5,8 @@
 
 #include <orpheus/session_graph.h>
 
+#include "abi/abi_runtime.h"
+
 #include <filesystem>
 #include <ios>
 #include <new>
@@ -17,8 +19,16 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-inline orpheus::core::SessionGraph* ToSession(orpheus_session_handle handle) {
-  return reinterpret_cast<orpheus::core::SessionGraph*>(handle);
+/// Resolve a session handle before any cast or dereference. A null handle is
+/// INVALID_ARGUMENT; a non-null handle that is not registered process-wide is
+/// NOT_FOUND.
+inline orpheus_status ResolveSessionHandle(orpheus_session_handle handle,
+                                           orpheus::core::SessionGraph*& out_session) {
+  if (handle == nullptr) {
+    return ORPHEUS_STATUS_INVALID_ARGUMENT;
+  }
+  out_session = ResolveSession(handle);
+  return out_session != nullptr ? ORPHEUS_STATUS_OK : ORPHEUS_STATUS_NOT_FOUND;
 }
 
 inline orpheus::core::Track* ToTrack(orpheus_track_handle handle) {

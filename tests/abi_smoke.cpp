@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 #include "orpheus/abi.h"
+#include "orpheus/session_graph.h"
 #include "treefall/abi.h"
 #include "treefall/errors.h"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <limits>
@@ -190,6 +194,96 @@ TEST(AbiChildHandleTest, RejectsFabricatedStaleAndForeignChildHandles) {
 
   session_api->destroy(session_b);
   session_api->destroy(session_a);
+}
+
+TEST(AbiSessionHandleTest, RejectsFabricatedStaleForeignAndDestroyedSessionHandles) {
+  const auto* session_api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  const auto* clipgrid = orpheus_clipgrid_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  const auto* render = orpheus_render_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  ASSERT_NE(session_api, nullptr);
+  ASSERT_NE(clipgrid, nullptr);
+  ASSERT_NE(render, nullptr);
+
+  const auto fabricated = reinterpret_cast<orpheus_session_handle>(static_cast<uintptr_t>(0x1));
+  const orpheus_track_desc track_desc{"track"};
+  const orpheus_clip_desc clip_desc{"clip", 0.0, 1.0, 0};
+  orpheus_track_handle out_track{};
+  orpheus_clip_handle out_clip{};
+  orpheus_transport_state transport_state{};
+
+  EXPECT_EQ(session_api->set_tempo(fabricated, 120.0), ORPHEUS_STATUS_NOT_FOUND);
+  EXPECT_EQ(session_api->add_track(fabricated, &track_desc, &out_track), ORPHEUS_STATUS_NOT_FOUND);
+  EXPECT_EQ(session_api->get_transport_state(fabricated, &transport_state),
+            ORPHEUS_STATUS_NOT_FOUND);
+  const auto fabricated_track = reinterpret_cast<orpheus_track_handle>(static_cast<uintptr_t>(0x1));
+  EXPECT_EQ(clipgrid->add_clip(fabricated, fabricated_track, &clip_desc, &out_clip),
+            ORPHEUS_STATUS_NOT_FOUND);
+
+  // A real, allocated graph that the registry never published.
+  auto* foreign = new orpheus::core::SessionGraph();
+  EXPECT_EQ(session_api->set_tempo(reinterpret_cast<orpheus_session_handle>(foreign), 120.0),
+            ORPHEUS_STATUS_NOT_FOUND);
+  delete foreign;
+
+  EXPECT_EQ(session_api->set_tempo(nullptr, 120.0), ORPHEUS_STATUS_INVALID_ARGUMENT);
+  EXPECT_EQ(session_api->add_track(nullptr, &track_desc, &out_track),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  EXPECT_EQ(session_api->get_transport_state(nullptr, &transport_state),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+
+  orpheus_session_handle live{};
+  ASSERT_EQ(session_api->create(&live), ORPHEUS_STATUS_OK);
+  ASSERT_EQ(session_api->add_track(live, &track_desc, &out_track), ORPHEUS_STATUS_OK);
+  ASSERT_EQ(session_api->set_tempo(live, 132.0), ORPHEUS_STATUS_OK);
+  ASSERT_EQ(session_api->get_transport_state(live, &transport_state), ORPHEUS_STATUS_OK);
+
+  // The handle is captured before destruction and used afterwards. No session
+  // is created in between: an address-keyed registry cannot distinguish a
+  // destroyed handle from a new session reusing the same address.
+  const orpheus_session_handle destroyed = live;
+  session_api->destroy(destroyed);
+  session_api->destroy(destroyed);
+  EXPECT_EQ(session_api->set_tempo(destroyed, 120.0), ORPHEUS_STATUS_NOT_FOUND);
+  EXPECT_EQ(session_api->get_transport_state(destroyed, &transport_state),
+            ORPHEUS_STATUS_NOT_FOUND);
+
+  // The legacy and Treefall names are the same physical handle.
+  const auto* treefall = treefall_session_abi_v1(TREEFALL_ABI_MAJOR, nullptr, nullptr);
+  ASSERT_NE(treefall, nullptr);
+  orpheus_session_handle cross_name{};
+  ASSERT_EQ(session_api->create(&cross_name), ORPHEUS_STATUS_OK);
+  EXPECT_EQ(treefall->set_tempo(cross_name, 140.0), ORPHEUS_STATUS_OK);
+  EXPECT_EQ(session_api->set_tempo(cross_name, 141.0), ORPHEUS_STATUS_OK);
+  treefall->destroy(cross_name);
+}
+
+TEST(AbiSessionHandleTest, ConcurrentUseOfDistinctHandlesIsSafe) {
+  const auto* session_api = orpheus_session_abi_v1(ORPHEUS_ABI_MAJOR, nullptr, nullptr);
+  ASSERT_NE(session_api, nullptr);
+
+  constexpr int kThreads = 3;
+  orpheus_session_handle handles[kThreads]{};
+  for (int index = 0; index < kThreads; ++index) {
+    ASSERT_EQ(session_api->create(&handles[index]), ORPHEUS_STATUS_OK);
+  }
+
+  std::vector<std::thread> workers;
+  workers.reserve(kThreads);
+  for (int index = 0; index < kThreads; ++index) {
+    workers.emplace_back([&session_api, handle = handles[index], index]() {
+      for (int iteration = 0; iteration < 64; ++iteration) {
+        EXPECT_EQ(session_api->set_tempo(handle, 120.0 + static_cast<double>(iteration)),
+                  ORPHEUS_STATUS_OK);
+      }
+      static_cast<void>(index);
+    });
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+  for (int index = 0; index < kThreads; ++index) {
+    session_api->destroy(handles[index]);
+  }
 }
 
 TEST(AbiTimelineTest, RejectsNonFiniteValuesWithoutChangingValidTimeline) {
