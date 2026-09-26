@@ -204,6 +204,64 @@ TEST(SessionRoundTrip, AtomicSaveKeepsBackupAndRecoversCorruptPrimary) {
   fs::remove_all(root);
 }
 
+TEST(SessionRoundTrip, FutureSchemaPrimaryNeverFallsBackToBackup) {
+  const fs::path root = fs::temp_directory_path() / "orpheus_session_future_schema_test";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path path = root / "session.json";
+
+  SessionGraph session;
+  session.set_name("First");
+  session.set_session_range(0.0, 8.0);
+  SaveSessionToFile(session, path.string());
+  session.set_name("Second");
+  SaveSessionToFile(session, path.string());
+  ASSERT_EQ(LoadSessionFromFile(path.string()).name(), "Second");
+
+  std::string primary;
+  {
+    std::ifstream read(path);
+    ASSERT_TRUE(read.is_open());
+    std::ostringstream buffer;
+    buffer << read.rdbuf();
+    primary = buffer.str();
+  }
+  const size_t marker = primary.find("\"schema_version\": 1");
+  ASSERT_NE(marker, std::string::npos) << "primary no longer advertises schema_version 1";
+  primary.replace(marker, std::string("\"schema_version\": 1").size(), "\"schema_version\": 999");
+  {
+    std::ofstream write(path, std::ios::trunc);
+    write << primary;
+  }
+
+  // A future schema is a hard failure and must never resolve to the backup.
+  EXPECT_THROW(LoadSessionWithRecovery(path.string()), std::runtime_error);
+  EXPECT_THROW(LoadSessionFromFile(path.string()), std::runtime_error);
+
+  // Neither document may be rewritten as a side effect of the rejection.
+  {
+    std::ifstream after(path);
+    std::ostringstream buffer;
+    buffer << after.rdbuf();
+    EXPECT_NE(buffer.str().find("\"schema_version\": 999"), std::string::npos);
+  }
+  {
+    std::ifstream after(path.string() + ".bak");
+    std::ostringstream buffer;
+    buffer << after.rdbuf();
+    EXPECT_NE(buffer.str().find("\"schema_version\": 1"), std::string::npos);
+  }
+
+  // A missing primary is ordinary I/O loss and must still recover.
+  fs::remove(path);
+  const SessionLoadResult recovered = LoadSessionWithRecovery(path.string());
+  EXPECT_TRUE(recovered.recoveredFromBackup);
+  EXPECT_EQ(recovered.sourcePath, path.string() + ".bak");
+  EXPECT_EQ(recovered.session.name(), "First");
+
+  fs::remove_all(root);
+}
+
 TEST(SessionRoundTrip, RejectsOverlappingClips) {
   const std::string invalid = R"({
     "name": "Invalid",
