@@ -6,9 +6,11 @@
 #include "coreaudio/coreaudio_driver.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -1025,6 +1027,175 @@ TEST_F(CoreAudioDriverTest, OutputRouteRequestPublishesPlaybackState) {
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
   EXPECT_EQ(m_driver->getAudioIoRouteState().state, AudioRouteState::Running);
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+}
+
+namespace {
+
+// AudioBufferList has a one-element trailing mBuffers[1], so a by-value list
+// physically holds a single AudioBuffer. Over-claiming mNumberBuffers on one is
+// out-of-bounds object representation even when the callback rejects the count
+// before indexing. These tests supply correctly sized, correctly aligned storage.
+constexpr size_t kListBytesForFourBuffers = sizeof(AudioBufferList) + 3 * sizeof(AudioBuffer);
+constexpr float kSentinel = -7.0f;
+constexpr UInt32 kTestFrames = 512;
+constexpr UInt32 kLanes = 4;
+// Each lane owns a two-frame window so the region a width-bounded clear must
+// not touch is not the neighbouring lane's data.
+constexpr UInt32 kLaneStride = 2 * kTestFrames;
+
+struct RenderProbe {
+  std::array<std::byte, kListBytesForFourBuffers> storage{};
+  float lanes[kLanes * kLaneStride]{};
+
+  AudioBufferList* list() {
+    return reinterpret_cast<AudioBufferList*>(storage.data());
+  }
+};
+
+void ResetLanes(RenderProbe& probe) {
+  for (float& sample : probe.lanes) {
+    sample = kSentinel;
+  }
+}
+
+bool LanesHoldSentinel(const RenderProbe& probe) {
+  for (float sample : probe.lanes) {
+    if (sample != kSentinel) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Builds a well-formed two-lane list, then lets each case break exactly one
+// property of that shape.
+void FillWellFormedList(RenderProbe& probe) {
+  AudioBufferList* list = probe.list();
+  list->mNumberBuffers = 2;
+  for (UInt32 lane = 0; lane < 4; ++lane) {
+    AudioBuffer& buffer = list->mBuffers[lane];
+    buffer.mNumberChannels = 1u;
+    buffer.mDataByteSize = kTestFrames * sizeof(float);
+    buffer.mData = probe.lanes + (lane * kLaneStride);
+  }
+}
+
+constexpr OSStatus kNoErrStatus = 0;
+
+} // namespace
+
+TEST_F(CoreAudioDriverTest, MalformedOutputShapeIsNoTouch) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "A readable default output endpoint is unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id.clear();
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  auto* driver = static_cast<CoreAudioDriver*>(m_driver.get());
+  ASSERT_NE(driver, nullptr);
+
+  RenderProbe probe;
+  AudioUnitRenderActionFlags action_flags = 0;
+  const auto call = [&](UInt32 frames, AudioBufferList* list) {
+    return CoreAudioDriver::renderCallbackForTesting(driver, &action_flags, nullptr, 0, frames,
+                                                     list);
+  };
+
+  // A null buffer list never reaches a write.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  EXPECT_EQ(call(kTestFrames, nullptr), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // Fewer buffers than configured output lanes.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  probe.list()->mNumberBuffers = 1;
+  EXPECT_EQ(call(kTestFrames, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // More buffers than configured output lanes.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  probe.list()->mNumberBuffers = 3;
+  EXPECT_EQ(call(kTestFrames, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // A configured lane with no backing storage.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  probe.list()->mBuffers[1].mData = nullptr;
+  EXPECT_EQ(call(kTestFrames, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // A configured lane that cannot hold the requested frames.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  probe.list()->mBuffers[1].mDataByteSize = (kTestFrames - 1) * sizeof(float);
+  EXPECT_EQ(call(kTestFrames, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // A lane that interleaves two channels into one buffer.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  probe.list()->mBuffers[1].mNumberChannels = 2u;
+  EXPECT_EQ(call(kTestFrames, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+
+  // A frame count above any configured ceiling, unambiguously.
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  EXPECT_EQ(call(1u << 20, probe.list()), kNoErrStatus);
+  EXPECT_TRUE(LanesHoldSentinel(probe));
+}
+
+TEST_F(CoreAudioDriverTest, ValidShapeClearsExactlyFrameBytesWhenNotRunning) {
+  const EndpointPair endpoints = getDistinctDefaultEndpointsForTest();
+  if (!endpoints.isValid()) {
+    GTEST_SKIP() << "A readable default output endpoint is unavailable";
+  }
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 512;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.output_device_id.clear();
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+  auto* driver = static_cast<CoreAudioDriver*>(m_driver.get());
+  ASSERT_NE(driver, nullptr);
+  ASSERT_FALSE(m_driver->isRunning());
+
+  RenderProbe probe;
+  AudioUnitRenderActionFlags action_flags = 0;
+  ResetLanes(probe);
+  FillWellFormedList(probe);
+  // Over-declare capacity so a clear bounded by mDataByteSize would run past
+  // the frame window this test inspects.
+  for (UInt32 lane = 0; lane < 2; ++lane) {
+    probe.list()->mBuffers[lane].mDataByteSize = 2 * kTestFrames * sizeof(float);
+  }
+
+  EXPECT_EQ(CoreAudioDriver::renderCallbackForTesting(driver, &action_flags, nullptr, 0,
+                                                      kTestFrames, probe.list()),
+            kNoErrStatus);
+
+  for (UInt32 lane = 0; lane < 2; ++lane) {
+    for (UInt32 frame = 0; frame < kTestFrames; ++frame) {
+      EXPECT_FLOAT_EQ(probe.lanes[lane * kLaneStride + frame], 0.0f)
+          << "lane " << lane << " frame " << frame;
+    }
+    for (UInt32 frame = kTestFrames; frame < kLaneStride; ++frame) {
+      EXPECT_FLOAT_EQ(probe.lanes[lane * kLaneStride + frame], kSentinel)
+          << "over-cleared lane " << lane << " frame " << frame;
+    }
+  }
 }
 
 TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {

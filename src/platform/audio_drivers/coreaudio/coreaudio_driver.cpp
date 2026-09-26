@@ -716,20 +716,20 @@ void CoreAudioDriver::setPerformanceMonitor(IPerformanceMonitor* monitor) {
   performance_monitor_target_.replaceAndDrain(monitor);
 }
 
+OSStatus CoreAudioDriver::renderCallbackForTesting(void* inRefCon,
+                                                   AudioUnitRenderActionFlags* ioActionFlags,
+                                                   const AudioTimeStamp* inTimeStamp,
+                                                   UInt32 inBusNumber, UInt32 inNumberFrames,
+                                                   AudioBufferList* ioData) {
+  return renderCallback(inRefCon, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, ioData);
+}
+
 OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                          const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                          UInt32 inNumberFrames, AudioBufferList* ioData) {
   (void)inBusNumber;
   auto* driver = static_cast<CoreAudioDriver*>(inRefCon);
   assert(driver != nullptr);
-
-  if (ioData != nullptr) {
-    for (UInt32 index = 0; index < ioData->mNumberBuffers; ++index) {
-      if (ioData->mBuffers[index].mData != nullptr && ioData->mBuffers[index].mDataByteSize != 0) {
-        std::memset(ioData->mBuffers[index].mData, 0, ioData->mBuffers[index].mDataByteSize);
-      }
-    }
-  }
 
   const uint32_t native_frames = inNumberFrames;
   const uint32_t max_frames = driver->render_max_callback_frames_.load(std::memory_order_acquire);
@@ -738,20 +738,36 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   const uint32_t num_output_channels =
       driver->render_output_channels_.load(std::memory_order_acquire);
   const uint64_t native_frame_bytes = requiredBytes(native_frames);
+  // Complete shape validation precedes every write. The output stream is
+  // non-interleaved and each lane is consumed as exactly one channel of
+  // native_frame_bytes, so the safe shape is one buffer per configured lane
+  // carrying one channel each. A buffer count alone does not establish that.
   bool malformed_output = ioData == nullptr || max_frames == 0 || native_frames > max_frames;
   if (!malformed_output) {
-    if (ioData->mNumberBuffers < num_output_channels) {
+    if (ioData->mNumberBuffers != num_output_channels) {
       malformed_output = true;
     } else {
       for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
         const AudioBuffer& buffer = ioData->mBuffers[channel];
-        if (buffer.mData == nullptr ||
+        if (buffer.mNumberChannels != 1u || buffer.mData == nullptr ||
             static_cast<uint64_t>(buffer.mDataByteSize) < native_frame_bytes) {
           malformed_output = true;
           break;
         }
       }
     }
+  }
+  if (malformed_output) {
+    if (driver->route_monitor_) {
+      driver->route_monitor_->closeAdmission();
+    }
+    driver->publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BufferSizeChanged);
+    return noErr;
+  }
+
+  // Clear exactly the frames this callback owns, not the advertised capacity.
+  for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
+    std::memset(ioData->mBuffers[channel].mData, 0, static_cast<size_t>(native_frame_bytes));
   }
   if (malformed_output) {
     if (driver->route_monitor_) {
