@@ -4,11 +4,13 @@
 
 **Professional audio SDK for broadcast, live performance, and DAW applications**
 
-Treefall is the public product identity for this host-neutral C++20 SDK. The
-native libraries, executable names, and canonical `orpheus` C++
-namespace remain compatible with existing consumers. Treefall provides
-deterministic session/transport control, sample-accurate clip playback, and
-real-time audio infrastructure.
+**Treefall SDK** is the current name of this host-neutral C++20 audio SDK; it
+was formerly the **Orpheus SDK**. The GitHub repository was renamed to match
+and the earlier `chrislyons/orpheus-sdk` slug still resolves. Native library,
+executable, and package names and the canonical `orpheus` C++ namespace remain
+technical compatibility identities, so existing consumers are unaffected.
+Treefall provides deterministic session/transport control, sample-accurate clip
+playback, and real-time audio infrastructure.
 
 **Current version:** 0.9.1 (pre-1.0 SDK; stable C ABI 1.0). The authoritative
 value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
@@ -20,7 +22,7 @@ value is `project(orpheus VERSION ...)` in [`CMakeLists.txt`](CMakeLists.txt);
 
 ```bash
 # Clone repository
-git clone https://github.com/chrislyons/treefall-sdk.git
+git clone https://github.com/boot-industries/treefall-sdk.git
 cd treefall-sdk
 
 # Build SDK (Debug with AddressSanitizer)
@@ -62,6 +64,11 @@ available. An appended C++ virtual extension preserves source compatibility for
 recompiled implementations, but every C++ consumer and subclass must be
 rebuilt against the matching headers. No legacy surface has a removal date;
 removal requires a separately approved major migration.
+
+The repository directory and the CMake project name also stay as they are:
+the checkout is still `orpheus-sdk` on developer machines and the root project
+is still `project(orpheus VERSION ...)`. Neither is part of the public product
+identity.
 
 ## Lightweight Integration Targets
 

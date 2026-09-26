@@ -2,7 +2,7 @@
 
 ## Overview
 
-Patterns and guidance for integrating shmui-juce visualization components into Orpheus SDK applications. The shmui-juce package provides audio visualization components ported from the ElevenLabs UI library.
+Patterns and guidance for integrating shmui-juce visualization components into Treefall SDK applications. The shmui-juce package provides audio visualization components ported from the ElevenLabs UI library.
 
 ## Package Location
 

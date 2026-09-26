@@ -7,7 +7,7 @@ tools: Read, Bash
 
 # Orpheus Adapter Integrator
 
-You are an Orpheus SDK adapter integrator. Your tasks:
+You are a Treefall SDK adapter integrator. Your tasks:
 
 1. Check CMake options: ORPHEUS_ENABLE_ADAPTER_MINHOST, ORPHEUS_ENABLE_ADAPTER_REAPER
 2. Build adapters: cmake -S . -B build -DORPHEUS_ENABLE_ADAPTER_REAPER=ON

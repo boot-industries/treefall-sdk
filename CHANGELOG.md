@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The project is now published as the **Treefall SDK**; it was formerly the
+  **Orpheus SDK**. The GitHub repository was renamed to
+  `boot-industries/treefall-sdk`, and the earlier `chrislyons/orpheus-sdk` and
+  `chrislyons/treefall-sdk` slugs still resolve to it. The root CMake project,
+  native library and target names, the installed `OrpheusSDK` package and
+  `Orpheus::` targets, the `include/orpheus/...` headers, the `orpheus` C++
+  namespace, and the stable C ABI 1.0 exports keep their existing names, so the
+  rename itself requires no consumer source, build, or binary change.
+
+- The private CoreAudio aggregate device is now presented as `Treefall SDK
+  I/O Bridge`. Its `com.orpheus.sdk.aggregate.*` UID, the published public C
+  ABI 1.0, and every other device identifier are unchanged, so no saved route
+  or device selection is invalidated.
+
 ### Fixed
 
 - Loading a session whose primary document advertises a newer schema version
@@ -1141,6 +1157,6 @@ None. v1.0 is fully backward compatible with v0.x.
 **Support:**
 
 - Documentation: `docs/`
-- Issues: https://github.com/chrislyons/treefall-sdk/issues
+- Issues: https://github.com/boot-industries/treefall-sdk/issues
 
 **License:** MIT

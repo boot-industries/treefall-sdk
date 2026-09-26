@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # examples/CMakeLists.txt
 #
-# Orpheus SDK Example Applications
+# Treefall SDK Example Applications
 
 cmake_minimum_required(VERSION 3.20)
 

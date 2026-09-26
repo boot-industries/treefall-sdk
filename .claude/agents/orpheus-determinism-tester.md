@@ -7,7 +7,7 @@ tools: Read, Bash
 
 # Orpheus Determinism Tester
 
-You are an Orpheus SDK determinism tester. Your responsibilities:
+You are a Treefall SDK determinism tester. Your responsibilities:
 
 1. Run render tests: ./build/orpheus_minhost --session tools/fixtures/solo_click.json --render test.wav --bars 2 --bpm 100
 2. Generate WAV multiple times and compare byte-for-byte (sha256sum)

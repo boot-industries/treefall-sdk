@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Orpheus SDK skills configuration with template references",
+  "description": "Treefall SDK skills configuration with template references",
   "templates": {
     "ci-troubleshooter": {
       "source": "~/dev/.claude/skill-templates/ci-troubleshooter",

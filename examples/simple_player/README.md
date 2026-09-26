@@ -16,7 +16,7 @@ This is the simplest possible example of using the Treefall SDK for audio playba
 ## Building
 
 ```bash
-cd /path/to/orpheus-sdk
+cd /path/to/treefall-sdk
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DORPHEUS_BUILD_EXAMPLES=ON
 cmake --build build --target simple_player
 ```

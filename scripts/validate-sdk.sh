@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Orpheus SDK Validation Script
+# Treefall SDK Validation Script
 # This script runs a comprehensive validation of the SDK before submitting PRs.
 # It checks C++ builds, tests, formatting, and JavaScript linting.
 

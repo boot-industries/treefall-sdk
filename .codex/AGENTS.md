@@ -1,8 +1,8 @@
-# Orpheus SDK - Codex CLI Agent Configuration
+# Treefall SDK - Codex CLI Agent Configuration
 
 **Target Model:** GPT-5.1-Codex-Max (OpenAI, November 2025)
 **CLI Tool:** OpenAI Codex CLI
-**Repository:** orpheus-sdk (Professional C++20 Audio SDK)
+**Repository:** Treefall SDK (Professional C++20 Audio SDK)
 **Documentation PREFIX:** ORP (SDK), OCC (Clip Composer app)
 
 Professional audio SDK with host-neutral C++20 core for deterministic session, transport, and render management.
@@ -76,7 +76,7 @@ orpheus-sdk/
 
 **Location:** `packages/shmui-juce/` | **Purpose:** First-party JUCE UI components for Orpheus apps
 
-The **shmui-juce** package provides audio visualization components for application-level UI. These components are maintained within orpheus-sdk but originate from the upstream shmui dual-stack library (`~/dev/shmui`).
+The **shmui-juce** package provides audio visualization components for application-level UI. These components are maintained within the Treefall SDK but originate from the upstream shmui dual-stack library (`~/dev/shmui`).
 
 **Components:**
 

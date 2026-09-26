@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Orpheus SDK
-Source: https://github.com/orpheus-sdk/orpheus-sdk
+Upstream-Name: Treefall SDK
+Source: https://github.com/boot-industries/treefall-sdk
 
 Files: *
 Copyright: 2024 Orpheus SDK Contributors

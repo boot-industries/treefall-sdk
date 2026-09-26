@@ -666,7 +666,7 @@ public:
     case CommandIDs::about:
       juce::AlertWindow::showMessageBoxAsync(
           juce::AlertWindow::InfoIcon, "About Orpheus Demo Host",
-          "A minimal, unbranded host demonstrating the Orpheus SDK."
+          "A minimal, unbranded host demonstrating the Treefall SDK."
           "\n\nOpen a session, trigger the ClipGrid, then render synthetic stems to disk.");
       break;
     default:
