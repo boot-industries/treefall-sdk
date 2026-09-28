@@ -1,6 +1,6 @@
-# Orpheus SDK — Treefall Sprint Planning and Implementation
+# Treefall SDK — Treefall Sprint Planning and Implementation
 
-You are working on the Orpheus SDK. Use only the Whitebox checkout:
+You are working on the Treefall SDK. Use only the Whitebox checkout:
 
 `/Users/nesbitt/dev/orpheus-sdk`
 

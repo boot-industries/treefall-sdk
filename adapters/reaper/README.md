@@ -2,7 +2,7 @@
 
 **Status:** ⚠️  Experimental - Not recommended for production use
 
-This adapter provides a modern ABI-based integration between Orpheus SDK and REAPER. It is built entirely on the public Orpheus ABI and does not use legacy WDL/SWELL/WALTER frameworks.
+This adapter provides a modern ABI-based integration between Treefall SDK and REAPER. It is built entirely on the public Orpheus ABI and does not use legacy WDL/SWELL/WALTER frameworks.
 
 ## Features
 

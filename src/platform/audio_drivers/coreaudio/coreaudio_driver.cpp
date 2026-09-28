@@ -1250,7 +1250,7 @@ AudioDeviceID CoreAudioDriver::createAggregateDevice(AudioDeviceID input_device_
   CFMutableDictionaryRef aggregate_dict = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceNameKey),
-                       CFSTR("Orpheus SDK I/O Bridge"));
+                       CFSTR("Treefall SDK I/O Bridge"));
   CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceUIDKey), aggregate_uid);
   CFDictionarySetValue(aggregate_dict, CFSTR(kAudioAggregateDeviceSubDeviceListKey),
                        sub_device_list);

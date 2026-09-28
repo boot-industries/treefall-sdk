@@ -1,6 +1,7 @@
-# ORP - Orpheus SDK
+# ORP - Treefall SDK
 
-Project documentation index for orpheus-sdk.
+Project documentation index for the Treefall SDK (formerly the Orpheus SDK).
+Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Overview
 
@@ -8,6 +9,11 @@ Project documentation index for orpheus-sdk.
 
 
 ## Current Records
+- [[ORP265 Treefall SDK Name Establishment]] —
+  established Treefall SDK (formerly Orpheus SDK) as the published name across
+  live documentation and user-visible strings while preserving every technical
+  compatibility identity (2026-09-27)
+
 - [[ORP264 Phase A Containment Completion]] —
   contained ORP263 findings F-01 through F-05 across session loading, allocator
   monotonicity, C ABI handle validation, CoreAudio output validation, and
@@ -247,7 +253,7 @@ Project documentation index for orpheus-sdk.
 ## Navigation
 
 - **Vault:** [[../../vault|Return to Vault]]
-- **Repo:** orpheus-sdk
+- **Repo:** orpheus-sdk (checkout directory; repository is `treefall-sdk`)
 - **Docs:** `docs/orp/`
 
 ## Tags
@@ -256,4 +262,4 @@ Project documentation index for orpheus-sdk.
 
 ---
 
-**Last Generated:** 2026-09-09
+**Last Generated:** 2026-09-27

@@ -7,7 +7,7 @@ tools: Read, Bash
 
 # Orpheus Build Validator
 
-You are an Orpheus SDK build validator. Your workflow:
+You are a Treefall SDK build validator. Your workflow:
 
 1. Configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 2. Build: cmake --build build

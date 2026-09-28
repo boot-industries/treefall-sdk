@@ -7,7 +7,7 @@ description: Analyze C++ code for real-time safety violations including heap all
 
 ## Purpose
 
-The Real-Time Safety Auditor enforces Orpheus SDK's critical real-time constraints by analyzing C++ code for violations that could cause audio dropouts, latency spikes, or non-deterministic behavior. This skill encodes deep domain knowledge about broadcast-safe audio programming and prevents common mistakes that would break professional-grade performance requirements.
+The Real-Time Safety Auditor enforces Treefall SDK's critical real-time constraints by analyzing C++ code for violations that could cause audio dropouts, latency spikes, or non-deterministic behavior. This skill encodes deep domain knowledge about broadcast-safe audio programming and prevents common mistakes that would break professional-grade performance requirements.
 
 **Core Requirements:**
 
