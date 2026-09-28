@@ -1,6 +1,6 @@
 # Allowed Patterns for Real-Time Audio Code
 
-**Purpose:** Approved design patterns and constructs safe for Orpheus SDK audio threads
+**Purpose:** Approved design patterns and constructs safe for Treefall SDK audio threads
 **Version:** 1.0
 **Last Updated:** 2025-10-18
 
@@ -678,8 +678,8 @@ For every audio thread function:
 
 ## References
 
-- Orpheus SDK Real-Time Constraints (rt_constraints.md)
-- Orpheus SDK Banned Functions (banned_functions.md)
+- Treefall SDK Real-Time Constraints (rt_constraints.md)
+- Treefall SDK Banned Functions (banned_functions.md)
 - JUCE Framework Real-Time Safe Code Examples
 - Boost.Lockfree Documentation
 - C++ Concurrency in Action (Anthony Williams)

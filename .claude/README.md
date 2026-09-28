@@ -1,6 +1,6 @@
-# Orpheus SDK - Claude Development Documentation
+# Treefall SDK - Claude Development Documentation
 
-This directory contains development notes and session reports for AI-assisted development of the Orpheus SDK.
+This directory contains development notes and session reports for AI-assisted development of the Treefall SDK.
 
 ---
 
@@ -176,9 +176,9 @@ All code in this project meets:
 
 ---
 
-## Claude Skills for Orpheus SDK
+## Claude Skills for Treefall SDK
 
-The Orpheus SDK includes specialized Claude skills that enforce real-time safety and quality standards automatically.
+The Treefall SDK includes specialized Claude skills that enforce real-time safety and quality standards automatically.
 
 ### Overview
 
@@ -379,7 +379,7 @@ Run validation script to verify skills installation:
 **Expected Output:**
 
 ```
-=== Orpheus SDK Skills Validation ===
+=== Treefall SDK Skills Validation ===
 
 --- Checking Directory Structure ---
 ✓ Manifest file: ./manifest.json

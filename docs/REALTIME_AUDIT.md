@@ -1,6 +1,6 @@
 # Realtime Audio Audit
 
-This checklist is the first hardening gate for Orpheus SDK audio code. It is
+This checklist is the first hardening gate for Treefall SDK audio code. It is
 about realtime safety and architecture contracts, not micro-optimizing DSP.
 
 ## Callback Rules

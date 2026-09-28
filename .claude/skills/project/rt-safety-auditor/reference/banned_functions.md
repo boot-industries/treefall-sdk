@@ -1,6 +1,6 @@
 # Banned Functions for Real-Time Audio Code
 
-**Purpose:** Comprehensive list of functions forbidden in Orpheus SDK audio threads
+**Purpose:** Comprehensive list of functions forbidden in Treefall SDK audio threads
 **Version:** 1.0
 **Last Updated:** 2025-10-18
 
@@ -380,6 +380,6 @@ Add comments to suppress false positives:
 
 ## References
 
-- Orpheus SDK Real-Time Constraints (rt_constraints.md)
+- Treefall SDK Real-Time Constraints (rt_constraints.md)
 - JUCE Framework Real-Time Safety Guide
 - Ross Bencina - Real-time audio programming 101

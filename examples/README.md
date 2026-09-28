@@ -7,7 +7,7 @@ Practical applications demonstrating the installed Treefall SDK public APIs. The
 ## Quick start
 
 ```bash
-cd /path/to/orpheus-sdk
+cd /path/to/treefall-sdk
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DORPHEUS_BUILD_EXAMPLES=ON
 cmake --build build --target simple_player multi_clip_trigger
 ```

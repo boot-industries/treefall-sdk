@@ -2,7 +2,7 @@
   ==============================================================================
 
     Main.cpp
-    Wave Finder — Orpheus SDK proof-of-concept application.
+    Wave Finder — Treefall SDK proof-of-concept application.
     Validates that occ-app-platform package works for a second consumer.
 
   ==============================================================================

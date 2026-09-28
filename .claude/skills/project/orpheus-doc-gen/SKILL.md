@@ -1,13 +1,13 @@
 ---
 name: orpheus.doc.gen
-description: Generate and maintain comprehensive documentation including Doxygen comments, progress reports, session notes, and API docs for Orpheus SDK.
+description: Generate and maintain comprehensive documentation including Doxygen comments, progress reports, session notes, and API docs for Treefall SDK.
 ---
 
-# Orpheus Documentation Generator
+# Treefall Documentation Generator
 
 ## Purpose
 
-The Orpheus Documentation Generator skill automates creation and maintenance of high-quality documentation for the Orpheus SDK, ensuring the 8000+ line documentation standard is maintained. This skill encodes documentation best practices, generates Doxygen-compliant API comments, and maintains progress tracking documents.
+The Treefall Documentation Generator skill automates creation and maintenance of high-quality documentation for the Treefall SDK, ensuring the 8000+ line documentation standard is maintained. This skill encodes documentation best practices, generates Doxygen-compliant API comments, and maintains progress tracking documents.
 
 **Core Capabilities:**
 
@@ -314,7 +314,7 @@ Verified with cross-platform integration tests.
 
 ### 1. rt.safety.auditor Skill Complete
 
-Created comprehensive real-time safety auditing skill for Orpheus SDK:
+Created comprehensive real-time safety auditing skill for Treefall SDK:
 
 **Files Created:**
 

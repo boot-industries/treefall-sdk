@@ -10,7 +10,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "========================================="
-echo "Orpheus SDK Integration Tests"
+echo "Treefall SDK Integration Tests"
 echo "========================================="
 echo ""
 

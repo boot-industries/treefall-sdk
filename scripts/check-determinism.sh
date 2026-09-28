@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Orpheus SDK Determinism Validation Script
+# Treefall SDK Determinism Validation Script
 #
 # This script validates that audio rendering is deterministic by:
 # 1. Rendering a test audio file using the minhost adapter

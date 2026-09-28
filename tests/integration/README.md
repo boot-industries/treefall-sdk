@@ -1,6 +1,6 @@
 # Integration Tests
 
-This directory contains integration smoke tests for the Orpheus SDK packages.
+This directory contains integration smoke tests for the Treefall SDK packages.
 
 ## Purpose
 

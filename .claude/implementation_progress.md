@@ -38,7 +38,7 @@
 
 - **C++ SDK:** 0.6.7 pre-1.0 SDK with stable C ABI 1.0; clean on `main` at
   `2819ca0e` and aligned with `origin/main`.
-- **Suite baseline:** Orpheus SDK, Shmui, Clip Composer, FreqFinder, and
+- **Suite baseline:** Treefall SDK, Shmui, Clip Composer, FreqFinder, and
   FourTrack are clean on `main`, with zero divergence from their respective
   `origin/main` refs.
 - **Applications:** Clip Composer, FreqFinder, and FourTrack have verified

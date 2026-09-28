@@ -1,6 +1,6 @@
 #!/bin/bash
-# Orpheus SDK Skills Validation Script
-# Validates skill installation and Orpheus-specific constraints
+# Treefall SDK Skills Validation Script
+# Validates skill installation and Treefall-specific constraints
 # Version: 1.0
 
 set -e
@@ -18,7 +18,7 @@ CHECKS=0
 
 SKILLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "=== Orpheus SDK Skills Validation ==="
+echo "=== Treefall SDK Skills Validation ==="
 echo "Location: $SKILLS_DIR"
 echo ""
 
