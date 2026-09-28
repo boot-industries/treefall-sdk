@@ -9,6 +9,11 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP265 Treefall SDK Name Establishment]] —
+  established Treefall SDK (formerly Orpheus SDK) as the published name across
+  live documentation and user-visible strings while preserving every technical
+  compatibility identity (2026-09-27)
+
 - [[ORP264 Phase A Containment Completion]] —
   contained ORP263 findings F-01 through F-05 across session loading, allocator
   monotonicity, C ABI handle validation, CoreAudio output validation, and
