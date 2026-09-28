@@ -20,10 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   namespace, and the stable C ABI 1.0 exports keep their existing names, so the
   rename itself requires no consumer source, build, or binary change.
 
-- The private CoreAudio aggregate device is now presented as `Treefall SDK
-  I/O Bridge`. Its `com.orpheus.sdk.aggregate.*` UID, the published public C
-  ABI 1.0, and every other device identifier are unchanged, so no saved route
-  or device selection is invalidated.
+- The private CoreAudio aggregate device is now presented as `Treefall SDK I/O
+  Bridge`. Selection behavior is unchanged: the aggregate keeps its
+  `com.orpheus.sdk.aggregate.*` UID, the SDK selects by `device_id` and
+  documents `display_name` as presentation-only, and that UID embeds the driver
+  instance address, so it was never a stable cross-run identifier. A host that
+  matches devices by display name instead of `device_id` sees the new label.
 
 ### Fixed
 
