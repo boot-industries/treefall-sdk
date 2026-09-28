@@ -8,7 +8,8 @@
 was formerly the **Orpheus SDK**. The GitHub repository was renamed to match
 and the earlier `chrislyons/orpheus-sdk` slug still resolves. Native library,
 executable, and package names and the canonical `orpheus` C++ namespace remain
-technical compatibility identities, so existing consumers are unaffected.
+technical compatibility identities, so the rename requires no consumer source,
+build, or binary change.
 Treefall provides deterministic session/transport control, sample-accurate clip
 playback, and real-time audio infrastructure.
 
