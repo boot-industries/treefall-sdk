@@ -66,10 +66,10 @@ recompiled implementations, but every C++ consumer and subclass must be
 rebuilt against the matching headers. No legacy surface has a removal date;
 removal requires a separately approved major migration.
 
-The repository directory and the CMake project name also stay as they are:
-the checkout is still `orpheus-sdk` on developer machines and the root project
-is still `project(orpheus VERSION ...)`. Neither is part of the public product
-identity.
+The checkout directory is local and need not match the product name: existing
+worktrees may still be named `orpheus-sdk`, while the clone command above
+creates `treefall-sdk`. The root CMake project remains
+`project(orpheus VERSION ...)` for compatibility.
 
 ## Lightweight Integration Targets
 
