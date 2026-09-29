@@ -222,8 +222,8 @@ is required for final platform evidence.
 
 ## ORP176 — CoreAudio Bluetooth duplex and directional SRC
 
-**Date:** 2026-08-11
-**Status:** Deterministic and package qualification complete; physical CLbuds acceptance remains blocked.
+**Date:** 2026-08-13
+**Status:** Source and deterministic repair complete; final CLbuds rerun blocked by device disconnect.
 
 ### Delivered
 
@@ -236,12 +236,46 @@ is required for final platform evidence.
 
 ### Evidence and boundary
 
-- `polyphase_resampler_test`, `coreaudio_route_probe_test`, and `coreaudio_driver_test`
-  passed after the callback-timeline review correction; `realtime_static_audit` and its
-  unit contract also passed.
-- The repository's complete configured debug suite (80/80) and three release/package
-  contracts passed before review. No CLbuds endpoint is present locally, so no Bluetooth
-  hardware acceptance, release tag, or downstream production pin is claimed.
+- A 2026-08-12 CLbuds inventory supplied the missing directional facts: its
+  `:input` endpoint is 16 kHz/320 frames/one channel, while `:output` is
+  44.1 kHz/512 frames/two channels.
+- Physical ARM exposed three startup defects. Monitoring admitted pre-activation
+  rate/format facts and used one output-sized buffer expectation for every
+  endpoint. A 48 kHz duplex run also exhausted the input FIFO while the output
+  AUHAL blocked during startup because priming used maximum capacity rather than
+  the active 320-frame callback and capture continued while output startup was
+  unable to consume it.
+- Monitoring now admits the fully activated route and captures rate, buffer,
+  and stream-format baselines per endpoint. Capture priming uses the current
+  input callback size, then freezes the primed FIFO until output startup
+  completes. Later real mutations remain terminal.
+- `CoreAudioRouteMonitorTest.*` passes 13 contracts; the complete
+  `coreaudio_driver_test` binary passes 62 contracts.
+- An intermediate repaired 44.1 kHz SDK hardware run passed with 498 callbacks,
+  219,618 host/input frames, a non-zero input peak, healthy route outcome, and
+  zero render/FIFO/conversion failures. The subsequent 48 kHz run exposed the
+  startup FIFO defect above. CLbuds then disconnected before the final
+  44.1/48 kHz rerun, so final-source physical capture is not claimed.
+- FourTrack separately repairs stale persisted-output resolution and verified
+  the disconnected CLbuds UID falls back to the live built-in default supporting
+  both session rates.
+- No release tag or downstream production pin is claimed.
+### Candidate verification
+
+- The isolated Debug build (`/tmp/ftr085-sdk-debug`) passed the complete 80/80
+  CTest suite, including package consumers, CoreAudio route/driver contracts,
+  realtime audit, and stress labels.
+- The isolated Release build (`/tmp/ftr085-sdk-release`) passed the complete
+  80/80 CTest suite with the same package and platform gates.
+- `python3 tools/realtime_audit.py --root . --include-adjacent` passed with
+  zero hard failures and zero tracked debt findings. Prepared directional
+  converter transfers are covered by the runtime allocation guard.
+- `orpheus_coreaudio_hardware_acceptance` now reports requested/actual route
+  rates and buffers, physical/virtual/client widths, directional latency,
+  conversion/FIFO counters, bounded capture evidence, and stable terminal
+  outcomes. Built-in output-only smoke and expected unavailable-output
+  initialization checks passed; no CLbuds hardware result is inferred.
+
 - Full record: [`ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion`](docs/orp/ORP176%20CoreAudio%20Bluetooth%20Duplex%20and%20Directional%20SRC%20SDK%20Completion.md).
 
 ## ORP174 — Cooperative CoreAudio rate negotiation

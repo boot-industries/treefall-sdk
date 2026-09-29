@@ -22,17 +22,22 @@ enum class CoreAudioRoutePollResult : uint8_t {
   BackendFailure,
 };
 
+/// Physical endpoint facts observed when the route becomes active.
 struct CoreAudioRouteDevice {
   AudioDeviceID device_id = 0;
   bool monitors_input = false;
   bool monitors_output = false;
   bool is_private_aggregate = false;
+  /// Captured from the active endpoint during start().
   uint32_t expected_sample_rate = 0;
+  /// Captured from the active endpoint during start().
+  uint32_t expected_buffer_frames = 0;
 };
 
 /// One stream whose virtual and physical formats are part of the active route.
 struct CoreAudioRouteStream {
   AudioStreamID stream_id = 0;
+  /// Captured from the active stream during start().
   AudioStreamBasicDescription expected_virtual_format{};
   AudioStreamBasicDescription expected_physical_format{};
 };

@@ -2,11 +2,11 @@
 
 # ORP176 CoreAudio Bluetooth Duplex and Directional SRC SDK Completion
 
-**Document type:** SDK implementation and qualification record  
-**Status:** Source and deterministic/package qualification complete; physical Bluetooth acceptance blocked  
-**Date:** 2026-08-11  
-**Consumer:** FourTrack / EightTrack, FTR085  
-**Implementation baseline:** `main` worktree at the FTR085 implementation checkpoint  
+**Document type:** SDK implementation and qualification record
+**Status:** Source and deterministic repair complete; final CLbuds 44.1/48 kHz rerun blocked by device disconnect
+**Date:** 2026-08-13
+**Consumer:** FourTrack / EightTrack, FTR085
+**Implementation baseline:** `main` plus pending activation-admission and startup-FIFO repair
 **SDK version:** 0.8.0
 
 ## Decision
@@ -58,8 +58,16 @@ C ABI remains 1.0 because the C-facing ABI contract is unchanged.
    render from session to physical rate without allocation, locks, or I/O in the callback.
    Converted callbacks derive every chunk position from one session-frame base and advance
    the timeline only after the full callback, preserving contiguous sample positions.
-5. The route monitor treats property changes as terminal, publishes one structured outcome,
-   closes callback admission, and prevents stale route facts or repeated writes.
+5. Capture SRC priming uses the active input callback size rather than the
+   endpoint's maximum capacity. Once primed, capture delivery pauses while the
+   output AUHAL starts, preventing a blocking Bluetooth output startup from
+   exhausting the FIFO before output callbacks can consume it.
+6. The route monitor admits only the fully activated route and captures each
+   endpoint's nominal rate and buffer size plus each stream's virtual/physical
+   formats. This permits directional Bluetooth startup transitions while later
+   real mutations remain terminal.
+7. Property changes publish one structured terminal outcome, close callback
+   admission, and prevent stale route facts or repeated writes.
 
 ## Deterministic evidence
 
@@ -69,16 +77,33 @@ Source and deterministic evidence recorded in this session:
 |---|---|
 | Directional SRC: canonical supported rate pairs, tone/frequency preservation, exact frame accounting, limits, reset, bounded FIFO and callback-path safety | Passed in `polyphase_resampler_test` |
 | Resolver: output-only isolation, distinct endpoints, 16 kHz Bluetooth input conversion, strict mono conflict/fallback, related Bluetooth protection, rate-plan decisions | Passed in `coreaudio_route_probe_test` |
-| Driver: dual-AUHAL flow, active physical/client facts, converter latency and counters, terminal monitor outcomes, rollback/lifecycle behavior | Passed in `coreaudio_driver_test` |
-| Static callback audit | `realtime_static_audit` and `realtime_static_audit_unit` passed |
-| Complete configured SDK tree | 80/80 CTest contracts passed in `build-sdk-debug` |
+| Driver: dual-AUHAL flow, active physical/client facts, converter latency and counters, terminal monitor outcomes, rollback/lifecycle behavior | `coreaudio_driver_test`: 62/62 passed |
+| Monitor activation admission: 16 kHz/320-frame input plus 44.1 kHz/512-frame output, activation rate/stream baselines, later terminal mutations | `CoreAudioRouteMonitorTest.*`: 13/13 passed |
+| Static callback audit | `realtime_static_audit`, `realtime_static_audit_unit`, and adjacent-consumer audit passed with zero hard failures and zero tracked debt findings |
 | Installed package and public version contract | `version_contract`, `cmake_find_package`, and `cmake_package_runtime_consumer` passed against 0.8.0 |
+| Complete candidate Debug suite | `/tmp/ftr085-sdk-debug`: 80/80 CTest cases passed |
+| Complete candidate Release suite | `/tmp/ftr085-sdk-release`: 80/80 CTest cases passed |
+| Realtime static and dynamic allocation gate | Static audit: zero hard/debt findings; prepared SRC transfers: zero allocation/deallocation violations |
+| Acceptance CLI contract | Built-in output-only pass and expected unavailable-output initialization pass; no CLbuds result inferred |
 
-The physical hardware baseline captured before implementation found no CLbuds endpoint.
-A deterministic output-only CoreAudio acceptance run against `BuiltInSpeakerDevice` at
-48 kHz passed; its JSON reported two settled physical output channels, matching active
-map `{0,1}`, no input route, no conversion, and zero callback health failures. A
-negative expected-tone invocation failed as intended when no input callback existed.
+On 2026-08-12, live CLbuds testing exposed three defects beyond the original
+deterministic qualification. The monitor used one output-sized buffer
+expectation for both endpoints, then admitted pre-activation sample-rate and
+stream-format facts. At 48 kHz, input priming used the endpoint's maximum
+capacity and capture continued while output AUHAL startup blocked, eventually
+overflowing the FIFO before output callbacks could drain it.
+
+The repair now baselines rate, buffer, and stream formats per endpoint only
+after full activation, primes from the active 320-frame input callback, and
+freezes the primed FIFO during output startup. The monitor and complete
+CoreAudio-driver deterministic suites pass.
+
+An intermediate 44.1 kHz hardware run passed with 498 callbacks, 219,618
+host/input frames, a non-zero captured peak, healthy route outcome, and zero
+render, FIFO, or conversion failures. The following 48 kHz run exposed the FIFO
+startup defect. CLbuds disconnected before both rates could be rerun against the
+final source, so final-source physical capture and FourTrack ARM acceptance are
+not claimed.
 
 ## FourTrack adoption boundary
 
@@ -96,14 +121,17 @@ round_trip_frames = capture_frames + playback_frames + processing_frames
 route state. Output-only sessions must leave input selection empty: no input capability
 query, listener, device write, capture failure, or permission request is allowed.
 
-## Remaining physical gate
+FourTrack now resolves an unavailable persisted output preference through
+CoreAudio's current live default without rewriting explicit route overrides. A
+disconnected CLbuds probe resolved to `BuiltInSpeakerDevice`, whose advertised
+ranges include both 44.1 and 48 kHz; the Swift policy test and signed app build
+passed.
 
-Physical Bluetooth acceptance is not claimed. The 2026-08-11 machine inventory had no
-CLbuds endpoint, so the required Bluetooth-input-plus-speakers, same-headset stereo,
-same-headset mono strict/fallback, and unrelated Bluetooth endpoint measurements remain
-unexecuted. Do not tag a release, mark FTR085 complete, or advance FourTrack's production
-SDK pin until a CLbuds run records the settled endpoint UIDs, physical/client rates,
-physical callback width, converter latency, counters, and tone/frame evidence.
+The final physical Bluetooth gate remains open. Do not tag a release, mark
+FTR085 complete, or advance FourTrack's production SDK pin until CLbuds is
+reconnected and both 44.1 and 48 kHz runs record settled endpoint UIDs,
+physical/client rates, physical callback width, converter latency, counters,
+and tone/frame evidence.
 
 ## References
 

@@ -382,6 +382,27 @@ TEST(CoreAudioOutputOnlyInjectedTest, PreserveRateMismatchIsRejectedWithoutPrope
   EXPECT_TRUE(property_api->writeLedger().empty());
   EXPECT_TRUE(audit.operations.empty());
 }
+
+TEST(CoreAudioOutputOnlyInjectedTest, ExplicitUnavailableOutputDoesNotFallBackToDefault) {
+  auto property_api = std::make_shared<test_support::FakeCoreAudioPropertyApi>();
+  auto query = std::make_shared<OutputOnlyRouteQuery>(11, 2, 48000.0);
+  DirectionAudit audit;
+  CoreAudioDriver driver(query, property_api, &audit);
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 256;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+  config.input_device_id = "stale.input.uid";
+  config.output_device_id = "stale.output.uid";
+  config.sample_rate_policy = AudioSampleRatePolicy::RequestExactRateOrConvert;
+
+  EXPECT_EQ(driver.initialize(config), SessionGraphError::InvalidParameter);
+  EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::OutputRouteUnavailable);
+  EXPECT_TRUE(property_api->writeLedger().empty());
+  EXPECT_TRUE(audit.operations.empty());
+}
 } // namespace
 } // namespace orpheus
 #endif

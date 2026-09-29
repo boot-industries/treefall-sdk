@@ -172,6 +172,72 @@ TEST(CoreAudioRouteMonitorTest, BufferChangeReportsBufferSizeChanged) {
   EXPECT_FALSE(fixture.monitor->permitsRendering());
 }
 
+TEST(CoreAudioRouteMonitorTest, AcceptsDirectionalEndpointBufferFramesAndDetectsMutation) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setAlive(2, 1);
+  api.setRate(1, 44100.0);
+  api.setRate(2, 16000.0);
+  api.setBuffer(1, 512);
+  api.setBuffer(2, 320);
+  CoreAudioRouteMonitor monitor(api, 44100, 512,
+                                std::vector<CoreAudioRouteDevice>{{1, false, true, false, 44100},
+                                                                  {2, true, false, false, 16000}},
+                                {});
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+
+  api.setBuffer(2, 256);
+  api.notify(2, kAudioDevicePropertyBufferFrameSize);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::BufferSizeChanged);
+  EXPECT_FALSE(monitor.permitsRendering());
+}
+
+TEST(CoreAudioRouteMonitorTest, CapturesActivationRateBeforeDetectingLaterMutation) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setRate(1, 16000.0);
+  api.setBuffer(1, 320);
+  CoreAudioRouteMonitor monitor(
+      api, 44100, 512, std::vector<CoreAudioRouteDevice>{{1, true, true, false, 44100}}, {});
+
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+
+  api.thirdPartyRateMutation(1, 8000.0);
+  api.notify(1, kAudioDevicePropertyNominalSampleRate);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::SampleRateChanged);
+  EXPECT_FALSE(monitor.permitsRendering());
+}
+
+TEST(CoreAudioRouteMonitorTest, CapturesActivationStreamFormatsBeforeLaterMutation) {
+  FakeCoreAudioPropertyApi api;
+  api.setAlive(1, 1);
+  api.setRate(1, 16000.0);
+  api.setBuffer(1, 320);
+  auto activation_format = testFormat();
+  activation_format.mSampleRate = 16000.0;
+  activation_format.mChannelsPerFrame = 1;
+  api.setFormat(100, kAudioStreamPropertyVirtualFormat, activation_format);
+  api.setFormat(100, kAudioStreamPropertyPhysicalFormat, activation_format);
+  const auto stale_format = testFormat();
+  CoreAudioRouteMonitor monitor(
+      api, 44100, 512, std::vector<CoreAudioRouteDevice>{{1, true, true, false, 44100}},
+      std::vector<CoreAudioRouteStream>{{100, stale_format, stale_format}});
+
+  ASSERT_TRUE(monitor.start());
+  monitor.requestCheck();
+  ASSERT_EQ(monitor.poll(), CoreAudioRoutePollResult::NoChange);
+
+  activation_format.mChannelsPerFrame = 2;
+  api.setFormat(100, kAudioStreamPropertyVirtualFormat, activation_format);
+  api.notify(100, kAudioStreamPropertyVirtualFormat);
+  EXPECT_EQ(monitor.poll(), CoreAudioRoutePollResult::FormatChanged);
+  EXPECT_FALSE(monitor.permitsRendering());
+}
+
 TEST(CoreAudioRouteMonitorTest, PropertyReadFailureReportsBackendFailure) {
   RouteMonitorFixture fixture;
   ASSERT_TRUE(fixture.initialization_ok);

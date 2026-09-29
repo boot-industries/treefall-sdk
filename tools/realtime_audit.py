@@ -184,11 +184,31 @@ def scan_target(target: ScanTarget) -> list[Finding]:
 
 
 def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
+    coreaudio_driver = root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp"
+    converter = root / "src/core/audio_io/directional_sample_rate_converter.cpp"
     targets = [
         ScanTarget(
             "CoreAudio render callback",
-            root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp",
+            coreaudio_driver,
             r"OSStatus\s+CoreAudioDriver::renderCallback\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "CoreAudio input capture callback",
+            coreaudio_driver,
+            r"OSStatus\s+CoreAudioDriver::inputRenderCallback\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "DirectionalSampleRateConverter push transfer",
+            converter,
+            r"DirectionalSrcTransfer\s+DirectionalSampleRateConverter::pushInput\s*\(",
+            pattern_sets=(HARD_REALTIME_SET,),
+        ),
+        ScanTarget(
+            "DirectionalSampleRateConverter render transfer",
+            converter,
+            r"DirectionalSrcTransfer\s+DirectionalSampleRateConverter::renderOutput\s*\(",
             pattern_sets=(HARD_REALTIME_SET,),
         ),
         ScanTarget(
