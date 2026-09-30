@@ -147,6 +147,55 @@ def _timing_guarded_lines(lines: list[str]) -> list[tuple[str, bool]]:
     return result
 
 
+def _mask_comments_and_literals(lines: list[str]) -> list[str]:
+    """Blank comment spans and literal contents, preserving length and line count."""
+    masked: list[str] = []
+    in_block = False
+    quote = ""
+    for line in lines:
+        out: list[str] = []
+        index = 0
+        length = len(line)
+        while index < length:
+            char = line[index]
+            nxt = line[index + 1] if index + 1 < length else ""
+            if in_block:
+                if char == "*" and nxt == "/":
+                    out.append("  ")
+                    index += 2
+                    in_block = False
+                else:
+                    out.append(" ")
+                    index += 1
+            elif quote:
+                if char == "\\" and nxt:
+                    out.append("  ")
+                    index += 2
+                elif char == quote:
+                    out.append(" ")
+                    index += 1
+                    quote = ""
+                else:
+                    out.append(" ")
+                    index += 1
+            elif char == "/" and nxt == "*":
+                out.append("  ")
+                index += 2
+                in_block = True
+            elif char == "/" and nxt == "/":
+                out.extend(" " * (length - index))
+                index = length
+            elif char in ('"', "'"):
+                quote = char
+                out.append(" ")
+                index += 1
+            else:
+                out.append(char)
+                index += 1
+        masked.append("".join(out))
+    return masked
+
+
 def scan_target(target: ScanTarget) -> list[Finding]:
     if not target.path.exists():
         if target.required:
@@ -158,13 +207,14 @@ def scan_target(target: ScanTarget) -> list[Finding]:
         base_line, lines = extract_function(text, target.function_regex, target.label)
     else:
         base_line, lines = 1, text.splitlines()
+    masked = _mask_comments_and_literals(lines)
 
     findings: list[Finding] = []
     for pattern_items, hard_fail in target.resolved_pattern_sets():
         patterns = dict(pattern_items)
-        for offset, (line, timing_guarded) in enumerate(_timing_guarded_lines(lines)):
-            stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+        for offset, (_original, timing_guarded) in enumerate(_timing_guarded_lines(lines)):
+            line = masked[offset]
+            if not line.strip():
                 continue
             for pattern, message in patterns.items():
                 if pattern == "std::chrono" and timing_guarded:
