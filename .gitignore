@@ -100,4 +100,8 @@ docs/api/
 
 # Keep ORP working records local-only; do not ignore other documentation.
 /docs/orp/
+
+# Keep internal sprint prompts local-only.
+/treefall-*-prompt*.md
+
 /suite/.backups/
