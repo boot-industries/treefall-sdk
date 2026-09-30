@@ -172,6 +172,16 @@ if(WIN32 AND ORPHEUS_ENABLE_ASIO)
         message(FATAL_ERROR "ASIO_SDK_PATH must be set when ORPHEUS_ENABLE_ASIO=ON")
     endif()
 
+    set(ORPHEUS_ASIO_DRIVER_SOURCE
+        "${ORPHEUS_ROOT_SOURCE_DIR}/src/platform/audio_drivers/asio/asio_driver.cpp")
+    if(NOT EXISTS "${ORPHEUS_ASIO_DRIVER_SOURCE}")
+        message(FATAL_ERROR
+            "ORPHEUS_ENABLE_ASIO=ON requires the in-tree ASIO backend source at "
+            "${ORPHEUS_ASIO_DRIVER_SOURCE}, which is not present. The ASIO backend is a "
+            "gated, source-only capability; provide the integration sources or configure "
+            "with -DORPHEUS_ENABLE_ASIO=OFF.")
+    endif()
+
     add_library(orpheus_audio_driver_asio STATIC
         asio/asio_driver.cpp
     )
