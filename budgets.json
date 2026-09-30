@@ -1,5 +1,6 @@
 {
   "version": "1.0",
+  "_note": "Informational budgets only. scripts/validate-performance.js is invoked by no CI workflow and no package.json script, and the command-latency figures require external runtime profiling to verify.",
   "budgets": {
     "bundleSize": {
       "@orpheus/engine-wasm": {

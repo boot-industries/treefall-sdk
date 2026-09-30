@@ -137,7 +137,7 @@ if (budgets.budgets.eventFrequency) {
   for (const [event, config] of Object.entries(budgets.budgets.eventFrequency)) {
     console.log(`  ${event}:`);
     console.log(`    Max frequency: ${config.max} ${config.unit}`);
-    console.log(`    ✓ Validated by frequency-validator.test.ts`);
+    console.log(`    ℹ️  Informational budget; not enforced in CI`);
   }
 } else {
   console.log('  No event frequency budgets defined');
