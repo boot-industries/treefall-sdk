@@ -659,24 +659,60 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
       std::isfinite(getDesktopScaleFactor()) && getDesktopScaleFactor() > 0.0f
           ? getDesktopScaleFactor()
           : 1.0f;
-  const auto layout = calculateSegmentLayout(signalAxisLength, m_style.segmentLength,
-                                             m_style.segmentGap, displayScale);
   const float peakDb = normalizedToDB(peakLevel);
   const float rmsDb = normalizedToDB(rmsLevel);
-  const auto segmentDb = [&](int index) {
-    const float offset =
-        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
-    const float normalized =
-        signalAxisLength > 0.0f
-            ? juce::jlimit(0.0f, 1.0f, (offset + layout.bodyLength * 0.5f) / signalAxisLength)
-            : 0.0f;
-    return normalizedToDB(normalized);
-  };
 
-  int greenSegmentCount = 0;
-  for (int index = 0; index < layout.count; ++index) {
-    if (segmentDb(index) < m_style.yellowThreshold)
-      ++greenSegmentCount;
+  // The segment ladder (positions, per-segment dB, colours) is a pure
+  // function of layout + style, never of levels: rebuild only when those
+  // change instead of re-deriving every segment every frame.
+  const SegmentTableSignature signature{
+      signalAxisLength,
+      displayScale,
+      m_style.segmentLength,
+      m_style.segmentGap,
+      m_style.yellowThreshold,
+      m_style.redThreshold,
+      m_style.clipThreshold,
+      m_minDB,
+      m_maxDB,
+      m_style.greenToYellowTransitionSegments,
+      m_style.meterColorLow.getARGB(),
+      m_style.meterColorMid.getARGB(),
+      m_style.meterColorHigh.getARGB(),
+      m_style.clipColor.getARGB()};
+  if (!(signature == m_segmentTableSignature)) {
+    m_segmentTableSignature = signature;
+    m_segmentTable.clear();
+    const auto layout = calculateSegmentLayout(signalAxisLength, m_style.segmentLength,
+                                              m_style.segmentGap, displayScale);
+    const auto segmentDb = [&](int index) {
+      const float offset =
+          layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+      const float normalized =
+          signalAxisLength > 0.0f
+              ? juce::jlimit(0.0f, 1.0f, (offset + layout.bodyLength * 0.5f) / signalAxisLength)
+              : 0.0f;
+      return normalizedToDB(normalized);
+    };
+    int greenSegmentCount = 0;
+    for (int index = 0; index < layout.count; ++index) {
+      if (segmentDb(index) < m_style.yellowThreshold)
+        ++greenSegmentCount;
+    }
+    m_segmentTable.reserve(static_cast<size_t>(layout.count));
+    int greenIndex = 0;
+    for (int index = 0; index < layout.count; ++index) {
+      const float dB = segmentDb(index);
+      const bool isGreen = dB < m_style.yellowThreshold;
+      const int colorGreenIndex = greenIndex;
+      if (isGreen)
+        ++greenIndex;
+      const float offset =
+          layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+      m_segmentTable.push_back(
+          {offset, layout.bodyLength, dB,
+           getSegmentColorForLevel(dB, colorGreenIndex, greenSegmentCount)});
+    }
   }
 
   const auto snapToPixel = [displayScale](float value) {
@@ -684,32 +720,24 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
   };
   bool hasLitSegment = false;
   float topLitDb = m_minDB;
-  int greenIndex = 0;
-  for (int index = 0; index < layout.count; ++index) {
-    const float dB = segmentDb(index);
-    const bool isGreen = dB < m_style.yellowThreshold;
-    const int colorGreenIndex = greenIndex;
-    if (isGreen)
-      ++greenIndex;
-    if (dB > peakDb)
+  for (const auto &segment : m_segmentTable) {
+    if (segment.dB > peakDb)
       continue;
 
-    const float offset =
-        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
-    g.setColour(getSegmentColorForLevel(dB, colorGreenIndex, greenSegmentCount));
+    g.setColour(segment.colour);
     if (m_isVertical) {
-      const float bottom = snapToPixel(contentBounds.getBottom() - offset);
-      const float top = snapToPixel(bottom - layout.bodyLength);
+      const float bottom = snapToPixel(contentBounds.getBottom() - segment.offset);
+      const float top = snapToPixel(bottom - segment.bodyLength);
       g.fillRect(contentBounds.getX(), juce::jmin(top, bottom), contentBounds.getWidth(),
                  std::abs(bottom - top));
     } else {
-      const float left = snapToPixel(contentBounds.getX() + offset);
-      const float right = snapToPixel(left + layout.bodyLength);
+      const float left = snapToPixel(contentBounds.getX() + segment.offset);
+      const float right = snapToPixel(left + segment.bodyLength);
       g.fillRect(juce::jmin(left, right), contentBounds.getY(), std::abs(right - left),
                  contentBounds.getHeight());
     }
     hasLitSegment = true;
-    topLitDb = dB;
+    topLitDb = segment.dB;
   }
 
   const bool isSilent = peakDb <= m_minDB && rmsDb <= m_minDB;

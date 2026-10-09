@@ -468,6 +468,35 @@ private:
   ChromeCacheSignature m_chromeCacheSignature{};
   inline static std::atomic<uint64_t> s_paintCount{0};
 
+  // Segmented-fill geometry and colours depend only on the layout and style,
+  // never on levels: precompute the ladder once per size/style/scale change
+  // instead of re-deriving per-segment dB and colours every frame.
+  struct SegmentGeom {
+    float offset = 0.0f;
+    float bodyLength = 0.0f;
+    float dB = 0.0f;
+    juce::Colour colour;
+  };
+  struct SegmentTableSignature {
+    float axisLength = 0.0f;
+    float displayScale = 0.0f;
+    float segmentLength = 0.0f;
+    float segmentGap = 0.0f;
+    float yellowThreshold = 0.0f;
+    float redThreshold = 0.0f;
+    float clipThreshold = 0.0f;
+    float minDB = 0.0f;
+    float maxDB = 0.0f;
+    int transitionSegments = 0;
+    uint32_t lowArgb = 0;
+    uint32_t midArgb = 0;
+    uint32_t highArgb = 0;
+    uint32_t clipArgb = 0;
+    bool operator==(const SegmentTableSignature &) const = default;
+  };
+  SegmentTableSignature m_segmentTableSignature{};
+  std::vector<SegmentGeom> m_segmentTable;
+
   // dB range
   float m_minDB = -60.0f;
   float m_maxDB = 6.0f;
