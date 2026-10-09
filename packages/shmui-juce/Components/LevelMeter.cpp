@@ -221,6 +221,10 @@ void LevelMeter::setDBRange(float minDB, float maxDB) {
   repaint();
 }
 
+void LevelMeter::setMinRepaintIntervalMs(double milliseconds) {
+  m_minRepaintIntervalMs = juce::jmax(0.0, milliseconds);
+}
+
 void LevelMeter::setStyle(const LevelMeterStyle& style) {
   if (!requireMessageThread())
     return;
@@ -385,14 +389,12 @@ void LevelMeter::recordEvent(const LevelEvent& ev) {
 
 //==============================================================================
 void LevelMeter::paint(juce::Graphics& g) {
+  s_paintCount.fetch_add(1, std::memory_order_relaxed);
   // Latch at the actual draw, not an earlier timer tick. A publication arriving
   // after the repaint request still belongs in this frame.
   updateMeter();
 
   auto bounds = getLocalBounds().toFloat();
-
-  // Background
-  g.fillAll(m_style.backgroundColor);
 
   // Calculate meter layout
   float scaleWidth = m_style.showScale ? 30.0f : 0.0f;
@@ -407,10 +409,24 @@ void LevelMeter::paint(juce::Graphics& g) {
     meterArea = bounds;
   }
 
-  // Draw scale
-  if (m_style.showScale) {
-    drawScale(g, scaleArea);
+  // Background and dB scale are static per size/style; draw them once into a
+  // cache and blit so the per-frame path never renders text.
+  const ChromeCacheSignature signature{
+      m_style.backgroundColor.getARGB(), m_style.textColor.getARGB(),
+      m_style.tickColor.getARGB(),       m_style.showScale,
+      m_style.showTicks,                 m_isVertical,
+      m_minDB,                           m_maxDB,
+      getWidth(),                        getHeight()};
+  if (m_chromeCache.isNull() || !(signature == m_chromeCacheSignature)) {
+    m_chromeCacheSignature = signature;
+    m_chromeCache = juce::Image(juce::Image::ARGB, juce::jmax(1, getWidth()),
+                                juce::jmax(1, getHeight()), true);
+    juce::Graphics chrome(m_chromeCache);
+    chrome.fillAll(m_style.backgroundColor);
+    if (m_style.showScale)
+      drawScale(chrome, scaleArea);
   }
+  g.drawImageAt(m_chromeCache, 0, 0);
 
   // Calculate meter bounds for each channel
   float totalMeterWidth =
@@ -453,7 +469,7 @@ void LevelMeter::mouseDown(const juce::MouseEvent& e) {
 //==============================================================================
 void LevelMeter::repaintIfNeeded() {
   if (m_animationActive) {
-    repaint();
+    requestThrottledRepaint();
     return;
   }
   for (int ch = 0; ch < m_numChannels; ++ch) {
@@ -461,10 +477,18 @@ void LevelMeter::repaintIfNeeded() {
     if (m_inputLevelPairs[index].load(std::memory_order_relaxed) != m_paintedLevelPairs[index] ||
         (m_style.showPeakHold && m_peakHolds[index] > m_displayLevels[index] &&
          juce::Time::getMillisecondCounterHiRes() - m_peakHoldTimes[index] > m_peakHoldTimeMs)) {
-      repaint();
+      requestThrottledRepaint();
       return;
     }
   }
+}
+
+void LevelMeter::requestThrottledRepaint() {
+  const double now = juce::Time::getMillisecondCounterHiRes();
+  if (now - m_lastRepaintRequestMs < m_minRepaintIntervalMs)
+    return;
+  m_lastRepaintRequestMs = now;
+  repaint();
 }
 
 void LevelMeter::updateDisplaySync() {

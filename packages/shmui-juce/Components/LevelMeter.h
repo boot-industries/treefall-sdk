@@ -287,6 +287,18 @@ public:
     return m_style;
   }
 
+  /**
+   * @brief Cap the display refresh rate while the meter animates (minimum
+   * milliseconds between repaints; 0 = uncapped). Level input is unaffected;
+   * only visual refresh is throttled.
+   */
+  void setMinRepaintIntervalMs(double milliseconds);
+
+  /// Cumulative paint count for live performance telemetry.
+  static uint64_t paintCount() noexcept {
+    return s_paintCount.load(std::memory_order_relaxed);
+  }
+
   /** Resume following the process-wide default theme. */
   void useDefaultThemeStyle();
   [[nodiscard]] bool usesDefaultThemeStyle() const {
@@ -413,6 +425,23 @@ private:
   void drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel);
   void drawMeter(juce::Graphics& g, juce::Rectangle<float> bounds, int channel);
   void drawScale(juce::Graphics& g, juce::Rectangle<float> bounds);
+  void requestThrottledRepaint();
+
+  // Static chrome (background + dB scale) is drawn once per size/style change
+  // and blitted per frame, keeping text rendering off the animation path.
+  struct ChromeCacheSignature {
+    uint32_t backgroundArgb = 0;
+    uint32_t textArgb = 0;
+    uint32_t tickArgb = 0;
+    bool showScale = false;
+    bool showTicks = false;
+    bool vertical = false;
+    float minDB = 0.0f;
+    float maxDB = 0.0f;
+    int width = 0;
+    int height = 0;
+    bool operator==(const ChromeCacheSignature &) const = default;
+  };
 
   //==============================================================================
   static constexpr int MAX_CHANNELS = 8;
@@ -428,6 +457,16 @@ private:
   juce::VBlankAttachment m_displaySync;
   double m_lastMeterUpdateMs = 0.0;
   bool m_animationActive = false;
+
+  // Repaint budget: while the meter animates (peak/RMS needle release, peak
+  // hold expiry) repaintIfNeeded() runs at display refresh via the vblank
+  // attachment; cap the effective frame rate so a bank of meters can never
+  // starve the message thread.
+  double m_minRepaintIntervalMs = 16.0;
+  double m_lastRepaintRequestMs = 0.0;
+  juce::Image m_chromeCache;
+  ChromeCacheSignature m_chromeCacheSignature{};
+  inline static std::atomic<uint64_t> s_paintCount{0};
 
   // dB range
   float m_minDB = -60.0f;
