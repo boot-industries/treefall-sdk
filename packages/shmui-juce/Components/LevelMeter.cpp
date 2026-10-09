@@ -664,9 +664,14 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
 
   // The segment ladder (positions, per-segment dB, colours) is a pure
   // function of layout + style, never of levels: rebuild only when those
-  // change instead of re-deriving every segment every frame.
+  // change instead of re-deriving every segment every frame. The same pass
+  // derives the smooth band stops and the track-coloured gap overlay that
+  // let the animation path draw with one gradient fill and one blit.
+  const float crossExtent =
+      m_isVertical ? contentBounds.getWidth() : contentBounds.getHeight();
   const SegmentTableSignature signature{
       signalAxisLength,
+      crossExtent,
       displayScale,
       m_style.segmentLength,
       m_style.segmentGap,
@@ -683,6 +688,7 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
   if (!(signature == m_segmentTableSignature)) {
     m_segmentTableSignature = signature;
     m_segmentTable.clear();
+    m_ladderFullImage = {};
     const auto layout = calculateSegmentLayout(signalAxisLength, m_style.segmentLength,
                                               m_style.segmentGap, displayScale);
     const auto segmentDb = [&](int index) {
@@ -713,31 +719,84 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
           {offset, layout.bodyLength, dB,
            getSegmentColorForLevel(dB, colorGreenIndex, greenSegmentCount)});
     }
+
+    // Bake the all-lit ladder (track base, segments, gaps) once: the
+    // animation path then blits the lit section of this opaque image.
+    if (!m_segmentTable.empty()) {
+      const int crossPixels =
+          juce::jmax(1, static_cast<int>(std::ceil(crossExtent)));
+      const int axisPixels =
+          juce::jmax(1, static_cast<int>(std::ceil(signalAxisLength)));
+      m_ladderFullImage =
+          juce::Image(juce::Image::ARGB,
+                      m_isVertical ? crossPixels : axisPixels,
+                      m_isVertical ? axisPixels : crossPixels, true);
+      juce::Graphics ladder(m_ladderFullImage);
+      ladder.fillAll(m_style.backgroundColor.brighter(0.1f));
+      const auto snapToPixel = [displayScale](float value) {
+        return std::round(value * displayScale) / displayScale;
+      };
+      const float axisSize = static_cast<float>(
+          m_isVertical ? m_ladderFullImage.getHeight()
+                       : m_ladderFullImage.getWidth());
+      for (const auto &segment : m_segmentTable) {
+        ladder.setColour(segment.colour);
+        if (m_isVertical) {
+          const float bottom = snapToPixel(axisSize - segment.offset);
+          const float top = snapToPixel(bottom - segment.bodyLength);
+          ladder.fillRect(0.0f, juce::jmin(top, bottom),
+                          static_cast<float>(m_ladderFullImage.getWidth()),
+                          std::abs(bottom - top));
+        } else {
+          const float left = snapToPixel(segment.offset);
+          const float right = snapToPixel(left + segment.bodyLength);
+          ladder.fillRect(juce::jmin(left, right), 0.0f,
+                          std::abs(right - left),
+                          static_cast<float>(m_ladderFullImage.getHeight()));
+        }
+      }
+    }
   }
 
   const auto snapToPixel = [displayScale](float value) {
     return std::round(value * displayScale) / displayScale;
   };
-  bool hasLitSegment = false;
-  float topLitDb = m_minDB;
-  for (const auto &segment : m_segmentTable) {
-    if (segment.dB > peakDb)
-      continue;
 
-    g.setColour(segment.colour);
+  // Lit segments form a contiguous prefix (dB ascends with index). Blit the
+  // baked all-lit ladder and cover the unlit remainder with one flat rect —
+  // two flat calls per lane instead of a fill per segment.
+  int lastLit = -1;
+  for (int index = 0; index < static_cast<int>(m_segmentTable.size());
+       ++index) {
+    if (m_segmentTable[static_cast<size_t>(index)].dB <= peakDb)
+      lastLit = index;
+    else
+      break;
+  }
+  const bool hasLitSegment = lastLit >= 0;
+  const float topLitDb =
+      hasLitSegment ? m_segmentTable[static_cast<size_t>(lastLit)].dB : m_minDB;
+  if (hasLitSegment && !m_ladderFullImage.isNull()) {
+    const auto &lastSegment = m_segmentTable[static_cast<size_t>(lastLit)];
+    const float litExtent = lastSegment.offset + lastSegment.bodyLength;
+    g.drawImageAt(m_ladderFullImage, juce::roundToInt(contentBounds.getX()),
+                  juce::roundToInt(contentBounds.getY()));
     if (m_isVertical) {
-      const float bottom = snapToPixel(contentBounds.getBottom() - segment.offset);
-      const float top = snapToPixel(bottom - segment.bodyLength);
-      g.fillRect(contentBounds.getX(), juce::jmin(top, bottom), contentBounds.getWidth(),
-                 std::abs(bottom - top));
+      const float litTop = snapToPixel(contentBounds.getBottom() - litExtent);
+      if (litTop > contentBounds.getY()) {
+        g.setColour(m_style.backgroundColor.brighter(0.1f));
+        g.fillRect(contentBounds.getX(), contentBounds.getY(),
+                   contentBounds.getWidth(), litTop - contentBounds.getY());
+      }
     } else {
-      const float left = snapToPixel(contentBounds.getX() + segment.offset);
-      const float right = snapToPixel(left + segment.bodyLength);
-      g.fillRect(juce::jmin(left, right), contentBounds.getY(), std::abs(right - left),
-                 contentBounds.getHeight());
+      const float litRight = snapToPixel(contentBounds.getX() + litExtent);
+      if (litRight < contentBounds.getRight()) {
+        g.setColour(m_style.backgroundColor.brighter(0.1f));
+        g.fillRect(litRight, contentBounds.getY(),
+                   contentBounds.getRight() - litRight,
+                   contentBounds.getHeight());
+      }
     }
-    hasLitSegment = true;
-    topLitDb = segment.dB;
   }
 
   const bool isSilent = peakDb <= m_minDB && rmsDb <= m_minDB;

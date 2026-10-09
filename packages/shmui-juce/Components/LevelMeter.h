@@ -479,6 +479,7 @@ private:
   };
   struct SegmentTableSignature {
     float axisLength = 0.0f;
+    float crossExtent = 0.0f;
     float displayScale = 0.0f;
     float segmentLength = 0.0f;
     float segmentGap = 0.0f;
@@ -496,6 +497,10 @@ private:
   };
   SegmentTableSignature m_segmentTableSignature{};
   std::vector<SegmentGeom> m_segmentTable;
+  // The full all-lit ladder (segments + track-coloured gaps baked in) renders
+  // once per size/style change; the animation path blits only the lit
+  // section — one opaque image draw instead of a rect per segment.
+  juce::Image m_ladderFullImage;
 
   // dB range
   float m_minDB = -60.0f;
