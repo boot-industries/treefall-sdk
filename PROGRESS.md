@@ -1,5 +1,95 @@
 # Progress
 
+## OCC204 owner-boundary latency investigation — 2026-10-09
+
+Clip Composer PR #68's OCC204 records a **retained**, unresolved 11.635 ms
+app-callback sample against the 10.667 ms CoreAudio buffer period (24 voices,
+295 verified/registered clips, External Headphones at 48 kHz / 512 frames).
+The original visible collection had 1/28,104 deadline misses and no underruns;
+matched hidden and native resident-PCM controls had zero misses. This is not
+evidence that the SDK render caused the outlier: the app's callback timer spans
+SDK transport render, app natural-boundary publication and ShmUI waveform
+analysis, while the SDK CoreAudio monitor separately times the host callback
+envelope, including conversion and excluding the final host-buffer copy. The
+app's callback ring records neither per-sample timestamps nor corresponding
+per-callback render durations; its latest-render scalar cannot attribute the
+retained outlier. The native control omits the SDK, file cache and JUCE.
+
+A new safety-gated Whitebox replay used the **unchanged** PR #68 Release binary
+and SDK submodule: 295/295/295 assigned/verified/registered, the supplied quiet
+WAVs, UID `BuiltInHeadphoneOutputDevice`, system/device volume at 5%/~0.05,
+48 kHz / 512 frames. The two 10-second-warmup + 300-second 24-voice steady
+collections completed with 0/28,119 visible and 0/28,119 hidden **collection**
+callback samples over budget (max 9.919/2.456 ms). All recorded callback
+sequences, including warmup, were contiguous (29,101/29,144 samples), with no
+ring drops or observed underruns. A separately rebuilt, unmodified native
+CoreAudio resident-PCM control completed 300 seconds with 0/28,124 misses,
+zero record overflow/late gaps/overload events, max 0.268 ms. **The original
+miss remains in the record; one clean paired replay cannot erase it.**
+
+The replay is not equivalent to OCC204's real-foreground UI gate:
+`juce::Process::isForegroundProcess()` reported false in **every** app row
+despite successful System Events activation calls. LaunchServices activation,
+native `NSRunningApplication.activate` and a titlebar event also did not make
+the owned app active in this tool session. The visible 24-voice steady row
+recorded 299 >100-ms message-frame intervals (max 674.877 ms), versus zero
+hidden; 4/8/16/24 high-trigger visible rows recorded 123/288/365/509 such
+intervals versus 0/0/1/2 hidden. All eight high-trigger rows accepted 24
+first and 252 repeat starts, had zero accepted audio/paint missing, zero
+callback misses and zero underruns; they **cannot** establish the foreground
+paint or meter thresholds. The paired 8-voice minimal-instrument runs likewise
+remained background. The original 8-visible `playout_admission:cpu_budget`
+rejection after 34.19% reported audio CPU is retained as an unresolved
+admission review item, not silently counted as accepted.
+
+These **background-only** high-trigger p95 values (milliseconds) are diagnostic,
+not substitutes for the foreground limits. `H→A` is the audio-thread callback
+stamp; `E→P` is scheduler enqueue to the observed JUCE button paint. Each
+first/repeat cohort has 24/252 accepted events and matching callback/paint
+records; values are visible/hidden pairs:
+
+| Voices | H→A first | H→A repeat | E→P first | E→P repeat |
+| --- | --- | --- | --- | --- |
+| 4 | 87.20 / 62.04 | 91.79 / 63.80 | 67.19 / 59.03 | 86.26 / 52.71 |
+| 8 | 103.50 / 71.02 | 103.10 / 65.81 | 87.58 / 55.86 | 86.51 / 52.92 |
+| 16 | 106.22 / 69.51 | 101.61 / 69.48 | 80.74 / 57.79 | 83.53 / 55.74 |
+| 24 | 107.98 / 69.95 | 107.21 / 75.87 | 71.66 / 48.83 | 87.96 / 57.96 |
+
+Visible meter-publication p95 was 23.60/21.42/23.66/23.91 Hz for
+4/8/16/24 voices; LevelMeter paint-rate p95 was
+54.39/60.58/57.32/55.52 per second. These low rates are **not** a latency
+pass: they coexist with 123–509 long UI frame stalls in invalid background
+runs. The 8-voice trace-disabled pair contains no per-callback duration
+samples by design and must not be counted as zero-miss tracing coverage.
+
+Resource samples after 20 seconds of warmup show process CPU p50/p95
+94.6/100.3% visible versus 78.2/88.9% hidden for the long rows; sampled RSS
+min/median/max was 347.1/360.0/406.2 MiB versus 324.8/356.6/386.5 MiB.
+These process-only observations do not include host compression/pressure and
+do not establish stable retention. A 90-second System Trace captured only its
+template's final five-second window and contained no matching callback miss.
+The owner boundary remains unproven; **no SDK or ShmUI source correction or
+consumer pin change is justified by this replay**. The SDK transport streaming
+source reads resident pages on the callback and delegates decode to its worker,
+but the retained app trace cannot distinguish render occupancy from scheduler
+preemption or app analysis around the one miss.
+
+For PR #68: reject a run as foreground evidence unless its per-report
+`process_is_foreground` is true during collection; retain all callback
+samples/drops and prior misses. A discriminating trace needs a common
+monotonic time per callback with host entry/exit, SDK render entry/exit,
+app analyzer entry/exit, frame budget, scheduler wake gap, dropped realtime
+snapshots and CoreAudio overloads. Compare exact-process scheduling and stacks
+at the *same* over-budget callback before assigning a fix. Repeat foreground
+visible/hidden high-trigger and five-minute runs, matched raw controls,
+probe-on/off comparisons, and host compression/pressure measurement. Do not
+weaken admission or the zero-miss gate. Evidence: local
+`/tmp/occ-meter-lag-68/owner-*` and `/tmp/occ204-owner-raw/`, alongside [1].
+
+[1] Clip Composer, “OCC204 Owner Boundary Latency Handoff,” 2026-10-09,
+`clip-composer/docs/occ/OCC204 Owner Boundary Latency Handoff.md`
+(PR [#68](https://github.com/boot-industries/clip-composer/pull/68)).
+
 ## Upstream meter publication and presentation fix — 2026-09-10
 
 Corrected the actual number flow, rather than requiring downstream timer
