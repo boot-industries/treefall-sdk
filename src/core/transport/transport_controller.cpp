@@ -1423,13 +1423,8 @@ void TransportController::processCommands() {
     case TransportCommand::Type::UpdateGain:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
-          float gainDb = cmd.data.gainDb;
-          m_activeClips[i].gainDb.store(gainDb, std::memory_order_release);
-          // Calculate linear gain here to avoid pow() in the inner audio loop
-          // Note: std::pow is expensive but safe-ish in command processor (run once per update)
-          // Ideally we'd use a fast approximation or lookup table, but this is infrequent.
-          float linear = std::pow(10.0f, gainDb / 20.0f);
-          m_activeClips[i].gainLinear.store(linear, std::memory_order_release);
+          m_activeClips[i].gainDb.store(cmd.data.gain.db, std::memory_order_release);
+          m_activeClips[i].gainLinear.store(cmd.data.gain.linear, std::memory_order_release);
         }
       }
       break;
@@ -2948,7 +2943,8 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   cmd = TransportCommand{};
   cmd.type = TransportCommand::Type::UpdateGain;
   cmd.handle = handle;
-  cmd.data.gainDb = gainDb;
+  cmd.data.gain.db = gainDb;
+  cmd.data.gain.linear = std::pow(10.0f, gainDb / 20.0f);
   const SessionGraphError result = reservation.publish();
   if (result != SessionGraphError::OK)
     return result;

@@ -118,6 +118,7 @@ private:
   uint32_t m_currentSampleRate{48000};
   uint32_t m_currentBufferSize{512};
   std::function<void()> m_deviceChangeCallback;
+  std::mutex m_transitionMutex;
   mutable std::mutex m_mutex;
 };
 
@@ -132,10 +133,22 @@ AudioDriverManager::~AudioDriverManager() {
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
   m_endpointMonitor.reset();
 #endif
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_activeDriver) {
-    m_activeDriver->stop();
+  std::lock_guard<std::mutex> transition_lock(m_transitionMutex);
+  IAudioDriver* active_driver;
+  {
+    std::lock_guard<std::mutex> state_lock(m_mutex);
+    active_driver = m_activeDriver.get();
   }
+  if (active_driver) {
+    active_driver->stop();
+  }
+  std::unique_ptr<IAudioDriver> retired_driver;
+  {
+    std::lock_guard<std::mutex> state_lock(m_mutex);
+    retired_driver = std::move(m_activeDriver);
+  }
+  // Destroy the backend while the manager state mutex is still available to
+  // reentrant getters, but without holding that mutex.
 }
 
 std::vector<AudioDeviceInfo> AudioDriverManager::enumerateDevices() {
@@ -187,22 +200,27 @@ std::optional<AudioDeviceInfo> AudioDriverManager::getDeviceInfo(const std::stri
 SessionGraphError AudioDriverManager::setActiveDevice(const std::string& device_id,
                                                       uint32_t sample_rate, uint32_t buffer_size) {
   std::function<void()> notification;
-  std::unique_ptr<IAudioDriver> candidate;
-  std::string candidate_device_id;
 
   {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const auto device_info = getDeviceInfo(device_id);
-    if (!device_info.has_value() ||
-        !isSampleRateSupported(device_info->supportedSampleRates, sample_rate) ||
-        !isBufferSizeSupported(device_info->supportedBufferSizes, buffer_size)) {
-      return SessionGraphError::InvalidParameter;
-    }
-
+    std::lock_guard<std::mutex> transition_lock(m_transitionMutex);
     try {
-      candidate_device_id = device_id;
-      notification = m_deviceChangeCallback;
+      // Enumeration and backend calls may block or reenter state getters.
+      const auto device_info = getDeviceInfo(device_id);
+      if (!device_info.has_value() ||
+          !isSampleRateSupported(device_info->supportedSampleRates, sample_rate) ||
+          !isBufferSizeSupported(device_info->supportedBufferSizes, buffer_size)) {
+        return SessionGraphError::InvalidParameter;
+      }
 
+      std::string candidate_device_id = device_id;
+      IAudioDriver* old_driver;
+      {
+        std::lock_guard<std::mutex> state_lock(m_mutex);
+        old_driver = m_activeDriver.get();
+        notification = m_deviceChangeCallback;
+      }
+      // The transition lock keeps the manager's old driver owned and published
+      // throughout candidate preparation and stop, including failed transitions.
       AudioDriverConfig config;
       config.sample_rate = sample_rate;
       config.buffer_size = static_cast<uint16_t>(buffer_size);
@@ -215,7 +233,7 @@ SessionGraphError AudioDriverManager::setActiveDevice(const std::string& device_
       if (!m_driverFactory) {
         return SessionGraphError::InternalError;
       }
-      candidate = m_driverFactory(device_id);
+      auto candidate = m_driverFactory(device_id);
       if (!candidate) {
         return SessionGraphError::InternalError;
       }
@@ -223,18 +241,26 @@ SessionGraphError AudioDriverManager::setActiveDevice(const std::string& device_
       if (init_result != SessionGraphError::OK) {
         return init_result;
       }
+      const auto& candidate_config = candidate->getConfig();
+      const uint32_t candidate_sample_rate = candidate_config.sample_rate;
+      const uint32_t candidate_buffer_size = candidate_config.buffer_size;
 
-      if (m_activeDriver) {
-        const SessionGraphError stop_result = m_activeDriver->stop();
+      if (old_driver) {
+        const SessionGraphError stop_result = old_driver->stop();
         if (stop_result != SessionGraphError::OK) {
           return stop_result;
         }
       }
 
-      m_activeDriver = std::move(candidate);
-      m_currentDeviceId.swap(candidate_device_id);
-      m_currentSampleRate = m_activeDriver->getConfig().sample_rate;
-      m_currentBufferSize = m_activeDriver->getConfig().buffer_size;
+      {
+        std::lock_guard<std::mutex> state_lock(m_mutex);
+        m_activeDriver.swap(candidate);
+        m_currentDeviceId.swap(candidate_device_id);
+        m_currentSampleRate = candidate_sample_rate;
+        m_currentBufferSize = candidate_buffer_size;
+      }
+      // candidate now owns the retired driver; destruction is outside the state
+      // lock and completes before another transition may begin.
     } catch (...) {
       return SessionGraphError::InternalError;
     }

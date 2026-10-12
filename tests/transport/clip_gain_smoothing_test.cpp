@@ -64,7 +64,8 @@ std::string writeConstantWav(const std::filesystem::path& path, float durationSe
 class ClipGainSmoothingTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_path = (std::filesystem::temp_directory_path() / "orp127_gain_smooth.wav").string();
     writeConstantWav(m_path, 2.0f, kSampleRate);
   }
@@ -125,6 +126,13 @@ TEST_F(ClipGainSmoothingTest, AbruptGainChangeRampsWithoutZipper) {
 TEST_F(ClipGainSmoothingTest, RapidGainAutomationStaysSmooth) {
   ClipHandle handle = 1;
   ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  auto reference =
+      std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = kSampleRate});
+  ASSERT_EQ(reference->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  auto referenceMetadata = *reference->getClipMetadata(handle);
+  std::vector<float> referenceLeft(kBuffer);
+  std::vector<float> referenceRight(kBuffer);
+  float* referenceBuffers[] = {referenceLeft.data(), referenceRight.data()};
 
   std::vector<float> left(kBuffer, 0.0f);
   std::vector<float> right(kBuffer, 0.0f);
@@ -132,6 +140,8 @@ TEST_F(ClipGainSmoothingTest, RapidGainAutomationStaysSmooth) {
 
   m_transport->startClip(handle);
   m_transport->processAudio(buffers, 2, kBuffer);
+  ASSERT_EQ(reference->startClip(handle), SessionGraphError::OK);
+  reference->processAudio(referenceBuffers, 2, kBuffer);
   float steady = std::fabs(left[100]);
   ASSERT_GT(steady, 0.01f);
 
@@ -141,6 +151,15 @@ TEST_F(ClipGainSmoothingTest, RapidGainAutomationStaysSmooth) {
   for (float g : gains) {
     ASSERT_EQ(m_transport->updateClipGain(handle, g), SessionGraphError::OK);
     m_transport->processAudio(buffers, 2, kBuffer);
+    referenceMetadata.gainDb = g;
+    ASSERT_EQ(reference->updateClipMetadata(handle, referenceMetadata), SessionGraphError::OK);
+    reference->processAudio(referenceBuffers, 2, kBuffer);
+    // Metadata already prepares exact linear gain on the control thread.
+    // Equivalent gain commands must preserve the full rendered transition.
+    for (size_t i = 0; i < kBuffer; ++i) {
+      EXPECT_FLOAT_EQ(left[i], referenceLeft[i]);
+      EXPECT_FLOAT_EQ(right[i], referenceRight[i]);
+    }
     for (size_t i = 0; i < kBuffer; ++i)
       env.push_back(std::fabs(left[i]));
   }

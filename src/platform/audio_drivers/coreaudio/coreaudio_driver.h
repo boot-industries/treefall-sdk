@@ -14,6 +14,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -48,10 +49,32 @@ struct CoreAudioDriverDirectionAudit {
 };
 using AudioOutputUnitStartFunction = OSStatus (*)(AudioUnit);
 
+/// Private lifecycle/prime seam. Installed driver interfaces are unchanged.
+/// Hooks are control-side only; synthetic units never reach native lifecycle calls.
+struct CoreAudioDriverControlTestHooks {
+  enum class Operation : uint8_t { Start, Stop, ActiveRoute, Latency };
+  void* context{nullptr};
+  OSStatus (*stopUnit)(AudioUnit){&AudioOutputUnitStop};
+  OSStatus (*uninitializeUnit)(AudioUnit){&AudioUnitUninitialize};
+  OSStatus (*disposeUnit)(AudioUnit){&AudioComponentInstanceDispose};
+  OSStatus (*getUnitProperty)(AudioUnit, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement,
+                              void*, UInt32*){&AudioUnitGetProperty};
+  std::chrono::steady_clock::time_point (*primeNow)(void*){nullptr};
+  void (*primePollWait)(void*, std::chrono::milliseconds){nullptr};
+  void (*beforeControlLock)(void*, Operation){nullptr};
+};
+
 } // namespace detail
 
 /// CoreAudio HAL output driver with stable UID routing and control-thread
 /// route-state monitoring.
+///
+/// start(), stop(), getActiveRoute() and getLatencySamples() serialize behind
+/// mutex_. Converted input startup polls readiness to an explicit two-second
+/// deadline while holding that mutex; concurrent controls can wait for priming.
+/// One millisecond is polling cadence, not a readiness condition. The deadline
+/// bounds the prime poll, not AudioUnit/OS calls or scheduling, and is not a hard
+/// end-to-end control-latency guarantee.
 class CoreAudioDriver : public IAudioDriver {
 public:
   CoreAudioDriver();
@@ -95,6 +118,10 @@ public:
                                            AudioBufferList* io_data);
 
 private:
+  friend struct CoreAudioDriverTestAccess;
+  void observeControlLock(detail::CoreAudioDriverControlTestHooks::Operation) const;
+  std::chrono::steady_clock::time_point primeNow() const;
+  void waitForPrimePoll() const;
   static OSStatus renderCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags,
                                  const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber,
                                  UInt32 inNumberFrames, AudioBufferList* ioData);
@@ -162,6 +189,7 @@ private:
   ICoreAudioPropertyApi* property_api_{nullptr};
   std::shared_ptr<ICoreAudioPropertyApi> injected_property_api_;
   detail::AudioOutputUnitStartFunction audio_unit_start_{&AudioOutputUnitStart};
+  detail::CoreAudioDriverControlTestHooks control_test_hooks_;
   detail::CoreAudioDriverDirectionAudit* direction_audit_{nullptr};
   AudioDriverConfig config_;
 

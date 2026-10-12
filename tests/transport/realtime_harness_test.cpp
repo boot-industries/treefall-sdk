@@ -28,11 +28,13 @@
 #include "../../src/core/routing/routing_matrix.h"
 #include "../../src/core/transport/transport_controller.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -40,6 +42,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 #if defined(__APPLE__)
@@ -93,11 +96,12 @@ double currentThreadCpuMicros() noexcept {
 }
 #endif
 
-// Minimal WAV writer (16-bit PCM stereo) — mirrors multi_clip_stress_test.
+// Minimal WAV writer; optional exact topology parameters preserve existing callers.
 std::string writeSineWav(const std::filesystem::path& dir, const std::string& name, float freq,
-                         float durationSeconds, uint32_t sampleRate = kSampleRate) {
-  const uint16_t numChannels = 2;
-  const int64_t numFrames = static_cast<int64_t>(durationSeconds * sampleRate);
+                         float durationSeconds, uint32_t sampleRate = kSampleRate,
+                         uint16_t numChannels = 2, int64_t exactFrames = -1) {
+  const int64_t numFrames =
+      exactFrames >= 0 ? exactFrames : static_cast<int64_t>(durationSeconds * sampleRate);
 
   std::string filepath = (dir / name).string();
   std::ofstream file(filepath, std::ios::binary);
@@ -126,10 +130,11 @@ std::string writeSineWav(const std::filesystem::path& dir, const std::string& na
 
   for (int64_t i = 0; i < numFrames; ++i) {
     float s = 0.3f * std::sin(2.0f * static_cast<float>(M_PI) * freq * static_cast<float>(i) /
-                              static_cast<float>(kSampleRate));
+                              static_cast<float>(sampleRate));
     int16_t v = static_cast<int16_t>(s * 32767.0f);
-    file.write(reinterpret_cast<const char*>(&v), 2); // L
-    file.write(reinterpret_cast<const char*>(&v), 2); // R
+    for (uint16_t channel = 0; channel < numChannels; ++channel) {
+      file.write(reinterpret_cast<const char*>(&v), 2);
+    }
   }
   file.close();
   return filepath;
@@ -914,6 +919,205 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
 
   runMode(MeteringMode::Peak, "sample-peak");
   runMode(MeteringMode::TruePeak, "true-peak");
+}
+
+TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
+#if !defined(NDEBUG)
+  GTEST_SKIP() << "Requires unsanitized Release and ORPHEUS_RUN_WORST_CASE_BENCHMARK=1";
+#elif defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
+    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
+#endif
+#endif
+  const char* enabled = std::getenv("ORPHEUS_RUN_WORST_CASE_BENCHMARK");
+  if (enabled == nullptr || std::string_view(enabled) != "1") {
+    GTEST_SKIP() << "Opt-in measurement disabled; R-01 is not qualified by this skip";
+  }
+  constexpr size_t frames = 2048;
+  constexpr size_t warmups = 100;
+  constexpr size_t observations = 10000;
+#if defined(_MSC_VER)
+  std::cout << "[WorstCase] compiler=MSVC-" << _MSC_VER;
+#else
+  std::cout << "[WorstCase] compiler=" << __VERSION__;
+#endif
+  std::cout << " build=Release-unsanitized rates=synthetic-not-negotiated"
+            << " frames=2048 warmup=100 blocks=10000 outliers=retained\n";
+  const auto measure = [&](uint32_t rate, const char* mix, auto&& prepare, auto&& render,
+                           auto&& verify) {
+    std::vector<double> wall(observations);
+    std::vector<double> cpu(observations, -1.0);
+    for (size_t block = 0; block < warmups; ++block) {
+      prepare(block);
+      if (::testing::Test::HasFatalFailure()) {
+        return;
+      }
+      render();
+      verify();
+    }
+    uint64_t ioReadCalls = 0;
+    uint64_t ioReadBytes = 0;
+    bool ioAvailable = true;
+    RtGuardState::reset();
+    for (size_t block = 0; block < observations; ++block) {
+      prepare(block + warmups);
+      if (::testing::Test::HasFatalFailure()) {
+        return;
+      }
+      const auto before = readProcIoCounters();
+#if defined(__APPLE__) || defined(__linux__)
+      const double cpuStart = currentThreadCpuMicros();
+#endif
+      const auto begin = std::chrono::steady_clock::now();
+      {
+        RtSection section;
+        render();
+      }
+      const auto end = std::chrono::steady_clock::now();
+#if defined(__APPLE__) || defined(__linux__)
+      const double cpuEnd = currentThreadCpuMicros();
+      if (cpuStart >= 0.0 && cpuEnd >= cpuStart) {
+        cpu[block] = cpuEnd - cpuStart;
+      }
+#endif
+      wall[block] = std::chrono::duration<double, std::micro>(end - begin).count();
+      const auto after = readProcIoCounters();
+      if (before && after) {
+        ioReadCalls += after->syscr - before->syscr;
+        ioReadBytes += after->rchar - before->rchar;
+      } else {
+        ioAvailable = false;
+      }
+      verify();
+    }
+    const double deadline = static_cast<double>(frames) * 1000000.0 / rate;
+    for (size_t block = 0; block < observations; ++block) {
+      if (wall[block] >= deadline) {
+        std::cout << "[WorstCaseMiss] rate=" << rate << " mix=" << mix << " block=" << block
+                  << " wall_us=" << wall[block] << " cpu_us=" << cpu[block]
+                  << " deadline_us=" << deadline << '\n';
+      }
+    }
+    std::sort(wall.begin(), wall.end());
+    std::sort(cpu.begin(), cpu.end());
+    const auto report = [&](const char* clock, const std::vector<double>& values) {
+      std::cout << "[WorstCase] rate=" << rate << " mix=" << mix << " clock=" << clock
+                << " p50_us=" << values[observations * 50 / 100]
+                << " p95_us=" << values[observations * 95 / 100]
+                << " p99_us=" << values[observations * 99 / 100] << " max_us=" << values.back()
+                << " deadline_us=" << deadline << '\n';
+    };
+    report("wall", wall);
+    report("thread-cpu", cpu);
+    std::cout << "[WorstCase] mix=" << mix << " allocations=" << RtGuardState::allocViolations()
+              << " deallocations=" << RtGuardState::deallocViolations()
+              << " io_sampler=" << (ioAvailable ? "proc-self-includes-observer" : "unavailable")
+              << " sampled_read_calls=" << ioReadCalls << " sampled_read_bytes=" << ioReadBytes
+              << '\n';
+    EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+    EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+    EXPECT_LT(wall[observations * 99 / 100], deadline);
+    EXPECT_LT(wall.back(), deadline);
+    // /proc sampling itself performs reads; exact callback syscall attribution
+    // remains a separate Linux trace gate, never a zero-I/O claim from this aggregate.
+  };
+  for (uint32_t rate : {44100u, 48000u, 96000u, 192000u}) {
+    {
+      TransportConfig config;
+      config.sampleRate = rate;
+      config.maxBlockFrames = frames;
+      config.maxActiveVoices = 32;
+      config.outputChannels = 8;
+      auto transport = std::make_unique<TransportController>(nullptr, config);
+      const auto path = writeSineWav(m_tempDir, "worst-" + std::to_string(rate) + ".wav", 220.0f,
+                                     0.0f, rate, 8, 8192);
+      std::array<ClipMetadata, 32> metadata;
+      const auto sourceFormat = ChannelFormat::Surround71();
+      ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 8}), SessionGraphError::OK);
+      ASSERT_EQ(transport->setGroupOutputBus(1, OutputBusRoute{0, 8}), SessionGraphError::OK);
+      for (ClipHandle handle = 1; handle <= 32; ++handle) {
+        ASSERT_EQ(transport->registerClipAudio(handle, path), SessionGraphError::OK);
+        auto& value = metadata[handle - 1];
+        value = *transport->getClipMetadata(handle);
+        value.loopEnabled = true;
+        value.voiceMode = VoiceMode::MonoStrict;
+        value.routingGroup = handle == 1 ? 0 : 1;
+        value.sourceLayout = sourceFormat.layout;
+        value.speakerPatchSize = sourceFormat.num_channels;
+        std::copy_n(sourceFormat.channel_map.begin(), sourceFormat.num_channels,
+                    value.speakerPatch.begin());
+        ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+        ASSERT_EQ(transport->prepareClipAudio(handle), SessionGraphError::OK);
+        ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+      }
+      std::array<std::array<float, frames>, 8> output{};
+      std::array<float*, 8> lanes{};
+      for (size_t lane = 0; lane < lanes.size(); ++lane) {
+        lanes[lane] = output[lane].data();
+      }
+      transport->processAudio(lanes.data(), lanes.size(), frames);
+      ASSERT_EQ(transport->getTotalActiveVoiceCount(), 32u);
+      const auto prepare = [&](size_t block) {
+        for (size_t command = 0; command < 128; ++command) {
+          const ClipHandle handle = static_cast<ClipHandle>(command % 32 + 1);
+          ASSERT_EQ(transport->updateClipMetadata(handle, metadata[handle - 1]),
+                    SessionGraphError::OK);
+        }
+        for (size_t command = 0; command < 126; ++command) {
+          ASSERT_EQ(transport->updateClipGain(static_cast<ClipHandle>(command % 32 + 1),
+                                              (block & 1) ? -3.0f : -6.0f),
+                    SessionGraphError::OK);
+        }
+        ASSERT_EQ(transport->startClipWithGroupChoke(1), SessionGraphError::OK);
+      };
+      measure(
+          rate, "transport-32voices-8source-255commands", prepare,
+          [&] { transport->processAudio(lanes.data(), lanes.size(), frames); },
+          [&] {
+            ASSERT_EQ(transport->getTotalActiveVoiceCount(), 32u);
+            transport->processCallbacks();
+          });
+    }
+    for (MeteringMode mode : {MeteringMode::Peak, MeteringMode::TruePeak}) {
+      RoutingConfig config;
+      config.num_channels = 256;
+      config.num_groups = 32;
+      config.num_outputs = 32;
+      config.sample_rate = rate;
+      config.gain_smoothing_ms = 0.0f;
+      config.enable_metering = true;
+      config.enable_clipping_protection = false;
+      config.source_channel_policy = SourceChannelPolicy::Discrete;
+      config.metering_mode = mode;
+      RoutingMatrix matrix;
+      ASSERT_EQ(matrix.initialize(config), SessionGraphError::OK);
+      for (RoutingChannelIndex channel = 0; channel < 256; ++channel) {
+        ASSERT_EQ(matrix.setChannelRoute(channel, static_cast<RoutingGroupIndex>(channel / 8),
+                                         static_cast<RoutingOutputIndex>(channel % 8)),
+                  SessionGraphError::OK);
+      }
+      std::vector<std::vector<float>> input(256, std::vector<float>(frames, 0.01f));
+      std::vector<std::vector<float>> output(32, std::vector<float>(frames, 0.0f));
+      std::array<const float*, 256> inputs{};
+      std::array<float*, 32> outputs{};
+      for (size_t lane = 0; lane < inputs.size(); ++lane) {
+        inputs[lane] = input[lane].data();
+      }
+      for (size_t lane = 0; lane < outputs.size(); ++lane) {
+        outputs[lane] = output[lane].data();
+      }
+      SessionGraphError result = SessionGraphError::OK;
+      measure(
+          rate,
+          mode == MeteringMode::Peak ? "routing-256-32-32-Peak" : "routing-256-32-32-TruePeak",
+          [](size_t) {},
+          [&] { result = matrix.processRouting(inputs.data(), outputs.data(), frames); },
+          [&] { ASSERT_EQ(result, SessionGraphError::OK); });
+    }
+  }
 }
 
 int main(int argc, char** argv) {

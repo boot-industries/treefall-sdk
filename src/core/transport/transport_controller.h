@@ -125,7 +125,10 @@ struct TransportCommand {
       FadeCurve outCurve;
     } fade; // For UpdateFade
 
-    float gainDb;      // For UpdateGain
+    struct {
+      float db;
+      float linear;
+    } gain;            // For UpdateGain; exact conversion prepared on the control thread
     bool booleanValue; // For UpdateLoop / UpdateStopOthers
 
     int64_t seekPosition; // For Seek (absolute sample position, pre-clamped)

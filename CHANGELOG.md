@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy realtime timing counters retain their names and layouts: the `p99`
   field is a half-budget exceedance count, not a percentile. Normal transport
   telemetry carries no measured callback duration.
+- Media-worker attachment is identity-idempotent; service rotates source order
+  and grants one page opportunity per source per round, prioritizing command
+  demand. Arbitrary blocked reads and destructor joins remain unbounded.
+- Driver transitions serialize independently of state getters. Failed stops
+  retain old pointer/metadata without guaranteeing backend usability.
 
 - The project is now published as the **Treefall SDK**; it was formerly the
   **Orpheus SDK**. The GitHub repository was renamed to
@@ -42,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concurrent telemetry and callback fixtures cover ring saturation, newest-drop
   recovery, correlated payloads, and cache-miss callback delivery only through
   the control pump. The callback guard rejects deliberate audio-thread dispatch.
+- Prepared decoding now rejects premature EOF and short reads before publishing
+  a source, matching streaming corruption handling.
+- Exact decibel-to-linear gain conversion moves from audio command consumption
+  to control publication without changing rendered gain transitions.
 
 - Loading a session whose primary document advertises a newer schema version
   now fails with a hard error instead of silently falling back to the `.bak`
@@ -81,6 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restoring queued delivery passed the focused guard and standalone diagnostics
   consumer. Linux TSan is still required; these results do not qualify hardware
   or temporal coherence.
+- Local T2 media/manager/realtime checks passed five gates and four synthetic
+  CoreAudio prime tests. The opt-in 10,000-block Release topology measurements
+  failed both before and after gain precomputation; retained distributions and
+  misses are documented in `docs/REALTIME_AUDIT.md`. Maximum-topology timing and
+  callback-only I/O qualification remain open, not hidden by the default skip.
 - Hard cancellation of an arbitrary blocked media reader remains unqualified.
   Windows/Linux runner evidence, physical route/operator acceptance, child-app
   acceptance and temporal-coherence release requirements remain open. This work

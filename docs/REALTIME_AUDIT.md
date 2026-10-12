@@ -79,6 +79,109 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   `processCallbacks()`. A cache miss emits silence and queues an underrun;
   it must never invoke an observer from the audio render path.
 
+## Control-Side Resilience and Measurement Limits
+
+- Driver-manager device transitions serialize separately from short state
+  snapshot/publication locks. Enumeration, factory construction, initialization
+  and old-driver stop do not hold the state lock; getters may observe the
+  retained route during preparation. Publication replaces driver and metadata
+  together, and notifications occur outside both locks. Failed initialization
+  or stop retains old pointer/metadata, not a guarantee that it is usable.
+  `getActiveDriver()` is borrowed, not a lease; callers must coordinate lifetime.
+- CoreAudio start, status getters, and stop are serialized by the driver mutex.
+  Input priming has an explicit two-second polling deadline; the one-millisecond
+  sleep is only cadence. That deadline does not bound backend calls, mutex
+  waits, OS scheduling, or end-to-end start/stop. Physical route qualification
+  remains separate from injected delayed-input and timeout measurements.
+- A synchronous reader can block the media worker and destructor join.
+  Command-demand deadlines do not bound an arbitrary virtual/OS read or
+  cancellation acknowledgement. Deduplication and bounded service opportunities
+  cannot establish hard blocked-reader fairness or teardown qualification.
+- `RealtimeHarnessTest.WorstCaseTopologyDeadlineDistribution` is opt-in,
+  unsanitized Release evidence only. Set
+  `ORPHEUS_RUN_WORST_CASE_BENCHMARK=1`; its normal skip is not qualification.
+  It preserves all 10,000 observations per synthetic rate/mix after 100 warmups,
+  reports wall and available thread-CPU distributions, and checks actual
+  frame/rate deadlines. Synthetic rates are not negotiated hardware evidence.
+  Allocation guards do not prove zero I/O; `/proc/self/io` sampling includes
+  observer reads, and callback-only Linux syscall attribution remains separate.
+
+### Local resilience measurements
+
+Host: Cloudkicker, Apple M2 Pro / Mac14,9, arm64, Darwin 25.5.0.
+Compiler: Apple LLVM 21.0.0 (`clang-2100.0.123.102`). Base revision:
+`e34c81b02` plus the resilience working changes. Debug checks passed five
+selected CTest gates (37.12 s) and all four synthetic CoreAudio prime fixtures;
+no physical playback was exercised.
+
+- Actual service replay at 32 sources performed 160 reads. Full-window service
+  had prefix-count skew 5 and last first-opportunity index 155; round-robin
+  service had skew 1 and index 31. This is a controlled reader replay, not a
+  cancellation or wall-clock fairness bound.
+- CoreAudio delayed-input start maximum: 30.4661 ms over 24 samples; controlled
+  timeout start maximum: 31.4467 ms over 24 samples. The real two-second prime
+  poll sample took 2000.43 ms; concurrent route/latency/stop calls waited
+  2000.44 / 2000.48 / 2000.56 ms. These synthetic measurements demonstrate
+  serialization, not a hard end-to-end bound.
+
+First unsanitized Release topology run, **before gain precomputation**:
+`env ORPHEUS_RUN_WORST_CASE_BENCHMARK=1
+build-release/tests/transport/realtime_harness_test
+--gtest_filter=RealtimeHarnessTest.WorstCaseTopologyDeadlineDistribution`.
+Result: failed, 961.095 s. Each mix/rate has 100 warmups and 10,000 measured
+2048-frame blocks; rates are synthetic. Transport uses 32 MonoStrict voices,
+8 source/output lanes and 255 admitted commands per block. Routing uses
+256 channels / 32 groups / 32 outputs. All guarded allocation/deallocation
+counts were zero; I/O attribution was unavailable. Units below are microseconds.
+
+| Rate (Hz) | Mix | Wall p50 | Wall p95 | Wall p99 | Wall max | CPU p99 | CPU max | Deadline |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 44100 | Transport | 3943.04 | 4365.38 | 4484.88 | 5374.21 | 4415 | 4662 | 46439.9 |
+| 44100 | Peak | 5640.21 | 6192.88 | 6315.75 | 7261.38 | 6280 | 6550 | 46439.9 |
+| 44100 | TruePeak | 13920.4 | 14666 | 15635.8 | 26822.1 | 14610 | 16405 | 46439.9 |
+| 48000 | Transport | 3904.71 | 4293.96 | 4367.71 | 5075.29 | 4362 | 4557 | 42666.7 |
+| 48000 | Peak | 5726.79 | 6285.88 | 6378.83 | 6890.67 | 6371 | 6892 | 42666.7 |
+| 48000 | TruePeak | 13180.1 | 14508.8 | 15368.7 | 21533.5 | 14551 | 16092 | 42666.7 |
+| 96000 | Transport | 4014.67 | 5432.17 | 12583 | 96031.8 | 5142 | 8340 | 21333.3 |
+| 96000 | Peak | 5633.08 | 6510.96 | 8203.92 | 24356.5 | 6443 | 7582 | 21333.3 |
+| 96000 | TruePeak | 14020 | 15055.6 | 18456.2 | 122879 | 15013 | 23044 | 21333.3 |
+| 192000 | Transport | 4205.83 | 4566.83 | 4776.42 | 22783.3 | 4434 | 5324 | 10666.7 |
+| 192000 | Peak | 5596.67 | 6432.75 | 6770.75 | 14397.7 | 6313 | 7105 | 10666.7 |
+| 192000 | TruePeak | 13010.1 | 14618.9 | 15437.5 | 26655.6 | 14522 | 15790 | 10666.7 |
+
+The initial run retained distributions and maxima, not per-block miss indices.
+Its complete emitted output is retained locally as
+`build-release/worst-case-before-gain.log`. Subsequent runs emit each missed
+block outside the timed region; a later result cannot erase these misses.
+Maximum-topology timing remains unqualified. Moving exact gain conversion to
+control publication cannot by itself resolve routing or scheduler misses.
+
+Second run, after exact gain precomputation on control publication, used the
+same command and `-O3 -DNDEBUG` Release flags; result failed (932.120 s).
+Gain-command rendered transitions match the existing metadata-gain path
+sample-for-sample. Allocation/deallocation guards again reported zero; I/O
+attribution remained unavailable. All missed blocks are retained in
+`build-release/worst-case-after-gain.log`.
+
+| Rate (Hz) | Mix | Wall p50 | Wall p95 | Wall p99 | Wall max | CPU p99 | CPU max | Misses / 10000 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 44100 | Transport | 3910 | 4275.29 | 4337.08 | 5139.46 | 4331 | 4477 | 0 |
+| 44100 | Peak | 5647.33 | 6123.88 | 6213.92 | 12422.4 | 6198 | 7008 | 0 |
+| 44100 | TruePeak | 13258.5 | 14297.1 | 14454 | 23011 | 14404 | 15491 | 0 |
+| 48000 | Transport | 3892.29 | 4235.96 | 4302.5 | 4949.38 | 4298 | 4581 | 0 |
+| 48000 | Peak | 5663.25 | 6144.92 | 6622.71 | 20440.1 | 6346 | 7104 | 0 |
+| 48000 | TruePeak | 13124 | 14169.4 | 14368.2 | 33419 | 14322 | 16100 | 0 |
+| 96000 | Transport | 3879.46 | 4158.92 | 4274.33 | 7015.79 | 4269 | 4785 | 0 |
+| 96000 | Peak | 5676.71 | 6125.17 | 6255.62 | 10999.8 | 6240 | 6984 | 0 |
+| 96000 | TruePeak | 13190 | 14197.9 | 14385.6 | 29925.7 | 14364 | 15633 | 3 |
+| 192000 | Transport | 3880.5 | 4214.12 | 4305.29 | 17708.2 | 4296 | 5509 | 1 |
+| 192000 | Peak | 5696.38 | 6034.38 | 6216.46 | 18408.2 | 6204 | 8133 | 2 |
+| 192000 | TruePeak | 13120 | 13558.5 | 14304 | 24728.8 | 14276 | 15124 | 10000 |
+
+The maximum-topology criterion remains open: TruePeak at 192 kHz exceeds the
+deadline even in thread CPU, and other mixes retain wall-max misses. No outlier
+was removed and no support tier or release qualification follows from this run.
+
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`
