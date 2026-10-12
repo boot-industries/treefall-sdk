@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Diagnostics now describe `latencyMs` as estimated callback-buffer duration,
+  not measured route latency, and expose independently sampled metrics rather
+  than claiming a coherent snapshot. Underrun reset linearizes at an atomic
+  exchange; peak reset is consumed by the sole producer on its next callback.
+- Legacy realtime timing counters retain their names and layouts: the `p99`
+  field is a half-budget exceedance count, not a percentile. Normal transport
+  telemetry carries no measured callback duration.
+
 - The project is now published as the **Treefall SDK**; it was formerly the
   **Orpheus SDK**. The GitHub repository was renamed to
   `boot-industries/treefall-sdk`, and the earlier `chrislyons/orpheus-sdk` and
@@ -28,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches devices by display name instead of `device_id` sees the new label.
 
 ### Fixed
+
+- Streaming loop-anchor commit now releases pins with bounded atomic work under
+  exclusive command ownership, retaining old pages until audio consumption.
+- Concurrent telemetry and callback fixtures cover ring saturation, newest-drop
+  recovery, correlated payloads, and cache-miss callback delivery only through
+  the control pump. The callback guard rejects deliberate audio-thread dispatch.
 
 - Loading a session whose primary document advertises a newer schema version
   now fails with a hard error instead of silently falling back to the `.bak`
@@ -59,6 +73,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state. A null `master_output` or a null configured output lane is now a true
   no-touch return: routing control state, the group-output meter snapshot, and
   telemetry are all left unchanged.
+
+### Verification and remaining acceptance
+
+- Local macOS Debug T1 verification: 12 selected native/package/ABI/realtime/docs
+  CTest gates passed (42.40 s). The callback dispatch mutation failed as expected;
+  restoring queued delivery passed the focused guard and standalone diagnostics
+  consumer. Linux TSan is still required; these results do not qualify hardware
+  or temporal coherence.
+- Hard cancellation of an arbitrary blocked media reader remains unqualified.
+  Windows/Linux runner evidence, physical route/operator acceptance, child-app
+  acceptance and temporal-coherence release requirements remain open. This work
+  does not promote WASAPI/ASIO, modify child pins, or authorize release tagging.
 
 ## [0.9.1] - 2026-09-10
 

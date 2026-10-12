@@ -81,6 +81,9 @@ struct RealtimeTelemetrySnapshot {
   uint32_t schema_version{kRealtimeTelemetrySchemaVersion};
   uint64_t sequence{0}; ///< Monotonic capture attempt; gaps identify dropped snapshots.
   TimePoint position{}; ///< Canonical post-block transport position.
+  /// Independently aggregated counters. Normal transport publication does not
+  /// measure callback duration: zero budget-exceedance counts are not evidence
+  /// of callback health, a percentile, voice onset, or acoustic latency.
   RealtimeDiagnosticsSnapshot diagnostics{};
   uint32_t active_voice_count{0};
   uint8_t group_count{0};
@@ -120,6 +123,9 @@ public:
 
   /// Record one callback and return true when this block should be captured.
   /// Call once per realtime callback, before publishFromRealtime().
+  /// No callback duration is measured here. Backend opt-in timing under
+  /// ORPHEUS_ENABLE_AUDIO_CALLBACK_TIMING feeds the performance monitor only,
+  /// not this bridge's diagnostic threshold counters.
   [[nodiscard]] bool beginRealtimeBlock(uint32_t bufferFrames, uint32_t sampleRate) noexcept;
 
   /// Add one source/cache underrun to the next diagnostics snapshot.

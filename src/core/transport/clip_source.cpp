@@ -90,17 +90,16 @@ bool StreamingClipSource::copyFromResidentPage(int64_t pos, float* dest, size_t 
 }
 
 void StreamingClipSource::releaseReadyPin(Page& page) noexcept {
-  uint32_t observed = page.guard.load(std::memory_order_acquire);
-  while (true) {
-    assert(observed > 0 && observed < kClaimed);
-    if (observed == 0 || observed >= kClaimed) {
-      return;
-    }
-    if (page.guard.compare_exchange_weak(observed, observed - 1, std::memory_order_acq_rel,
-                                         std::memory_order_acquire)) {
-      return;
-    }
+  const uint32_t observed = page.guard.load(std::memory_order_acquire);
+  assert(observed > 0 && observed < kClaimed);
+  if (observed == 0 || observed >= kClaimed) {
+    return;
   }
+  // This caller owns one pin: other owners cannot release it or claim the
+  // page before this RMW, so release needs no contention-dependent retry.
+  const uint32_t previous = page.guard.fetch_sub(1, std::memory_order_acq_rel);
+  assert(previous > 0 && previous < kClaimed);
+  static_cast<void>(previous);
 }
 
 bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& framesRead) {

@@ -5,7 +5,9 @@
 
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -23,7 +25,7 @@ constexpr size_t kBlockFrames = 64;
 constexpr orpheus::ClipHandle kFirstHandle = 11;
 constexpr orpheus::ClipHandle kSecondHandle = 22;
 
-std::string writeSilentWav(const std::filesystem::path& path) {
+std::string writeSilentWav(const std::filesystem::path& path, bool steppedSignal = false) {
   constexpr uint16_t channels = 2;
   constexpr uint16_t bitsPerSample = 16;
   constexpr uint16_t audioFormat = 1;
@@ -49,6 +51,14 @@ std::string writeSilentWav(const std::filesystem::path& path) {
   file.write("data", 4);
   file.write(reinterpret_cast<const char*>(&dataSize), sizeof(dataSize));
   std::vector<int16_t> silence(static_cast<size_t>(durationFrames) * channels, 0);
+  if (steppedSignal) {
+    // Distinct block amplitudes make stale/torn meter payloads observable.
+    for (size_t frame = 0; frame < durationFrames; ++frame) {
+      const auto sample = static_cast<int16_t>(((frame / kBlockFrames) % 31 + 1) * 128);
+      silence[frame * channels] = sample;
+      silence[frame * channels + 1] = sample;
+    }
+  }
   file.write(reinterpret_cast<const char*>(silence.data()),
              static_cast<std::streamsize>(silence.size() * sizeof(int16_t)));
   file.close();
@@ -287,6 +297,157 @@ TEST_F(CallbackLossTelemetryTest, ConcurrentSnapshotsRemainCoherentDuringPublica
 
   stop.store(true, std::memory_order_relaxed);
   audioThread.join();
+}
+
+TEST_F(CallbackLossTelemetryTest, ConcurrentRealtimeRingSaturatesPreservesPayloadAndRecovers) {
+  constexpr uint64_t kStalledAttempts = orpheus::kRealtimeTelemetryCapacity + 7;
+  constexpr uint64_t kAttempts = 4096;
+  constexpr orpheus::ClipHandle kSignalHandle = 33;
+  const auto signalPath = writeSilentWav(directory / "stepped.wav", true);
+  ASSERT_EQ(transport->registerClipAudio(kSignalHandle, signalPath),
+            orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->prepareClipAudio(kSignalHandle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setClipLoopMode(kSignalHandle, true), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setClipLoopMode(kFirstHandle, true), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSignalHandle), orpheus::SessionGraphError::OK);
+  auto* bridge = transport->getRealtimeTelemetry();
+  ASSERT_NE(bridge, nullptr);
+  bridge->setDecimationBlocks(1);
+  ASSERT_EQ(bridge->pendingSnapshotCount(), 0u);
+
+  struct RenderedBlock {
+    std::array<float, 2> rmsDb{};
+    uint32_t voices = 0;
+  };
+  // Producer output is an independent oracle for the meters from that exact
+  // transport publication, not an unrelated control-side routing/voice query.
+  std::vector<RenderedBlock> rendered(kAttempts + 1);
+  std::vector<uint64_t> received;
+  received.reserve(kAttempts);
+  std::atomic<uint64_t> renderedThrough{0};
+  std::atomic<bool> finished{false};
+  std::atomic<bool> bounded{true};
+  bool startSucceeded = false;
+  bool coherent = true;
+  size_t saturatedPending = 0;
+  uint64_t saturatedDrops = 0;
+  std::barrier phases(2);
+
+  std::thread producer([&] {
+    const auto render = [&](uint64_t attempt, uint32_t voices) {
+      renderBlock();
+      auto& expected = rendered[attempt];
+      expected.voices = voices;
+      for (size_t lane = 0; lane < 2; ++lane) {
+        const auto& output = lane == 0 ? left : right;
+        double sumSquares = 0.0;
+        for (const float sample : output) {
+          sumSquares += static_cast<double>(sample) * sample;
+        }
+        const float rms = static_cast<float>(std::sqrt(sumSquares / kBlockFrames));
+        expected.rmsDb[lane] = rms > 0.0f ? 20.0f * std::log10(rms) : orpheus::kAudioMeterSilenceDb;
+      }
+      renderedThrough.store(attempt, std::memory_order_release);
+      if (bridge->pendingSnapshotCount() > orpheus::kRealtimeTelemetryCapacity) {
+        bounded.store(false, std::memory_order_relaxed);
+      }
+    };
+    // The consumer is deliberately stalled: all 64 unread slots must survive
+    // the next seven attempts unchanged (drop newest, not oldest).
+    for (uint64_t attempt = 1; attempt <= kStalledAttempts; ++attempt) {
+      render(attempt, 1);
+    }
+    phases.arrive_and_wait(); // Permit the consumer to inspect and drain.
+    phases.arrive_and_wait(); // All retained slots have been consumed.
+    render(kStalledAttempts + 1, 1);
+    phases.arrive_and_wait(); // Publish the first recovered, gapped sequence.
+    phases.arrive_and_wait(); // Consumer has checked recovery before stress.
+    // Change voice count only after the gapped recovery is consumed: changing
+    // routing topology during a dropped peak window legitimately resets it.
+    startSucceeded = transport->startClip(kFirstHandle) == orpheus::SessionGraphError::OK;
+    for (uint64_t attempt = kStalledAttempts + 2; attempt <= kAttempts; ++attempt) {
+      render(attempt, 2);
+    }
+    finished.store(true, std::memory_order_release);
+  });
+
+  std::thread consumer([&] {
+    orpheus::RealtimeTelemetrySnapshot snapshot;
+    uint64_t previousSequence = 0;
+    const auto consume = [&](uint64_t maximumSequence) {
+      while (bridge->tryRead(snapshot)) {
+        const uint64_t sequence = snapshot.sequence;
+        if (sequence == 0 || sequence > maximumSequence || sequence <= previousSequence) {
+          coherent = false;
+          continue;
+        }
+        // processAudio publishes before the producer computes the independent
+        // output oracle; this release/acquire handoff protects that table only.
+        while (renderedThrough.load(std::memory_order_acquire) < sequence) {
+          std::this_thread::yield();
+        }
+        const auto& expected = rendered[sequence];
+        coherent &= snapshot.schema_version == orpheus::kRealtimeTelemetrySchemaVersion;
+        coherent &= snapshot.position.samples() == static_cast<int64_t>(sequence * kBlockFrames);
+        coherent &= snapshot.active_voice_count == expected.voices;
+        coherent &= snapshot.diagnostics.callback_count == sequence;
+        coherent &= snapshot.diagnostics.samples_processed == sequence * kBlockFrames;
+        coherent &= snapshot.diagnostics.last_buffer_frames == kBlockFrames;
+        coherent &= snapshot.diagnostics.last_sample_rate == kSampleRate;
+        coherent &= snapshot.diagnostics.underrun_count == 0;
+        coherent &= snapshot.diagnostics.callback_over_budget_count == 0;
+        coherent &= snapshot.diagnostics.callback_p99_over_budget_count == 0;
+        coherent &= snapshot.output_count == 2;
+        const auto& meters = snapshot.routing_meters;
+        coherent &= meters.schema_version == orpheus::kRoutingMeterTelemetrySchemaVersion;
+        coherent &= meters.availability == orpheus::MeterAvailability::Measured;
+        coherent &= meters.post_master_output_count == 2;
+        coherent &= meters.rms_window_frames == kBlockFrames;
+        coherent &= meters.peak_window_frames == (sequence - previousSequence) * kBlockFrames;
+        for (size_t lane = 0; lane < 2; ++lane) {
+          coherent &=
+              meters.post_master_output_availability[lane] == orpheus::MeterAvailability::Measured;
+          coherent &= std::abs(meters.post_master_output_lane_meters[lane].rms_db -
+                               expected.rmsDb[lane]) < 0.0001f;
+          coherent &=
+              std::abs(snapshot.output_meters[lane].rms_db - expected.rmsDb[lane]) < 0.0001f;
+        }
+        received.push_back(sequence);
+        previousSequence = sequence;
+        if (bridge->pendingSnapshotCount() > orpheus::kRealtimeTelemetryCapacity) {
+          bounded.store(false, std::memory_order_relaxed);
+        }
+      }
+    };
+    phases.arrive_and_wait();
+    saturatedPending = bridge->pendingSnapshotCount();
+    saturatedDrops = bridge->droppedSnapshotCount();
+    consume(kStalledAttempts);
+    phases.arrive_and_wait();
+    phases.arrive_and_wait();
+    consume(kStalledAttempts + 1);
+    phases.arrive_and_wait();
+    while (!finished.load(std::memory_order_acquire)) {
+      consume(kAttempts);
+      std::this_thread::yield();
+    }
+    consume(kAttempts);
+  });
+  producer.join();
+  consumer.join();
+
+  EXPECT_TRUE(startSucceeded);
+  EXPECT_TRUE(coherent) << "A consumed payload must match its own rendered block";
+  EXPECT_TRUE(bounded.load());
+  EXPECT_EQ(saturatedPending, orpheus::kRealtimeTelemetryCapacity);
+  EXPECT_EQ(saturatedDrops, 7u);
+  ASSERT_GE(received.size(), orpheus::kRealtimeTelemetryCapacity + 1);
+  for (size_t index = 0; index < orpheus::kRealtimeTelemetryCapacity; ++index) {
+    EXPECT_EQ(received[index], index + 1) << "Unread slots must not be overwritten";
+  }
+  EXPECT_EQ(received[orpheus::kRealtimeTelemetryCapacity], kStalledAttempts + 1);
+  EXPECT_EQ(received.size() + bridge->droppedSnapshotCount(), kAttempts);
+  EXPECT_EQ(bridge->pendingSnapshotCount(), 0u);
 }
 
 TEST_F(CallbackLossTelemetryTest, SingleHandleAggregatesTailsStateTieBreakAndCompaction) {

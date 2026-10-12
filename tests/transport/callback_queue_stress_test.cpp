@@ -5,9 +5,15 @@
 // events from the audio thread to the UI thread.
 
 #include "../../src/core/transport/transport_controller.h"
+#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
+#include "../support/rt_guard.hpp"
+#include <orpheus/audio_file_writer.h>
 
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
 #include <random>
@@ -15,6 +21,24 @@
 #include <vector>
 
 using namespace orpheus;
+
+namespace orpheus {
+class TransportControllerTestAccess {
+public:
+  static std::shared_ptr<IClipSource> source(TransportController& transport, ClipHandle handle) {
+    std::lock_guard lock(transport.m_audioFilesMutex);
+    return transport.m_audioFiles.at(handle).source;
+  }
+
+  // Called before Start captures the registered source into its command context
+  // and before either test thread runs. No public source-injection API.
+  static void replaceSource(TransportController& transport, ClipHandle handle,
+                            std::shared_ptr<IClipSource> source) {
+    std::lock_guard lock(transport.m_audioFilesMutex);
+    transport.m_audioFiles.at(handle).source = std::move(source);
+  }
+};
+} // namespace orpheus
 
 // Callback counter for stress testing
 class CountingCallback : public ITransportCallback {
@@ -73,6 +97,10 @@ protected:
 
   void TearDown() override {
     m_transport.reset();
+    if (!m_mediaDirectory.empty()) {
+      std::error_code ignored;
+      std::filesystem::remove_all(m_mediaDirectory, ignored);
+    }
   }
 
   // Simulate audio thread processing
@@ -92,6 +120,7 @@ protected:
 
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<CountingCallback> m_callback;
+  std::filesystem::path m_mediaDirectory;
 };
 
 // ============================================================================
@@ -431,6 +460,93 @@ public:
   }
 };
 
+class OneCacheMissSource final : public IClipSource {
+public:
+  explicit OneCacheMissSource(std::shared_ptr<IClipSource> resident)
+      : resident_(std::move(resident)) {}
+
+  uint16_t numChannels() const override {
+    return resident_->numChannels();
+  }
+  int64_t lengthFrames() const override {
+    return resident_->lengthFrames();
+  }
+  bool isFullyResident() const override {
+    return false;
+  }
+  bool read(int64_t position, float* destination, size_t frames, size_t& framesRead) override {
+    ++readCount;
+    if (missCount == 0) {
+      ++missCount;
+      framesRead = 0;
+      return false; // Cache miss: leave destination untouched.
+    }
+    return resident_->read(position, destination, frames, framesRead);
+  }
+  void setDemand(int64_t position) override {
+    ++demandCount;
+    lastDemand = position;
+  }
+
+  // Sole audio-producer fields, inspected only after thread join.
+  size_t readCount{0};
+  size_t missCount{0};
+  size_t demandCount{0};
+  int64_t lastDemand{-1};
+
+private:
+  std::shared_ptr<IClipSource> resident_;
+};
+
+class FixedRecordingCallback final : public ITransportCallback {
+public:
+  using Kind = RecordingCallback::Kind;
+  struct Entry {
+    Kind kind{};
+    ClipHandle handle{};
+    StartRequestTag requestTag{};
+    uint32_t voiceId{};
+    TransportPosition position{};
+    std::thread::id thread{};
+  };
+  std::array<Entry, 8> entries{};
+  std::atomic<size_t> count{0};
+
+  void onClipStarted(ClipHandle handle, StartRequestTag tag, uint32_t voice,
+                     TransportPosition position) override {
+    record(Kind::Started, handle, tag, voice, position);
+  }
+  void onClipStopped(ClipHandle handle, StartRequestTag tag, uint32_t voice,
+                     TransportPosition position) override {
+    record(Kind::Stopped, handle, tag, voice, position);
+  }
+  void onClipLooped(ClipHandle handle, StartRequestTag tag, uint32_t voice,
+                    TransportPosition position) override {
+    record(Kind::Looped, handle, tag, voice, position);
+  }
+  void onClipRestarted(ClipHandle handle, TransportPosition position) override {
+    record(Kind::Restarted, handle, 0, 0, position);
+  }
+  void onClipSeeked(ClipHandle handle, TransportPosition position) override {
+    record(Kind::Seeked, handle, 0, 0, position);
+  }
+  void onBufferUnderrun(TransportPosition position) override {
+    record(Kind::Underrun, 0, 0, 0, position);
+  }
+
+private:
+  void record(Kind kind, ClipHandle handle, StartRequestTag tag, uint32_t voice,
+              TransportPosition position) {
+    // Even the deliberate audio-dispatch mutation cannot allocate here.
+    // Test barriers serialize that unexpected audio call and the later pump.
+    const size_t index = count.load(std::memory_order_relaxed);
+    if (index < entries.size()) {
+      entries[index] = {kind, handle, tag, voice, position, std::this_thread::get_id()};
+    }
+    count.store(index + 1, std::memory_order_release);
+  }
+};
+
 } // namespace
 
 TEST_F(CallbackQueueStressTest, EventOrderingPreserved) {
@@ -475,6 +591,110 @@ TEST_F(CallbackQueueStressTest, EventOrderingPreserved) {
 
   // Restore the fixture's counting callback before TearDown.
   m_transport->setCallback(m_callback.get());
+}
+
+TEST_F(CallbackQueueStressTest, CacheMissCallbacksRequireControlPump) {
+  constexpr ClipHandle kHandle = 71;
+  constexpr StartRequestTag kTag = 207;
+  m_mediaDirectory = std::filesystem::temp_directory_path() /
+                     ("orpheus-callback-pump-" +
+                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(m_mediaDirectory);
+  const auto path = m_mediaDirectory / "cache-miss.wav";
+  auto writer = createAudioFileWriter();
+  ASSERT_NE(writer, nullptr);
+  ASSERT_EQ(
+      writer->open(path.string(), {AudioFileFormat::WAV, SAMPLE_RATE, 2, AudioSampleFormat::Int16}),
+      SessionGraphError::OK);
+  std::array<float, BUFFER_SIZE * 8> pcm;
+  pcm.fill(0.25f); // A real non-silent prepared source, not a source-less clip.
+  const auto written = writer->writeSamples(pcm.data(), BUFFER_SIZE * 4);
+  ASSERT_EQ(written.error, SessionGraphError::OK);
+  ASSERT_EQ(written.value, BUFFER_SIZE * 4);
+  ASSERT_EQ(writer->close(), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->registerClipAudio(kHandle, path.string()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(kHandle), SessionGraphError::OK);
+
+  auto resident = TransportControllerTestAccess::source(*m_transport, kHandle);
+  ASSERT_NE(resident, nullptr);
+  auto miss = std::make_shared<OneCacheMissSource>(resident);
+  TransportControllerTestAccess::replaceSource(*m_transport, kHandle, miss);
+  ASSERT_EQ(m_transport->startClip(kHandle, kTag), SessionGraphError::OK);
+  FixedRecordingCallback recorder;
+  m_transport->setCallback(&recorder);
+  auto* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+
+  std::array<float, BUFFER_SIZE> left;
+  std::array<float, BUFFER_SIZE> right;
+  left.fill(1.0f);
+  right.fill(1.0f);
+  float* outputs[2] = {left.data(), right.data()};
+  std::thread::id audioId;
+  std::thread::id controlId;
+  size_t observedBeforePump = 0;
+  std::barrier phases(2);
+  using orpheus::tests::support::RtGuardState;
+  RtGuardState::reset();
+
+  std::thread audio([&] {
+    audioId = std::this_thread::get_id();
+    phases.arrive_and_wait();
+    {
+      orpheus::tests::support::RtSection callback;
+      m_transport->processAudio(outputs, 2, BUFFER_SIZE);
+    }
+    phases.arrive_and_wait(); // Completed render, no observer may have run.
+    phases.arrive_and_wait(); // Keep the audio thread alive through the pump.
+  });
+  std::thread control([&] {
+    controlId = std::this_thread::get_id();
+    phases.arrive_and_wait();
+    phases.arrive_and_wait();
+    observedBeforePump = recorder.count.load(std::memory_order_acquire);
+    m_transport->processCallbacks(); // The only permitted observer dispatch.
+    phases.arrive_and_wait();
+  });
+  audio.join();
+  control.join();
+  m_transport->setCallback(m_callback.get());
+
+  EXPECT_NE(audioId, controlId);
+  EXPECT_EQ(observedBeforePump, 0u) << "Rendering must only enqueue host callbacks";
+  ASSERT_EQ(recorder.count.load(std::memory_order_acquire), 2u);
+  EXPECT_EQ(recorder.entries[0].kind, FixedRecordingCallback::Kind::Started);
+  EXPECT_EQ(recorder.entries[0].handle, kHandle);
+  EXPECT_EQ(recorder.entries[0].requestTag, kTag);
+  EXPECT_NE(recorder.entries[0].voiceId, 0u);
+  EXPECT_EQ(recorder.entries[0].position.samples, 0);
+  EXPECT_EQ(recorder.entries[1].kind, FixedRecordingCallback::Kind::Underrun);
+  EXPECT_EQ(recorder.entries[1].position.samples, 0);
+  for (size_t index = 0; index < 2; ++index) {
+    EXPECT_EQ(recorder.entries[index].thread, controlId);
+    EXPECT_NE(recorder.entries[index].thread, audioId);
+  }
+  EXPECT_EQ(miss->readCount, 1u);
+  EXPECT_EQ(miss->missCount, 1u);
+  EXPECT_GE(miss->demandCount, 1u);
+  EXPECT_EQ(miss->lastDemand, 0);
+  for (size_t frame = 0; frame < BUFFER_SIZE; ++frame) {
+    EXPECT_FLOAT_EQ(left[frame], 0.0f);
+    EXPECT_FLOAT_EQ(right[frame], 0.0f);
+  }
+  RealtimeTelemetrySnapshot snapshot;
+  ASSERT_TRUE(telemetry->tryRead(snapshot));
+  EXPECT_EQ(snapshot.diagnostics.callback_count, 1u);
+  EXPECT_EQ(snapshot.diagnostics.underrun_count, 1u);
+  EXPECT_EQ(snapshot.active_voice_count, 1u);
+  EXPECT_EQ(snapshot.position.samples(), static_cast<int64_t>(BUFFER_SIZE));
+  EXPECT_EQ(snapshot.diagnostics.callback_over_budget_count, 0u);
+  EXPECT_EQ(snapshot.diagnostics.callback_p99_over_budget_count, 0u);
+  const auto delivery = m_transport->getCallbackDeliveryTelemetry();
+  EXPECT_EQ(delivery.lastAttemptedSequence, 2u);
+  EXPECT_EQ(delivery.lastPostedSequence, 2u);
+  EXPECT_EQ(delivery.cumulativeDroppedCount, 0u);
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 }
 
 // NOTE: Restarted/Seeked event translation (payload + delivery) is covered by

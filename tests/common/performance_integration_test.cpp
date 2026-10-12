@@ -4,8 +4,10 @@
 #include <orpheus/session_graph.h>
 #include <orpheus/transport_controller.h>
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <thread>
 
 using namespace orpheus;
@@ -16,7 +18,8 @@ protected:
   void SetUp() override {
     m_sessionGraph = std::make_unique<core::SessionGraph>();
     m_monitor = createPerformanceMonitor(m_sessionGraph.get());
-    m_transport = createTransportController(m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = createTransportController(
+        m_sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   }
 
   void TearDown() override {
@@ -90,35 +93,30 @@ TEST_F(PerformanceIntegrationTest, MetricsConsistencyOverTime) {
 }
 
 TEST_F(PerformanceIntegrationTest, ResetOperationsDoNotAffectOtherMetrics) {
-  // Get initial metrics
-  auto metrics1 = m_monitor->getMetrics();
-  double uptime1 = metrics1.uptimeSeconds;
-
-  // Reset underrun count
+  m_monitor->recordAudioCallback(500, 1000, 7, 48000, 512);
+  m_monitor->reportUnderrun();
+  const auto before = m_monitor->getMetrics();
+  const auto histogramBefore = m_monitor->getCallbackTimingHistogram();
   m_monitor->resetUnderrunCount();
-
-  // Wait a bit
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  // Get metrics again
-  auto metrics2 = m_monitor->getMetrics();
-  double uptime2 = metrics2.uptimeSeconds;
-
-  // Uptime should still increase
-  EXPECT_GT(uptime2, uptime1);
-
-  // Reset peak CPU
   m_monitor->resetPeakCpuUsage();
+  const auto pending = m_monitor->getMetrics();
+  EXPECT_EQ(pending.bufferUnderrunCount, 0u);
+  EXPECT_FLOAT_EQ(pending.cpuUsagePercent, before.cpuUsagePercent);
+  EXPECT_FLOAT_EQ(pending.latencyMs, before.latencyMs);
+  EXPECT_EQ(pending.activeClipCount, before.activeClipCount);
+  EXPECT_EQ(pending.totalSamplesProcessed, before.totalSamplesProcessed);
+  EXPECT_GE(pending.uptimeSeconds, before.uptimeSeconds);
+  EXPECT_EQ(m_monitor->getCallbackTimingHistogram(), histogramBefore);
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 50.0f); // No callback has consumed reset.
 
-  // Wait a bit more
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  // Get metrics again
-  auto metrics3 = m_monitor->getMetrics();
-  double uptime3 = metrics3.uptimeSeconds;
-
-  // Uptime should still increase
-  EXPECT_GT(uptime3, uptime2);
+  m_monitor->recordAudioCallback(0, 1000, 3, 0, 1024);
+  const auto after = m_monitor->getMetrics();
+  EXPECT_EQ(after.activeClipCount, 3u);
+  EXPECT_EQ(after.totalSamplesProcessed, 1536u);
+  EXPECT_FLOAT_EQ(after.latencyMs, before.latencyMs);
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), before.cpuUsagePercent);
+  const auto histogramAfter = m_monitor->getCallbackTimingHistogram();
+  EXPECT_EQ(histogramAfter[0].second, histogramBefore[0].second + 1);
 }
 
 TEST_F(PerformanceIntegrationTest, HistogramRemainsStable) {
@@ -249,49 +247,72 @@ TEST_F(PerformanceIntegrationTest, ConcurrentAccessFromMultipleThreads) {
   }
 }
 
-TEST_F(PerformanceIntegrationTest, ResetOperationsUnderLoad) {
-  // Test reset operations while other threads are reading
-  constexpr int kNumReaderThreads = 4;
-  constexpr int kDurationMs = 500;
+TEST_F(PerformanceIntegrationTest, ConcurrentProducerQueriesAndResetRequests) {
+  constexpr unsigned kCallbacks = 5000;
+  std::promise<void> startPromise;
+  auto start = startPromise.get_future().share();
+  std::atomic<bool> producerDone{false};
+  std::atomic<unsigned> observations{0};
+  std::promise<void> firstObservation;
+  auto observed = firstObservation.get_future();
+  std::promise<void> firstCallback;
+  auto recorded = firstCallback.get_future();
 
-  std::atomic<bool> stopFlag{false};
-  std::vector<std::thread> threads;
-  threads.reserve(kNumReaderThreads);
-
-  // Start reader threads
-  for (int i = 0; i < kNumReaderThreads; ++i) {
-    threads.emplace_back([this, &stopFlag]() {
-      while (!stopFlag) {
-        auto metrics = m_monitor->getMetrics();
-        (void)metrics;
-        std::this_thread::yield();
+  std::thread producer([&] {
+    start.wait();
+    m_monitor->recordAudioCallback(1000, 1000, 1, 48000, 512);
+    firstCallback.set_value();
+    observed.wait(); // Reader must sample a live producer before it continues.
+    for (unsigned i = 1; i < kCallbacks; ++i) {
+      m_monitor->recordAudioCallback(i % 1001, 1000, i % 33, 48000, 512);
+      m_monitor->reportUnderrun();
+    }
+    producerDone.store(true, std::memory_order_release);
+  });
+  std::thread observer([&] {
+    start.wait();
+    recorded.wait();
+    double previousUptime = 0.0;
+    do {
+      const auto metrics = m_monitor->getMetrics();
+      // Independent aggregates: only per-field invariants, no same-callback claims.
+      EXPECT_GE(metrics.cpuUsagePercent, 0.0f);
+      EXPECT_LE(metrics.cpuUsagePercent, 100.0f);
+      EXPECT_LE(metrics.activeClipCount, 32u);
+      EXPECT_EQ(metrics.totalSamplesProcessed % 512, 0u);
+      EXPECT_LE(metrics.totalSamplesProcessed, uint64_t{kCallbacks} * 512);
+      EXPECT_GE(metrics.uptimeSeconds, previousUptime);
+      previousUptime = metrics.uptimeSeconds;
+      EXPECT_GE(m_monitor->getPeakCpuUsage(), 0.0f);
+      uint32_t histogramTotal = 0;
+      for (const auto& bucket : m_monitor->getCallbackTimingHistogram()) {
+        histogramTotal += bucket.second;
       }
-    });
-  }
-
-  // Perform reset operations
-  auto start = std::chrono::steady_clock::now();
-  int resetCount = 0;
-
-  while (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-                                                               start)
-             .count() < kDurationMs) {
+      EXPECT_LE(histogramTotal, kCallbacks);
+      if (observations.fetch_add(1, std::memory_order_relaxed) == 0) {
+        firstObservation.set_value();
+      }
+    } while (!producerDone.load(std::memory_order_acquire));
+  });
+  startPromise.set_value();
+  for (unsigned i = 0; i < kCallbacks; ++i) {
     m_monitor->resetUnderrunCount();
     m_monitor->resetPeakCpuUsage();
-    ++resetCount;
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  producer.join();
+  observer.join();
 
-  // Stop reader threads
-  stopFlag = true;
-  for (auto& thread : threads) {
-    thread.join();
+  EXPECT_GT(observations.load(), 0u);
+  EXPECT_EQ(m_monitor->getMetrics().totalSamplesProcessed, uint64_t{kCallbacks} * 512);
+  uint32_t histogramTotal = 0;
+  for (const auto& bucket : m_monitor->getCallbackTimingHistogram()) {
+    histogramTotal += bucket.second;
   }
-
-  std::cout << "Performed " << resetCount << " reset operations under concurrent load" << std::endl;
-
-  // If we get here without crashing, the test passed
-  SUCCEED();
+  EXPECT_EQ(histogramTotal, kCallbacks);
+  const auto last = m_monitor->getMetrics();
+  m_monitor->resetPeakCpuUsage();
+  m_monitor->recordAudioCallback(0, 1000, 0, 48000, 512); // Exclusive producer handoff after join.
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), last.cpuUsagePercent);
 }
 
 TEST_F(PerformanceIntegrationTest, MonitorLifetimeSafety) {
@@ -309,8 +330,3 @@ TEST_F(PerformanceIntegrationTest, MonitorLifetimeSafety) {
   auto metrics2 = monitor->getMetrics();
   EXPECT_GE(metrics2.uptimeSeconds, metrics1.uptimeSeconds);
 }
-
-// Note: Full audio processing tests require audio driver integration
-// and are beyond the scope of this unit test file. These tests verify
-// the performance monitor's data structures and thread safety, which
-// is sufficient for validating the implementation.

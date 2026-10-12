@@ -49,6 +49,36 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   command calls per controller. Independent observations need not satisfy the
   admission partition until callers and consumer are quiescent.
 
+## Diagnostic and Transition Contracts
+
+- `PerformanceMetrics::latencyMs` is the estimated callback-buffer duration
+  (`bufferSize / sampleRate * 1000`), not measured input, output, or round-trip
+  latency. A zero sample rate retains the last estimate. Use the existing
+  directional `AudioLatencyBreakdown` and `AudioRouteLatency::complete` for
+  measured route terms; incomplete routes remain incomplete.
+- Performance metrics, histogram buckets, and realtime diagnostic counters are
+  independently sampled, eventually consistent aggregates, not a coherent
+  same-callback snapshot. Uptime is calculated at observation time.
+- Underrun reset linearizes at its atomic exchange: earlier increments are
+  cleared and later increments are retained. Peak reset requests coalesce and
+  take effect at the next callback boundary; the sole callback producer resets
+  to the prior smoothed CPU value and includes that callback's instantaneous
+  CPU. An idle monitor retains the previous peak until a callback arrives.
+- `callback_over_budget_count` counts durations strictly above one quarter of
+  the callback budget. The compatibility field `callback_p99_over_budget_count`
+  counts durations strictly above one half of the budget; it is not a
+  percentile. Duration zero means no timing observation. Normal transport
+  telemetry supplies no duration, so zero threshold counts are not timing
+  health evidence or an audio-onset measurement. Opt-in backend timing feeds
+  the performance monitor only.
+- Loop-anchor preparation and rollback belong to the control thread. Admission
+  transfers exclusive transition ownership to a command; bounded audio-safe
+  commit releases the previous pin only when that command executes. Rejected
+  commands roll back before transfer, and teardown drains after audio quiescence.
+- Transport observers run only when the control thread calls
+  `processCallbacks()`. A cache miss emits silence and queues an underrun;
+  it must never invoke an observer from the audio render path.
+
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`

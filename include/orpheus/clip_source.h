@@ -195,17 +195,24 @@ public:
   /// THREAD ONLY.
   void serviceCommandDemand();
 
-  /// Prepare an exact loop-anchor ownership transition without changing the
-  /// current anchor. CONTROL THREAD ONLY.
+  /// Prepare an exact loop-anchor ownership transition, retaining the previous
+  /// anchor's pin until commit. CONTROL THREAD ONLY; stages the next control
+  /// anchor and owns transition exclusively until command admission. Never
+  /// prepare into or otherwise mutate an admitted command's transition.
   SessionGraphError prepareLoopAnchorTransition(int64_t pos, bool enabled,
                                                 LoopAnchorTransition& transition);
 
-  /// Commit a prepared loop-anchor transition after its command is admitted.
-  /// CONTROL THREAD ONLY.
+  /// Commit a prepared loop-anchor transition under exclusive ownership.
+  /// AUDIO THREAD SAFE after ownership transfers through an admitted command:
+  /// bounded atomic-only work releases the previous pin at command execution,
+  /// not enqueue, and clears only command-local transition state. Control-side
+  /// source setup may commit before publication while it owns transition.
   void commitLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
 
-  /// Roll back a prepared transition whose command was rejected or discarded.
-  /// CONTROL THREAD ONLY.
+  /// Roll back a prepared transition before ownership transfers to an admitted
+  /// command. CONTROL THREAD ONLY; restores the prior anchor and releases the
+  /// replacement pin. Discarded admitted commands may be drained on control
+  /// only after audio quiescence has returned exclusive ownership.
   void rollbackLoopAnchorTransition(LoopAnchorTransition& transition) noexcept;
 
 private:
@@ -269,7 +276,7 @@ private:
   decodeMissingIntoCommandPool(const std::array<int64_t, kCommandPrimePages>& missingPages,
                                size_t missingCount, uint16_t& claimedMask);
 
-  /// Undo exactly one READY-page pin acquired by a failed command-prime scan.
+  /// Release exactly one caller-owned READY-page pin with bounded atomic work.
   void releaseReadyPin(Page& page) noexcept;
 
   std::shared_ptr<IAudioFileReader> m_reader; // worker/control threads only

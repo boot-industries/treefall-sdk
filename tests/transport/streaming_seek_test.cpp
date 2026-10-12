@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -56,6 +57,91 @@ public:
 
   static void serviceCommandDemand(StreamingClipSource& source) {
     source.serviceCommandDemand();
+  }
+
+  static size_t residentPageIndex(StreamingClipSource& source, int64_t start) {
+    for (size_t index = 0; index < StreamingClipSource::kNumPages; ++index) {
+      if (source.m_pages[index].start.load(std::memory_order_acquire) == start) {
+        return index;
+      }
+    }
+    return StreamingClipSource::kNumPages;
+  }
+
+  static int64_t pageStart(StreamingClipSource& source, size_t index) {
+    return source.m_pages[index].start.load(std::memory_order_acquire);
+  }
+
+  static uint32_t pageGuard(StreamingClipSource& source, size_t index) {
+    return source.m_pages[index].guard.load(std::memory_order_acquire);
+  }
+
+  static bool acquireReadyPin(StreamingClipSource& source, size_t index) {
+    auto& guard = source.m_pages[index].guard;
+    uint32_t expected = guard.load(std::memory_order_acquire);
+    return expected < StreamingClipSource::kClaimed - 1 &&
+           guard.compare_exchange_strong(expected, expected + 1, std::memory_order_acq_rel,
+                                         std::memory_order_acquire);
+  }
+
+  static void releaseReadyPin(StreamingClipSource& source, size_t index) {
+    source.releaseReadyPin(source.m_pages[index]);
+  }
+
+  static bool claimPage(StreamingClipSource& source, size_t index) {
+    uint32_t expected = 0;
+    return source.m_pages[index].guard.compare_exchange_strong(
+        expected, StreamingClipSource::kClaimed, std::memory_order_acq_rel,
+        std::memory_order_acquire);
+  }
+
+  static void releaseClaim(StreamingClipSource& source, size_t index) {
+    source.m_pages[index].guard.store(0, std::memory_order_release);
+  }
+};
+
+class TransportControllerTestAccess {
+public:
+  static std::shared_ptr<StreamingClipSource> source(TransportController& transport,
+                                                     ClipHandle handle) {
+    std::lock_guard lock(transport.m_audioFilesMutex);
+    return std::dynamic_pointer_cast<StreamingClipSource>(transport.m_audioFiles.at(handle).source);
+  }
+
+  static void consumeCommands(TransportController& transport) {
+    transport.processCommands();
+  }
+
+  static SessionGraphError rejectPreparedLoopTransition(TransportController& transport,
+                                                        ClipHandle handle, int64_t trimIn,
+                                                        size_t& replacementIndex) {
+    std::lock_guard lock(transport.m_audioFilesMutex);
+    const uint32_t index = transport.acquireCommandNode();
+    if (index == UINT32_MAX) {
+      return SessionGraphError::NotReady;
+    }
+    TransportController::CommandReservation reservation(transport, index);
+    auto& entry = transport.m_audioFiles.at(handle);
+    auto* streaming = dynamic_cast<StreamingClipSource*>(entry.source.get());
+    if (streaming == nullptr || !entry.commandLifetime) {
+      return SessionGraphError::NotReady;
+    }
+    auto& command = transport.m_commandNodes[index].command;
+    command = TransportCommand{};
+    command.type = TransportCommand::Type::UpdateTrim;
+    command.handle = handle;
+    command.data.trim = {trimIn, entry.trimOutSamples};
+    command.sourceLifetime = entry.commandLifetime.get();
+    transport.retainSourceCommand(command.sourceLifetime);
+    const auto result =
+        streaming->prepareLoopAnchorTransition(trimIn, true, command.loopAnchorTransition);
+    if (result != SessionGraphError::OK) {
+      return result;
+    }
+    command.loopAnchorSource = streaming;
+    replacementIndex = command.loopAnchorTransition.replacementPageIndex;
+    // Deliberately do not publish: production reservation cleanup owns rollback.
+    return SessionGraphError::OK;
   }
 };
 
@@ -509,6 +595,12 @@ TEST_F(StreamingSeekMatrixTest, QueueFullTrimUpdatePreservesOldLoopAnchor) {
   std::vector<float> output(block);
   float* buffers[] = {output.data()};
   transport->processAudio(buffers, 1, block);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  const size_t anchorIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(anchorIndex, StreamingClipSource::kNumPages);
+  const uint32_t anchorGuard = StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex);
+  ASSERT_GT(anchorGuard, 0u);
 
   const auto before = transport->getClipMetadata(1);
   ASSERT_TRUE(before.has_value());
@@ -521,6 +613,8 @@ TEST_F(StreamingSeekMatrixTest, QueueFullTrimUpdatePreservesOldLoopAnchor) {
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after->trimInSamples, before->trimInSamples);
   EXPECT_EQ(after->trimOutSamples, before->trimOutSamples);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, anchorIndex), 2 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex), anchorGuard);
 
   drainAndCrossLoop(*transport, callback, output, block, before->trimOutSamples);
 }
@@ -544,6 +638,12 @@ TEST_F(StreamingSeekMatrixTest, QueueFullLoopTogglePreservesOldLoopAnchor) {
   std::vector<float> output(block);
   float* buffers[] = {output.data()};
   transport->processAudio(buffers, 1, block);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  const size_t anchorIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(anchorIndex, StreamingClipSource::kNumPages);
+  const uint32_t anchorGuard = StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex);
+  ASSERT_GT(anchorGuard, 0u);
 
   const auto before = transport->getClipMetadata(1);
   ASSERT_TRUE(before.has_value());
@@ -554,6 +654,8 @@ TEST_F(StreamingSeekMatrixTest, QueueFullLoopTogglePreservesOldLoopAnchor) {
   const auto after = transport->getClipMetadata(1);
   ASSERT_TRUE(after.has_value());
   EXPECT_TRUE(after->loopEnabled);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, anchorIndex), 2 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex), anchorGuard);
 
   drainAndCrossLoop(*transport, callback, output, block, before->trimOutSamples);
 }
@@ -577,6 +679,12 @@ TEST_F(StreamingSeekMatrixTest, QueueFullMetadataUpdatePreservesOldLoopAnchor) {
   std::vector<float> output(block);
   float* buffers[] = {output.data()};
   transport->processAudio(buffers, 1, block);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  const size_t anchorIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(anchorIndex, StreamingClipSource::kNumPages);
+  const uint32_t anchorGuard = StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex);
+  ASSERT_GT(anchorGuard, 0u);
 
   const auto before = transport->getClipMetadata(1);
   ASSERT_TRUE(before.has_value());
@@ -592,6 +700,8 @@ TEST_F(StreamingSeekMatrixTest, QueueFullMetadataUpdatePreservesOldLoopAnchor) {
   EXPECT_EQ(after->trimInSamples, before->trimInSamples);
   EXPECT_FLOAT_EQ(after->gainDb, before->gainDb);
   EXPECT_EQ(after->loopEnabled, before->loopEnabled);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, anchorIndex), 2 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex), anchorGuard);
 
   drainAndCrossLoop(*transport, callback, output, block, before->trimOutSamples);
 }
@@ -630,6 +740,125 @@ TEST_F(StreamingSeekMatrixTest, UnrelatedVoiceDoesNotRetainStoppedSourceStartPri
   EXPECT_FALSE(transport->isClipPlaying(1));
   EXPECT_TRUE(transport->isClipPlaying(2));
   EXPECT_EQ(transport->unregisterClipAudio(1), SessionGraphError::OK);
+}
+
+TEST_F(StreamingSeekMatrixTest, AdmittedLoopTransitionsRetainPinsUntilAudioConsumption) {
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t trimOut = 6 * page + 4000;
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  SeekCallback callback;
+  configureLoopingTransport(*transport, callback, sourcePath(rate, 1, rate), 2 * page, trimOut,
+                            rate);
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+  // Consume the start-prime page first, leaving only the persistent old anchor.
+  ASSERT_EQ(transport->seekClip(1, 5 * page + 100), SessionGraphError::OK);
+  transport->processAudio(buffers, 1, block);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  const size_t oldIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(oldIndex, StreamingClipSource::kNumPages);
+  ASSERT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 1u);
+
+  ASSERT_EQ(transport->updateClipTrimPoints(1, 3 * page + 100, trimOut), SessionGraphError::OK);
+  const size_t intermediateIndex =
+      StreamingClipSourceTestAccess::residentPageIndex(*source, 3 * page);
+  ASSERT_LT(intermediateIndex, StreamingClipSource::kNumPages);
+  // Preparing a later command must not mutate the already-admitted transition.
+  ASSERT_EQ(transport->updateClipTrimPoints(1, 4 * page + 100, trimOut), SessionGraphError::OK);
+  const size_t finalIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 4 * page);
+  ASSERT_LT(finalIndex, StreamingClipSource::kNumPages);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 1u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, intermediateIndex), 1u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, finalIndex), 1u);
+
+  std::barrier consume(2);
+  const auto controlThread = std::this_thread::get_id();
+  std::thread::id audioThread;
+  RtGuardState::reset();
+  std::thread audio([&]() {
+    audioThread = std::this_thread::get_id();
+    consume.arrive_and_wait();
+    RtSection section;
+    // Drain production commands without rendering/retiring pages afterward,
+    // so the ownership boundary is observed independently of the demand window.
+    TransportControllerTestAccess::consumeCommands(*transport);
+  });
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(*source, oldIndex));
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(*source, intermediateIndex));
+  consume.arrive_and_wait();
+  audio.join();
+
+  EXPECT_NE(audioThread, controlThread);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, oldIndex), 2 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, intermediateIndex), 3 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 0u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, intermediateIndex), 0u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, finalIndex), 1u);
+  EXPECT_EQ(RtGuardState::totalViolations(), 0u);
+}
+
+TEST_F(StreamingSeekMatrixTest, RejectedPreparedLoopCommandRollsBackBeforeOwnershipTransfer) {
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t trimOut = 6 * page + 4000;
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  auto transport = std::make_unique<TransportController>(nullptr, config);
+  SeekCallback callback;
+  configureLoopingTransport(*transport, callback, sourcePath(rate, 1, rate), 2 * page, trimOut,
+                            rate);
+  std::vector<float> output(block);
+  float* buffers[] = {output.data()};
+  transport->processAudio(buffers, 1, block);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  const size_t oldIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(oldIndex, StreamingClipSource::kNumPages);
+  const uint32_t oldGuard = StreamingClipSourceTestAccess::pageGuard(*source, oldIndex);
+  const auto before = transport->getClipMetadata(1);
+  ASSERT_TRUE(before.has_value());
+  const auto ingressBefore = transport->getCommandIngressTelemetry();
+  size_t replacementIndex = StreamingClipSource::kNumPages;
+
+  ASSERT_EQ(TransportControllerTestAccess::rejectPreparedLoopTransition(
+                *transport, 1, 3 * page + 100, replacementIndex),
+            SessionGraphError::OK);
+  ASSERT_LT(replacementIndex, StreamingClipSource::kNumPages);
+  EXPECT_NE(replacementIndex, oldIndex);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, oldIndex), 2 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), oldGuard);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, replacementIndex), 0u);
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(*source, oldIndex));
+  const auto after = transport->getClipMetadata(1);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(after->trimInSamples, before->trimInSamples);
+  EXPECT_EQ(after->trimOutSamples, before->trimOutSamples);
+  EXPECT_EQ(transport->getCommandIngressTelemetry().preparationRejectedCount,
+            ingressBefore.preparationRejectedCount + 1);
+
+  StreamingClipSource::LoopAnchorTransition inspection{};
+  ASSERT_EQ(source->prepareLoopAnchorTransition(0, false, inspection), SessionGraphError::OK);
+  EXPECT_EQ(inspection.previousPageIndex, oldIndex);
+  EXPECT_EQ(inspection.previousStart, 2 * page);
+  source->rollbackLoopAnchorTransition(inspection);
+  drainAndCrossLoop(*transport, callback, output, block, trimOut);
 }
 
 TEST_F(StreamingSeekMatrixTest, QueuedLoopNudgesReleaseSupersededAnchorsInOrder) {
@@ -1065,6 +1294,109 @@ TEST(StreamingClipSourcePrimeTest, PrimeCapacityRejectsAtomicallyAndRecovers) {
   EXPECT_FALSE(source.hasPendingCommandPrimes());
 }
 
+TEST(StreamingClipSourcePrimeTest, ConcurrentReadyPinReleaseAndAcquisitionPreventsReclamation) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(8 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 8 * page);
+  ASSERT_EQ(source.prefill(0, 1), SessionGraphError::OK);
+  StreamingClipSource::LoopAnchorTransition anchor{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(0, true, anchor), SessionGraphError::OK);
+  const size_t pageIndex = anchor.replacementPageIndex;
+  ASSERT_LT(pageIndex, StreamingClipSource::kNumPages);
+  source.commitLoopAnchorTransition(anchor);
+  ASSERT_EQ(StreamingClipSourceTestAccess::pageGuard(source, pageIndex), 1u);
+
+  constexpr size_t kOwners = 4;
+  constexpr size_t kRounds = 512;
+  std::array<bool, kOwners> ownsPin{};
+  std::barrier begin(static_cast<std::ptrdiff_t>(kOwners + 2));
+  std::barrier end(static_cast<std::ptrdiff_t>(kOwners + 2));
+  std::array<std::thread, kOwners> owners;
+  std::atomic<size_t> prematureClaims{0};
+  RtGuardState::reset();
+  for (size_t owner = 0; owner < kOwners; ++owner) {
+    owners[owner] = std::thread([&, owner]() {
+      for (size_t round = 0; round < kRounds; ++round) {
+        begin.arrive_and_wait();
+        if (ownsPin[owner]) {
+          // Exercise the exact bounded helper, not releaseCommandPrime's
+          // separate RMW. Each test owner acquired precisely one READY pin.
+          RtSection section;
+          StreamingClipSourceTestAccess::releaseReadyPin(source, pageIndex);
+        }
+        end.arrive_and_wait();
+      }
+    });
+  }
+  std::thread claimant([&]() {
+    for (size_t round = 0; round < kRounds; ++round) {
+      begin.arrive_and_wait();
+      for (size_t attempt = 0; attempt < 32; ++attempt) {
+        if (StreamingClipSourceTestAccess::claimPage(source, pageIndex)) {
+          prematureClaims.fetch_add(1, std::memory_order_relaxed);
+          StreamingClipSourceTestAccess::releaseClaim(source, pageIndex);
+        }
+      }
+      end.arrive_and_wait();
+    }
+  });
+
+  std::array<float, 32> scratch{};
+  for (size_t round = 0; round < kRounds; ++round) {
+    for (size_t owner = 0; owner < kOwners; ++owner) {
+      ownsPin[owner] = StreamingClipSourceTestAccess::acquireReadyPin(source, pageIndex);
+      EXPECT_TRUE(ownsPin[owner]);
+    }
+    begin.arrive_and_wait();
+    // The real command-prime acquisition races the four valid-owner releases
+    // while the anchor's independent pin prevents a zero-guard claim.
+    StreamingClipSource::PrimeReservation reservation{};
+    const auto result = source.primeForCommand(100, scratch.size(), reservation);
+    EXPECT_EQ(result, SessionGraphError::OK);
+    if (result == SessionGraphError::OK) {
+      EXPECT_EQ(reservation.pageMask, static_cast<uint16_t>(uint16_t{1} << pageIndex));
+      source.releaseCommandPrime(reservation);
+    }
+    end.arrive_and_wait();
+    EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, pageIndex), 1u);
+    EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(source, pageIndex), 0);
+    size_t framesRead = 0;
+    bool readSucceeded;
+    {
+      RtSection section;
+      readSucceeded = source.read(100, scratch.data(), scratch.size(), framesRead);
+    }
+    EXPECT_TRUE(readSucceeded);
+    EXPECT_EQ(framesRead, scratch.size());
+    EXPECT_FLOAT_EQ(scratch.front(), 100.0f);
+    EXPECT_FLOAT_EQ(scratch.back(), 131.0f);
+  }
+  for (auto& owner : owners) {
+    owner.join();
+  }
+  claimant.join();
+  EXPECT_EQ(prematureClaims.load(std::memory_order_relaxed), 0u);
+  EXPECT_EQ(reader->readCalls.load(std::memory_order_relaxed), 1u);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+  EXPECT_EQ(RtGuardState::totalViolations(), 0u);
+
+  StreamingClipSource::LoopAnchorTransition disabled{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(0, false, disabled), SessionGraphError::OK);
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(source, pageIndex));
+  source.commitLoopAnchorTransition(disabled);
+  ASSERT_TRUE(StreamingClipSourceTestAccess::claimPage(source, pageIndex));
+  StreamingClipSource::PrimeReservation blocked{};
+  EXPECT_EQ(source.primeForCommand(100, scratch.size(), blocked), SessionGraphError::NotReady);
+  EXPECT_EQ(blocked.pageMask, 0);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(source, pageIndex), 0);
+  StreamingClipSourceTestAccess::releaseClaim(source, pageIndex);
+  ASSERT_EQ(source.primeForCommand(100, scratch.size(), blocked), SessionGraphError::OK);
+  source.releaseCommandPrime(blocked);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, pageIndex), 0u);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+}
+
 TEST(StreamingClipSourcePrimeTest,
      ConcurrentWorkerServiceAndCommandPrimeDoesNotDuplicateOwnership) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
@@ -1249,7 +1581,11 @@ TEST(StreamingClipSourcePrimeTest, FailedReanchorRetainsExactOldPage) {
 
   StreamingClipSource::LoopAnchorTransition anchor{};
   ASSERT_EQ(source.prepareLoopAnchorTransition(0, true, anchor), SessionGraphError::OK);
+  const size_t oldIndex = anchor.replacementPageIndex;
+  ASSERT_LT(oldIndex, StreamingClipSource::kNumPages);
   source.commitLoopAnchorTransition(anchor);
+  const uint32_t oldGuard = StreamingClipSourceTestAccess::pageGuard(source, oldIndex);
+  ASSERT_EQ(oldGuard, 1u);
 
   std::array<StreamingClipSource::PrimeReservation, StreamingClipSource::kCommandPrimePages> held{};
   for (size_t index = 0; index < held.size(); ++index) {
@@ -1260,6 +1596,13 @@ TEST(StreamingClipSourcePrimeTest, FailedReanchorRetainsExactOldPage) {
   StreamingClipSource::LoopAnchorTransition failed{};
   EXPECT_EQ(source.prepareLoopAnchorTransition(10 * page, true, failed),
             SessionGraphError::NotReady);
+  EXPECT_EQ(failed.previousPageIndex,
+            StreamingClipSource::LoopAnchorTransition::kInactivePageIndex);
+  EXPECT_EQ(failed.replacementPageIndex,
+            StreamingClipSource::LoopAnchorTransition::kInactivePageIndex);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(source, oldIndex), 0);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, oldIndex), oldGuard);
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(source, oldIndex));
   source.setDemand(10 * page);
   source.service();
 
