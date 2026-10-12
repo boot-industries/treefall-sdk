@@ -345,4 +345,79 @@ TEST(SessionGraphTransactions, RejectsNestedTransactions) {
   transaction.rollback();
 }
 
+TEST(SessionGraphInvariants, SceneNumericRejectionDoesNotConsumePendingTimeline) {
+  SessionGraph session;
+  auto* track = session.add_track("Track");
+  ASSERT_NE(session.add_clip(*track, "Clip", 0.0, 1.0, 1), nullptr);
+  const QuantizationWindow quantization{1.0, 0.1};
+  session.trigger_scene(1, 0.0, quantization);
+  EXPECT_THROW(session.trigger_scene(2, 0x1p63, quantization), std::invalid_argument);
+  EXPECT_THROW(session.trigger_scene(
+                   2, 1.0, QuantizationWindow{std::numeric_limits<double>::denorm_min(), 0.0}),
+               std::invalid_argument);
+  EXPECT_THROW(session.end_scene(1, 0x1p63, quantization), std::invalid_argument);
+  EXPECT_THROW(session.commit_arrangement(0x1p63), std::invalid_argument);
+  EXPECT_TRUE(session.committed_clips().empty());
+  session.end_scene(1, 1.0, quantization);
+  session.commit_arrangement();
+  ASSERT_EQ(session.committed_clips().size(), 1u);
+  EXPECT_DOUBLE_EQ(session.committed_clips()[0].arranged_start_beats, 0.0);
+  EXPECT_DOUBLE_EQ(session.committed_clips()[0].arranged_length_beats, 1.0);
+}
+
+TEST(SessionGraphInvariants, AssignmentValidationIsAtomicAndAllowsRepeatedMembers) {
+  SessionGraph session;
+  auto* track = session.add_track("Track");
+  const auto id = session.add_clip(*track, "Clip", 0.0, 1.0)->id();
+  session.set_clip_assignment_ids({id, id});
+  EXPECT_EQ(session.clip_assignments(), (std::vector<uint64_t>{id.raw(), id.raw()}));
+  const auto revision = session.revision();
+  const auto before = session.clip_assignments();
+  for (const uint64_t invalid : {uint64_t{0}, id.raw() + 1}) {
+    EXPECT_THROW(session.set_clip_assignments({id.raw(), invalid}), std::invalid_argument);
+    EXPECT_THROW(session.set_clip_assignment_ids({id, ClipId::fromRaw(invalid)}),
+                 std::invalid_argument);
+    EXPECT_EQ(session.clip_assignments(), before);
+    EXPECT_EQ(session.revision(), revision);
+  }
+  auto snapshot = session.snapshot();
+  snapshot.name = "Must not publish";
+  snapshot.clip_assignments = {ClipId::fromRaw(id.raw() + 1)};
+  EXPECT_THROW(session.restore(snapshot), std::invalid_argument);
+  EXPECT_EQ(session.name(), "Session");
+  EXPECT_EQ(session.tracks().front()->clips().front()->id(), id);
+  EXPECT_EQ(session.tracks().front()->clips().front()->name(), "Clip");
+  EXPECT_EQ(session.clip_assignments(), before);
+  EXPECT_EQ(session.revision(), revision);
+  snapshot.clip_assignments = {id, id};
+  session.restore(snapshot);
+  EXPECT_EQ(session.clip_assignments(), before);
+}
+
+TEST(SessionGraphInvariants, ExtremeTimingRejectionPreservesGraphAndRevision) {
+  SessionGraph session;
+  auto* track = session.add_track("Track");
+  auto* clip = session.add_clip(*track, "Clip", 0.0, 1.0);
+  const auto revision = session.revision();
+  for (double value :
+       {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::max(), 0x1p63}) {
+    EXPECT_THROW(session.set_session_range(0.0, value), std::invalid_argument);
+    EXPECT_THROW(session.set_clip_start(*clip, value), std::invalid_argument);
+    EXPECT_THROW(session.set_clip_length(*clip, value), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(session.add_clip(*track, "Rejected", value, 1.0)),
+                 std::invalid_argument);
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_DOUBLE_EQ(clip->start(), 0.0);
+    EXPECT_DOUBLE_EQ(clip->length(), 1.0);
+    EXPECT_EQ(track->clips().size(), 1u);
+  }
+  EXPECT_THROW(session.set_tempo(std::numeric_limits<double>::min()), std::invalid_argument);
+  EXPECT_EQ(session.revision(), revision);
+  auto snapshot = session.snapshot();
+  snapshot.tracks[0].clips[0].range =
+      TimeRange::fromStartLength(TimePoint::fromSamples(std::numeric_limits<int64_t>::max()), 1);
+  EXPECT_THROW(session.restore(snapshot), std::invalid_argument);
+  EXPECT_EQ(session.revision(), revision);
+}
 } // namespace orpheus::core::tests

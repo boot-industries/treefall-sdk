@@ -8,6 +8,10 @@
 #include <string>
 #include <vector>
 
+namespace orpheus::core {
+class SessionGraph;
+}
+
 namespace orpheus::core::render {
 
 struct Session {
@@ -41,5 +45,9 @@ struct RenderSpec {
 
 ORPHEUS_API std::vector<std::filesystem::path>
 render_tracks(const Session& session, const TrackList& tracks, const RenderSpec& spec);
+
+// Source-only graph bridge; renders the same deterministic synthetic stems as the ABI.
+ORPHEUS_API void render_session_tracks(const SessionGraph& session,
+                                       const std::filesystem::path& output_directory);
 
 } // namespace orpheus::core::render

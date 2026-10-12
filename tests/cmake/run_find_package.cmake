@@ -43,7 +43,15 @@ function(run_consumer mode consumer_binary_dir)
     -D${package_name}_DIR:PATH=${package_dir}
     -DORPHEUS_REQUIRED_VERSION=${required_version}
     -DTREEFALL_DISCOVERY_MODE=${mode}
+    -DSDK_INSTALL_PREFIX:PATH=${install_prefix}
+    -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
+    -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
     -DORP_ENABLE_UBSAN=OFF)
+  foreach(feature EXPECTED_REALTIME EXPECTED_COREAUDIO EXPECTED_WASAPI EXPECTED_SHMUI EXPECTED_SHMUI_GL)
+    if(DEFINED ${feature})
+      list(APPEND configure_args "-D${feature}=${${feature}}")
+    endif()
+  endforeach()
 
   if(DEFINED build_type AND NOT build_type STREQUAL "")
     list(APPEND configure_args -DCMAKE_BUILD_TYPE=${build_type})

@@ -2,12 +2,12 @@
 #include "panel.h"
 
 #include "abi_negotiation.h"
-#include "json_io.h"
 #include "orpheus/abi.h"
 #include "orpheus/adapters/reaper/entry.h"
 #include "orpheus/errors.h"
 #include "orpheus/music_timing.h"
 #include "session_guard.h"
+#include <orpheus/session_io.h>
 
 #include <algorithm>
 #include <cmath>

@@ -182,6 +182,65 @@ The maximum-topology criterion remains open: TruePeak at 192 kHz exceeds the
 deadline even in thread CPU, and other mixes retain wall-max misses. No outlier
 was removed and no support tier or release qualification follows from this run.
 
+## Host, Package and Input-Boundary Evidence
+
+Local Debug verification at `e737bbddb` plus the host/package/validation working
+changes passed 14 selected CTest gates (34.11 s): aggregate native, identity/time,
+scene management/routing, ingress, voice policy, callback loss, both package
+consumers, ABI link, and the four targeted compile negatives.
+`cmake_find_package` exercised legacy, Treefall, legacy-first and Treefall-first
+discovery. Both manifests cover public link capabilities; internal ABI/support
+exports and the explicitly checked minhost/performance-tool executables are not
+advertised link capabilities. ASIO stays excluded.
+
+- Installed session I/O exercised parse, serialize/save, primary load, backup
+  recovery, future-primary hard rejection and unchanged persisted documents.
+  Parsing retains the existing clip-grid normalization; it is not a byte-copy
+  operation on an uncommitted graph.
+- Compiler rejection requires an actual source-located error naming the retired
+  symbol, missing private header, or invalid constant expression. Source echoes,
+  notes, configure errors and generic link/build failures do not qualify.
+- Actual module-resolved ABI callbacks confirmed per-DSO logger/telemetry
+  isolation and same-module Orpheus/Treefall alias sharing on this host. Static
+  builds retain final-link-unit scope; independent platform execution remains
+  required, not inferred from this macOS run.
+- Numeric/duplicate-key/reference tests reject invalid values before graph,
+  revision, scene timeline, routing or playback mutation. Signed sample
+  conversion validates the rounded value in `[-2^63, 2^63)`; fractional integer
+  settings and dangling assignment/scene members are refused.
+- Borrowed graph and committed clip pointers are invalidated by removal or
+  rebuild/restore/rollback. Re-resolve stable IDs; scene definitions and runtime
+  scene state remain outside transaction snapshots. Borrowed driver pointers
+  are not lifetime leases or evidence of usability after failed stop.
+- Same-file A/B renders verified independent polyphony, tags, voice identities,
+  policy change, stop/refire fades and A unregister while B stays live, including
+  per-sample output attribution.
+
+The actual native demo ran `--self-smoke tools/fixtures/two_tracks.json
+build/t4-demo-stems tests/fixtures/reconform/insert.json` without opening an audio
+device; it exercised the shared UI/controller paths and exited 0 without JUCE
+assertions after explicit UTF-8 conversion. Native window observation succeeded,
+but exact-window pixel capture failed and `CGPreflightScreenCaptureAccess()`
+returned false. Pixel review is unavailable; the temporary capture hold/helper
+source was removed. Minhost rendered the same stems through C ABI 1.0:
+
+| Stem | Canonical C++ / ABI SHA-256 |
+|---|---|
+| `two_tracks_bass_48k_24b.wav` | `109e7e7e0a0dd8eef6daee6836d57e714c86ef556c4faa11923b7546ac858d5f` |
+| `two_tracks_drums_48k_24b.wav` | `34ae09c68965b59b65ee64b216cf644ecd8b09ebc2b280967fadbcd153a68f61` |
+
+The real click command used `{"tempo_bpm":100,"bars":2}` and produced stereo
+Int16, 44100 Hz, 211680 frames / 4.8 s. An out-of-range bar override exited 1
+with `spec.parse` / `bars out of range` and preserved the existing output hash.
+REAPER application/vendor-SDK acceptance remains unavailable.
+
+Retained earlier result: during a concurrent JUCE build, the aggregate gate
+failed `OscillatorTest.ProcessesEfficiently` at 388663.43 samples/s against its
+unchanged 500000 samples/s requirement. The subsequent quiet aggregate passed;
+this does not erase the observed failure or establish its scheduling cause.
+Windows/GCC/MSVC diagnostic portability, Linux TSan, physical routes and release
+temporal-coherence acceptance are still unqualified.
+
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`

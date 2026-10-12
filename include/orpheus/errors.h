@@ -30,11 +30,23 @@ typedef enum orpheus_log_level {
 typedef void (*orpheus_log_callback)(orpheus_log_level level, const char* message, void* user_data);
 
 ORPHEUS_API const char* orpheus_status_to_string(orpheus_status status);
+/**
+ * Configure the logger in the ABI shared library through which this setter is
+ * invoked, not process-wide. Session, clipgrid and render DSOs keep independent
+ * registrations. The Orpheus and Treefall spellings share one registration
+ * within the same DSO; either spelling replaces it, and a null callback clears
+ * it. Static builds keep callback state per final link unit.
+ */
 ORPHEUS_API void orpheus_set_logger(orpheus_log_callback callback, void* user_data);
 
 typedef void (*orpheus_telemetry_callback)(const char* event_name, const char* json_payload,
                                            void* user_data);
 
+/**
+ * Configure telemetry with the same DSO-local scope and same-DSO alias-sharing
+ * rules as orpheus_set_logger. This callback registration is independent of
+ * the shared session-handle registry.
+ */
 ORPHEUS_API void orpheus_set_telemetry_callback(orpheus_telemetry_callback callback,
                                                 void* user_data);
 

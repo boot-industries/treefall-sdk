@@ -65,6 +65,7 @@ scenarios are:
 - `Orpheus::diagnostics` / `Treefall::diagnostics`
 - `Orpheus::audio_utils` / `Treefall::audio_utils`
 - `Orpheus::audio_io` / `Treefall::audio_io`
+- `Orpheus::audio_driver_manager` / `Treefall::audio_driver_manager`
 - `Orpheus::routing` / `Treefall::routing`
 - `Orpheus::transport` / `Treefall::transport`
 

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -137,8 +138,186 @@ void PrintResolution(const std::string& symbol, const void* address) {
   }
   std::cout << "Resolved " << symbol << " -> " << address << std::endl;
 }
-void LoaderLogger(orpheus_log_level, const char*, void*) {}
-void LoaderTelemetry(const char*, const char*, void*) {}
+template <typename Fn>
+Fn ResolveModuleSymbol(ModuleHandle handle, const fs::path& path, const char* name) {
+  void* address = LoadSymbol(handle, name);
+  PrintResolution(name, address);
+#if defined(_WIN32)
+  HMODULE owner = nullptr;
+  if (!::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCSTR>(address), &owner) ||
+      owner != handle) {
+    throw std::runtime_error(std::string(name) + " did not resolve from " + path.string());
+  }
+#else
+  Dl_info owner{};
+  if (dladdr(address, &owner) == 0 || owner.dli_fname == nullptr ||
+      !fs::equivalent(path, fs::path(owner.dli_fname))) {
+    throw std::runtime_error(std::string(name) + " did not resolve from " + path.string());
+  }
+#endif
+  return reinterpret_cast<Fn>(address);
+}
+
+// No ABI table operation currently emits telemetry. Resolve the existing public
+// C++ EmitTelemetry export itself, using the host/library's matching C++ ABI.
+// Never call a link-time-bound helper: that could merely test interposition.
+std::string TelemetrySymbol() {
+#if defined(_MSC_VER)
+  return "?EmitTelemetry@orpheus@@YAXV?$basic_string_view@DU?$char_traits@D@std@@@std@@0@Z";
+#elif defined(_LIBCPP_VERSION)
+#define ORP_STRINGIFY_IMPL(value) #value
+#define ORP_STRINGIFY(value) ORP_STRINGIFY_IMPL(value)
+  constexpr std::string_view abi_namespace = ORP_STRINGIFY(_LIBCPP_ABI_NAMESPACE);
+#undef ORP_STRINGIFY
+#undef ORP_STRINGIFY_IMPL
+  return "_ZN7orpheus13EmitTelemetryENSt" + std::to_string(abi_namespace.size()) +
+         std::string(abi_namespace) + "17basic_string_viewIcNS0_11char_traitsIcEEEES4_";
+#else
+  return "_ZN7orpheus13EmitTelemetryESt17basic_string_viewIcSt11char_traitsIcEES3_";
+#endif
+}
+
+struct CallbackObservation {
+  std::size_t logs = 0;
+  std::size_t telemetry = 0;
+  orpheus_log_level level = ORPHEUS_LOG_LEVEL_DEBUG;
+  std::string message;
+  std::string event;
+  std::string payload;
+};
+
+void RecordLogger(orpheus_log_level level, const char* message, void* user_data) {
+  auto& observation = *static_cast<CallbackObservation*>(user_data);
+  ++observation.logs;
+  observation.level = level;
+  observation.message = message != nullptr ? message : "";
+}
+
+void RecordTelemetry(const char* event, const char* payload, void* user_data) {
+  auto& observation = *static_cast<CallbackObservation*>(user_data);
+  ++observation.telemetry;
+  observation.event = event != nullptr ? event : "";
+  observation.payload = payload != nullptr ? payload : "";
+}
+
+struct ModuleCallbacks {
+  using SetLogger = void (*)(orpheus_log_callback, void*);
+  using SetTelemetry = void (*)(orpheus_telemetry_callback, void*);
+  using EmitTelemetry = void (*)(std::string_view, std::string_view);
+  SetLogger legacy_logger;
+  SetLogger treefall_logger;
+  SetTelemetry legacy_telemetry;
+  SetTelemetry treefall_telemetry;
+  EmitTelemetry emit_telemetry;
+};
+
+void CheckCallbackScope(const std::vector<ModuleHandle>& handles,
+                        const std::array<ModuleInfo, 3>& modules, const fs::path& library_dir,
+                        const orpheus_session_api_v1& session_api,
+                        const orpheus_clipgrid_api_v1& clipgrid_api,
+                        const orpheus_render_api_v1& render_api, orpheus_session_handle session,
+                        orpheus_clip_handle clip) {
+  std::array<ModuleCallbacks, 3> callbacks{};
+  std::array<CallbackObservation, 6> observations{};
+  std::array<CallbackObservation*, 3> active{};
+  for (std::size_t i = 0; i < callbacks.size(); ++i) {
+    const fs::path path = library_dir / modules[i].library_name;
+    callbacks[i] = {
+        ResolveModuleSymbol<ModuleCallbacks::SetLogger>(handles[i], path, "orpheus_set_logger"),
+        ResolveModuleSymbol<ModuleCallbacks::SetLogger>(handles[i], path, "treefall_set_logger"),
+        ResolveModuleSymbol<ModuleCallbacks::SetTelemetry>(handles[i], path,
+                                                           "orpheus_set_telemetry_callback"),
+        ResolveModuleSymbol<ModuleCallbacks::SetTelemetry>(handles[i], path,
+                                                           "treefall_set_telemetry_callback"),
+        ResolveModuleSymbol<ModuleCallbacks::EmitTelemetry>(handles[i], path,
+                                                            TelemetrySymbol().c_str())};
+  }
+  struct ResetCallbacks {
+    const std::array<ModuleCallbacks, 3>& callbacks;
+    ~ResetCallbacks() {
+      for (const auto& callback : callbacks) {
+        callback.legacy_logger(nullptr, nullptr);
+        callback.treefall_telemetry(nullptr, nullptr);
+      }
+    }
+  } reset{callbacks};
+
+  const auto exercise_all = [&] {
+    for (std::size_t source = 0; source < callbacks.size(); ++source) {
+      std::array<std::pair<std::size_t, std::size_t>, 6> before{};
+      for (std::size_t i = 0; i < observations.size(); ++i)
+        before[i] = {observations[i].logs, observations[i].telemetry};
+      const double invalid = std::numeric_limits<double>::quiet_NaN();
+      orpheus_status status = ORPHEUS_STATUS_INTERNAL_ERROR;
+      if (source == 0) {
+        status = session_api.set_tempo(session, invalid);
+      } else if (source == 1) {
+        status = clipgrid_api.set_clip_length(session, clip, invalid);
+      } else {
+        orpheus_render_click_spec spec{};
+        spec.tempo_bpm = invalid;
+        status = render_api.render_click(&spec, "abi_link_must_not_render.wav");
+      }
+      if (status != ORPHEUS_STATUS_INVALID_ARGUMENT)
+        throw std::runtime_error("Callback scope logger trigger did not reject invalid input");
+      const std::string payload = "{\"module\":" + std::to_string(source) + "}";
+      callbacks[source].emit_telemetry("abi_link.callback_scope", payload);
+      for (std::size_t i = 0; i < observations.size(); ++i) {
+        const std::size_t expected = active[source] == &observations[i] ? 1u : 0u;
+        const auto& observation = observations[i];
+        const std::size_t logs = observation.logs - before[i].first;
+        const std::size_t telemetry = observation.telemetry - before[i].second;
+        if (logs != expected || telemetry != expected) {
+          throw std::runtime_error(
+              "A8/D03 open: callback scope differs from DSO-local/alias-sharing contract; " +
+              std::string(modules[source].library_name) + " triggered observer " +
+              std::to_string(i) + " (logs=" + std::to_string(logs) + ", telemetry=" +
+              std::to_string(telemetry) + ", expected=" + std::to_string(expected) + ")");
+        }
+        if (expected != 0 &&
+            (observation.level != ORPHEUS_LOG_LEVEL_WARN ||
+             observation.message != "abi: invalid argument" ||
+             observation.event != "abi_link.callback_scope" || observation.payload != payload))
+          throw std::runtime_error("Callback scope event contents or user-data identity differ");
+      }
+    }
+  };
+
+  for (std::size_t i = 0; i < callbacks.size(); ++i) {
+    active[i] = &observations[i];
+    callbacks[i].legacy_logger(RecordLogger, active[i]);
+    callbacks[i].legacy_telemetry(RecordTelemetry, active[i]);
+  }
+  exercise_all();
+  for (std::size_t i = 0; i < callbacks.size(); ++i) {
+    // Replacing one registration through the other spelling must affect only
+    // that DSO, and must not leave the first callback independently registered.
+    active[i] = &observations[i + callbacks.size()];
+    callbacks[i].treefall_logger(RecordLogger, active[i]);
+    callbacks[i].treefall_telemetry(RecordTelemetry, active[i]);
+    exercise_all();
+    active[i] = nullptr;
+    callbacks[i].legacy_logger(nullptr, nullptr);
+    callbacks[i].legacy_telemetry(nullptr, nullptr);
+    exercise_all();
+    active[i] = &observations[i];
+    callbacks[i].legacy_logger(RecordLogger, active[i]);
+    callbacks[i].legacy_telemetry(RecordTelemetry, active[i]);
+    exercise_all();
+    active[i] = nullptr;
+    callbacks[i].treefall_logger(nullptr, nullptr);
+    callbacks[i].treefall_telemetry(nullptr, nullptr);
+    exercise_all();
+    active[i] = &observations[i];
+    callbacks[i].treefall_logger(RecordLogger, active[i]);
+    callbacks[i].treefall_telemetry(RecordTelemetry, active[i]);
+    exercise_all();
+  }
+  std::cout << "Verified DSO-local logger/telemetry callbacks and same-DSO aliases in all "
+            << callbacks.size() << " ABI modules" << std::endl;
+}
 
 } // namespace
 
@@ -242,18 +421,8 @@ int main() {
       PrintResolution(names.first, LoadSymbol(first, names.first));
       PrintResolution(names.second, LoadSymbol(first, names.second));
     }
-    auto old_logger = reinterpret_cast<void (*)(orpheus_log_callback, void*)>(
-        LoadSymbol(first, "orpheus_set_logger"));
-    auto new_logger = reinterpret_cast<void (*)(treefall_log_callback, void*)>(
-        LoadSymbol(first, "treefall_set_logger"));
-    old_logger(LoaderLogger, nullptr);
-    new_logger(nullptr, nullptr);
-    auto old_telemetry = reinterpret_cast<void (*)(orpheus_telemetry_callback, void*)>(
-        LoadSymbol(first, "orpheus_set_telemetry_callback"));
-    auto new_telemetry = reinterpret_cast<void (*)(treefall_telemetry_callback, void*)>(
-        LoadSymbol(first, "treefall_set_telemetry_callback"));
-    new_telemetry(LoaderTelemetry, nullptr);
-    old_telemetry(nullptr, nullptr);
+    // Behavioral setter checks below resolve and invoke both names in every
+    // actual module; symbol presence alone is not proof of callback scope.
     auto status = reinterpret_cast<const char* (*)(orpheus_status)>(
         LoadSymbol(first, "treefall_status_to_string"));
     auto old_status = reinterpret_cast<const char* (*)(orpheus_status)>(
@@ -293,6 +462,10 @@ int main() {
     if (old_clipgrid(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
             ->add_clip(handle, track, &clip_desc, &clip) != ORPHEUS_STATUS_OK)
       throw std::runtime_error("Cross-DSO add_clip failed: the session registry is not shared");
+    CheckCallbackScope(handles, modules, library_dir,
+                       *old_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
+                       *old_clipgrid(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
+                       *old_render(ORPHEUS_ABI_MAJOR, nullptr, nullptr), handle, clip);
     const fs::path render_output = fs::temp_directory_path() / "abi_link_cross_dso.json";
     if (old_render(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
             ->render_tracks(handle, render_output.string().c_str()) != ORPHEUS_STATUS_OK)

@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   demand. Arbitrary blocked reads and destructor joins remain unbounded.
 - Driver transitions serialize independently of state getters. Failed stops
   retain old pointer/metadata without guaranteeing backend usability.
+- Session I/O is available through `<orpheus/session_io.h>` and the Treefall
+  forwarding header, retaining the existing declarations and schema behavior.
+  The demo now links canonical C++ core state instead of copying opaque ABI
+  handles; demo/minhost/REAPER remain source-tree integrations.
+- Logger and telemetry registrations retain ABI-DSO-local scope, with both
+  setter spellings sharing state within each module. Graph/driver pointers
+  remain borrowed; stable-ID snapshots exclude scene definitions/runtime state.
 
 - The project is now published as the **Treefall SDK**; it was formerly the
   **Orpheus SDK**. The GitHub repository was renamed to
@@ -51,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a source, matching streaming corruption handling.
 - Exact decibel-to-linear gain conversion moves from audio command consumption
   to control publication without changing rendered gain transitions.
+- Numeric settings, signed sample rounding, assignment membership, scene recall
+  and duplicate JSON keys now reject invalid inputs before mutation. Click CLI
+  overrides reject fractional/out-of-range integer values instead of narrowing
+  unchecked results.
+- Removed unconsumed private transport command variants without changing public
+  voice-policy setters. Same-file handles retain independent voices, policies,
+  callbacks and rendered audio through stop/refire/unregister.
+- Optional demo builds use the existing JUCE 8.0.4 pin and C/C++ language graph.
+  Strict warnings remain on owned demo code, not third-party JUCE translation
+  units; native UTF-8 labels now use explicit conversion.
 
 - Loading a session whose primary document advertises a newer schema version
   now fails with a hard error instead of silently falling back to the `.bak`
@@ -95,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed both before and after gain precomputation; retained distributions and
   misses are documented in `docs/REALTIME_AUDIT.md`. Maximum-topology timing and
   callback-only I/O qualification remain open, not hidden by the default skip.
+- Final local T4 verification passed 14 selected gates (34.11 s), including all
+  four package discovery modes and targeted private/retired/constexpr negatives.
+  Native demo import/commit/render/reconform and minhost click/stem commands
+  passed; canonical C++ and ABI stems were byte-identical. Pixel capture remains
+  unavailable because the observed screen-capture preflight was false.
+  The earlier concurrent-build oscillator throughput failure is retained in
+  `docs/REALTIME_AUDIT.md`, not erased by the later quiet pass.
 - Hard cancellation of an arbitrary blocked media reader remains unqualified.
   Windows/Linux runner evidence, physical route/operator acceptance, child-app
   acceptance and temporal-coherence release requirements remain open. This work

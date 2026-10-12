@@ -403,6 +403,24 @@ TEST(AbiRenderClickTest, StreamsBoundedPcmAndRejectsImpossiblePlansBeforeFileCre
   EXPECT_FALSE(fs::exists(excessive_channels));
   EXPECT_FALSE(fs::exists(infinite_duration));
   EXPECT_FALSE(fs::exists(excessive_bars));
+  for (double extreme :
+       {0x1p63, std::numeric_limits<double>::max(), std::numeric_limits<double>::quiet_NaN()}) {
+    auto invalid = valid;
+    invalid.click_duration_seconds = extreme;
+    EXPECT_EQ(render->render_click(&invalid, infinite_duration_string.c_str()),
+              ORPHEUS_STATUS_INVALID_ARGUMENT);
+    EXPECT_FALSE(fs::exists(infinite_duration));
+  }
+  auto invalid_tempo = valid;
+  invalid_tempo.tempo_bpm = std::numeric_limits<double>::min();
+  EXPECT_EQ(render->render_click(&invalid_tempo, infinite_duration_string.c_str()),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  EXPECT_FALSE(fs::exists(infinite_duration));
+  auto invalid_frequency = valid;
+  invalid_frequency.click_frequency_hz = std::numeric_limits<double>::max();
+  EXPECT_EQ(render->render_click(&invalid_frequency, infinite_duration_string.c_str()),
+            ORPHEUS_STATUS_INVALID_ARGUMENT);
+  EXPECT_FALSE(fs::exists(infinite_duration));
 
   stream.close();
   fs::remove_all(root);

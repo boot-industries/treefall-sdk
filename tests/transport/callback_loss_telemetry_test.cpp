@@ -67,15 +67,15 @@ std::string writeSilentWav(const std::filesystem::path& path, bool steppedSignal
 
 class CountingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
-                     orpheus::TransportPosition) override {
+  void onClipStarted(orpheus::ClipHandle handle, orpheus::StartRequestTag requestTag,
+                     uint32_t voiceId, orpheus::TransportPosition) override {
     ++count;
-    started.push_back({requestTag, voiceId});
+    started.push_back({requestTag, voiceId, handle});
   }
-  void onClipStopped(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
-                     orpheus::TransportPosition) override {
+  void onClipStopped(orpheus::ClipHandle handle, orpheus::StartRequestTag requestTag,
+                     uint32_t voiceId, orpheus::TransportPosition) override {
     ++count;
-    stopped.push_back({requestTag, voiceId});
+    stopped.push_back({requestTag, voiceId, handle});
   }
   void onClipLooped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
                     orpheus::TransportPosition) override {
@@ -98,6 +98,7 @@ public:
   struct TaggedVoice {
     orpheus::StartRequestTag requestTag = 0;
     uint32_t voiceId = 0;
+    orpheus::ClipHandle handle = 0;
   };
 
   std::vector<TaggedVoice> started;
@@ -448,6 +449,196 @@ TEST_F(CallbackLossTelemetryTest, ConcurrentRealtimeRingSaturatesPreservesPayloa
   EXPECT_EQ(received[orpheus::kRealtimeTelemetryCapacity], kStalledAttempts + 1);
   EXPECT_EQ(received.size() + bridge->droppedSnapshotCount(), kAttempts);
   EXPECT_EQ(bridge->pendingSnapshotCount(), 0u);
+}
+
+TEST_F(CallbackLossTelemetryTest, SameFileHandlesKeepIndependentVoicesPoliciesAndRenderedAudio) {
+  // Both handles decode the same stepped PCM, but use different source offsets
+  // and opposite stereo balances. Each output channel therefore proves its
+  // handle's actual source cursors and envelopes, not merely its snapshot.
+  const auto signalPath = writeSilentWav(directory / "shared-signal.wav", true);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->unregisterClipAudio(kSecondHandle), orpheus::SessionGraphError::OK);
+  constexpr int64_t kSecondTrim = kBlockFrames * 8;
+  constexpr size_t kStopFadeFrames = 480; // 10 ms at 48 kHz, including a partial final block.
+  for (const auto handle : {kFirstHandle, kSecondHandle}) {
+    ASSERT_EQ(transport->registerClipAudio(handle, signalPath), orpheus::SessionGraphError::OK);
+  }
+  auto firstMetadata = transport->getClipMetadata(kFirstHandle).value();
+  firstMetadata.pan = -1.0f;
+  firstMetadata.stopFadeOutSeconds = 0.01;
+  auto secondMetadata = transport->getClipMetadata(kSecondHandle).value();
+  secondMetadata.pan = 1.0f;
+  secondMetadata.trimInSamples = kSecondTrim;
+  for (const auto handle : {kFirstHandle, kSecondHandle}) {
+    ASSERT_EQ(transport->updateClipMetadata(handle, handle == kFirstHandle ? firstMetadata
+                                                                           : secondMetadata),
+              orpheus::SessionGraphError::OK);
+    ASSERT_EQ(transport->prepareClipAudio(handle), orpheus::SessionGraphError::OK);
+    ASSERT_EQ(transport->getClipVoiceMode(handle), orpheus::VoiceMode::Polyphonic);
+  }
+
+  const auto sourceSample = [](size_t sourceFrame) {
+    return static_cast<float>(((sourceFrame / kBlockFrames) % 31 + 1) * 128) / 32768.0f;
+  };
+  const auto stopGain = [](size_t elapsedFrame) {
+    return elapsedFrame < kStopFadeFrames
+               ? 1.0f - static_cast<float>(elapsedFrame) / static_cast<float>(kStopFadeFrames)
+               : 0.0f;
+  };
+  // Frames already rendered since B's first start; its second start is one
+  // block later. Never derive the output oracle from a transport snapshot.
+  size_t renderedFrames = 0;
+  const auto expectSecondOutput = [&](bool secondVoiceStarted) {
+    for (size_t frame = 0; frame < kBlockFrames; ++frame) {
+      float expected = sourceSample(kSecondTrim + renderedFrames + frame);
+      if (secondVoiceStarted) {
+        expected += sourceSample(kSecondTrim + renderedFrames - kBlockFrames + frame);
+      }
+      EXPECT_NEAR(right[frame], expected, 1.0e-6f)
+          << "B output at rendered frame " << renderedFrames + frame;
+    }
+    renderedFrames += kBlockFrames;
+  };
+  const auto expectFirstOutput = [&](const auto& expectedSample) {
+    for (size_t frame = 0; frame < kBlockFrames; ++frame) {
+      EXPECT_NEAR(left[frame], expectedSample(frame), 1.0e-6f) << "A frame " << frame;
+    }
+  };
+
+  ASSERT_EQ(transport->startClip(kFirstHandle, 101), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSecondHandle, 201), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) { return sourceSample(frame); });
+  expectSecondOutput(false);
+  ASSERT_EQ(transport->startClip(kFirstHandle, 102), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSecondHandle, 202), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput(
+      [&](size_t frame) { return sourceSample(kBlockFrames + frame) + sourceSample(frame); });
+  expectSecondOutput(true);
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 4u);
+  constexpr std::array<orpheus::ClipHandle, 4> expectedHandles{kFirstHandle, kSecondHandle,
+                                                               kFirstHandle, kSecondHandle};
+  constexpr std::array<orpheus::StartRequestTag, 4> expectedTags{101, 201, 102, 202};
+  for (size_t index = 0; index < callback.started.size(); ++index) {
+    EXPECT_EQ(callback.started[index].handle, expectedHandles[index]);
+    EXPECT_EQ(callback.started[index].requestTag, expectedTags[index]);
+    EXPECT_NE(callback.started[index].voiceId, 0u);
+    for (size_t previous = 0; previous < index; ++previous) {
+      EXPECT_NE(callback.started[index].voiceId, callback.started[previous].voiceId);
+    }
+  }
+  const uint32_t secondVoiceId = callback.started[3].voiceId;
+  const uint32_t survivingFirstTailId = callback.started[2].voiceId;
+  auto snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+
+  ASSERT_EQ(transport->setClipVoiceMode(kFirstHandle, orpheus::VoiceMode::MonoWithFadeOverlap),
+            orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setMaxVoicesPerClip(2), orpheus::SessionGraphError::OK);
+  EXPECT_EQ(transport->getMaxVoicesPerClip(), 2u);
+  EXPECT_EQ(transport->getClipVoiceMode(kSecondHandle), orpheus::VoiceMode::Polyphonic);
+  ASSERT_EQ(transport->stopClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return (sourceSample(2 * kBlockFrames + frame) + sourceSample(kBlockFrames + frame)) *
+           stopGain(frame);
+  });
+  expectSecondOutput(true);
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->state, orpheus::PlaybackState::Stopping);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+
+  // With both A voices fading, refire allocates a new primary and the cap
+  // replaces only A's oldest tail. B's two voices keep their original cursors.
+  ASSERT_EQ(transport->startClip(kFirstHandle, 103), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return sourceSample(2 * kBlockFrames + frame) * stopGain(kBlockFrames + frame) +
+           sourceSample(frame);
+  });
+  expectSecondOutput(true);
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 5u);
+  EXPECT_EQ(callback.started[4].handle, kFirstHandle);
+  EXPECT_EQ(callback.started[4].requestTag, 103u);
+  const uint32_t refiredVoiceId = callback.started[4].voiceId;
+  for (size_t index = 0; index < 4; ++index) {
+    EXPECT_NE(refiredVoiceId, callback.started[index].voiceId);
+  }
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->state, orpheus::PlaybackState::Playing);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->newestVoiceId, refiredVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestStartRequestTag, 202u);
+  const auto secondBeforeRejectedUnregister = *findEntry(snapshot, kSecondHandle);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::NotReady);
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestPosition.samples,
+            secondBeforeRejectedUnregister.newestPosition.samples);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return sourceSample(3 * kBlockFrames + frame) * stopGain(2 * kBlockFrames + frame) +
+           sourceSample(kBlockFrames + frame);
+  });
+  expectSecondOutput(true);
+
+  ASSERT_EQ(transport->stopClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  constexpr size_t kFadeBlocks = (kStopFadeFrames + kBlockFrames - 1) / kBlockFrames;
+  for (size_t block = 0; block < kFadeBlocks; ++block) {
+    renderBlock();
+    expectFirstOutput([&](size_t frame) {
+      const size_t elapsed = block * kBlockFrames + frame;
+      // A's existing tail keeps its original stop clock; only the new
+      // primary starts a fresh envelope on this second stop.
+      return sourceSample(4 * kBlockFrames + elapsed) * stopGain(3 * kBlockFrames + elapsed) +
+             sourceSample(2 * kBlockFrames + elapsed) * stopGain(elapsed);
+    });
+    expectSecondOutput(true);
+  }
+  transport->processCallbacks();
+  ASSERT_EQ(callback.stopped.size(), 2u);
+  for (const auto& stopped : callback.stopped) {
+    EXPECT_EQ(stopped.handle, kFirstHandle);
+    EXPECT_TRUE((stopped.requestTag == 102 && stopped.voiceId == survivingFirstTailId) ||
+                (stopped.requestTag == 103 && stopped.voiceId == refiredVoiceId));
+  }
+  EXPECT_NE(callback.stopped[0].voiceId, callback.stopped[1].voiceId);
+  snapshot = transport->getActiveVoiceSnapshot();
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_EQ(snapshot.totalActiveVoiceCount, 2u);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::OK);
+  for (size_t block = 0; block < 2; ++block) {
+    renderBlock();
+    expectFirstOutput([](size_t) { return 0.0f; });
+    expectSecondOutput(true);
+    snapshot = transport->getActiveVoiceSnapshot();
+    EXPECT_EQ(findEntry(snapshot, kFirstHandle), nullptr);
+    ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->state, orpheus::PlaybackState::Playing);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestStartRequestTag, 202u);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestPosition.samples,
+              kSecondTrim + static_cast<int64_t>(renderedFrames - kBlockFrames));
+  }
+  transport->processCallbacks();
+  EXPECT_EQ(callback.started.size(), 5u);
+  EXPECT_EQ(callback.stopped.size(), 2u);
+  EXPECT_TRUE(callback.rejectedTags.empty());
+  EXPECT_EQ(transport->getCallbackDeliveryTelemetry().cumulativeDroppedCount, 0u);
 }
 
 TEST_F(CallbackLossTelemetryTest, SingleHandleAggregatesTailsStateTieBreakAndCompaction) {
