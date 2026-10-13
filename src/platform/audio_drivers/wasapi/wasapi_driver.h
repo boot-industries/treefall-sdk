@@ -11,7 +11,6 @@
 #include <audioclient.h>
 
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -23,7 +22,6 @@
 #include <orpheus/realtime_diagnostics.h>
 
 #include "../../../core/common/realtime_borrowed_target.h"
-#include "wasapi_format_validation.h"
 
 namespace orpheus {
 
@@ -44,7 +42,6 @@ struct WASAPIResolvedFormat {
   uint16_t buffer_size{0};
   uint16_t num_outputs{0};
   bool float32{false};
-  WASAPIFormatShape format_shape{};
 };
 
 /// Testable boundary around COM/audio-client state and the worker wait path.
@@ -70,10 +67,6 @@ public:
 using WASAPIWorkerLauncher = std::function<std::thread(std::function<void()>)>;
 
 std::unique_ptr<IWASAPIRenderRuntime> createWASAPIRenderRuntime();
-
-/// Validates a byte-bounded native descriptor; failure clears shape.
-bool validateWASAPINativeFormat(const void* descriptor, size_t descriptor_bytes,
-                                uint16_t requested_outputs, WASAPIFormatShape& shape) noexcept;
 
 } // namespace detail
 

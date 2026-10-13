@@ -264,29 +264,43 @@ proof is inferred. Logs remain under `build/t5-integrated-nonhardware-suite.log`
 and `build/t5-native-sanitizer-evidence.log`; the portable smoke source was
 removed after execution.
 
-WASAPI native selection now validates descriptor extents before extension
-reads, exact subtype/width, requested count, mask population, alignment and
-widened average-byte arithmetic before `IAudioClient::Initialize`. A copied
-nonzero mask incompatible with a reduced count is refused; zero stays
-unspecified. The private resolved-format projection must agree with the runtime,
-without accepting legacy fake defaults. Windows fake source covers format,
-PCM16/float32 output, partial/malformed buffers, waits, acquire/release errors,
-cleanup, admission and reinitialization. The existing terminal two-second wait
-timeout is unchanged.
+### Review split and hosted execution evidence
 
-**Still unavailable:** Windows native bridge/COM/fake compilation and execution,
-hosted Debug/Release package/ABI evidence, and a current-revision hardware JSON
-artifact. No Windows runner was supplied and the checked MinGW compiler was
-absent. The existing self-hosted `[Windows, x64, audio-hardware]` workflow is
-preserved, not dispatched; source and portable algorithm proof are not native
-or device acceptance and do not promote WASAPI.
+The four WASAPI format/runtime/test files are excluded from the portable
+hardening delta and retained on `fix/pr265-platform-qualification`. The existing
+WASAPI support tier is unchanged. The nine-target Linux TSan selection stays
+with the portable realtime-concurrency changes.
 
-Linux TSan adds monitor, integration, diagnostics and callback queue stress to
-the existing callback-loss/ingress/voice/realtime-harness/streaming selection.
-`TSAN_OPTIONS=halt_on_error=1:exitcode=66`, `-j 1`, build flags and attributed
-artifacts remain intact. No Linux runner execution or current-revision artifact
-was obtained; local ASan/UBSan is not a substitute. Linux callback-only syscall
-attribution remains separate.
+Hosted run `38326895539` exercised merge revision
+`96d5cfa307776eb2c9a13d67194700a6d490b5ee`, whose parents are base `d2d61b28c`
+and reviewed head `b3bc1e3d7`. Downloaded artifacts show nine TSan targets passed
+in 262.61 s with `halt_on_error=1:exitcode=66` and `-j 1`. The separate syscall
+artifact records `execution=0`, `parser=0` for
+`ConcurrentIngressAt96k64DoesNoIo` and its marked consumer window. This is
+selected-consumer evidence, not every callback/mix or worst-case I/O proof [1].
+
+Windows Debug and Release each passed all 24 expanded WASAPI cases, including
+native descriptor validation and fake output/failure paths. Both configurations
+failed the scene fixture because it deleted the WAV while the transport's
+reader still owned it. Cleanup now destroys the scene manager and transport
+before removing media, including assertion-failure teardown. Neither that old
+run nor local macOS verification establishes green required checks for the
+amended portable or counterpart revisions [1].
+
+Review corrections also exercise true Treefall-first header inclusion and
+reject a zero graph-render sample rate before synthesis. CPU percentiles are
+omitted on unsupported platforms and when any observation is invalid. A reduced
+real-render smoke used two warmups/four observations per mix: 12 CPU reports
+with the sampler, zero with the unsupported-sampler branch. Both smoke runs
+retained deadline failures; they are reporting proof, not timing qualification.
+A throwaway getter fault injection compiled the actual graph renderer, observed
+the zero-rate rejection and no output creation; normal public graph setters
+already reject zero. The ten relevant local CTest gates passed in 52.01 s,
+including installed package, ABI, scene, renderer and realtime coverage.
+
+[1] GitHub Actions, "Treefall SDK CI Pipeline," run 38326895539, Oct. 13, 2026.
+[Online]. Available:
+https://github.com/boot-industries/treefall-sdk/actions/runs/38326895539.
 
 Physical explicit-UID, Bluetooth, aggregate teardown, unplug/replug and
 rate/buffer-change acceptance still needs named device/operator access and

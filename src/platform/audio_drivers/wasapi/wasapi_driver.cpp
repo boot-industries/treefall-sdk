@@ -45,6 +45,30 @@ std::wstring utf8ToWide(const std::string& value) {
   return result;
 }
 
+bool isFloatFormat(const WAVEFORMATEX* format) {
+  if (format->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+    return format->wBitsPerSample == 32;
+  }
+  if (format->wFormatTag != WAVE_FORMAT_EXTENSIBLE ||
+      format->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+    return false;
+  }
+  const auto* extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(format);
+  return extensible->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT && format->wBitsPerSample == 32;
+}
+
+bool isPcm16Format(const WAVEFORMATEX* format) {
+  if (format->wFormatTag == WAVE_FORMAT_PCM) {
+    return format->wBitsPerSample == 16;
+  }
+  if (format->wFormatTag != WAVE_FORMAT_EXTENSIBLE ||
+      format->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+    return false;
+  }
+  const auto* extensible = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(format);
+  return extensible->SubFormat == KSDATAFORMAT_SUBTYPE_PCM && format->wBitsPerSample == 16;
+}
+
 detail::WASAPIRenderStatus statusFromHRESULT(HRESULT result) noexcept {
   if (SUCCEEDED(result)) {
     return detail::WASAPIRenderStatus::Ready;
@@ -113,23 +137,17 @@ public:
     requested_format->nChannels = requested.num_outputs;
     requested_format->nSamplesPerSec = requested.sample_rate;
     const uint32_t bytes_per_sample = requested_format->wBitsPerSample / 8u;
-    const uint32_t block_align = static_cast<uint32_t>(requested.num_outputs) * bytes_per_sample;
-    const uint64_t average_bytes = static_cast<uint64_t>(requested.sample_rate) * block_align;
-    if (bytes_per_sample == 0 || block_align > std::numeric_limits<uint16_t>::max() ||
-        average_bytes > std::numeric_limits<uint32_t>::max()) {
+    if (bytes_per_sample == 0 ||
+        static_cast<uint32_t>(requested_format->nChannels) * bytes_per_sample >
+            std::numeric_limits<uint16_t>::max()) {
       CoTaskMemFree(mix_format);
       cleanup();
       return SessionGraphError::InvalidParameter;
     }
-    requested_format->nBlockAlign = static_cast<uint16_t>(block_align);
-    requested_format->nAvgBytesPerSec = static_cast<uint32_t>(average_bytes);
-    detail::WASAPIFormatShape requested_shape;
-    if (!detail::validateWASAPINativeFormat(requested_bytes.data(), requested_bytes.size(),
-                                            requested.num_outputs, requested_shape)) {
-      CoTaskMemFree(mix_format);
-      cleanup();
-      return SessionGraphError::InvalidParameter;
-    }
+    requested_format->nBlockAlign =
+        static_cast<uint16_t>(requested_format->nChannels * bytes_per_sample);
+    requested_format->nAvgBytesPerSec =
+        requested_format->nSamplesPerSec * requested_format->nBlockAlign;
 
     WAVEFORMATEX* closest = nullptr;
     const HRESULT support =
@@ -157,9 +175,8 @@ public:
     CoTaskMemFree(mix_format);
 
     auto* selected_format = reinterpret_cast<WAVEFORMATEX*>(selected_bytes.data());
-    detail::WASAPIFormatShape selected_shape;
-    if (!detail::validateWASAPINativeFormat(selected_bytes.data(), selected_bytes.size(),
-                                            requested.num_outputs, selected_shape)) {
+    if (selected_format->nChannels != requested.num_outputs ||
+        (!isFloatFormat(selected_format) && !isPcm16Format(selected_format))) {
       cleanup();
       return SessionGraphError::InvalidParameter;
     }
@@ -182,13 +199,13 @@ public:
       return SessionGraphError::InternalError;
     }
 
-    float32_ = selected_shape.encoding == detail::WASAPISampleType::Float32;
-    resolved.sample_rate = selected_shape.sample_rate;
+    format_bytes_ = std::move(selected_bytes);
+    format_ = reinterpret_cast<WAVEFORMATEX*>(format_bytes_.data());
+    resolved.sample_rate = format_->nSamplesPerSec;
     resolved.buffer_size = static_cast<uint16_t>(
         std::min<UINT32>(buffer_frames_, std::numeric_limits<uint16_t>::max()));
-    resolved.num_outputs = selected_shape.channels;
-    resolved.float32 = float32_;
-    resolved.format_shape = selected_shape;
+    resolved.num_outputs = format_->nChannels;
+    resolved.float32 = isFloatFormat(format_);
     return SessionGraphError::OK;
   }
 
@@ -251,7 +268,8 @@ public:
   }
 
   void cleanup() noexcept override {
-    float32_ = false;
+    format_ = nullptr;
+    format_bytes_.clear();
     buffer_frames_ = 0;
     if (event_ != nullptr) {
       CloseHandle(event_);
@@ -283,7 +301,7 @@ public:
     return buffer_frames_;
   }
   bool float32() const noexcept override {
-    return float32_;
+    return format_ != nullptr && isFloatFormat(format_);
   }
 
   uint32_t latencySamples(uint32_t sample_rate) const noexcept override {
@@ -303,7 +321,8 @@ private:
   IAudioClient* client_{nullptr};
   IAudioRenderClient* render_client_{nullptr};
   HANDLE event_{nullptr};
-  bool float32_{false};
+  std::vector<std::byte> format_bytes_;
+  WAVEFORMATEX* format_{nullptr};
   UINT32 buffer_frames_{0};
   bool com_initialized_{false};
 };
@@ -311,52 +330,6 @@ private:
 } // namespace
 
 namespace detail {
-
-bool validateWASAPINativeFormat(const void* descriptor, size_t descriptor_bytes,
-                                uint16_t requested_outputs, WASAPIFormatShape& shape) noexcept {
-  shape = {};
-  if (descriptor == nullptr || descriptor_bytes < sizeof(WAVEFORMATEX)) {
-    return false;
-  }
-  WAVEFORMATEXTENSIBLE native{};
-  WAVEFORMATEX& format = native.Format;
-  std::memcpy(&format, descriptor, sizeof(format));
-  if (format.cbSize > descriptor_bytes - sizeof(WAVEFORMATEX)) {
-    return false;
-  }
-
-  WASAPIFormatShape candidate;
-  candidate.sample_rate = format.nSamplesPerSec;
-  candidate.channels = format.nChannels;
-  candidate.bits_per_sample = format.wBitsPerSample;
-  candidate.block_align = format.nBlockAlign;
-  candidate.average_bytes_per_second = format.nAvgBytesPerSec;
-  if (format.wFormatTag == WAVE_FORMAT_PCM) {
-    candidate.encoding = WASAPISampleType::Pcm16;
-  } else if (format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-    candidate.encoding = WASAPISampleType::Float32;
-  } else if (format.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-    if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-      return false;
-    }
-    std::memcpy(reinterpret_cast<std::byte*>(&native) + sizeof(WAVEFORMATEX),
-                static_cast<const std::byte*>(descriptor) + sizeof(WAVEFORMATEX),
-                sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX));
-    candidate.extensible = true;
-    candidate.valid_bits_per_sample = native.Samples.wValidBitsPerSample;
-    candidate.channel_mask = native.dwChannelMask;
-    if (native.SubFormat == KSDATAFORMAT_SUBTYPE_PCM) {
-      candidate.encoding = WASAPISampleType::Pcm16;
-    } else if (native.SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
-      candidate.encoding = WASAPISampleType::Float32;
-    }
-  }
-  if (!validateWASAPIFormatShape(candidate, requested_outputs)) {
-    return false;
-  }
-  shape = candidate;
-  return true;
-}
 
 std::unique_ptr<IWASAPIRenderRuntime> createWASAPIRenderRuntime() {
   return std::make_unique<WASAPIComRenderRuntime>();
@@ -414,14 +387,8 @@ SessionGraphError WASAPIAudioDriver::initialize(const AudioDriverConfig& request
       runtime_->cleanup();
       return result;
     }
-    if (!detail::validateWASAPIFormatShape(resolved.format_shape, requested.num_outputs) ||
-        resolved.num_outputs != resolved.format_shape.channels ||
-        resolved.sample_rate != resolved.format_shape.sample_rate ||
-        resolved.float32 != (resolved.format_shape.encoding == detail::WASAPISampleType::Float32) ||
-        resolved.float32 != runtime_->float32() || resolved.buffer_size == 0 ||
-        runtime_->bufferFrames() == 0 ||
-        resolved.buffer_size !=
-            std::min<uint32_t>(runtime_->bufferFrames(), std::numeric_limits<uint16_t>::max())) {
+    if (resolved.num_outputs != requested.num_outputs || resolved.sample_rate == 0 ||
+        resolved.buffer_size == 0 || runtime_->bufferFrames() == 0) {
       runtime_->cleanup();
       return SessionGraphError::InvalidParameter;
     }

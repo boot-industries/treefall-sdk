@@ -68,11 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional demo builds use the existing JUCE 8.0.4 pin and C/C++ language graph.
   Strict warnings remain on owned demo code, not third-party JUCE translation
   units; native UTF-8 labels now use explicit conversion.
-- WASAPI selected-format validation now checks native descriptor extents,
-  encoding/container width, channel-mask population, block alignment and widened
-  average-byte arithmetic before initialization. Unknown masks stay unspecified;
-  reduced counts do not inherit mismatched speaker masks. Expanded Windows fake
-  cases remain unexecuted until native runner evidence is available.
+- Graph rendering rejects a zero sample rate immediately, before synthesis.
+  Installed session-I/O fixtures now exercise actual Treefall-first inclusion.
+  Benchmark CPU distributions are emitted only when sampling is available and
+  every observation is valid; unsupported platforms never report sentinel values.
+  Scene-fixture cleanup releases transport-owned readers before deleting media.
 - Linux TSan selection now includes monitor/integration/diagnostic and callback
   pump stress targets, retaining the existing ingress/voice/streaming selections,
   single-test concurrency and attributed artifacts.
@@ -133,10 +133,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prime cases. Optional ShmUI export discovery also passed enabled/non-OpenGL
   in all four namespace modes. These checks do not replace Linux TSan,
   Windows native/fake/package/ABI execution or physical acceptance.
-- Hard cancellation of an arbitrary blocked media reader remains unqualified.
-  Windows/Linux runner evidence, physical route/operator acceptance, child-app
-  acceptance and temporal-coherence release requirements remain open. This work
-  does not promote WASAPI/ASIO, modify child pins, or authorize release tagging.
+- The WASAPI selected-format/fake changes are isolated on
+  `fix/pr265-platform-qualification`, not part of the portable hardening delta.
+  Hosted run `38326895539` passed nine Linux TSan targets and the selected
+  consumer syscall check at merge revision `96d5cfa307776eb2c9a13d67194700a6d490b5ee`.
+  Windows Debug/Release each passed the 24-case WASAPI suite but failed scene
+  media cleanup; the portable revision fixes that lifetime error. Those results
+  do not claim green required CI for the amended revisions.
+- Hard cancellation, maximum-topology deadlines, physical route/operator
+  acceptance, child acceptance and temporal coherence remain open. WASAPI/ASIO
+  support tiers, child pins and release-tag policy are unchanged.
 
 ## [0.9.1] - 2026-09-10
 

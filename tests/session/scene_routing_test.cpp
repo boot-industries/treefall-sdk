@@ -48,6 +48,16 @@ protected:
     m_scenes->setRoutingMatrix(m_routing.get());
   }
 
+  void TearDown() override {
+    m_scenes.reset();
+    m_transport.reset();
+    if (!m_audioPath.empty()) {
+      std::error_code error;
+      std::filesystem::remove(m_audioPath, error);
+      EXPECT_FALSE(error) << error.message();
+    }
+  }
+
   uint64_t addClip(const std::string& name) {
     auto* track = m_graph->add_track(name);
     return m_graph->add_clip(*track, name, 0.0, 1.0)->id().raw();
@@ -67,6 +77,7 @@ protected:
   std::unique_ptr<ISceneManager> m_scenes;
   std::unique_ptr<ITransportController> m_transport;
   std::unique_ptr<IRoutingMatrix> m_routing;
+  std::filesystem::path m_audioPath;
 };
 
 } // namespace
@@ -173,7 +184,8 @@ TEST_F(SceneRoutingTest, DanglingHistoricalSceneRejectsBeforePlaybackRoutingOrGr
   m_graph->set_clip_assignments({live, live});
   assignTopology(2, 3.0f);
 
-  const auto path = std::filesystem::temp_directory_path() / "orpheus-scene-prevalidation.wav";
+  m_audioPath = std::filesystem::temp_directory_path() / "orpheus-scene-prevalidation.wav";
+  const auto& path = m_audioPath;
   {
     std::ofstream file(path, std::ios::binary);
     const uint32_t riff = 36 + 96000, fmt = 16, rate = 48000, bytes = 96000, data = 96000;
@@ -216,5 +228,4 @@ TEST_F(SceneRoutingTest, DanglingHistoricalSceneRejectsBeforePlaybackRoutingOrGr
   m_transport->processAudio(output, 2, 64); // Any incorrectly queued stop executes here.
   EXPECT_TRUE(m_transport->isClipPlaying(live));
   EXPECT_GT(left.back(), 0.0f);
-  std::filesystem::remove(path);
 }

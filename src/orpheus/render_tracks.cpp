@@ -231,6 +231,9 @@ void render_session_tracks(const SessionGraph& session_graph,
   }
 
   const std::uint32_t sample_rate = session_graph.render_sample_rate();
+  if (sample_rate == 0u) {
+    throw std::invalid_argument("render sample rate must be positive");
+  }
   const std::uint16_t bit_depth = session_graph.render_bit_depth();
   const bool dither = session_graph.render_dither();
 

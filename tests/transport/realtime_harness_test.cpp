@@ -949,7 +949,10 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
   const auto measure = [&](uint32_t rate, const char* mix, auto&& prepare, auto&& render,
                            auto&& verify) {
     std::vector<double> wall(observations);
+#if defined(__APPLE__) || defined(__linux__)
     std::vector<double> cpu(observations, -1.0);
+    bool cpuAvailable = true;
+#endif
     for (size_t block = 0; block < warmups; ++block) {
       prepare(block);
       if (::testing::Test::HasFatalFailure()) {
@@ -981,6 +984,8 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
       const double cpuEnd = currentThreadCpuMicros();
       if (cpuStart >= 0.0 && cpuEnd >= cpuStart) {
         cpu[block] = cpuEnd - cpuStart;
+      } else {
+        cpuAvailable = false;
       }
 #endif
       wall[block] = std::chrono::duration<double, std::micro>(end - begin).count();
@@ -997,12 +1002,16 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
     for (size_t block = 0; block < observations; ++block) {
       if (wall[block] >= deadline) {
         std::cout << "[WorstCaseMiss] rate=" << rate << " mix=" << mix << " block=" << block
-                  << " wall_us=" << wall[block] << " cpu_us=" << cpu[block]
-                  << " deadline_us=" << deadline << '\n';
+                  << " wall_us=" << wall[block];
+#if defined(__APPLE__) || defined(__linux__)
+        if (cpu[block] >= 0.0) {
+          std::cout << " cpu_us=" << cpu[block];
+        }
+#endif
+        std::cout << " deadline_us=" << deadline << '\n';
       }
     }
     std::sort(wall.begin(), wall.end());
-    std::sort(cpu.begin(), cpu.end());
     const auto report = [&](const char* clock, const std::vector<double>& values) {
       std::cout << "[WorstCase] rate=" << rate << " mix=" << mix << " clock=" << clock
                 << " p50_us=" << values[observations * 50 / 100]
@@ -1011,7 +1020,12 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
                 << " deadline_us=" << deadline << '\n';
     };
     report("wall", wall);
-    report("thread-cpu", cpu);
+#if defined(__APPLE__) || defined(__linux__)
+    if (cpuAvailable) {
+      std::sort(cpu.begin(), cpu.end());
+      report("thread-cpu", cpu);
+    }
+#endif
     std::cout << "[WorstCase] mix=" << mix << " allocations=" << RtGuardState::allocViolations()
               << " deallocations=" << RtGuardState::deallocViolations()
               << " io_sampler=" << (ioAvailable ? "proc-self-includes-observer" : "unavailable")
