@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Loop-enabled clips now apply their configured fade-in on initial play and
+  explicit start/refire. Automatic wraps still bypass natural boundary fades;
+  zero-duration fade-in, non-loop natural fade-out and operator Stop are unchanged.
 - Streaming loop-anchor commit now releases pins with bounded atomic work under
   exclusive command ownership, retaining old pages until audio consumption.
 - Concurrent telemetry and callback fixtures cover ring saturation, newest-drop

@@ -12,6 +12,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 
 using namespace orpheus;
 
@@ -142,6 +143,116 @@ TEST_F(ClipAudioControlsTest, LegacyFadeUpdateRespectsStoppedClipTrimWindow) {
 
   EXPECT_EQ(transport->updateClipFades(handle, 0.0, 0.01, FadeCurve::Linear, FadeCurve::Linear),
             SessionGraphError::InvalidFadeDuration);
+}
+
+TEST_F(ClipAudioControlsTest, InitialFadeInAppliesWithAndWithoutLooping) {
+  const std::array<std::pair<FadeCurve, float>, 3> curves = {{
+      {FadeCurve::Linear, 0.5f},
+      {FadeCurve::EqualPower, 0.70710678f},
+      {FadeCurve::Exponential, 0.25f},
+  }};
+  std::array<float, 256> left{};
+  std::array<float, 256> right{};
+  for (const bool looping : {false, true}) {
+    for (const auto& [curve, midpointGain] : curves) {
+      SCOPED_TRACE(looping ? "loop enabled" : "non-looped");
+      SCOPED_TRACE(static_cast<int>(curve));
+      ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+      render(left, right);
+      auto value = metadata();
+      value.trimInSamples = 128;
+      value.trimOutSamples = 640;
+      value.fadeInSeconds = 0.005; // 240 source samples
+      value.fadeInCurve = curve;
+      value.fadeOutSeconds = 0.005;
+      value.loopEnabled = looping;
+      ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+      ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+      render(left, right);
+      EXPECT_FLOAT_EQ(left.front(), 0.0f);
+      EXPECT_FLOAT_EQ(right.front(), 0.0f);
+      EXPECT_NEAR(left[120], 0.25f * midpointGain, 1.0e-5f);
+      EXPECT_NEAR(right[120], 0.5f * midpointGain, 1.0e-5f);
+      EXPECT_NEAR(left[240], 0.25f, 1.0e-5f);
+      EXPECT_NEAR(right[240], 0.5f, 1.0e-5f);
+      for (size_t frame = 1; frame <= 240; ++frame)
+        EXPECT_GE(left[frame], left[frame - 1] - 1.0e-6f);
+    }
+  }
+}
+
+TEST_F(ClipAudioControlsTest, LoopFadeInSkipsWrapButResetsOnRefireAndFreshStart) {
+  auto value = metadata();
+  value.trimInSamples = 128;
+  value.trimOutSamples = 640;
+  value.fadeInSeconds = 0.005;
+  value.fadeInCurve = FadeCurve::Linear;
+  value.fadeOutSeconds = 0.005;
+  value.stopFadeOutSeconds = 0.005;
+  value.stopFadeOutCurve = FadeCurve::Linear;
+  value.loopEnabled = true;
+  value.voiceMode = VoiceMode::MonoWithFadeOverlap;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+  std::array<float, 256> left{};
+  std::array<float, 256> right{};
+  render(left, right);
+  EXPECT_FLOAT_EQ(left.front(), 0.0f);
+  EXPECT_NEAR(left[120], 0.125f, 1.0e-5f);
+  // The rest of the first window and repeated automatic wraps remain at unity
+  // despite configured natural IN and OUT fades.
+  for (int block = 0; block < 5; ++block) {
+    render(left, right);
+    for (size_t frame = 0; frame < left.size(); ++frame) {
+      EXPECT_NEAR(left[frame], 0.25f, 1.0e-5f);
+      EXPECT_NEAR(right[frame], 0.5f, 1.0e-5f);
+    }
+  }
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+  render(left, right);
+  EXPECT_FLOAT_EQ(left.front(), 0.0f);
+  EXPECT_LT(left[120], 0.1f)
+      << "Refire applies the initial envelope alongside the restart crossfade";
+  EXPECT_GT(left[120], 0.04f);
+  EXPECT_NEAR(left[240], 0.25f, 1.0e-5f);
+  EXPECT_EQ(transport->getActiveVoiceCount(handle), 1u);
+  ASSERT_EQ(transport->stopClip(handle), SessionGraphError::OK);
+  render(left, right);
+  EXPECT_NEAR(left.front(), 0.25f, 1.0e-5f);
+  EXPECT_NEAR(left[120], 0.125f, 1.0e-5f);
+  EXPECT_FLOAT_EQ(left[240], 0.0f);
+  EXPECT_EQ(transport->getClipState(handle), PlaybackState::Stopped);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+  render(left, right);
+  EXPECT_FLOAT_EQ(left.front(), 0.0f);
+  EXPECT_NEAR(left[120], 0.125f, 1.0e-5f)
+      << "A fresh voice after Stop receives the enabled fade-in";
+}
+
+TEST_F(ClipAudioControlsTest, ZeroFadeInBypassesInitialAndLoopEnvelopes) {
+  std::array<float, 256> left{};
+  std::array<float, 256> right{};
+  for (const bool looping : {false, true}) {
+    SCOPED_TRACE(looping ? "loop enabled" : "non-looped");
+    ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+    render(left, right);
+    auto value = metadata();
+    value.trimInSamples = 128;
+    value.trimOutSamples = 640;
+    value.fadeInSeconds = 0.0;
+    value.fadeInCurve = FadeCurve::Exponential;
+    value.fadeOutSeconds = 0.0;
+    value.loopEnabled = looping;
+    ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+    ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+    for (int block = 0; block < (looping ? 5 : 1); ++block) {
+      render(left, right);
+      for (size_t frame = 0; frame < left.size(); ++frame) {
+        EXPECT_NEAR(left[frame], 0.25f, 1.0e-5f);
+        EXPECT_NEAR(right[frame], 0.5f, 1.0e-5f);
+      }
+    }
+  }
 }
 
 TEST_F(ClipAudioControlsTest, DelayDefersAudioWithoutAdvancingSource) {
