@@ -9,6 +9,21 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP266 DeepWiki Coherence Audit]] —
+  independent coherence audit of the Treefall SDK against the pinned external
+  DeepWiki description at commit `fb5b4b97`; 16 findings across 8 axes, all
+  verification gates passing (2026-09-29)
+
+- [[ORP267 DeepWiki Implementation Plan]] —
+  execution plan for ORP266 with a disposition section mapping plan leads to
+  the final findings, outcome corrections, and the split into ORP268
+  (2026-09-29)
+
+- [[ORP268 Deferred Audit Remediation Requirements]] —
+  Requirements A (clock-domain/discontinuity plumbing) and B (C ABI table size
+  handshake) deferring ORP266's Critical and High findings with anchors,
+  blockers, and acceptance tests (2026-09-29; open)
+
 - [[ORP265 Treefall SDK Name Establishment]] —
   established Treefall SDK (formerly Orpheus SDK) as the published name across
   live documentation and user-visible strings while preserving every technical
@@ -102,6 +117,9 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Records
 
+- [ORP266 DeepWiki Coherence Audit](ORP266%20DeepWiki%20Coherence%20Audit.md)
+- [ORP267 DeepWiki Implementation Plan](ORP267%20DeepWiki%20Implementation%20Plan.md)
+- [ORP268 Deferred Audit Remediation Requirements](ORP268%20Deferred%20Audit%20Remediation%20Requirements.md)
 - [ORP264 Phase A Containment Completion](ORP264%20Phase%20A%20Containment%20Completion.md)
 - [ORP262 Branch Resolution and Outstanding Work Register](ORP262%20Branch%20Resolution%20and%20Outstanding%20Work%20Register.md)
 
@@ -262,4 +280,4 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ---
 
-**Last Generated:** 2026-09-27
+**Last Generated:** 2026-10-12
