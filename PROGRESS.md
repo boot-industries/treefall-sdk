@@ -1,5 +1,45 @@
 # Progress
 
+## Clip Composer SDK loop fade-in resolution — 2026-10-13
+
+Applied the targeted transport envelope correction on
+`fix/main-initial-loop-fade-in`, based on local `main` at `ff45db0c1`.
+Loop mode no longer bypasses the initial enabled fade-in. Existing
+`hasLoopedOnce` state suppresses it after automatic wraps and resets on explicit
+start/refire; no new clock, allocation, public signature or ABI layout is added.
+Natural fade-out remains non-loop-only; operator Stop remains independently
+configured. No Clip Composer sources, pins, voice admission/readiness policy,
+ShmUI import metadata or unrelated stacked-branch changes were modified.
+
+Changed `src/core/transport/transport_controller.cpp` and added three rendered
+regressions in `tests/transport/clip_controls_test.cpp`: all three fade curves
+with and without looping, repeated wraps/refire/Stop/fresh start, and OFF.
+Public usage guidance and the unreleased changelog now describe this behavior.
+
+Observed verification:
+
+- `cmake --build build-orp263 --parallel 8` passed.
+- Ten selected CTest gates passed, zero failures, in 24.75 s: clip controls,
+  fade processing, loop, restart, stop envelope, voice mode, strict realtime
+  audit, audit unit tests, documentation paths and clean-prefix package.
+- Cue-point playback, realtime harness, deterministic render hashes and sample
+  rate conversion passed four additional CTest gates in 85.93 s.
+- A separate temporary consumer compiled and ran against the relocated
+  installed package using only public headers and `Orpheus::` targets.
+  With 48 kHz prepared PCM, nonzero trim-in and a 1,024-frame callback crossing
+  a 512-frame loop boundary: initial/refire midpoint = 0.125, wrap = 0.25,
+  operator Stop midpoint = 0.125 and end = 0, OFF start/wrap = 0.25,
+  non-loop natural OUT midpoint = 0.125 and final source frame = 0.00104167.
+  The first smoke link lacked the installed Debug libraries' sanitizer runtime;
+  matching ASan/UBSan compiler/link flags resolved it and the executable passed.
+- The temporary consumer source/build/media were removed. Documentation paths
+  passed again after the public documentation updates (1.30 s).
+
+Hardware/acoustic qualification was not performed. The reported intermittent
+underrun origin remains unknown; no refusal suppression or safety-policy change
+is included. The reported import-manifest mismatch was not investigated.
+Remote publication/mainline merge remains separate; no push was requested.
+
 ## Upstream meter publication and presentation fix — 2026-09-10
 
 Corrected the actual number flow, rather than requiring downstream timer
