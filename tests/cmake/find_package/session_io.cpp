@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
+// clang-format off: include order is the contract exercised by this fixture.
 #if defined(TREEFALL_SESSION_HEADER_FIRST)
-#include <orpheus/session_io.h>
 #include <treefall/session_io.h>
+#include <orpheus/session_io.h>
 #else
 #include <orpheus/session_io.h>
 #include <treefall/session_io.h>
 #endif
+// clang-format on
 
 #include <filesystem>
 #include <fstream>
