@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Benchmark CPU distributions are emitted only when sampling is available and
   every observation is valid; unsupported platforms never report sentinel values.
   Scene-fixture cleanup releases transport-owned readers before deleting media.
+- The platform counterpart restores WASAPI descriptor extent, sample-width,
+  channel-mask, block-alignment and byte-rate validation plus the 24-case Windows
+  fake matrix. This source delivery does not promote WASAPI or qualify hardware.
 - Linux TSan selection now includes monitor/integration/diagnostic and callback
   pump stress targets, retaining the existing ingress/voice/streaming selections,
   single-test concurrency and attributed artifacts.
