@@ -298,6 +298,17 @@ the zero-rate rejection and no output creation; normal public graph setters
 already reject zero. The ten relevant local CTest gates passed in 52.01 s,
 including installed package, ABI, scene, renderer and realtime coverage.
 
+The partial-command failure/cancellation fixture now advances at most two
+worker rounds to its first actual read, verifies page 1 remains unpublished,
+then fails the next read at page 2 or cancels without another read. The
+production request starts at `firstMissing`; no resident-page round is assumed.
+Read-offset traces and final guards verify rollback releases new ownership,
+retains the original page-0 anchor, and permits a successful retry. Production
+scheduling is unchanged. The focused native fixture passed (11 ms), the full
+streaming and realtime-audit CTest gates passed (10.30 s), and all four worker
+service fixtures passed with ASan/UBSan. These local results do not certify
+current-head hosted CI or authorize merging either PR.
+
 [1] GitHub Actions, "Treefall SDK CI Pipeline," run 38326895539, Oct. 13, 2026.
 [Online]. Available:
 https://github.com/boot-industries/treefall-sdk/actions/runs/38326895539.

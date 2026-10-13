@@ -1673,6 +1673,8 @@ TEST(MediaStreamWorkerServiceTest, PartialCommandFailureAndCancellationReleaseOn
     const size_t anchorIndex = anchor.replacementPageIndex;
     source->commitLoopAnchorTransition(anchor);
     reader->resetReadCalls();
+    auto trace = std::make_shared<ServiceTrace>();
+    reader->setServiceTrace(trace, 0);
     MediaStreamWorker worker;
     StreamingClipSourceTestAccess::parkWorker(worker);
     worker.attach(source);
@@ -1684,7 +1686,10 @@ TEST(MediaStreamWorkerServiceTest, PartialCommandFailureAndCancellationReleaseOn
         StreamingClipSourceTestAccess::waitForPending(*source, std::chrono::seconds(1));
     StreamingClipSourceTestAccess::WorkerDrive drive;
     if (pending) {
-      StreamingClipSourceTestAccess::serviceRound(worker, drive);
+      // Advance to the first missing-page decode, not an assumed worker round.
+      for (size_t round = 0; round < 2 && reader->readCalls.load() == 0; ++round) {
+        StreamingClipSourceTestAccess::serviceRound(worker, drive);
+      }
       EXPECT_EQ(reader->readCalls.load(), 1u);
       EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, anchorIndex), 2u);
       EXPECT_EQ(StreamingClipSourceTestAccess::residentPageIndex(*source, page),
@@ -1692,9 +1697,18 @@ TEST(MediaStreamWorkerServiceTest, PartialCommandFailureAndCancellationReleaseOn
       if (cancel) {
         StreamingClipSourceTestAccess::requestCancellation(*source);
       } else {
-        reader->failReadOnCall(2);
+        reader->failReadOnCall(reader->readCalls.load() + 1);
       }
       StreamingClipSourceTestAccess::serviceRound(worker, drive);
+      EXPECT_EQ(reader->readCalls.load(), cancel ? 1u : 2u);
+      const auto reads = trace->observations();
+      EXPECT_EQ(reads.size(), cancel ? 1u : 2u);
+      if (!reads.empty()) {
+        EXPECT_EQ(reads[0].start, page);
+      }
+      if (!cancel && reads.size() == 2) {
+        EXPECT_EQ(reads[1].start, 2 * page);
+      }
     }
     StreamingClipSourceTestAccess::rollbackDrive(drive);
     control.join();

@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Benchmark CPU distributions are emitted only when sampling is available and
   every observation is valid; unsupported platforms never report sentinel values.
   Scene-fixture cleanup releases transport-owned readers before deleting media.
+- Partial-command rollback coverage advances to the first actual missing-page
+  decode before injecting a next-read failure or cancellation. Read-offset
+  traces verify partial unpublished decoding and retained anchor ownership.
 - Linux TSan selection now includes monitor/integration/diagnostic and callback
   pump stress targets, retaining the existing ingress/voice/streaming selections,
   single-test concurrency and attributed artifacts.
