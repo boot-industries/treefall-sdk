@@ -179,6 +179,13 @@ transport->updateClipGain(handle, -6.0f);  // Half amplitude
 transport->setClipLoopMode(handle, true);
 ```
 
+An enabled clip fade-in applies on the initial playthrough, including when loop
+mode is enabled. Automatic loop wraps bypass both the initial fade-in and the
+natural fade-out, preserving seamless boundaries. An explicit start/refire
+begins a new initial playthrough under the selected voice policy. A zero
+`fadeInSeconds` value disables the clip fade-in entirely. Operator-stop envelopes
+remain independently controlled by `stopFadeOutSeconds` and `stopFadeOutCurve`.
+
 ### 💾 Persistent Metadata
 
 ```cpp

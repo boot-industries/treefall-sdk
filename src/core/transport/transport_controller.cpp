@@ -820,14 +820,16 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
         const int64_t relativePosition =
             static_cast<int64_t>(std::floor(frameSourcePosition)) - activeWindowStart;
-        if (!loopEnabled) {
-          if (atProgramStart && fadeInSampleCount > 0 && relativePosition >= 0 &&
-              relativePosition < fadeInSampleCount) {
-            const float fadePosition =
-                static_cast<float>(relativePosition) / static_cast<float>(fadeInSampleCount);
-            gain *= calculateFadeGain(fadePosition, fadeInCurveType);
-          }
+        // Looping bypasses boundary fades, not the initial start envelope.
+        // Explicit starts/refires reset hasLoopedOnce; automatic wraps set it.
+        if (atProgramStart && (!loopEnabled || !clip.hasLoopedOnce) && fadeInSampleCount > 0 &&
+            relativePosition >= 0 && relativePosition < fadeInSampleCount) {
+          const float fadePosition =
+              static_cast<float>(relativePosition) / static_cast<float>(fadeInSampleCount);
+          gain *= calculateFadeGain(fadePosition, fadeInCurveType);
+        }
 
+        if (!loopEnabled) {
           const int64_t activeWindowDuration = activeWindowEnd - activeWindowStart;
           if (atProgramEnd && fadeOutSampleCount > 0 &&
               relativePosition >= activeWindowDuration - fadeOutSampleCount) {
