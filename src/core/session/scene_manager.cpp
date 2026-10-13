@@ -12,6 +12,10 @@
 #include <mutex>
 #include <sstream>
 
+#include <cmath>
+#include <limits>
+
+#include "common/checked_numeric.h"
 #include "orpheus/json.hpp"
 #include "orpheus/routing_matrix.h"
 #include <orpheus/session_graph.h>
@@ -156,14 +160,19 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
   }
 
   if (auto* timestamp = json::RequireField(root, "timestamp")) {
-    scene.timestamp = static_cast<uint64_t>(json::RequireNumber(*timestamp, "timestamp"));
+    scene.timestamp = core::detail::CheckedInteger<uint64_t>(
+        json::RequireNumber(*timestamp, "timestamp"), "timestamp");
   }
 
   // Parse assigned clips
   if (auto* assignedClips = json::RequireField(root, "assignedClips")) {
     const auto& arr = json::ExpectArray(*assignedClips, "assignedClips");
     for (const auto& item : arr.array) {
-      ClipHandle handle = static_cast<ClipHandle>(item.number);
+      ClipHandle handle = core::detail::CheckedInteger<ClipHandle>(
+          json::RequireNumber(item, "assignedClips"), "assignedClips");
+      if (!ClipId::fromRaw(handle).isValid()) {
+        throw std::invalid_argument("Clip assignment ID must be valid");
+      }
       scene.assignedClips.push_back(handle);
     }
   }
@@ -172,9 +181,9 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
   if (auto* clipGroups = json::RequireField(root, "clipGroups")) {
     const auto& arr = json::ExpectArray(*clipGroups, "clipGroups");
     for (const auto& item : arr.array) {
-      const auto stored = static_cast<uint64_t>(item.number);
-      scene.clipGroups.push_back(stored == 255 ? UNASSIGNED_GROUP
-                                               : static_cast<RoutingGroupIndex>(stored));
+      const auto stored = core::detail::CheckedInteger<RoutingGroupIndex>(
+          json::RequireNumber(item, "clipGroups"), "clipGroups");
+      scene.clipGroups.push_back(stored == 255 ? UNASSIGNED_GROUP : stored);
     }
   }
 
@@ -182,7 +191,11 @@ SceneSnapshot deserializeSceneFromJson(const json::JsonValue& root) {
   if (auto* groupGains = json::RequireField(root, "groupGains")) {
     const auto& arr = json::ExpectArray(*groupGains, "groupGains");
     for (const auto& item : arr.array) {
-      float gain = static_cast<float>(item.number);
+      const double value = json::RequireNumber(item, "groupGains");
+      if (value < -std::numeric_limits<float>::max() || value > std::numeric_limits<float>::max()) {
+        throw std::invalid_argument("groupGains out of range");
+      }
+      float gain = static_cast<float>(value);
       scene.groupGains.push_back(gain);
     }
   }
@@ -237,7 +250,8 @@ public:
 
     // Get current timestamp
     auto now = std::chrono::system_clock::now();
-    scene.timestamp = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(now));
+    scene.timestamp = core::detail::CheckedInteger<uint64_t>(
+        static_cast<double>(std::chrono::system_clock::to_time_t(now)), "timestamp");
 
     scene.assignedClips.assign(sessionGraph_->clip_assignments().begin(),
                                sessionGraph_->clip_assignments().end());
@@ -285,6 +299,20 @@ public:
     }
 
     const SceneSnapshot& scene = it->second;
+    for (const auto handle : scene.assignedClips) {
+      const ClipId id = ClipId::fromRaw(handle);
+      if (!id.isValid()) {
+        return SessionGraphError::InvalidParameter;
+      }
+      const bool member = std::any_of(
+          sessionGraph_->tracks().begin(), sessionGraph_->tracks().end(), [id](const auto& track) {
+            return std::any_of(track->clips().begin(), track->clips().end(),
+                               [id](const auto& clip) { return clip->id() == id; });
+          });
+      if (!member) {
+        return SessionGraphError::InvalidParameter;
+      }
+    }
 
     if (transport_ == nullptr) {
       return SessionGraphError::NotInitialized;
@@ -295,6 +323,16 @@ public:
       if ((!scene.clipGroups.empty() && scene.clipGroups.size() != config.num_channels) ||
           (!scene.groupGains.empty() && scene.groupGains.size() != config.num_groups)) {
         return SessionGraphError::InvalidParameter;
+      }
+      for (const auto group : scene.clipGroups) {
+        if (group != UNASSIGNED_GROUP && group >= config.num_groups) {
+          return SessionGraphError::InvalidParameter;
+        }
+      }
+      for (const auto gain : scene.groupGains) {
+        if (!std::isfinite(gain)) {
+          return SessionGraphError::InvalidParameter;
+        }
       }
     }
 
@@ -417,7 +455,8 @@ public:
 
       // Update timestamp to import time
       auto now = std::chrono::system_clock::now();
-      scene.timestamp = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(now));
+      scene.timestamp = core::detail::CheckedInteger<uint64_t>(
+          static_cast<double>(std::chrono::system_clock::to_time_t(now)), "timestamp");
 
       // Store scene
       scenes_[scene.sceneId] = scene;

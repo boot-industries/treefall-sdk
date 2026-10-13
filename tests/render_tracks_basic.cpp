@@ -11,6 +11,9 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <limits>
+#include <orpheus/session_graph.h>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -492,4 +495,35 @@ TEST(RenderTracksBasic, DitheredRenderIsSeedDeterministic) {
   EXPECT_EQ(first, second) << "same render job (incl. dither seed) must reproduce identical bytes";
   EXPECT_NE(first, reseeded) << "a different dither seed must change the dither noise "
                                 "(otherwise the seed in the job descriptor is dead)";
+}
+
+TEST(RenderTracksBasic, ExtremeNumericInputsRejectBeforeOutputMutation) {
+  using namespace orpheus::core::render;
+  ScratchDir scratch("numeric_boundaries");
+  Session session;
+  session.name = "Numeric";
+  session.tempo_bpm = 120.0;
+  session.start_beats = 0.0;
+  session.end_beats = 1.0;
+  RenderSpec spec;
+  spec.output_directory = scratch.path() / "must-not-exist";
+  spec.sample_rate_hz = 48000;
+  spec.output_channels = 2;
+  spec.bit_depth_bits = 16;
+  Track track;
+  track.name = "Track";
+  Clip clip;
+  clip.samples = {{0.25f}};
+  for (double value :
+       {0x1p63, -0x1p63, std::numeric_limits<double>::max(),
+        std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+    clip.start_beats = value;
+    track.clips = {clip};
+    EXPECT_THROW(render_tracks(session, {track}, spec), std::invalid_argument);
+    EXPECT_FALSE(fs::exists(spec.output_directory));
+  }
+  track.clips.clear();
+  session.end_beats = 0x1p63;
+  EXPECT_THROW(render_tracks(session, {track}, spec), std::invalid_argument);
+  EXPECT_FALSE(fs::exists(spec.output_directory));
 }

@@ -3,9 +3,10 @@
 #include "treefall/abi.h"
 
 #include "abi/abi_internal.h"
+#include "common/checked_numeric.h"
 #include "render/orpheus_wav.hpp"
 #include "render/render_tracks.h"
-#include "session/json_io.h"
+#include <orpheus/session_io.h>
 
 #include <algorithm>
 #include <array>
@@ -55,16 +56,13 @@ void RequireFinite(double value, const char* name) {
 
 std::uint64_t CheckedMultiply(std::uint64_t lhs, std::uint64_t rhs, const char* name) {
   if (lhs != 0 && rhs > std::numeric_limits<std::uint64_t>::max() / lhs) {
-    throw std::invalid_argument(std::string(name) + " overflows");
+    throw std::invalid_argument(std::string(name) + " out of range");
   }
   return lhs * rhs;
 }
 
 std::uint64_t RoundedFrameCount(double value, const char* name) {
-  if (!std::isfinite(value) || value > static_cast<double>(std::numeric_limits<long long>::max())) {
-    throw std::invalid_argument(std::string(name) + " is out of range");
-  }
-  const long long rounded = std::llround(value);
+  const std::int64_t rounded = orpheus::core::detail::RoundedSamples(value, name);
   return rounded > 0 ? static_cast<std::uint64_t>(rounded) : 1u;
 }
 
@@ -108,6 +106,7 @@ RenderClickPlan BuildRenderPlan(const orpheus_render_click_spec& spec) {
   const double phase_increment =
       2.0 * std::numbers::pi * params.frequency_hz / static_cast<double>(params.sample_rate);
   RequireFinite(phase_increment, "Click phase increment");
+  RequireFinite(phase_increment * static_cast<double>(click_samples - 1u), "Click phase extent");
 
   return {params, samples_per_beat, click_samples, total_frames, interleaved_samples, data_bytes};
 }
@@ -173,106 +172,7 @@ orpheus_status RenderTracks(orpheus_session_handle session, const char* out_path
       return status;
     }
 
-    const auto& tracks = session_graph->tracks();
-    if (tracks.empty()) {
-      return ORPHEUS_STATUS_OK;
-    }
-
-    const double tempo = session_graph->tempo();
-    if (tempo <= 0.0) {
-      throw std::invalid_argument("Tempo must be positive");
-    }
-
-    const std::uint32_t sample_rate = session_graph->render_sample_rate();
-    const std::uint16_t bit_depth = session_graph->render_bit_depth();
-    const bool dither = session_graph->render_dither();
-
-    namespace fs = std::filesystem;
-    fs::path base_path(out_path);
-    if (base_path.empty()) {
-      base_path = fs::current_path();
-    }
-    const double session_start = session_graph->session_start_beats();
-    const double session_end = session_graph->session_end_beats();
-    const double seconds_per_beat = orpheus::secondsPerBeat(tempo);
-
-    const auto BeatsToSampleIndex = [&](double beats) -> std::size_t {
-      const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
-      const auto rounded = static_cast<long long>(std::llround(samples));
-      if (rounded <= 0) {
-        return 0;
-      }
-      return static_cast<std::size_t>(rounded);
-    };
-
-    const auto BeatsToSampleCount = [&](double beats) -> std::size_t {
-      if (beats <= 0.0) {
-        return 0;
-      }
-      const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
-      const auto rounded = static_cast<long long>(std::llround(samples));
-      return static_cast<std::size_t>(std::max<long long>(1, rounded));
-    };
-
-    orpheus::core::render::Session session_desc;
-    session_desc.name = session_graph->name();
-    session_desc.tempo_bpm = tempo;
-    session_desc.start_beats = session_start;
-    session_desc.end_beats = session_end;
-
-    orpheus::core::render::TrackList render_tracks_list;
-    render_tracks_list.reserve(tracks.size());
-
-    const std::size_t track_count = tracks.size();
-    for (std::size_t track_index = 0; track_index < track_count; ++track_index) {
-      const auto& track = tracks[track_index];
-      orpheus::core::render::Track render_track;
-      render_track.name = track->name();
-      render_track.output_map = {0, 1};
-
-      const double pan =
-          track_count > 1 ? static_cast<double>(track_index) / static_cast<double>(track_count - 1)
-                          : 0.5;
-      const double left_gain = std::clamp(1.0 - pan, 0.0, 1.0);
-      const double right_gain = std::clamp(pan, 0.0, 1.0);
-      const double amplitude = 0.4;
-      const double frequency = 220.0 + 110.0 * static_cast<double>(track_index);
-
-      for (const auto& clip : track->clips()) {
-        const double clip_length = clip->length();
-        std::size_t clip_samples = BeatsToSampleCount(clip_length);
-        if (clip_samples == 0u) {
-          continue;
-        }
-        const std::size_t start_sample = BeatsToSampleIndex(clip->start() - session_start);
-        std::vector<float> left_channel(clip_samples, 0.0f);
-        std::vector<float> right_channel(clip_samples, 0.0f);
-        for (std::size_t i = 0; i < clip_samples; ++i) {
-          const std::size_t sample_index = start_sample + i;
-          const double t = static_cast<double>(sample_index) / static_cast<double>(sample_rate);
-          const double sample_value = std::sin(2.0 * std::numbers::pi * frequency * t) * amplitude;
-          left_channel[i] = static_cast<float>(sample_value * left_gain);
-          right_channel[i] = static_cast<float>(sample_value * right_gain);
-        }
-        orpheus::core::render::Clip render_clip;
-        render_clip.start_beats = clip->start();
-        render_clip.samples.push_back(std::move(left_channel));
-        render_clip.samples.push_back(std::move(right_channel));
-        render_track.clips.push_back(std::move(render_clip));
-      }
-
-      render_tracks_list.push_back(std::move(render_track));
-    }
-
-    orpheus::core::render::RenderSpec spec;
-    spec.output_directory = base_path;
-    spec.sample_rate_hz = sample_rate;
-    spec.bit_depth_bits = bit_depth;
-    spec.output_channels = 2u;
-    spec.dither = dither;
-    spec.dither_seed = 0x9e3779b97f4a7c15ull;
-
-    orpheus::core::render::render_tracks(session_desc, render_tracks_list, spec);
+    orpheus::core::render::render_session_tracks(*session_graph, std::filesystem::path(out_path));
 
     return ORPHEUS_STATUS_OK;
   });

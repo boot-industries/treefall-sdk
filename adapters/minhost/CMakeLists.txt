@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Source-tree-only host: adapters_common and ABI module discovery are not an installed host API.
 add_executable(orpheus_minhost
   main.cpp
 )
@@ -12,7 +13,7 @@ target_link_libraries(orpheus_minhost
 target_include_directories(orpheus_minhost
   PRIVATE
     ${ORPHEUS_ROOT_SOURCE_DIR}/include
-    ${ORPHEUS_ROOT_SOURCE_DIR}/src/core/session
+    ${ORPHEUS_ROOT_SOURCE_DIR}/src/core
 )
 
 include(${ORPHEUS_ROOT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)

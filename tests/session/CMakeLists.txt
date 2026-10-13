@@ -23,7 +23,6 @@ target_include_directories(scene_manager_test
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/core/session
 )
 
 include(${CMAKE_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
@@ -69,7 +68,6 @@ if(TARGET orpheus_routing)
     PRIVATE
       ${CMAKE_SOURCE_DIR}/include
       ${CMAKE_SOURCE_DIR}/src/core
-      ${CMAKE_SOURCE_DIR}/src/core/session
   )
 
   orpheus_enable_warnings(scene_routing_test)

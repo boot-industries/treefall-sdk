@@ -13,6 +13,8 @@
 // All types are trivially copyable PODs, safe to embed in realtime messages.
 
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 
 namespace orpheus {
 
@@ -44,6 +46,7 @@ public:
   }
 
   /// Derived-domain constructor; rounds to the nearest sample.
+  /// Nonfinite or unrepresentable sample counts throw std::invalid_argument.
   static constexpr TimePoint fromSeconds(double seconds, uint32_t sampleRate) {
     return TimePoint(roundToSamples(seconds * static_cast<double>(sampleRate)));
   }
@@ -51,6 +54,10 @@ public:
   /// Derived-domain constructor; rounds to the nearest sample.
   /// @param tempoBpm Beats per minute (> 0)
   static constexpr TimePoint fromBeats(double beats, double tempoBpm, uint32_t sampleRate) {
+    if (!(tempoBpm >= -std::numeric_limits<double>::max() &&
+          tempoBpm <= std::numeric_limits<double>::max())) {
+      throw std::invalid_argument("Tempo must be finite");
+    }
     const double seconds = tempoBpm > 0.0 ? (beats * 60.0 / tempoBpm) : 0.0;
     return fromSeconds(seconds, sampleRate);
   }
@@ -127,7 +134,15 @@ private:
   static constexpr int64_t roundToSamples(double value) {
     // constexpr-friendly round-half-away-from-zero (std::llround isn't
     // constexpr in C++20).
-    return value >= 0.0 ? static_cast<int64_t>(value + 0.5) : -static_cast<int64_t>(-value + 0.5);
+    if (!(value >= -std::numeric_limits<double>::max() &&
+          value <= std::numeric_limits<double>::max())) {
+      throw std::invalid_argument("Samples must be finite");
+    }
+    const double rounded = value >= 0.0 ? value + 0.5 : value - 0.5;
+    if (rounded < -0x1p63 || rounded >= 0x1p63) {
+      throw std::invalid_argument("Samples out of range");
+    }
+    return static_cast<int64_t>(rounded);
   }
 
   int64_t m_samples = 0;

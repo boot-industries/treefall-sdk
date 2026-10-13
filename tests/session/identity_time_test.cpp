@@ -11,9 +11,12 @@
 #include <orpheus/media_model.h>
 #include <orpheus/time_domain.h>
 
+#include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -186,6 +189,27 @@ TEST(TimeDomainTest, TimecodeIsIntegerExact) {
   // Negative time clamps to zero rather than producing negative fields.
   Timecode neg = TimePoint::fromSamples(-100).toTimecode(kRate, 25);
   EXPECT_EQ(neg, Timecode{});
+}
+
+TEST(TimeDomainTest, SignedRoundingAndExclusiveIntegerBounds) {
+  constexpr auto positive = TimePoint::fromSeconds(0.5, 1);
+  constexpr auto negative = TimePoint::fromSeconds(-0.5, 1);
+  static_assert(positive.samples() == 1 && negative.samples() == -1);
+  constexpr auto minimum = TimePoint::fromSeconds(-0x1p63, 1);
+  static_assert(minimum.samples() == std::numeric_limits<int64_t>::min());
+  const double below = std::nextafter(0x1p63, 0.0);
+  EXPECT_EQ(TimePoint::fromSeconds(below, 1).samples(), static_cast<int64_t>(below));
+  EXPECT_THROW(TimePoint::fromSeconds(0x1p63, 1), std::invalid_argument);
+  EXPECT_THROW(TimePoint::fromSeconds(std::nextafter(-0x1p63, -INFINITY), 1),
+               std::invalid_argument);
+  for (double value :
+       {std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::max()}) {
+    EXPECT_THROW(TimePoint::fromSeconds(value, 48000), std::invalid_argument);
+    EXPECT_THROW(TimePoint::fromBeats(value, 120.0, 48000), std::invalid_argument);
+  }
+  EXPECT_EQ(TimePoint::fromBeats(42.0, 0.0, 48000).samples(), 0);
+  EXPECT_EQ(TimePoint::fromBeats(42.0, -1.0, 48000).samples(), 0);
 }
 
 TEST(TimeDomainTest, RangesAreHalfOpen) {

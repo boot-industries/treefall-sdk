@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Experimental source-tree-only adapter; adapters_common is not installed/exported.
 add_library(reaper_orpheus SHARED
   panel.cpp
   reaper_entry.cpp
@@ -18,7 +19,6 @@ target_compile_definitions(reaper_orpheus
 target_include_directories(reaper_orpheus
   PRIVATE
     ${ORPHEUS_ROOT_SOURCE_DIR}/include
-    ${ORPHEUS_ROOT_SOURCE_DIR}/src/core/session
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>

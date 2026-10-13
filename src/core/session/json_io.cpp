@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "json_io.h"
+#include <orpheus/session_io.h>
 
 #include <algorithm>
 #include <cctype>
@@ -27,6 +27,7 @@
 #include <unistd.h>
 #endif
 
+#include "common/checked_numeric.h"
 #include "common/json_parser.h"
 
 namespace orpheus::core::session_json {
@@ -215,19 +216,13 @@ SessionGraph parseSessionDocument(const std::string& json_text) {
     const JsonValue& render_object = ExpectObject(render_it->second, "render settings");
     if (auto rate_it = render_object.object.find("sample_rate_hz");
         rate_it != render_object.object.end()) {
-      const double value = RequireNumber(rate_it->second, "render.sample_rate_hz");
-      if (value < 0.0 || value > std::numeric_limits<std::uint32_t>::max()) {
-        throw std::runtime_error("render.sample_rate_hz out of range");
-      }
-      session.set_render_sample_rate(static_cast<std::uint32_t>(std::llround(value)));
+      session.set_render_sample_rate(detail::CheckedInteger<std::uint32_t>(
+          RequireNumber(rate_it->second, "render.sample_rate_hz"), "render.sample_rate_hz"));
     }
     if (auto depth_it = render_object.object.find("bit_depth");
         depth_it != render_object.object.end()) {
-      const double value = RequireNumber(depth_it->second, "render.bit_depth");
-      if (value < 0.0 || value > std::numeric_limits<std::uint16_t>::max()) {
-        throw std::runtime_error("render.bit_depth out of range");
-      }
-      session.set_render_bit_depth(static_cast<std::uint16_t>(std::llround(value)));
+      session.set_render_bit_depth(detail::CheckedInteger<std::uint16_t>(
+          RequireNumber(depth_it->second, "render.bit_depth"), "render.bit_depth"));
     }
     if (auto dither_it = render_object.object.find("dither");
         dither_it != render_object.object.end()) {

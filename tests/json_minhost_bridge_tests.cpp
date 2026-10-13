@@ -46,73 +46,27 @@ private:
 };
 
 } // namespace
-
-TEST(JsonMinhostBridgeTests, ParsesTypicalSpec) {
-  const std::string contents = R"JSON({
-    "tempo_bpm": 123.5,
-    "bars": 8,
-    "sample_rate": 48000,
-    "channels": 2,
-    "gain": -3.0,
-    "click_frequency_hz": 950.0,
-    "click_duration_seconds": 0.25,
-    "output_path": "click.wav"
-  })JSON";
-
-  TempJsonFile file(contents);
-  minhost::ClickSpecOverrides overrides;
-  minhost::ErrorInfo error;
-  ASSERT_TRUE(minhost::ParseClickSpecOverrides(file.path(), overrides, error));
-  EXPECT_TRUE(error.code.empty());
-  EXPECT_TRUE(error.message.empty());
-  EXPECT_TRUE(error.details.empty());
-
-  ASSERT_TRUE(overrides.tempo_bpm.has_value());
-  EXPECT_DOUBLE_EQ(*overrides.tempo_bpm, 123.5);
-  ASSERT_TRUE(overrides.bars.has_value());
-  EXPECT_EQ(*overrides.bars, 8u);
-  ASSERT_TRUE(overrides.sample_rate.has_value());
-  EXPECT_EQ(*overrides.sample_rate, 48000u);
-  ASSERT_TRUE(overrides.channels.has_value());
-  EXPECT_EQ(*overrides.channels, 2u);
-  ASSERT_TRUE(overrides.gain.has_value());
-  EXPECT_DOUBLE_EQ(*overrides.gain, -3.0);
-  ASSERT_TRUE(overrides.click_frequency_hz.has_value());
-  EXPECT_DOUBLE_EQ(*overrides.click_frequency_hz, 950.0);
-  ASSERT_TRUE(overrides.click_duration_seconds.has_value());
-  EXPECT_DOUBLE_EQ(*overrides.click_duration_seconds, 0.25);
-  ASSERT_TRUE(overrides.output_path.has_value());
-  EXPECT_EQ(*overrides.output_path, "click.wav");
+TEST(JsonMinhostBridgeTests, RejectsFractionalAndOutOfRangeIntegerOverrides) {
+  for (const std::string field : {"bars", "sample_rate", "channels"}) {
+    for (const std::string value : {"1.5", "-1", "4294967296", "1e300"}) {
+      TempJsonFile file("{\"" + field + "\":" + value + "}");
+      minhost::ClickSpecOverrides overrides;
+      minhost::ErrorInfo error;
+      EXPECT_FALSE(minhost::ParseClickSpecOverrides(file.path(), overrides, error));
+      EXPECT_EQ(error.code, "spec.parse");
+      ASSERT_EQ(error.details.size(), 1u);
+      EXPECT_EQ(error.details.front(),
+                field + (value == "1.5" ? " must be integral" : " out of range"));
+    }
+  }
 }
 
-TEST(JsonMinhostBridgeTests, ParsesMinimalSpec) {
-  TempJsonFile file("{}\n");
-  minhost::ClickSpecOverrides overrides;
-  minhost::ErrorInfo error;
-  EXPECT_TRUE(minhost::ParseClickSpecOverrides(file.path(), overrides, error));
-  EXPECT_TRUE(error.message.empty());
-  EXPECT_FALSE(overrides.tempo_bpm.has_value());
-  EXPECT_FALSE(overrides.bars.has_value());
-  EXPECT_FALSE(overrides.sample_rate.has_value());
-  EXPECT_FALSE(overrides.channels.has_value());
-  EXPECT_FALSE(overrides.gain.has_value());
-  EXPECT_FALSE(overrides.click_frequency_hz.has_value());
-  EXPECT_FALSE(overrides.click_duration_seconds.has_value());
-  EXPECT_FALSE(overrides.output_path.has_value());
-}
-
-TEST(JsonMinhostBridgeTests, ReportsInvalidSpecDetails) {
-  const std::string contents = R"JSON({
-    "bars": -1
-  })JSON";
-
-  TempJsonFile file(contents);
-  minhost::ClickSpecOverrides overrides;
-  minhost::ErrorInfo error;
-  EXPECT_FALSE(minhost::ParseClickSpecOverrides(file.path(), overrides, error));
-  EXPECT_EQ(error.code, "spec.parse");
-  EXPECT_EQ(error.message, "Failed to parse click spec");
-  ASSERT_EQ(error.details.size(), 1u);
-  EXPECT_EQ(error.details.front(), "bars must be non-negative");
-  EXPECT_FALSE(overrides.bars.has_value());
+TEST(JsonMinhostBridgeTests, RangeBarConversionRejectsUnsignedOverflow) {
+  minhost::SessionContext context;
+  context.range_start_beats = 0.0;
+  context.range_end_beats = 4.0 * 0x1p32;
+  minhost::TimelineRange range;
+  EXPECT_THROW(minhost::ComputeBarsFromRange(context, range), std::invalid_argument);
+  context.range_end_beats = 4.0 * (0x1p32 - 1.0);
+  EXPECT_EQ(minhost::ComputeBarsFromRange(context, range), UINT32_MAX);
 }

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include "abi_negotiation.h"
-#include "json_io.h"
+#include "common/checked_numeric.h"
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
 #include "orpheus/json.hpp"
 #include "orpheus/music_timing.h"
 #include "session_guard.h"
+#include <orpheus/session_io.h>
 
 #include <algorithm>
 #include <cctype>
@@ -944,40 +945,42 @@ bool ParseClickSpecOverrides(const fs::path& spec_path, ClickSpecOverrides& over
     const json::JsonValue& object = json::ExpectObject(root, "click spec");
     if (auto it = object.object.find("tempo_bpm");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      overrides.tempo_bpm = it->second.number;
+      overrides.tempo_bpm = orpheus::core::detail::RequireFinite(it->second.number, "tempo_bpm");
     }
     if (auto it = object.object.find("bars");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      if (it->second.number < 0.0) {
-        throw std::runtime_error("bars must be non-negative");
-      }
-      overrides.bars = static_cast<std::uint32_t>(std::llround(it->second.number));
+      overrides.bars =
+          orpheus::core::detail::CheckedInteger<std::uint32_t>(it->second.number, "bars");
     }
     if (auto it = object.object.find("sample_rate");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      if (it->second.number <= 0.0) {
-        throw std::runtime_error("sample_rate must be positive");
+      overrides.sample_rate =
+          orpheus::core::detail::CheckedInteger<std::uint32_t>(it->second.number, "sample_rate");
+      if (*overrides.sample_rate == 0) {
+        throw std::invalid_argument("sample_rate out of range");
       }
-      overrides.sample_rate = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
     if (auto it = object.object.find("channels");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      if (it->second.number <= 0.0) {
-        throw std::runtime_error("channels must be positive");
+      overrides.channels =
+          orpheus::core::detail::CheckedInteger<std::uint32_t>(it->second.number, "channels");
+      if (*overrides.channels == 0) {
+        throw std::invalid_argument("channels out of range");
       }
-      overrides.channels = static_cast<std::uint32_t>(std::llround(it->second.number));
     }
     if (auto it = object.object.find("gain");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      overrides.gain = it->second.number;
+      overrides.gain = orpheus::core::detail::RequireFinite(it->second.number, "gain");
     }
     if (auto it = object.object.find("click_frequency_hz");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      overrides.click_frequency_hz = it->second.number;
+      overrides.click_frequency_hz =
+          orpheus::core::detail::RequireFinite(it->second.number, "click_frequency_hz");
     }
     if (auto it = object.object.find("click_duration_seconds");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kNumber) {
-      overrides.click_duration_seconds = it->second.number;
+      overrides.click_duration_seconds =
+          orpheus::core::detail::RequireFinite(it->second.number, "click_duration_seconds");
     }
     if (auto it = object.object.find("output_path");
         it != object.object.end() && it->second.type == json::JsonValue::Type::kString) {
@@ -1109,7 +1112,7 @@ std::uint32_t ComputeBarsFromRange(const SessionContext& context, const Timeline
   if (bars <= 0.0) {
     return 1u;
   }
-  return static_cast<std::uint32_t>(std::ceil(bars));
+  return orpheus::core::detail::CheckedInteger<std::uint32_t>(std::ceil(bars), "bars");
 }
 
 int RunRenderClickCommand(const CliGlobalOptions& global,
@@ -1124,7 +1127,13 @@ int RunRenderClickCommand(const CliGlobalOptions& global,
 
   orpheus_render_click_spec spec{};
   spec.tempo_bpm = context.tempo_bpm;
-  spec.bars = ComputeBarsFromRange(context, merged.session.range);
+  try {
+    spec.bars = ComputeBarsFromRange(context, merged.session.range);
+  } catch (const std::invalid_argument& exception) {
+    error = {"click.range", exception.what(), {}};
+    PrintError(global, error);
+    return 1;
+  }
   spec.sample_rate = merged.sample_rate_override.value_or(44100u);
   spec.channels = 2;
   spec.gain = 0.3;

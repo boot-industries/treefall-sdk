@@ -5,6 +5,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 
 using namespace orpheus;
@@ -32,15 +34,26 @@ protected:
   std::unique_ptr<IPerformanceMonitor> m_monitor;
 };
 
-// Helper to access private updateMetrics method for testing
-class TestablePerformanceMonitor {
+// Reusable rendezvous for exact producer/control ordering, without sleeps.
+class MonitorTestBarrier {
 public:
-  static void updateMetrics(IPerformanceMonitor* monitor, uint64_t callbackDurationUs,
-                            uint64_t bufferDurationUs, uint32_t activeClips, uint32_t sampleRate,
-                            uint32_t bufferSize) {
-    // This is a workaround for testing - in production, the audio thread calls updateMetrics
-    // For now, we'll test via the public API only
+  void arriveAndWait() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    const auto generation = m_generation;
+    if (++m_arrivals == 2) {
+      m_arrivals = 0;
+      ++m_generation;
+      m_changed.notify_all();
+    } else {
+      m_changed.wait(lock, [&] { return m_generation != generation; });
+    }
   }
+
+private:
+  std::mutex m_mutex;
+  std::condition_variable m_changed;
+  unsigned m_arrivals = 0;
+  unsigned m_generation = 0;
 };
 
 // Basic Tests
@@ -72,19 +85,28 @@ TEST_F(PerformanceMonitorTest, UptimeIncreases) {
   EXPECT_GE(uptime2 - uptime1, 0.05); // At least 50ms elapsed
 }
 
-TEST_F(PerformanceMonitorTest, ResetUnderrunCount) {
-  // Initially zero
-  auto metrics1 = m_monitor->getMetrics();
-  EXPECT_EQ(metrics1.bufferUnderrunCount, 0u);
+TEST_F(PerformanceMonitorTest, UnderrunResetClearsBeforeAndRetainsAfterExchange) {
+  MonitorTestBarrier boundary;
+  std::thread producer([&] {
+    for (unsigned i = 0; i < 17; ++i) {
+      m_monitor->reportUnderrun();
+    }
+    boundary.arriveAndWait(); // All preceding increments have completed.
+    boundary.arriveAndWait(); // Reset must complete before the next increments.
+    for (unsigned i = 0; i < 23; ++i) {
+      m_monitor->reportUnderrun();
+    }
+    boundary.arriveAndWait();
+  });
 
-  // Reset (should still be zero)
+  boundary.arriveAndWait();
+  EXPECT_EQ(m_monitor->getMetrics().bufferUnderrunCount, 17u);
   m_monitor->resetUnderrunCount();
-
-  auto metrics2 = m_monitor->getMetrics();
-  EXPECT_EQ(metrics2.bufferUnderrunCount, 0u);
-
-  // Note: We can't easily increment underrun count from tests without
-  // exposing internal methods, so we're limited in testing this
+  EXPECT_EQ(m_monitor->getMetrics().bufferUnderrunCount, 0u);
+  boundary.arriveAndWait();
+  boundary.arriveAndWait();
+  EXPECT_EQ(m_monitor->getMetrics().bufferUnderrunCount, 23u);
+  producer.join();
 }
 
 TEST_F(PerformanceMonitorTest, PeakCpuUsageInitiallyZero) {
@@ -92,12 +114,51 @@ TEST_F(PerformanceMonitorTest, PeakCpuUsageInitiallyZero) {
   EXPECT_EQ(peakCpu, 0.0f);
 }
 
-TEST_F(PerformanceMonitorTest, ResetPeakCpuUsage) {
-  // Reset peak (should set to current CPU usage, which is 0)
-  m_monitor->resetPeakCpuUsage();
+TEST_F(PerformanceMonitorTest, PeakResetUsesProducerBoundaryAndPreviousSmoothedCpu) {
+  MonitorTestBarrier boundary;
+  std::thread producer([&] {
+    m_monitor->recordAudioCallback(1000, 1000, 1, 48000, 512); // Instant 100, EMA 10.
+    boundary.arriveAndWait();
+    boundary.arriveAndWait();
+    m_monitor->recordAudioCallback(20, 1000, 1, 48000, 512); // Instant 2, EMA 9.2.
+    boundary.arriveAndWait();
+    boundary.arriveAndWait();
+    m_monitor->recordAudioCallback(250, 1000, 1, 48000, 512); // Instant 25 > baseline.
+    boundary.arriveAndWait();
+    boundary.arriveAndWait();
+    m_monitor->recordAudioCallback(0, 1000, 1, 48000, 512);
+    boundary.arriveAndWait();
+  });
 
-  float peakCpu = m_monitor->getPeakCpuUsage();
-  EXPECT_EQ(peakCpu, 0.0f);
+  boundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getMetrics().cpuUsagePercent, 10.0f);
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 100.0f);
+  m_monitor->resetPeakCpuUsage();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 100.0f); // Idle request does not write peak.
+  boundary.arriveAndWait();
+  boundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 10.0f); // Prior EMA, not new EMA 9.2.
+  EXPECT_NEAR(m_monitor->getMetrics().cpuUsagePercent, 9.2f, 0.0001f);
+  m_monitor->resetPeakCpuUsage(); // After the previous boundary: wait for another callback.
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 10.0f);
+  boundary.arriveAndWait();
+  boundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 25.0f); // Includes reset callback's instant CPU.
+  boundary.arriveAndWait();
+  boundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 25.0f); // No reset request remains.
+  producer.join();
+}
+
+TEST_F(PerformanceMonitorTest, BufferDurationEstimateRetainsLastValueWithoutSampleRate) {
+  m_monitor->recordAudioCallback(100, 1000, 0, 0, 512);
+  EXPECT_FLOAT_EQ(m_monitor->getMetrics().latencyMs, 0.0f);
+  m_monitor->recordAudioCallback(100, 1000, 0, 48000, 512);
+  EXPECT_NEAR(m_monitor->getMetrics().latencyMs, 10.666667f, 0.00001f);
+  m_monitor->recordAudioCallback(100, 1000, 0, 0, 2048);
+  EXPECT_NEAR(m_monitor->getMetrics().latencyMs, 10.666667f, 0.00001f);
+  m_monitor->recordAudioCallback(100, 1000, 0, 96000, 512);
+  EXPECT_NEAR(m_monitor->getMetrics().latencyMs, 5.333333f, 0.00001f);
 }
 
 TEST_F(PerformanceMonitorTest, CallbackTimingHistogramInitiallyEmpty) {
@@ -172,30 +233,40 @@ TEST_F(PerformanceMonitorTest, ThreadSafety_ConcurrentReads) {
   }
 }
 
-TEST_F(PerformanceMonitorTest, ThreadSafety_ConcurrentResets) {
-  // Test that concurrent resets don't crash
-  constexpr int kNumThreads = 4;
-  constexpr int kIterationsPerThread = 100;
+TEST_F(PerformanceMonitorTest, ConcurrentPeakResetRequestsCoalesce) {
+  MonitorTestBarrier producerBoundary;
+  std::thread producer([&] {
+    m_monitor->recordAudioCallback(1000, 1000, 1, 48000, 512);
+    producerBoundary.arriveAndWait();
+    producerBoundary.arriveAndWait();
+    m_monitor->recordAudioCallback(250, 1000, 1, 48000, 512);
+    producerBoundary.arriveAndWait();
+    producerBoundary.arriveAndWait();
+    m_monitor->recordAudioCallback(0, 1000, 1, 48000, 512);
+    producerBoundary.arriveAndWait();
+  });
 
-  std::vector<std::thread> threads;
-  threads.reserve(kNumThreads);
-
-  for (int i = 0; i < kNumThreads; ++i) {
-    threads.emplace_back([this]() {
-      for (int j = 0; j < kIterationsPerThread; ++j) {
-        m_monitor->resetUnderrunCount();
-        m_monitor->resetPeakCpuUsage();
-
-        // Also do some reads
-        auto metrics = m_monitor->getMetrics();
-        (void)metrics; // Suppress unused warning
-      }
-    });
+  producerBoundary.arriveAndWait();
+  MonitorTestBarrier resetBoundary;
+  std::thread resetter([&] {
+    resetBoundary.arriveAndWait();
+    for (unsigned i = 0; i < 100; ++i) {
+      m_monitor->resetPeakCpuUsage();
+    }
+  });
+  resetBoundary.arriveAndWait();
+  for (unsigned i = 0; i < 100; ++i) {
+    m_monitor->resetPeakCpuUsage();
   }
-
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  resetter.join();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 100.0f);
+  producerBoundary.arriveAndWait();
+  producerBoundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 25.0f);
+  producerBoundary.arriveAndWait();
+  producerBoundary.arriveAndWait();
+  EXPECT_FLOAT_EQ(m_monitor->getPeakCpuUsage(), 25.0f); // Requests consumed once, not replayed.
+  producer.join();
 }
 
 TEST_F(PerformanceMonitorTest, MultipleMonitorInstances) {
@@ -266,7 +337,3 @@ TEST_F(PerformanceMonitorTest, LongRunningUptime) {
   auto metrics2 = m_monitor->getMetrics();
   EXPECT_GE(metrics2.uptimeSeconds - metrics1.uptimeSeconds, 0.1);
 }
-
-// Note: We cannot easily test the internal updateMetrics() method without
-// exposing it or creating a test-only subclass. In production, the audio
-// thread will call this method. Integration tests will verify end-to-end behavior.

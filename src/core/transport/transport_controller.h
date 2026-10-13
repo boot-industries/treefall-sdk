@@ -74,19 +74,15 @@ struct TransportCommand {
     StopAll,
     Panic, // OCC155 Ask #5: hard-cut all voices, no fade
 
-    // ORP133 G2: StopGroup removed — the transport has no clip→group mapping;
-    // hosts implement scoped group-stop with stopOtherClips() + host grouping.
     UpdateTrim,
     UpdateFade,
     UpdateGain,
     UpdateLoop,
-    UpdateStopOthers,
     // ORP127 G1: UI-thread voice mutations routed onto the audio thread so no
     // ActiveClip field is written from two threads.
     Restart,             // Restart all voices for a handle from trim IN (with fade-in)
     Seek,                // Seek all voices for a handle to an absolute position
     UpdateMetadata,      // Apply a full metadata batch to active voices
-    SetVoiceMode,        // ORP127 G5: change a clip's voice policy (audio-thread state)
     StopOthers,          // ORP127 G7: stop every voice except cmd.handle (choke primitive)
     StartWithGroupChoke, // Atomically admit start, then fade registered same-group peers
     StartWithStopOthers  // Atomically admit start, then fade every other voice
@@ -125,12 +121,13 @@ struct TransportCommand {
       FadeCurve outCurve;
     } fade; // For UpdateFade
 
-    float gainDb;      // For UpdateGain
-    bool booleanValue; // For UpdateLoop / UpdateStopOthers
+    struct {
+      float db;
+      float linear;
+    } gain;            // For UpdateGain; exact conversion prepared on the control thread
+    bool booleanValue; // For UpdateLoop
 
     int64_t seekPosition; // For Seek (absolute sample position, pre-clamped)
-
-    uint8_t voiceMode; // For SetVoiceMode (VoiceMode enum value)
 
     // For UpdateMetadata: full metadata batch (fade sample counts precomputed
     // on the UI thread so no pow()/float-math surprises on the audio thread).

@@ -103,7 +103,9 @@ JsonValue JsonParser::ParseObject() {
       throw std::runtime_error("Expected ':' after object key");
     }
     JsonValue element = ParseValue();
-    value.object.emplace(key, std::move(element));
+    if (!value.object.emplace(key, std::move(element)).second) {
+      throw std::runtime_error("Duplicate JSON object key: " + key);
+    }
     SkipWhitespace();
     const char next = Consume();
     if (next == '}') {
@@ -315,6 +317,9 @@ const JsonValue* RequireField(const JsonValue& object, const std::string& key) {
 double RequireNumber(const JsonValue& value, const std::string& key) {
   if (value.type != JsonValue::Type::kNumber) {
     throw std::runtime_error("Expected numeric field: " + key);
+  }
+  if (!std::isfinite(value.number)) {
+    throw std::runtime_error(key + " must be finite");
   }
   return value.number;
 }

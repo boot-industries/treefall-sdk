@@ -292,9 +292,9 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
       if (input_audio_unit_ == nullptr) {
         return;
       }
-      AudioOutputUnitStop(input_audio_unit_);
-      AudioUnitUninitialize(input_audio_unit_);
-      AudioComponentInstanceDispose(input_audio_unit_);
+      control_test_hooks_.stopUnit(input_audio_unit_);
+      control_test_hooks_.uninitializeUnit(input_audio_unit_);
+      control_test_hooks_.disposeUnit(input_audio_unit_);
       input_audio_unit_ = nullptr;
     };
     if (input_unit_was_requested) {
@@ -442,7 +442,28 @@ SessionGraphError CoreAudioDriver::initializeAudioOutput(const AudioOutputRouteR
   return initialize(config);
 }
 
+void CoreAudioDriver::observeControlLock(
+    detail::CoreAudioDriverControlTestHooks::Operation operation) const {
+  if (control_test_hooks_.beforeControlLock) {
+    control_test_hooks_.beforeControlLock(control_test_hooks_.context, operation);
+  }
+}
+
+std::chrono::steady_clock::time_point CoreAudioDriver::primeNow() const {
+  return control_test_hooks_.primeNow ? control_test_hooks_.primeNow(control_test_hooks_.context)
+                                      : std::chrono::steady_clock::now();
+}
+
+void CoreAudioDriver::waitForPrimePoll() const {
+  if (control_test_hooks_.primePollWait) {
+    control_test_hooks_.primePollWait(control_test_hooks_.context, std::chrono::milliseconds(1));
+  } else {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
 SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
+  observeControlLock(detail::CoreAudioDriverControlTestHooks::Operation::Start);
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (!audio_unit_ || !route_monitor_ || (input_conversion_active_ && !input_audio_unit_)) {
@@ -483,13 +504,15 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
       publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BackendFailure);
       return SessionGraphError::InternalError;
     }
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (!input_converter_.isPrimed() && std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // Only the readiness poll has a deadline. Native start/stop and scheduler
+    // delays are not bounded by it; the mutex intentionally serializes controls.
+    const auto deadline = primeNow() + std::chrono::seconds(2);
+    while (!input_converter_.isPrimed() && primeNow() < deadline) {
+      waitForPrimePoll();
     }
     if (!input_converter_.isPrimed()) {
       input_callback_target_.replaceAndDrain(nullptr);
-      AudioOutputUnitStop(input_audio_unit_);
+      control_test_hooks_.stopUnit(input_audio_unit_);
       route_monitor_->closeAdmission();
       route_monitor_->stop();
       cleanupAudioUnit();
@@ -531,6 +554,7 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
 }
 
 SessionGraphError CoreAudioDriver::stop() {
+  observeControlLock(detail::CoreAudioDriverControlTestHooks::Operation::Stop);
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopRenderingLocked();
@@ -552,6 +576,7 @@ std::string CoreAudioDriver::getDriverName() const {
 }
 
 uint32_t CoreAudioDriver::getLatencySamples() const {
+  observeControlLock(detail::CoreAudioDriverControlTestHooks::Operation::Latency);
   std::lock_guard<std::mutex> lock(mutex_);
   return queryDeviceLatency();
 }
@@ -574,6 +599,7 @@ AudioRouteCompatibility CoreAudioDriver::probeRoute(const AudioDriverConfig& con
 }
 
 ActiveAudioRoute CoreAudioDriver::getActiveRoute() const {
+  observeControlLock(detail::CoreAudioDriverControlTestHooks::Operation::ActiveRoute);
   std::lock_guard<std::mutex> lock(mutex_);
   return active_route_;
 }
@@ -1546,8 +1572,8 @@ AudioLatencyBreakdown CoreAudioDriver::queryDetailedLatencyBreakdown() const {
     }
     Float64 seconds = 0.0;
     UInt32 size = sizeof(seconds);
-    const OSStatus unit_status = AudioUnitGetProperty(unit, kAudioUnitProperty_Latency,
-                                                      kAudioUnitScope_Global, 0, &seconds, &size);
+    const OSStatus unit_status = control_test_hooks_.getUnitProperty(
+        unit, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0, &seconds, &size);
     if (unit_status != noErr || size != sizeof(seconds)) {
       return false;
     }
@@ -1872,8 +1898,8 @@ SessionGraphError CoreAudioDriver::setupInputAudioUnit() {
     return SessionGraphError::InternalError;
   }
   const auto fail = [&]() {
-    AudioUnitUninitialize(input_audio_unit_);
-    AudioComponentInstanceDispose(input_audio_unit_);
+    control_test_hooks_.uninitializeUnit(input_audio_unit_);
+    control_test_hooks_.disposeUnit(input_audio_unit_);
     input_audio_unit_ = nullptr;
     return SessionGraphError::InternalError;
   };
@@ -2118,15 +2144,15 @@ void CoreAudioDriver::cleanupAudioUnit() {
   input_callback_target_.replaceAndDrain(nullptr);
   output_callback_target_.replaceAndDrain(nullptr);
   if (audio_unit_) {
-    AudioOutputUnitStop(audio_unit_);
-    AudioUnitUninitialize(audio_unit_);
-    AudioComponentInstanceDispose(audio_unit_);
+    control_test_hooks_.stopUnit(audio_unit_);
+    control_test_hooks_.uninitializeUnit(audio_unit_);
+    control_test_hooks_.disposeUnit(audio_unit_);
     audio_unit_ = nullptr;
   }
   if (input_audio_unit_) {
-    AudioOutputUnitStop(input_audio_unit_);
-    AudioUnitUninitialize(input_audio_unit_);
-    AudioComponentInstanceDispose(input_audio_unit_);
+    control_test_hooks_.stopUnit(input_audio_unit_);
+    control_test_hooks_.uninitializeUnit(input_audio_unit_);
+    control_test_hooks_.disposeUnit(input_audio_unit_);
     input_audio_unit_ = nullptr;
   }
   callback_target_.replaceAndDrain(nullptr);
@@ -2188,10 +2214,10 @@ void CoreAudioDriver::stopRenderingLocked() {
   input_callback_target_.replaceAndDrain(nullptr);
   output_callback_target_.replaceAndDrain(nullptr);
   if (audio_unit_) {
-    AudioOutputUnitStop(audio_unit_);
+    control_test_hooks_.stopUnit(audio_unit_);
   }
   if (input_audio_unit_) {
-    AudioOutputUnitStop(input_audio_unit_);
+    control_test_hooks_.stopUnit(input_audio_unit_);
   }
   callback_target_.replaceAndDrain(nullptr);
   // Stopping is the explicit continuous-device discontinuity boundary. Both

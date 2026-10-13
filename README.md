@@ -91,9 +91,47 @@ target_link_libraries(my_app PRIVATE Orpheus::diagnostics Orpheus::audio_utils)
 - `Treefall::diagnostics` (also `Orpheus::diagnostics`) exposes
   `performance_monitor.h` and `loudness_meter.h`. Use
   `createStandalonePerformanceMonitor()` when no `SessionGraph` is involved.
+  `latencyMs` is estimated callback-buffer duration, not measured route latency;
+  use complete directional route data for measured terms. Metrics are independent
+  aggregates. Peak reset takes effect on the next callback, not while idle.
 - `Treefall::audio_utils` (also `Orpheus::audio_utils`) exposes file I/O and
   format-conversion helpers plus `trigger_voice.h`, the allocation-free one-shot
   voice utility used by host-owned sequencers and generated tracks.
+
+## Session I/O and Stable Ownership
+
+Link `Treefall::core` (equivalently `Orpheus::core`) for
+`<treefall/session_io.h>` or `<orpheus/session_io.h>`. The unchanged
+`orpheus::core::session_json` namespace provides parsing, serialization, save,
+load, and recovery contracts. The former private `json_io.h` is not an installed
+consumer header. Loading an unsupported future primary schema is a hard error,
+not permission to recover an older backup; missing or corrupt primary documents
+remain recoverable under the existing recovery API.
+
+`SessionGraph` exposes stable `TrackId`/`ClipId` values and pointer-free
+snapshots. Borrowed `Track*`, `Clip*`, and `CommittedClip::clip` are invalidated
+by removal or graph rebuild/restore; re-resolve IDs after these operations
+instead of retaining pointers. Transactions/snapshots exclude scene definitions
+and runtime scene-trigger, marker, playlist and transport state. Application
+undo and presentation policy remain host-owned. Issued IDs are not reused after
+rollback or restore.
+
+Invalid numeric conversions, duplicate JSON object keys, and clip assignments
+to IDs absent from the session are rejected before publication/mutation.
+Repeated valid assignments remain permitted. Scene recall validates clip
+membership before changing playback/routing; historical dangling scenes are
+rejected, not silently pruned.
+
+Device-manager driver pointers are also borrowed, not leased. Coordinate their
+use with route replacement/destruction; retaining a pointer after failed stop
+does not prove the backend remains usable. The media worker cannot bound an
+arbitrary blocked synchronous reader or its destructor join.
+
+ABI logger and telemetry setters configure the module through which they are
+called, not every module in the process. Resolve/set callbacks on each ABI DSO
+that needs them; Orpheus and Treefall setter spellings share state within that
+module. Static builds use final-link-unit scope. The shared session-handle
+registry in the default shared ABI build is a separate ownership contract.
 
 ## CoreAudio Route Reliability
 
@@ -540,30 +578,38 @@ Clip Composer depends on — then bump the submodule pin in the app repo.
 
 ### Standalone Demo Host
 
-`OrpheusDemoHost` dynamically loads the Orpheus ABI shared libraries at runtime
-and mirrors the demo workflow:
+`OrpheusDemoHost` links the canonical C++ core and owns one session graph:
 
 1. **File → Open Session…** – load a session JSON file.
-2. **Session → Trigger ClipGrid Scene** – negotiate the clip grid.
-3. **Session → Render WAV Stems…** – write rendered stems to disk.
+2. **Session → Trigger ClipGrid Scene** – commit the graph's clip grid.
+3. **Session → Render WAV Stems…** – write deterministic synthetic stems to disk.
 
 The executable (`OrpheusDemoHost` plus the platform extension) is emitted inside
 your build directory.
+The demo, minhost, and REAPER adapter remain source-tree integrations, not
+installed-prefix consumers: private render/OTIO integration helpers still
+belong to those optional hosts. Public session I/O does not promote their whole
+integration boundary.
 
 ### Render a Click Track
 
-Use the minhost CLI to generate a two-bar click track with an overridden tempo:
+Save a click override as `click-spec.json`:
 
-```sh
-./build/orpheus_minhost \
-  --session tools/fixtures/solo_click.json \
-  --render click.wav \
-  --bars 2 \
-  --bpm 100
+```json
+{"tempo_bpm": 100, "bars": 2}
 ```
 
-Omit `--render` to run a transport simulation and print the proposed render
-graph instead of writing audio.
+Then use minhost's render command:
+
+```sh
+./build/adapters/minhost/orpheus_minhost render-click \
+  --session tools/fixtures/solo_click.json \
+  --spec click-spec.json \
+  --out click.wav
+```
+
+Use the `simulate-transport` command for a transport simulation instead of
+writing audio. Each command exposes its supported options with `--help`.
 
 ## Tooling & Quality
 

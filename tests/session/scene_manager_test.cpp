@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "../../include/orpheus/scene_manager.h"
+#include "common/checked_numeric.h"
+#include <cmath>
+#include <limits>
+#include <utility>
+#include <vector>
 
 #include <chrono>
 #include <cstdio>
@@ -22,7 +27,8 @@ protected:
 
     // Create scene manager
     sceneManager = createSceneManager(sessionGraph.get());
-    transport = createTransportController(sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    transport = createTransportController(
+        sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     sceneManager->setTransportController(transport.get());
 
     // Use std::filesystem for portable temp directory
@@ -125,7 +131,8 @@ TEST_F(SceneManagerTest, CaptureSceneTimestampIncreases) {
 
 TEST(SceneManagerPackageContract, SelfContainedFactoryCanCaptureAndRecall) {
   auto manager = createSceneManager();
-  auto packageTransport = createTransportController(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+  auto packageTransport = createTransportController(
+      nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
   ASSERT_NE(manager, nullptr);
   ASSERT_NE(packageTransport, nullptr);
   ASSERT_NE(packageTransport->getRoutingMatrix(), nullptr);
@@ -540,6 +547,27 @@ TEST_F(SceneManagerTest, SceneSnapshotInitialization) {
   EXPECT_TRUE(scene.groupGains.empty());
 }
 
+TEST_F(SceneManagerTest, ImportRejectsNumericAndDuplicateBoundariesWithoutPublishing) {
+  const auto existing = sceneManager->captureScene("Retained");
+  const auto revision = sessionGraph->revision();
+  const auto path = getTempFilePath("invalid_boundaries.json");
+  for (const std::string fragment :
+       {"\"timestamp\":-1", "\"timestamp\":1.5", "\"timestamp\":18446744073709551616",
+        "\"assignedClips\":[0]", "\"assignedClips\":[1.5]",
+        "\"assignedClips\":[18446744073709551616]", "\"clipGroups\":[-1]", "\"clipGroups\":[1.5]",
+        "\"clipGroups\":[65536]", "\"groupGains\":[1e100]", "\"name\":\"Duplicate\""}) {
+    {
+      std::ofstream file(path);
+      file << "{\"sceneId\":\"input\",\"name\":\"Invalid\"," << fragment << "}";
+    }
+    EXPECT_TRUE(sceneManager->importScene(path).empty()) << fragment;
+    EXPECT_EQ(sceneManager->listScenes().size(), 1u);
+    EXPECT_TRUE(sceneManager->hasScene(existing));
+    EXPECT_EQ(sessionGraph->revision(), revision);
+  }
+  std::remove(path.c_str());
+}
+
 // ============================================================================
 // Stress Tests
 // ============================================================================
@@ -571,4 +599,34 @@ TEST_F(SceneManagerTest, RapidCaptureAndDelete) {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+TEST(SceneNumericBoundaries, ExactExclusiveBoundsAndFieldErrors) {
+  using orpheus::core::detail::CheckedInteger;
+  using orpheus::core::detail::RoundedSamples;
+  EXPECT_EQ(CheckedInteger<int64_t>(-0x1p63, "timestamp"), std::numeric_limits<int64_t>::min());
+  const auto below = std::nextafter(0x1p63, 0.0);
+  EXPECT_EQ(CheckedInteger<int64_t>(below, "timestamp"), static_cast<int64_t>(below));
+  EXPECT_EQ(RoundedSamples(-0.5, "samples"), -1);
+  EXPECT_EQ(RoundedSamples(0.5, "samples"), 1);
+  EXPECT_EQ(RoundedSamples(-0x1p63, "samples"), std::numeric_limits<int64_t>::min());
+  EXPECT_THROW(RoundedSamples(0x1p63, "samples"), std::invalid_argument);
+  EXPECT_THROW(CheckedInteger<int64_t>(0x1p63, "timestamp"), std::invalid_argument);
+  EXPECT_THROW(CheckedInteger<uint64_t>(0x1p64, "assignedClips"), std::invalid_argument);
+  const auto unsigned_below = std::nextafter(0x1p64, 0.0);
+  EXPECT_EQ(CheckedInteger<uint64_t>(unsigned_below, "assignedClips"),
+            static_cast<uint64_t>(unsigned_below));
+  for (const auto& [value, message] : std::vector<std::pair<double, std::string>>{
+           {std::numeric_limits<double>::infinity(), "timestamp must be finite"},
+           {std::numeric_limits<double>::quiet_NaN(), "timestamp must be finite"},
+           {1.5, "timestamp must be integral"},
+           {-1.0, "timestamp out of range"},
+           {0x1p64, "timestamp out of range"}}) {
+    try {
+      CheckedInteger<uint64_t>(value, "timestamp");
+      FAIL() << "Accepted " << value;
+    } catch (const std::invalid_argument& error) {
+      EXPECT_EQ(error.what(), message);
+    }
+  }
 }

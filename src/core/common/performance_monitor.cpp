@@ -43,14 +43,14 @@ public:
   PerformanceMetrics getMetrics() const override {
     PerformanceMetrics metrics{};
 
-    // Read atomically (memory_order_relaxed is safe for metrics display)
+    // Each aggregate is sampled independently, not at a common callback boundary.
     metrics.cpuUsagePercent = m_cpuUsagePercent.load(std::memory_order_relaxed);
     metrics.latencyMs = m_latencyMs.load(std::memory_order_relaxed);
     metrics.bufferUnderrunCount = m_underrunCount.load(std::memory_order_relaxed);
     metrics.activeClipCount = m_activeClipCount.load(std::memory_order_relaxed);
     metrics.totalSamplesProcessed = m_totalSamplesProcessed.load(std::memory_order_relaxed);
 
-    // Calculate uptime
+    // Uptime reflects query observation time, not the last callback.
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(now - m_startTime);
     metrics.uptimeSeconds = static_cast<double>(duration.count()) / 1'000'000.0;
@@ -59,7 +59,7 @@ public:
   }
 
   void resetUnderrunCount() override {
-    m_underrunCount.store(0, std::memory_order_relaxed);
+    m_underrunCount.exchange(0, std::memory_order_relaxed);
   }
 
   float getPeakCpuUsage() const override {
@@ -67,8 +67,7 @@ public:
   }
 
   void resetPeakCpuUsage() override {
-    float currentCpu = m_cpuUsagePercent.load(std::memory_order_relaxed);
-    m_peakCpuUsage.store(currentCpu, std::memory_order_relaxed);
+    m_peakResetRequested.store(true, std::memory_order_relaxed);
   }
 
   std::vector<std::pair<float, uint32_t>> getCallbackTimingHistogram() const override {
@@ -86,6 +85,13 @@ public:
   void recordAudioCallback(uint64_t callbackDurationUs, uint64_t bufferDurationUs,
                            uint32_t activeClips, uint32_t sampleRate,
                            uint32_t bufferSize) override {
+    // Only the callback producer writes the peak. Requests after this exchange
+    // wait for the next callback; multiple pending requests coalesce.
+    float currentCpu = m_cpuUsagePercent.load(std::memory_order_relaxed);
+    if (m_peakResetRequested.exchange(false, std::memory_order_relaxed)) {
+      m_peakCpuUsage.store(currentCpu, std::memory_order_relaxed);
+    }
+
     // Update total samples processed
     m_totalSamplesProcessed.fetch_add(bufferSize, std::memory_order_relaxed);
 
@@ -100,7 +106,6 @@ public:
     }
 
     // Apply exponential moving average to smooth readings
-    float currentCpu = m_cpuUsagePercent.load(std::memory_order_relaxed);
     float smoothedCpu = (kEmaAlpha * instantCpu) + ((1.0f - kEmaAlpha) * currentCpu);
     m_cpuUsagePercent.store(smoothedCpu, std::memory_order_relaxed);
 
@@ -110,9 +115,8 @@ public:
       m_peakCpuUsage.store(instantCpu, std::memory_order_relaxed);
     }
 
-    // Calculate latency (for now, use buffer size as approximation)
-    // Total latency = (inputBuffer + processingBuffer + outputBuffer) / sampleRate * 1000
-    // Simplified: latency ≈ bufferSize / sampleRate * 1000 ms
+    // Estimated callback-buffer duration only, never measured route latency.
+    // Without a valid sample rate retain the last estimate.
     if (sampleRate > 0) {
       float latency = (static_cast<float>(bufferSize) / static_cast<float>(sampleRate)) * 1000.0f;
       m_latencyMs.store(latency, std::memory_order_relaxed);
@@ -147,8 +151,9 @@ private:
   std::atomic<uint32_t> m_activeClipCount{0};
   std::atomic<uint64_t> m_totalSamplesProcessed{0};
 
-  // Peak tracking
+  // Peak is written only by the exclusive callback producer.
   std::atomic<float> m_peakCpuUsage{0.0f};
+  std::atomic<bool> m_peakResetRequested{false};
 
   // Histogram (7 buckets: 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms+)
   std::array<std::atomic<uint32_t>, 7> m_histogramCounts;
