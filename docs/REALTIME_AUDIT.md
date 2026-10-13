@@ -241,6 +241,61 @@ this does not erase the observed failure or establish its scheduling cause.
 Windows/GCC/MSVC diagnostic portability, Linux TSan, physical routes and release
 temporal-coherence acceptance are still unqualified.
 
+## Integrated Local Checks and External Gates
+
+Base revision `15e26480d` plus qualification working changes; same attributed
+Cloudkicker/M2 Pro/Apple LLVM host above. Native Debug build completed.
+
+| Evidence | Observed result |
+|---|---|
+| Nonhardware native/package/audit suite | 83 CTest entries passed, 200.76 s |
+| Local Debug ASan + UBSan | 15 selected entries passed, 132.34 s; four synthetic CoreAudio prime cases also passed |
+| Production portable WASAPI format algorithm | Strict C++20 ASan/UBSan smoke passed PCM16/float32, extensible, mask/count, width/alignment/valid-bits, overflow and zero-boundary cases |
+| Enabled optional ShmUI export discovery | Four namespace modes passed with OpenGL OFF, 212.34 s; optional flag restored OFF afterward |
+| Linux TSan configuration | YAML parsed; nine configured targets confirmed by actual CTest inventory; execution unavailable |
+
+The nonhardware command was:
+`env GTEST_FILTER=-DeviceHotSwapTest.HotSwap_DummyToCoreAudio:DeviceHotSwapTest.HotSwap_CoreAudioToDummy
+ctest --test-dir build --output-on-failure -E '^coreaudio_driver_test$'`.
+Thus this is not a full physical-device suite pass. The opt-in Release
+worst-case measurement still skips by default in Debug; that skip does not
+qualify timing. macOS `/proc/self/io` is unavailable, so no callback-only syscall
+proof is inferred. Logs remain under `build/t5-integrated-nonhardware-suite.log`
+and `build/t5-native-sanitizer-evidence.log`; the portable smoke source was
+removed after execution.
+
+WASAPI native selection now validates descriptor extents before extension
+reads, exact subtype/width, requested count, mask population, alignment and
+widened average-byte arithmetic before `IAudioClient::Initialize`. A copied
+nonzero mask incompatible with a reduced count is refused; zero stays
+unspecified. The private resolved-format projection must agree with the runtime,
+without accepting legacy fake defaults. Windows fake source covers format,
+PCM16/float32 output, partial/malformed buffers, waits, acquire/release errors,
+cleanup, admission and reinitialization. The existing terminal two-second wait
+timeout is unchanged.
+
+**Still unavailable:** Windows native bridge/COM/fake compilation and execution,
+hosted Debug/Release package/ABI evidence, and a current-revision hardware JSON
+artifact. No Windows runner was supplied and the checked MinGW compiler was
+absent. The existing self-hosted `[Windows, x64, audio-hardware]` workflow is
+preserved, not dispatched; source and portable algorithm proof are not native
+or device acceptance and do not promote WASAPI.
+
+Linux TSan adds monitor, integration, diagnostics and callback queue stress to
+the existing callback-loss/ingress/voice/realtime-harness/streaming selection.
+`TSAN_OPTIONS=halt_on_error=1:exitcode=66`, `-j 1`, build flags and attributed
+artifacts remain intact. No Linux runner execution or current-revision artifact
+was obtained; local ASan/UBSan is not a substitute. Linux callback-only syscall
+attribution remains separate.
+
+Physical explicit-UID, Bluetooth, aggregate teardown, unplug/replug and
+rate/buffer-change acceptance still needs named device/operator access and
+playback authorization. Child acceptance, meter-source reconciliation,
+same-callback native/app attribution and temporal coherence remain separate
+gates. Hard blocked-reader cancellation and failed maximum-topology deadlines
+also stay open. ASIO stays source-only; there is no release tag or support-tier
+promotion from these local checks.
+
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`

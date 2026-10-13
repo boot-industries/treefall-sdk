@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional demo builds use the existing JUCE 8.0.4 pin and C/C++ language graph.
   Strict warnings remain on owned demo code, not third-party JUCE translation
   units; native UTF-8 labels now use explicit conversion.
+- WASAPI selected-format validation now checks native descriptor extents,
+  encoding/container width, channel-mask population, block alignment and widened
+  average-byte arithmetic before initialization. Unknown masks stay unspecified;
+  reduced counts do not inherit mismatched speaker masks. Expanded Windows fake
+  cases remain unexecuted until native runner evidence is available.
+- Linux TSan selection now includes monitor/integration/diagnostic and callback
+  pump stress targets, retaining the existing ingress/voice/streaming selections,
+  single-test concurrency and attributed artifacts.
 
 - Loading a session whose primary document advertises a newer schema version
   now fails with a hard error instead of silently falling back to the `.bak`
@@ -119,6 +127,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unavailable because the observed screen-capture preflight was false.
   The earlier concurrent-build oscillator throughput failure is retained in
   `docs/REALTIME_AUDIT.md`, not erased by the later quiet pass.
+- Integrated local nonhardware CTest passed 83 entries (200.76 s); the real
+  CoreAudio target and two physical hot-swap cases were intentionally excluded.
+  Local ASan/UBSan passed 15 selected entries plus four synthetic CoreAudio
+  prime cases. Optional ShmUI export discovery also passed enabled/non-OpenGL
+  in all four namespace modes. These checks do not replace Linux TSan,
+  Windows native/fake/package/ABI execution or physical acceptance.
 - Hard cancellation of an arbitrary blocked media reader remains unqualified.
   Windows/Linux runner evidence, physical route/operator acceptance, child-app
   acceptance and temporal-coherence release requirements remain open. This work
