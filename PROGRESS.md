@@ -1,5 +1,38 @@
 # Progress
 
+## Floating development remote tracking and coordinator repair — 2026-10-14
+
+Completed the SDK coordinator repair on `fix/suite-checkpoint-provenance`.
+Development now has a null snapshot pointer and status/doctor follow each
+repository's declared remote-tracking default branch. Missing tracking refs are
+reported unavailable rather than replaced with local `HEAD`; local/remote
+revision mismatch is reported as drift. Floating source-workspace dependency
+pins follow the dependency's declared tracking branch, while git-submodule pins
+remain exact declared revisions. Explicit snapshots and candidate/stable
+channels remain pinned. Snapshot observation leaves the floating pointer null
+and preserves all existing historical snapshot objects.
+
+Updated the SDK ShmUI-JUCE generated-artifact expectation from the actual
+imported package: source revision
+`1f2c87a089d975eec1396360173da87a926835ed`, content hash
+`c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`, token
+contract `0.6.0`. The suite manifest records explicit downstream SDK gitlink
+expectations at `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` and SDK version
+`0.9.1`. No historical snapshot or child-application source was changed.
+
+Added behavior coverage for floating branch drift/convergence, immutable
+candidate and explicit snapshots, unavailable remote-tracking refs,
+unconfigured pinned channels, snapshot observation immutability, and floating
+source-workspace pins versus exact submodule pins. The decision and safe status
+recipe are in `suite/README.md` and
+`docs/orp/ORP269 Suite Floating Development Coordinator Repair.md`. The schema
+already supports floating channels with a null snapshot; no schema change or
+version bump is needed.
+
+No verification is claimed here. The parent agent owns the final SDK manifest,
+`suite_tool_unit`, and configured CTest gates. This repair does not promote a
+release, qualify hardware, or establish FourTrack native-runtime behavior.
+
 ## Governed meter and shared-source streaming integration — 2026-10-14
 
 Integrated on `fix/shared-stream-governed-integration`, based on SDK mainline
