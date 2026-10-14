@@ -321,6 +321,19 @@ gates. Hard blocked-reader cancellation and failed maximum-topology deadlines
 also stay open. ASIO stays source-only; there is no release tag or support-tier
 promotion from these local checks.
 
+### Platform counterpart merge gates
+
+The counterpart restores exactly the four WASAPI source/test files from
+`b3bc1e3d7` atop the corrected portable branch. Require current-revision Windows
+Debug/Release native descriptor/fake, installed package and ABI checks before
+merging; historical 24-case results are not a new-revision pass. Retain the
+nine-target Linux TSan and marked selected-consumer syscall gates on the stack;
+the previous artifacts qualify only their recorded merge revision. Full
+maximum-topology deadline/I/O qualification remains open after the observed
+misses. Real-device `wasapi-hardware.json`, physical route/operator access and
+temporal-coherence acceptance remain separate release/support-promotion gates.
+
+
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`
