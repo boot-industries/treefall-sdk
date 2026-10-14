@@ -492,7 +492,16 @@ namespace {
 class UnderrunCountingCallback : public ITransportCallback {
 public:
   std::atomic<int> underruns{0};
-  void onClipStarted(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  std::atomic<int> firstStarts{0};
+  std::atomic<int> refireStarts{0};
+  void onClipStarted(ClipHandle, orpheus::StartRequestTag requestTag, uint32_t,
+                     TransportPosition) override {
+    if (requestTag == 1) {
+      firstStarts.fetch_add(1, std::memory_order_relaxed);
+    } else if (requestTag == 2) {
+      refireStarts.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
   void onClipStopped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {
@@ -573,6 +582,52 @@ TEST_F(RealtimeHarnessTest, StreamingGroupChokeRefirePrimesTrimInWithoutUnderrun
 
   EXPECT_EQ(callback.underruns.load(), 0) << "group-choke refire missed the trim-in streaming page";
   EXPECT_TRUE(bufferHasSignal(m_left));
+  m_transport->setCallback(nullptr);
+}
+
+TEST_F(RealtimeHarnessTest, StreamingFadeOverlapKeepsBothCursorsAllocationFree) {
+  m_transport->setPreparedSourceMaxFrames(48000);
+  ASSERT_EQ(m_transport->setMaxVoicesPerClip(2), SessionGraphError::OK);
+  UnderrunCountingCallback callback;
+  m_transport->setCallback(&callback);
+
+  const std::string path = writeSineWav(m_tempDir, "stream_overlap.wav", 220.0f, 10.0f);
+  ASSERT_EQ(m_transport->registerClipAudio(1, path), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipVoiceMode(1, VoiceMode::MonoWithFadeOverlap),
+            SessionGraphError::OK);
+  auto metadata = m_transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->stopFadeOutSeconds = 4.0;
+  ASSERT_EQ(m_transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipLoopMode(1, true), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(1), SessionGraphError::OK);
+
+  constexpr int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  RtGuardState::reset();
+  ASSERT_EQ(m_transport->startClip(1, 1), SessionGraphError::OK);
+  guardedCallback();
+  ASSERT_EQ(m_transport->seekClip(1, 6 * page + 100), SessionGraphError::OK);
+  guardedCallback();
+  ASSERT_EQ(m_transport->stopClip(1), SessionGraphError::OK);
+  guardedCallback();
+  ASSERT_EQ(m_transport->startClip(1, 2), SessionGraphError::OK);
+  for (size_t block = 0; block < 32; ++block) {
+    guardedCallback();
+  }
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(m_transport->getActiveVoiceCount(1), 2u);
+  EXPECT_EQ(callback.firstStarts.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(callback.refireStarts.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(callback.underruns.load(std::memory_order_relaxed), 0);
+  EXPECT_TRUE(bufferHasSignal(m_left));
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+
+  ASSERT_EQ(m_transport->panic(), SessionGraphError::OK);
+  guardedCallback();
+  m_transport->processCallbacks();
+  EXPECT_EQ(m_transport->getTotalActiveVoiceCount(), 0u);
   m_transport->setCallback(nullptr);
 }
 

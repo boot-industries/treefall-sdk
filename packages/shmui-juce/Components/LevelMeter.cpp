@@ -19,7 +19,10 @@ public:
   explicit ShowingStateWatcher(LevelMeter& owner)
       : juce::ComponentMovementWatcher(&owner), m_owner(owner) {}
 
-  void componentMovedOrResized(bool, bool) override {}
+  void componentMovedOrResized(bool wasMoved, bool wasResized) override {
+    if (wasMoved || wasResized)
+      m_owner.updateDisplayScale();
+  }
 
   void componentPeerChanged() override {
     m_owner.updateDisplaySync();
@@ -50,6 +53,7 @@ LevelMeter::LevelMeter(int numChannels)
 
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
   sanitizeStyle();
+  updateClipThreshold();
   setBallistics(MeterBallistics::Peak);
   addDefaultThemeListener(this);
   m_showingStateWatcher = std::make_unique<ShowingStateWatcher>(*this);
@@ -115,8 +119,82 @@ void LevelMeter::setLevelPair(int channel, float peakLevel, float rmsLevel) {
   };
   const float peak = sanitize(peakLevel);
   const float rms = juce::jmin(peak, sanitize(rmsLevel));
-  m_inputLevelPairs[static_cast<size_t>(channel)].store(packLevelPair({peak, rms}),
-                                                        std::memory_order_relaxed);
+  const auto index = static_cast<size_t>(channel);
+  m_inputLevelPairs[index].store(packLevelPair({peak, rms}), std::memory_order_relaxed);
+  const auto peakBits = std::bit_cast<uint32_t>(peak);
+  accumulateIntervalPeak(channel, peakBits);
+  const float clipThreshold =
+      std::bit_cast<float>(m_intervalClipThresholdBits.load(std::memory_order_relaxed));
+  if (peak >= clipThreshold)
+    m_intervalClipCrossed[index].store(true, std::memory_order_relaxed);
+}
+void LevelMeter::accumulateIntervalPeak(int channel, uint32_t peakBits) noexcept {
+  if (peakBits == 0)
+    return;
+
+  auto& maximum = m_intervalPeakBits[static_cast<size_t>(channel)];
+  auto observed = maximum.load(std::memory_order_relaxed);
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (peakBits <= observed)
+      return;
+    if (maximum.compare_exchange_strong(observed, peakBits, std::memory_order_relaxed,
+                                        std::memory_order_relaxed))
+      return;
+  }
+  if (peakBits <= observed)
+    return;
+
+  const auto bucket = intervalPeakFallbackBucket(peakBits);
+  const auto wordIndex = static_cast<size_t>(bucket / 64U);
+  const auto bit = uint64_t{1} << (bucket % 64U);
+  m_intervalPeakFallbackBits[static_cast<size_t>(channel)][wordIndex].fetch_or(
+      bit, std::memory_order_relaxed);
+  m_intervalPeakFallbackPending[static_cast<size_t>(channel)].store(true,
+                                                                    std::memory_order_release);
+}
+
+uint32_t LevelMeter::intervalPeakFallbackBucket(uint32_t peakBits) noexcept {
+  const uint32_t minExponentField = static_cast<uint32_t>(INTERVAL_PEAK_MIN_EXPONENT_FIELD);
+  const uint32_t exponentField = (peakBits >> 23U) & 0xffU;
+  if (exponentField < minExponentField)
+    return 0;
+
+  const uint32_t exponentIndex = exponentField - minExponentField;
+  if (exponentIndex >= static_cast<uint32_t>(INTERVAL_PEAK_EXPONENT_COUNT))
+    return static_cast<uint32_t>(INTERVAL_PEAK_BUCKET_COUNT - 1);
+
+  constexpr int mantissaPrefixBits = 8;
+  const uint32_t mantissaIndex = (peakBits >> (23U - mantissaPrefixBits)) &
+                                 static_cast<uint32_t>(INTERVAL_PEAK_BUCKETS_PER_EXPONENT - 1);
+  return exponentIndex * static_cast<uint32_t>(INTERVAL_PEAK_BUCKETS_PER_EXPONENT) + mantissaIndex;
+}
+
+uint32_t LevelMeter::intervalPeakFallbackUpperBits(uint32_t bucket) noexcept {
+  constexpr int mantissaPrefixBits = 8;
+  constexpr int trailingMantissaBits = 23 - mantissaPrefixBits;
+  const auto exponentField =
+      INTERVAL_PEAK_MIN_EXPONENT_FIELD + bucket / INTERVAL_PEAK_BUCKETS_PER_EXPONENT;
+  const auto mantissaPrefix = (bucket % INTERVAL_PEAK_BUCKETS_PER_EXPONENT) << trailingMantissaBits;
+  const auto trailingMantissaMask = (uint32_t{1} << trailingMantissaBits) - 1U;
+  return (exponentField << 23U) | mantissaPrefix | trailingMantissaMask;
+}
+
+float LevelMeter::consumeIntervalPeak(int channel) noexcept {
+  const auto index = static_cast<size_t>(channel);
+  auto peakBits = m_intervalPeakBits[index].exchange(0, std::memory_order_relaxed);
+  if (m_intervalPeakFallbackPending[index].exchange(false, std::memory_order_acquire)) {
+    for (int wordIndex = 0; wordIndex < INTERVAL_PEAK_BUCKET_WORDS; ++wordIndex) {
+      const auto buckets =
+          m_intervalPeakFallbackBits[index][static_cast<size_t>(wordIndex)].exchange(
+              0, std::memory_order_relaxed);
+      if (buckets == 0)
+        continue;
+      const auto highestBit = 63U - static_cast<uint32_t>(std::countl_zero(buckets));
+      const auto bucket = static_cast<uint32_t>(wordIndex) * 64U + highestBit;
+      peakBits = juce::jmax(peakBits, intervalPeakFallbackUpperBits(bucket));
+    }
+  }
+  return std::bit_cast<float>(peakBits);
 }
 
 void LevelMeter::setLevelPairDB(int channel, float peakDb, float rmsDb) {
@@ -151,6 +229,14 @@ void LevelMeter::reset() {
     m_displayLevels[static_cast<size_t>(i)] = 0.0f;
     m_displayRmsLevels[static_cast<size_t>(i)] = 0.0f;
     m_peakHolds[static_cast<size_t>(i)] = 0.0f;
+    const auto index = static_cast<size_t>(i);
+    m_intervalPeakBits[index].store(0, std::memory_order_relaxed);
+    for (auto& word : m_intervalPeakFallbackBits[index])
+      word.store(0, std::memory_order_relaxed);
+    m_intervalPeakFallbackPending[index].store(false, std::memory_order_relaxed);
+    m_intervalClipCrossed[index].store(false, std::memory_order_relaxed);
+    m_deferredIntervalPeakLevels[index] = 0.0f;
+    m_deferredIntervalClipCrossings[index] = false;
     m_peakHoldTimes[static_cast<size_t>(i)] = 0;
     m_clipped[static_cast<size_t>(i)] = false;
     m_peakRmsNeedleDb[static_cast<size_t>(i)] = m_minDB;
@@ -218,7 +304,15 @@ void LevelMeter::setDBRange(float minDB, float maxDB) {
   const float safeMax = std::isfinite(maxDB) ? juce::jlimit(-200.0f, 200.0f, maxDB) : 6.0f;
   m_minDB = safeMin;
   m_maxDB = juce::jlimit(m_minDB + 0.001f, 200.0f, safeMax);
+  updateClipThreshold();
   repaint();
+}
+
+void LevelMeter::setMinRepaintIntervalMs(double milliseconds) {
+  if (!requireMessageThread())
+    return;
+  m_minRepaintIntervalMs = std::isfinite(milliseconds) ? juce::jmax(0.0, milliseconds) : 0.0;
+  m_lastRepaintRequestMs = 0.0;
 }
 
 void LevelMeter::setStyle(const LevelMeterStyle& style) {
@@ -226,6 +320,7 @@ void LevelMeter::setStyle(const LevelMeterStyle& style) {
     return;
   m_style = style;
   sanitizeStyle();
+  updateClipThreshold();
   m_usesDefaultThemeStyle = false;
   repaint();
 }
@@ -236,6 +331,7 @@ void LevelMeter::useDefaultThemeStyle() {
   m_usesDefaultThemeStyle = true;
   m_style = LevelMeterStyle::fromTheme(defaultTheme());
   sanitizeStyle();
+  updateClipThreshold();
   repaint();
 }
 
@@ -245,6 +341,7 @@ void LevelMeter::defaultThemeChanged(const ShmuiTheme& theme) {
 
   m_style = LevelMeterStyle::fromTheme(theme);
   sanitizeStyle();
+  updateClipThreshold();
   repaint();
 }
 
@@ -274,6 +371,13 @@ void LevelMeter::sanitizeStyle() {
   m_style.peakRmsNeedleReleaseDbPerSecond =
       juce::jlimit(0.0f, 200.0f, finiteOr(m_style.peakRmsNeedleReleaseDbPerSecond, 14.5f));
 }
+void LevelMeter::updateClipThreshold() noexcept {
+  const float thresholdNorm = dbToNormalized(m_style.clipThreshold);
+  const float thresholdLinear =
+      thresholdNorm <= 0.0f ? 0.0f : std::pow(10.0f, normalizedToDB(thresholdNorm) / 20.0f);
+  m_intervalClipThresholdBits.store(std::bit_cast<uint32_t>(thresholdLinear),
+                                    std::memory_order_relaxed);
+}
 
 void LevelMeter::clearClip() {
   if (!requireMessageThread())
@@ -283,8 +387,12 @@ void LevelMeter::clearClip() {
   handleAsyncUpdate();
   if (safeThis == nullptr)
     return;
-  for (int i = 0; i < m_numChannels; ++i)
-    m_clipped[static_cast<size_t>(i)] = false;
+  for (int i = 0; i < m_numChannels; ++i) {
+    const auto index = static_cast<size_t>(i);
+    m_clipped[index] = false;
+    m_deferredIntervalClipCrossings[index] = false;
+    m_intervalClipCrossed[index].store(false, std::memory_order_relaxed);
+  }
   repaint();
 }
 
@@ -385,57 +493,66 @@ void LevelMeter::recordEvent(const LevelEvent& ev) {
 
 //==============================================================================
 void LevelMeter::paint(juce::Graphics& g) {
+  s_paintCount.fetch_add(1, std::memory_order_relaxed);
   // Latch at the actual draw, not an earlier timer tick. A publication arriving
   // after the repaint request still belongs in this frame.
   updateMeter();
 
-  auto bounds = getLocalBounds().toFloat();
-
-  // Background
-  g.fillAll(m_style.backgroundColor);
-
-  // Calculate meter layout
-  float scaleWidth = m_style.showScale ? 30.0f : 0.0f;
-
-  juce::Rectangle<float> meterArea, scaleArea;
+  const auto bounds = getLocalBounds().toFloat();
+  auto meterArea = bounds;
+  juce::Rectangle<float> scaleArea;
+  const float scaleWidth = m_style.showScale ? 30.0f : 0.0f;
 
   if (m_isVertical) {
-    scaleArea = bounds.removeFromLeft(scaleWidth);
-    meterArea = bounds;
+    scaleArea = meterArea.removeFromLeft(scaleWidth);
   } else {
-    scaleArea = bounds.removeFromBottom(scaleWidth);
-    meterArea = bounds;
+    scaleArea = meterArea.removeFromBottom(scaleWidth);
   }
 
-  // Draw scale
-  if (m_style.showScale) {
-    drawScale(g, scaleArea);
-  }
+  const float displayScale = paintScaleFactor(g);
+  const ChromeCacheSignature signature{m_style.backgroundColor.getARGB(),
+                                       m_style.textColor.getARGB(),
+                                       m_style.tickColor.getARGB(),
+                                       m_style.showScale,
+                                       m_style.showTicks,
+                                       m_isVertical,
+                                       m_minDB,
+                                       m_maxDB,
+                                       displayScale,
+                                       getWidth(),
+                                       getHeight()};
 
-  // Calculate meter bounds for each channel
-  float totalMeterWidth =
+  if (m_chromeCache.isNull() || !(signature == m_chromeCacheSignature)) {
+    m_chromeCacheSignature = signature;
+    const int pixelWidth =
+        juce::jmax(1, static_cast<int>(std::ceil(static_cast<float>(getWidth()) * displayScale)));
+    const int pixelHeight =
+        juce::jmax(1, static_cast<int>(std::ceil(static_cast<float>(getHeight()) * displayScale)));
+    m_chromeCache = juce::Image(juce::Image::ARGB, pixelWidth, pixelHeight, true);
+    juce::Graphics chrome(m_chromeCache);
+    chrome.addTransform(juce::AffineTransform::scale(displayScale));
+    chrome.fillAll(m_style.backgroundColor);
+    if (m_style.showScale)
+      drawScale(chrome, scaleArea);
+    ++m_chromeCacheRebuildCount;
+  }
+  g.drawImage(m_chromeCache, getLocalBounds().toFloat());
+
+  const float totalMeterWidth =
       m_numChannels * m_style.meterWidth + (m_numChannels - 1) * m_style.meterGap;
-
-  float startOffset;
-  if (m_isVertical) {
-    startOffset = meterArea.getX() + (meterArea.getWidth() - totalMeterWidth) * 0.5f;
-  } else {
-    startOffset = meterArea.getY() + (meterArea.getHeight() - totalMeterWidth) * 0.5f;
-  }
+  const float startOffset =
+      m_isVertical ? meterArea.getX() + (meterArea.getWidth() - totalMeterWidth) * 0.5f
+                   : meterArea.getY() + (meterArea.getHeight() - totalMeterWidth) * 0.5f;
 
   for (int ch = 0; ch < m_numChannels; ++ch) {
     juce::Rectangle<float> meterBounds;
-
     if (m_isVertical) {
-      float x = startOffset + ch * (m_style.meterWidth + m_style.meterGap);
-      meterBounds =
-          juce::Rectangle<float>(x, meterArea.getY(), m_style.meterWidth, meterArea.getHeight());
+      const float x = startOffset + ch * (m_style.meterWidth + m_style.meterGap);
+      meterBounds = {x, meterArea.getY(), m_style.meterWidth, meterArea.getHeight()};
     } else {
-      float y = startOffset + ch * (m_style.meterWidth + m_style.meterGap);
-      meterBounds =
-          juce::Rectangle<float>(meterArea.getX(), y, meterArea.getWidth(), m_style.meterWidth);
+      const float y = startOffset + ch * (m_style.meterWidth + m_style.meterGap);
+      meterBounds = {meterArea.getX(), y, meterArea.getWidth(), m_style.meterWidth};
     }
-
     drawMeter(g, meterBounds, ch);
   }
 }
@@ -452,30 +569,122 @@ void LevelMeter::mouseDown(const juce::MouseEvent& e) {
 
 //==============================================================================
 void LevelMeter::repaintIfNeeded() {
+  const float previousPeerScale = m_lastPeerScaleFactor;
+  updateDisplayScale();
+  if (m_lastPeerScaleFactor != previousPeerScale)
+    return;
+
   if (m_animationActive) {
-    repaint();
+    requestThrottledRepaint();
     return;
   }
+
+  const double now = juce::Time::getMillisecondCounterHiRes();
   for (int ch = 0; ch < m_numChannels; ++ch) {
     const auto index = static_cast<size_t>(ch);
-    if (m_inputLevelPairs[index].load(std::memory_order_relaxed) != m_paintedLevelPairs[index] ||
-        (m_style.showPeakHold && m_peakHolds[index] > m_displayLevels[index] &&
-         juce::Time::getMillisecondCounterHiRes() - m_peakHoldTimes[index] > m_peakHoldTimeMs)) {
-      repaint();
+    const auto packed = m_inputLevelPairs[index].load(std::memory_order_relaxed);
+    const bool inputChanged = packed != m_paintedLevelPairs[index];
+    const float intervalPeak = consumeIntervalPeak(ch);
+    const bool intervalClip =
+        m_intervalClipCrossed[index].exchange(false, std::memory_order_relaxed);
+    const float pendingPeak = juce::jmax(m_deferredIntervalPeakLevels[index], intervalPeak);
+    const bool pendingClip = m_deferredIntervalClipCrossings[index] || intervalClip;
+    const float intervalPeakNorm = linearToNormalized(pendingPeak);
+    const float previousHold = m_peakHolds[index];
+
+    const bool holdVisible =
+        m_style.fillStyle == MeterFillStyle::Continuous && m_style.showPeakHold;
+    const bool needleVisible = m_style.fillStyle == MeterFillStyle::Segmented &&
+                               m_ballistics == MeterBallistics::PeakRms &&
+                               m_style.showPeakRmsNeedle;
+    const bool holdChanged =
+        holdVisible && intervalPeakNorm > previousHold && intervalPeakNorm > 0.01f;
+    if (pendingPeak > 0.0f && intervalPeakNorm >= previousHold && !holdChanged) {
+      m_peakHolds[index] = intervalPeakNorm;
+      m_peakHoldTimes[index] = now;
+    }
+
+    const bool needleChanged =
+        needleVisible && normalizedToDB(intervalPeakNorm) > m_peakRmsNeedleDb[index];
+    const bool clipChanged = pendingClip && !m_clipped[index];
+    const bool holdExpired = m_style.showPeakHold && m_peakHolds[index] > m_displayLevels[index] &&
+                             now - m_peakHoldTimes[index] > m_peakHoldTimeMs;
+
+    if (inputChanged || (holdVisible && holdChanged) || needleChanged || clipChanged ||
+        holdExpired) {
+      m_deferredIntervalPeakLevels[index] = pendingPeak;
+      m_deferredIntervalClipCrossings[index] = pendingClip;
+      requestThrottledRepaint();
       return;
     }
+
+    // Keep a not-currently-visible peak for a future style change; discard
+    // one already represented by the visible hold/needle to avoid redraws
+    // when a producer repeatedly publishes the same nonzero level.
+    const bool representedByHold = holdVisible && intervalPeakNorm <= m_peakHolds[index];
+    const bool representedByNeedle =
+        needleVisible && normalizedToDB(intervalPeakNorm) <= m_peakRmsNeedleDb[index];
+    if (pendingPeak > 0.0f && !representedByHold && !representedByNeedle)
+      m_deferredIntervalPeakLevels[index] = pendingPeak;
+    else
+      m_deferredIntervalPeakLevels[index] = 0.0f;
+    m_deferredIntervalClipCrossings[index] = false;
   }
+}
+void LevelMeter::requestThrottledRepaint() {
+  const double now = juce::Time::getMillisecondCounterHiRes();
+  if (now - m_lastRepaintRequestMs < m_minRepaintIntervalMs)
+    return;
+  m_lastRepaintRequestMs = now;
+  repaint();
 }
 
 void LevelMeter::updateDisplaySync() {
   if (!requireMessageThread())
     return;
+  updateDisplayScale();
   if (!isShowing()) {
     m_displaySync = {};
     m_lastMeterUpdateMs = 0.0;
+    m_lastRepaintRequestMs = 0.0;
   } else if (m_displaySync.isEmpty()) {
     m_displaySync = juce::VBlankAttachment(this, [this](double) { repaintIfNeeded(); });
   }
+}
+
+// The paint target's physical scale is authoritative for raster geometry.
+float LevelMeter::paintScaleFactor(const juce::Graphics& graphics) const noexcept {
+  const float scale = graphics.getInternalContext().getPhysicalPixelScaleFactor();
+  return std::isfinite(scale) && scale > 0.0f ? juce::jlimit(0.001f, 1000.0f, scale) : 1.0f;
+}
+
+// Desktop scale is global-only; Display::scale supplies per-screen backing
+// density (notably on macOS), with the native peer factor as a fallback.
+float LevelMeter::peerDisplayScaleFactor() const noexcept {
+  const auto& desktop = juce::Desktop::getInstance();
+  const float globalScale = desktop.getGlobalScaleFactor();
+  float scale = globalScale;
+  if (const auto* peer = getPeer()) {
+    const float platformScale = static_cast<float>(peer->getPlatformScaleFactor());
+    if (std::isfinite(platformScale) && platformScale > 0.0f)
+      scale = platformScale * globalScale;
+    if (const auto* display = desktop.getDisplays().getDisplayForRect(getScreenBounds())) {
+      const float displayScale = static_cast<float>(display->scale);
+      if (std::isfinite(displayScale) && displayScale > 0.0f)
+        scale = displayScale;
+    }
+  }
+  return std::isfinite(scale) && scale > 0.0f ? juce::jlimit(0.001f, 1000.0f, scale) : 1.0f;
+}
+
+void LevelMeter::updateDisplayScale() {
+  if (!requireMessageThread())
+    return;
+  const float scale = peerDisplayScaleFactor();
+  if (scale == m_lastPeerScaleFactor)
+    return;
+  m_lastPeerScaleFactor = scale;
+  repaint();
 }
 
 void LevelMeter::updateMeter() {
@@ -497,20 +706,30 @@ void LevelMeter::updateMeter() {
     const auto pair = unpackLevelPair(packed);
     const float inputNorm = linearToNormalized(pair.peak);
     const float rmsNorm = linearToNormalized(pair.rms);
-    m_displayRmsLevels[static_cast<size_t>(ch)] = rmsNorm;
-    float& displayLevel = m_displayLevels[static_cast<size_t>(ch)];
+    const float intervalPeak =
+        juce::jmax(consumeIntervalPeak(ch), m_deferredIntervalPeakLevels[index]);
+    const float intervalPeakNorm = linearToNormalized(intervalPeak);
+    const float peakObservationNorm = juce::jmax(inputNorm, intervalPeakNorm);
+    const bool intervalClip =
+        m_deferredIntervalClipCrossings[index] ||
+        m_intervalClipCrossed[index].exchange(false, std::memory_order_relaxed);
+    m_deferredIntervalPeakLevels[index] = 0.0f;
+    m_deferredIntervalClipCrossings[index] = false;
+    m_displayRmsLevels[index] = rmsNorm;
+    float& displayLevel = m_displayLevels[index];
     const float previousLevel = displayLevel;
 
     if (m_ballistics == MeterBallistics::PeakRms) {
-      // The segmented fill is intentionally unsmoothed. The separate needle
-      // supplies the only release motion in this presentation.
+      // The raw fill and RMS remain the newest coherent producer pair. The
+      // separate interval maximum only attacks the needle/peak hold.
       displayLevel = inputNorm;
 
-      float& needleDb = m_peakRmsNeedleDb[static_cast<size_t>(ch)];
+      float& needleDb = m_peakRmsNeedleDb[index];
       const float peakDb = normalizedToDB(inputNorm);
+      const float observedPeakDb = normalizedToDB(peakObservationNorm);
       const float rmsDb = normalizedToDB(rmsNorm);
-      if (peakDb >= needleDb) {
-        needleDb = peakDb;
+      if (observedPeakDb >= needleDb) {
+        needleDb = observedPeakDb;
       } else if (elapsed > 0.0 && elapsed < 250.0) {
         // Do not invent release motion across suspension, or let a steady
         // peak alternate between decay and re-attack on successive frames.
@@ -519,7 +738,8 @@ void LevelMeter::updateMeter() {
                                              static_cast<float>(elapsed) / 1000.0f);
       }
       needleDb = juce::jlimit(m_minDB, m_maxDB, std::isfinite(needleDb) ? needleDb : m_minDB);
-      m_animationActive |= m_style.showPeakRmsNeedle && needleDb > peakDb;
+      m_animationActive |= m_style.fillStyle == MeterFillStyle::Segmented &&
+                           m_style.showPeakRmsNeedle && needleDb > peakDb;
     } else if (inputNorm != displayLevel) {
       const float coeff =
           timeAdjustedCoefficient(inputNorm > displayLevel ? m_attackCoeff : m_releaseCoeff);
@@ -536,21 +756,22 @@ void LevelMeter::updateMeter() {
     if (m_peakHolds[index] == previousLevel && displayLevel < previousLevel)
       m_peakHoldTimes[index] = currentTime;
 
-    if (displayLevel >= m_peakHolds[static_cast<size_t>(ch)]) {
-      m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
-      m_peakHoldTimes[static_cast<size_t>(ch)] = currentTime;
-    } else if (currentTime - m_peakHoldTimes[static_cast<size_t>(ch)] > m_peakHoldTimeMs) {
-      m_peakHolds[static_cast<size_t>(ch)] = displayLevel;
+    const float heldLevel = juce::jmax(displayLevel, intervalPeakNorm);
+    if (heldLevel >= m_peakHolds[index]) {
+      m_peakHolds[index] = heldLevel;
+      m_peakHoldTimes[index] = currentTime;
+    } else if (currentTime - m_peakHoldTimes[index] > m_peakHoldTimeMs) {
+      m_peakHolds[index] = displayLevel;
     }
 
     const float clipThreshNorm = dbToNormalized(m_style.clipThreshold);
-    if (inputNorm >= clipThreshNorm && !m_clipped[static_cast<size_t>(ch)]) {
-      m_clipped[static_cast<size_t>(ch)] = true;
+    if ((inputNorm >= clipThreshNorm || intervalClip) && !m_clipped[index]) {
+      m_clipped[index] = true;
       // User callbacks can destroy the component. Keep them outside JUCE's
       // paint stack, but retain the crossing's time and tag, not delivery time.
       if (onClip || onLevelEvent || !m_history.empty()) {
         m_pendingClipEvents[index] = {juce::Time::currentTimeMillis(), ch,
-                                      normalizedToDB(inputNorm), m_eventTag};
+                                      normalizedToDB(peakObservationNorm), m_eventTag};
         m_pendingClipMask |= uint32_t{1} << ch;
       }
     }
@@ -617,6 +838,100 @@ juce::Colour LevelMeter::getSegmentColorForLevel(float dB, int greenIndex,
   return m_style.meterColorLow;
 }
 
+void LevelMeter::ensureSegmentCache(juce::Rectangle<float> contentBounds, float displayScale) {
+  const float axisLength = m_isVertical ? contentBounds.getHeight() : contentBounds.getWidth();
+  const float crossExtent = m_isVertical ? contentBounds.getWidth() : contentBounds.getHeight();
+  const SegmentTableSignature signature{axisLength,
+                                        crossExtent,
+                                        displayScale,
+                                        m_style.segmentLength,
+                                        m_style.segmentGap,
+                                        m_style.cornerRadius,
+                                        m_style.yellowThreshold,
+                                        m_style.redThreshold,
+                                        m_style.clipThreshold,
+                                        m_minDB,
+                                        m_maxDB,
+                                        m_style.greenToYellowTransitionSegments,
+                                        m_style.backgroundColor.getARGB(),
+                                        m_style.meterColorLow.getARGB(),
+                                        m_style.meterColorMid.getARGB(),
+                                        m_style.meterColorHigh.getARGB(),
+                                        m_style.clipColor.getARGB(),
+                                        m_isVertical};
+  if (signature == m_segmentTableSignature)
+    return;
+
+  m_segmentTableSignature = signature;
+  m_segmentTable.clear();
+  m_ladderFullImage = {};
+  ++m_segmentTableRebuildCount;
+
+  const auto layout =
+      calculateSegmentLayout(axisLength, m_style.segmentLength, m_style.segmentGap, displayScale);
+  const auto segmentDb = [this, &layout, axisLength](int index) {
+    const float offset =
+        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+    const float normalized =
+        axisLength > 0.0f
+            ? juce::jlimit(0.0f, 1.0f, (offset + layout.bodyLength * 0.5f) / axisLength)
+            : 0.0f;
+    return normalizedToDB(normalized);
+  };
+
+  int greenSegmentCount = 0;
+  for (int index = 0; index < layout.count; ++index)
+    greenSegmentCount += segmentDb(index) < m_style.yellowThreshold ? 1 : 0;
+
+  m_segmentTable.reserve(static_cast<size_t>(layout.count));
+  int greenIndex = 0;
+  for (int index = 0; index < layout.count; ++index) {
+    const float dB = segmentDb(index);
+    const bool isGreen = dB < m_style.yellowThreshold;
+    const int colourGreenIndex = greenIndex;
+    if (isGreen)
+      ++greenIndex;
+    const float offset =
+        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
+    m_segmentTable.push_back({offset, layout.bodyLength, dB,
+                              getSegmentColorForLevel(dB, colourGreenIndex, greenSegmentCount)});
+  }
+
+  if (m_segmentTable.empty())
+    return;
+
+  const int crossPixels = juce::jmax(1, static_cast<int>(std::ceil(crossExtent * displayScale)));
+  const int axisPixels = juce::jmax(1, static_cast<int>(std::ceil(axisLength * displayScale)));
+  m_ladderFullImage = juce::Image(juce::Image::ARGB, m_isVertical ? crossPixels : axisPixels,
+                                  m_isVertical ? axisPixels : crossPixels, true);
+  juce::Graphics ladder(m_ladderFullImage);
+  ladder.addTransform(juce::AffineTransform::scale(displayScale));
+  if (m_style.cornerRadius > 1.0f) {
+    juce::Path innerTrack;
+    const float imageWidth = m_isVertical ? crossExtent : axisLength;
+    const float imageHeight = m_isVertical ? axisLength : crossExtent;
+    innerTrack.addRoundedRectangle(0.0f, 0.0f, imageWidth, imageHeight,
+                                   m_style.cornerRadius - 1.0f);
+    ladder.reduceClipRegion(innerTrack);
+  }
+  const auto snapToPixel = [displayScale](float value) {
+    return std::round(value * displayScale) / displayScale;
+  };
+  for (const auto& segment : m_segmentTable) {
+    ladder.setColour(segment.colour);
+    if (m_isVertical) {
+      const float bottom = snapToPixel(axisLength - segment.offset);
+      const float top = snapToPixel(bottom - segment.bodyLength);
+      ladder.fillRect(0.0f, juce::jmin(top, bottom), crossExtent, std::abs(bottom - top));
+    } else {
+      const float left = snapToPixel(segment.offset);
+      const float right = snapToPixel(left + segment.bodyLength);
+      ladder.fillRect(juce::jmin(left, right), 0.0f, std::abs(right - left), crossExtent);
+    }
+  }
+  ++m_ladderImageRebuildCount;
+}
+
 void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> trackBounds,
                                     int channel) {
   const float peakLevel = juce::jlimit(
@@ -629,79 +944,50 @@ void LevelMeter::drawSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> tr
   g.fillRoundedRectangle(trackBounds, m_style.cornerRadius);
 
   const auto contentBounds = trackBounds.reduced(1.0f);
-  const float signalAxisLength =
-      m_isVertical ? contentBounds.getHeight() : contentBounds.getWidth();
-  const float displayScale =
-      std::isfinite(getDesktopScaleFactor()) && getDesktopScaleFactor() > 0.0f
-          ? getDesktopScaleFactor()
-          : 1.0f;
-  const auto layout = calculateSegmentLayout(signalAxisLength, m_style.segmentLength,
-                                             m_style.segmentGap, displayScale);
+  const float displayScale = paintScaleFactor(g);
+  ensureSegmentCache(contentBounds, displayScale);
+
   const float peakDb = normalizedToDB(peakLevel);
   const float rmsDb = normalizedToDB(rmsLevel);
-  const auto segmentDb = [&](int index) {
-    const float offset =
-        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
-    const float normalized =
-        signalAxisLength > 0.0f
-            ? juce::jlimit(0.0f, 1.0f, (offset + layout.bodyLength * 0.5f) / signalAxisLength)
-            : 0.0f;
-    return normalizedToDB(normalized);
-  };
+  const auto firstUnlit = std::upper_bound(
+      m_segmentTable.begin(), m_segmentTable.end(), peakDb,
+      [](float levelDb, const SegmentGeom& segment) { return levelDb < segment.dB; });
+  const int lastLit = static_cast<int>(firstUnlit - m_segmentTable.begin()) - 1;
+  const bool hasLitSegment = lastLit >= 0;
+  const float topLitDb = hasLitSegment ? m_segmentTable[static_cast<size_t>(lastLit)].dB : m_minDB;
 
-  int greenSegmentCount = 0;
-  for (int index = 0; index < layout.count; ++index) {
-    if (segmentDb(index) < m_style.yellowThreshold)
-      ++greenSegmentCount;
+  if (hasLitSegment && !m_ladderFullImage.isNull()) {
+    const auto& lastSegment = m_segmentTable[static_cast<size_t>(lastLit)];
+    const float litExtent = lastSegment.offset + lastSegment.bodyLength;
+    auto litBounds = contentBounds;
+    if (m_isVertical)
+      litBounds.setTop(contentBounds.getBottom() - litExtent);
+    else
+      litBounds.setRight(contentBounds.getX() + litExtent);
+
+    juce::Graphics::ScopedSaveState savedState(g);
+    g.reduceClipRegion(litBounds.getSmallestIntegerContainer());
+    g.drawImage(m_ladderFullImage, contentBounds);
   }
 
-  const auto snapToPixel = [displayScale](float value) {
-    return std::round(value * displayScale) / displayScale;
-  };
-  bool hasLitSegment = false;
-  float topLitDb = m_minDB;
-  int greenIndex = 0;
-  for (int index = 0; index < layout.count; ++index) {
-    const float dB = segmentDb(index);
-    const bool isGreen = dB < m_style.yellowThreshold;
-    const int colorGreenIndex = greenIndex;
-    if (isGreen)
-      ++greenIndex;
-    if (dB > peakDb)
-      continue;
-
-    const float offset =
-        layout.leadingInset + static_cast<float>(index) * (layout.bodyLength + layout.gap);
-    g.setColour(getSegmentColorForLevel(dB, colorGreenIndex, greenSegmentCount));
-    if (m_isVertical) {
-      const float bottom = snapToPixel(contentBounds.getBottom() - offset);
-      const float top = snapToPixel(bottom - layout.bodyLength);
-      g.fillRect(contentBounds.getX(), juce::jmin(top, bottom), contentBounds.getWidth(),
-                 std::abs(bottom - top));
-    } else {
-      const float left = snapToPixel(contentBounds.getX() + offset);
-      const float right = snapToPixel(left + layout.bodyLength);
-      g.fillRect(juce::jmin(left, right), contentBounds.getY(), std::abs(right - left),
-                 contentBounds.getHeight());
-    }
-    hasLitSegment = true;
-    topLitDb = dB;
-  }
-
-  const bool isSilent = peakDb <= m_minDB && rmsDb <= m_minDB;
+  const float rawNeedleDb = m_peakRmsNeedleDb[static_cast<size_t>(channel)];
+  const bool isSilent = peakDb <= m_minDB && rmsDb <= m_minDB && rawNeedleDb <= m_minDB;
   if (m_style.showPeakRmsNeedle && !isSilent) {
-    const float rawNeedleDb = m_peakRmsNeedleDb[static_cast<size_t>(channel)];
     const float drawnDb = hasLitSegment ? juce::jmax(rawNeedleDb, topLitDb) : rawNeedleDb;
     const float needleNormalized = dbToNormalized(drawnDb);
     g.setColour(m_style.peakHoldColor);
     if (m_isVertical) {
       const float center =
-          snapToPixel(contentBounds.getBottom() - contentBounds.getHeight() * needleNormalized);
+          std::round((contentBounds.getBottom() - contentBounds.getHeight() * needleNormalized) *
+                     displayScale) /
+          displayScale;
       g.fillRect(contentBounds.getX(), center - m_style.peakRmsNeedleWidth * 0.5f,
                  contentBounds.getWidth(), m_style.peakRmsNeedleWidth);
     } else {
       const float center =
-          snapToPixel(contentBounds.getX() + contentBounds.getWidth() * needleNormalized);
+          std::round((contentBounds.getX() + contentBounds.getWidth() * needleNormalized) *
+                     displayScale) /
+          displayScale;
       g.fillRect(center - m_style.peakRmsNeedleWidth * 0.5f, contentBounds.getY(),
                  m_style.peakRmsNeedleWidth, contentBounds.getHeight());
     }

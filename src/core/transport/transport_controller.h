@@ -36,6 +36,9 @@ struct ClipPlaybackContext {
   // ORP134 G1: the audio thread reads decoded PCM through an IClipSource
   // (prepared memory or streaming pages) — never through an IAudioFileReader.
   std::shared_ptr<IClipSource> source;
+  // Cached on the control thread so rendering never needs RTTI to classify a
+  // source. The shared_ptr above owns this pointer for the voice lifetime.
+  StreamingClipSource* streamingSource{nullptr};
   // Pins the registry entry while the admitted voice remains in the audio set.
   SourceCommandLifetime* sourceLifetime{nullptr};
 
@@ -243,6 +246,8 @@ struct ActiveClip {
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
   // Reads are position-explicit (source->read(currentSample, ...)), so
   std::shared_ptr<IClipSource> source;
+  StreamingClipSource* streamingSource{nullptr};
+  size_t streamingDemandIndex{0};
   // Pins the registry entry while this voice remains in the active set.
   SourceCommandLifetime* sourceLifetime{nullptr};
 
