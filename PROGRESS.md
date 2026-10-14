@@ -1,5 +1,51 @@
 # Progress
 
+## Governed meter and shared-source streaming integration — 2026-10-14
+
+Integrated on `fix/shared-stream-governed-integration`, based on SDK mainline
+`3ca1fa06e`, retaining the merged initial-loop-fade correction. The historical
+`95d5e3` nested checkpoint was reviewed, not adopted wholesale.
+
+Streaming voices publish bounded four-buffer coherent demand snapshots.
+Six steady pages remain shared per decoder; independent old/fresh cursors
+retain current/look-ahead pages, with transient copy pins excluding retirement
+and reuse. Worker refill remains current-first and source-fair. Four command
+pages, command rollback, loop-anchor ownership and observable misses remain.
+Matching C++ consumers must rebuild; no virtual extension or stable C ABI
+layout/export change is introduced.
+
+The public installed-package 40-second streaming smoke passed: one source,
+two overlapping voices, exactly one Started settlement for each start/refire,
+zero underruns before refire and after two seconds of paced sustain.
+Measured RMS: initial 0.210766, distant 0.210034, overlap 0.204558,
+sustain 0.190817. Nine focused SDK suites passed in 39.25 seconds, including
+streaming demand coherence, capacity/miss/idle recovery, transient pins,
+command-pool reuse, voice removal, fade controls and realtime render checks.
+
+Governed ShmUI inputs are committed at
+`1f2c87a`; token contract remains `0.6.0`, OpenGL remains opt-in.
+Upstream synchronization and SDK manifest checks passed, with 58 files and hash
+`c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`.
+The authoritative native fixture passed rendering, transitions, physical-scale,
+interval-peak and paint-safe callback coverage. Two matched 60-second native
+workload pairs retained repaint throttling and chrome/table/ladder reuse,
+with zero active cache rebuilds and zero hidden/settled paints.
+Observed rates remained approximately 24 Hz despite the 33 ms cap;
+this is not a zero-miss 30-fps or audio-to-photon qualification.
+SHM026 records CPU, observation-age, missed-slot and bounded resource tradeoffs.
+
+Full configured SDK build and CTest passed: 84/84 gates, zero failed,
+223.70 seconds. The generated native fixture directory
+`build/apps/wave-finder/shmui-juce` passed SHM026 separately in 1.22 seconds.
+The public streaming consumer was relinked against the final installed library
+and passed again with the source/voice/settlement/underrun/RMS results above.
+ORP261 records the current governed qualification and application handoff.
+
+Clip Composer adoption is delegated to its application agent: no application
+sources, gitlink or build were changed for this integration. Hardware/acoustic
+and non-macOS acceptance remain outside this local verification;
+admission/readiness and the two-voice policy are unchanged.
+
 ## Clip Composer SDK loop fade-in resolution — 2026-10-13
 
 Applied the targeted transport envelope correction on

@@ -334,8 +334,9 @@ SessionGraphError TransportController::makeStartContextLocked(
         return prepareResult;
       }
       context->source = entry.source;
+      context->streamingSource = dynamic_cast<StreamingClipSource*>(entry.source.get());
       if (startPrime.pageMask != 0) {
-        startSource = dynamic_cast<StreamingClipSource*>(entry.source.get());
+        startSource = context->streamingSource;
       }
       context->numChannels = entry.metadata.num_channels;
       context->trimInSamples = entry.trimInSamples;
@@ -623,6 +624,28 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   }
 
   processCommands();
+  static_assert(MAX_ACTIVE_CLIPS <= StreamingClipSource::kMaxVoiceDemands);
+  std::array<StreamingClipSource*, MAX_ACTIVE_CLIPS> streamingSources{};
+  size_t streamingSourceCount = 0;
+  // Publish every active cursor before any read can retire a sibling's
+  // current/look-ahead pages. Source snapshots are bounded and nonblocking.
+  for (size_t index = 0; index < m_activeClipCount; ++index) {
+    ActiveClip& clip = m_activeClips[index];
+    StreamingClipSource* source = clip.streamingSource;
+    if (source == nullptr) {
+      continue;
+    }
+    if (std::find(streamingSources.begin(), streamingSources.begin() + streamingSourceCount,
+                  source) == streamingSources.begin() + streamingSourceCount) {
+      streamingSources[streamingSourceCount++] = source;
+      source->beginVoiceDemands();
+    }
+    clip.streamingDemandIndex =
+        source->addVoiceDemand(static_cast<int64_t>(std::floor(clip.sourcePosition)));
+  }
+  for (size_t index = 0; index < streamingSourceCount; ++index) {
+    streamingSources[index]->publishVoiceDemands();
+  }
 
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
@@ -754,7 +777,11 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       bool readSucceeded = true;
       if (readStart < clip.fileLengthSamples && samplesNeeded <= clipReadBufferSize) {
         readSucceeded =
-            clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
+            clip.streamingSource
+                ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, readStart,
+                                                     clipReadBuffer, requestedInputFrames,
+                                                     framesRead)
+                : clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
       }
 
       if (!readSucceeded) {
@@ -774,7 +801,11 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           readStart + static_cast<int64_t>(requestedInputFrames) > activeWindowEnd) {
         size_t loopStartFramesRead = 0;
         hasLoopStartFrame =
-            clip.source->read(activeWindowStart, loopStartFrame.data(), 1, loopStartFramesRead) &&
+            (clip.streamingSource
+                 ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, activeWindowStart,
+                                                      loopStartFrame.data(), 1, loopStartFramesRead)
+                 : clip.source->read(activeWindowStart, loopStartFrame.data(), 1,
+                                     loopStartFramesRead)) &&
             loopStartFramesRead == 1;
         if (!hasLoopStartFrame) {
           clip.source->setDemand(activeWindowStart);
@@ -2058,6 +2089,8 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
 
   clip.source = context->source; // Store shared_ptr (maintains reference count)
+  clip.streamingSource = context->streamingSource;
+  clip.streamingDemandIndex = 0;
   clip.sourceLifetime = context->sourceLifetime;
   clip.numChannels = context->numChannels;
   clip.fileLengthSamples = context->fileLengthSamples; // ORP127 G3
@@ -2089,6 +2122,20 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
   for (size_t i = 0; i < m_activeClipCount; ++i) {
     if (m_activeClips[i].voiceId == voiceId) {
       SourceCommandLifetime* removedLifetime = m_activeClips[i].sourceLifetime;
+      StreamingClipSource* removedSource = m_activeClips[i].streamingSource;
+      if (removedSource != nullptr) {
+        bool stillActive = false;
+        for (size_t other = 0; other < m_activeClipCount; ++other) {
+          if (other != i && m_activeClips[other].streamingSource == removedSource) {
+            stillActive = true;
+            break;
+          }
+        }
+        if (!stillActive) {
+          removedSource->beginVoiceDemands();
+          removedSource->publishVoiceDemands();
+        }
+      }
       // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
       // can't be copied)
       if (i < m_activeClipCount - 1) {
@@ -2157,6 +2204,8 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
         dest.hasLoopedOnce = src.hasLoopedOnce;
         dest.source = src.source;
+        dest.streamingSource = src.streamingSource;
+        dest.streamingDemandIndex = src.streamingDemandIndex;
         dest.sourceLifetime = src.sourceLifetime;
         dest.numChannels = src.numChannels;
         dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
@@ -2167,6 +2216,8 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
       }
       configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
       m_activeClips[m_activeClipCount - 1].source.reset();
+      m_activeClips[m_activeClipCount - 1].streamingSource = nullptr;
+      m_activeClips[m_activeClipCount - 1].streamingDemandIndex = 0;
       m_activeClips[m_activeClipCount - 1].sourceLifetime = nullptr;
       --m_activeClipCount;
       releaseActiveSource(removedLifetime);

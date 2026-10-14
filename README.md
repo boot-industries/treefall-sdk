@@ -235,6 +235,21 @@ metadata.loopEnabled = true;
 transport->updateClipMetadata(handle, metadata);
 ```
 
+Streaming clips share one decoder across their voices. The source keeps six
+steady pages and four separate command-prime pages; a Stop/refire overlap with
+two independent cursors receives three steady pages per cursor (behind, current,
+and forward). Audio reads retain transient pins, while the worker consumes a
+coherent bounded cursor snapshot and refills current pages before look-ahead.
+First-render primes and loop anchors retain independent ownership.
+
+This fixed cache is not an arbitrary-polyphony guarantee. More cursor demands
+reduce their windows; demands beyond the six steady-page budget can miss.
+Unavailable command-prime capacity returns `NotReady`; a render cache miss
+remains observable silence plus an underrun, never synchronous decoding.
+Rebuild consumers with matching SDK headers/libraries when adopting this change:
+streaming-source and internal voice layouts changed, but public signatures,
+virtual interfaces and stable C ABI 1.0 exports/layouts did not.
+
 ### ⚡ Seamless Restart & Seek
 
 ```cpp
@@ -437,6 +452,12 @@ The Treefall SDK provides deterministic session/transport control for profession
 - `packages/shmui-juce` — **active** JUCE UI component library (waveform,
   meters, transport widgets) consumed by downstream JUCE apps; not part of the
   core SDK libraries.
+  The governed meter retains static chrome, segmented geometry and baked-ladder
+  caches with physical-scale-aware invalidation. `setMinRepaintIntervalMs()`
+  caps display-sync repaint requests without delaying paint-time consumption
+  of the newest coherent peak/RMS pair. Separate bounded interval peaks retain
+  hold/needle attack and exact clip crossings; unchanged settled and hidden
+  meters do not repaint. Rebuild C++ consumers with the matching headers.
 - The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
   `@orpheus/shmui`) are **archived** as part of the C++ SDK focus; they are not
   part of this repository.

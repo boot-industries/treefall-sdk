@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shared-source streaming Stop/refire overlaps retain independent current and
+  look-ahead pages through bounded voice-demand snapshots and page-copy pins.
+  Worker refill remains current-first and source-fair; the six steady/four
+  command-prime page budgets, observable misses, command rollback and loop-anchor
+  ownership are retained. Matching C++ consumers require rebuilding.
 - Loop-enabled clips now apply their configured fade-in on initial play and
   explicit start/refire. Automatic wraps still bypass natural boundary fades;
   zero-duration fade-in, non-loop natural fade-out and operator Stop are unchanged.

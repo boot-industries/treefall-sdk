@@ -34,6 +34,7 @@
 using namespace orpheus;
 using orpheus::tests::support::RtGuardState;
 using orpheus::tests::support::RtSection;
+constexpr size_t kVoiceDemandTestCapacity = kActiveVoiceSnapshotCapacity;
 
 namespace orpheus {
 
@@ -129,6 +130,39 @@ public:
   static uint32_t pageGuard(StreamingClipSource& source, size_t index) {
     return source.m_pages[index].guard.load(std::memory_order_acquire);
   }
+  struct PublishedDemandSnapshot {
+    std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+    size_t count{0};
+  };
+
+  static void publishDemands(StreamingClipSource& source,
+                             const std::array<int64_t, kVoiceDemandTestCapacity>& positions,
+                             size_t count) {
+    source.beginVoiceDemands();
+    for (size_t index = 0; index < count; ++index) {
+      source.addVoiceDemand(positions[index]);
+    }
+    source.publishVoiceDemands();
+  }
+
+  static bool readPublishedDemands(StreamingClipSource& source, PublishedDemandSnapshot& result) {
+    StreamingClipSource::VoiceDemandSnapshot snapshot{};
+    if (!source.readWorkerVoiceDemands(snapshot)) {
+      return false;
+    }
+    result.count = snapshot.count;
+    result.positions = snapshot.positions;
+    return true;
+  }
+
+  static bool readForVoice(StreamingClipSource& source, size_t demandIndex, int64_t position,
+                           float* destination, size_t frames, size_t& framesRead) {
+    return source.readForVoice(demandIndex, position, destination, frames, framesRead);
+  }
+  static bool acquireTransientReadPin(StreamingClipSource& source, size_t index,
+                                      int64_t expectedStart) {
+    return source.acquireTransientReadPin(source.m_pages[index], expectedStart);
+  }
 
   static bool acquireReadyPin(StreamingClipSource& source, size_t index) {
     auto& guard = source.m_pages[index].guard;
@@ -160,6 +194,19 @@ public:
                                                      ClipHandle handle) {
     std::lock_guard lock(transport.m_audioFilesMutex);
     return std::dynamic_pointer_cast<StreamingClipSource>(transport.m_audioFiles.at(handle).source);
+  }
+  static bool readSourceDemands(TransportController& transport, ClipHandle handle,
+                                StreamingClipSourceTestAccess::PublishedDemandSnapshot& snapshot) {
+    auto streaming = source(transport, handle);
+    if (streaming == nullptr) {
+      return false;
+    }
+    for (size_t attempt = 0; attempt < 32; ++attempt) {
+      if (StreamingClipSourceTestAccess::readPublishedDemands(*streaming, snapshot)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static std::shared_ptr<IClipSource> playbackSource(TransportController& transport,
@@ -264,8 +311,16 @@ class SeekCallback final : public ITransportCallback {
 public:
   std::atomic<int> underruns{0};
   std::atomic<int> seeks{0};
+  std::atomic<int> starts{0};
+  std::atomic<int> secondRequestStarts{0};
 
-  void onClipStarted(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipStarted(ClipHandle, orpheus::StartRequestTag requestTag, uint32_t,
+                     TransportPosition) override {
+    starts.fetch_add(1, std::memory_order_relaxed);
+    if (requestTag == 2) {
+      secondRequestStarts.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
   void onClipStopped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onClipLooped(ClipHandle, orpheus::StartRequestTag, uint32_t, TransportPosition) override {}
   void onBufferUnderrun(TransportPosition) override {
@@ -1309,6 +1364,89 @@ TEST_F(StreamingSeekMatrixTest, FadeOverlapSeekMovesBothVoicesWithoutUnderrun) {
   EXPECT_EQ(RtGuardState::totalViolations(), 0u);
 }
 
+TEST_F(StreamingSeekMatrixTest,
+       SharedStreamingFadeOverlapKeepsBothDemandWindowsAndRemovesIdleState) {
+  constexpr uint32_t rate = 48000;
+  constexpr uint32_t block = 512;
+  constexpr int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  TransportConfig config{.sampleRate = rate,
+                         .outputChannels = 1,
+                         .maxBlockFrames = block,
+                         .maxActiveVoices = 32,
+                         .numGroups = 1,
+                         .maxSourceChannels = 1,
+                         .sourceChannelPolicy = SourceChannelPolicy::Discrete};
+  TransportController transport(nullptr, config);
+  transport.setPreparedSourceMaxFrames(rate);
+  ASSERT_EQ(transport.setMaxVoicesPerClip(2), SessionGraphError::OK);
+  SeekCallback callback;
+  transport.setCallback(&callback);
+  ASSERT_EQ(transport.registerClipAudio(1, sourcePath(rate, 1, rate)), SessionGraphError::OK);
+  ASSERT_EQ(transport.setClipVoiceMode(1, VoiceMode::MonoWithFadeOverlap), SessionGraphError::OK);
+  auto metadata = transport.getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->stopFadeOutSeconds = 4.0;
+  metadata->loopEnabled = true;
+  ASSERT_EQ(transport.updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(transport.prepareClipAudio(1), SessionGraphError::OK);
+  const auto sharedSource = TransportControllerTestAccess::source(transport, 1);
+  ASSERT_NE(sharedSource, nullptr);
+
+  std::array<float, block> output{};
+  float* buffers[] = {output.data()};
+  const auto render = [&]() {
+    {
+      RtSection section;
+      transport.processAudio(buffers, 1, block);
+    }
+    transport.processCallbacks();
+  };
+
+  RtGuardState::reset();
+  ASSERT_EQ(transport.startClip(1, 1), SessionGraphError::OK);
+  render();
+  ASSERT_EQ(transport.seekClip(1, 6 * page + 100), SessionGraphError::OK);
+  render();
+  ASSERT_EQ(transport.stopClip(1), SessionGraphError::OK);
+  render();
+  ASSERT_EQ(transport.startClip(1, 2), SessionGraphError::OK);
+
+  StreamingClipSourceTestAccess::PublishedDemandSnapshot snapshot{};
+  bool publishedOverlap = false;
+  for (size_t attempt = 0; attempt < 8; ++attempt) {
+    render();
+    if (TransportControllerTestAccess::readSourceDemands(transport, 1, snapshot) &&
+        snapshot.count == 2) {
+      publishedOverlap = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(publishedOverlap);
+  ASSERT_EQ(transport.getActiveVoiceCount(1), 2u);
+  bool sawOldCursor = false;
+  bool sawFreshCursor = false;
+  for (size_t voice = 0; voice < snapshot.count; ++voice) {
+    sawOldCursor |= snapshot.positions[voice] > 6 * page;
+    sawFreshCursor |= snapshot.positions[voice] < page;
+  }
+  EXPECT_TRUE(sawOldCursor);
+  EXPECT_TRUE(sawFreshCursor);
+  EXPECT_EQ(callback.secondRequestStarts.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(callback.underruns.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(TransportControllerTestAccess::source(transport, 1), sharedSource);
+  EXPECT_TRUE(std::any_of(output.begin(), output.end(),
+                          [](float sample) { return std::abs(sample) > 0.01f; }));
+  EXPECT_EQ(RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
+
+  ASSERT_EQ(transport.panic(), SessionGraphError::OK);
+  render();
+  EXPECT_EQ(transport.getTotalActiveVoiceCount(), 0u);
+  ASSERT_TRUE(TransportControllerTestAccess::readSourceDemands(transport, 1, snapshot));
+  EXPECT_EQ(snapshot.count, 0u);
+  transport.setCallback(nullptr);
+}
+
 TEST(PreparedClipSourceDecodeTest, ExactLengthAndFinalPartialChunkAreFullyDecoded) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   for (const int64_t length : {page, page + 37}) {
@@ -1592,6 +1730,241 @@ TEST(MediaStreamWorkerServiceTest, SourceCountOpportunityDistribution) {
       StreamingClipSourceTestAccess::rollbackDrive(drive);
     }
   }
+}
+
+TEST(StreamingClipSourceDemandTest, PublishedVoiceDemandsStayCoherentDuringUpdates) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(2048 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 2048 * page);
+  std::atomic<bool> done{false};
+  std::atomic<bool> incoherent{false};
+  std::atomic<size_t> acceptedSnapshots{0};
+
+  std::thread publisher([&]() {
+    std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+    for (size_t round = 0; round < 10000; ++round) {
+      positions[0] = static_cast<int64_t>(round) * page;
+      positions[1] = positions[0] + page;
+      StreamingClipSourceTestAccess::publishDemands(source, positions, 2);
+    }
+    positions.fill(0);
+    StreamingClipSourceTestAccess::publishDemands(source, positions, 0);
+    done.store(true, std::memory_order_release);
+  });
+
+  do {
+    StreamingClipSourceTestAccess::PublishedDemandSnapshot snapshot{};
+    if (!StreamingClipSourceTestAccess::readPublishedDemands(source, snapshot)) {
+      continue;
+    }
+    acceptedSnapshots.fetch_add(1, std::memory_order_relaxed);
+    if (snapshot.count != 0 &&
+        (snapshot.count != 2 || snapshot.positions[1] != snapshot.positions[0] + page)) {
+      incoherent.store(true, std::memory_order_relaxed);
+    }
+  } while (!done.load(std::memory_order_acquire));
+  publisher.join();
+
+  EXPECT_FALSE(incoherent.load(std::memory_order_relaxed));
+  EXPECT_GT(acceptedSnapshots.load(std::memory_order_relaxed), 0u);
+  std::array<int64_t, kVoiceDemandTestCapacity> emptyPositions{};
+  StreamingClipSourceTestAccess::publishDemands(source, emptyPositions, 0);
+  StreamingClipSourceTestAccess::PublishedDemandSnapshot finalSnapshot{};
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readPublishedDemands(source, finalSnapshot));
+  EXPECT_EQ(finalSnapshot.count, 0u);
+}
+
+TEST(StreamingClipSourceDemandTest, TwoVoiceWindowsRetainIndependentCurrentAndLookaheadPages) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(20 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 20 * page);
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  positions[0] = page + 16;
+  positions[1] = 10 * page + 24;
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 2);
+
+  // Six steady pages are split into two three-page windows: behind, current,
+  // and one forward page for each independently located cursor.
+  source.service();
+  for (const int64_t start : {int64_t{0}, page, 2 * page, 9 * page, 10 * page, 11 * page}) {
+    EXPECT_NE(StreamingClipSourceTestAccess::residentPageIndex(source, start),
+              StreamingClipSource::kNumPages)
+        << "missing initial voice window page " << start;
+  }
+
+  std::array<float, 16> samples{};
+  size_t framesRead = 0;
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(source, 0, page + 16, samples.data(),
+                                                          samples.size(), framesRead));
+  ASSERT_EQ(framesRead, samples.size());
+  EXPECT_FLOAT_EQ(samples[0], static_cast<float>(page + 16));
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(source, 1, 10 * page + 24, samples.data(),
+                                                          samples.size(), framesRead));
+  ASSERT_EQ(framesRead, samples.size());
+  EXPECT_FLOAT_EQ(samples[0], static_cast<float>(10 * page + 24));
+
+  positions[0] = 2 * page + 16;
+  positions[1] = 11 * page + 24;
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 2);
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(source, 0, positions[0], samples.data(),
+                                                          samples.size(), framesRead));
+  ASSERT_EQ(framesRead, samples.size());
+  EXPECT_FLOAT_EQ(samples[0], static_cast<float>(positions[0]));
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(source, 1, positions[1], samples.data(),
+                                                          samples.size(), framesRead));
+  ASSERT_EQ(framesRead, samples.size());
+  EXPECT_FLOAT_EQ(samples[0], static_cast<float>(positions[1]));
+  source.service();
+
+  for (const int64_t start : {page, 2 * page, 3 * page, 10 * page, 11 * page, 12 * page}) {
+    EXPECT_NE(StreamingClipSourceTestAccess::residentPageIndex(source, start),
+              StreamingClipSource::kNumPages)
+        << "one voice read evicted another voice's current/lookahead page " << start;
+  }
+  EXPECT_EQ(StreamingClipSourceTestAccess::residentPageIndex(source, 0),
+            StreamingClipSource::kNumPages);
+  EXPECT_EQ(StreamingClipSourceTestAccess::residentPageIndex(source, 9 * page),
+            StreamingClipSource::kNumPages);
+}
+
+TEST(StreamingClipSourceDemandTest, SixCurrentPageCapacityReportsMissAndRecoversAfterIdle) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(16 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 16 * page);
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  for (size_t voice = 0; voice < 7; ++voice) {
+    positions[voice] = static_cast<int64_t>(voice) * page + 8;
+  }
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 7);
+  source.service();
+
+  std::array<float, 8> samples{};
+  size_t framesRead = 0;
+  for (size_t voice = 0; voice < 6; ++voice) {
+    ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(
+        source, voice, positions[voice], samples.data(), samples.size(), framesRead));
+    ASSERT_EQ(framesRead, samples.size());
+  }
+  EXPECT_FALSE(StreamingClipSourceTestAccess::readForVoice(source, 6, positions[6], samples.data(),
+                                                           samples.size(), framesRead));
+  EXPECT_EQ(framesRead, 0u);
+
+  // Retire every demand before reopening the previously unsupported cursor.
+  // Its miss frees obsolete pages; the same worker/source restores service.
+  const int64_t recoveryPosition = positions[6];
+  positions.fill(0);
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 0);
+  positions[0] = recoveryPosition;
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 1);
+  EXPECT_FALSE(StreamingClipSourceTestAccess::readForVoice(source, 0, positions[0], samples.data(),
+                                                           samples.size(), framesRead));
+  source.service();
+  ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(source, 0, positions[0], samples.data(),
+                                                          samples.size(), framesRead));
+  EXPECT_EQ(framesRead, samples.size());
+  EXPECT_FLOAT_EQ(samples.front(), static_cast<float>(recoveryPosition));
+  EXPECT_FLOAT_EQ(samples.back(), static_cast<float>(recoveryPosition + samples.size() - 1));
+}
+
+TEST(StreamingClipSourceDemandTest, TransientReadPinExcludesRetirementAndReuse) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(8 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 8 * page);
+  ASSERT_EQ(source.prefill(0, 1), SessionGraphError::OK);
+  const size_t pageIndex = StreamingClipSourceTestAccess::residentPageIndex(source, 0);
+  ASSERT_LT(pageIndex, StreamingClipSource::kNumPages);
+
+  std::array<float, 32> samples{};
+  size_t framesRead = 0;
+  ASSERT_TRUE(source.read(0, samples.data(), samples.size(), framesRead));
+  ASSERT_EQ(framesRead, samples.size());
+  ASSERT_TRUE(StreamingClipSourceTestAccess::acquireTransientReadPin(source, pageIndex, 0));
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, pageIndex), 1u);
+  EXPECT_FALSE(StreamingClipSourceTestAccess::claimPage(source, pageIndex));
+
+  StreamingClipSourceTestAccess::releaseReadyPin(source, pageIndex);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, pageIndex), 0u);
+  EXPECT_TRUE(StreamingClipSourceTestAccess::claimPage(source, pageIndex));
+  StreamingClipSourceTestAccess::releaseClaim(source, pageIndex);
+}
+
+TEST(StreamingClipSourceDemandTest, ActiveVoiceLeaseProtectsAndReleasesCommandPageForReuse) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(12 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 12 * page);
+  ASSERT_EQ(source.prefill(2 * page + 32), SessionGraphError::OK);
+
+  StreamingClipSource::PrimeReservation activePrime{};
+  ASSERT_EQ(source.primeForCommand(9 * page + 16, 32, activePrime), SessionGraphError::OK);
+  size_t activeIndex = StreamingClipSource::kNumPages;
+  for (size_t index = StreamingClipSource::kWindowPages; index < StreamingClipSource::kNumPages;
+       ++index) {
+    if ((activePrime.pageMask & static_cast<uint16_t>(uint16_t{1} << index)) != 0) {
+      activeIndex = index;
+    }
+  }
+  ASSERT_LT(activeIndex, StreamingClipSource::kNumPages);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 1u);
+
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  positions[0] = 2 * page + 32;
+  positions[1] = 9 * page + 16;
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 2);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 2u)
+      << "active source window must own a command-pool page past first-render release";
+  source.releaseCommandPrime(activePrime);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 1u);
+
+  StreamingClipSource::PrimeReservation otherPrime{};
+  ASSERT_EQ(source.primeForCommand(10 * page + 16, 32, otherPrime), SessionGraphError::OK);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 1u)
+      << "an unrelated prime must use another command slot";
+  source.releaseCommandPrime(otherPrime);
+
+  positions.fill(0);
+  positions[0] = 2 * page + 32;
+  StreamingClipSourceTestAccess::publishDemands(source, positions, 1);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 0u)
+      << "idle demand retirement must release the active-window lease";
+
+  StreamingClipSource::PrimeReservation reused{};
+  ASSERT_EQ(source.primeForCommand(8 * page + 16, 32, reused), SessionGraphError::OK);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(source, activeIndex), 8 * page);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, activeIndex), 1u);
+  source.releaseCommandPrime(reused);
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+}
+
+TEST(MediaStreamWorkerServiceTest, SharedSourceRoundsServeEveryCurrentCursorBeforeLookahead) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  MediaStreamWorker worker;
+  StreamingClipSourceTestAccess::parkWorker(worker);
+  auto trace = std::make_shared<ServiceTrace>();
+  auto reader = std::make_shared<FaultReader>(20 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  reader->setServiceTrace(trace, 0);
+  auto source = std::make_shared<StreamingClipSource>(reader, 1, 20 * page);
+  worker.attach(source);
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  positions[0] = page + 16;
+  positions[1] = 10 * page + 16;
+  StreamingClipSourceTestAccess::publishDemands(*source, positions, 2);
+
+  StreamingClipSourceTestAccess::WorkerDrive drive;
+  for (size_t round = 0; round < 4; ++round) {
+    StreamingClipSourceTestAccess::serviceRound(worker, drive);
+    const auto observations = trace->observations();
+    ASSERT_EQ(observations.size(), round + 1);
+    const std::array<int64_t, 4> expectedStarts{page, 10 * page, 2 * page, 11 * page};
+    EXPECT_EQ(observations.back().start, expectedStarts[round])
+        << "current demand pages must precede every look-ahead page";
+  }
+  StreamingClipSourceTestAccess::rollbackDrive(drive);
 }
 
 TEST(MediaStreamWorkerServiceTest, CommandPagesAreFairAndPrecedeLookAhead) {
