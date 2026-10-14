@@ -267,6 +267,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 - [[ORP177 Orpheus SDK Rebrand]]
 - [[ORP178 ShmUI Segmented Meter Import Handoff]]
 - [[ORP181 Upstream Meter Latency Correction and Temporal Coherence Progress]]
+- [[ORP269 Suite Floating Development Coordinator Repair]]
 
 ## Navigation
 
@@ -280,4 +281,4 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ---
 
-**Last Generated:** 2026-10-12
+**Last Generated:** 2026-10-14

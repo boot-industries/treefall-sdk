@@ -29,9 +29,13 @@ recipe are in `suite/README.md` and
 already supports floating channels with a null snapshot; no schema change or
 version bump is needed.
 
-No verification is claimed here. The parent agent owns the final SDK manifest,
-`suite_tool_unit`, and configured CTest gates. This repair does not promote a
-release, qualify hardware, or establish FourTrack native-runtime behavior.
+Parent verification passed: all 13 coordinator behavior cases, manifest/schema
+validation, governed import check and actual-workspace doctor smoke (healthy,
+zero errors). Full configured SDK CTest passed 84/84, zero failures (233.84 s).
+Parent corrected the floating status classification and remaining live
+canonical/Swift provenance declarations before those final results.
+Mainline repair commit: `8f4115de6`. No release, hardware, or FourTrack native
+runtime qualification is claimed.
 
 ## Governed meter and shared-source streaming integration — 2026-10-14
 
