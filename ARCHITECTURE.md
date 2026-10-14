@@ -222,7 +222,9 @@ In-memory representation of an audio project:
 - **Tempo** – BPM and time signature information
 - **Metadata** – Session name, creation date, versioning
 
-**Thread Safety:** Read-only from audio thread, mutable from UI thread with atomic updates.
+**Thread Safety:** Read-only from the audio thread. Mutations are single-owner on the
+control thread and go through explicit transactions that roll back when the
+transaction is destroyed; nested transactions are rejected.
 
 **File:** `include/orpheus/session_graph.h`, `src/core/session/session_graph.cpp`
 
@@ -250,8 +252,10 @@ Real-time audio playback engine:
 Decodes audio files for playback:
 
 - **Supported Formats** – WAV, AIFF, FLAC via libsndfile
-- **Memory Management** – Pre-loaded into memory for real-time access
-- **Sample Rate** – Currently requires 48kHz (no resampling yet)
+- **Memory Management** – Playback never decodes on the audio thread: short clips are
+  prepared whole-file in memory, long files are page-streamed by a background worker,
+  and a streaming cache miss yields silence plus an observable underrun
+- **Sample Rate** – Resampled to the engine rate during preparation, off the audio thread
 
 **File:** `include/orpheus/audio_file_reader.h`, `src/core/audio_io/audio_file_reader.cpp`
 
@@ -260,11 +264,12 @@ Decodes audio files for playback:
 Platform-agnostic audio I/O abstraction:
 
 - **CoreAudio** (macOS) – Native low-latency driver
-- **WASAPI** (Windows) – Planned for v1.0
+- **WASAPI** (Windows) – Implemented in-tree; not release-supported pending Windows
+  package/ABI and physical-hardware evidence (see `docs/SUPPORT_MATRIX.md`)
 - **ALSA** (Linux) – Planned for v1.0
 - **Dummy Driver** – For testing without hardware
 
-**File:** `include/orpheus/audio_driver.h`, `src/core/audio_io/drivers/`
+**File:** `include/orpheus/audio_driver.h`, `src/platform/audio_drivers/`
 
 #### 5. Session JSON (`orpheus::core::session_json`)
 
@@ -274,7 +279,8 @@ Session serialization utilities:
 - **Validation** – Structural validation on load
 - **Filesystem Helpers** – Path resolution, filename generation
 
-**File:** `include/orpheus/session_json.h`, `src/core/session/session_json.cpp`
+**File:** `src/core/session/json_io.h`, `src/core/session/json_io.cpp` (public graph
+types in `include/orpheus/session_graph.h`)
 
 #### 6. ABI Negotiation (`orpheus::AbiVersion`)
 
@@ -364,8 +370,10 @@ UI Thread                   Audio Thread
 #### ActiveClip (Audio Thread, Lock-Free)
 
 ```cpp
+// Illustrative sketch; the real struct is src/core/transport/transport_controller.h
 struct ActiveClip {
-    std::atomic<uint64_t> currentFrame;
+    int64_t currentSample;  // Audio-thread-owned position; not atomic
+    double sourcePosition;  // Fractional source cursor for varispeed interpolation
     std::atomic<float> gainLinear;
     std::atomic<bool> loopEnabled;
     std::shared_ptr<IClipSource> source; // Prepared/streamed PCM view (ORP134 G1)

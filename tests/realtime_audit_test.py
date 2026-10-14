@@ -99,6 +99,36 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
         self.assertTrue(findings)
         self.assertTrue(all(finding.hard_fail for finding in findings))
 
+    def test_dereference_leading_statement_is_scanned(self):
+        source = """
+        void render() {
+            float* out = nullptr;
+            *out = new float[8];
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], [" new "])
+        self.assertTrue(findings[0].hard_fail)
+
+    def test_code_after_block_comment_close_is_scanned(self):
+        source = """
+        void render() {
+            /* note */ std::mutex mutex;
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], ["std::mutex"])
+
+    def test_comment_marker_inside_literal_does_not_open_block_comment(self):
+        source = """
+        void render() {
+            const char* marker = "/*";
+            std::mutex mutex;
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], ["std::mutex"])
+
     def test_one_target_receives_hard_rules_and_file_reader_debt(self):
         source = """
         void render() {

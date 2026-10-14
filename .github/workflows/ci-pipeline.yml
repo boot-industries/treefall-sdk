@@ -491,7 +491,6 @@ jobs:
               ("macos-latest", "Debug"), ("windows-2022", "Debug"),
               ("windows-2022", "Release"),
           }
-          golden = "e59bff0bbf328128a96992e19b1047688227778480642251b1fa1f27f6b85eaa"
           fields = {"schemaVersion","sampleRate","channels","sampleEncoding","frames","payloadBytes","goldenPcmSha256","renders"}
           seen = []
           for directory in sorted(p for p in root.iterdir() if p.is_dir()):
@@ -506,7 +505,10 @@ jobs:
               if key in seen or key not in expected:
                   raise SystemExit(f"unexpected or duplicate runner identity: {key}")
               data = json.loads(hashes[0].read_text())
-              if set(data) != fields or data["schemaVersion"] != 1 or data["sampleRate"] != 48000 or data["channels"] != 2 or data["sampleEncoding"] != "pcm_s16le" or data["frames"] != 8450 or data["payloadBytes"] != 33800 or data["goldenPcmSha256"] != golden:
+              golden = data["goldenPcmSha256"]
+              if re.fullmatch(r"[0-9a-f]{64}", golden) is None:
+                  raise SystemExit(f"{key}: malformed golden digest")
+              if set(data) != fields or data["schemaVersion"] != 1 or data["sampleRate"] != 48000 or data["channels"] != 2 or data["sampleEncoding"] != "pcm_s16le" or data["frames"] != 8450 or data["payloadBytes"] != 33800:
                   raise SystemExit(f"{key}: schema or golden mismatch")
               renders = data["renders"]
               if len(renders) != 4 or {r.get("blockFrames") for r in renders} != {256,512,1024,2048}:

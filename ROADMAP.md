@@ -46,7 +46,7 @@ future applications requiring sample-accurate, low-latency performance.
   - ASIO (Windows) - Planned
   - ALSA (Linux) - Planned
 
-- ⏳ **Routing Matrix** - Planned for OCC v0.3.0
+- ✅ **Routing Matrix** - Complete (shipped in SDK 0.9.0)
   - Professional N×M routing
   - Real-time gain/pan adjustment with click-free smoothing
   - Multiple solo modes, mute controls
