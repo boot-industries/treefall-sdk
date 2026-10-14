@@ -12,6 +12,9 @@
 
 #include <orpheus/session_graph.h>
 
+#include <array>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -27,7 +30,8 @@ protected:
     m_graph = std::make_unique<core::SessionGraph>();
     m_scenes = createSceneManager(m_graph.get());
     ASSERT_NE(m_scenes, nullptr);
-    m_transport = createTransportController(m_graph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = createTransportController(
+        m_graph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     ASSERT_NE(m_transport, nullptr);
     m_scenes->setTransportController(m_transport.get());
 
@@ -44,6 +48,21 @@ protected:
     m_scenes->setRoutingMatrix(m_routing.get());
   }
 
+  void TearDown() override {
+    m_scenes.reset();
+    m_transport.reset();
+    if (!m_audioPath.empty()) {
+      std::error_code error;
+      std::filesystem::remove(m_audioPath, error);
+      EXPECT_FALSE(error) << error.message();
+    }
+  }
+
+  uint64_t addClip(const std::string& name) {
+    auto* track = m_graph->add_track(name);
+    return m_graph->add_clip(*track, name, 0.0, 1.0)->id().raw();
+  }
+
   void assignTopology(uint8_t groupForEvenChannels, float gainDbGroup0) {
     for (uint8_t ch = 0; ch < 16; ++ch) {
       m_routing->setChannelGroup(ch,
@@ -58,6 +77,7 @@ protected:
   std::unique_ptr<ISceneManager> m_scenes;
   std::unique_ptr<ITransportController> m_transport;
   std::unique_ptr<IRoutingMatrix> m_routing;
+  std::filesystem::path m_audioPath;
 };
 
 } // namespace
@@ -130,21 +150,82 @@ TEST_F(SceneRoutingTest, DetachedMatrixStillCapturesMetadata) {
 }
 
 TEST_F(SceneRoutingTest, RecallRestoresAssignmentsAtomically) {
-  m_graph->set_clip_assignments({11, 22, 33});
+  const auto a = addClip("A");
+  const auto b = addClip("B");
+  const auto c = addClip("C");
+  m_graph->set_clip_assignments({a, b, c});
   const std::string sceneId = m_scenes->captureScene("Assignments");
   ASSERT_FALSE(sceneId.empty());
 
-  m_graph->set_clip_assignments({99});
+  m_graph->set_clip_assignments({c});
   ASSERT_EQ(m_scenes->recallScene(sceneId), SessionGraphError::OK);
-  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{11, 22, 33}));
+  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{a, b, c}));
 }
 
 TEST_F(SceneRoutingTest, RecallWithoutTransportDoesNotMutateAssignments) {
-  m_graph->set_clip_assignments({1, 2});
+  const auto a = addClip("A");
+  const auto b = addClip("B");
+  m_graph->set_clip_assignments({a, b});
   const std::string sceneId = m_scenes->captureScene("Rollback");
-  m_graph->set_clip_assignments({7, 8});
+  m_graph->set_clip_assignments({b, a});
   m_scenes->setTransportController(nullptr);
 
   EXPECT_EQ(m_scenes->recallScene(sceneId), SessionGraphError::NotInitialized);
-  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{7, 8}));
+  EXPECT_EQ(m_graph->clip_assignments(), (std::vector<uint64_t>{b, a}));
+}
+
+TEST_F(SceneRoutingTest, DanglingHistoricalSceneRejectsBeforePlaybackRoutingOrGraphMutation) {
+  const auto removed = addClip("Removed");
+  const auto live = addClip("Live");
+  m_graph->set_clip_assignments({removed});
+  assignTopology(1, -6.0f);
+  const auto scene = m_scenes->captureScene("Historical");
+  ASSERT_TRUE(m_graph->remove_clip(ClipId::fromRaw(removed)));
+  m_graph->set_clip_assignments({live, live});
+  assignTopology(2, 3.0f);
+
+  m_audioPath = std::filesystem::temp_directory_path() / "orpheus-scene-prevalidation.wav";
+  const auto& path = m_audioPath;
+  {
+    std::ofstream file(path, std::ios::binary);
+    const uint32_t riff = 36 + 96000, fmt = 16, rate = 48000, bytes = 96000, data = 96000;
+    const uint16_t format = 1, channels = 1, align = 2, bits = 16;
+    auto write = [&file](const auto& value) {
+      file.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+    file.write("RIFF", 4);
+    write(riff);
+    file.write("WAVEfmt ", 8);
+    write(fmt);
+    write(format);
+    write(channels);
+    write(rate);
+    write(bytes);
+    write(align);
+    write(bits);
+    file.write("data", 4);
+    write(data);
+    const std::vector<int16_t> samples(48000, 8192);
+    file.write(reinterpret_cast<const char*>(samples.data()), 96000);
+  }
+  ASSERT_EQ(m_transport->registerClipAudio(live, path.string()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(live), SessionGraphError::OK);
+  std::array<float, 64> left{}, right{};
+  float* output[] = {left.data(), right.data()};
+  m_transport->processAudio(output, 2, 64);
+  ASSERT_TRUE(m_transport->isClipPlaying(live));
+  const auto revision = m_graph->revision();
+  const auto assignments = m_graph->clip_assignments();
+  const auto routing = m_routing->saveSnapshot("before");
+
+  EXPECT_EQ(m_scenes->recallScene(scene), SessionGraphError::InvalidParameter);
+  EXPECT_TRUE(m_scenes->hasScene(scene));
+  EXPECT_EQ(m_graph->revision(), revision);
+  EXPECT_EQ(m_graph->clip_assignments(), assignments);
+  const auto after = m_routing->saveSnapshot("after");
+  EXPECT_EQ(after.channels[0].group_index, routing.channels[0].group_index);
+  EXPECT_FLOAT_EQ(after.groups[0].gain_db, routing.groups[0].gain_db);
+  m_transport->processAudio(output, 2, 64); // Any incorrectly queued stop executes here.
+  EXPECT_TRUE(m_transport->isClipPlaying(live));
+  EXPECT_GT(left.back(), 0.0f);
 }

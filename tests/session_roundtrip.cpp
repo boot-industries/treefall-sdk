@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "session/json_io.h"
+#include <orpheus/session_io.h>
 
 #include <cmath>
 #include <filesystem>
@@ -287,6 +287,54 @@ TEST(SessionRoundTrip, RejectsOverlappingClips) {
   })";
 
   EXPECT_THROW(ParseSession(invalid), std::invalid_argument);
+}
+
+TEST(SessionRoundTrip, RejectsDuplicateKeysAtEveryObjectDepth) {
+  for (
+      const std::string text :
+      {R"({"name":"A","name":"B"})",
+       R"({"name":"A","tempo_bpm":120,"start_beats":0,"end_beats":1,"render":{"bit_depth":16,"bit_depth":24},"tracks":[]})",
+       R"({"name":"A","tempo_bpm":120,"start_beats":0,"end_beats":1,"tracks":[{"name":"T","clips":[{"name":"C","start_beats":0,"length_beats":1,"length_beats":2}]}]})"}) {
+    try {
+      ParseSession(text);
+      FAIL() << "Accepted duplicate";
+    } catch (const std::runtime_error& error) {
+      EXPECT_EQ(std::string(error.what()).find("Duplicate JSON object key: "), 0u);
+    }
+  }
+}
+
+TEST(SessionRoundTrip, CheckedRenderSettingsRejectFractionalNegativeAndExtremeNumbers) {
+  for (const std::string field : {"sample_rate_hz", "bit_depth"}) {
+    for (const std::string value : {"1.5", "-1", "4294967296", "18446744073709551616"}) {
+      const std::string text =
+          R"({"name":"A","tempo_bpm":120,"start_beats":0,"end_beats":1,"tracks":[],"render":{")" +
+          field + "\":" + value + "}}";
+      try {
+        ParseSession(text);
+        FAIL() << text;
+      } catch (const std::invalid_argument& error) {
+        EXPECT_EQ(std::string(error.what()),
+                  "render." + field + (value == "1.5" ? " must be integral" : " out of range"));
+      }
+    }
+  }
+}
+
+TEST(SessionRoundTrip, FailedLoadLeavesExistingGraphAndRevisionUntouched) {
+  SessionGraph graph;
+  graph.set_name("Retained");
+  const auto revision = graph.revision();
+  const auto path = fs::temp_directory_path() / "orpheus-session-invalid-numeric.json";
+  {
+    std::ofstream file(path);
+    file
+        << R"({"name":"Replacement","tempo_bpm":120,"start_beats":0,"end_beats":1,"tracks":[],"render":{"sample_rate_hz":48000.5}})";
+  }
+  EXPECT_ANY_THROW(graph = LoadSessionFromFile(path.string()));
+  EXPECT_EQ(graph.name(), "Retained");
+  EXPECT_EQ(graph.revision(), revision);
+  fs::remove(path);
 }
 
 } // namespace orpheus::core::session_json::tests

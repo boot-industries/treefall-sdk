@@ -180,7 +180,8 @@ class SuiteToolTest(unittest.TestCase):
             root = Path(directory)
             repo, revision, remote = self.make_repo(root)
             manifest = self.manifest(root, revision, remote)
-            status = SUITE.snapshot_status(manifest, root, None)
+            manifest["release_channel"] = "development"
+            status = SUITE.snapshot_status(manifest, root, None, follow_remote=True)
         item = status["repositories"][0]
         self.assertEqual(item["remote"]["push_status"], "not-required")
         self.assertEqual(item["artifacts"][0]["status"], "fresh")
@@ -260,6 +261,7 @@ class SuiteToolTest(unittest.TestCase):
 
             manifest = self.manifest(workspace, revision, remote)
             manifest["release_channel"] = "development"
+            manifest["channels"]["development"]["mode"] = "pinned"
             manifest["channels"]["development"]["snapshot_id"] = "development"
             manifest["snapshots"]["development"] = {
                 **copy.deepcopy(manifest["snapshots"]["candidate"]),
@@ -346,29 +348,228 @@ class SuiteToolTest(unittest.TestCase):
                 yes=False,
                 json=True,
             )
+            previous_snapshots = copy.deepcopy(manifest["snapshots"])
             self.assertEqual(SUITE.cmd_snapshot_observe(args), 0)
             args.apply = True
             args.yes = True
             self.assertEqual(SUITE.cmd_snapshot_observe(args), 0)
             after = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(after["channels"]["development"]["snapshot_id"], "observed")
+        self.assertIsNone(after["channels"]["development"]["snapshot_id"])
         self.assertEqual(after["snapshots"]["observed"]["state"], "observed")
         self.assertTrue(after["snapshots"]["observed"]["immutable"])
         self.assertEqual(after["snapshots"]["observed"]["repositories"]["repo"]["commit"], revision)
-        self.assertEqual(after["snapshots"]["candidate"], manifest["snapshots"]["candidate"])
+        for snapshot_id, previous in previous_snapshots.items():
+            self.assertEqual(after["snapshots"][snapshot_id], previous)
+
+    def test_floating_channel_tracks_remote_while_explicit_snapshots_remain_pinned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            repo, original, remote = self.make_repo(workspace)
+            (repo / "next.txt").write_text("next\n", encoding="utf-8")
+            self.git(repo, "add", "next.txt")
+            self.git(repo, "commit", "-m", "test: advance remote main")
+            remote_tip = self.git(repo, "rev-parse", "HEAD")
+            self.git(repo, "push", "origin", "main")
+            self.git(repo, "fetch", "origin", "main")
+            self.git(repo, "checkout", "--detach", original)
+
+            manifest = self.manifest(workspace, original, remote)
+            manifest["release_channel"] = "development"
+            manifest["channels"]["development"]["snapshot_id"] = None
+            self.assertIsNone(SUITE.selected_snapshot(manifest, None, "development"))
+            self.assertTrue(SUITE.channel_follows_remote(manifest, "development", None))
+
+            floating = SUITE.snapshot_status(
+                manifest,
+                workspace,
+                None,
+                follow_remote=SUITE.channel_follows_remote(manifest, "development", None),
+            )
+            floating_repo = floating["repositories"][0]
+            self.assertEqual(floating_repo["expected"], remote_tip)
+            self.assertEqual(floating_repo["expected_source"], "remote-branch")
+            self.assertEqual(floating_repo["status"], "drifted")
+            self.assertEqual(floating_repo["reachability"]["status"], "reachable")
+            self.assertIn("repo: drifted", SUITE.status_errors(floating))
+
+            candidate = SUITE.selected_snapshot(manifest, None, "candidate")
+            pinned = SUITE.snapshot_status(manifest, workspace, candidate)
+            self.assertEqual(pinned["repositories"][0]["expected"], original)
+            self.assertEqual(pinned["repositories"][0]["status"], "pinned")
+            self.assertTrue(candidate["immutable"])
+            self.assertEqual(manifest["channels"]["candidate"]["mode"], "pinned")
+            self.assertEqual(manifest["channels"]["stable"]["mode"], "pinned")
+            self.assertEqual(
+                manifest["snapshots"]["candidate"]["repositories"]["repo"]["commit"],
+                original,
+            )
+
+            explicit = SUITE.selected_snapshot(manifest, "candidate", "development")
+            explicit_status = SUITE.snapshot_status(manifest, workspace, explicit)
+            self.assertEqual(explicit_status["repositories"][0]["expected"], original)
+            self.assertFalse(SUITE.channel_follows_remote(manifest, "development", "candidate"))
+
+            self.git(repo, "merge", "--ff-only", "origin/main")
+            current = SUITE.snapshot_status(
+                manifest,
+                workspace,
+                None,
+                follow_remote=SUITE.channel_follows_remote(manifest, "development", None),
+            )
+            self.assertEqual(current["repositories"][0]["expected"], remote_tip)
+            self.assertEqual(current["repositories"][0]["status"], "floating")
+
+    def test_floating_and_pinned_channels_report_missing_expectations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo, revision, remote = self.make_repo(root)
+            manifest = self.manifest(root, revision, remote)
+            manifest["release_channel"] = "development"
+            manifest["channels"]["development"]["snapshot_id"] = None
+            self.git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+
+            floating = SUITE.snapshot_status(
+                manifest,
+                root,
+                SUITE.selected_snapshot(manifest, None, "development"),
+                follow_remote=SUITE.channel_follows_remote(manifest, "development", None),
+            )
+            floating_repo = floating["repositories"][0]
+            self.assertIsNone(floating_repo["expected"])
+            self.assertEqual(floating_repo["expected_branch"]["status"], "tracking-ref-unavailable")
+            self.assertEqual(floating_repo["status"], "remote-branch-unavailable")
+            self.assertIn("repo: remote-branch-unavailable", SUITE.status_errors(floating))
+
+            manifest["release_channel"] = "stable"
+            stable = SUITE.snapshot_status(
+                manifest,
+                root,
+                SUITE.selected_snapshot(manifest, None, "stable"),
+                follow_remote=SUITE.channel_follows_remote(manifest, "stable", None),
+            )
+            self.assertIsNone(stable["repositories"][0]["expected"])
+            self.assertEqual(stable["repositories"][0]["status"], "snapshot-unconfigured")
+            self.assertIn("repo: snapshot-unconfigured", SUITE.status_errors(stable))
+            with self.assertRaises(SUITE.SuiteError):
+                SUITE.selected_snapshot(manifest, "missing-snapshot", "development")
+
+    def test_floating_workspace_dependency_tracks_remote_without_moving_submodule_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory) / "workspace"
+            workspace.mkdir()
+            consumer, consumer_revision, consumer_remote = self.make_repo(workspace)
+            source_root = workspace / "dependency-source"
+            source_root.mkdir()
+            source, pinned_revision, source_remote = self.make_repo(source_root)
+            (source / "next.txt").write_text("next\n", encoding="utf-8")
+            self.git(source, "add", "next.txt")
+            self.git(source, "commit", "-m", "test: advance dependency remote main")
+            remote_tip = self.git(source, "rev-parse", "HEAD")
+            self.git(source, "push", "origin", "main")
+            self.git(source, "fetch", "origin", "main")
+            self.git(source, "checkout", "--detach", pinned_revision)
+
+            self.git(
+                consumer,
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-b",
+                "main",
+                str(source_remote),
+                "third_party/sdk",
+            )
+            self.git(consumer / "third_party/sdk", "checkout", "--detach", pinned_revision)
+            self.git(consumer, "add", ".gitmodules", "third_party/sdk")
+            self.git(consumer, "commit", "-m", "test: retain reviewed SDK submodule pin")
+
+            manifest = self.manifest(workspace, consumer_revision, consumer_remote)
+            manifest["release_channel"] = "development"
+            manifest["channels"]["development"]["snapshot_id"] = None
+            manifest["repositories"][0]["dependency_pins"] = [
+                {
+                    "dependency": "dependency",
+                    "kind": "cmake-source-override",
+                    "workspace_path": "dependency-source/repo",
+                    "revision": pinned_revision,
+                },
+                {
+                    "dependency": "dependency",
+                    "kind": "git-submodule",
+                    "path": "third_party/sdk",
+                    "revision": pinned_revision,
+                },
+            ]
+            manifest["repositories"].append(
+                {
+                    "id": "dependency",
+                    "path": "dependency-source/repo",
+                    "remote": {
+                        "fetch_url": str(source_remote),
+                        "fetch_remote": "origin",
+                        "push_url": None,
+                        "push_remote": None,
+                    },
+                    "default_branch": "main",
+                    "role": "test",
+                    "source_of_truth": ["artifact.txt"],
+                    "dependency_pins": [],
+                    "generated_artifacts": [],
+                    "verification": [],
+                }
+            )
+            status = SUITE.snapshot_status(
+                manifest,
+                workspace,
+                None,
+                follow_remote=SUITE.channel_follows_remote(manifest, "development", None),
+            )
+            pins = {pin["kind"]: pin for pin in status["repositories"][0]["dependency_pins"]}
+            pinned_snapshot_status = SUITE.snapshot_status(
+                manifest,
+                workspace,
+                manifest["snapshots"]["candidate"],
+                follow_remote=True,
+            )
+            pinned_snapshot_pins = {
+                pin["kind"]: pin
+                for pin in pinned_snapshot_status["repositories"][0]["dependency_pins"]
+            }
+
+        workspace_pin = pins["cmake-source-override"]
+        self.assertEqual(workspace_pin["expected"], remote_tip)
+        self.assertEqual(workspace_pin["expected_source"], "remote-branch")
+        self.assertEqual(workspace_pin["actual"], pinned_revision)
+        self.assertEqual(workspace_pin["status"], "drifted")
+        self.assertIn("repo: dependency pin is drifted", SUITE.status_errors(status))
+        submodule_pin = pins["git-submodule"]
+        self.assertEqual(submodule_pin["expected"], pinned_revision)
+        self.assertEqual(submodule_pin["expected_source"], "declared")
+        self.assertEqual(submodule_pin["actual"], pinned_revision)
+        self.assertEqual(submodule_pin["status"], "pinned")
+        snapshot_workspace_pin = pinned_snapshot_pins["cmake-source-override"]
+        self.assertEqual(snapshot_workspace_pin["expected"], pinned_revision)
+        self.assertEqual(snapshot_workspace_pin["expected_source"], "snapshot")
+        self.assertEqual(snapshot_workspace_pin["status"], "pinned")
 
     def test_status_errors_reject_unreachable_selected_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            repo, _, remote = self.make_repo(root)
-            (repo / "artifact.txt").write_text("unpublished\n", encoding="utf-8")
-            self.git(repo, "add", "artifact.txt")
+            repo, revision, remote = self.make_repo(root)
+            (repo / "unpublished.txt").write_text("unpublished\n", encoding="utf-8")
+            self.git(repo, "add", "unpublished.txt")
             self.git(repo, "commit", "-m", "test: create unpublished revision")
             unpublished = self.git(repo, "rev-parse", "HEAD")
-            manifest = self.manifest(root, unpublished, remote)
-            status = SUITE.snapshot_status(manifest, root, None)
+            manifest = self.manifest(root, revision, remote)
+            snapshot = copy.deepcopy(manifest["snapshots"]["candidate"])
+            snapshot["repositories"]["repo"]["commit"] = unpublished
+            status = SUITE.snapshot_status(manifest, root, snapshot)
         self.assertEqual(status["repositories"][0]["reachability"]["status"], "unreachable")
         self.assertIn("repo: selected revision is unreachable", SUITE.status_errors(status))
+
 
     def test_apply_requires_marked_isolated_workspace(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Diagnostics now describe `latencyMs` as estimated callback-buffer duration,
+  not measured route latency, and expose independently sampled metrics rather
+  than claiming a coherent snapshot. Underrun reset linearizes at an atomic
+  exchange; peak reset is consumed by the sole producer on its next callback.
+- Legacy realtime timing counters retain their names and layouts: the `p99`
+  field is a half-budget exceedance count, not a percentile. Normal transport
+  telemetry carries no measured callback duration.
+- Media-worker attachment is identity-idempotent; service rotates source order
+  and grants one page opportunity per source per round, prioritizing command
+  demand. Arbitrary blocked reads and destructor joins remain unbounded.
+- Driver transitions serialize independently of state getters. Failed stops
+  retain old pointer/metadata without guaranteeing backend usability.
+- Session I/O is available through `<orpheus/session_io.h>` and the Treefall
+  forwarding header, retaining the existing declarations and schema behavior.
+  The demo now links canonical C++ core state instead of copying opaque ABI
+  handles; demo/minhost/REAPER remain source-tree integrations.
+- Logger and telemetry registrations retain ABI-DSO-local scope, with both
+  setter spellings sharing state within each module. Graph/driver pointers
+  remain borrowed; stable-ID snapshots exclude scene definitions/runtime state.
+
 - The project is now published as the **Treefall SDK**; it was formerly the
   **Orpheus SDK**. The GitHub repository was renamed to
   `boot-industries/treefall-sdk`, and the earlier `chrislyons/orpheus-sdk` and
@@ -28,6 +48,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches devices by display name instead of `device_id` sees the new label.
 
 ### Fixed
+
+- Shared-source streaming Stop/refire overlaps retain independent current and
+  look-ahead pages through bounded voice-demand snapshots and page-copy pins.
+  Worker refill remains current-first and source-fair; the six steady/four
+  command-prime page budgets, observable misses, command rollback and loop-anchor
+  ownership are retained. Matching C++ consumers require rebuilding.
+- Loop-enabled clips now apply their configured fade-in on initial play and
+  explicit start/refire. Automatic wraps still bypass natural boundary fades;
+  zero-duration fade-in, non-loop natural fade-out and operator Stop are unchanged.
+- Streaming loop-anchor commit now releases pins with bounded atomic work under
+  exclusive command ownership, retaining old pages until audio consumption.
+- Concurrent telemetry and callback fixtures cover ring saturation, newest-drop
+  recovery, correlated payloads, and cache-miss callback delivery only through
+  the control pump. The callback guard rejects deliberate audio-thread dispatch.
+- Prepared decoding now rejects premature EOF and short reads before publishing
+  a source, matching streaming corruption handling.
+- Exact decibel-to-linear gain conversion moves from audio command consumption
+  to control publication without changing rendered gain transitions.
+- Numeric settings, signed sample rounding, assignment membership, scene recall
+  and duplicate JSON keys now reject invalid inputs before mutation. Click CLI
+  overrides reject fractional/out-of-range integer values instead of narrowing
+  unchecked results.
+- Removed unconsumed private transport command variants without changing public
+  voice-policy setters. Same-file handles retain independent voices, policies,
+  callbacks and rendered audio through stop/refire/unregister.
+- Optional demo builds use the existing JUCE 8.0.4 pin and C/C++ language graph.
+  Strict warnings remain on owned demo code, not third-party JUCE translation
+  units; native UTF-8 labels now use explicit conversion.
+- Graph rendering rejects a zero sample rate immediately, before synthesis.
+  Installed session-I/O fixtures now exercise actual Treefall-first inclusion.
+  Benchmark CPU distributions are emitted only when sampling is available and
+  every observation is valid; unsupported platforms never report sentinel values.
+  Scene-fixture cleanup releases transport-owned readers before deleting media.
+- Partial-command rollback coverage advances to the first actual missing-page
+  decode before injecting a next-read failure or cancellation. Read-offset
+  traces verify partial unpublished decoding and retained anchor ownership.
+- Linux TSan selection now includes monitor/integration/diagnostic and callback
+  pump stress targets, retaining the existing ingress/voice/streaming selections,
+  single-test concurrency and attributed artifacts.
 
 - Loading a session whose primary document advertises a newer schema version
   now fails with a hard error instead of silently falling back to the `.bak`
@@ -59,6 +118,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state. A null `master_output` or a null configured output lane is now a true
   no-touch return: routing control state, the group-output meter snapshot, and
   telemetry are all left unchanged.
+
+### Verification and remaining acceptance
+
+- Local macOS Debug T1 verification: 12 selected native/package/ABI/realtime/docs
+  CTest gates passed (42.40 s). The callback dispatch mutation failed as expected;
+  restoring queued delivery passed the focused guard and standalone diagnostics
+  consumer. Linux TSan is still required; these results do not qualify hardware
+  or temporal coherence.
+- Local T2 media/manager/realtime checks passed five gates and four synthetic
+  CoreAudio prime tests. The opt-in 10,000-block Release topology measurements
+  failed both before and after gain precomputation; retained distributions and
+  misses are documented in `docs/REALTIME_AUDIT.md`. Maximum-topology timing and
+  callback-only I/O qualification remain open, not hidden by the default skip.
+- Final local T4 verification passed 14 selected gates (34.11 s), including all
+  four package discovery modes and targeted private/retired/constexpr negatives.
+  Native demo import/commit/render/reconform and minhost click/stem commands
+  passed; canonical C++ and ABI stems were byte-identical. Pixel capture remains
+  unavailable because the observed screen-capture preflight was false.
+  The earlier concurrent-build oscillator throughput failure is retained in
+  `docs/REALTIME_AUDIT.md`, not erased by the later quiet pass.
+- Integrated local nonhardware CTest passed 83 entries (200.76 s); the real
+  CoreAudio target and two physical hot-swap cases were intentionally excluded.
+  Local ASan/UBSan passed 15 selected entries plus four synthetic CoreAudio
+  prime cases. Optional ShmUI export discovery also passed enabled/non-OpenGL
+  in all four namespace modes. These checks do not replace Linux TSan,
+  Windows native/fake/package/ABI execution or physical acceptance.
+- The WASAPI selected-format/fake changes are isolated on
+  `fix/pr265-platform-qualification`, not part of the portable hardening delta.
+  Hosted run `38326895539` passed nine Linux TSan targets and the selected
+  consumer syscall check at merge revision `96d5cfa307776eb2c9a13d67194700a6d490b5ee`.
+  Windows Debug/Release each passed the 24-case WASAPI suite but failed scene
+  media cleanup; the portable revision fixes that lifetime error. Those results
+  do not claim green required CI for the amended revisions.
+- Hard cancellation, maximum-topology deadlines, physical route/operator
+  acceptance, child acceptance and temporal coherence remain open. WASAPI/ASIO
+  support tiers, child pins and release-tag policy are unchanged.
 
 ## [0.9.1] - 2026-09-10
 

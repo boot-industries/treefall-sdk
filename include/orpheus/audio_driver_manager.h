@@ -74,9 +74,12 @@ struct AudioDeviceInfo {
 /// and hot-swap capabilities for the Treefall SDK.
 ///
 /// Thread Safety:
-/// - enumerateDevices(), getDeviceInfo(), setActiveDevice(): control/UI thread only
-/// - getCurrentDevice(), getCurrentSampleRate(), getCurrentBufferSize(): thread-safe
+/// - enumerateDevices(), getDeviceInfo(): control/UI thread only
+/// - setActiveDevice(): serialized control-side transitions; not realtime-safe
+/// - getCurrentDevice(), getCurrentSampleRate(), getCurrentBufferSize(),
+///   getActiveDriver(): thread-safe to obtain, independently sampled state
 /// - setDeviceChangeCallback(): control/UI thread only
+/// - Hosts must exclude external calls and borrowed-driver use during destruction.
 /// Platform Support:
 /// - macOS: CoreAudio device enumeration
 /// - Windows: WASAPI shared-mode device enumeration and playback
@@ -106,15 +109,24 @@ public:
   /// Set active audio device (transactional hot-swap)
   ///
   /// A candidate is created and initialized before the current driver is
-  /// stopped. Candidate or stop failure preserves the current driver and
-  /// configuration. On success ownership/configuration commit atomically, then
-  /// the change callback is invoked after the manager lock is released.
+  /// stopped. Candidate failure leaves the current driver and metadata unchanged.
+  /// Stop failure retains the old pointer and metadata, but does not guarantee
+  /// that the backend is still usable. On success ownership and metadata are
+  /// published together, then the change callback runs outside both manager locks.
+  ///
+  /// Device transitions and destruction are serialized separately from state
+  /// getters. Enumeration, factory creation, initialization, backend configuration
+  /// queries and stop do not hold the state mutex, so getters can observe the
+  /// previous publication while those operations are in progress. Backend calls
+  /// and OS scheduling have no universal latency bound. Recursive device changes
+  /// from a factory or backend operation are not supported; reentrant getters are.
   ///
   /// @param deviceId Device identifier
   /// @param sampleRate Desired sample rate (must be in supportedSampleRates)
   /// @param bufferSize Desired buffer size (must be in supportedBufferSizes)
   /// @return SessionGraphError::OK on success
-  /// @warning May cause brief audio dropout (~100ms) after a successful switch.
+  /// @warning A successful switch stops the old driver; hosts restart playback
+  ///          explicitly using the newly borrowed driver.
   virtual SessionGraphError setActiveDevice(const std::string& deviceId, uint32_t sampleRate,
                                             uint32_t bufferSize) = 0;
 
@@ -152,8 +164,9 @@ public:
   ///
   /// @return Borrowed pointer to the active driver, or nullptr if no device active
   /// @note The pointer is thread-safe to obtain but is not a lifetime lease.
-  ///       Synchronize its use with setActiveDevice() and do not retain it
-  ///       across a possible replacement.
+  ///       Synchronize its use with setActiveDevice() and destruction, and do not
+  ///       retain it across a possible replacement. A retained pointer after stop
+  ///       failure is not evidence of a usable backend.
   virtual IAudioDriver* getActiveDriver() = 0;
   /// Enumerate direction-specific endpoint capabilities. Control thread only.
   virtual std::vector<AudioEndpointCapabilities> enumerateEndpointCapabilities() {

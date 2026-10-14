@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 #include "render/render_tracks.h"
 
+#include "common/checked_numeric.h"
 #include "orpheus/music_timing.h"
 #include "render/orpheus_wav.hpp"
 #include "render/pcm.hpp"
-#include "session/json_io.h"
+#include <orpheus/session_io.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -18,21 +21,30 @@ namespace orpheus::core::render {
 namespace {
 
 std::size_t BeatsToSampleIndex(double beats, double seconds_per_beat, std::uint32_t sample_rate) {
+  detail::RequireFinite(beats, "Render beats");
   const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
-  const auto rounded = static_cast<long long>(std::llround(samples));
+  const auto rounded = detail::RoundedSamples(samples, "Render samples");
   if (rounded <= 0) {
     return 0;
+  }
+  if (static_cast<std::uint64_t>(rounded) > std::numeric_limits<std::size_t>::max()) {
+    throw std::invalid_argument("Render samples out of range");
   }
   return static_cast<std::size_t>(rounded);
 }
 
 std::size_t BeatsToSampleCount(double beats, double seconds_per_beat, std::uint32_t sample_rate) {
+  detail::RequireFinite(beats, "Render beats");
   if (beats <= 0.0) {
     return 0;
   }
   const double samples = beats * seconds_per_beat * static_cast<double>(sample_rate);
-  const auto rounded = static_cast<long long>(std::llround(samples));
-  return static_cast<std::size_t>(std::max<long long>(1, rounded));
+  const auto rounded = detail::RoundedSamples(samples, "Render samples");
+  const auto count = static_cast<std::uint64_t>(std::max<std::int64_t>(1, rounded));
+  if (count > std::numeric_limits<std::size_t>::max()) {
+    throw std::invalid_argument("Render samples out of range");
+  }
+  return static_cast<std::size_t>(count);
 }
 
 std::size_t ClipFrameCount(const Clip& clip) {
@@ -112,6 +124,9 @@ void ValidateSpec(const RenderSpec& spec) {
 
 std::vector<std::filesystem::path> render_tracks(const Session& session, const TrackList& tracks,
                                                  const RenderSpec& spec) {
+  detail::RequireFinite(session.tempo_bpm, "Render tempo");
+  detail::RequireFinite(session.start_beats, "Render start");
+  detail::RequireFinite(session.end_beats, "Render end");
   if (session.tempo_bpm <= 0.0) {
     throw std::invalid_argument("tempo must be positive");
   }
@@ -120,12 +135,29 @@ std::vector<std::filesystem::path> render_tracks(const Session& session, const T
   }
 
   ValidateSpec(spec);
-  std::filesystem::create_directories(spec.output_directory);
 
   const double seconds_per_beat = orpheus::secondsPerBeat(session.tempo_bpm);
   const double total_beats = std::max(0.0, session.end_beats - session.start_beats);
   const std::size_t session_frames =
       BeatsToSampleCount(total_beats, seconds_per_beat, spec.sample_rate_hz);
+
+  // Reject every numeric/shape boundary before creating a directory or a stem.
+  for (const auto& track : tracks) {
+    std::size_t required_frames = session_frames;
+    for (const auto& clip : track.clips) {
+      const auto start_sample = BeatsToSampleIndex(clip.start_beats - session.start_beats,
+                                                   seconds_per_beat, spec.sample_rate_hz);
+      const auto frames = ClipFrameCount(clip);
+      if (frames > std::numeric_limits<std::size_t>::max() - start_sample) {
+        throw std::invalid_argument("Render frame count out of range");
+      }
+      required_frames = std::max(required_frames, start_sample + frames);
+    }
+    if (required_frames > std::vector<double>().max_size() / spec.output_channels) {
+      throw std::invalid_argument("Render sample count out of range");
+    }
+  }
+  std::filesystem::create_directories(spec.output_directory);
 
   std::vector<std::filesystem::path> outputs;
   outputs.reserve(tracks.size());
@@ -183,6 +215,109 @@ std::vector<std::filesystem::path> render_tracks(const Session& session, const T
   }
 
   return outputs;
+}
+
+void render_session_tracks(const SessionGraph& session_graph,
+                           const std::filesystem::path& output_directory) {
+  const auto& tracks = session_graph.tracks();
+  if (tracks.empty()) {
+    return;
+  }
+
+  const double tempo = session_graph.tempo();
+  detail::RequireFinite(tempo, "Render tempo");
+  if (tempo <= 0.0) {
+    throw std::invalid_argument("Tempo must be positive");
+  }
+
+  const std::uint32_t sample_rate = session_graph.render_sample_rate();
+  if (sample_rate == 0u) {
+    throw std::invalid_argument("render sample rate must be positive");
+  }
+  const std::uint16_t bit_depth = session_graph.render_bit_depth();
+  const bool dither = session_graph.render_dither();
+
+  namespace fs = std::filesystem;
+  fs::path base_path(output_directory);
+  if (base_path.empty()) {
+    base_path = fs::current_path();
+  }
+  const double session_start = session_graph.session_start_beats();
+  const double session_end = session_graph.session_end_beats();
+  const double seconds_per_beat = orpheus::secondsPerBeat(tempo);
+  BeatsToSampleCount(session_end - session_start, seconds_per_beat, sample_rate);
+  for (const auto& track : tracks) {
+    for (const auto& clip : track->clips()) {
+      const auto start =
+          BeatsToSampleIndex(clip->start() - session_start, seconds_per_beat, sample_rate);
+      const auto count = BeatsToSampleCount(clip->length(), seconds_per_beat, sample_rate);
+      if (count > std::numeric_limits<std::size_t>::max() - start ||
+          count > std::vector<float>().max_size()) {
+        throw std::invalid_argument("Render sample count out of range");
+      }
+    }
+  }
+
+  Session session_desc;
+  session_desc.name = session_graph.name();
+  session_desc.tempo_bpm = tempo;
+  session_desc.start_beats = session_start;
+  session_desc.end_beats = session_end;
+
+  TrackList render_tracks_list;
+  render_tracks_list.reserve(tracks.size());
+
+  const std::size_t track_count = tracks.size();
+  for (std::size_t track_index = 0; track_index < track_count; ++track_index) {
+    const auto& track = tracks[track_index];
+    Track render_track;
+    render_track.name = track->name();
+    render_track.output_map = {0, 1};
+
+    const double pan = track_count > 1
+                           ? static_cast<double>(track_index) / static_cast<double>(track_count - 1)
+                           : 0.5;
+    const double left_gain = std::clamp(1.0 - pan, 0.0, 1.0);
+    const double right_gain = std::clamp(pan, 0.0, 1.0);
+    const double amplitude = 0.4;
+    const double frequency = 220.0 + 110.0 * static_cast<double>(track_index);
+
+    for (const auto& clip : track->clips()) {
+      const double clip_length = clip->length();
+      std::size_t clip_samples = BeatsToSampleCount(clip_length, seconds_per_beat, sample_rate);
+      if (clip_samples == 0u) {
+        continue;
+      }
+      const std::size_t start_sample =
+          BeatsToSampleIndex(clip->start() - session_start, seconds_per_beat, sample_rate);
+      std::vector<float> left_channel(clip_samples, 0.0f);
+      std::vector<float> right_channel(clip_samples, 0.0f);
+      for (std::size_t i = 0; i < clip_samples; ++i) {
+        const std::size_t sample_index = start_sample + i;
+        const double t = static_cast<double>(sample_index) / static_cast<double>(sample_rate);
+        const double sample_value = std::sin(2.0 * std::numbers::pi * frequency * t) * amplitude;
+        left_channel[i] = static_cast<float>(sample_value * left_gain);
+        right_channel[i] = static_cast<float>(sample_value * right_gain);
+      }
+      Clip render_clip;
+      render_clip.start_beats = clip->start();
+      render_clip.samples.push_back(std::move(left_channel));
+      render_clip.samples.push_back(std::move(right_channel));
+      render_track.clips.push_back(std::move(render_clip));
+    }
+
+    render_tracks_list.push_back(std::move(render_track));
+  }
+
+  RenderSpec spec;
+  spec.output_directory = base_path;
+  spec.sample_rate_hz = sample_rate;
+  spec.bit_depth_bits = bit_depth;
+  spec.output_channels = 2u;
+  spec.dither = dither;
+  spec.dither_seed = 0x9e3779b97f4a7c15ull;
+
+  render_tracks(session_desc, render_tracks_list, spec);
 }
 
 } // namespace orpheus::core::render

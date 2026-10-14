@@ -12,7 +12,6 @@ target_link_libraries(orpheus_conformance_json
 target_include_directories(orpheus_conformance_json
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src/core/session
 )
 
 target_compile_definitions(orpheus_conformance_json

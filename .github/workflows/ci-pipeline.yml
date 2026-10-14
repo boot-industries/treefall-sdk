@@ -310,7 +310,7 @@ jobs:
             -DCMAKE_CXX_FLAGS='-fsanitize=thread -g' \
             -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' 2>&1 | tee build-tsan/configure.log
       - name: Build focused TSan targets
-        run: cmake --build build-tsan --parallel 4 --target command_ingress_test voice_state_tsan_test callback_loss_telemetry_test realtime_harness_test streaming_seek_test
+        run: cmake --build build-tsan --parallel 4 --target command_ingress_test voice_state_tsan_test callback_loss_telemetry_test realtime_harness_test streaming_seek_test performance_monitor_test performance_integration_test realtime_diagnostics_test callback_queue_stress_test
         timeout-minutes: 20
       - name: Run focused TSan tests
         run: |
@@ -319,7 +319,7 @@ jobs:
           set +e
           TSAN_OPTIONS=halt_on_error=1:exitcode=66 \
             ctest --test-dir build-tsan --build-config Debug --output-on-failure -j 1 --timeout 300 \
-            -R '^(command_ingress_test|voice_state_tsan_test|callback_loss_telemetry_test|realtime_harness_test|streaming_seek_test)$' \
+            -R '^(command_ingress_test|voice_state_tsan_test|callback_loss_telemetry_test|realtime_harness_test|streaming_seek_test|performance_monitor_test|performance_integration_test|realtime_diagnostics_test|callback_queue_stress_test)$' \
             2>&1 | tee build-tsan/evidence/ctest.log
           status=${PIPESTATUS[0]}
           set -e

@@ -313,7 +313,7 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                 pattern_sets=(HARD_REALTIME_SET,),
             )
         )
-    for function in ("releaseCommandPrime", "commitLoopAnchorTransition"):
+    for function in ("releaseCommandPrime", "commitLoopAnchorTransition", "releaseReadyPin"):
         targets.append(
             ScanTarget(
                 f"Streaming consumer lease helper {function}",

@@ -67,7 +67,6 @@ target_include_directories(orpheus_tests
   PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/core/session
     ${CMAKE_SOURCE_DIR}/tests
     ${CMAKE_SOURCE_DIR}/adapters/reaper/include
     ${CMAKE_SOURCE_DIR}/adapters/shared
@@ -209,6 +208,11 @@ add_test(NAME cmake_find_package
     -Dsource_dir=${FIND_PACKAGE_SOURCE_DIR}
     -Dbinary_dir=${FIND_PACKAGE_BINARY_DIR}
     -Drun_discovery_matrix=ON
+    -DEXPECTED_REALTIME=${ORPHEUS_ENABLE_REALTIME}
+    -DEXPECTED_COREAUDIO=$<TARGET_EXISTS:orpheus_audio_driver_coreaudio>
+    -DEXPECTED_WASAPI=$<TARGET_EXISTS:orpheus_audio_driver_wasapi>
+    -DEXPECTED_SHMUI=$<AND:$<BOOL:${ORPHEUS_ENABLE_SHMUI_JUCE}>,$<TARGET_EXISTS:orpheus_shmui_juce>>
+    -DEXPECTED_SHMUI_GL=$<AND:$<BOOL:${ORPHEUS_ENABLE_SHMUI_JUCE}>,$<TARGET_EXISTS:orpheus_shmui_juce_gl>>
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_find_package.cmake)
 
 set(PACKAGE_RUNTIME_SOURCE_DIR ${CMAKE_SOURCE_DIR}/tests/package_runtime_consumer)
@@ -269,6 +273,9 @@ add_test(NAME cmake_audio_io_retired_enum_rejection
     -Dbuild_type=$<CONFIG>
     -Dsource_dir=${RETIRED_ENUM_SOURCE_DIR}
     -Dbinary_dir=${RETIRED_ENUM_BINARY_DIR}
+    -DEXPECTED_DIAGNOSTIC_SYMBOL=AudioDriverRuntimeOutcome
+    -DEXPECTED_FAILURE_TARGET=retired_enum_consumer
+    -DPOSITIVE_TARGET=public_audio_io_consumer
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
 
 set(RETIRED_TELEMETRY_SOURCE_DIR
@@ -284,6 +291,39 @@ add_test(NAME cmake_audio_io_retired_telemetry_field_rejection
     -Dbuild_type=$<CONFIG>
     -Dsource_dir=${RETIRED_TELEMETRY_SOURCE_DIR}
     -Dbinary_dir=${RETIRED_TELEMETRY_BINARY_DIR}
+    -DEXPECTED_DIAGNOSTIC_SYMBOL=runtime_outcome
+    -DEXPECTED_FAILURE_TARGET=retired_telemetry_field_consumer
+    -DPOSITIVE_TARGET=public_audio_io_consumer
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
+
+set(PRIVATE_SESSION_HEADER_SOURCE_DIR
+  ${CMAKE_SOURCE_DIR}/tests/cmake/private_header_rejection)
+set(PRIVATE_SESSION_HEADER_BINARY_DIR
+  ${CMAKE_BINARY_DIR}/tests/private_session_header_rejection_build)
+set(PRIVATE_SESSION_HEADER_INSTALL_DIR
+  ${CMAKE_BINARY_DIR}/tests/private_session_header_rejection_prefix)
+add_test(NAME cmake_private_session_header_rejection
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${PRIVATE_SESSION_HEADER_INSTALL_DIR}
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${PRIVATE_SESSION_HEADER_SOURCE_DIR}
+    -Dbinary_dir=${PRIVATE_SESSION_HEADER_BINARY_DIR}
+    -DEXPECTED_DIAGNOSTIC_SYMBOL=json_io.h
+    -DEXPECTED_FAILURE_TARGET=private_session_header_consumer
+    -DPOSITIVE_TARGET=public_session_io_consumer
+    -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
+
+add_test(NAME cmake_time_point_constexpr_rejection
+  COMMAND ${CMAKE_COMMAND}
+    -Dsdk_build_dir=${CMAKE_BINARY_DIR}
+    -Dinstall_prefix=${CMAKE_BINARY_DIR}/tests/time_point_constexpr_rejection_prefix
+    -Dbuild_type=$<CONFIG>
+    -Dsource_dir=${CMAKE_SOURCE_DIR}/tests/cmake/time_point_constexpr_rejection
+    -Dbinary_dir=${CMAKE_BINARY_DIR}/tests/time_point_constexpr_rejection_build
+    -DEXPECTED_DIAGNOSTIC_SYMBOL=InvalidTimePointConstantExpression
+    -DEXPECTED_FAILURE_TARGET=invalid_time_point_consumer
+    -DPOSITIVE_TARGET=public_time_point_consumer
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_expected_compile_failure.cmake)
 
 # ORP127 T10: submodule (add_subdirectory) external-consumer smoke test. Covers
@@ -345,6 +385,8 @@ target_compile_definitions(orpheus_abi_link
     ORP_BUILD_SHARED_CORE=$<IF:$<BOOL:ORP_BUILD_SHARED_CORE>,1,0>
   )
 
+add_dependencies(orpheus_abi_link orpheus_session orpheus_clipgrid orpheus_render)
+
 target_link_libraries(orpheus_abi_link
   PRIVATE
     ${CMAKE_DL_LIBS}
@@ -368,6 +410,8 @@ set_tests_properties(
   cmake_package_rejects_previous_minor
   cmake_audio_io_retired_enum_rejection
   cmake_audio_io_retired_telemetry_field_rejection
+  cmake_private_session_header_rejection
+  cmake_time_point_constexpr_rejection
   cmake_add_subdirectory
   cmake_shmui_package_consumer
   abi_link

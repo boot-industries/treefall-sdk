@@ -178,7 +178,9 @@ public:
    * @brief Set peak and RMS levels for a channel (thread-safe).
    *
    * The two readings are published as one lock-free atomic value, so the
-   * visible meter never observes a peak from one block and RMS from another.
+   * visible meter never observes a peak from one producer update with RMS
+   * from another. A separate lock-free interval maximum preserves peak hold,
+   * needle attack, and clip latching without changing the newest raw fill/RMS.
    */
   void setLevelPair(int channel, float peakLevel, float rmsLevel);
 
@@ -286,6 +288,18 @@ public:
   const LevelMeterStyle& getStyle() const {
     return m_style;
   }
+  /**
+   * @brief Set the minimum interval between vblank-driven repaint requests.
+   *
+   * Level publication and paint-time reads are unaffected. A value of zero
+   * leaves the display-sync callback uncapped.
+   */
+  void setMinRepaintIntervalMs(double milliseconds);
+
+  /// Cumulative number of LevelMeter paint calls across all instances.
+  static uint64_t paintCount() noexcept {
+    return s_paintCount.load(std::memory_order_relaxed);
+  }
 
   /** Resume following the process-wide default theme. */
   void useDefaultThemeStyle();
@@ -392,8 +406,56 @@ private:
     float leadingInset = 0.0f;
   };
 
+  struct SegmentGeom {
+    float offset = 0.0f;
+    float bodyLength = 0.0f;
+    float dB = 0.0f;
+    juce::Colour colour;
+  };
+
+  struct ChromeCacheSignature {
+    uint32_t backgroundArgb = 0;
+    uint32_t textArgb = 0;
+    uint32_t tickArgb = 0;
+    bool showScale = false;
+    bool showTicks = false;
+    bool vertical = false;
+    float minDB = 0.0f;
+    float maxDB = 0.0f;
+    float displayScale = 0.0f;
+    int width = 0;
+    int height = 0;
+    bool operator==(const ChromeCacheSignature&) const = default;
+  };
+
+  struct SegmentTableSignature {
+    float axisLength = 0.0f;
+    float crossExtent = 0.0f;
+    float displayScale = 0.0f;
+    float segmentLength = 0.0f;
+    float segmentGap = 0.0f;
+    float cornerRadius = 0.0f;
+    float yellowThreshold = 0.0f;
+    float redThreshold = 0.0f;
+    float clipThreshold = 0.0f;
+    float minDB = 0.0f;
+    float maxDB = 0.0f;
+    int transitionSegments = 0;
+    uint32_t backgroundArgb = 0;
+    uint32_t lowArgb = 0;
+    uint32_t midArgb = 0;
+    uint32_t highArgb = 0;
+    uint32_t clipArgb = 0;
+    bool vertical = false;
+    bool operator==(const SegmentTableSignature&) const = default;
+  };
+
   static_assert(std::atomic<uint64_t>::is_always_lock_free,
                 "LevelMeter paired level publication must be lock-free");
+  static_assert(std::atomic<uint32_t>::is_always_lock_free,
+                "LevelMeter interval peak publication must be lock-free");
+  static_assert(std::atomic<bool>::is_always_lock_free,
+                "LevelMeter interval clip latch must be lock-free");
 
   static uint64_t packLevelPair(LevelPair pair) noexcept;
   static LevelPair unpackLevelPair(uint64_t packed) noexcept;
@@ -402,6 +464,17 @@ private:
 
   void repaintIfNeeded();
   void updateDisplaySync();
+  void requestThrottledRepaint();
+  float paintScaleFactor(const juce::Graphics& graphics) const noexcept;
+  float peerDisplayScaleFactor() const noexcept;
+  void updateDisplayScale();
+  void ensureSegmentCache(juce::Rectangle<float> contentBounds, float displayScale);
+
+  void updateClipThreshold() noexcept;
+  void accumulateIntervalPeak(int channel, uint32_t peakBits) noexcept;
+  float consumeIntervalPeak(int channel) noexcept;
+  static uint32_t intervalPeakFallbackBucket(uint32_t peakBits) noexcept;
+  static uint32_t intervalPeakFallbackUpperBits(uint32_t bucket) noexcept;
   void updateMeter();
   void handleAsyncUpdate() override;
   void sanitizeStyle();
@@ -417,6 +490,12 @@ private:
   //==============================================================================
   static constexpr int MAX_CHANNELS = 8;
   static constexpr int MAX_HISTORY_EVENTS = 4096;
+  static constexpr int INTERVAL_PEAK_BUCKETS_PER_EXPONENT = 256;
+  static constexpr int INTERVAL_PEAK_MIN_EXPONENT_FIELD = 93;
+  static constexpr int INTERVAL_PEAK_EXPONENT_COUNT = 68;
+  static constexpr int INTERVAL_PEAK_BUCKET_COUNT =
+      INTERVAL_PEAK_BUCKETS_PER_EXPONENT * INTERVAL_PEAK_EXPONENT_COUNT;
+  static constexpr int INTERVAL_PEAK_BUCKET_WORDS = (INTERVAL_PEAK_BUCKET_COUNT + 63) / 64;
 
   int m_numChannels = 1;
   bool m_isVertical = true;
@@ -428,6 +507,18 @@ private:
   juce::VBlankAttachment m_displaySync;
   double m_lastMeterUpdateMs = 0.0;
   bool m_animationActive = false;
+  double m_minRepaintIntervalMs = 16.0;
+  double m_lastRepaintRequestMs = 0.0;
+  juce::Image m_chromeCache;
+  ChromeCacheSignature m_chromeCacheSignature{};
+  SegmentTableSignature m_segmentTableSignature{};
+  std::vector<SegmentGeom> m_segmentTable;
+  juce::Image m_ladderFullImage;
+  uint64_t m_chromeCacheRebuildCount = 0;
+  uint64_t m_segmentTableRebuildCount = 0;
+  uint64_t m_ladderImageRebuildCount = 0;
+  float m_lastPeerScaleFactor = 0.0f;
+  inline static std::atomic<uint64_t> s_paintCount{0};
 
   // dB range
   float m_minDB = -60.0f;
@@ -440,6 +531,18 @@ private:
   // Per-channel state. Producers publish peak/RMS pairs in one lock-free
   // atomic; all display state remains message-thread only.
   std::array<std::atomic<uint64_t>, MAX_CHANNELS> m_inputLevelPairs{};
+  // Producer-side max since the last paint. Kept separate from the coherent
+  // current pair so an interval peak never gets paired with a stale RMS value.
+  std::array<std::atomic<uint32_t>, MAX_CHANNELS> m_intervalPeakBits{};
+  // Bounded fallback bitmap: each bucket spans <0.034 dB; painting rounds up
+  // only if a bounded CAS update encountered contention.
+  std::array<std::array<std::atomic<uint64_t>, INTERVAL_PEAK_BUCKET_WORDS>, MAX_CHANNELS>
+      m_intervalPeakFallbackBits{};
+  std::array<std::atomic<bool>, MAX_CHANNELS> m_intervalPeakFallbackPending{};
+  std::array<std::atomic<bool>, MAX_CHANNELS> m_intervalClipCrossed{};
+  std::atomic<uint32_t> m_intervalClipThresholdBits{0};
+  std::array<float, MAX_CHANNELS> m_deferredIntervalPeakLevels{};
+  std::array<bool, MAX_CHANNELS> m_deferredIntervalClipCrossings{};
   std::array<uint64_t, MAX_CHANNELS> m_paintedLevelPairs{};
   std::array<float, MAX_CHANNELS> m_displayLevels{}; // Smoothed/raw peak
   std::array<float, MAX_CHANNELS> m_displayRmsLevels{};

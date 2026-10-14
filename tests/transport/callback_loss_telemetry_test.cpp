@@ -5,7 +5,9 @@
 
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -23,7 +25,7 @@ constexpr size_t kBlockFrames = 64;
 constexpr orpheus::ClipHandle kFirstHandle = 11;
 constexpr orpheus::ClipHandle kSecondHandle = 22;
 
-std::string writeSilentWav(const std::filesystem::path& path) {
+std::string writeSilentWav(const std::filesystem::path& path, bool steppedSignal = false) {
   constexpr uint16_t channels = 2;
   constexpr uint16_t bitsPerSample = 16;
   constexpr uint16_t audioFormat = 1;
@@ -49,6 +51,14 @@ std::string writeSilentWav(const std::filesystem::path& path) {
   file.write("data", 4);
   file.write(reinterpret_cast<const char*>(&dataSize), sizeof(dataSize));
   std::vector<int16_t> silence(static_cast<size_t>(durationFrames) * channels, 0);
+  if (steppedSignal) {
+    // Distinct block amplitudes make stale/torn meter payloads observable.
+    for (size_t frame = 0; frame < durationFrames; ++frame) {
+      const auto sample = static_cast<int16_t>(((frame / kBlockFrames) % 31 + 1) * 128);
+      silence[frame * channels] = sample;
+      silence[frame * channels + 1] = sample;
+    }
+  }
   file.write(reinterpret_cast<const char*>(silence.data()),
              static_cast<std::streamsize>(silence.size() * sizeof(int16_t)));
   file.close();
@@ -57,15 +67,15 @@ std::string writeSilentWav(const std::filesystem::path& path) {
 
 class CountingCallback final : public orpheus::ITransportCallback {
 public:
-  void onClipStarted(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
-                     orpheus::TransportPosition) override {
+  void onClipStarted(orpheus::ClipHandle handle, orpheus::StartRequestTag requestTag,
+                     uint32_t voiceId, orpheus::TransportPosition) override {
     ++count;
-    started.push_back({requestTag, voiceId});
+    started.push_back({requestTag, voiceId, handle});
   }
-  void onClipStopped(orpheus::ClipHandle, orpheus::StartRequestTag requestTag, uint32_t voiceId,
-                     orpheus::TransportPosition) override {
+  void onClipStopped(orpheus::ClipHandle handle, orpheus::StartRequestTag requestTag,
+                     uint32_t voiceId, orpheus::TransportPosition) override {
     ++count;
-    stopped.push_back({requestTag, voiceId});
+    stopped.push_back({requestTag, voiceId, handle});
   }
   void onClipLooped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
                     orpheus::TransportPosition) override {
@@ -88,6 +98,7 @@ public:
   struct TaggedVoice {
     orpheus::StartRequestTag requestTag = 0;
     uint32_t voiceId = 0;
+    orpheus::ClipHandle handle = 0;
   };
 
   std::vector<TaggedVoice> started;
@@ -287,6 +298,347 @@ TEST_F(CallbackLossTelemetryTest, ConcurrentSnapshotsRemainCoherentDuringPublica
 
   stop.store(true, std::memory_order_relaxed);
   audioThread.join();
+}
+
+TEST_F(CallbackLossTelemetryTest, ConcurrentRealtimeRingSaturatesPreservesPayloadAndRecovers) {
+  constexpr uint64_t kStalledAttempts = orpheus::kRealtimeTelemetryCapacity + 7;
+  constexpr uint64_t kAttempts = 4096;
+  constexpr orpheus::ClipHandle kSignalHandle = 33;
+  const auto signalPath = writeSilentWav(directory / "stepped.wav", true);
+  ASSERT_EQ(transport->registerClipAudio(kSignalHandle, signalPath),
+            orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->prepareClipAudio(kSignalHandle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setClipLoopMode(kSignalHandle, true), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setClipLoopMode(kFirstHandle, true), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSignalHandle), orpheus::SessionGraphError::OK);
+  auto* bridge = transport->getRealtimeTelemetry();
+  ASSERT_NE(bridge, nullptr);
+  bridge->setDecimationBlocks(1);
+  ASSERT_EQ(bridge->pendingSnapshotCount(), 0u);
+
+  struct RenderedBlock {
+    std::array<float, 2> rmsDb{};
+    uint32_t voices = 0;
+  };
+  // Producer output is an independent oracle for the meters from that exact
+  // transport publication, not an unrelated control-side routing/voice query.
+  std::vector<RenderedBlock> rendered(kAttempts + 1);
+  std::vector<uint64_t> received;
+  received.reserve(kAttempts);
+  std::atomic<uint64_t> renderedThrough{0};
+  std::atomic<bool> finished{false};
+  std::atomic<bool> bounded{true};
+  bool startSucceeded = false;
+  bool coherent = true;
+  size_t saturatedPending = 0;
+  uint64_t saturatedDrops = 0;
+  std::barrier phases(2);
+
+  std::thread producer([&] {
+    const auto render = [&](uint64_t attempt, uint32_t voices) {
+      renderBlock();
+      auto& expected = rendered[attempt];
+      expected.voices = voices;
+      for (size_t lane = 0; lane < 2; ++lane) {
+        const auto& output = lane == 0 ? left : right;
+        double sumSquares = 0.0;
+        for (const float sample : output) {
+          sumSquares += static_cast<double>(sample) * sample;
+        }
+        const float rms = static_cast<float>(std::sqrt(sumSquares / kBlockFrames));
+        expected.rmsDb[lane] = rms > 0.0f ? 20.0f * std::log10(rms) : orpheus::kAudioMeterSilenceDb;
+      }
+      renderedThrough.store(attempt, std::memory_order_release);
+      if (bridge->pendingSnapshotCount() > orpheus::kRealtimeTelemetryCapacity) {
+        bounded.store(false, std::memory_order_relaxed);
+      }
+    };
+    // The consumer is deliberately stalled: all 64 unread slots must survive
+    // the next seven attempts unchanged (drop newest, not oldest).
+    for (uint64_t attempt = 1; attempt <= kStalledAttempts; ++attempt) {
+      render(attempt, 1);
+    }
+    phases.arrive_and_wait(); // Permit the consumer to inspect and drain.
+    phases.arrive_and_wait(); // All retained slots have been consumed.
+    render(kStalledAttempts + 1, 1);
+    phases.arrive_and_wait(); // Publish the first recovered, gapped sequence.
+    phases.arrive_and_wait(); // Consumer has checked recovery before stress.
+    // Change voice count only after the gapped recovery is consumed: changing
+    // routing topology during a dropped peak window legitimately resets it.
+    startSucceeded = transport->startClip(kFirstHandle) == orpheus::SessionGraphError::OK;
+    for (uint64_t attempt = kStalledAttempts + 2; attempt <= kAttempts; ++attempt) {
+      render(attempt, 2);
+    }
+    finished.store(true, std::memory_order_release);
+  });
+
+  std::thread consumer([&] {
+    orpheus::RealtimeTelemetrySnapshot snapshot;
+    uint64_t previousSequence = 0;
+    const auto consume = [&](uint64_t maximumSequence) {
+      while (bridge->tryRead(snapshot)) {
+        const uint64_t sequence = snapshot.sequence;
+        if (sequence == 0 || sequence > maximumSequence || sequence <= previousSequence) {
+          coherent = false;
+          continue;
+        }
+        // processAudio publishes before the producer computes the independent
+        // output oracle; this release/acquire handoff protects that table only.
+        while (renderedThrough.load(std::memory_order_acquire) < sequence) {
+          std::this_thread::yield();
+        }
+        const auto& expected = rendered[sequence];
+        coherent &= snapshot.schema_version == orpheus::kRealtimeTelemetrySchemaVersion;
+        coherent &= snapshot.position.samples() == static_cast<int64_t>(sequence * kBlockFrames);
+        coherent &= snapshot.active_voice_count == expected.voices;
+        coherent &= snapshot.diagnostics.callback_count == sequence;
+        coherent &= snapshot.diagnostics.samples_processed == sequence * kBlockFrames;
+        coherent &= snapshot.diagnostics.last_buffer_frames == kBlockFrames;
+        coherent &= snapshot.diagnostics.last_sample_rate == kSampleRate;
+        coherent &= snapshot.diagnostics.underrun_count == 0;
+        coherent &= snapshot.diagnostics.callback_over_budget_count == 0;
+        coherent &= snapshot.diagnostics.callback_p99_over_budget_count == 0;
+        coherent &= snapshot.output_count == 2;
+        const auto& meters = snapshot.routing_meters;
+        coherent &= meters.schema_version == orpheus::kRoutingMeterTelemetrySchemaVersion;
+        coherent &= meters.availability == orpheus::MeterAvailability::Measured;
+        coherent &= meters.post_master_output_count == 2;
+        coherent &= meters.rms_window_frames == kBlockFrames;
+        coherent &= meters.peak_window_frames == (sequence - previousSequence) * kBlockFrames;
+        for (size_t lane = 0; lane < 2; ++lane) {
+          coherent &=
+              meters.post_master_output_availability[lane] == orpheus::MeterAvailability::Measured;
+          coherent &= std::abs(meters.post_master_output_lane_meters[lane].rms_db -
+                               expected.rmsDb[lane]) < 0.0001f;
+          coherent &=
+              std::abs(snapshot.output_meters[lane].rms_db - expected.rmsDb[lane]) < 0.0001f;
+        }
+        received.push_back(sequence);
+        previousSequence = sequence;
+        if (bridge->pendingSnapshotCount() > orpheus::kRealtimeTelemetryCapacity) {
+          bounded.store(false, std::memory_order_relaxed);
+        }
+      }
+    };
+    phases.arrive_and_wait();
+    saturatedPending = bridge->pendingSnapshotCount();
+    saturatedDrops = bridge->droppedSnapshotCount();
+    consume(kStalledAttempts);
+    phases.arrive_and_wait();
+    phases.arrive_and_wait();
+    consume(kStalledAttempts + 1);
+    phases.arrive_and_wait();
+    while (!finished.load(std::memory_order_acquire)) {
+      consume(kAttempts);
+      std::this_thread::yield();
+    }
+    consume(kAttempts);
+  });
+  producer.join();
+  consumer.join();
+
+  EXPECT_TRUE(startSucceeded);
+  EXPECT_TRUE(coherent) << "A consumed payload must match its own rendered block";
+  EXPECT_TRUE(bounded.load());
+  EXPECT_EQ(saturatedPending, orpheus::kRealtimeTelemetryCapacity);
+  EXPECT_EQ(saturatedDrops, 7u);
+  ASSERT_GE(received.size(), orpheus::kRealtimeTelemetryCapacity + 1);
+  for (size_t index = 0; index < orpheus::kRealtimeTelemetryCapacity; ++index) {
+    EXPECT_EQ(received[index], index + 1) << "Unread slots must not be overwritten";
+  }
+  EXPECT_EQ(received[orpheus::kRealtimeTelemetryCapacity], kStalledAttempts + 1);
+  EXPECT_EQ(received.size() + bridge->droppedSnapshotCount(), kAttempts);
+  EXPECT_EQ(bridge->pendingSnapshotCount(), 0u);
+}
+
+TEST_F(CallbackLossTelemetryTest, SameFileHandlesKeepIndependentVoicesPoliciesAndRenderedAudio) {
+  // Both handles decode the same stepped PCM, but use different source offsets
+  // and opposite stereo balances. Each output channel therefore proves its
+  // handle's actual source cursors and envelopes, not merely its snapshot.
+  const auto signalPath = writeSilentWav(directory / "shared-signal.wav", true);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->unregisterClipAudio(kSecondHandle), orpheus::SessionGraphError::OK);
+  constexpr int64_t kSecondTrim = kBlockFrames * 8;
+  constexpr size_t kStopFadeFrames = 480; // 10 ms at 48 kHz, including a partial final block.
+  for (const auto handle : {kFirstHandle, kSecondHandle}) {
+    ASSERT_EQ(transport->registerClipAudio(handle, signalPath), orpheus::SessionGraphError::OK);
+  }
+  auto firstMetadata = transport->getClipMetadata(kFirstHandle).value();
+  firstMetadata.pan = -1.0f;
+  firstMetadata.stopFadeOutSeconds = 0.01;
+  auto secondMetadata = transport->getClipMetadata(kSecondHandle).value();
+  secondMetadata.pan = 1.0f;
+  secondMetadata.trimInSamples = kSecondTrim;
+  for (const auto handle : {kFirstHandle, kSecondHandle}) {
+    ASSERT_EQ(transport->updateClipMetadata(handle, handle == kFirstHandle ? firstMetadata
+                                                                           : secondMetadata),
+              orpheus::SessionGraphError::OK);
+    ASSERT_EQ(transport->prepareClipAudio(handle), orpheus::SessionGraphError::OK);
+    ASSERT_EQ(transport->getClipVoiceMode(handle), orpheus::VoiceMode::Polyphonic);
+  }
+
+  const auto sourceSample = [](size_t sourceFrame) {
+    return static_cast<float>(((sourceFrame / kBlockFrames) % 31 + 1) * 128) / 32768.0f;
+  };
+  const auto stopGain = [](size_t elapsedFrame) {
+    return elapsedFrame < kStopFadeFrames
+               ? 1.0f - static_cast<float>(elapsedFrame) / static_cast<float>(kStopFadeFrames)
+               : 0.0f;
+  };
+  // Frames already rendered since B's first start; its second start is one
+  // block later. Never derive the output oracle from a transport snapshot.
+  size_t renderedFrames = 0;
+  const auto expectSecondOutput = [&](bool secondVoiceStarted) {
+    for (size_t frame = 0; frame < kBlockFrames; ++frame) {
+      float expected = sourceSample(kSecondTrim + renderedFrames + frame);
+      if (secondVoiceStarted) {
+        expected += sourceSample(kSecondTrim + renderedFrames - kBlockFrames + frame);
+      }
+      EXPECT_NEAR(right[frame], expected, 1.0e-6f)
+          << "B output at rendered frame " << renderedFrames + frame;
+    }
+    renderedFrames += kBlockFrames;
+  };
+  const auto expectFirstOutput = [&](const auto& expectedSample) {
+    for (size_t frame = 0; frame < kBlockFrames; ++frame) {
+      EXPECT_NEAR(left[frame], expectedSample(frame), 1.0e-6f) << "A frame " << frame;
+    }
+  };
+
+  ASSERT_EQ(transport->startClip(kFirstHandle, 101), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSecondHandle, 201), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) { return sourceSample(frame); });
+  expectSecondOutput(false);
+  ASSERT_EQ(transport->startClip(kFirstHandle, 102), orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(kSecondHandle, 202), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput(
+      [&](size_t frame) { return sourceSample(kBlockFrames + frame) + sourceSample(frame); });
+  expectSecondOutput(true);
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 4u);
+  constexpr std::array<orpheus::ClipHandle, 4> expectedHandles{kFirstHandle, kSecondHandle,
+                                                               kFirstHandle, kSecondHandle};
+  constexpr std::array<orpheus::StartRequestTag, 4> expectedTags{101, 201, 102, 202};
+  for (size_t index = 0; index < callback.started.size(); ++index) {
+    EXPECT_EQ(callback.started[index].handle, expectedHandles[index]);
+    EXPECT_EQ(callback.started[index].requestTag, expectedTags[index]);
+    EXPECT_NE(callback.started[index].voiceId, 0u);
+    for (size_t previous = 0; previous < index; ++previous) {
+      EXPECT_NE(callback.started[index].voiceId, callback.started[previous].voiceId);
+    }
+  }
+  const uint32_t secondVoiceId = callback.started[3].voiceId;
+  const uint32_t survivingFirstTailId = callback.started[2].voiceId;
+  auto snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+
+  ASSERT_EQ(transport->setClipVoiceMode(kFirstHandle, orpheus::VoiceMode::MonoWithFadeOverlap),
+            orpheus::SessionGraphError::OK);
+  ASSERT_EQ(transport->setMaxVoicesPerClip(2), orpheus::SessionGraphError::OK);
+  EXPECT_EQ(transport->getMaxVoicesPerClip(), 2u);
+  EXPECT_EQ(transport->getClipVoiceMode(kSecondHandle), orpheus::VoiceMode::Polyphonic);
+  ASSERT_EQ(transport->stopClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return (sourceSample(2 * kBlockFrames + frame) + sourceSample(kBlockFrames + frame)) *
+           stopGain(frame);
+  });
+  expectSecondOutput(true);
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->state, orpheus::PlaybackState::Stopping);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+
+  // With both A voices fading, refire allocates a new primary and the cap
+  // replaces only A's oldest tail. B's two voices keep their original cursors.
+  ASSERT_EQ(transport->startClip(kFirstHandle, 103), orpheus::SessionGraphError::OK);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return sourceSample(2 * kBlockFrames + frame) * stopGain(kBlockFrames + frame) +
+           sourceSample(frame);
+  });
+  expectSecondOutput(true);
+  transport->processCallbacks();
+  ASSERT_EQ(callback.started.size(), 5u);
+  EXPECT_EQ(callback.started[4].handle, kFirstHandle);
+  EXPECT_EQ(callback.started[4].requestTag, 103u);
+  const uint32_t refiredVoiceId = callback.started[4].voiceId;
+  for (size_t index = 0; index < 4; ++index) {
+    EXPECT_NE(refiredVoiceId, callback.started[index].voiceId);
+  }
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->state, orpheus::PlaybackState::Playing);
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle)->newestVoiceId, refiredVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestStartRequestTag, 202u);
+  const auto secondBeforeRejectedUnregister = *findEntry(snapshot, kSecondHandle);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::NotReady);
+  snapshot = transport->getActiveVoiceSnapshot();
+  ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestPosition.samples,
+            secondBeforeRejectedUnregister.newestPosition.samples);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+  EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+  renderBlock();
+  expectFirstOutput([&](size_t frame) {
+    return sourceSample(3 * kBlockFrames + frame) * stopGain(2 * kBlockFrames + frame) +
+           sourceSample(kBlockFrames + frame);
+  });
+  expectSecondOutput(true);
+
+  ASSERT_EQ(transport->stopClip(kFirstHandle), orpheus::SessionGraphError::OK);
+  constexpr size_t kFadeBlocks = (kStopFadeFrames + kBlockFrames - 1) / kBlockFrames;
+  for (size_t block = 0; block < kFadeBlocks; ++block) {
+    renderBlock();
+    expectFirstOutput([&](size_t frame) {
+      const size_t elapsed = block * kBlockFrames + frame;
+      // A's existing tail keeps its original stop clock; only the new
+      // primary starts a fresh envelope on this second stop.
+      return sourceSample(4 * kBlockFrames + elapsed) * stopGain(3 * kBlockFrames + elapsed) +
+             sourceSample(2 * kBlockFrames + elapsed) * stopGain(elapsed);
+    });
+    expectSecondOutput(true);
+  }
+  transport->processCallbacks();
+  ASSERT_EQ(callback.stopped.size(), 2u);
+  for (const auto& stopped : callback.stopped) {
+    EXPECT_EQ(stopped.handle, kFirstHandle);
+    EXPECT_TRUE((stopped.requestTag == 102 && stopped.voiceId == survivingFirstTailId) ||
+                (stopped.requestTag == 103 && stopped.voiceId == refiredVoiceId));
+  }
+  EXPECT_NE(callback.stopped[0].voiceId, callback.stopped[1].voiceId);
+  snapshot = transport->getActiveVoiceSnapshot();
+  EXPECT_EQ(findEntry(snapshot, kFirstHandle), nullptr);
+  ASSERT_EQ(snapshot.totalActiveVoiceCount, 2u);
+  ASSERT_EQ(transport->unregisterClipAudio(kFirstHandle), orpheus::SessionGraphError::OK);
+  for (size_t block = 0; block < 2; ++block) {
+    renderBlock();
+    expectFirstOutput([](size_t) { return 0.0f; });
+    expectSecondOutput(true);
+    snapshot = transport->getActiveVoiceSnapshot();
+    EXPECT_EQ(findEntry(snapshot, kFirstHandle), nullptr);
+    ASSERT_NE(findEntry(snapshot, kSecondHandle), nullptr);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->state, orpheus::PlaybackState::Playing);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->activeVoiceCount, 2u);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestVoiceId, secondVoiceId);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestStartRequestTag, 202u);
+    EXPECT_EQ(findEntry(snapshot, kSecondHandle)->newestPosition.samples,
+              kSecondTrim + static_cast<int64_t>(renderedFrames - kBlockFrames));
+  }
+  transport->processCallbacks();
+  EXPECT_EQ(callback.started.size(), 5u);
+  EXPECT_EQ(callback.stopped.size(), 2u);
+  EXPECT_TRUE(callback.rejectedTags.empty());
+  EXPECT_EQ(transport->getCallbackDeliveryTelemetry().cumulativeDroppedCount, 0u);
 }
 
 TEST_F(CallbackLossTelemetryTest, SingleHandleAggregatesTailsStateTieBreakAndCompaction) {

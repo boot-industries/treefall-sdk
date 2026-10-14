@@ -26,6 +26,9 @@ typedef orpheus_telemetry_callback treefall_telemetry_callback;
 #define TREEFALL_LOG_LEVEL_WARN ORPHEUS_LOG_LEVEL_WARN
 #define TREEFALL_LOG_LEVEL_ERROR ORPHEUS_LOG_LEVEL_ERROR
 TREEFALL_API const char* treefall_status_to_string(treefall_status status);
+/* Same-DSO aliases of the Orpheus setters, not process-wide registrations.
+ * Resolving either spelling from another ABI DSO configures that DSO only.
+ * Static builds retain per-final-link-unit state; see orpheus/errors.h. */
 TREEFALL_API void treefall_set_logger(treefall_log_callback callback, void* user_data);
 TREEFALL_API void treefall_set_telemetry_callback(treefall_telemetry_callback callback,
                                                   void* user_data);

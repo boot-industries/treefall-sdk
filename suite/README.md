@@ -10,6 +10,57 @@ Operational identifiers remain `orpheus-suite`, `orpheus-sdk`,
 `ORPHEUS_SUITE_WORKSPACE`, and `.orpheus-suite-workspace`; schema, graph IDs,
 package/API names, and historical snapshots are compatibility identities.
 
+## 2026-10-14 floating development status repair
+
+The development channel is floating with `snapshot_id: null`. `status`,
+`doctor`, and `snapshot observe` compare each checkout with the declared
+repository `fetch_remote/default_branch` tracking ref (currently `origin/main`).
+They do not fetch and never substitute local `HEAD` when that ref is absent.
+An unequal local `HEAD` is reported as drift; an absent tracking ref is reported
+as `remote-branch-unavailable`, with the expected ref and unavailable state in
+the result. Fetch each declared remote branch before using status as a current
+remote comparison:
+
+```sh
+WORKSPACE=/path/to/suite-workspace
+for repository in orpheus-sdk shmui fourtrack freqfinder clip-composer; do
+  git -C "$WORKSPACE/$repository" fetch origin main
+done
+python3 tools/suite.py status --channel development \
+  --workspace-root "$WORKSPACE" --json
+```
+
+Floating source-workspace dependency pins compare with that dependency
+repository's declared tracking ref. Git-submodule pins remain the reviewed
+exact revisions in the manifest. An explicit `--snapshot` always selects its
+immutable snapshot; candidate and stable channels remain pinned. A pinned
+channel without a snapshot is reported as `snapshot-unconfigured`, not treated
+as floating. `snapshot observe` records an immutable observation without
+changing the floating development pointer. Existing historical snapshot
+objects are preserved byte-for-byte.
+
+The SDK package artifact is tied to the actual imported package and its
+governed metadata: source revision
+`1f2c87a089d975eec1396360173da87a926835ed`, package content hash
+`c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`, and ShmUI token contract `0.6.0`.
+The suite manifest declares exact SDK gitlink expectations for FourTrack and
+Clip Composer at `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` (SDK 0.9.1).
+Both approved application pin repairs have merged. This coordinator change
+does not promote a release or establish hardware or native-runtime acceptance.
+
+Validate the contract and behavioral coordinator coverage with:
+
+```sh
+WORKSPACE=/path/to/suite-workspace
+python3 tools/suite.py validate --json
+ctest --test-dir build --output-on-failure -R '^suite_tool_unit$'
+python3 tools/suite.py status --snapshot <snapshot-id> \
+  --workspace-root "$WORKSPACE" --json
+```
+
+The manifest schema already permits a floating channel with a null snapshot
+ID; no schema-version change is needed.
+
 ## 2026-09-10 dependency and temporal-coherence handoff
 
 `ORP-SUITE-20260910-001` selects the published SDK source baseline
@@ -42,11 +93,13 @@ phase/sample integrity, responsive coherent presentation and demand-driven CPU
 use are joint gates. This is policy adoption and reconnaissance, not a completed
 timing implementation or measured screen/thermal acceptance.
 
-No pushes or merges are included. Local policy/consumer branches are not yet
-reachable from remote `main`, and default `status` still compares against the
-historical development snapshot. That status is not rewritten to manufacture a
-green release claim. Finish publication and the original Clip Composer
-integration before capturing a new clean reachable development snapshot.
+At the time of that handoff, no pushes or merges were included. Local policy
+and consumer branches were not yet reachable from remote `main`, and status
+still compared against the historical development snapshot. The handoff did
+not rewrite that result to manufacture a green release claim; it required
+publication and Clip Composer integration before a clean reachable development
+snapshot could be captured. Floating status behavior has since been corrected
+as described above, without making a release or hardware qualification claim.
 
 ## 2026-09-09 source adoption evidence
 

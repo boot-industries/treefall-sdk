@@ -2,7 +2,7 @@
 
 **Status:** ⚠️  Experimental - Not recommended for production use
 
-This adapter provides a modern ABI-based integration between Treefall SDK and REAPER. It is built entirely on the public Orpheus ABI and does not use legacy WDL/SWELL/WALTER frameworks.
+This experimental **source-tree-only** adapter uses the public Orpheus C ABI and installed C++ session I/O (`<orpheus/session_io.h>`). It also depends on the non-installed `adapters/shared` helpers; it is not an installed-prefix adapter target. It does not use legacy WDL/SWELL/WALTER frameworks.
 
 ## Features
 
@@ -21,6 +21,8 @@ cmake --build build --target reaper_orpheus
 ```
 
 This produces a shared library: `build/adapters/reaper/libreaper_orpheus.{so|dylib|dll}`
+
+Building the source adapter does not qualify it inside a running REAPER instance. REAPER application/plugin-host acceptance requires the external host prerequisite and is unavailable without it.
 
 ## Installation
 
@@ -72,9 +74,9 @@ This adapter is marked **experimental** because:
 Previous REAPER plugins using WDL/SWELL/WALTER frameworks have been quarantined to `backup/non_orpheus_20250926/` and are no longer maintained. The current adapter:
 
 - Does **not** use WDL/SWELL/WALTER
-- Does **not** depend on private Orpheus headers
-- Uses only the public ABI interface
-- Compiles independently from core implementation details
+- Uses public session-I/O declarations instead of the retired private `json_io.h`
+- Uses public ABI functions plus source-tree `adapters/shared` helpers
+- Does not provide an independently buildable installed-prefix adapter API; optional installation of its built plugin artifact does not export the source-tree helpers
 
 ## Future Work
 

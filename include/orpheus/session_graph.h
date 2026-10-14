@@ -162,6 +162,8 @@ struct ORPHEUS_API QuantizationWindow {
 };
 
 struct ORPHEUS_API CommittedClip {
+  /// Borrowed graph storage, not a lifetime lease. Removal or graph rebuild/
+  /// restore invalidates this pointer; keep ClipId and re-resolve after edits.
   const Clip* clip{nullptr};
   std::uint32_t scene_index{0u};
   double arranged_start_beats{0.0};
@@ -218,8 +220,8 @@ struct SessionTrackSnapshot {
 /// Pointer-free state for persistence, undo/redo, and cross-thread handoff.
 ///
 /// Time values are canonical sample-domain values at render_sample_rate_hz.
-/// Runtime transport, scene-trigger, marker, and playlist state are deliberately
-/// excluded from the transactional edit domain.
+/// Scene definitions and runtime transport, scene-trigger, marker and playlist
+/// state are deliberately excluded from the transactional edit domain.
 ///
 /// Schema 1 snapshots are still accepted; their allocator watermarks are
 /// derived from the TrackId/ClipId values they contain. Because schema 2
@@ -246,6 +248,11 @@ struct SessionGraphSnapshot {
   std::uint64_t next_clip_id_raw{1u};
 };
 
+/// Owns track/clip storage. Returned Track*/Clip* and committed clip pointers
+/// are borrowed and become invalid after removal or graph rebuild/restore,
+/// including rollback that restores a snapshot. Keep stable IDs across those
+/// boundaries and re-resolve through the current graph's tracks/clips.
+/// Application undo and presentation policy are not owned by this graph.
 class SessionGraph {
 public:
   class Transaction {

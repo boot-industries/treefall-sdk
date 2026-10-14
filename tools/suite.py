@@ -436,17 +436,32 @@ def repo_map(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {repo["id"]: repo for repo in manifest.get("repositories", [])}
 
 
-def selected_snapshot(manifest: dict[str, Any], snapshot_id: str | None, channel: str | None) -> dict[str, Any] | None:
+def selected_snapshot(manifest: dict[str, Any], snapshot_id: str | None, channel: str | None, mode: str | None = None) -> dict[str, Any] | None:
     chosen = snapshot_id
     if chosen is None:
         selected_channel = channel or manifest.get("release_channel", "development")
-        chosen = manifest.get("channels", {}).get(selected_channel, {}).get("snapshot_id")
+        channel_config = manifest.get("channels", {}).get(selected_channel, {})
+        if mode is None:
+            mode = channel_config.get("mode", "pinned")
+        if mode == "floating":
+            return None
+        chosen = channel_config.get("snapshot_id")
     if chosen is None:
         return None
     snapshot = manifest.get("snapshots", {}).get(chosen)
     if snapshot is None:
         raise SuiteError(f"snapshot not found: {chosen}")
     return snapshot
+
+
+def channel_follows_remote(manifest: dict[str, Any], channel: str | None, snapshot_id: str | None) -> bool:
+    if snapshot_id is not None:
+        return False
+    selected_channel = channel or manifest.get("release_channel", "development")
+    channel_config = manifest.get("channels", {}).get(selected_channel, {})
+    return channel_config.get("mode") == "floating"
+
+
 def remote_branch_revision(path: Path, repo: dict[str, Any]) -> str | None:
     remote = repo.get("remote", {})
     fetch_remote = remote.get("fetch_remote", "origin")
@@ -578,7 +593,14 @@ def check_artifact(artifact: dict[str, Any], owner_path: Path, workspace: Path) 
     return result
 
 
-def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[str, Any] | None) -> dict[str, Any]:
+def snapshot_status(
+    manifest: dict[str, Any],
+    workspace: Path,
+    snapshot: dict[str, Any] | None,
+    *,
+    follow_remote: bool = False,
+) -> dict[str, Any]:
+    follow_remote = follow_remote and snapshot is None
     repositories = repo_map(manifest)
     repo_results: list[dict[str, Any]] = []
     for repo_id, repo in repositories.items():
@@ -588,18 +610,50 @@ def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[st
             repo_results.append(item)
             continue
         head = git_head(path)
-        expected = snapshot.get("repositories", {}).get(repo_id, {}).get("commit") if snapshot else head
+        if snapshot is not None:
+            expected = snapshot.get("repositories", {}).get(repo_id, {}).get("commit")
+            expected_source = "snapshot"
+        elif follow_remote:
+            expected = remote_branch_revision(path, repo)
+            expected_source = "remote-branch"
+        else:
+            expected = None
+            expected_source = "pinned-snapshot-required"
         dirty = git_dirty(path)
-        item.update({"head": head, "branch": git_branch(path), "dirty": dirty, "expected": expected})
-        item["reachability"] = revision_reachable(path, repo, expected)
+        item.update(
+            {
+                "head": head,
+                "branch": git_branch(path),
+                "dirty": dirty,
+                "expected": expected,
+                "expected_source": expected_source,
+            }
+        )
+        if follow_remote:
+            remote = repo.get("remote", {})
+            branch = repo.get("default_branch", "main")
+            tracking_remote = remote.get("fetch_remote", "origin")
+            item["expected_branch"] = {
+                "remote": tracking_remote,
+                "branch": branch,
+                "tracking_ref": f"{tracking_remote}/{branch}",
+                "revision": expected,
+                "status": "available" if expected else "tracking-ref-unavailable",
+            }
+        if snapshot is not None or expected is not None:
+            item["reachability"] = revision_reachable(path, repo, expected)
         if head is None:
             item["status"] = "not-a-git-repository"
-        elif snapshot and expected and head != expected:
+        elif follow_remote and expected is None:
+            item["status"] = "remote-branch-unavailable"
+        elif snapshot is None and not follow_remote:
+            item["status"] = "snapshot-unconfigured"
+        elif expected and head != expected:
             item["status"] = "dirty-drift" if dirty else "drifted"
         elif dirty:
             item["status"] = "dirty"
         else:
-            item["status"] = "pinned" if snapshot else "observed"
+            item["status"] = "floating" if follow_remote else "pinned"
 
         remote_config = repo.get("remote", {})
         fetch_remote = remote_config.get("fetch_remote", "origin")
@@ -631,20 +685,50 @@ def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[st
         expected_pins = snapshot.get("repositories", {}).get(repo_id, {}).get("dependency_pins", {}) if snapshot else {}
         for pin in repo.get("dependency_pins", []):
             dependency = pin.get("dependency")
-            expected_pin = expected_pins.get(dependency, pin.get("revision"))
-            pin_result: dict[str, Any] = {
-                "dependency": dependency,
-                "kind": pin.get("kind"),
-                "expected": expected_pin,
-            }
+            dependency_repo = repositories.get(dependency)
             if pin.get("kind") == "git-submodule":
                 target = path / pin["path"]
             else:
                 target = workspace / pin.get("workspace_path", "")
+            expected_pin = expected_pins.get(dependency, pin.get("revision"))
+            expected_pin_source = "snapshot" if snapshot else "declared"
+            if (
+                snapshot is None
+                and follow_remote
+                and pin.get("kind") != "git-submodule"
+                and pin.get("workspace_path")
+                and dependency_repo
+            ):
+                expected_pin = remote_branch_revision(target, dependency_repo)
+                expected_pin_source = "remote-branch"
+            pin_result: dict[str, Any] = {
+                "dependency": dependency,
+                "kind": pin.get("kind"),
+                "expected": expected_pin,
+                "expected_source": expected_pin_source,
+            }
+            if expected_pin_source == "remote-branch":
+                dependency_remote = dependency_repo.get("remote", {})
+                branch = dependency_repo.get("default_branch", "main")
+                tracking_remote = dependency_remote.get("fetch_remote", "origin")
+                pin_result["expected_branch"] = {
+                    "remote": tracking_remote,
+                    "branch": branch,
+                    "tracking_ref": f"{tracking_remote}/{branch}",
+                    "revision": expected_pin,
+                    "status": "available" if expected_pin else "tracking-ref-unavailable",
+                }
             actual = git_head(target) if target.is_dir() else None
-            pin_result.update({"actual": actual, "status": "pinned" if actual == expected_pin else "drifted"})
-            dependency_repo = repositories.get(dependency)
-            if dependency_repo:
+            if actual is None:
+                pin_status = "missing"
+            elif expected_pin is None and expected_pin_source == "remote-branch":
+                pin_status = "remote-branch-unavailable"
+            elif expected_pin is None:
+                pin_status = "not-configured"
+            else:
+                pin_status = "pinned" if actual == expected_pin else "drifted"
+            pin_result.update({"actual": actual, "status": pin_status})
+            if dependency_repo and expected_pin:
                 pin_result["reachability"] = revision_reachable(target, dependency_repo, expected_pin)
             if pin.get("config"):
                 cache_values: list[str] = []
@@ -675,7 +759,14 @@ def snapshot_status(manifest: dict[str, Any], workspace: Path, snapshot: dict[st
 def status_errors(status: dict[str, Any], *, require_clean: bool = False) -> list[str]:
     errors: list[str] = []
     for repo in status["repositories"]:
-        if repo["status"] in {"missing", "not-a-git-repository", "drifted", "dirty-drift"}:
+        if repo["status"] in {
+            "missing",
+            "not-a-git-repository",
+            "drifted",
+            "dirty-drift",
+            "remote-branch-unavailable",
+            "snapshot-unconfigured",
+        }:
             errors.append(f"{repo['id']}: {repo['status']}")
         if require_clean and repo.get("dirty"):
             errors.append(f"{repo['id']}: worktree is dirty")
@@ -947,7 +1038,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     _, manifest, workspace = manifest_context(args)
     snapshot = selected_snapshot(manifest, args.snapshot, args.channel)
-    result = snapshot_status(manifest, workspace, snapshot)
+    result = snapshot_status(
+        manifest,
+        workspace,
+        snapshot,
+        follow_remote=channel_follows_remote(manifest, args.channel, args.snapshot),
+    )
     result.update({"workspace": str(workspace), "channel": args.channel or manifest.get("release_channel"), "errors": status_errors(result)})
     output(result, args.json)
     return 0 if not result["errors"] else 1
@@ -956,7 +1052,12 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     _, manifest, workspace = manifest_context(args)
     snapshot = selected_snapshot(manifest, args.snapshot, args.channel)
-    result = snapshot_status(manifest, workspace, snapshot)
+    result = snapshot_status(
+        manifest,
+        workspace,
+        snapshot,
+        follow_remote=channel_follows_remote(manifest, args.channel, args.snapshot),
+    )
     errors = status_errors(result, require_clean=args.require_clean)
     checks: list[dict[str, Any]] = []
     if args.checks:
@@ -1197,7 +1298,7 @@ def cmd_snapshot_observe(args: argparse.Namespace) -> int:
         raise SuiteError("snapshot observe requires --version X.Y.Z")
     if not args.evidence or not args.evidence.strip():
         raise SuiteError("snapshot observe requires --evidence")
-    status = snapshot_status(manifest, workspace, None)
+    status = snapshot_status(manifest, workspace, None, follow_remote=True)
     blockers = status_errors(status, require_clean=True)
     verification = {
         "status": "inventory-only" if not blockers else "blocked",
@@ -1233,7 +1334,8 @@ def cmd_snapshot_observe(args: argparse.Namespace) -> int:
         acceptance,
     )
     manifest["snapshots"][args.snapshot_id] = snapshot
-    manifest["channels"]["development"]["snapshot_id"] = args.snapshot_id
+    if manifest["channels"]["development"].get("mode") != "floating":
+        manifest["channels"]["development"]["snapshot_id"] = args.snapshot_id
     backup_dir = manifest_path.parent / ".backups"
     backup_dir.mkdir(exist_ok=True)
     backup = backup_dir / f"manifest-{dt.datetime.now().strftime('%Y%m%dT%H%M%SZ')}.json"

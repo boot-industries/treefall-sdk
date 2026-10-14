@@ -25,11 +25,22 @@ TimeRange RangeFromBeats(double start_beats, double length_beats, double tempo_b
                          std::uint32_t sample_rate) {
   const TimePoint start = TimePoint::fromBeats(start_beats, tempo_bpm, sample_rate);
   const TimePoint end = TimePoint::fromBeats(start_beats + length_beats, tempo_bpm, sample_rate);
+  if (start.samples() < 0 &&
+      end.samples() > std::numeric_limits<std::int64_t>::max() + start.samples()) {
+    throw std::invalid_argument("Sample range out of range");
+  }
   return TimeRange::fromStartEnd(start, end);
 }
 
 double BeatsFromTime(TimePoint point, double tempo_bpm, std::uint32_t sample_rate) {
-  return point.toBeats(tempo_bpm, sample_rate);
+  return RequireFinite(point.toBeats(tempo_bpm, sample_rate), "Beats");
+}
+
+TimePoint RangeEnd(TimeRange range) {
+  if (range.start().samples() > std::numeric_limits<std::int64_t>::max() - range.length()) {
+    throw std::invalid_argument("Sample range out of range");
+  }
+  return TimePoint::fromSamples(range.start().samples() + range.length());
 }
 } // namespace
 
@@ -333,7 +344,7 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
       const double start_beats =
           BeatsFromTime(clip_state.range.start(), state.tempo_bpm, state.render_sample_rate_hz);
       const double end_beats =
-          BeatsFromTime(clip_state.range.end(), state.tempo_bpm, state.render_sample_rate_hz);
+          BeatsFromTime(RangeEnd(clip_state.range), state.tempo_bpm, state.render_sample_rate_hz);
       static_cast<void>(track->add_clip(clip_state.id, clip_state.name, start_beats,
                                         end_beats - start_beats, clip_state.scene_index));
       rebuilt_clip_ids.reserveThrough(clip_state.id);
@@ -345,7 +356,10 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
   rebuilt_assignments.reserve(state.clip_assignments.size());
   for (const ClipId assignment : state.clip_assignments) {
     if (!assignment.isValid()) {
-      throw std::invalid_argument("Snapshot contains an invalid clip assignment");
+      throw std::invalid_argument("Clip assignment ID must be valid");
+    }
+    if (seen_clip_ids.find(assignment.raw()) == seen_clip_ids.end()) {
+      throw std::invalid_argument("Clip assignment ID is not a member of the session");
     }
     rebuilt_assignments.push_back(assignment.raw());
   }
@@ -353,7 +367,7 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
   const double session_start =
       BeatsFromTime(state.session_range.start(), state.tempo_bpm, state.render_sample_rate_hz);
   const double session_end =
-      BeatsFromTime(state.session_range.end(), state.tempo_bpm, state.render_sample_rate_hz);
+      BeatsFromTime(RangeEnd(state.session_range), state.tempo_bpm, state.render_sample_rate_hz);
 
   track_ids_ = rebuilt_track_ids;
   clip_ids_ = rebuilt_clip_ids;
@@ -398,7 +412,7 @@ ClipId SessionGraph::create_clip(TrackId track_id, std::string name, TimeRange r
     throw std::invalid_argument("Track ID does not belong to session");
   }
   const double start_beats = BeatsFromTime(range.start(), tempo_bpm_, render_sample_rate_hz_);
-  const double end_beats = BeatsFromTime(range.end(), tempo_bpm_, render_sample_rate_hz_);
+  const double end_beats = BeatsFromTime(RangeEnd(range), tempo_bpm_, render_sample_rate_hz_);
   return add_clip(*track, std::move(name), start_beats, end_beats - start_beats, scene_index)->id();
 }
 
@@ -419,7 +433,8 @@ void SessionGraph::set_clip_range(ClipId clip_id, TimeRange range) {
   const double previous_start = target->start();
   const double previous_length = target->length();
   const double start_beats = BeatsFromTime(range.start(), tempo_bpm_, render_sample_rate_hz_);
-  const double end_beats = BeatsFromTime(range.end(), tempo_bpm_, render_sample_rate_hz_);
+  const double end_beats = BeatsFromTime(RangeEnd(range), tempo_bpm_, render_sample_rate_hz_);
+  RangeFromBeats(start_beats, end_beats - start_beats, tempo_bpm_, render_sample_rate_hz_);
   target->set_start(start_beats);
   target->set_length(end_beats - start_beats);
   owner->sort_clips();
@@ -449,6 +464,15 @@ void SessionGraph::set_name(std::string name) {
 }
 
 void SessionGraph::set_clip_assignments(std::vector<std::uint64_t> assignments) {
+  for (const std::uint64_t raw : assignments) {
+    const ClipId id = ClipId::fromRaw(raw);
+    if (!id.isValid()) {
+      throw std::invalid_argument("Clip assignment ID must be valid");
+    }
+    if (find_clip(id) == nullptr) {
+      throw std::invalid_argument("Clip assignment ID is not a member of the session");
+    }
+  }
   clip_assignments_ = std::move(assignments);
   record_change(SessionChangeFlags::ClipAssignments);
 }
@@ -511,6 +535,13 @@ void SessionGraph::set_tempo(double bpm) {
   if (bpm <= 0.0 || !std::isfinite(bpm)) {
     throw std::invalid_argument("Tempo must be finite and positive");
   }
+  RangeFromBeats(session_start_beats_, session_end_beats_ - session_start_beats_, bpm,
+                 render_sample_rate_hz_);
+  for (const auto& track : tracks_) {
+    for (const auto& clip : track->clips()) {
+      RangeFromBeats(clip->start(), clip->length(), bpm, render_sample_rate_hz_);
+    }
+  }
   tempo_bpm_ = bpm;
   record_change(SessionChangeFlags::Timing);
 }
@@ -518,6 +549,13 @@ void SessionGraph::set_tempo(double bpm) {
 void SessionGraph::set_render_sample_rate(std::uint32_t sample_rate_hz) {
   if (sample_rate_hz == 0u) {
     throw std::invalid_argument("Sample rate must be non-zero");
+  }
+  RangeFromBeats(session_start_beats_, session_end_beats_ - session_start_beats_, tempo_bpm_,
+                 sample_rate_hz);
+  for (const auto& track : tracks_) {
+    for (const auto& clip : track->clips()) {
+      RangeFromBeats(clip->start(), clip->length(), tempo_bpm_, sample_rate_hz);
+    }
   }
   render_sample_rate_hz_ = sample_rate_hz;
   record_change(SessionChangeFlags::RenderSettings);
@@ -555,6 +593,7 @@ void SessionGraph::set_session_range(double start_beats, double end_beats) {
   if (end_beats < start_beats) {
     throw std::invalid_argument("Session end must not precede start");
   }
+  RangeFromBeats(start_beats, end_beats - start_beats, tempo_bpm_, render_sample_rate_hz_);
   session_start_beats_ = start_beats;
   session_end_beats_ = end_beats;
   record_change(SessionChangeFlags::Timing);
@@ -566,6 +605,9 @@ Clip* SessionGraph::add_clip(Track& track, std::string name, double start_beats,
   if (target == nullptr) {
     throw std::invalid_argument("Track does not belong to session");
   }
+  RangeFromBeats(start_beats,
+                 std::max(RequireFinite(length_beats, "Clip length"), kMinimumLengthBeats),
+                 tempo_bpm_, render_sample_rate_hz_);
   Clip* clip = target->add_clip(clip_ids_.allocate(), std::move(name), start_beats, length_beats,
                                 scene_index);
   mark_clip_grid_dirty();
@@ -590,6 +632,7 @@ void SessionGraph::set_clip_start(Clip& clip, double start_beats) {
     throw std::invalid_argument("Clip does not belong to session");
   }
   Clip* target = owner->find_clip(&clip);
+  RangeFromBeats(start_beats, target->length(), tempo_bpm_, render_sample_rate_hz_);
   const double previous_start = target->start();
   target->set_start(start_beats);
   owner->sort_clips();
@@ -610,6 +653,9 @@ void SessionGraph::set_clip_length(Clip& clip, double length_beats) {
     throw std::invalid_argument("Clip does not belong to session");
   }
   Clip* target = owner->find_clip(&clip);
+  RangeFromBeats(target->start(),
+                 std::max(RequireFinite(length_beats, "Clip length"), kMinimumLengthBeats),
+                 tempo_bpm_, render_sample_rate_hz_);
   const double previous_length = target->length();
   target->set_length(length_beats);
   try {
@@ -635,6 +681,11 @@ void SessionGraph::set_clip_scene(Clip& clip, std::uint32_t scene_index) {
 void SessionGraph::commit_clip_grid() {
   if (!clip_grid_dirty_) {
     return;
+  }
+  for (const auto& track : tracks_) {
+    for (const auto& clip : track->clips()) {
+      RangeFromBeats(clip->start(), clip->length(), tempo_bpm_, render_sample_rate_hz_);
+    }
   }
   clip_grid_dirty_ = false;
   std::stable_sort(tracks_.begin(), tracks_.end(),
@@ -694,6 +745,7 @@ void SessionGraph::trigger_scene(std::uint32_t scene_index, double position_beat
                                  const QuantizationWindow& quantization) {
   const double quantized_start =
       QuantizePosition(position_beats, quantization, /*minimum_beats=*/0.0);
+  RangeFromBeats(quantized_start, 0.0, tempo_bpm_, render_sample_rate_hz_);
 
   SceneTimelineEntry entry;
   entry.scene_index = scene_index;
@@ -714,6 +766,7 @@ void SessionGraph::end_scene(std::uint32_t scene_index, double position_beats,
   SceneTimelineEntry& entry = scene_timeline_[active->second.timeline_index];
   const double quantized_end =
       QuantizePosition(position_beats, quantization, entry.quantized_start_beats);
+  RangeFromBeats(quantized_end, 0.0, tempo_bpm_, render_sample_rate_hz_);
   entry.has_end = true;
   entry.end_position_beats = position_beats;
   entry.end_quantization = quantization;
@@ -747,7 +800,6 @@ void SessionGraph::update_session_range_from_commits() {
 
 void SessionGraph::commit_arrangement(double fallback_scene_length_beats) {
   RequireFinite(fallback_scene_length_beats, "Arrangement fallback length");
-  committed_clips_.clear();
 
   std::vector<SceneTimelineEntry> resolved_timeline = scene_timeline_;
 
@@ -758,6 +810,12 @@ void SessionGraph::commit_arrangement(double fallback_scene_length_beats) {
       entry.has_end = entry.quantized_end_beats > entry.quantized_start_beats;
     }
   }
+  for (const auto& entry : resolved_timeline) {
+    RangeFromBeats(entry.quantized_start_beats,
+                   entry.quantized_end_beats - entry.quantized_start_beats, tempo_bpm_,
+                   render_sample_rate_hz_);
+  }
+  committed_clips_.clear();
 
   std::stable_sort(resolved_timeline.begin(), resolved_timeline.end(),
                    [](const SceneTimelineEntry& lhs, const SceneTimelineEntry& rhs) {

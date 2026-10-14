@@ -17,16 +17,17 @@ class SessionGraph;
 
 /// Performance metrics for audio processing
 ///
-/// This structure provides a snapshot of real-time audio processing performance.
-/// All values are thread-safe and can be queried from the UI thread without
-/// blocking the audio thread.
+/// Values are independently sampled, eventually consistent aggregates, not a
+/// same-moment callback snapshot. Queries do not block the audio thread.
 struct PerformanceMetrics {
   float cpuUsagePercent;          ///< CPU usage (0-100%)
-  float latencyMs;                ///< Round-trip latency in milliseconds
-  uint32_t bufferUnderrunCount;   ///< Total dropout count since start
-  uint32_t activeClipCount;       ///< Currently playing clips
+  float latencyMs;                ///< Estimated callback-buffer duration in milliseconds;
+                                  ///< not measured route latency. Zero sample rate retains
+                                  ///< the last estimate (initially zero).
+  uint32_t bufferUnderrunCount;   ///< Dropout count since the last ordered reset
+  uint32_t activeClipCount;       ///< Last reported active clip count
   uint64_t totalSamplesProcessed; ///< Lifetime sample count
-  double uptimeSeconds;           ///< Time since audio thread started
+  double uptimeSeconds;           ///< Observation-time elapsed since monitor creation
 };
 
 /// Performance monitor for realtime diagnostics.
@@ -36,41 +37,43 @@ struct PerformanceMetrics {
 /// not this diagnostics interface.
 ///
 /// Thread Safety:
-/// - All query methods are thread-safe (atomic reads from audio thread state)
-/// - Reset methods are thread-safe (atomic writes)
-/// - No locks are held in the audio callback path
+/// - Query methods independently sample atomic aggregates; uptime is observation-time
+/// - Reset methods are thread-safe; peak reset is deferred to the next callback
+/// - recordAudioCallback() has one exclusive callback producer per monitor
+/// - No locks or allocations are used in the callback recording path
 ///
-/// Performance:
-/// - getMetrics() completes in <100 CPU cycles (atomic reads only)
-/// - Audio thread overhead: <1% CPU (single timestamp + atomic increments)
+/// latencyMs estimates bufferSize / sampleRate only. For measured route latency
+/// and unknown terms, use AudioRouteLatency::complete and the directional
+/// AudioLatencyBreakdown from the existing audio driver route APIs instead.
 class IPerformanceMonitor {
 public:
   virtual ~IPerformanceMonitor() = default;
 
   /// Get current performance metrics
   ///
-  /// This function returns a snapshot of current performance metrics.
-  /// All values are atomically consistent (captured at the same moment).
+  /// Fields are sampled independently and are eventually consistent; they need
+  /// not describe the same callback. Uptime is computed at query observation time.
   ///
-  /// @return Metrics structure (atomic snapshot)
+  /// @return Independently aggregated metrics
   ///
   /// @note Thread-safe: Can be called from any thread
-  /// @note Performance: <100 CPU cycles (no locks, atomic operations only)
   /// @note Typical use: Poll at 30 Hz from UI thread for real-time display
   virtual PerformanceMetrics getMetrics() const = 0;
 
   /// Reset buffer underrun counter
   ///
-  /// This resets the dropout counter to zero. Useful after resolving
-  /// performance issues to verify the fix.
+  /// The atomic exchange to zero is the reset's linearization point. Underrun
+  /// increments ordered before it are cleared; increments ordered after it are
+  /// retained. Other metrics and histogram counts are unchanged.
   ///
   /// @note Thread-safe: Can be called from any thread
   virtual void resetUnderrunCount() = 0;
 
   /// Get peak CPU usage since last reset
   ///
-  /// This returns the maximum CPU usage percentage observed since the
-  /// monitor was created or since resetPeakCpuUsage() was last called.
+  /// Returns the maximum instantaneous CPU usage since creation or the last
+  /// callback that consumed a reset request, including that reset's baseline
+  /// of the preceding smoothed CPU usage. Pending resets do not change the peak.
   ///
   /// @return Peak CPU % (0-100%, can exceed 100% if callback takes longer than buffer duration)
   ///
@@ -80,8 +83,11 @@ public:
 
   /// Reset peak CPU usage tracker
   ///
-  /// This resets the peak CPU tracker to the current CPU usage value.
-  /// Useful for measuring peak load during specific operations.
+  /// Request a reset, consumed by the sole producer at the start of the next
+  /// recordAudioCallback(). The producer initializes peak to its preceding
+  /// smoothed CPU usage, then includes that callback's instantaneous CPU usage.
+  /// Concurrent requests coalesce. While idle, peak is unchanged until the next
+  /// callback; a request after a callback's reset boundary waits for a later one.
   ///
   /// @note Thread-safe: Can be called from any thread
   virtual void resetPeakCpuUsage() = 0;
@@ -98,6 +104,7 @@ public:
   /// @note Thread-safe: Can be called from any thread
   /// @note Example buckets: 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms+
   /// @note Histogram is accumulated over the lifetime of the monitor
+  /// @note Bucket counts are sampled independently, not as one coherent snapshot
   virtual std::vector<std::pair<float, uint32_t>> getCallbackTimingHistogram() const = 0;
 
   /// Record audio callback performance (called by audio driver)
@@ -109,11 +116,12 @@ public:
   /// @param callbackDurationUs Audio callback execution time in microseconds
   /// @param bufferDurationUs Audio buffer duration in microseconds
   /// @param activeClips Number of currently active clips
-  /// @param sampleRate Sample rate in Hz
+  /// @param sampleRate Sample rate in Hz; zero retains the last latencyMs estimate
   /// @param bufferSize Buffer size in samples
   ///
-  /// @note Thread-safe: Should be called from audio thread
-  /// @note Performance: <100 CPU cycles (atomic operations only, no locks)
+  /// @note Thread-safe: One exclusive audio callback producer per monitor;
+  ///       queries, resets, and underrun reports may run concurrently
+  /// @note Callback recording uses bounded atomic operations, no locks or allocation
   /// @note This is the preferred way to measure audio CPU (deadline-based, not wall-clock)
   ///
   /// @code

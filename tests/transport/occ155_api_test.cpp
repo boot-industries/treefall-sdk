@@ -17,7 +17,13 @@
 //   Ask #5 (HIGH)     — panic() hard-cuts all voices with no fade (immediate
 //                       mute), in contrast to stopAllClips()'s fade envelope.
 
+#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/rt_guard.hpp"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -28,7 +34,6 @@
 #include <orpheus/transport_controller.h>
 #include <string>
 #include <vector>
-
 // MSVC's <cmath> does not define M_PI without _USE_MATH_DEFINES; guard it so
 // the Windows build resolves the constant. Matches the codebase's M_PI_2 guard.
 #ifndef M_PI
@@ -113,13 +118,33 @@ std::string writeSineWav(const std::filesystem::path& path, float freq, float du
   file.close();
   return path.string();
 }
+class OverlapEventCounter final : public ITransportCallback {
+public:
+  std::atomic<uint32_t> firstStarts{0};
+  std::atomic<uint32_t> refireStarts{0};
+  std::atomic<uint32_t> underruns{0};
+
+  void onClipStarted(ClipHandle, StartRequestTag requestTag, uint32_t, TransportPosition) override {
+    if (requestTag == 1) {
+      firstStarts.fetch_add(1, std::memory_order_relaxed);
+    } else if (requestTag == 2) {
+      refireStarts.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  void onClipStopped(ClipHandle, StartRequestTag, uint32_t, TransportPosition) override {}
+  void onClipLooped(ClipHandle, StartRequestTag, uint32_t, TransportPosition) override {}
+  void onBufferUnderrun(TransportPosition) override {
+    underruns.fetch_add(1, std::memory_order_relaxed);
+  }
+};
 
 } // namespace
 
 class Occ155ApiTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
     m_dir = std::filesystem::temp_directory_path() / "occ155_api";
     std::filesystem::create_directories(m_dir);
     m_constPath = writeConstantWav(m_dir / "const.wav", 2.0f, kSampleRate);
@@ -344,4 +369,62 @@ TEST_F(Occ155ApiTest, FadeOverlapReFireHasIndependentCursors) {
   EXPECT_EQ(m_transport->getClipState(h), PlaybackState::Playing);
   int64_t advanced = m_transport->getClipPosition(h);
   EXPECT_GT(advanced, freshPos) << "Surviving fresh voice must keep advancing on its own cursor";
+}
+
+TEST_F(Occ155ApiTest, SharedStreamingFadeOverlapHasBoundedRealtimeRender) {
+  const std::string path =
+      writeSineWav(m_dir / "streaming_overlap.wav", 4000.0f, 9.0f, kSampleRate);
+  m_transport->setPreparedSourceMaxFrames(kSampleRate);
+  ASSERT_EQ(m_transport->setMaxVoicesPerClip(2), SessionGraphError::OK);
+  OverlapEventCounter callback;
+  m_transport->setCallback(&callback);
+  const ClipHandle handle = 7;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, path), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipVoiceMode(handle, VoiceMode::MonoWithFadeOverlap),
+            SessionGraphError::OK);
+  auto metadata = m_transport->getClipMetadata(handle);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->stopFadeOutSeconds = 4.0;
+  ASSERT_EQ(m_transport->updateClipMetadata(handle, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setClipLoopMode(handle, true), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->prepareClipAudio(handle), SessionGraphError::OK);
+
+  std::array<float, kBuffer> left{};
+  std::array<float, kBuffer> right{};
+  float* buffers[] = {left.data(), right.data()};
+  const auto render = [&]() {
+    {
+      orpheus::tests::support::RtSection section;
+      m_transport->processAudio(buffers, 2, kBuffer);
+    }
+    m_transport->processCallbacks();
+  };
+
+  orpheus::tests::support::RtGuardState::reset();
+  ASSERT_EQ(m_transport->startClip(handle, 1), SessionGraphError::OK);
+  render();
+  constexpr int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  ASSERT_EQ(m_transport->seekClip(handle, 6 * page + 100), SessionGraphError::OK);
+  render();
+  ASSERT_EQ(m_transport->stopClip(handle), SessionGraphError::OK);
+  render();
+  ASSERT_EQ(m_transport->startClip(handle, 2), SessionGraphError::OK);
+  render();
+
+  EXPECT_EQ(m_transport->getActiveVoiceCount(handle), 2u);
+  EXPECT_EQ(callback.firstStarts.load(std::memory_order_relaxed), 1u);
+  EXPECT_EQ(callback.refireStarts.load(std::memory_order_relaxed), 1u);
+  EXPECT_EQ(callback.underruns.load(std::memory_order_relaxed), 0u);
+  float peak = 0.0f;
+  for (const float sample : left) {
+    peak = std::max(peak, std::fabs(sample));
+  }
+  EXPECT_GT(peak, 0.01f);
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::allocViolations(), 0u);
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::deallocViolations(), 0u);
+
+  ASSERT_EQ(m_transport->panic(), SessionGraphError::OK);
+  render();
+  EXPECT_EQ(m_transport->getActiveVoiceCount(handle), 0u);
+  m_transport->setCallback(nullptr);
 }

@@ -77,3 +77,38 @@ This preserves an auditable upstream → SDK package → application gitlink cha
 - `packages/shmui-juce/`
 - `packages/shmui-juce/shmui-juce-import.json`
 - `docs/orp/ORP261 ShmUI Segmented Meter Import Handoff.md`
+
+## Governed performance and streaming qualification — 2026-10-14
+
+Current integration branch: `fix/shared-stream-governed-integration`, based on
+mainline `3ca1fa06e`, retaining the initial-loop-fade fix. Governed upstream
+inputs: ShmUI `1f2c87a`, synchronized through the authoritative script.
+Manifest: 58 files, SHA-256
+`c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`;
+token contract `0.6.0`, OpenGL opt-in unchanged.
+
+Repaint budget, static chrome, grit-table and baked-ladder caches are retained.
+The actual imported SHM026 native fixture passed (1.22 s), including 1x/2x
+pixels, transition invalidation, interval peaks, continuous compatibility and
+paint-safe callbacks. SHM026 records two matched 60-second native workloads,
+actual final construction counts, observation age, frame misses and bounded
+memory costs. Approximately 24 Hz was observed, not guaranteed 30 fps.
+
+The independent streaming correction preserves one decoder and the six-steady/
+four-command page budgets, using coherent bounded per-voice demand publication
+and transient copy pins. Full configured SDK build and CTest passed:
+84/84 gates, zero failed, 223.70 s. The rebuilt installed-public-SDK smoke
+passed with one source, two voices, one Started settlement per request, audible
+old/fresh cursors and zero underruns after paced Stop/refire sustain.
+Historical checkpoint `95d5e3` remains provenance, not the adopted implementation.
+
+Clip Composer adoption belongs to its application agent. Pin the resulting SDK
+commit, rebuild all matching code and run both long-streaming regressions,
+the full app suite and isolated native READY smoke before claiming adoption.
+No admission/readiness bypass, cooldown change, duplicate decoder, voice-policy
+change or fix for every intermittent refusal is authorized. Hardware/acoustic,
+non-macOS and physical-monitor migration qualification remain unperformed.
+The upstream ShmUI change is merged through PR #33 at mainline merge commit
+`0485e8973f6a038b837eae31fad11b556aba00f0`; original governed input
+`1f2c87a089d975eec1396360173da87a926835ed` remains in its ancestry.
+SDK integration is proposed in PR #269; application adoption remains separate.
