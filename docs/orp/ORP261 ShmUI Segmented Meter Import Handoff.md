@@ -108,4 +108,7 @@ the full app suite and isolated native READY smoke before claiming adoption.
 No admission/readiness bypass, cooldown change, duplicate decoder, voice-policy
 change or fix for every intermittent refusal is authorized. Hardware/acoustic,
 non-macOS and physical-monitor migration qualification remain unperformed.
-These commits are local; remote delivery requires user approval.
+The upstream ShmUI change is merged through PR #33 at mainline merge commit
+`0485e8973f6a038b837eae31fad11b556aba00f0`; original governed input
+`1f2c87a089d975eec1396360173da87a926835ed` remains in its ancestry.
+SDK integration is proposed in PR #269; application adoption remains separate.
