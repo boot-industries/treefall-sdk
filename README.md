@@ -226,6 +226,16 @@ remain independently controlled by `stopFadeOutSeconds` and `stopFadeOutCurve`.
 
 ### 💾 Persistent Metadata
 
+Initial state for a replacement/unpublished transport can be installed with
+`registerClipAudioWithMetadata(handle, path, metadata)`. Unlike
+`updateClipMetadata()`, this control-thread operation commits the source and
+complete playback metadata together without using the bounded render-command
+queue; invalid metadata leaves the handle unregistered. It is intended for
+initial configuration only. Active metadata changes should continue to use
+`updateClipMetadata()` so the audio thread applies them atomically at a render
+boundary.
+
+
 ```cpp
 // Batch update all clip settings (survives stop/start cycles)
 ClipMetadata metadata;

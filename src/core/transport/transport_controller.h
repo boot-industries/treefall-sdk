@@ -365,6 +365,9 @@ public:
   /// @param file_path Path to audio file
   /// @return Error code
   SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) override;
+  SessionGraphError registerClipAudioWithMetadata(
+      ClipHandle handle, const std::string& file_path,
+      const ClipMetadata& metadata) override;
 
   /// ORP134 G1: Build the clip's realtime playback source outside the audio
   /// callback — whole-file PCM in memory for short clips, a worker-fed page
@@ -784,6 +787,16 @@ private:
     // Cue points (stored sorted by position)
     std::vector<CuePoint> cuePoints;
   };
+  SessionGraphError registerClipAudioImpl(
+      ClipHandle handle, const std::string& file_path,
+      const ClipMetadata* initialMetadata);
+  SessionGraphError validateClipMetadataFields(
+      const AudioFileEntry& entry, const ClipMetadata& metadata,
+      int64_t& trimOut) const;
+  static void applyClipMetadata(AudioFileEntry& entry,
+                                const ClipMetadata& metadata,
+                                int64_t trimOut);
+
   std::mutex m_audioFilesMutex;
   std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
 

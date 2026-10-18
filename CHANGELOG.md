@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ITransportController::registerClipAudioWithMetadata()` atomically registers a
+  clip source and its complete initial `ClipMetadata` on the control thread
+  without consuming a render-command node. Invalid metadata leaves the handle
+  unregistered; the default interface implementation reports `NotSupported`.
+  The additive C++ interface extension requires downstream consumers to rebuild.
+
+
 ### Changed
 
 - Diagnostics now describe `latencyMs` as estimated callback-buffer duration,
