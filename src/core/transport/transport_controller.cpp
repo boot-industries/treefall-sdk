@@ -2600,8 +2600,20 @@ void TransportController::processCallbacks() {
   m_callbackReadIndex.store(readIdx, std::memory_order_release);
 }
 
-SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
-                                                         const std::string& file_path) {
+SessionGraphError TransportController::registerClipAudio(
+    ClipHandle handle, const std::string& file_path) {
+  return registerClipAudioImpl(handle, file_path, nullptr);
+}
+
+SessionGraphError TransportController::registerClipAudioWithMetadata(
+    ClipHandle handle, const std::string& file_path,
+    const ClipMetadata& metadata) {
+  return registerClipAudioImpl(handle, file_path, &metadata);
+}
+
+SessionGraphError TransportController::registerClipAudioImpl(
+    ClipHandle handle, const std::string& file_path,
+    const ClipMetadata* initialMetadata) {
   if (handle == 0) {
     return SessionGraphError::InvalidHandle;
   }
@@ -2695,6 +2707,21 @@ SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
   // for resampled files) so trims are in the same timeline as the transport.
   entry.trimInSamples = 0;
   entry.trimOutSamples = entry.metadata.duration_samples;
+
+  if (initialMetadata != nullptr) {
+    int64_t trimOut = 0;
+    const auto validation =
+        validateClipMetadataFields(entry, *initialMetadata, trimOut);
+    if (validation != SessionGraphError::OK)
+      return validation;
+    ClipDspProcessor preparedDsp;
+    if (preparedDsp.prepare(initialMetadata->dsp, m_sampleRate,
+                            entry.metadata.num_channels) !=
+        ClipDspValidationError::OK) {
+      return SessionGraphError::InvalidParameter;
+    }
+    applyClipMetadata(entry, *initialMetadata, trimOut);
+  }
 
   m_audioFiles.emplace(handle, std::move(entry));
 
@@ -3091,6 +3118,90 @@ bool TransportController::getClipStopOthersMode(ClipHandle handle) const {
   return it->second.stopOthersOnPlay;
 }
 
+SessionGraphError TransportController::validateClipMetadataFields(
+    const AudioFileEntry& entry, const ClipMetadata& metadata,
+    int64_t& trimOut) const {
+  const int64_t fileDurationSamples = entry.metadata.duration_samples;
+  const uint16_t fileChannels = entry.metadata.num_channels;
+  trimOut = metadata.trimOutSamples == 0 ? fileDurationSamples
+                                         : metadata.trimOutSamples;
+  if (metadata.trimInSamples < 0 ||
+      metadata.trimInSamples >= fileDurationSamples ||
+      trimOut <= metadata.trimInSamples || trimOut > fileDurationSamples) {
+    return SessionGraphError::InvalidClipTrimPoints;
+  }
+  if (metadata.segmentCount > kMaxClipPlaybackSegments)
+    return SessionGraphError::InvalidParameter;
+  for (uint32_t index = 0; index < metadata.segmentCount; ++index) {
+    const auto& segment = metadata.segments[index];
+    if (segment.startSample < metadata.trimInSamples ||
+        segment.endSample <= segment.startSample || segment.endSample > trimOut ||
+        segment.repeatCount == 0 ||
+        segment.repeatCount > kMaxClipSegmentRepeatCount) {
+      return SessionGraphError::InvalidParameter;
+    }
+  }
+
+  const int64_t clipDuration = trimOut - metadata.trimInSamples;
+  const double clipDurationSeconds =
+      static_cast<double>(clipDuration) / static_cast<double>(m_sampleRate);
+  if (metadata.fadeInSeconds < 0.0 ||
+      metadata.fadeInSeconds > clipDurationSeconds ||
+      metadata.fadeOutSeconds < 0.0 ||
+      metadata.fadeOutSeconds > clipDurationSeconds ||
+      !std::isfinite(metadata.stopFadeOutSeconds) ||
+      metadata.stopFadeOutSeconds < 0.0 ||
+      metadata.stopFadeOutSeconds > clipDurationSeconds) {
+    return SessionGraphError::InvalidFadeDuration;
+  }
+
+  if (!std::isfinite(metadata.gainDb) || !std::isfinite(metadata.pan) ||
+      metadata.pan < -1.0f || metadata.pan > 1.0f ||
+      !std::isfinite(metadata.playbackRate) || metadata.playbackRate < 0.25 ||
+      metadata.playbackRate > 4.0 ||
+      !std::isfinite(metadata.playDelaySeconds) ||
+      metadata.playDelaySeconds < 0.0 || metadata.playDelaySeconds > 99.9) {
+    return SessionGraphError::InvalidParameter;
+  }
+  if (metadata.routingGroup >= m_config.numGroups ||
+      fileChannels >
+          m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
+    return SessionGraphError::InvalidParameter;
+  }
+  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize,
+                           metadata.speakerPatch, fileChannels)) {
+    return SessionGraphError::InvalidParameter;
+  }
+  return SessionGraphError::OK;
+}
+
+void TransportController::applyClipMetadata(
+    AudioFileEntry& entry, const ClipMetadata& metadata, int64_t trimOut) {
+  entry.trimInSamples = metadata.trimInSamples;
+  entry.trimOutSamples = trimOut;
+  entry.fadeInSeconds = metadata.fadeInSeconds;
+  entry.fadeOutSeconds = metadata.fadeOutSeconds;
+  entry.fadeInCurve = metadata.fadeInCurve;
+  entry.fadeOutCurve = metadata.fadeOutCurve;
+  entry.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
+  entry.stopFadeOutCurve = metadata.stopFadeOutCurve;
+  entry.loopEnabled = metadata.loopEnabled;
+  entry.stopOthersOnPlay = metadata.stopOthersOnPlay;
+  entry.voiceMode = metadata.voiceMode;
+  entry.gainDb = metadata.gainDb;
+  entry.muted = metadata.muted;
+  entry.pan = metadata.pan;
+  entry.playbackRate = metadata.playbackRate;
+  entry.playDelaySeconds = metadata.playDelaySeconds;
+  entry.routingGroup = metadata.routingGroup;
+  entry.sourceLayout = metadata.sourceLayout;
+  entry.speakerPatchSize = metadata.speakerPatchSize;
+  entry.speakerPatch = metadata.speakerPatch;
+  entry.segmentCount = metadata.segmentCount;
+  entry.segments = metadata.segments;
+  entry.dsp = metadata.dsp;
+}
+
 SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
                                                           const ClipMetadata& metadata) {
   if (handle == 0) {
@@ -3101,55 +3212,12 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   auto it = m_audioFiles.find(handle);
   if (it == m_audioFiles.end())
     return SessionGraphError::ClipNotRegistered;
-  const int64_t fileDurationSamples = it->second.metadata.duration_samples;
   const uint16_t fileChannels = it->second.metadata.num_channels;
-
-  int64_t trimOut = metadata.trimOutSamples;
-  if (trimOut == 0) {
-    trimOut = fileDurationSamples;
-  }
-  if (metadata.trimInSamples < 0 || metadata.trimInSamples >= fileDurationSamples ||
-      trimOut <= metadata.trimInSamples || trimOut > fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
-  }
-
-  if (metadata.segmentCount > kMaxClipPlaybackSegments) {
-    return SessionGraphError::InvalidParameter;
-  }
-  for (uint32_t index = 0; index < metadata.segmentCount; ++index) {
-    const auto& segment = metadata.segments[index];
-    if (segment.startSample < metadata.trimInSamples || segment.endSample <= segment.startSample ||
-        segment.endSample > trimOut || segment.repeatCount == 0 ||
-        segment.repeatCount > kMaxClipSegmentRepeatCount) {
-      return SessionGraphError::InvalidParameter;
-    }
-  }
-
-  const int64_t clipDuration = trimOut - metadata.trimInSamples;
-  const double clipDurationSeconds =
-      static_cast<double>(clipDuration) / static_cast<double>(m_sampleRate);
-  if (metadata.fadeInSeconds < 0.0 || metadata.fadeInSeconds > clipDurationSeconds ||
-      metadata.fadeOutSeconds < 0.0 || metadata.fadeOutSeconds > clipDurationSeconds ||
-      !std::isfinite(metadata.stopFadeOutSeconds) || metadata.stopFadeOutSeconds < 0.0 ||
-      metadata.stopFadeOutSeconds > clipDurationSeconds) {
-    return SessionGraphError::InvalidFadeDuration;
-  }
-
-  if (!std::isfinite(metadata.gainDb) || !std::isfinite(metadata.pan) || metadata.pan < -1.0f ||
-      metadata.pan > 1.0f || !std::isfinite(metadata.playbackRate) ||
-      metadata.playbackRate < 0.25 || metadata.playbackRate > 4.0 ||
-      !std::isfinite(metadata.playDelaySeconds) || metadata.playDelaySeconds < 0.0 ||
-      metadata.playDelaySeconds > 99.9) {
-    return SessionGraphError::InvalidParameter;
-  }
-  if (metadata.routingGroup >= m_config.numGroups ||
-      fileChannels > m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
-    return SessionGraphError::InvalidParameter;
-  }
-  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize, metadata.speakerPatch,
-                           fileChannels)) {
-    return SessionGraphError::InvalidParameter;
-  }
+  int64_t trimOut = 0;
+  const auto validation =
+      validateClipMetadataFields(it->second, metadata, trimOut);
+  if (validation != SessionGraphError::OK)
+    return validation;
 
   ClipDspProcessor preparedDsp;
 
@@ -3229,29 +3297,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return postResult;
   reservation.disarm();
 
-  it->second.trimInSamples = metadata.trimInSamples;
-  it->second.trimOutSamples = trimOut;
-  it->second.fadeInSeconds = metadata.fadeInSeconds;
-  it->second.fadeOutSeconds = metadata.fadeOutSeconds;
-  it->second.fadeInCurve = metadata.fadeInCurve;
-  it->second.fadeOutCurve = metadata.fadeOutCurve;
-  it->second.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
-  it->second.stopFadeOutCurve = metadata.stopFadeOutCurve;
-  it->second.loopEnabled = metadata.loopEnabled;
-  it->second.stopOthersOnPlay = metadata.stopOthersOnPlay;
-  it->second.voiceMode = metadata.voiceMode;
-  it->second.gainDb = metadata.gainDb;
-  it->second.muted = metadata.muted;
-  it->second.pan = metadata.pan;
-  it->second.playbackRate = metadata.playbackRate;
-  it->second.playDelaySeconds = metadata.playDelaySeconds;
-  it->second.routingGroup = metadata.routingGroup;
-  it->second.sourceLayout = metadata.sourceLayout;
-  it->second.speakerPatchSize = metadata.speakerPatchSize;
-  it->second.speakerPatch = metadata.speakerPatch;
-  it->second.segmentCount = metadata.segmentCount;
-  it->second.segments = metadata.segments;
-  it->second.dsp = metadata.dsp;
+  applyClipMetadata(it->second, metadata, trimOut);
   return SessionGraphError::OK;
 }
 

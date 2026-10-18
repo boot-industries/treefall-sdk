@@ -177,6 +177,32 @@ int main() {
   }
 
   const auto wav = writeFixtureWav();
+  orpheus::ClipMetadata initialMetadata;
+  initialMetadata.trimInSamples = 8;
+  initialMetadata.trimOutSamples = 120;
+  initialMetadata.fadeInSeconds = 0.0001;
+  initialMetadata.fadeOutSeconds = 0.0002;
+  initialMetadata.stopFadeOutSeconds = 0.0001;
+  initialMetadata.sourceLayout = orpheus::ChannelLayout::Stereo;
+  initialMetadata.speakerPatchSize = 2;
+  initialMetadata.speakerPatch[0] = orpheus::Speaker::L;
+  initialMetadata.speakerPatch[1] = orpheus::Speaker::R;
+  initialMetadata.segmentCount = 1;
+  initialMetadata.segments[0] = {8, 120, 2};
+  if (transport->registerClipAudioWithMetadata(
+          78, wav.string(), initialMetadata) != orpheus::SessionGraphError::OK) {
+    return 14;
+  }
+  const auto restoredMetadata = transport->getClipMetadata(78);
+  const auto registrationTelemetry = transport->getCommandIngressTelemetry();
+  if (!restoredMetadata || restoredMetadata->trimInSamples != 8 ||
+      restoredMetadata->trimOutSamples != 120 ||
+      restoredMetadata->segmentCount != 1 ||
+      restoredMetadata->segments[0] != initialMetadata.segments[0] ||
+      registrationTelemetry.attemptedCount != 0) {
+    return 15;
+  }
+
   if (transport->registerClipAudio(77, wav.string()) != orpheus::SessionGraphError::OK ||
       transport->startClip(77) != orpheus::SessionGraphError::OK) {
     return 5;
