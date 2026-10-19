@@ -189,15 +189,14 @@ int main() {
   initialMetadata.speakerPatch[1] = orpheus::Speaker::R;
   initialMetadata.segmentCount = 1;
   initialMetadata.segments[0] = {8, 120, 2};
-  if (transport->registerClipAudioWithMetadata(
-          78, wav.string(), initialMetadata) != orpheus::SessionGraphError::OK) {
+  if (transport->registerClipAudioWithMetadata(78, wav.string(), initialMetadata) !=
+      orpheus::SessionGraphError::OK) {
     return 14;
   }
   const auto restoredMetadata = transport->getClipMetadata(78);
   const auto registrationTelemetry = transport->getCommandIngressTelemetry();
   if (!restoredMetadata || restoredMetadata->trimInSamples != 8 ||
-      restoredMetadata->trimOutSamples != 120 ||
-      restoredMetadata->segmentCount != 1 ||
+      restoredMetadata->trimOutSamples != 120 || restoredMetadata->segmentCount != 1 ||
       restoredMetadata->segments[0] != initialMetadata.segments[0] ||
       registrationTelemetry.attemptedCount != 0) {
     return 15;

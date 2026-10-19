@@ -283,14 +283,12 @@ TEST_F(ClipMetadataTest, RegistersFullInitialMetadataWithoutRenderCommands) {
 
   auto invalidMetadata = metadata;
   invalidMetadata.trimInSamples = -1;
-  EXPECT_EQ(m_transport->registerClipAudioWithMetadata(
-                handle, m_testFilePath, invalidMetadata),
+  EXPECT_EQ(m_transport->registerClipAudioWithMetadata(handle, m_testFilePath, invalidMetadata),
             SessionGraphError::InvalidClipTrimPoints);
   EXPECT_FALSE(m_transport->getClipMetadata(handle).has_value());
 
   const auto before = m_transport->getCommandIngressTelemetry();
-  ASSERT_EQ(m_transport->registerClipAudioWithMetadata(
-                handle, m_testFilePath, metadata),
+  ASSERT_EQ(m_transport->registerClipAudioWithMetadata(handle, m_testFilePath, metadata),
             SessionGraphError::OK);
   const auto after = m_transport->getCommandIngressTelemetry();
   EXPECT_EQ(after.attemptedCount, before.attemptedCount);
