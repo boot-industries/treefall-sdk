@@ -107,22 +107,17 @@ public:
     }
 
     const size_t mix_bytes = sizeof(WAVEFORMATEX) + mix_format->cbSize;
-    std::vector<std::byte> requested_bytes(mix_bytes);
-    std::memcpy(requested_bytes.data(), mix_format, mix_bytes);
-    auto* requested_format = reinterpret_cast<WAVEFORMATEX*>(requested_bytes.data());
-    requested_format->nChannels = requested.num_outputs;
-    requested_format->nSamplesPerSec = requested.sample_rate;
-    const uint32_t bytes_per_sample = requested_format->wBitsPerSample / 8u;
-    const uint32_t block_align = static_cast<uint32_t>(requested.num_outputs) * bytes_per_sample;
-    const uint64_t average_bytes = static_cast<uint64_t>(requested.sample_rate) * block_align;
-    if (bytes_per_sample == 0 || block_align > std::numeric_limits<uint16_t>::max() ||
-        average_bytes > std::numeric_limits<uint32_t>::max()) {
+    detail::WASAPIRequestLayout request_layout{};
+    request_layout.num_outputs = requested.num_outputs;
+    request_layout.sample_rate = requested.sample_rate;
+    std::vector<std::byte> requested_bytes;
+    if (!detail::buildWASAPIRequestDescriptor(mix_format, mix_bytes, request_layout,
+                                              requested_bytes)) {
       CoTaskMemFree(mix_format);
       cleanup();
       return SessionGraphError::InvalidParameter;
     }
-    requested_format->nBlockAlign = static_cast<uint16_t>(block_align);
-    requested_format->nAvgBytesPerSec = static_cast<uint32_t>(average_bytes);
+    auto* requested_format = reinterpret_cast<WAVEFORMATEX*>(requested_bytes.data());
     detail::WASAPIFormatShape requested_shape;
     if (!detail::validateWASAPINativeFormat(requested_bytes.data(), requested_bytes.size(),
                                             requested.num_outputs, requested_shape)) {
@@ -355,6 +350,43 @@ bool validateWASAPINativeFormat(const void* descriptor, size_t descriptor_bytes,
     return false;
   }
   shape = candidate;
+  return true;
+}
+
+bool buildWASAPIRequestDescriptor(const void* mix_descriptor, size_t mix_bytes,
+                                  const WASAPIRequestLayout& requested,
+                                  std::vector<std::byte>& request_bytes) noexcept {
+  if (mix_descriptor == nullptr || mix_bytes < sizeof(WAVEFORMATEX)) {
+    return false;
+  }
+  request_bytes.assign(mix_bytes, std::byte{0});
+  std::memcpy(request_bytes.data(), mix_descriptor, mix_bytes);
+  auto* format = reinterpret_cast<WAVEFORMATEX*>(request_bytes.data());
+  const uint32_t bytes_per_sample = format->wBitsPerSample / 8u;
+  const uint32_t block_align = static_cast<uint32_t>(requested.num_outputs) * bytes_per_sample;
+  const uint64_t average_bytes = static_cast<uint64_t>(requested.sample_rate) * block_align;
+  if (bytes_per_sample == 0 || block_align > std::numeric_limits<uint16_t>::max() ||
+      average_bytes > std::numeric_limits<uint32_t>::max()) {
+    return false;
+  }
+  format->nChannels = requested.num_outputs;
+  format->nSamplesPerSec = requested.sample_rate;
+  format->nBlockAlign = static_cast<uint16_t>(block_align);
+  format->nAvgBytesPerSec = static_cast<uint32_t>(average_bytes);
+  // A mix format that describes more channels than the request keeps a speaker
+  // mask that no longer matches the request. The request is self-authored, so
+  // its mask is reconciled with the requested channel count instead of
+  // inheriting the device's layout.
+  if (format->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+      format->cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX) &&
+      request_bytes.size() >= sizeof(WAVEFORMATEXTENSIBLE)) {
+    WAVEFORMATEXTENSIBLE native{};
+    std::memcpy(&native, request_bytes.data(), sizeof(native));
+    native.dwChannelMask = reconcileWASAPIChannelMask(native.dwChannelMask, requested.num_outputs);
+    std::memcpy(request_bytes.data() + sizeof(WAVEFORMATEX),
+                reinterpret_cast<const std::byte*>(&native) + sizeof(WAVEFORMATEX),
+                sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX));
+  }
   return true;
 }
 

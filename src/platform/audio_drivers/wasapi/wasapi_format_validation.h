@@ -45,4 +45,41 @@ inline constexpr bool validateWASAPIFormatShape(const WASAPIFormatShape& shape,
   return shape.channel_mask == 0 || std::popcount(shape.channel_mask) == shape.channels;
 }
 
+/// Canonical speaker mask for a channel count, or 0 for unspecified placement.
+inline constexpr uint32_t canonicalWASAPISpeakerMask(uint16_t channels) noexcept {
+  switch (channels) {
+  case 1:
+    return 0x4; // SPEAKER_FRONT_CENTER
+  case 2:
+    return 0x3; // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+  case 4:
+    return 0x33; // SPEAKER_QUAD
+  case 6:
+    return 0x3F; // SPEAKER_SURROUND
+  case 8:
+    return 0x63F; // SPEAKER_7POINT1
+  default:
+    return 0; // unspecified speaker placement
+  }
+}
+
+/// Speaker mask a self-authored request descriptor has to carry.
+///
+/// A device mix format that describes more channels than the request keeps a
+/// speaker mask that no longer matches the request, so the request would be
+/// rejected by its own validation before the device is ever asked whether it
+/// supports the format. The request is self-authored, so its mask has to
+/// describe its own channel count: an inherited mask that does not match is
+/// replaced by the canonical layout for the requested count, or by the
+/// unspecified value when that count has no canonical layout. An inherited
+/// mask that already matches is kept, so a device layout the engine agrees
+/// with survives unchanged.
+inline constexpr uint32_t reconcileWASAPIChannelMask(uint32_t inherited_mask,
+                                                     uint16_t requested_channels) noexcept {
+  if (inherited_mask == 0 || std::popcount(inherited_mask) == requested_channels) {
+    return inherited_mask;
+  }
+  return canonicalWASAPISpeakerMask(requested_channels);
+}
+
 } // namespace orpheus::detail
