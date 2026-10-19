@@ -252,3 +252,70 @@ TEST_F(ClipMetadataTest, StopOthersOnPlayPersists) {
   meta = m_transport->getClipMetadata(handle);
   EXPECT_FALSE(meta->stopOthersOnPlay);
 }
+
+TEST_F(ClipMetadataTest, RegistersFullInitialMetadataWithoutRenderCommands) {
+  constexpr ClipHandle handle = 73;
+  ClipMetadata metadata;
+  metadata.trimInSamples = 1200;
+  metadata.trimOutSamples = 45600;
+  metadata.fadeInSeconds = 0.05;
+  metadata.fadeOutSeconds = 0.08;
+  metadata.fadeInCurve = FadeCurve::EqualPower;
+  metadata.fadeOutCurve = FadeCurve::Exponential;
+  metadata.stopFadeOutSeconds = 0.03;
+  metadata.stopFadeOutCurve = FadeCurve::EqualPower;
+  metadata.loopEnabled = true;
+  metadata.stopOthersOnPlay = true;
+  metadata.gainDb = -3.0f;
+  metadata.muted = true;
+  metadata.pan = -0.25f;
+  metadata.playbackRate = 1.25;
+  metadata.playDelaySeconds = 0.2;
+  metadata.voiceMode = VoiceMode::MonoWithFadeOverlap;
+  metadata.routingGroup = 0;
+  metadata.sourceLayout = ChannelLayout::Stereo;
+  metadata.speakerPatchSize = 2;
+  metadata.speakerPatch[0] = Speaker::L;
+  metadata.speakerPatch[1] = Speaker::R;
+  metadata.segmentCount = 2;
+  metadata.segments[0] = {1200, 24000, 2};
+  metadata.segments[1] = {24000, 45600, 1};
+
+  auto invalidMetadata = metadata;
+  invalidMetadata.trimInSamples = -1;
+  EXPECT_EQ(m_transport->registerClipAudioWithMetadata(handle, m_testFilePath, invalidMetadata),
+            SessionGraphError::InvalidClipTrimPoints);
+  EXPECT_FALSE(m_transport->getClipMetadata(handle).has_value());
+
+  const auto before = m_transport->getCommandIngressTelemetry();
+  ASSERT_EQ(m_transport->registerClipAudioWithMetadata(handle, m_testFilePath, metadata),
+            SessionGraphError::OK);
+  const auto after = m_transport->getCommandIngressTelemetry();
+  EXPECT_EQ(after.attemptedCount, before.attemptedCount);
+
+  const auto stored = m_transport->getClipMetadata(handle);
+  ASSERT_TRUE(stored.has_value());
+  EXPECT_EQ(stored->trimInSamples, metadata.trimInSamples);
+  EXPECT_EQ(stored->trimOutSamples, metadata.trimOutSamples);
+  EXPECT_DOUBLE_EQ(stored->fadeInSeconds, metadata.fadeInSeconds);
+  EXPECT_DOUBLE_EQ(stored->fadeOutSeconds, metadata.fadeOutSeconds);
+  EXPECT_EQ(stored->fadeInCurve, metadata.fadeInCurve);
+  EXPECT_EQ(stored->fadeOutCurve, metadata.fadeOutCurve);
+  EXPECT_DOUBLE_EQ(stored->stopFadeOutSeconds, metadata.stopFadeOutSeconds);
+  EXPECT_EQ(stored->stopFadeOutCurve, metadata.stopFadeOutCurve);
+  EXPECT_TRUE(stored->loopEnabled);
+  EXPECT_TRUE(stored->stopOthersOnPlay);
+  EXPECT_FLOAT_EQ(stored->gainDb, metadata.gainDb);
+  EXPECT_TRUE(stored->muted);
+  EXPECT_FLOAT_EQ(stored->pan, metadata.pan);
+  EXPECT_DOUBLE_EQ(stored->playbackRate, metadata.playbackRate);
+  EXPECT_DOUBLE_EQ(stored->playDelaySeconds, metadata.playDelaySeconds);
+  EXPECT_EQ(stored->voiceMode, metadata.voiceMode);
+  EXPECT_EQ(stored->routingGroup, metadata.routingGroup);
+  EXPECT_EQ(stored->sourceLayout, metadata.sourceLayout);
+  EXPECT_EQ(stored->speakerPatchSize, metadata.speakerPatchSize);
+  EXPECT_EQ(stored->speakerPatch, metadata.speakerPatch);
+  EXPECT_EQ(stored->segmentCount, metadata.segmentCount);
+  EXPECT_EQ(stored->segments, metadata.segments);
+  EXPECT_EQ(stored->dsp, metadata.dsp);
+}

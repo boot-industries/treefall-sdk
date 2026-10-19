@@ -9,6 +9,15 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP270 Transport Initial Metadata Registration Delivery]] —
+  reviewed delivery of `ITransportController::registerClipAudioWithMetadata()`,
+  an additive C++-only initial-metadata registration path with transport
+  coverage and an installed clean-prefix fixture (2026-10-19)
+
+- [[ORP269 Suite Floating Development Coordinator Repair]] —
+  development-channel coordinator behavior and floating-ref validation for the
+  suite tool, with manifest and reachability evidence (2026-10-14)
+
 - [[ORP266 DeepWiki Coherence Audit]] —
   independent coherence audit of the Treefall SDK against the pinned external
   DeepWiki description at commit `fb5b4b97`; 16 findings across 8 axes, all
@@ -117,6 +126,8 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Records
 
+- [ORP270 Transport Initial Metadata Registration Delivery](ORP270%20Transport%20Initial%20Metadata%20Registration%20Delivery.md)
+- [ORP269 Suite Floating Development Coordinator Repair](ORP269%20Suite%20Floating%20Development%20Coordinator%20Repair.md)
 - [ORP266 DeepWiki Coherence Audit](ORP266%20DeepWiki%20Coherence%20Audit.md)
 - [ORP267 DeepWiki Implementation Plan](ORP267%20DeepWiki%20Implementation%20Plan.md)
 - [ORP268 Deferred Audit Remediation Requirements](ORP268%20Deferred%20Audit%20Remediation%20Requirements.md)
@@ -268,6 +279,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 - [[ORP178 ShmUI Segmented Meter Import Handoff]]
 - [[ORP181 Upstream Meter Latency Correction and Temporal Coherence Progress]]
 - [[ORP269 Suite Floating Development Coordinator Repair]]
+- [[ORP270 Transport Initial Metadata Registration Delivery]]
 
 ## Navigation
 
@@ -281,4 +293,4 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ---
 
-**Last Generated:** 2026-10-14
+**Last Generated:** 2026-10-19
