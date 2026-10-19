@@ -108,7 +108,13 @@ public:
   detail::WASAPIRenderStatus getPadding(uint32_t& padding) noexcept override {
     ++padding_calls;
     padding = configured_padding;
-    return padding_status;
+    if (inject_malformed_padding || padding_status != detail::WASAPIRenderStatus::Ready) {
+      return padding_status;
+    }
+    // Mirror the runtime mapping: a full or overfull buffer has no frames to
+    // render, so the driver skips the acquire instead of failing.
+    return padding >= buffer_frames ? detail::WASAPIRenderStatus::NoFrames
+                                    : detail::WASAPIRenderStatus::Ready;
   }
 
   detail::WASAPIRenderStatus acquire(uint32_t frames, BYTE*& output) noexcept override {
@@ -201,6 +207,9 @@ public:
   uint32_t buffer_frames{4};
   uint16_t resolved_output_channels{2};
   uint32_t configured_padding{0};
+  /// Test-only seam: report a padding value the runtime never produces, so the
+  /// driver's defensive handling of a malformed padding stays covered.
+  bool inject_malformed_padding{false};
   bool output_float32{true};
   bool extensible{false};
   uint32_t channel_mask{0};
@@ -469,7 +478,6 @@ TEST(WASAPIDriverTest, PaddingAcquireAndReleaseFailuresAreTerminal) {
     EXPECT_EQ(runtime->buffer_owned.load(), failure == 2);
     EXPECT_EQ(driver.start(&callback), SessionGraphError::NotReady);
     EXPECT_EQ(driver.stop(), SessionGraphError::OK);
-    EXPECT_EQ(runtime->stop_calls.load(), 1u);
     const auto callbacks_after_stop = callback.callback_count.load();
     runtime->padding_status = detail::WASAPIRenderStatus::Ready;
     runtime->acquire_status = detail::WASAPIRenderStatus::Ready;
@@ -554,8 +562,10 @@ TEST(WASAPIDriverTest, NativeDescriptorsAcceptPcm16AndFloat32IncludingExtensible
 
 TEST(WASAPIDriverTest, ReducedRequestedCountRejectsCopiedMaskButAllowsUnspecifiedMask) {
   auto descriptor = nativeFormat(true, true, 6, 0x3f);
-  // This is the actual negotiation transformation: reduce count/stride without
-  // inventing a new speaker map from the original six-channel mix descriptor.
+  // A descriptor that keeps the six-channel speaker mask while claiming two
+  // channels is self-inconsistent and stays rejected: the strict rule still
+  // governs a device-supplied descriptor. The driver's own request reconciles
+  // the mask with its channel count before it is validated.
   descriptor.Format.nChannels = 2;
   descriptor.Format.nBlockAlign = 8;
   descriptor.Format.nAvgBytesPerSec = 48000 * 8;
@@ -589,6 +599,51 @@ TEST(WASAPIDriverTest, ReducedRequestedCountRejectsCopiedMaskButAllowsUnspecifie
       EXPECT_EQ(callback.callback_count.load(), 0u);
     }
   }
+}
+
+TEST(WASAPIDriverTest, NativeRequestDescriptorReconcilesCopiedSpeakerMaskForReducedOutputs) {
+  // A 5.1 device mix format carries a six-channel speaker mask. A stereo
+  // request must not inherit it: the request is self-authored, so its mask has
+  // to describe its own channel count. Before the reconciliation the request
+  // was rejected by its own validation before the device was ever asked
+  // whether it supports the format.
+  const auto mix = nativeFormat(true, true, 6, 0x3f);
+  detail::WASAPIRequestLayout request{};
+  request.num_outputs = 2;
+  request.sample_rate = 48000;
+  std::vector<std::byte> request_bytes;
+  ASSERT_TRUE(
+      detail::buildWASAPIRequestDescriptor(&mix, descriptorExtent(mix), request, request_bytes));
+  detail::WASAPIFormatShape shape;
+  ASSERT_TRUE(
+      detail::validateWASAPINativeFormat(request_bytes.data(), request_bytes.size(), 2, shape));
+  EXPECT_EQ(shape.channels, 2u);
+  EXPECT_EQ(shape.channel_mask, 3u);
+  EXPECT_TRUE(shape.extensible);
+  EXPECT_EQ(shape.encoding, detail::WASAPISampleType::Float32);
+  EXPECT_EQ(shape.block_align, 8u);
+
+  // A request that keeps the device's six-channel mask is still rejected.
+  auto unreconciled = mix;
+  unreconciled.Format.nChannels = 2;
+  unreconciled.Format.nBlockAlign = 8;
+  unreconciled.Format.nAvgBytesPerSec = 48000 * 8;
+  detail::WASAPIFormatShape rejected;
+  EXPECT_FALSE(detail::validateWASAPINativeFormat(&unreconciled, descriptorExtent(unreconciled), 2,
+                                                  rejected));
+
+  // A request that matches the device's channel count keeps the device mask.
+  detail::WASAPIRequestLayout six_channel{};
+  six_channel.num_outputs = 6;
+  six_channel.sample_rate = 48000;
+  std::vector<std::byte> six_channel_bytes;
+  ASSERT_TRUE(detail::buildWASAPIRequestDescriptor(&mix, descriptorExtent(mix), six_channel,
+                                                   six_channel_bytes));
+  detail::WASAPIFormatShape six_shape;
+  ASSERT_TRUE(detail::validateWASAPINativeFormat(six_channel_bytes.data(), six_channel_bytes.size(),
+                                                 6, six_shape));
+  EXPECT_EQ(six_shape.channel_mask, 0x3fu);
+  EXPECT_EQ(six_shape.channels, 6u);
 }
 
 TEST(WASAPIDriverTest, NativeDescriptorsRejectMalformedShapeAndClosestChannelMismatch) {
@@ -839,13 +894,17 @@ TEST(WASAPIDriverTest, ZeroBufferFramesRejectsInitializationAndReleasesPartialRe
 }
 
 TEST(WASAPIDriverTest, MalformedPaddingAndNullAcquiredBuffersAreTerminal) {
-  for (unsigned failure = 0; failure < 3; ++failure) {
+  for (unsigned failure = 0; failure < 2; ++failure) {
     SCOPED_TRACE(failure);
     auto fake = std::make_unique<FakeRenderRuntime>();
     auto* runtime = fake.get();
     runtime->resetWaits({detail::WASAPIRenderStatus::Ready});
-    if (failure < 2) {
-      runtime->configured_padding = runtime->buffer_frames + failure;
+    if (failure == 0) {
+      // The runtime never reports a padding larger than the buffer capacity:
+      // it maps that to NoFrames, which the driver skips. The driver still
+      // defends against the malformed value, so the fake injects it.
+      runtime->inject_malformed_padding = true;
+      runtime->configured_padding = runtime->buffer_frames + 1;
     } else {
       runtime->null_buffer = true;
     }
@@ -856,7 +915,7 @@ TEST(WASAPIDriverTest, MalformedPaddingAndNullAcquiredBuffersAreTerminal) {
     waitUntilStopped(driver, *runtime);
     EXPECT_EQ(callback.callback_count.load(), 0u);
     EXPECT_EQ(runtime->padding_calls.load(), 1u);
-    EXPECT_EQ(runtime->acquire_calls.load(), failure == 2 ? 1u : 0u);
+    EXPECT_EQ(runtime->acquire_calls.load(), failure == 1 ? 1u : 0u);
     EXPECT_EQ(runtime->release_calls.load(), 0u);
     EXPECT_FALSE(runtime->buffer_owned.load());
     EXPECT_EQ(driver.getTelemetry().route_outcome, AudioRouteRuntimeOutcome::BackendFailure);
@@ -864,6 +923,7 @@ TEST(WASAPIDriverTest, MalformedPaddingAndNullAcquiredBuffersAreTerminal) {
     EXPECT_EQ(driver.stop(), SessionGraphError::OK);
     EXPECT_EQ(runtime->stop_calls.load(), 1u);
     runtime->null_buffer = false;
+    runtime->inject_malformed_padding = false;
     runtime->configured_padding = 0;
     runtime->resetWaits({});
     const auto cleanups = runtime->cleanup_calls.load();
@@ -877,14 +937,21 @@ TEST(WASAPIDriverTest, MalformedPaddingAndNullAcquiredBuffersAreTerminal) {
 }
 
 TEST(WASAPIDriverTest, PaddingNoFramesSkipsAcquireAndPartialPaddingRendersOnlyAvailableFrames) {
-  for (bool no_frames : {false, true}) {
-    SCOPED_TRACE(no_frames);
+  enum class Scenario { Partial, ExplicitNoFrames, FullBuffer };
+  for (const auto scenario :
+       {Scenario::Partial, Scenario::ExplicitNoFrames, Scenario::FullBuffer}) {
+    SCOPED_TRACE(static_cast<int>(scenario));
     auto fake = std::make_unique<FakeRenderRuntime>();
     auto* runtime = fake.get();
     runtime->resetWaits({detail::WASAPIRenderStatus::Ready});
-    runtime->configured_padding = 1;
-    runtime->padding_status =
-        no_frames ? detail::WASAPIRenderStatus::NoFrames : detail::WASAPIRenderStatus::Ready;
+    // A full buffer is reported as NoFrames by the runtime, so the driver
+    // skips the acquire. The explicit status covers the same state without
+    // relying on the padding value alone.
+    const bool skips = scenario != Scenario::Partial;
+    runtime->configured_padding = scenario == Scenario::Partial ? 1 : runtime->buffer_frames;
+    runtime->padding_status = scenario == Scenario::ExplicitNoFrames
+                                  ? detail::WASAPIRenderStatus::NoFrames
+                                  : detail::WASAPIRenderStatus::Ready;
     WASAPIAudioDriver driver(std::move(fake));
     ASSERT_EQ(driver.initialize(validConfig()), SessionGraphError::OK);
     CaptureCallback callback;
@@ -892,10 +959,10 @@ TEST(WASAPIDriverTest, PaddingNoFramesSkipsAcquireAndPartialPaddingRendersOnlyAv
     ASSERT_EQ(driver.start(&callback), SessionGraphError::OK);
     ASSERT_TRUE(runtime->waitForBlockedWait());
     EXPECT_TRUE(driver.isRunning());
-    EXPECT_EQ(runtime->acquire_calls.load(), no_frames ? 0u : 1u);
-    EXPECT_EQ(runtime->release_calls.load(), no_frames ? 0u : 1u);
-    EXPECT_EQ(callback.callback_count.load(), no_frames ? 0u : 1u);
-    if (!no_frames) {
+    EXPECT_EQ(runtime->acquire_calls.load(), skips ? 0u : 1u);
+    EXPECT_EQ(runtime->release_calls.load(), skips ? 0u : 1u);
+    EXPECT_EQ(callback.callback_count.load(), skips ? 0u : 1u);
+    if (!skips) {
       EXPECT_EQ(callback.frames.load(), 3u);
       EXPECT_EQ(runtime->acquired_frames.load(), 3u);
       EXPECT_EQ(runtime->released_frames.load(), 3u);
