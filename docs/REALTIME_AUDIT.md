@@ -333,7 +333,6 @@ maximum-topology deadline/I/O qualification remains open after the observed
 misses. Real-device `wasapi-hardware.json`, physical route/operator access and
 temporal-coherence acceptance remain separate release/support-promotion gates.
 
-
 ## Boundary and Lifetime Gates
 
 - `transport_controller_test`, `routing_matrix_test`, and `audio_input_test`
