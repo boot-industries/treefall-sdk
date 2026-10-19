@@ -1,5 +1,21 @@
 # Progress
 
+## Clip Composer SDK pin in the suite manifest — 2026-10-19
+
+**Branch:** `chore/suite-clip-composer-pin-20261019`
+**Status:** Manifest and prose updated; no release promotion and no
+support-tier change.
+
+The suite manifest now records Clip Composer's SDK gitlink at
+`f37503b23f72d7c0bd78ff1276be3c5d4817cee8`, the SDK `main` merge commit that
+carries the transport initial-metadata registration path (PR #270). The
+previous entry named `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` and was
+already stale: Clip Composer had been pinned to an unmerged SDK branch commit
+since the registration work was authored outside this repository. FourTrack's
+pin is unchanged at `56a81fcdff445b43d1ba4d9b6684efbbffd11e32`; that
+repository is out of scope here and its pin stays an exact, reachable
+revision. `manifest_revision` moves to `2026-10-19`.
+
 ## Transport initial metadata registration — 2026-10-19
 
 **Branch:** `feat/transport-initial-metadata-registration-main`

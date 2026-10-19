@@ -4,7 +4,7 @@
   "suite_id": "orpheus-suite",
   "suite_version": "0.1.0",
   "release_channel": "development",
-  "manifest_revision": "2026-10-14",
+  "manifest_revision": "2026-10-19",
   "workspace": {
     "root_environment": "ORPHEUS_SUITE_WORKSPACE",
     "default_root": "..",
@@ -429,7 +429,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "56a81fcdff445b43d1ba4d9b6684efbbffd11e32"
+          "revision": "f37503b23f72d7c0bd78ff1276be3c5d4817cee8"
         }
       ],
       "verification": [

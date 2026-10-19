@@ -43,10 +43,14 @@ The SDK package artifact is tied to the actual imported package and its
 governed metadata: source revision
 `1f2c87a089d975eec1396360173da87a926835ed`, package content hash
 `c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`, and ShmUI token contract `0.6.0`.
-The suite manifest declares exact SDK gitlink expectations for FourTrack and
-Clip Composer at `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` (SDK 0.9.1).
-Both approved application pin repairs have merged. This coordinator change
-does not promote a release or establish hardware or native-runtime acceptance.
+The suite manifest declares exact SDK gitlink expectations for FourTrack at
+`56a81fcdff445b43d1ba4d9b6684efbbffd11e32` and for Clip Composer at
+`f37503b23f72d7c0bd78ff1276be3c5d4817cee8` (SDK 0.9.1). The Clip Composer pin
+moves because the transport initial-metadata registration path is now merged
+on the SDK's `main` branch; the previous gitlink pointed at an unmerged SDK
+branch commit. Both approved application pin repairs have merged. This
+coordinator change does not promote a release or establish hardware or
+native-runtime acceptance.
 
 Validate the contract and behavioral coordinator coverage with:
 
