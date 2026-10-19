@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unregistered; the default interface implementation reports `NotSupported`.
   The additive C++ interface extension requires downstream consumers to rebuild.
 
-
 ### Changed
 
 - Diagnostics now describe `latencyMs` as estimated callback-buffer duration,

@@ -1091,6 +1091,7 @@ public:
   virtual TransportCommandIngressTelemetry getCommandIngressTelemetry() const noexcept {
     return {};
   }
+
   /// Register a clip and install its complete initial playback metadata as one
   /// control-thread operation. The metadata is available immediately and no
   /// render command is queued, which is intended for configuring an unpublished
@@ -1099,12 +1100,11 @@ public:
   /// initial metadata registration return NotSupported.
   ///
   /// This additive interface extension requires consumers to rebuild.
-  virtual SessionGraphError registerClipAudioWithMetadata(
-      ClipHandle /*handle*/, const std::string& /*file_path*/,
-      const ClipMetadata& /*metadata*/) {
+  virtual SessionGraphError registerClipAudioWithMetadata(ClipHandle /*handle*/,
+                                                          const std::string& /*file_path*/,
+                                                          const ClipMetadata& /*metadata*/) {
     return SessionGraphError::NotSupported;
   }
-
 };
 
 /// Create a transport controller with an immutable render contract.
