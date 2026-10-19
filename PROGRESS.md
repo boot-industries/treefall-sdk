@@ -1,5 +1,55 @@
 # Progress
 
+## Transport initial metadata registration — 2026-10-19
+
+**Branch:** `feat/transport-initial-metadata-registration-main`
+**Pull request:** [#270](https://github.com/boot-industries/treefall-sdk/pull/270)
+**Record:** `docs/orp/ORP270 Transport Initial Metadata Registration Delivery.md`
+**Status:** Implementation complete; evidence limitations are recorded below.
+
+`ITransportController::registerClipAudioWithMetadata()` registers a clip
+source and its complete initial `ClipMetadata` in one control-thread
+operation. The source and the metadata are committed together, the operation
+consumes no bounded render-command node, and invalid metadata leaves the
+handle unregistered. The virtual is appended at the end of
+`ITransportController`, so no existing virtual slot is renumbered and the
+default implementation keeps custom implementations source-compatible. The
+extension is C++-only: the stable C ABI 1.0 tables and layouts are unchanged
+and the SDK version stays 0.9.1. C++ consumers and subclasses must be
+rebuilt; the installed clean-prefix legacy fixtures implement the interface
+without overriding the new method and still compile and link.
+
+The change was authored outside this repository and re-created here by
+cherry-pick. `git patch-id --stable` gives
+`2499545c31e8001f6e4185ab3986ccfc476c1f30` for both this branch's transport
+commit and the source commit, so the committed patch is identical.
+
+### Verification
+
+- Local Debug build on macOS (AppleClang 21.0.0, CMake 4.1.0) with
+  `-DORPHEUS_ENABLE_REALTIME=ON`: configure and build exit 0.
+- Full configured CTest: 84/84 passed, 0 failed (430.99 s).
+- `cmake_find_package` (22.42 s) passed with the new method and its new
+  failure codes in the installed clean-prefix consumer; `clip_metadata_test`
+  passed with the new transport case.
+- `tools/realtime_audit.py --fail-known-debt`: 0 hard failures, 0 tracked debt
+  findings. `tools/docs_path_audit.py --root .`: passed, 7 documents checked.
+  `tools/version_contract.py --check`: consistent at 0.9.1.
+  `tools/shmui_juce_manifest.py --check`: consistent, 58 files, sha256
+  `c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`.
+- `git diff --check`: clean. The `src` and `include` trees are clean under the
+  pipeline's `clang-format-14` lint gate.
+
+The hosted pipeline for this pull request runs the same gates on macOS,
+Ubuntu, and Windows-2022; its observed result is recorded on the pull request.
+
+### Evidence limits
+
+No release promotion, no version bump, and no support-tier change. No
+Windows, WASAPI, or real-device evidence is claimed: WASAPI remains
+unpromoted source and fake-test code, and the open WASAPI
+platform-qualification pull request is not merged by this delivery.
+
 ## Floating development remote tracking and coordinator repair — 2026-10-14
 
 Completed the SDK coordinator repair on `fix/suite-checkpoint-provenance`.
