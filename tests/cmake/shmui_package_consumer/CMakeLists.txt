@@ -35,6 +35,12 @@ endif()
 
 add_executable(orpheus_shmui_package_consumer main.cpp)
 target_compile_features(orpheus_shmui_package_consumer PRIVATE cxx_std_20)
+# The consumer verifies the installed attribution that ships with the console
+# icon set, so it needs the install prefix the package was installed into.
+get_filename_component(orpheus_shmui_install_prefix
+  "${OrpheusSDK_DIR}/../../.." ABSOLUTE)
+target_compile_definitions(orpheus_shmui_package_consumer PRIVATE
+  ORPHEUS_SHMUI_INSTALL_PREFIX="${orpheus_shmui_install_prefix}")
 target_link_libraries(orpheus_shmui_package_consumer PRIVATE
   Orpheus::core
   Orpheus::audio_utils

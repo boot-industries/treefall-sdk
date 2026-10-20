@@ -475,6 +475,11 @@ The Treefall SDK provides deterministic session/transport control for profession
   of the newest coherent peak/RMS pair. Separate bounded interval peaks retain
   hold/needle attack and exact clip crossings; unchanged settled and hidden
   meters do not repaint. Rebuild C++ consumers with the matching headers.
+  The console icon set (loop, stop-peers badge, fade wedges, hotkey-legend
+  shift mark and the transport symbols) carries upstream artwork: the geometry
+  is generated into the package, and the licence texts, the NOTICE and the
+  machine-readable provenance record install with it under
+  `share/shmui-juce/ThirdParty/`.
 - The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
   `@orpheus/shmui`) are **archived** as part of the C++ SDK focus; they are not
   part of this repository.
