@@ -83,23 +83,34 @@ juce::Path fadeOutPath() {
   return path;
 }
 
-// Shift - bootstrap-icons: icons/shift-fill.svg
+// Shift - bootstrap-icons: icons/shift.svg
 juce::Path shiftPath() {
   juce::Path path;
 
-  path.startNewSubPath(11.256317f, 5.822266f);
-  path.cubicTo(11.448801f, 5.616671f, 11.717854f, 5.5f, 11.999491f, 5.5f);
-  path.cubicTo(12.281128f, 5.5f, 12.550181f, 5.616671f, 12.742665f, 5.822266f);
-  path.lineTo(19.202171f, 12.714441f);
-  path.cubicTo(19.812999f, 13.363955f, 19.350806f, 14.427814f, 18.458997f, 14.427814f);
-  path.lineTo(15.562654f, 14.427814f);
-  path.lineTo(15.562654f, 17.481953f);
-  path.cubicTo(15.562654f, 18.044205f, 15.106859f, 18.5f, 14.544608f, 18.5f);
-  path.lineTo(9.454374f, 18.5f);
-  path.cubicTo(8.892123f, 18.5f, 8.436328f, 18.044205f, 8.436328f, 17.481953f);
-  path.lineTo(8.436328f, 14.427814f);
-  path.lineTo(5.538967f, 14.427814f);
-  path.cubicTo(4.649194f, 14.427814f, 4.187001f, 13.363955f, 4.795793f, 12.713423f);
+  path.startNewSubPath(10.90425f, 2.897665f);
+  path.cubicTo(11.187858f, 2.594739f, 11.584284f, 2.422835f, 11.99925f, 2.422835f);
+  path.cubicTo(12.414216f, 2.422835f, 12.810642f, 2.594739f, 13.09425f, 2.897665f);
+  path.lineTo(22.61175f, 13.052665f);
+  path.cubicTo(23.51175f, 14.009665f, 22.83075f, 15.577165f, 21.51675f, 15.577165f);
+  path.lineTo(17.24925f, 15.577165f);
+  path.lineTo(17.24925f, 20.077165f);
+  path.cubicTo(17.24925f, 20.905592f, 16.577677f, 21.577165f, 15.74925f, 21.577165f);
+  path.lineTo(8.24925f, 21.577165f);
+  path.cubicTo(7.420823f, 21.577165f, 6.74925f, 20.905592f, 6.74925f, 20.077165f);
+  path.lineTo(6.74925f, 15.577165f);
+  path.lineTo(2.48025f, 15.577165f);
+  path.cubicTo(1.16925f, 15.577165f, 0.48825f, 14.009665f, 1.38525f, 13.051165f);
+  path.closeSubPath();
+
+  path.startNewSubPath(21.51825f, 14.077165f);
+  path.lineTo(11.99925f, 3.923665f);
+  path.lineTo(2.48025f, 14.077165f);
+  path.lineTo(6.74925f, 14.077165f);
+  path.cubicTo(7.577677f, 14.077165f, 8.24925f, 14.748738f, 8.24925f, 15.577165f);
+  path.lineTo(8.24925f, 20.077165f);
+  path.lineTo(15.74925f, 20.077165f);
+  path.lineTo(15.74925f, 15.577165f);
+  path.cubicTo(15.74925f, 14.748738f, 16.420823f, 14.077165f, 17.24925f, 14.077165f);
   path.closeSubPath();
 
   return path;

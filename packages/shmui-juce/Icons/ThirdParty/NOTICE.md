@@ -26,7 +26,7 @@ files, so that the recorded digests can be verified offline.
 * Files used: `icons/play-fill.svg`, `icons/pause-fill.svg`,
   `icons/stop-fill.svg`, `icons/record-fill.svg`, `icons/rewind-fill.svg`,
   `icons/fast-forward-fill.svg`, `icons/skip-start-fill.svg`,
-  `icons/skip-end-fill.svg`, `icons/shift-fill.svg`
+  `icons/skip-end-fill.svg`, `icons/shift.svg`
 
 ## Tabler Icons
 

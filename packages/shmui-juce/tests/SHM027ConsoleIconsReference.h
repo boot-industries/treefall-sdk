@@ -36,7 +36,7 @@ inline constexpr GlyphReference glyphReferences[] = {
     {shmui::IconType::StopPeers, 16.0f, {0.212010f, 0.500163f, 0.498203f}},
     {shmui::IconType::FadeIn, 16.0f, {0.336443f, 0.650792f, 0.624239f}},
     {shmui::IconType::FadeOut, 16.0f, {0.338557f, 0.350169f, 0.623477f}},
-    {shmui::IconType::Shift, 16.0f, {0.187653f, 0.500291f, 0.525230f}},
+    {shmui::IconType::Shift, 16.0f, {0.161688f, 0.500062f, 0.546355f}},
     {shmui::IconType::Play, 16.0f, {0.170573f, 0.435061f, 0.499975f}},
     {shmui::IconType::Pause, 16.0f, {0.194393f, 0.499961f, 0.499877f}},
     {shmui::IconType::Stop, 16.0f, {0.308241f, 0.499947f, 0.501370f}},

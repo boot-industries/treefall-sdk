@@ -301,6 +301,21 @@ void requireOpenGeometryIsStrokedNotFilled() {
 }
 
 //==============================================================================
+void requireShiftMarkIsTheClassicOutline() {
+  // The shift mark is the classic up-caret-with-a-bar form drawn as an
+  // outline. A solid arrow fills the head and reads as an upload glyph, so the
+  // head interior has to stay open.
+  const auto image = renderIcon(shmui::IconType::Shift, 32, 1);
+  const auto stats = measure(image);
+
+  require(!stats.empty, "the shift mark renders ink");
+
+  // The hollow interior of the caret head, sampled in the 24-unit design grid.
+  require(image.getPixelAt(16, 15).getAlpha() < 48,
+          "the shift mark is the classic outline (its caret head stays open)");
+}
+
+//==============================================================================
 void requireStopPeersIsAFlatToppedHexagon() {
   // The traffic-sign hexagon: flat top and bottom, points left and right, and
   // a width/height ratio of 2/sqrt(3).
@@ -666,6 +681,7 @@ int main(int argc, char* argv[]) {
   requireRenderingMatchesUpstreamArtwork();
   requireRenderContract();
   requireOpenGeometryIsStrokedNotFilled();
+  requireShiftMarkIsTheClassicOutline();
   requireStopPeersIsAFlatToppedHexagon();
   requireFadeWedgesKeepTheirForm();
   requireLampMarksShareOneOpticalHeight();
