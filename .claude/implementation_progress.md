@@ -1615,3 +1615,29 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
   in both attempts. Recorded in ORP271.
 - The OpenGL posture, the SDK version (0.9.1) and the token contract are
   unchanged; no public C header or ABI table changed.
+
+## 2026-10-20 SHM027 console icon import — documentation closeout
+
+- Closed the published import's documentation record on the docs-only branch
+  `docs/orp271-published-revisions` (PR #273): the scoped `Unreleased` entry in
+  `CHANGELOG.md`, the published-revision corrections in
+  `docs/orp/ORP271 ShmUI Console Icon Import and Attribution Gate.md`, and this
+  record.
+- The closeout is documentation only. The published implementation revision
+  `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21` (PR #272), the governed manifest
+  `packages/shmui-juce/shmui-juce-import.json` with content hash
+  `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7`, the
+  `share/shmui-juce/ThirdParty/` attribution destination and the token
+  contract `0.6.0` are all unchanged.
+- No build, packaging or rendering gate was re-run for the closeout; the
+  repository documentation path audit is the only gate it adds. The import's
+  own evidence stays in ORP271 and SHM027 §7, and it is not restated here.
+- One operator decision is still open, and it is not an SDK implementation
+  item: SHM027 §6 records the transport family moving from OCC218's Iconoir
+  glyphs to Bootstrap Icons, and that substitution awaits explicit
+  ratification. The Shift and mirrored Fade Out decisions in the same section
+  are closed.
+- OCC's next action is its own: pin SDK `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`
+  and follow SHM027 §10 for the shared-API integration. OCC still pins
+  `9184892e063399661c0dad0f94bab3750974d58b`; that gitlink change belongs to
+  the OCC team and does not block this closeout.

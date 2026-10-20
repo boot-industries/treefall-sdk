@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without consuming a render-command node. Invalid metadata leaves the handle
   unregistered; the default interface implementation reports `NotSupported`.
   The additive C++ interface extension requires downstream consumers to rebuild.
+- The `shmui-juce` package now ships the published shared console-icon set.
+  `IconType::StopPeers`, `FadeIn`, `FadeOut` and `Shift` join the existing
+  transport roles, and every role carries its own render contract: a caller
+  that paints through `shmui::Icons::drawIcon()` without an explicit stroke
+  width gets the shared per-icon mode, so the open-geometry loop and
+  stop-peers marks are stroked with the console stroke policy while the filled
+  transport symbols stay filled. The new enumerators are appended before
+  `NumIcons`, so existing values do not shift, but consumers that draw the
+  affected roles must rebuild against the updated package headers. The governed
+  import manifest `packages/shmui-juce/shmui-juce-import.json` records the
+  source revision and content hash, and the upstream provenance record, the
+  NOTICE and the MIT licence texts install with the package under
+  `share/shmui-juce/ThirdParty/`.
 
 ### Changed
 
