@@ -20,9 +20,9 @@ SDK_ROOT=/Users/chrislyons/dev/orpheus-sdk scripts/sync-juce.sh --check
 ```
 
 The mirror recorded the governed source revision
-`b58560ad94b4abca1c817c11486ea2d95fb627c8` in
+`d420ec64dcb5fd16baa0b95d5048ee09bb95eee8` in
 `packages/shmui-juce/shmui-juce-import.json`, with content hash
-`d43e81a00b6571331f26e7ec783c3fa48ab79f4a024413abaee3909f9633b876` and the
+`4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7` and the
 unchanged design-token contract version `0.6.0`. The token contract is
 untouched: sourcing icons does not change tokens.
 
@@ -45,8 +45,8 @@ The imported change set:
 * `packages/shmui-juce/Icons/ThirdParty/` — the vendored upstream artwork, the
   licence texts, `NOTICE.md` and `provenance.json`. The provenance record
   carries the operator ratification of 2026-10-20 that the shift glyph follows
-  OCC217 (the classic up-caret with a bar) rather than OCC218's Iconoir
-  arrow-up, which has no bar and cannot satisfy OCC217 D7.
+  OCC217 (the classic up-caret with a bar, drawn as an outline) rather than
+  OCC218's Iconoir arrow-up, which has no bar and cannot satisfy OCC217 D7.
 
 ## Installed attribution
 
@@ -134,7 +134,7 @@ roles.
 The import lives on the local branch `feat/shmui-console-icons-import`
 (`6b2477e2e` import, `193f4685f` consumer gate and README,
 `85e00e488` import record,
-`67ce4654f` and `2133647f9` import refreshes). Neither commit is
+`67ce4654f`, `2133647f9` and `c0ba8d38` import refreshes). Neither commit is
 published to a remote: remote publication needs authorisation, and the
 ShmUI source revision it mirrors is likewise local-only on
 `feature/shm-027-console-icons`.
