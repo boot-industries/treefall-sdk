@@ -1629,6 +1629,15 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
   `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7`, the
   `share/shmui-juce/ThirdParty/` attribution destination and the token
   contract `0.6.0` are all unchanged.
+- The closeout merged to `main` as merge commit
+  `dabe8c03a0d58e74418d304dcf9af8a5e615868f`, whose second parent is the
+  reviewed head `48e43e33e8c19f0906f6b2419d0457ade4efe5db`. All ten pipeline
+  legs on that head passed, including `C++ Build & Test (windows-2022, Debug)`,
+  so the merged head is the CI-qualified head. The merge was performed by the
+  `chrislyons` account at 09:38:26Z, in the same minute the closeout head was
+  pushed and before that run's legs had completed: `main` carries no branch
+  protection, and the `Orpheus SDK Rules` ruleset blocks only branch deletion
+  and force pushes, so no CI requirement gated it.
 - No build, packaging or rendering gate was re-run for the closeout; the
   repository documentation path audit is the only gate it adds. The import's
   own evidence stays in ORP271 and SHM027 §7, and it is not restated here.

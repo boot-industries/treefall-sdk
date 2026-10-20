@@ -179,6 +179,22 @@ contract stays `0.6.0`. No build, packaging or rendering qualification is
 re-run for it; the repository documentation path audit is the only gate the
 closeout adds.
 
+The closeout merged to `main` as merge commit
+`dabe8c03a0d58e74418d304dcf9af8a5e615868f` (PR #273), whose second parent is
+the reviewed closeout head
+`48e43e33e8c19f0906f6b2419d0457ade4efe5db`. All ten pipeline legs on that
+head passed, including `C++ Build & Test (windows-2022, Debug)`, so the merged
+head is the CI-qualified head. That run is separate from the import run
+recorded above, which belongs to PR #272.
+
+The merge itself was performed by the `chrislyons` account at 09:38:26Z, in
+the same minute the closeout head was pushed and before the pipeline legs for
+that head had completed. `main` carries no branch protection, and the
+`Orpheus SDK Rules` ruleset blocks only branch deletion and force pushes, so
+no CI requirement gated the merge; the legs that ran afterwards on the merged
+head all passed. The closeout carried documentation only, so no package,
+manifest or rendering artifact was published without qualification.
+
 ## Outstanding operator ratification
 
 One operator decision is still open, and it is not an SDK implementation item.
