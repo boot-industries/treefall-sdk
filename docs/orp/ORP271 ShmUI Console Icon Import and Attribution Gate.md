@@ -20,9 +20,9 @@ SDK_ROOT=/Users/chrislyons/dev/orpheus-sdk scripts/sync-juce.sh --check
 ```
 
 The mirror recorded the governed source revision
-`c7cc4ae2149545d62d0727b98cb1feaf8501f20f` in
+`853a5770c51f553dd1a9a3d91b0b0cc956ba8163` in
 `packages/shmui-juce/shmui-juce-import.json`, with content hash
-`d5039c891da9e4b8228ebc7adb962c365fd7d761d73fe9435b77c7ff2a0ba202` and the
+`297585f8cb2ba0eec6c390a0e41a9ad8cef34d89742a13bf3f760fb6e3f5e85a` and the
 unchanged design-token contract version `0.6.0`. The token contract is
 untouched: sourcing icons does not change tokens.
 
@@ -129,7 +129,8 @@ roles.
 ## Revision availability
 
 The import lives on the local branch `feat/shmui-console-icons-import`
-(`6b2477e2e` import, `193f4685f` consumer gate and README). Neither commit is
+(`6b2477e2e` import, `193f4685f` consumer gate and README,
+`85e00e488` import record, `67ce4654f` import refresh). Neither commit is
 published to a remote: remote publication needs authorisation, and the
 ShmUI source revision it mirrors is likewise local-only on
 `feature/shm-027-console-icons`.
