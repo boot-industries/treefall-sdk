@@ -314,6 +314,20 @@ if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     set_tests_properties(coreaudio_driver_test PROPERTIES LABELS "extended;hardware")
 endif()
 
+# WASAPI native request speaker-mask reconciliation. Host-neutral: the
+# decision a self-authored request uses is verified on every platform, while
+# the descriptor transformation that applies it is covered by the Windows
+# driver test.
+add_executable(wasapi_format_reconciliation_test
+    wasapi_format_reconciliation_test.cpp
+)
+target_link_libraries(wasapi_format_reconciliation_test
+    PRIVATE
+        GTest::gtest
+        GTest::gtest_main
+)
+add_test(NAME wasapi_format_reconciliation_test COMMAND wasapi_format_reconciliation_test)
+
 if(WIN32 AND ORPHEUS_ENABLE_WASAPI)
     add_executable(wasapi_driver_test wasapi_driver_test.cpp)
     target_link_libraries(wasapi_driver_test

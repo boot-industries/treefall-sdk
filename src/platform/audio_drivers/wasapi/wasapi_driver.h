@@ -11,6 +11,7 @@
 #include <audioclient.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,6 +23,7 @@
 #include <orpheus/realtime_diagnostics.h>
 
 #include "../../../core/common/realtime_borrowed_target.h"
+#include "wasapi_format_validation.h"
 
 namespace orpheus {
 
@@ -42,6 +44,13 @@ struct WASAPIResolvedFormat {
   uint16_t buffer_size{0};
   uint16_t num_outputs{0};
   bool float32{false};
+  WASAPIFormatShape format_shape{};
+};
+
+/// The output shape a native request descriptor is built for.
+struct WASAPIRequestLayout {
+  uint16_t num_outputs{0};
+  uint32_t sample_rate{0};
 };
 
 /// Testable boundary around COM/audio-client state and the worker wait path.
@@ -67,6 +76,23 @@ public:
 using WASAPIWorkerLauncher = std::function<std::thread(std::function<void()>)>;
 
 std::unique_ptr<IWASAPIRenderRuntime> createWASAPIRenderRuntime();
+
+/// Validates a byte-bounded native descriptor; failure clears shape.
+bool validateWASAPINativeFormat(const void* descriptor, size_t descriptor_bytes,
+                                uint16_t requested_outputs, WASAPIFormatShape& shape) noexcept;
+
+/// Builds the self-authored request descriptor from a device mix format.
+///
+/// Copies the mix descriptor, rewrites the channel count and block layout for
+/// the requested output count, and reconciles the inherited speaker mask with
+/// that count so the request stays self-consistent. A mix format that
+/// describes more channels than the request must not leave the request
+/// carrying the device's speaker mask: the request would then be rejected by
+/// its own validation before the device is ever asked whether it supports the
+/// format. Returns false when the mix descriptor cannot describe the request.
+bool buildWASAPIRequestDescriptor(const void* mix_descriptor, size_t mix_bytes,
+                                  const WASAPIRequestLayout& requested,
+                                  std::vector<std::byte>& request_bytes) noexcept;
 
 } // namespace detail
 

@@ -267,9 +267,10 @@ removed after execution.
 ### Review split and hosted execution evidence
 
 The four WASAPI format/runtime/test files are excluded from the portable
-hardening delta and retained on `fix/pr265-platform-qualification`. The existing
-WASAPI support tier is unchanged. The nine-target Linux TSan selection stays
-with the portable realtime-concurrency changes.
+hardening delta and carried on the counterpart branch
+`fix/pr265-platform-qualification`, based on `main` after #265 landed. The
+existing WASAPI support tier is unchanged. The nine-target Linux TSan selection
+stays with the portable realtime-concurrency changes.
 
 Hosted run `38326895539` exercised merge revision
 `96d5cfa307776eb2c9a13d67194700a6d490b5ee`, whose parents are base `d2d61b28c`
@@ -320,6 +321,21 @@ same-callback native/app attribution and temporal coherence remain separate
 gates. Hard blocked-reader cancellation and failed maximum-topology deadlines
 also stay open. ASIO stays source-only; there is no release tag or support-tier
 promotion from these local checks.
+
+### Platform counterpart merge gates
+
+The counterpart carries the four WASAPI source/test files restored from
+`b3bc1e3d7` plus the self-authored request speaker-mask reconciliation and its
+host-neutral test target, based on `main` after #265 merged. Require
+current-revision Windows Debug/Release native descriptor/fake, installed package
+and ABI checks, and the green required aggregate checks before merging; the
+historical 24-case run is not a new-revision pass, and the branch now registers
+25 Windows fake cases. The nine-target Linux TSan selection and the marked
+selected-consumer syscall check are required checks for this pull request; the
+previous artifacts qualify only their recorded merge revision. Full
+maximum-topology deadline/I/O qualification remains open after the observed
+misses. Real-device `wasapi-hardware.json`, physical route/operator access and
+temporal-coherence acceptance remain separate release/support-promotion gates.
 
 ## Boundary and Lifetime Gates
 
