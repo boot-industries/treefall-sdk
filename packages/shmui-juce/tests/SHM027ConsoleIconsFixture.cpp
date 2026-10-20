@@ -520,7 +520,7 @@ juce::Image renderRoleSheet(const std::vector<shmui::IconType>& roles, int logic
 
 juce::Image renderControlSheet(int rasterScale) {
   const int cell = 56;
-  const int width = cell * 11;
+  const int width = cell * 13;
   const int height = cell + 16;
 
   juce::Image image(juce::Image::ARGB, width * rasterScale, height * rasterScale, true);
@@ -545,16 +545,27 @@ juce::Image renderControlSheet(int rasterScale) {
     button.paintEntireComponent(buttonGraphics, true);
   }
 
-  shmui::ClipButton clip(0);
-  clip.setBounds(0, 0, cell - 8, cell - 16);
-  clip.setClipState(shmui::ClipButton::State::Loaded);
-  clip.setIndicatorVisible("loop", true);
-  clip.setIndicatorVisible("fadeIn", true);
-  clip.setIndicatorVisible("fadeOut", true);
+  // The transport bar's loop toggle.
+  shmui::ToggleButton toggle(shmui::IconType::Loop);
+  toggle.setBounds(0, 0, cell - 8, cell - 16);
 
   {
+    juce::Graphics toggleGraphics(image);
+    toggleGraphics.addTransform(juce::AffineTransform::translation((float)(9 * cell), 0.0f));
+    toggle.paintEntireComponent(toggleGraphics, true);
+  }
+
+  // One clip button per lamp badge, so each shared mark is visible on its own.
+  const char* badges[] = {"loop", "fadeIn", "fadeOut"};
+
+  for (int i = 0; i < 3; ++i) {
+    shmui::ClipButton clip(i);
+    clip.setBounds(0, 0, cell - 8, cell - 16);
+    clip.setClipState(shmui::ClipButton::State::Loaded);
+    clip.setIndicatorVisible(badges[i], true);
+
     juce::Graphics clipGraphics(image);
-    clipGraphics.addTransform(juce::AffineTransform::translation((float)(9 * cell), 0.0f));
+    clipGraphics.addTransform(juce::AffineTransform::translation((float)((10 + i) * cell), 0.0f));
     clip.paintEntireComponent(clipGraphics, true);
   }
 
