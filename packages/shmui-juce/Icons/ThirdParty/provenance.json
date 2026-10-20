@@ -265,7 +265,7 @@
         ],
         "states": "one geometry, two states (inactive = same path at low alpha)"
       },
-      "decision": "OCC217 D7 and section 3 require the classic shift form - an up-caret with a bar, drawn as vector art - and forbid the letter 'S' and a font glyph. OCC218's sourcing record proposed Iconoir's generic up-arrow, which has no bar and therefore does not satisfy OCC217; the rendered comparison of Iconoir arrow-up, Lucide arrow-up, Phosphor caret-up and the Bootstrap shift mark settled on the Bootstrap shift mark as the only candidate that is a true classic shift form.",
+      "decision": "OCC217 D7 and section 3 require the classic shift form - an up-caret with a bar, drawn as vector art - and forbid the letter 'S' and a font glyph. OCC218's sourcing record proposed Iconoir's generic up-arrow, which has no bar and therefore does not satisfy OCC217; the rendered comparison of Iconoir arrow-up, Lucide arrow-up, Phosphor caret-up and the Bootstrap shift mark settled on the Bootstrap shift mark as the only candidate that is a true classic shift form. The operator ratified this on 2026-10-20: the shift glyph follows OCC217, not OCC218.",
       "native_evidence": "docs/shm/assets/shm027-icons/"
     },
     {
