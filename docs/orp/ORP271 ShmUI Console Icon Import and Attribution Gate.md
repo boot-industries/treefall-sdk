@@ -4,8 +4,8 @@
 
 **Document type:** Package import and installed-package qualification record  
 **Date:** 2026-10-20  
-**Branch:** `feat/shmui-console-icons-import`  
-**Status:** Imported on the working branch; not merged, not tagged, not pushed
+**Branch:** `feat/shmui-console-icons-import` → merged to `main` by PR #272 (merge commit `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`)  
+**Status:** Merged to `main`; not tagged, and no SDK release was cut for this import
 
 ## What was imported
 
@@ -131,10 +131,60 @@ roles.
 
 ## Revision availability
 
-The import lives on the local branch `feat/shmui-console-icons-import`
-(`6b2477e2e` import, `193f4685f` consumer gate and README,
-`85e00e488` import record,
-`67ce4654f`, `2133647f9` and `c0ba8d38` import refreshes). Neither commit is
-published to a remote: remote publication needs authorisation, and the
-ShmUI source revision it mirrors is likewise local-only on
-`feature/shm-027-console-icons`.
+The import is published. `main` in `boot-industries/treefall-sdk` carries the
+import through merge commit `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21` (PR
+#272), which contains `6b2477e2e` (import), `193f4685f` (consumer gate and
+README), `85e00e488` (import record), `67ce4654f`, `2133647f9` and
+`c0ba8d38` (import refreshes). A point-in-time snapshot of the delivered
+branch is kept in `safety/treefall-sdk-20261020`.
+
+The ShmUI source revision it mirrors, `d420ec64dcb5fd16baa0b95d5048ee09bb95eee8`,
+is published in `boot-industries/shmui` on `main` through merge commit
+`3ebfe5d7135657971c8e8975faa5095b03f3f031` (PR #34); the snapshot of that
+branch is `safety/shmui-20261020`. The import can be re-derived from ShmUI
+`main` with `scripts/sync-juce.sh`.
+
+## CI note — import run (PR #272)
+
+The `macos-latest` leg of the import run failed in the CoreAudio driver
+suite: `CoreAudioDriverTest.CallbackIsNotInvokedAfterStop` on the first
+attempt and `CoreAudioDriverTest.PublishesCallbackActiveClipCount` on the
+re-run — a different case each time. The same suite fails on `main`'s own
+2026-10-19 merge commit (`CoreAudioDriverTest.StereoConfiguration`), so the
+failure is a pre-existing macOS runner flake and not a consequence of this
+import. Every other leg is green: Ubuntu Debug and Release, Windows Debug
+and Release, C++ lint, the Linux TSan ingress evidence and the Linux consumer
+syscall evidence. The package consumer gate, which is the leg that covers
+this import, passed on macOS in both attempts.
+
+That evidence belongs to the import run on PR #272. It says nothing about the
+documentation closeout below, which is a separate pipeline run on its own
+head.
+
+## Documentation closeout (PR #273)
+
+The import was already published through PR #272. Its closeout is
+documentation only and carries three changes:
+
+* the published-revision corrections in this record;
+* a scoped `Unreleased` entry in `CHANGELOG.md` for the published import; and
+* the corresponding entry in `.claude/implementation_progress.md`.
+
+The closeout changes no published artifact. The implementation revision stays
+`54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`, the governed manifest
+`packages/shmui-juce/shmui-juce-import.json` is not restamped, the attribution
+install rule in `packages/shmui-juce/CMakeLists.txt` is untouched, the
+`share/shmui-juce/ThirdParty/` destination is unchanged, and the design-token
+contract stays `0.6.0`. No build, packaging or rendering qualification is
+re-run for it; the repository documentation path audit is the only gate the
+closeout adds.
+
+## Outstanding operator ratification
+
+One operator decision is still open, and it is not an SDK implementation item.
+SHM027 §6 records that the transport family moved from OCC218's Iconoir glyphs
+to Bootstrap Icons, and that substitution still awaits explicit operator
+ratification. The Shift decision (Bootstrap classic outline) and the mirrored
+Fade Out decision in the same section are closed and are not reopened here.
+The decision list lives in the ShmUI record
+`docs/shm/SHM027 Console Icons and SDK Import Handoff.md` §6.
