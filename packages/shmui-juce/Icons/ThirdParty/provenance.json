@@ -1,0 +1,678 @@
+{
+  "schema_version": 1,
+  "record": "SHM027",
+  "design_grid": 24.0,
+  "stroke_policy": {
+    "mode": "fixed device-pixel weight per logical surface size",
+    "anchors_px": [
+      {
+        "size": 11.0,
+        "stroke_width": 1.1
+      },
+      {
+        "size": 14.0,
+        "stroke_width": 1.25
+      },
+      {
+        "size": 16.0,
+        "stroke_width": 1.5
+      },
+      {
+        "size": 24.0,
+        "stroke_width": 2.0
+      }
+    ]
+  },
+  "assets": [
+    {
+      "role": "Loop",
+      "icon_type": "Loop",
+      "family": "tabler-icons",
+      "mode": "Stroked",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 0.875,
+        "translation_design_grid_units": [
+          1.5,
+          1.5
+        ]
+      },
+      "source": {
+        "library": "tabler/tabler-icons",
+        "upstream_file": "icons/outline/repeat.svg",
+        "immutable_revision": "a4ce1404bc6d24d3c365afe7b258d6bf6f48d62d",
+        "url": "https://github.com/tabler/tabler-icons/blob/a4ce1404bc6d24d3c365afe7b258d6bf6f48d62d/icons/outline/repeat.svg",
+        "raw_url": "https://raw.githubusercontent.com/tabler/tabler-icons/a4ce1404bc6d24d3c365afe7b258d6bf6f48d62d/icons/outline/repeat.svg",
+        "license": "MIT License (c) Pawel Kuna",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/tabler-icons/repeat.svg",
+        "sha256": "c018576502a5f4c2e3738d5537ef514ceb88ace4ae3b3b85ce98fe7eebcbc711"
+      },
+      "geometry": {
+        "view_box": "0 0 24 24",
+        "path_data": "M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3 M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "stroked",
+        "caps_joins": "round caps, round joins"
+      },
+      "presentation": {
+        "optical_group": "lamp",
+        "normalisation_rule": "painted height 18 design-grid units for every lamp mark; a stroked mark reserves the stroke allowance so its painted height matches the filled marks beside it",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Primary source for the shared Loop geometry. Tabler tags the glyph 'loop, repeat-all, replay, cycle, redo, again, music, playlist, repeat' and the rendered comparison at 11/14/16 px reads as a loop, unlike Iconoir's cycle-pill repeat, Lucide's detached swap arrows and Bootstrap's cycle glyph. One geometry serves both the OCC morphic control grid lamp and the clip-edit-dialog transport.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Stop Peers",
+      "icon_type": "StopPeers",
+      "family": "wikimedia-commons",
+      "mode": "Stroked",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 0.03031084,
+        "translation_design_grid_units": [
+          2.900685,
+          4.118937
+        ]
+      },
+      "source": {
+        "library": "Wikimedia Commons",
+        "upstream_file": "Bhutan stop sign.svg",
+        "immutable_revision": "sha1:8cfb6afd46f8575f8987551b928857c7164771ca",
+        "url": "https://commons.wikimedia.org/wiki/File:Bhutan_stop_sign.svg",
+        "license": "Public domain",
+        "obligations": "Public domain: no licence obligation. Attribution is retained as a courtesy credit to Fry1989 (Google Streetview).",
+        "local_path": "juce/Source/Icons/ThirdParty/wikimedia-commons/Bhutan stop sign.svg",
+        "sha256": "8f3e69d45addcc46d5568f2424f83f01dab43d46585bcfc782c3b6ccc11addeb"
+      },
+      "geometry": {
+        "view_box": "",
+        "path_data": "m 461.13723,925.42156 -299.99999,-10e-6 -150.000002,-259.808 150.000002,-259.808 300.00001,0 149.99998,259.80801 z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "stroked",
+        "caps_joins": "round caps, round joins"
+      },
+      "presentation": {
+        "optical_group": "lamp",
+        "normalisation_rule": "painted height 18 design-grid units for every lamp mark; a stroked mark reserves the stroke allowance so its painted height matches the filled marks beside it",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Public-domain hexagonal traffic stop sign: flat top and bottom, points left and right, width/height = 2/sqrt(3). No icon family draws that orientation - Lucide, Iconoir, Tabler and Bootstrap all publish point-top hexagons - so the road-sign geometry is the only correct source, and it is not an octagon, a transport square or a circular jewel.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Fade In",
+      "icon_type": "FadeIn",
+      "family": "in-house",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.8,
+        "translation_design_grid_units": [
+          -2.4,
+          -2.4
+        ]
+      },
+      "source": {
+        "library": "ShmUI in-house (Orpheus design kit)",
+        "upstream_file": "apps/www/public/design-preview/components-clip-buttons.html#g-fadein",
+        "immutable_revision": "n/a - in-house geometry",
+        "url": "https://github.com/boot-industries/shmui",
+        "license": "MIT (same repository licence)",
+        "obligations": "Retain the ShmUI copyright and licence notice.",
+        "local_path": "apps/www/public/design-preview/components-clip-buttons.html",
+        "sha256": "8d8834f7a0f64b211f90afe4fd0b16f9c11b0a267848548e5662526f8c055723",
+        "sha256_scope": "digest of the design-kit path data recorded in geometry.path_data"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M2 13 14 3v10z",
+        "primitives": "single closed triangle",
+        "paint": "fill",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "lamp",
+        "normalisation_rule": "painted height 18 design-grid units for every lamp mark; a stroked mark reserves the stroke allowance so its painted height matches the filled marks beside it",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Established in-house wedge, reused unchanged from the Orpheus design-kit symbol g-fadein: a ramp that rises to the right with a flat bottom edge. The fade-out mark is its mirror image, so the pair shares one optical form. It is the one mark that is not sourced from an external icon set, and it is labelled as in-house.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Fade Out",
+      "icon_type": "FadeOut",
+      "family": "in-house",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.8,
+        "translation_design_grid_units": [
+          -2.4,
+          -2.4
+        ]
+      },
+      "source": {
+        "library": "ShmUI in-house (Orpheus design kit)",
+        "upstream_file": "apps/www/public/design-preview/components-clip-buttons.html#g-fadein (reflected about the design-kit box centre)",
+        "immutable_revision": "n/a - in-house geometry",
+        "url": "https://github.com/boot-industries/shmui",
+        "license": "MIT (same repository licence)",
+        "obligations": "Retain the ShmUI copyright and licence notice.",
+        "local_path": "apps/www/public/design-preview/components-clip-buttons.html",
+        "sha256": "7eeef950dc9832aab0cb5da8b49abc14e1a64288d01f9465da0c7fb94826719a",
+        "sha256_scope": "digest of the design-kit path data recorded in geometry.path_data"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M14 13 2 3v10z",
+        "primitives": "single closed triangle",
+        "paint": "fill",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "lamp",
+        "normalisation_rule": "painted height 18 design-grid units for every lamp mark; a stroked mark reserves the stroke allowance so its painted height matches the filled marks beside it",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Established in-house wedge: the Orpheus design-kit fade-in wedge reflected about the design-kit box centre. The design-kit's own g-fadeout symbol has a sloped bottom edge, so its two bottom corners sat at different heights and the mark read as warped rather than as the counterpart of the fade-in wedge; on 2026-10-20 the operator directed that the fade-out bottom corners share one y-value, exactly like the fade-in. The reflection is a rigid transform of the established in-house form and the generator verifies that equivalence, so no vertex is hand-reconstructed. It is the one mark that is not sourced from an external icon set, and it is labelled as in-house.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Shift",
+      "icon_type": "Shift",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.01804661,
+        "translation_design_grid_units": [
+          3.855118,
+          3.738324
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/shift-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/shift-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/shift-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/shift-fill.svg",
+        "sha256": "f80706a6aa1f78b799a8b43989dbc4ad132b066924f7310b0aa2aaecee5f30cb"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M7.27 2.047a1 1 0 0 1 1.46 0l6.345 6.77c.6.638.146 1.683-.73 1.683H11.5v3a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-3H1.654C.78 10.5.326 9.455.924 8.816z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "legend",
+        "normalisation_rule": "painted height 13 design-grid units (hotkey legend, beside text)",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "OCC217 D7 and section 3 require the classic shift form - an up-caret with a bar, drawn as vector art - and forbid the letter 'S' and a font glyph. OCC218's sourcing record proposed Iconoir's generic up-arrow, which has no bar and therefore does not satisfy OCC217; the rendered comparison of Iconoir arrow-up, Lucide arrow-up, Phosphor caret-up and the Bootstrap shift mark settled on the Bootstrap shift mark as the only candidate that is a true classic shift form.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Play",
+      "icon_type": "Play",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          -0.000294,
+          -0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/play-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/play-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/play-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/play-fill.svg",
+        "sha256": "ae8baa815c8aa11eed60d41beb8e62b9a51cab620d3264707979e118ca576498"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Primary transport family. Bootstrap Icons ships a genuinely filled play glyph on a 16-unit grid designed for 16 px surfaces, which matches the console lamp sizes, and the whole transport set comes from one family so the proportions stay coherent.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Pause",
+      "icon_type": "Pause",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          0.0,
+          0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/pause-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/pause-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/pause-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/pause-fill.svg",
+        "sha256": "b268a8c9a7200067ca8607acca7fec56694e3d8952a97fb7ae992a7aa7491b44"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5m5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled counterpart of the primary transport family.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Stop",
+      "icon_type": "Stop",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          0.0,
+          0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/stop-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/stop-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/stop-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/stop-fill.svg",
+        "sha256": "b7099bb280463c41c9add1e1013b8f5971110cd5afa9cede112a153fc6a54828"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled square transport stop. Deliberately distinct from the hexagonal Stop Peers badge so the two never read as one control.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Record",
+      "icon_type": "Record",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          0.0,
+          0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/record-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/record-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/record-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/record-fill.svg",
+        "sha256": "fe581b54b70854f0693e0219adc3b84ed4a890fa14641a290ce2d513d2fec282"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M8 13A5 5 0 1 0 8 3a5 5 0 0 0 0 10",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled disc transport record.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Rewind",
+      "icon_type": "Rewind",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          -0.000362,
+          0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/rewind-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/rewind-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/rewind-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/rewind-fill.svg",
+        "sha256": "d0afffead5ee072bfbdd237c90b3f05e82f82a73d749a26c10ea004fea5c1541"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M8.404 7.304a.802.802 0 0 0 0 1.392l6.363 3.692c.52.302 1.233-.043 1.233-.696V4.308c0-.653-.713-.998-1.233-.696z M.404 7.304a.802.802 0 0 0 0 1.392l6.363 3.692c.52.302 1.233-.043 1.233-.696V4.308c0-.653-.713-.998-1.233-.696z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled double-triangle rewind.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Fast Forward",
+      "icon_type": "FastForward",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          0.000362,
+          0.0
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/fast-forward-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/fast-forward-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/fast-forward-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/fast-forward-fill.svg",
+        "sha256": "d57a7e07e64f07c09541e299ad368b0af6ebb3d1a3680706aa8f07fbc021de4f"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M7.596 7.304a.802.802 0 0 1 0 1.392l-6.363 3.692C.713 12.69 0 12.345 0 11.692V4.308c0-.653.713-.998 1.233-.696z M15.596 7.304a.802.802 0 0 1 0 1.392l-6.363 3.692C8.713 12.69 8 12.345 8 11.692V4.308c0-.653.713-.998 1.233-.696z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled double-triangle fast forward.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Skip Previous",
+      "icon_type": "SkipPrev",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          -0.37425,
+          -0.00075
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/skip-start-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/skip-start-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/skip-start-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/skip-start-fill.svg",
+        "sha256": "c9be65b74e27c8823b3b265793ea9264e09da1f4d07ef82048f0f29a7caabe8a"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M4 4a.5.5 0 0 1 1 0v3.248l6.267-3.636c.54-.313 1.232.066 1.232.696v7.384c0 .63-.692 1.01-1.232.697L5 8.753V12a.5.5 0 0 1-1 0z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled single-triangle-with-bar skip to previous, matching the classic transport skip mark.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    },
+    {
+      "role": "Skip Next",
+      "icon_type": "SkipNext",
+      "family": "bootstrap-icons",
+      "mode": "Filled",
+      "design_grid": 24.0,
+      "normalisation": {
+        "uniform_scale": 1.5,
+        "translation_design_grid_units": [
+          -0.375,
+          -0.0015
+        ]
+      },
+      "source": {
+        "library": "twbs/icons",
+        "upstream_file": "icons/skip-end-fill.svg",
+        "immutable_revision": "e568465481c0c541f63a78f6452d09387711d489",
+        "url": "https://github.com/twbs/icons/blob/e568465481c0c541f63a78f6452d09387711d489/icons/skip-end-fill.svg",
+        "raw_url": "https://raw.githubusercontent.com/twbs/icons/e568465481c0c541f63a78f6452d09387711d489/icons/skip-end-fill.svg",
+        "license": "MIT License (MIT) (c) The Bootstrap Authors",
+        "obligations": "MIT: reproduce the copyright notice and permission notice in the distributed product. The full text is installed as Icons/ThirdParty/<family>/LICENSE.",
+        "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/skip-end-fill.svg",
+        "sha256": "ee1021b43f04caefe4856daecc367ca9d824f01c8f503dbee4bc3907826dda6b"
+      },
+      "geometry": {
+        "view_box": "0 0 16 16",
+        "path_data": "M12.5 4a.5.5 0 0 0-1 0v3.248L5.233 3.612C4.693 3.3 4 3.678 4 4.308v7.384c0 .63.692 1.01 1.233.697L11.5 8.753V12a.5.5 0 0 0 1 0z",
+        "primitives": "upstream path, flattened to cubic segments",
+        "paint": "filled",
+        "caps_joins": "n/a"
+      },
+      "presentation": {
+        "optical_group": "transport",
+        "normalisation_rule": "the family artwork box maps uniformly onto the shared 24-unit design grid, so the designer's relative proportions are preserved",
+        "stroke_policy": "console stroke policy: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at 24 px; a fixed logical-pixel weight that the host's device-pixel ratio scales at draw time",
+        "target_sizes_px": [
+          11,
+          14,
+          16
+        ],
+        "raster_scales": [
+          1,
+          2
+        ],
+        "states": "one geometry, two states (inactive = same path at low alpha)"
+      },
+      "decision": "Filled single-triangle-with-bar skip to next, matching the classic transport skip mark.",
+      "native_evidence": "docs/shm/assets/shm027-icons/"
+    }
+  ],
+  "licenses": [
+    {
+      "family": "bootstrap-icons",
+      "license": "MIT License (MIT) (c) The Bootstrap Authors",
+      "local_path": "juce/Source/Icons/ThirdParty/bootstrap-icons/LICENSE",
+      "sha256": "0fb3e11bd57e896c5a512afd64864d28a37de45d19835016c87ca1ad19ead969"
+    },
+    {
+      "family": "tabler-icons",
+      "license": "MIT License (c) Pawel Kuna",
+      "local_path": "juce/Source/Icons/ThirdParty/tabler-icons/LICENSE",
+      "sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db"
+    }
+  ]
+}

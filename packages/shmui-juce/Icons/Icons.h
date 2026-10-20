@@ -103,8 +103,37 @@ enum class IconType {
   Loading,
   Clock,
 
+  // Console lamp and hotkey-legend icons (SHM027).
+  // These are appended before NumIcons so that every existing enumerator
+  // keeps its original numeric value.
+  StopPeers,
+  FadeIn,
+  FadeOut,
+  Shift,
+
   // Count (for iteration)
   NumIcons
+};
+
+//==============================================================================
+/**
+ * @brief How an icon's geometry is painted.
+ */
+enum class IconRenderMode {
+  Filled, ///< Closed geometry painted with the destination colour.
+  Stroked ///< Open geometry painted with a fixed-width stroke.
+};
+
+//==============================================================================
+/**
+ * @brief The rendering contract for one icon at one size.
+ */
+struct IconRenderSpec {
+  /** @brief Whether the geometry is filled or stroked. */
+  IconRenderMode mode{IconRenderMode::Filled};
+
+  /** @brief Stroke width in logical pixels; only meaningful for Stroked mode. */
+  float strokeWidth{0.0f};
 };
 
 //==============================================================================
@@ -129,10 +158,36 @@ juce::Path getIcon(IconType type, float size = 24.0f);
  * @param type Icon type to draw
  * @param bounds Bounding rectangle for the icon
  * @param colour Fill colour for the icon
- * @param strokeWidth Optional stroke width (0 = filled, >0 = stroked)
+ * @param strokeWidth Optional explicit stroke width in the same units as @p bounds.
+ *                    When greater than zero the icon is stroked with that width.
+ *                    When zero (the default) the icon is painted with its own
+ *                    render mode: filled icons are filled, and the console
+ *                    open-geometry icons are stroked with the console stroke
+ *                    policy for the surface size.
  */
 void drawIcon(juce::Graphics& g, IconType type, juce::Rectangle<float> bounds, juce::Colour colour,
               float strokeWidth = 0.0f);
+
+/**
+ * @brief The rendering contract for an icon at a given size.
+ *
+ * @param type Icon type
+ * @param size Icon size in the same units as the drawing surface
+ * @return The mode and stroke width the shared layer uses for that icon
+ */
+IconRenderSpec getIconRenderSpec(IconType type, float size);
+
+/**
+ * @brief The console stroke policy.
+ *
+ * The console open-geometry icons (Loop, Stop Peers) are stroked with a fixed
+ * logical-pixel weight that depends only on the size of the surface they are
+ * drawn on, so 24-grid artwork never collapses into a hairline at lamp size.
+ *
+ * @param size Icon size in logical pixels
+ * @return The stroke width in logical pixels
+ */
+float getConsoleStrokeWidth(float size);
 
 /**
  * @brief Get the name string for an icon type.
