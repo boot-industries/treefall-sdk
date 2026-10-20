@@ -7,10 +7,15 @@
     SVG path implementations for all icons.
     Paths are designed for a 24x24 viewbox and scaled to requested size.
 
+    The transport, console-lamp and hotkey-legend icons are generated from
+    upstream artwork: see ConsoleIconGeometry.cpp and the attribution records
+    in Icons/ThirdParty.
+
   ==============================================================================
 */
 
 #include "Icons.h"
+#include "ConsoleIconGeometry.h"
 
 namespace shmui {
 namespace Icons {
@@ -19,71 +24,10 @@ namespace {
 
 //==============================================================================
 // Path creation helpers - all paths designed for 24x24 viewbox
-
-juce::Path createPlayPath() {
-  juce::Path p;
-  p.addTriangle(6.0f, 4.0f, 6.0f, 20.0f, 20.0f, 12.0f);
-  return p;
-}
-
-juce::Path createPausePath() {
-  juce::Path p;
-  p.addRectangle(5.0f, 4.0f, 5.0f, 16.0f);
-  p.addRectangle(14.0f, 4.0f, 5.0f, 16.0f);
-  return p;
-}
-
-juce::Path createStopPath() {
-  juce::Path p;
-  p.addRectangle(5.0f, 5.0f, 14.0f, 14.0f);
-  return p;
-}
-
-juce::Path createRecordPath() {
-  juce::Path p;
-  p.addEllipse(4.0f, 4.0f, 16.0f, 16.0f);
-  return p;
-}
-
-juce::Path createFastForwardPath() {
-  juce::Path p;
-  p.addTriangle(4.0f, 4.0f, 4.0f, 20.0f, 12.0f, 12.0f);
-  p.addTriangle(12.0f, 4.0f, 12.0f, 20.0f, 20.0f, 12.0f);
-  return p;
-}
-
-juce::Path createRewindPath() {
-  juce::Path p;
-  p.addTriangle(20.0f, 4.0f, 20.0f, 20.0f, 12.0f, 12.0f);
-  p.addTriangle(12.0f, 4.0f, 12.0f, 20.0f, 4.0f, 12.0f);
-  return p;
-}
-
-juce::Path createSkipNextPath() {
-  juce::Path p;
-  p.addTriangle(5.0f, 4.0f, 5.0f, 20.0f, 16.0f, 12.0f);
-  p.addRectangle(17.0f, 4.0f, 3.0f, 16.0f);
-  return p;
-}
-
-juce::Path createSkipPrevPath() {
-  juce::Path p;
-  p.addRectangle(4.0f, 4.0f, 3.0f, 16.0f);
-  p.addTriangle(19.0f, 4.0f, 19.0f, 20.0f, 8.0f, 12.0f);
-  return p;
-}
-
-juce::Path createLoopPath() {
-  juce::Path p;
-  // Circular arrows indicating loop
-  p.addArc(4.0f, 6.0f, 16.0f, 12.0f, 0.0f, juce::MathConstants<float>::pi, true);
-  p.addArc(4.0f, 6.0f, 16.0f, 12.0f, juce::MathConstants<float>::pi,
-           juce::MathConstants<float>::twoPi, true);
-  // Arrow heads
-  p.addTriangle(18.0f, 6.0f, 22.0f, 6.0f, 20.0f, 2.0f);
-  p.addTriangle(2.0f, 18.0f, 6.0f, 18.0f, 4.0f, 22.0f);
-  return p;
-}
+//
+// The transport, console-lamp and hotkey-legend icons are not built here:
+// their geometry is upstream artwork normalised into the same 24x24 design grid
+// by scripts/gen-console-icon-geometry.py and lives in ConsoleIconGeometry.
 
 juce::Path createVolumeHighPath() {
   juce::Path p;
@@ -668,204 +612,182 @@ juce::Path createClockPath() {
 juce::Path getIcon(IconType type, float size) {
   juce::Path path;
 
-  switch (type) {
-  case IconType::Play:
-    path = createPlayPath();
-    break;
-  case IconType::Pause:
-    path = createPausePath();
-    break;
-  case IconType::Stop:
-    path = createStopPath();
-    break;
-  case IconType::Record:
-    path = createRecordPath();
-    break;
-  case IconType::FastForward:
-    path = createFastForwardPath();
-    break;
-  case IconType::Rewind:
-    path = createRewindPath();
-    break;
-  case IconType::SkipNext:
-    path = createSkipNextPath();
-    break;
-  case IconType::SkipPrev:
-    path = createSkipPrevPath();
-    break;
-  case IconType::Loop:
-    path = createLoopPath();
-    break;
+  // The console set is upstream artwork normalised into the shared design
+  // grid; it is dispatched before the switch so that the generated geometry
+  // stays the single source of truth for those roles.
+  if (Console::carries(type)) {
+    path = Console::pathFor(type);
+  } else
+    switch (type) {
+    case IconType::VolumeHigh:
+      path = createVolumeHighPath();
+      break;
+    case IconType::VolumeMid:
+      path = createVolumeMidPath();
+      break;
+    case IconType::VolumeLow:
+      path = createVolumeLowPath();
+      break;
+    case IconType::VolumeMute:
+      path = createVolumeMutePath();
+      break;
+    case IconType::Microphone:
+      path = createMicrophonePath();
+      break;
+    case IconType::Speaker:
+      path = createSpeakerPath();
+      break;
+    case IconType::Headphones:
+      path = createHeadphonesPath();
+      break;
+    case IconType::Waveform:
+      path = createWaveformPath();
+      break;
 
-  case IconType::VolumeHigh:
-    path = createVolumeHighPath();
-    break;
-  case IconType::VolumeMid:
-    path = createVolumeMidPath();
-    break;
-  case IconType::VolumeLow:
-    path = createVolumeLowPath();
-    break;
-  case IconType::VolumeMute:
-    path = createVolumeMutePath();
-    break;
-  case IconType::Microphone:
-    path = createMicrophonePath();
-    break;
-  case IconType::Speaker:
-    path = createSpeakerPath();
-    break;
-  case IconType::Headphones:
-    path = createHeadphonesPath();
-    break;
-  case IconType::Waveform:
-    path = createWaveformPath();
-    break;
+    case IconType::Solo:
+      path = createSoloPath();
+      break;
+    case IconType::Mute:
+      path = createMutePath();
+      break;
+    case IconType::Bypass:
+      path = createBypassPath();
+      break;
+    case IconType::Pan:
+      path = createPanPath();
+      break;
+    case IconType::Fader:
+      path = createFaderPath();
+      break;
 
-  case IconType::Solo:
-    path = createSoloPath();
-    break;
-  case IconType::Mute:
-    path = createMutePath();
-    break;
-  case IconType::Bypass:
-    path = createBypassPath();
-    break;
-  case IconType::Pan:
-    path = createPanPath();
-    break;
-  case IconType::Fader:
-    path = createFaderPath();
-    break;
+    case IconType::Folder:
+      path = createFolderPath();
+      break;
+    case IconType::FolderOpen:
+      path = createFolderOpenPath();
+      break;
+    case IconType::File:
+      path = createFilePath();
+      break;
+    case IconType::FileAudio:
+      path = createFileAudioPath();
+      break;
+    case IconType::Import:
+      path = createImportPath();
+      break;
+    case IconType::Export:
+      path = createExportPath();
+      break;
+    case IconType::Save:
+      path = createSavePath();
+      break;
+    case IconType::Load:
+      path = createLoadPath();
+      break;
 
-  case IconType::Folder:
-    path = createFolderPath();
-    break;
-  case IconType::FolderOpen:
-    path = createFolderOpenPath();
-    break;
-  case IconType::File:
-    path = createFilePath();
-    break;
-  case IconType::FileAudio:
-    path = createFileAudioPath();
-    break;
-  case IconType::Import:
-    path = createImportPath();
-    break;
-  case IconType::Export:
-    path = createExportPath();
-    break;
-  case IconType::Save:
-    path = createSavePath();
-    break;
-  case IconType::Load:
-    path = createLoadPath();
-    break;
+    case IconType::Cut:
+      path = createCutPath();
+      break;
+    case IconType::Copy:
+      path = createCopyPath();
+      break;
+    case IconType::Paste:
+      path = createPastePath();
+      break;
+    case IconType::Undo:
+      path = createUndoPath();
+      break;
+    case IconType::Redo:
+      path = createRedoPath();
+      break;
+    case IconType::Delete:
+      path = createDeletePath();
+      break;
+    case IconType::Duplicate:
+      path = createDuplicatePath();
+      break;
+    case IconType::Edit:
+      path = createEditPath();
+      break;
 
-  case IconType::Cut:
-    path = createCutPath();
-    break;
-  case IconType::Copy:
-    path = createCopyPath();
-    break;
-  case IconType::Paste:
-    path = createPastePath();
-    break;
-  case IconType::Undo:
-    path = createUndoPath();
-    break;
-  case IconType::Redo:
-    path = createRedoPath();
-    break;
-  case IconType::Delete:
-    path = createDeletePath();
-    break;
-  case IconType::Duplicate:
-    path = createDuplicatePath();
-    break;
-  case IconType::Edit:
-    path = createEditPath();
-    break;
+    case IconType::Menu:
+      path = createMenuPath();
+      break;
+    case IconType::Close:
+      path = createClosePath();
+      break;
+    case IconType::Minimize:
+      path = createMinimizePath();
+      break;
+    case IconType::Maximize:
+      path = createMaximizePath();
+      break;
+    case IconType::Settings:
+      path = createSettingsPath();
+      break;
+    case IconType::Search:
+      path = createSearchPath();
+      break;
+    case IconType::Filter:
+      path = createFilterPath();
+      break;
+    case IconType::Plus:
+      path = createPlusPath();
+      break;
+    case IconType::Minus:
+      path = createMinusPath();
+      break;
 
-  case IconType::Menu:
-    path = createMenuPath();
-    break;
-  case IconType::Close:
-    path = createClosePath();
-    break;
-  case IconType::Minimize:
-    path = createMinimizePath();
-    break;
-  case IconType::Maximize:
-    path = createMaximizePath();
-    break;
-  case IconType::Settings:
-    path = createSettingsPath();
-    break;
-  case IconType::Search:
-    path = createSearchPath();
-    break;
-  case IconType::Filter:
-    path = createFilterPath();
-    break;
-  case IconType::Plus:
-    path = createPlusPath();
-    break;
-  case IconType::Minus:
-    path = createMinusPath();
-    break;
+    case IconType::ChevronUp:
+      path = createChevronUpPath();
+      break;
+    case IconType::ChevronDown:
+      path = createChevronDownPath();
+      break;
+    case IconType::ChevronLeft:
+      path = createChevronLeftPath();
+      break;
+    case IconType::ChevronRight:
+      path = createChevronRightPath();
+      break;
+    case IconType::ArrowUp:
+      path = createArrowUpPath();
+      break;
+    case IconType::ArrowDown:
+      path = createArrowDownPath();
+      break;
+    case IconType::ArrowLeft:
+      path = createArrowLeftPath();
+      break;
+    case IconType::ArrowRight:
+      path = createArrowRightPath();
+      break;
 
-  case IconType::ChevronUp:
-    path = createChevronUpPath();
-    break;
-  case IconType::ChevronDown:
-    path = createChevronDownPath();
-    break;
-  case IconType::ChevronLeft:
-    path = createChevronLeftPath();
-    break;
-  case IconType::ChevronRight:
-    path = createChevronRightPath();
-    break;
-  case IconType::ArrowUp:
-    path = createArrowUpPath();
-    break;
-  case IconType::ArrowDown:
-    path = createArrowDownPath();
-    break;
-  case IconType::ArrowLeft:
-    path = createArrowLeftPath();
-    break;
-  case IconType::ArrowRight:
-    path = createArrowRightPath();
-    break;
+    case IconType::Check:
+      path = createCheckPath();
+      break;
+    case IconType::X:
+      path = createXPath();
+      break;
+    case IconType::Warning:
+      path = createWarningPath();
+      break;
+    case IconType::Info:
+      path = createInfoPath();
+      break;
+    case IconType::Error:
+      path = createErrorPath();
+      break;
+    case IconType::Loading:
+      path = createLoadingPath();
+      break;
+    case IconType::Clock:
+      path = createClockPath();
+      break;
 
-  case IconType::Check:
-    path = createCheckPath();
-    break;
-  case IconType::X:
-    path = createXPath();
-    break;
-  case IconType::Warning:
-    path = createWarningPath();
-    break;
-  case IconType::Info:
-    path = createInfoPath();
-    break;
-  case IconType::Error:
-    path = createErrorPath();
-    break;
-  case IconType::Loading:
-    path = createLoadingPath();
-    break;
-  case IconType::Clock:
-    path = createClockPath();
-    break;
-
-  default:
-    break;
-  }
+    default:
+      break;
+    }
 
   // Scale from 24x24 viewbox to requested size
   if (size != 24.0f && !path.isEmpty()) {
@@ -876,9 +798,55 @@ juce::Path getIcon(IconType type, float size) {
   return path;
 }
 
+//==============================================================================
+float getConsoleStrokeWidth(float size) {
+  // The console stroke policy, in logical pixels: a fixed weight per surface
+  // size, so the 24-grid open artwork keeps a legible weight at lamp size.
+  // Anchors: 1.10 px at 11 px, 1.25 px at 14 px, 1.50 px at 16 px, 2.00 px at
+  // 24 px; smaller surfaces scale down proportionally.
+  constexpr float anchors[][2] = {{11.0f, 1.10f}, {14.0f, 1.25f}, {16.0f, 1.50f}, {24.0f, 2.00f}};
+
+  constexpr float floorWidth = 0.75f;
+
+  if (size <= anchors[0][0])
+    return std::max(floorWidth, anchors[0][1] * size / anchors[0][0]);
+
+  for (size_t i = 0; i + 1 < juce::numElementsInArray(anchors); ++i) {
+    if (size <= anchors[i + 1][0]) {
+      const float t = (size - anchors[i][0]) / (anchors[i + 1][0] - anchors[i][0]);
+      return anchors[i][1] + t * (anchors[i + 1][1] - anchors[i][1]);
+    }
+  }
+
+  return anchors[juce::numElementsInArray(anchors) - 1][1] * size /
+         anchors[juce::numElementsInArray(anchors) - 1][0];
+}
+
+//==============================================================================
+IconRenderSpec getIconRenderSpec(IconType type, float size) {
+  IconRenderSpec spec;
+
+  // The console open-geometry icons are stroked; everything else - including
+  // every pre-existing icon - is filled, exactly as before.
+  switch (type) {
+  case IconType::Loop:
+  case IconType::StopPeers:
+    spec.mode = IconRenderMode::Stroked;
+    spec.strokeWidth = getConsoleStrokeWidth(size);
+    break;
+
+  default:
+    break;
+  }
+
+  return spec;
+}
+
+//==============================================================================
 void drawIcon(juce::Graphics& g, IconType type, juce::Rectangle<float> bounds, juce::Colour colour,
               float strokeWidth) {
-  juce::Path path = getIcon(type, std::min(bounds.getWidth(), bounds.getHeight()));
+  const float size = std::min(bounds.getWidth(), bounds.getHeight());
+  juce::Path path = getIcon(type, size);
 
   // Center the path in bounds
   auto pathBounds = path.getBounds();
@@ -894,7 +862,13 @@ void drawIcon(juce::Graphics& g, IconType type, juce::Rectangle<float> bounds, j
     g.strokePath(path, juce::PathStrokeType(strokeWidth, juce::PathStrokeType::curved,
                                             juce::PathStrokeType::rounded));
   } else {
-    g.fillPath(path);
+    const auto spec = getIconRenderSpec(type, size);
+
+    if (spec.mode == IconRenderMode::Stroked)
+      g.strokePath(path, juce::PathStrokeType(spec.strokeWidth, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded));
+    else
+      g.fillPath(path);
   }
 }
 
@@ -1031,6 +1005,15 @@ juce::String getIconName(IconType type) {
     return "Loading";
   case IconType::Clock:
     return "Clock";
+
+  case IconType::StopPeers:
+    return "Stop Peers";
+  case IconType::FadeIn:
+    return "Fade In";
+  case IconType::FadeOut:
+    return "Fade Out";
+  case IconType::Shift:
+    return "Shift";
 
   default:
     return "Unknown";

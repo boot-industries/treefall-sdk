@@ -49,6 +49,7 @@ set(SHMUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
 add_library(orpheus_shmui_juce_objects OBJECT
   # Icons
   ${SHMUI_SRC}/Icons/Icons.cpp
+  ${SHMUI_SRC}/Icons/ConsoleIconGeometry.cpp
 
   # Controls (Button System)
   ${SHMUI_SRC}/Controls/Button.cpp
@@ -127,6 +128,24 @@ if(NOT TARGET Orpheus::shmui_juce)
 endif()
 
 # ------------------------------------------------------------------------------
+# Third-party attribution for the console icon set (SHM027)
+#
+# The console, transport and hotkey-legend icons are upstream artwork. Their
+# licence texts, the NOTICE and the machine-readable provenance record travel
+# with the package, together with the upstream SVG files, so that a
+# redistributable install carries its obligations and the recorded digests can
+# be verified offline.
+# ------------------------------------------------------------------------------
+install(DIRECTORY "${SHMUI_SRC}/Icons/ThirdParty/"
+  DESTINATION share/shmui-juce/ThirdParty
+  FILES_MATCHING
+    PATTERN "*.md"
+    PATTERN "*.json"
+    PATTERN "*.svg"
+    PATTERN "LICENSE"
+)
+
+# ------------------------------------------------------------------------------
 # Optional OpenGL component (OrbVisualizer)
 # ------------------------------------------------------------------------------
 if(SHMUI_JUCE_ENABLE_OPENGL)
@@ -196,4 +215,13 @@ if(SHMUI_JUCE_BUILD_TESTS)
     JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME shmui_shm026_segmented_meter
     COMMAND shmui_shm026_segmented_meter_fixture)
+  add_executable(shmui_shm027_console_icons_fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/SHM027ConsoleIconsFixture.cpp
+  )
+  target_link_libraries(shmui_shm027_console_icons_fixture PRIVATE orpheus_shmui_juce)
+  target_compile_features(shmui_shm027_console_icons_fixture PRIVATE cxx_std_20)
+  target_compile_definitions(shmui_shm027_console_icons_fixture PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1)
+  add_test(NAME shmui_shm027_console_icons
+    COMMAND shmui_shm027_console_icons_fixture)
 endif()

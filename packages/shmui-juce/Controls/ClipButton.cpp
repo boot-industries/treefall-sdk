@@ -23,9 +23,9 @@ ClipButton::ClipButton(int buttonIndex) : m_buttonIndex(buttonIndex) {
   // apps append their own (choke, lock, FX, trim, …) via setIndicator().
   m_indicators.push_back(
       {"loop", IconType::Loop, juce::Colours::white.withAlpha(0.6f), BadgeSlot::TopRight, false});
-  m_indicators.push_back({"fadeIn", IconType::VolumeLow, juce::Colours::white.withAlpha(0.6f),
+  m_indicators.push_back({"fadeIn", IconType::FadeIn, juce::Colours::white.withAlpha(0.6f),
                           BadgeSlot::TopRight, false});
-  m_indicators.push_back({"fadeOut", IconType::VolumeMute, juce::Colours::white.withAlpha(0.6f),
+  m_indicators.push_back({"fadeOut", IconType::FadeOut, juce::Colours::white.withAlpha(0.6f),
                           BadgeSlot::TopRight, false});
 
   // Override click handlers with destruction-safe owner tokens.

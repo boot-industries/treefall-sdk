@@ -259,6 +259,82 @@ bool testDefaultThemeListeners() {
          require(shmui::defaultTheme().material.chassis == cool.material.chassis);
 }
 
+// The installed ShmUI package carries the console icon set and its attribution.
+// These checks run against the *installed* package, so they prove that a
+// downstream consumer receives the finalised icon API and the licence
+// material that travels with it.
+bool testConsoleIconApi() {
+  using shmui::IconType;
+
+  const std::array<IconType, 13> consoleRoles{
+      IconType::Loop,    IconType::StopPeers, IconType::FadeIn,      IconType::FadeOut,
+      IconType::Shift,   IconType::Play,      IconType::Pause,       IconType::Stop,
+      IconType::Record,  IconType::Rewind,    IconType::FastForward, IconType::SkipPrev,
+      IconType::SkipNext};
+
+  for (const auto type : consoleRoles) {
+    const auto path = shmui::Icons::getIcon(type, 24.0f);
+    if (!require(!path.isEmpty()))
+      return false;
+    const auto bounds = path.getBounds();
+    if (!require(bounds.getWidth() > 0.0f && bounds.getHeight() > 0.0f))
+      return false;
+  }
+
+  // The open-geometry console marks are stroked with the shared stroke policy;
+  // every other icon keeps its filled behaviour.
+  const auto loop = shmui::Icons::getIconRenderSpec(IconType::Loop, 16.0f);
+  const auto peers = shmui::Icons::getIconRenderSpec(IconType::StopPeers, 16.0f);
+  if (!require(loop.mode == shmui::IconRenderMode::Stroked) ||
+      !require(peers.mode == shmui::IconRenderMode::Stroked))
+    return false;
+  if (!require(std::abs(loop.strokeWidth - 1.50f) < 0.001f))
+    return false;
+  if (!require(shmui::Icons::getIconRenderSpec(IconType::Play, 16.0f).mode ==
+               shmui::IconRenderMode::Filled))
+    return false;
+
+  if (!require(std::abs(shmui::Icons::getConsoleStrokeWidth(11.0f) - 1.10f) < 0.001f) ||
+      !require(std::abs(shmui::Icons::getConsoleStrokeWidth(14.0f) - 1.25f) < 0.001f) ||
+      !require(std::abs(shmui::Icons::getConsoleStrokeWidth(16.0f) - 1.50f) < 0.001f))
+    return false;
+
+  // The loop mark is open geometry, so the shared renderer strokes it and its
+  // interior stays open instead of collapsing into a filled blob.
+  juce::Image image(juce::Image::ARGB, 32, 32, true);
+  juce::Graphics graphics(image);
+  shmui::Icons::drawIcon(graphics, IconType::Loop, image.getBounds().toFloat(),
+                         juce::Colours::white);
+  return require(image.getPixelAt(16, 16).getAlpha() < 48);
+}
+
+bool testInstalledAttribution() {
+  const juce::File root(juce::String(ORPHEUS_SHMUI_INSTALL_PREFIX) +
+                        "/share/shmui-juce/ThirdParty");
+
+  const std::array<const char*, 6> requiredFiles{"NOTICE.md",
+                                                 "provenance.json",
+                                                 "bootstrap-icons/LICENSE",
+                                                 "bootstrap-icons/play-fill.svg",
+                                                 "tabler-icons/LICENSE",
+                                                 "wikimedia-commons/Bhutan stop sign.svg"};
+
+  for (const auto* relative : requiredFiles) {
+    const auto file = root.getChildFile(relative);
+    if (!require(file.existsAsFile()))
+      return false;
+    if (!require(file.getSize() > 0))
+      return false;
+  }
+
+  const auto notice = root.getChildFile("NOTICE.md").loadFileAsString();
+  if (!require(notice.contains("Bootstrap Icons") && notice.contains("Tabler Icons")))
+    return false;
+
+  const auto provenance = root.getChildFile("provenance.json").loadFileAsString();
+  return require(provenance.contains("Stop Peers") && provenance.contains("Fade Out"));
+}
+
 bool testDefaultFollowingComponents() {
   using Flavor = shmui::ThemeFlavor;
   using Mode = shmui::AppearanceMode;
@@ -308,7 +384,8 @@ int main() {
 
   return spectrum.fftSize == impulse.size() && !spectrum.magnitudes.empty() &&
                  shmui::Version::major == 2 && testAppearanceProfiles() &&
-                 testDefaultThemeListeners() && testDefaultFollowingComponents()
+                 testDefaultThemeListeners() && testConsoleIconApi() &&
+                 testInstalledAttribution() && testDefaultFollowingComponents()
              ? 0
              : 1;
 }

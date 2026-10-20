@@ -35,7 +35,10 @@
 
     Icons:
     - shmui::Icons::getIcon() / shmui::Icons::drawIcon()
+    - shmui::Icons::getIconRenderSpec() / shmui::Icons::getConsoleStrokeWidth()
     - Transport, Audio, Mixer, Files, Edit, UI, Arrows, Status categories
+    - Console roles (Loop, StopPeers, FadeIn, FadeOut, Shift) carry sourced
+      geometry; see juce/Source/Icons/ThirdParty/NOTICE.md for attribution
 
     Usage:
     1. Include this header in your JUCE project
