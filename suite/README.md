@@ -10,6 +10,37 @@ Operational identifiers remain `orpheus-suite`, `orpheus-sdk`,
 `ORPHEUS_SUITE_WORKSPACE`, and `.orpheus-suite-workspace`; schema, graph IDs,
 package/API names, and historical snapshots are compatibility identities.
 
+## 2026-10-20 development-channel convergence
+
+`ORP-SUITE-20261020-001` converged the five-repository suite to the state
+this manifest's development channel defines. The record is
+`docs/orp/ORP272 Suite Development Channel Convergence.md`.
+
+The baseline reported seven errors: the SDK ShmUI-JUCE package hash and
+provenance, the FourTrack ShmUI manifest provenance, two FreqFinder source
+resolutions, Clip Composer drift, and the Clip Composer SDK pin. The
+corrections were:
+
+- The vendored package was already the exact output of the governed mirror at
+  ShmUI revision `d420ec64dcb5fd16baa0b95d5048ee09bb95eee8`, with content hash
+  `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7`. The
+  manifest recorded the pre-import values, so the manifest was corrected, not
+  the package.
+- The FourTrack generated ShmUI artifacts are byte-identical to ShmUI's
+  canonical `dist/swift` output and record the same revision with unchanged
+  content hashes.
+- The FreqFinder source overrides resolve once the consumer's build tree is
+  configured with the two variables the manifest names, and the manifest
+  records the revisions the workspace resolves.
+- The Clip Composer gitlink expectation records the revision the checkout
+  carries, `e885ddcf7d3113f5794b31103cd40e90f0d03745`, which the Clip
+  Composer reached by a re-pin to the SDK merge commit that published this
+  correction.
+
+ShmUI published nothing: it is fetch-only in this manifest and its checkout
+was already on `origin/main`. No candidate or stable snapshot was created, no
+`release` or `rollback` ran, and `snapshots[]` was not changed.
+
 ## 2026-10-14 floating development status repair
 
 The development channel is floating with `snapshot_id: null`. `status`,
@@ -39,11 +70,11 @@ as floating. `snapshot observe` records an immutable observation without
 changing the floating development pointer. Existing historical snapshot
 objects are preserved byte-for-byte.
 
-The SDK package artifact is tied to the actual imported package and its
+The SDK package artifact was tied to the actual imported package and its
 governed metadata: source revision
 `1f2c87a089d975eec1396360173da87a926835ed`, package content hash
 `c258caee7eb1c639e2fe7aa654b926aa216d5232149aad52423f897c91167655`, and ShmUI token contract `0.6.0`.
-The suite manifest declares exact SDK gitlink expectations for FourTrack at
+The suite manifest then declared exact SDK gitlink expectations for FourTrack at
 `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` and for Clip Composer at
 `f37503b23f72d7c0bd78ff1276be3c5d4817cee8` (SDK 0.9.1). The Clip Composer pin
 moves because the transport initial-metadata registration path is now merged
@@ -268,9 +299,13 @@ ORP170 requires:
   fetch-only boundary and reports `push_status: "not-required"`.
 - `status` attaches generated-artifact hashes, provenance, and selected-revision
   reachability to every repository and dependency pin.
-- The `fourtrack-shmui-provenance` quick gate invokes the consumer-owned checker
-  against the isolated nested SDK and ShmUI worktrees; it checks generated
-  bytes, import-manifest content, contract version, and provenance revisions.
+- The `fourtrack-shmui-provenance` quick gate was declared in the manifest
+  between the 2026-08-05 import refresh and the ORP170 synchronization
+  checkpoint, and is not declared now. The consumer-owned checker it invoked
+  still exists in the FourTrack repository (`scripts/check-shmui-swift.py`),
+  and FourTrack runs it as its own provenance gate; the manifest declares
+  `fourtrack-format` (quick) and `fourtrack-core-tests` (full) for that
+  repository.
 - Verification commands may declare a controlled environment map. The ShmUI
   freshness check resolves `SDK_ROOT` relative to its isolated check directory.
 - `snapshot observe` captures an immutable development inventory only from a

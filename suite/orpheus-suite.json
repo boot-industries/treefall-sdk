@@ -429,7 +429,7 @@
           "dependency": "orpheus-sdk",
           "kind": "git-submodule",
           "path": "third_party/orpheus-sdk",
-          "revision": "54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21"
+          "revision": "e885ddcf7d3113f5794b31103cd40e90f0d03745"
         }
       ],
       "verification": [

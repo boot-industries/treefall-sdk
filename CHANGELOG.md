@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The suite coordination manifest now records the governed state of the
+  five-repository Treefall Suite. The `sdk-shmui-juce-package` artifact
+  records the imported content hash
+  `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7` and the
+  governed ShmUI source revision
+  `d420ec64dcb5fd16baa0b95d5048ee09bb95eee8` that the package's own import
+  manifest names; the FourTrack generated ShmUI artifacts record the same
+  revision with unchanged content hashes; the FreqFinder source overrides
+  record the revisions the workspace resolves; and the Clip Composer gitlink
+  expectation records the revision its checkout carries. No package byte,
+  public header, ABI table or snapshot changed.
 - Diagnostics now describe `latencyMs` as estimated callback-buffer duration,
   not measured route latency, and expose independently sampled metrics rather
   than claiming a coherent snapshot. Underrun reset linearizes at an atomic
