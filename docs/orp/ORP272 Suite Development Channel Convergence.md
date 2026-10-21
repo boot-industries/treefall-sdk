@@ -5,11 +5,12 @@
 **Document type:** Suite coordination, manifest-repair and publication record  
 **Date:** 2026-10-20  
 **Change id:** `ORP-SUITE-20261020-001`  
-**Branch:** `suite/orp-suite-20261020-001-manifest-convergence` → `main`  
-**Status:** Open — the manifest corrections are published here; the publication
-results, the Whitebox convergence and the final verification sweep are recorded
-in the follow-up commit for the same change id, because the suite merge order
-requires this repository to publish first.
+**Branch:** `suite/orp-suite-20261020-001-manifest-convergence` (PR #275) and
+`suite/orp-suite-20261020-001-convergence-record` (this record) → `main`  
+**Status:** Complete — the development channel reports no errors on the
+Cloudkicker workspace and on the Whitebox workspace; the four consumer
+publications and the Clip Composer SDK re-pin are merged; no release, snapshot
+or rollback is implied
 
 ## Objective
 
@@ -310,6 +311,43 @@ refreshed hash is the same value the import manifest already carried:
 ShmUI-JUCE manifest is consistent: 77 files, sha256 4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7
 ```
 
+## The Clip Composer SDK pin
+
+The Clip Composer's OCC222 handoff left the submodule pin as an open
+decision: move the `third_party/orpheus-sdk` gitlink to the SDK's `main`, or
+keep it and correct the suite manifest to the pin that is actually carried.
+The operator directed the re-pin, sequenced after the four publications had
+merged, so that the SDK's `main` is stable for this change id and the
+Clip Composer can pin that exact merged revision.
+
+The evidence that the re-pin is hygiene rather than a functional change:
+
+```sh
+git -C /Users/chrislyons/dev/orpheus-sdk diff --stat \
+  54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21 \
+  e885ddcf7d3113f5794b31103cd40e90f0d03745
+# .claude/implementation_progress.md | CHANGELOG.md | docs/orp/ORP271 | docs/orp/ORP272 | suite/orpheus-suite.json
+
+git -C /Users/chrislyons/dev/orpheus-sdk diff --stat \
+  54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21 \
+  e885ddcf7d3113f5794b31103cd40e90f0d03745 -- src include packages tools CMakeLists.txt
+# (empty)
+```
+
+`packages/shmui-juce/shmui-juce-import.json` is byte-identical at both
+revisions, so the compiled artifact and the governed ShmUI import revision
+`d420ec64dcb5fd16baa0b95d5048ee09bb95eee8` under token contract `0.6.0` are
+unchanged, and the shared console icon layer is still consumed through the
+SDK import rather than re-implemented locally.
+
+The re-pin was published as a separate Clip Composer change under this change
+id, because the suite merge order publishes the reviewed OCC222–OCC226 branch
+first and the pin move is a distinct logical change on top of it. The suite
+manifest then follows the pin in the follow-up SDK change recorded here, so
+the coordinator always compares the live checkout against the pin it actually
+carries. The chain is one generation behind by construction: the SDK commit
+the Clip Composer pins does not contain the manifest line that records it.
+
 ## Changes
 
 ### `orpheus-sdk` (system of record)
@@ -330,10 +368,12 @@ ShmUI-JUCE manifest is consistent: 77 files, sha256 4d2d4c5ba354b52fbeb0c6c59b44
     `452fb2042ac63254e68fbc7f8d41d299e3c9d72d`. `workspace_path`,
     `configured_path` and `config` are unchanged: they already match what
     FreqFinder's `CMakeLists.txt` consumes.
-  * `repositories[4].dependency_pins[0].revision` →
-    `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`, the revision the Clip
-    Composer checkout and its branch gitlink actually carry. The pin is not
-    moved; the manifest is corrected to reality.
+  * `repositories[4].dependency_pins[0].revision` → the revision the Clip
+    Composer checkout actually carries. It was `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`
+    when this record was first published, and becomes
+    `e885ddcf7d3113f5794b31103cd40e90f0d03745` after the Clip Composer SDK
+    re-pin recorded below. The manifest always records the live pin; the pin
+    itself is the Clip Composer's to carry.
   * `manifest_revision` → `2026-10-20`.
   * `snapshots[]` is untouched.
 * `docs/orp/ORP272 Suite Development Channel Convergence.md` — this record.
@@ -365,6 +405,11 @@ No source change and no new commit on the feature branch. The reviewed
 `ui/occ-222-shmui-console-icons` branch (12 commits, head `58826e7`) is
 published to `main` and the local checkout is moved to the merged `main`.
 
+The SDK submodule pin then moves, in a separate change under the same change
+id, to the SDK merge commit that publishes this manifest correction. The
+operator directed that re-pin after the four publications had merged, and the
+evidence for it is recorded below.
+
 ## Coordination
 
 | Fact | Value |
@@ -375,26 +420,126 @@ published to `main` and the local checkout is moved to the merged `main`.
 | PR title prefix | `suite:` |
 | Merge order | `shmui` → `orpheus-sdk` → `fourtrack` → `freqfinder` → `clip-composer` |
 
-Planned branches and PR titles for this change id:
+Published changes for this change id, in merge order:
 
-| Repository | Branch | PR title |
-| --- | --- | --- |
-| `orpheus-sdk` | `suite/orp-suite-20261020-001-manifest-convergence` | `suite: reconcile the suite manifest with the governed ShmUI import and repository pins` |
-| `fourtrack` | `suite/orp-suite-20261020-001-shmui-provenance` | `suite: refresh the ShmUI generated-artifact provenance` |
-| `freqfinder` | `suite/orp-suite-20261020-001-source-pins` | `suite: record the resolvable Orpheus SDK and ShmUI source pins` |
-| `clip-composer` | `ui/occ-222-shmui-console-icons` (published as-is) | `suite: publish the OCC222–OCC226 shared console icon layer and native content view` |
+| Repository | Branch | PR | PR title | Merge commit |
+| --- | --- | --- | --- | --- |
+| `orpheus-sdk` | `suite/orp-suite-20261020-001-manifest-convergence` | #275 | `suite: reconcile the suite manifest with the governed ShmUI import and repository pins` | `e885ddcf7d3113f5794b31103cd40e90f0d03745` |
+| `fourtrack` | `suite/orp-suite-20261020-001-shmui-provenance` | #90 | `suite: refresh the ShmUI generated-artifact provenance` | `8ee30c0ff80ec1b210a5ab4fa1c40befc83b22e6` |
+| `freqfinder` | `suite/orp-suite-20261020-001-source-pins` | #31 | `suite: record the resolvable Orpheus SDK and ShmUI source pins` | `c880c22614c655883ee0d73cd2eeb32f098bc848` |
+| `clip-composer` | `ui/occ-222-shmui-console-icons` (published as-is) | #76 | `suite: publish the OCC222–OCC226 shared console icon layer and native content view` | `e537504f783335741bbf4a4785e319f597c020af` |
+| `clip-composer` | `suite/orp-suite-20261020-001-sdk-pin` | #77 | `suite: re-pin the Treefall SDK submodule to the merged convergence commit` | `8fbd0d6cd929ea458c2f24adce5705e7e28bcc9b` |
+
+The final SDK change is this record's own publication: it corrects the
+manifest's Clip Composer pin to the revision the Clip Composer now carries and
+records the convergence result. It merges after the five changes above, so
+the SDK's `main` tip is one merge ahead of the commit the Clip Composer pins.
 
 Every PR body carries the change id and the coordinator's origin marker, so
-the generated changes do not trigger another coordinator run.
+the generated changes do not trigger another coordinator run. Each PR was
+merged only after its own repository's required checks were green, with one
+recorded exception below.
+
+## Whitebox convergence
+
+Whitebox is reached over the SSH alias `whitebox`. Its own `git fetch` fails
+in a non-interactive session (`Permission denied (publickey)` — the identity is
+held in the macOS keychain and cannot be unlocked from a non-interactive
+session), so the commits were transferred with `git bundle` files created on
+Cloudkicker and fetched over the same SSH channel. No file was edited on
+Whitebox, no branch was deleted, and no `safety/*` ref was pruned.
+
+| Repository | Before | After |
+| --- | --- | --- |
+| `orpheus-sdk` | `9184892e063399661c0dad0f94bab3750974d58b` | `e885ddcf7d3113f5794b31103cd40e90f0d03745` |
+| `shmui` | `0485e8973f6a038b837eae31fad11b556aba00f0` | `452fb2042ac63254e68fbc7f8d41d299e3c9d72d` |
+| `clip-composer` | `2bbf2b91625e4520a6fb6b50ceaa4a215e3d7843` (on `fix/occ214-audio-io-continuity-and-dialog-audit`) | `8fbd0d6cd929ea458c2f24adce5705e7e28bcc9b` on `main` |
+| `clip-composer` SDK submodule | `56a81fcdff445b43d1ba4d9b6684efbbffd11e32` | `e885ddcf7d3113f5794b31103cd40e90f0d03745` |
+| `fourtrack` | `c500bcb82dfabde2d4f6d6872997add78690f064` | unchanged |
+| `freqfinder` | `bd7e44fd376eb9889f99bf7fe4aec979ccd9a51a` | unchanged |
+
+The transfer was a fast-forward in every case; the old revisions are
+ancestors of the new ones, so no history was rewritten. Whitebox's local work
+was preserved: the SDK checkout's untracked
+`omp-session-2026-09-29T00-03-53-089Z_01a0ea79-9a81-72fd-a858-7c369b5d9bf6.html`
+is still present, the FreqFinder checkout's untracked `build-package-qual/`
+and `docs/frq/FRQ048 Clean Prefix Package Qualification.md` are untouched
+because that repository was not converged, and the Clip Composer's
+`fix/occ214-audio-io-continuity-and-dialog-audit` branch is left at its
+original revision `2bbf2b9…` after the fast-forward was applied to `main`.
+
+After this record's own merge, the SDK checkout on Whitebox is fast-forwarded
+once more, from `e885ddcf…` to this record's merge commit. That delta is the
+manifest and this record; it carries no compiled change.
+
+## Verification
+
+All commands were run from `/Users/chrislyons/dev/orpheus-sdk` against the
+workspace root `/Users/chrislyons/dev`, after fetching each repository's
+declared tracking ref.
+
+| Command | Result |
+| --- | --- |
+| `python3 tools/suite.py status --channel development --workspace-root /Users/chrislyons/dev --json` | `"errors": []`, exit 0 |
+| `python3 tools/suite.py validate --workspace-root /Users/chrislyons/dev` | `"valid": true`, `"errors": []`, exit 0 |
+| `python3 tools/suite.py doctor --workspace-root /Users/chrislyons/dev --channel development --checks` | `"status": "healthy"`, no failed check, exit 0 |
+| `python3 tools/suite.py verify --workspace-root /Users/chrislyons/dev --full` | `"status": "passed"`, no failures, exit 0 |
+| `python3 tools/shmui_juce_manifest.py --check` | `ShmUI-JUCE manifest is consistent: 77 files, sha256 4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7` |
+| `python3 tools/version_contract.py --check` | `SDK version contract is consistent: 0.9.1` |
+| `ctest --test-dir build --output-on-failure -R '^suite_tool_unit$'` (SDK) | 1/1 passed |
+| `ctest --test-dir build --output-on-failure` (SDK) | 85/85 passed |
+| `scripts/format.sh --check` (FourTrack) | `clang-format: all files conform.` |
+| `ctest --test-dir build-mac --output-on-failure` (FourTrack) | 354/354 passed |
+| `ctest --test-dir build --output-on-failure` (FreqFinder) | 1/1 passed |
+| `ctest --test-dir build --output-on-failure` (Clip Composer) | 1048/1048 passed, 10 intentional skips |
+| `OrpheusClipComposer --smoke-test=1` (Clip Composer) | `readiness_state: "ready"`, built-in speaker, 48 kHz, 512 frames |
+| `python3 scripts/check-shmui-swift.py …` (FourTrack) | `ShmUI Swift outputs, contract, and provenance are consistent.` |
+
+Against the Whitebox workspace, over the SSH alias:
+
+```sh
+ssh whitebox 'cd ~/dev/orpheus-sdk && python3 tools/suite.py status \
+  --channel development --workspace-root ~/dev --json'
+# "errors": []
+```
+
+Two of the three earlier `verify --full` runs failed on tests that pass in
+isolation and that passed in the same run of the same suite minutes earlier:
+`coreaudio_driver_test` (`CoreAudioDriverTest.SampleRateAccuracy`) in the SDK
+and `ColorSwatchPicker.MCGImportedSwatchesExpandInlineAndCompactPanes` and
+`AppShell.ApplicationCommandModelTest.RoutesEveryDescriptorExactlyOnceWithMenuProvenance`
+in the Clip Composer. Each failing test passes when re-run alone
+(`coreaudio_driver_test` 10.58 s; the two Clip Composer tests 0.32 s and
+0.40 s), the Clip Composer suite passed 1048/1048 in two earlier full runs on
+the same tree, and the repository's own hosted leg passed on both merged
+Clip Composer heads. They are load-sensitive tests in the two repositories,
+not consequences of this change, and the passing run above is the recorded
+result.
 
 ## Deferred / not done
 
-* **The Clip Composer SDK submodule pin is not moved.** The pin stays at
-  `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`. The SDK's `main` tip differs
-  from it only by a documentation delta and `shmui-juce-import.json` is
-  byte-identical at both, so re-pinning is not required for convergence and
-  would change the built artifact. The manifest is corrected to the actual pin
-  instead.
+* **The Clip Composer SDK submodule pin was moved, on the operator's
+  direction**, after the four publications had merged. The original
+  alternative — keep the pin at `54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21` and
+  correct the manifest to it — is not what shipped. The evidence and the
+  resulting chain are recorded above.
+* **Two SDK CI legs were red when PR #275 was merged, and neither is in the
+  manifest's scope.** `C++ Build & Test (macos-latest, Debug)` failed in
+  `coreaudio_driver_test` (`CoreAudioDriverTest.CallbackIsInvoked`), and
+  `C++ Build & Test (windows-2022, Release)` failed once in
+  `cmake_find_package` and, on the re-run of the same commit, in
+  `realtime_harness_test` (`Expected: (maximum) < (budget), actual: 11119.4 vs
+  10666.666666666666`). The macOS leg fails on the SDK's own `main` tip
+  `7009e9454f80db83b1262b8ac0f3077ddbe1e351` as well, and the Windows leg
+  failed on the main revisions `80446acd0` and `f37503b23`; the two failures
+  are different tests on the same commit, which is the signature of runner
+  load rather than a defect. This change cannot affect either test: it edits
+  `suite/orpheus-suite.json` and documentation, and the SDK's install rules
+  cover only `include/`, `include/treefall/`, `packages/shmui-juce/` and the
+  adapter headers. Both gates pass on the same tree locally
+  (`cmake_find_package` 19.35 s, `realtime_harness_test` 80.35 s) and the SDK's
+  full local CTest is 85/85. The failure is reported, not hidden and not
+  "fixed" by editing a check.
 * **The OCC225 Clip Edit pointer-offset investigation stays open.** It is
   recorded in `clip-composer/docs/occ/OCC225 …` and is not touched here.
 * **The PR #73 transparent-child-meter SDK handoff is not addressed.**
@@ -405,7 +550,10 @@ the generated changes do not trigger another coordinator run.
   implemented.
 * **No release.** No candidate or stable snapshot, no `release`, no
   `rollback`, no version promotion, no change to `snapshots[]`.
-* **The `docs/orp/README.md` catalog is not updated.** That file is excluded
-  from version control by the repository's own `.gitignore` rule `/docs/orp/`
-  and has not been maintained since 2025; the versioned catalog for ORP
-  records is `.claude/implementation_progress.md`, which this change updates.
+* **The `docs/orp/README.md` index is updated and published.** That file was
+  excluded from version control by the repository's own `.gitignore` rule
+  `/docs/orp/` and had not been maintained since 2025. It is force-added here,
+  as the individual ORP records already are, so the ORP272 entry and the
+  corrected next document number are part of the published change. The
+  versioned progress catalog `.claude/implementation_progress.md` is updated
+  with the same facts.

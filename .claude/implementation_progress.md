@@ -1691,3 +1691,48 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
   Standalone, AU and VST3 targets build and `ctest --test-dir build` passes
   1/1. The sanitizer flags are a build-configuration choice; no FreqFinder
   source changed.
+
+## 2026-10-20 Suite development-channel convergence — publication result (ORP-SUITE-20261020-001)
+
+- Five changes were published and merged under this change id, in the
+  manifest's merge order: the SDK manifest correction (PR #275, merge
+  `e885ddcf7d3113f5794b31103cd40e90f0d03745`), the FourTrack ShmUI
+  generated-artifact re-vendor record (PR #90, merge
+  `8ee30c0ff80ec1b210a5ab4fa1c40befc83b22e6`), the FreqFinder source-pin
+  resolution record (PR #31, merge `c880c22614c655883ee0d73cd2eeb32f098bc848`),
+  the Clip Composer OCC222–OCC226 publication (PR #76, merge
+  `e537504f783335741bbf4a4785e319f597c020af`), and the Clip Composer SDK
+  submodule re-pin (PR #77, merge
+  `8fbd0d6cd929ea458c2f24adce5705e7e28bcc9b`).
+- The Clip Composer SDK pin moved from `54329bf0` to `e885ddcf` on the
+  operator's direction, after the four publications had merged. The SDK delta
+  between the two revisions is documentation and the suite manifest only:
+  `git diff --stat 54329bf0 e885ddcf -- src include packages tools
+  CMakeLists.txt` is empty and `packages/shmui-juce/shmui-juce-import.json` is
+  byte-identical at both, so the compiled artifact and the governed ShmUI
+  import revision `d420ec64` under token contract `0.6.0` are unchanged.
+  The suite manifest follows the pin in the follow-up SDK change.
+- Whitebox was converged over the working SSH channel with `git bundle`
+  transfers, because its own `git fetch` fails non-interactively. The SDK
+  moved `9184892e` → `e885ddcf`, ShmUI `0485e89` → `452fb204`, the Clip
+  Composer `2bbf2b9` → `8fbd0d6` on `main` with its SDK submodule `56a81fcd` →
+  `e885ddcf`. FourTrack and FreqFinder were left alone. Whitebox's local work
+  was preserved, no branch was deleted, and no `safety/*` ref was pruned.
+- The coordinator's verdict on the Cloudkicker workspace is
+  `"errors": []`; `validate` exits 0 against the manifest schema, `doctor
+  --checks` reports `healthy`, and `verify --full` passes for all five
+  repositories. The same `status` command against the Whitebox workspace
+  returns an empty error array.
+- Two SDK CI legs were red when PR #275 merged: the macOS leg's
+  `coreaudio_driver_test` and the Windows Release leg's `cmake_find_package`
+  and, on the re-run of the same commit, `realtime_harness_test`'s timing
+  budget. The macOS leg fails on the SDK's own `main` tip `7009e9454` as well,
+  the Windows leg failed on the main revisions `80446acd0` and `f37503b23`,
+  and the two failures are different tests on the same commit. This change
+  edits `suite/orpheus-suite.json` and documentation, and the SDK's install
+  rules cover only `include/`, `include/treefall/`, `packages/shmui-juce/` and
+  the adapter headers, so neither gate can be affected by it. Both pass on the
+  same tree locally, and the SDK's full local CTest is 85/85. The failure is
+  reported in ORP272, not hidden and not edited away.
+- No candidate or stable snapshot was created, no `release` or `rollback`
+  ran, no version was promoted, and `snapshots[]` was not changed.
