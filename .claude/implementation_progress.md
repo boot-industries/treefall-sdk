@@ -1650,3 +1650,44 @@ _This file is auto-maintained by Claude Code during ORP068 implementation._
   and follow SHM027 §10 for the shared-API integration. OCC still pins
   `9184892e063399661c0dad0f94bab3750974d58b`; that gitlink change belongs to
   the OCC team and does not block this closeout.
+
+## 2026-10-20 Suite development-channel convergence (ORP-SUITE-20261020-001)
+
+- Reproduced the coordinator's baseline before changing anything:
+  `python3 tools/suite.py status --channel development --workspace-root
+  /Users/chrislyons/dev --json` reported seven errors (SDK ShmUI-JUCE package
+  hash and provenance, FourTrack ShmUI manifest provenance, two FreqFinder
+  source resolutions, Clip Composer drift, Clip Composer SDK pin drift). The
+  record is `docs/orp/ORP272 Suite Development Channel Convergence.md`.
+- Re-ran the governed ShmUI-JUCE import
+  (`SDK_ROOT=… scripts/sync-juce.sh` and `--check` in the ShmUI checkout).
+  The mirror is idempotent at ShmUI revision
+  `d420ec64dcb5fd16baa0b95d5048ee09bb95eee8`: the package already was that
+  import's exact output, and `tools/shmui_juce_manifest.py --sync`/`--check`
+  confirmed 77 files and content hash
+  `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7`. No
+  package byte changed; the suite manifest's record of the package was the
+  stale artifact.
+- Corrected `suite/orpheus-suite.json`: the SDK package artifact now records
+  the imported hash and revision, the FourTrack generated artifacts record
+  the same ShmUI revision (their bytes are byte-identical to ShmUI's
+  canonical `dist/swift` output), the FreqFinder source overrides record the
+  revisions the workspace resolves, and the Clip Composer gitlink expectation
+  records the revision its checkout and branch actually carry
+  (`54329bf0c80b4ec7cc07cce9f4ed11ecb9c16f21`). `snapshots[]` is untouched and
+  the Clip Composer submodule pin is not moved.
+- The Clip Composer SDK submodule pin stays at `54329bf0…`: the SDK's `main`
+  tip differs from it only by a documentation delta and
+  `shmui-juce-import.json` is byte-identical at both, so re-pinning is not
+  required for convergence and would change the built artifact.
+- The Clip Composer `ui/occ-222-shmui-console-icons` branch (12 commits, head
+  `58826e7`) is a fast-forward of `origin/main`; it is published by PR, not
+  rewritten. `boot-industries/clip-composer#73` stays open and untouched, as
+  `docs/occ/OCC216 PR 73 to PR 74 Carry-Forward Assessment.md` designates.
+- FreqFinder's Debug tree is configured with `-DORP_ENABLE_ASAN=OFF
+  -DORP_ENABLE_UBSAN=OFF`: the SDK enables the sanitizers by default in
+  Debug, and the inherited ASan runtime aborts the VST3 bundle's manifest
+  helper ("Interceptors are not working"). With the sanitizers off, the
+  Standalone, AU and VST3 targets build and `ctest --test-dir build` passes
+  1/1. The sanitizer flags are a build-configuration choice; no FreqFinder
+  source changed.
