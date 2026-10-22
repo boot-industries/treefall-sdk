@@ -119,6 +119,7 @@ private:
   float m_gateReleaseCoefficient = 0.0f;
   float m_gateThresholdLinear = 0.0f;
   float m_compressorEnvelope = 0.0f;
+  float m_compressorMakeupLinear = 1.0f; ///< 10^(makeupGainDb/20), computed on the control thread
   float m_compressorAttackCoefficient = 0.0f;
   float m_compressorReleaseCoefficient = 0.0f;
   float m_limiterGain = 1.0f;

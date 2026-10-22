@@ -110,6 +110,37 @@ TEST(ClipDspTest, EnabledFullChainIsAllocationFreeInRealtimeSection) {
   EXPECT_EQ(orpheus::tests::support::RtGuardState::totalViolations(), 0u);
 }
 
+TEST(ClipDspTest, CompressorBelowThresholdAppliesOnlyTheConstantMakeupGain) {
+  // ORP273 F-06: below the threshold the compressor does not reduce, so the
+  // applied gain is exactly the constant makeup gain and the per-frame pow is
+  // skipped. The result must be unchanged by that shortcut.
+  ClipDspProgram program;
+  program.compressor.enabled = true;
+  program.compressor.thresholdDb = 0.0f;
+  program.compressor.ratio = 4.0f;
+  program.compressor.makeupGainDb = 6.0f;
+
+  ClipDspProcessor processor;
+  ASSERT_EQ(processor.prepare(program, 48000.0, 1), ClipDspValidationError::OK);
+
+  const float input = 0.01f;
+  const float expected = input * std::pow(10.0f, 6.0f / 20.0f);
+  float first = 0.0f;
+  for (size_t index = 0; index < 64; ++index) {
+    // The input is presented afresh every frame: a growing signal would
+    // eventually cross the threshold and start reducing, which is a different
+    // branch of the gain law.
+    float sample = input;
+    processor.processFrame(&sample, 1);
+    if (index == 0) {
+      first = sample;
+    } else {
+      EXPECT_FLOAT_EQ(sample, first) << "the applied gain must not drift between frames";
+    }
+    EXPECT_NEAR(sample, expected, 1e-6f);
+  }
+}
+
 TEST(ClipDspTest, ProcessorHasFixedTriviallyCopyableState) {
   static_assert(std::is_trivially_copyable_v<ClipDspProcessor>);
   EXPECT_LE(sizeof(ClipDspProcessor), 4096u);
