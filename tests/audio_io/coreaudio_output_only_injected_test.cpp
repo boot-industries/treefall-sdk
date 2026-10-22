@@ -279,6 +279,7 @@ uint32_t outputChannels(AudioDeviceID device_id) {
 struct HardwareOutputOnlyRoute {
   std::shared_ptr<test_support::FakeCoreAudioPropertyApi> property_api;
   std::shared_ptr<OutputOnlyRouteQuery> query;
+  AudioDeviceID output_id;
   uint32_t sample_rate;
   uint16_t buffer_size;
 };
@@ -329,7 +330,7 @@ std::optional<HardwareOutputOnlyRoute> makeHardwareOutputOnlyRoute(std::string& 
   property_api->setFormat(kSyntheticStream, kAudioStreamPropertyPhysicalFormat, format);
 
   auto query = std::make_shared<OutputOnlyRouteQuery>(output_id, channels, rate);
-  return HardwareOutputOnlyRoute{std::move(property_api), std::move(query),
+  return HardwareOutputOnlyRoute{std::move(property_api), std::move(query), output_id,
                                  static_cast<uint32_t>(rate), static_cast<uint16_t>(buffer)};
 }
 constexpr OSStatus kInjectedOutputStartStatus = static_cast<OSStatus>(-50'001);
@@ -386,6 +387,38 @@ TEST(CoreAudioOutputOnlyInjectedTest, NeverTouchesStaleInputDirection) {
   ASSERT_EQ(writes[1].bytes.size(), sizeof(restored_hog_mode));
   std::memcpy(&restored_hog_mode, writes[1].bytes.data(), sizeof(restored_hog_mode));
   EXPECT_EQ(restored_hog_mode, 1u);
+}
+
+TEST(CoreAudioOutputOnlyInjectedTest, RefusesDeviceAboveCallbackFrameCeiling) {
+  std::string skip_reason;
+  const auto setup = makeHardwareOutputOnlyRoute(skip_reason);
+  if (!setup.has_value()) {
+    GTEST_SKIP() << skip_reason;
+  }
+
+  // The device advertises a maximum buffer-frame capacity above the SDK's
+  // callback-frame ceiling, even though it currently runs at a small buffer.
+  // The capacity the driver consults is the maximum of the device's supported
+  // range, so the route must be refused.
+  setup->property_api->setBufferRange(setup->output_id, 64.0, 8192.0,
+                                      kAudioObjectPropertyScopeOutput);
+  setup->property_api->setBufferRange(setup->output_id, 64.0, 8192.0,
+                                      kAudioObjectPropertyScopeGlobal);
+
+  DirectionAudit audit;
+  CoreAudioDriver driver(setup->query, setup->property_api, &audit);
+
+  AudioDriverConfig config;
+  config.sample_rate = setup->sample_rate;
+  config.buffer_size = setup->buffer_size;
+  config.num_inputs = 0;
+  config.num_outputs = 2;
+
+  EXPECT_EQ(driver.initialize(config), SessionGraphError::NotSupported);
+  EXPECT_FALSE(driver.isRunning());
+  EXPECT_TRUE(CoreAudioDriverTestAccess::completelyCleaned(driver))
+      << "the refused route must not allocate render buffers or start an AudioUnit";
+  EXPECT_TRUE(setup->property_api->writeLedger().empty());
 }
 
 TEST(CoreAudioOutputOnlyInjectedTest, OutputStartFailurePublishesNativeStatus) {
