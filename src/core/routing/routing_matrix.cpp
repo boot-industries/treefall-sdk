@@ -1228,26 +1228,25 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         double sumSquares = 0.0;
         bool anyNonZero = false;
         bool clipped = false;
+        const bool truePeakMode = (config.metering_mode == MeteringMode::TruePeak);
         for (uint32_t frame = 0; frame < num_frames; ++frame) {
           const float sample = sanitize(group_buffer.channels[lane][frame]);
           group_buffer.channels[lane][frame] = sample;
           const float magnitude = std::abs(sample);
           clipped = clipped || magnitude >= 1.0f;
-          peak = std::max(peak, magnitude);
           anyNonZero = anyNonZero || sample != 0.0f;
           sumSquares += static_cast<double>(sample) * sample;
+          if (truePeakMode) {
+            peak = std::max(peak, group.lane_true_peak_meters[lane].process(sample));
+          } else {
+            peak = std::max(peak, magnitude);
+          }
         }
 
         if (!anyNonZero || muted) {
           group.lane_true_peak_meters[lane].reset();
           peak = 0.0f;
-        } else if (config.metering_mode == MeteringMode::TruePeak) {
-          peak = 0.0f;
-          for (uint32_t frame = 0; frame < num_frames; ++frame) {
-            peak = std::max(peak, group.lane_true_peak_meters[lane].process(
-                                      group_buffer.channels[lane][frame]));
-          }
-        } else {
+        } else if (!truePeakMode) {
           group.lane_true_peak_meters[lane].reset();
         }
 
@@ -1571,7 +1570,9 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
 
   const int config_idx = m_active_config_idx.load(std::memory_order_acquire);
   const MeteringMode mode = m_config_buffers[config_idx].metering_mode;
+  const bool true_peak_mode = (mode == MeteringMode::TruePeak);
   float peak_value = 0.0f;
+  float true_peak_value = 0.0f;
   double sum_squares = 0.0;
   bool any_nonzero = false;
   bool clipped = false;
@@ -1585,6 +1586,14 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
     any_nonzero = any_nonzero || left_sample != 0.0f || right_sample != 0.0f;
     sum_squares += static_cast<double>(left_sample) * left_sample +
                    static_cast<double>(right_sample) * right_sample;
+    if (true_peak_mode) {
+      if (left != nullptr) {
+        true_peak_value = std::max(true_peak_value, true_peak_meters[0].process(left_sample));
+      }
+      if (right != nullptr) {
+        true_peak_value = std::max(true_peak_value, true_peak_meters[1].process(right_sample));
+      }
+    }
   }
   if (clipped && clip_count != nullptr) {
     clip_count->fetch_add(1, std::memory_order_relaxed);
@@ -1595,24 +1604,17 @@ void RoutingMatrix::processStereoMetering(const float* left, const float* right,
       meter.reset();
     }
     peak_value = 0.0f;
-  } else if (mode == MeteringMode::TruePeak) {
-    if (left != nullptr) {
-      peak_value = 0.0f;
-      for (size_t i = 0; i < num_frames; ++i) {
-        const float sample = sanitizeSample(left[i]);
-        peak_value = std::max(peak_value, true_peak_meters[0].process(sample));
-      }
-    } else {
+  } else if (true_peak_mode) {
+    if (left == nullptr) {
       true_peak_meters[0].reset();
     }
-    if (right != nullptr) {
-      for (size_t i = 0; i < num_frames; ++i) {
-        const float sample = sanitizeSample(right[i]);
-        peak_value = std::max(peak_value, true_peak_meters[1].process(sample));
-      }
-    } else {
+    if (right == nullptr) {
       true_peak_meters[1].reset();
     }
+    // With a left channel the published TruePeak value is the estimator's
+    // maximum. Without one the sample-peak maximum is retained, which is the
+    // pre-existing behaviour of this path.
+    peak_value = (left != nullptr) ? true_peak_value : std::max(peak_value, true_peak_value);
   } else {
     for (auto& meter : true_peak_meters) {
       meter.reset();
