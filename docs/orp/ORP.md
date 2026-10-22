@@ -9,6 +9,11 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP273 Refactoring and Performance Optimization Review]] —
+  source-grounded refactoring and performance review of the SDK core at
+  `0325c6400`; 20 ranked findings with cost bounds, prior-record
+  reconciliation, and downstream impact (2026-10-21)
+
 - [[ORP270 Transport Initial Metadata Registration Delivery]] —
   reviewed delivery of `ITransportController::registerClipAudioWithMetadata()`,
   an additive C++-only initial-metadata registration path with transport
@@ -126,6 +131,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Records
 
+- [ORP273 Refactoring and Performance Optimization Review](ORP273%20Refactoring%20and%20Performance%20Optimization%20Review.md)
 - [ORP270 Transport Initial Metadata Registration Delivery](ORP270%20Transport%20Initial%20Metadata%20Registration%20Delivery.md)
 - [ORP269 Suite Floating Development Coordinator Repair](ORP269%20Suite%20Floating%20Development%20Coordinator%20Repair.md)
 - [ORP266 DeepWiki Coherence Audit](ORP266%20DeepWiki%20Coherence%20Audit.md)
@@ -280,6 +286,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 - [[ORP181 Upstream Meter Latency Correction and Temporal Coherence Progress]]
 - [[ORP269 Suite Floating Development Coordinator Repair]]
 - [[ORP270 Transport Initial Metadata Registration Delivery]]
+- [[ORP273 Refactoring and Performance Optimization Review]]
 
 ## Navigation
 
@@ -293,4 +300,4 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ---
 
-**Last Generated:** 2026-10-19
+**Last Generated:** 2026-10-21

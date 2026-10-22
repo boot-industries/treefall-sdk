@@ -1,4 +1,50 @@
 # ORP068 Implementation Progress
+## Refactoring and performance optimization review — 2026-10-21
+
+- Recorded `docs/orp/ORP273 Refactoring and Performance Optimization Review.md`,
+  a source-grounded review of the SDK core at `0325c6400` on branch
+  `docs/orp273-refactoring-performance-review`. Documentation only: no `src/`,
+  `include/`, `tests/`, `adapters/`, `packages/`, `cmake/`, `tools/` or
+  `CMakeLists.txt` file was modified.
+- 20 ranked findings, each with `path:line` anchors, an explicit multiplicity
+  bound, a concrete file-level recommendation, a blast-radius classification
+  and a Clip Composer / FreqFinder downstream-impact statement.
+- Two Critical findings are released-contract violations rather than CPU cost:
+  the CoreAudio device callback reaches `std::atomic::notify_one()` on the
+  route monitor, and the EqualPower fade's per-sample `std::sin` leaves the
+  cross-platform render hash unpinned, which the repository's own test comment
+  already names as ORP134 G4 scope.
+- The render-path findings concentrate memory traffic proportional to
+  configured capacity rather than to active work: a per-block clear of all 256
+  voice-slot routing lanes, three out-of-line gain/pan smoother calls per
+  channel per sample (two of them discarded under the default
+  `SourceChannelPolicy::Discrete`), an 17,936-byte meter telemetry struct
+  constructed and copied per block, a per-group channel rescan for headroom
+  compensation, redundant meter-scratch clears, and a duplicated per-sample
+  pass in TruePeak metering.
+- Measurement hygiene: `node scripts/validate-performance.js` reports "All
+  performance budgets met!" while the only configured bundle was skipped and
+  neither the latency nor the frequency budget was measured; sanitizer CI jobs
+  apply unsanitized timing thresholds to instrumented measurements; and the one
+  shipped performance tool times an end-to-end offline render that includes
+  file I/O and is not registered as a CTest test.
+- Reconciled against ORP104, ORP116, ORP121, ORP138, ORP263 (F-01…F-09,
+  R-01…R-07), ORP266 (all 16 rows), ORP267, ORP268, ORP134, ORP135 and
+  `docs/REALTIME_AUDIT.md` §Known Architecture Debt. Items already covered
+  are dispositioned in the record's reconciliation table and are not re-raised
+  as findings.
+- Verification: strict realtime audit, docs-path audit, version contract,
+  ShmUI manifest check and suite validation all pass; the targeted CTest set
+  `realtime_static_audit`, `docs_path_audit`, `multi_clip_stress_test`,
+  `transport_render_hash_test`, `performance_monitor_test` and
+  `realtime_harness_test` all pass. All 255 `path:line` anchors in the record
+  were re-verified to resolve against the committed tree.
+- Evidence limit: every measurement came from the Debug + ASan + UBSan
+  `build/` tree and is not release-representative. No finding claims a
+  millisecond saving or a callback-deadline gain; costs are stated as
+  operation counts and unmeasured per-operation latencies are labelled
+  `[INFERENCE]`.
+
 ## Windows CI baseline repair — 2026-09-02
 
 - Ordered Windows SDK includes so `windows.h` supplies prerequisites before the

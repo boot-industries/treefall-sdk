@@ -1,5 +1,87 @@
 # Progress
 
+## Refactoring and performance optimization review — 2026-10-21
+
+**Branch:** `docs/orp273-refactoring-performance-review`
+**Record:** `docs/orp/ORP273 Refactoring and Performance Optimization Review.md`
+**Status:** Review record complete; no SDK source, test, build, or package
+change was made.
+
+The review covers the C++20 SDK core at `0325c6400` (branch `main`):
+`src/`, `include/`, `adapters/`, `tools/`, `tests/`, and `examples/`.
+`packages/shmui-juce/` is a governed import pinned at upstream revision
+`d420ec64dcb5fd16baa0b95d5048ee09bb95eee8` and is excluded, as are `apps/`
+and the child-application repositories.
+
+It produced 20 ranked findings, each with `path:line` anchors, an explicit
+multiplicity bound, a concrete file-level recommendation, a blast-radius
+classification, and a downstream-impact statement for Clip Composer and
+FreqFinder. Two are rated Critical as released-contract violations: the
+CoreAudio device callback reaches `std::atomic::notify_one()` on the route
+monitor, and the EqualPower fade path's per-sample `std::sin` is the
+documented reason the render-hash golden is not pinned, which leaves the
+determinism principle unmet for that curve. The remainder concentrate
+memory traffic proportional to configured capacity rather than to active
+work in the transport and routing render path, plus measurement-hygiene
+gaps in the budget validator and the sanitizer CI timing thresholds.
+
+Every candidate was searched against ORP104, ORP116, ORP121, ORP138,
+ORP263 (F-01 to F-09, R-01 to R-07 and the design-debt list), ORP266 (all
+16 rows), ORP267, ORP268, ORP134, ORP135, and
+`docs/REALTIME_AUDIT.md` §Known Architecture Debt. Items already covered
+are dispositioned in the record's reconciliation table and are not re-raised
+as findings: the gain-conversion `std::pow` is already mitigated by
+control-side precomputation, ORP263 F-01 to F-05 are contained by ORP264,
+ORP266 row 7's unenforced budgets and rows 12/13/17's static-audit limits
+remain open in their own record, and the minhost split is already owned by
+ORP135.
+
+### Verification
+
+- Baseline confirmed before any work: clean worktree, HEAD
+  `0325c6400a37be9926b4b6dae532885417cabe9b`, `main` tracking
+  `origin/main`.
+- `python3 tools/realtime_audit.py --root . --fail-known-debt` — passed, 0
+  hard failures and 0 tracked debt findings.
+- `python3 tools/realtime_audit.py --root . --fail-known-debt
+  --include-adjacent` — 1 tracked debt finding, in Clip Composer's own
+  callback; out of scope for this repository.
+- `python3 tools/docs_path_audit.py --root .` — passed, 7 documents
+  checked.
+- `python3 tools/version_contract.py --check` — passed, 0.9.1.
+- `python3 tools/shmui_juce_manifest.py --check` — passed, 77 files,
+  sha256 `4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7`.
+- `python3 tools/suite.py validate --json` — `"errors": []`.
+- Targeted CTest only: `realtime_static_audit`, `docs_path_audit`,
+  `multi_clip_stress_test`, `transport_render_hash_test` and
+  `performance_monitor_test` passed (5/5, 54.91 s), and
+  `realtime_harness_test` passed (1/1, 87.74 s). The full 85-test suite was
+  deliberately not run.
+- `./build/tools/perf/orpheus_perf_render_click` — 44100 Hz 10.185 ms,
+  48000 Hz 10.788 ms, 96000 Hz 24.190 ms.
+- `./build/adapters/minhost/orpheus_minhost render-click --session
+  tools/fixtures/solo_click.json --out /tmp/orp273_probe.wav --range 0:8` —
+  rendered successfully.
+- `scripts/check-determinism.sh` — passed; SHA-256
+  `1a602fe4e879ec011bdf2b9ce25e0f2ad7f577d62c2c8ee937dc6bc38319d905`.
+
+### Evidence limits
+
+Every measurement was taken on the existing `build/` tree, which is Debug
+with AddressSanitizer and UndefinedBehaviorSanitizer enabled; it is **not**
+release-representative, and no release baseline was configured. No finding
+claims a millisecond saving, a percentage improvement, or callback-deadline
+headroom: every cost is stated as an operation count against a stated
+multiplicity bound, and per-operation latencies are labelled `[INFERENCE]`.
+`node scripts/validate-performance.js` exits 0 and prints "All performance
+budgets met!", but the only configured bundle was skipped and neither the
+command-latency nor the event-frequency budgets was measured, so that exit
+code is not performance evidence. The `perf_render_click` figures time an
+end-to-end offline render that includes the WAV file write, not a callback.
+No Windows, Linux, or physical-device evidence was gathered. All 255
+`path:line` anchors in the record were re-verified to resolve against the
+committed tree.
+
 ## Clip Composer SDK pin in the suite manifest — 2026-10-19
 
 **Branch:** `chore/suite-clip-composer-pin-20261019`

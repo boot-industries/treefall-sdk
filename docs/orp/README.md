@@ -34,7 +34,6 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   and factory-visible capture-failure telemetry.
 - **ORP156** — ORP155 implementation, verification, and PR delivery handoff.
 - **ORP157** — Bounded per-clip DSP and physical-output telemetry.
-  Next free document number: ORP158.
 - **ORP136** — Verification & CI framework spanning all sprints (realtime gates,
   determinism hashes, TSAN, fuzzing, benchmark budgets, downstream conformance).
 - **ORP272** — Suite development-channel convergence. The five-repository
@@ -42,7 +41,12 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   `suite/orpheus-suite.json` defines: the baseline error list, the per-error
   diagnosis, the governed ShmUI-JUCE import and the revision it names, the
   publication of the four consumer changes and the Clip Composer SDK re-pin,
-  and the Whitebox convergence. Next free document number: ORP273.
+  and the Whitebox convergence.
+- **ORP273** — Refactoring and performance optimization review of the SDK
+  core at `0325c6400`: 20 ranked findings with `path:line` anchors, cost
+  bounds and downstream impact, reconciled against ORP104, ORP116, ORP121,
+  ORP138, ORP263, ORP266, ORP267 and ORP268.
+  Next free document number: ORP274.
 
 ---
 
