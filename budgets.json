@@ -1,21 +1,15 @@
 {
   "version": "1.0",
   "budgets": {
-    "bundleSize": {
-      "@orpheus/engine-wasm": {
-        "max": 5242880,
-        "warn": 4718592,
-        "description": "WASM module (5 MB max, warn at 4.5 MB)"
-      }
-    },
-    "commandLatency": {
-      "LoadSession": { "p95": 200, "p99": 500, "unit": "ms" },
-      "RenderClick": { "p95": 1000, "p99": 2000, "unit": "ms" }
-    },
-    "eventFrequency": {
-      "TransportTick": { "max": 30, "unit": "Hz" },
-      "RenderProgress": { "max": 10, "unit": "Hz" }
-    },
-    "degradationTolerance": { "latency": "10%", "size": "15%" }
+    "renderBlockTime": {
+      "description": "Transport + routing render path, worst-case topology, 2048-frame blocks at 48 kHz",
+      "frames": 2048,
+      "voices": 32,
+      "channels": 8,
+      "rate": 48000,
+      "p99FractionOfDeadline": 0.5,
+      "unit": "us",
+      "enforcedBy": "realtime_render_deadline_distribution"
+    }
   }
 }
