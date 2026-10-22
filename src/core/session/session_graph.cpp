@@ -70,10 +70,7 @@ Track::~Track() = default;
 
 Clip* Track::add_clip(ClipId id, std::string name, double start_beats, double length_beats,
                       std::uint32_t scene_index) {
-  auto clip =
-      std::unique_ptr<Clip>(new Clip(id, std::move(name), start_beats, length_beats, scene_index));
-  Clip* raw = clip.get();
-  clips_.push_back(std::move(clip));
+  Clip* raw = append_clip(id, std::move(name), start_beats, length_beats, scene_index);
   sort_clips();
   try {
     validate_clip_layout();
@@ -82,6 +79,15 @@ Clip* Track::add_clip(ClipId id, std::string name, double start_beats, double le
     (void)removed;
     throw;
   }
+  return raw;
+}
+
+Clip* Track::append_clip(ClipId id, std::string name, double start_beats, double length_beats,
+                         std::uint32_t scene_index) {
+  auto clip =
+      std::unique_ptr<Clip>(new Clip(id, std::move(name), start_beats, length_beats, scene_index));
+  Clip* raw = clip.get();
+  clips_.push_back(std::move(clip));
   return raw;
 }
 
@@ -613,6 +619,56 @@ Clip* SessionGraph::add_clip(Track& track, std::string name, double start_beats,
   mark_clip_grid_dirty();
   record_change(SessionChangeFlags::Structure);
   return clip;
+}
+
+std::vector<Clip*> SessionGraph::add_clips(Track& track, const std::vector<ClipSpec>& specs) {
+  if (specs.empty()) {
+    return {};
+  }
+  Track* target = find_track(&track);
+  if (target == nullptr) {
+    throw std::invalid_argument("Track does not belong to session");
+  }
+  // Validate every spec's numbers before appending anything, so a numeric
+  // rejection unwinds nothing.
+  for (const ClipSpec& spec : specs) {
+    RangeFromBeats(spec.start_beats,
+                   std::max(RequireFinite(spec.length_beats, "Clip length"), kMinimumLengthBeats),
+                   tempo_bpm_, render_sample_rate_hz_);
+  }
+
+  std::vector<Clip*> created;
+  created.reserve(specs.size());
+  try {
+    for (const ClipSpec& spec : specs) {
+      created.push_back(target->append_clip(
+          clip_ids_.allocate(), spec.name, spec.start_beats,
+          std::max(RequireFinite(spec.length_beats, "Clip length"), kMinimumLengthBeats),
+          spec.scene_index));
+    }
+    target->sort_clips();
+    target->validate_clip_layout();
+  } catch (...) {
+    for (Clip* clip : created) {
+      const bool removed = target->remove_clip(clip);
+      (void)removed;
+    }
+    target->sort_clips();
+    throw;
+  }
+  mark_clip_grid_dirty();
+  record_change(SessionChangeFlags::Structure);
+
+  // The created clips are returned in the track's order after the sort.
+  const std::unordered_set<Clip*> created_set(created.begin(), created.end());
+  std::vector<Clip*> ordered;
+  ordered.reserve(created.size());
+  for (const auto& owned : target->clips()) {
+    if (created_set.count(owned.get()) != 0) {
+      ordered.push_back(owned.get());
+    }
+  }
+  return ordered;
 }
 
 bool SessionGraph::remove_clip(const Clip* clip) {

@@ -84,6 +84,10 @@ private:
   Track(TrackId id, std::string name);
   [[nodiscard]] Clip* add_clip(ClipId id, std::string name, double start_beats, double length_beats,
                                std::uint32_t scene_index);
+  /// Append a clip without sorting or validating the track. The caller owns
+  /// the ordering and the layout check.
+  [[nodiscard]] Clip* append_clip(ClipId id, std::string name, double start_beats,
+                                  double length_beats, std::uint32_t scene_index);
   [[nodiscard]] bool remove_clip(const Clip* clip);
   [[nodiscard]] Clip* find_clip(const Clip* clip);
   void sort_clips();
@@ -348,8 +352,20 @@ public:
     return session_end_beats_;
   }
 
+  /// One clip to create in a bulk construction.
+  struct ClipSpec {
+    std::string name;
+    double start_beats{0.0};
+    double length_beats{0.0};
+    std::uint32_t scene_index{0u};
+  };
+
   [[nodiscard]] ORPHEUS_API Clip* add_clip(Track& track, std::string name, double start_beats,
                                            double length_beats, std::uint32_t scene_index = 0u);
+  /// Bulk construction: append every clip, then sort and validate the track
+  /// once. Returns the created clips in track order.
+  [[nodiscard]] ORPHEUS_API std::vector<Clip*> add_clips(Track& track,
+                                                         const std::vector<ClipSpec>& specs);
   [[nodiscard]] ORPHEUS_API bool remove_clip(const Clip* clip);
   ORPHEUS_API void set_clip_start(Clip& clip, double start_beats);
   ORPHEUS_API void set_clip_length(Clip& clip, double length_beats);

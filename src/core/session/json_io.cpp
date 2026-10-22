@@ -296,6 +296,8 @@ SessionGraph parseSessionDocument(const std::string& json_text) {
     Track* track = session.add_track(track_name);
     const JsonValue* clips_field = RequireField(track_object, "clips");
     const JsonValue& clips_value = ExpectArray(*clips_field, "track.clips");
+    std::vector<SessionGraph::ClipSpec> clip_specs;
+    clip_specs.reserve(clips_value.array.size());
     for (const JsonValue& clip_value : clips_value.array) {
       const JsonValue& clip_object = ExpectObject(clip_value, "clip");
       const JsonValue* clip_name_field = RequireField(clip_object, "name");
@@ -304,10 +306,11 @@ SessionGraph parseSessionDocument(const std::string& json_text) {
       const JsonValue* clip_length_field = RequireField(clip_object, "length_beats");
       const double clip_start = RequireNumber(*clip_start_field, "clip.start_beats");
       const double clip_length = RequireNumber(*clip_length_field, "clip.length_beats");
-      auto* clip = session.add_clip(*track, clip_name, clip_start, clip_length);
-      if (clip == nullptr) {
-        throw std::runtime_error("Failed to add clip: " + clip_name);
-      }
+      clip_specs.push_back(SessionGraph::ClipSpec{clip_name, clip_start, clip_length, 0u});
+    }
+    const std::vector<Clip*> clips = session.add_clips(*track, clip_specs);
+    if (clips.size() != clip_specs.size()) {
+      throw std::runtime_error("Failed to add clips to track: " + track_name);
     }
   }
 

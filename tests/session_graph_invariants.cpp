@@ -5,6 +5,8 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace orpheus::core::tests {
 namespace {
@@ -418,6 +420,53 @@ TEST(SessionGraphInvariants, ExtremeTimingRejectionPreservesGraphAndRevision) {
   snapshot.tracks[0].clips[0].range =
       TimeRange::fromStartLength(TimePoint::fromSamples(std::numeric_limits<int64_t>::max()), 1);
   EXPECT_THROW(session.restore(snapshot), std::invalid_argument);
+  EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, BulkClipConstructionIsOneEditAndSortsTheTrack) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  const std::uint64_t revision = session.revision();
+
+  std::vector<SessionGraph::ClipSpec> specs;
+  specs.push_back(SessionGraph::ClipSpec{"Second", 4.0, 2.0, 0u});
+  specs.push_back(SessionGraph::ClipSpec{"First", 0.0, 2.0, 0u});
+  specs.push_back(SessionGraph::ClipSpec{"Third", 8.0, 2.0, 0u});
+
+  const std::vector<Clip*> clips = session.add_clips(*track, specs);
+  ASSERT_EQ(clips.size(), 3u);
+  EXPECT_EQ(session.revision(), revision + 1u) << "a bulk add is one logical edit";
+  ASSERT_EQ(track->clips().size(), 3u);
+  EXPECT_EQ(track->clips()[0]->name(), "First");
+  EXPECT_EQ(track->clips()[1]->name(), "Second");
+  EXPECT_EQ(track->clips()[2]->name(), "Third");
+  for (const Clip* clip : clips) {
+    EXPECT_NE(clip, nullptr);
+  }
+}
+
+TEST(SessionGraphInvariants, BulkClipConstructionRejectsOverlapsWithoutSideEffects) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  ASSERT_NE(session.add_clip(*track, "Existing", 0.0, 2.0), nullptr);
+  const std::uint64_t revision = session.revision();
+  const size_t clip_count = track->clips().size();
+
+  std::vector<SessionGraph::ClipSpec> specs;
+  specs.push_back(SessionGraph::ClipSpec{"Overlap", 1.0, 2.0, 0u});
+  EXPECT_THROW(static_cast<void>(session.add_clips(*track, specs)), std::invalid_argument);
+  EXPECT_EQ(track->clips().size(), clip_count) << "a rejected batch leaves the track unchanged";
+  EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, EmptyBulkClipConstructionIsNotAnEdit) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  const std::uint64_t revision = session.revision();
+  EXPECT_TRUE(session.add_clips(*track, {}).empty());
   EXPECT_EQ(session.revision(), revision);
 }
 } // namespace orpheus::core::tests
