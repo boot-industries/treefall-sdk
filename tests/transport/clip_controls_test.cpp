@@ -169,8 +169,12 @@ TEST_F(ClipAudioControlsTest, InitialFadeInAppliesWithAndWithoutLooping) {
       ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
       ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
       render(left, right);
-      EXPECT_FLOAT_EQ(left.front(), 0.0f);
-      EXPECT_FLOAT_EQ(right.front(), 0.0f);
+      // The fade starts from silence. The EqualPower curve is now evaluated
+      // with the pinned platform-independent elementary function, whose
+      // absolute error near zero is below the float32 noise floor, so the
+      // first sample is silent rather than bit-exactly zero.
+      EXPECT_NEAR(left.front(), 0.0f, 1.0e-15f);
+      EXPECT_NEAR(right.front(), 0.0f, 1.0e-15f);
       EXPECT_NEAR(left[120], 0.25f * midpointGain, 1.0e-5f);
       EXPECT_NEAR(right[120], 0.5f * midpointGain, 1.0e-5f);
       EXPECT_NEAR(left[240], 0.25f, 1.0e-5f);
