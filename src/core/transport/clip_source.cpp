@@ -6,6 +6,8 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <functional>
+#include <utility>
 
 namespace orpheus {
 
@@ -1279,16 +1281,37 @@ void MediaStreamWorker::snapshotSources(std::vector<SourceService>& live,
     }
   }
   std::erase_if(live, [](const SourceService& entry) { return !entry.source; });
+  // Carry the command-fill state forward by source identity. The previous
+  // round's entries are sorted by source pointer once, so every source below
+  // resolves its predecessor with a binary search instead of a linear scan of
+  // the whole snapshot. std::less gives a total order over unrelated
+  // pointers, so the ordering is well defined.
+  std::vector<std::pair<const StreamingClipSource*, StreamingClipSource::CommandFillWork>>
+      sorted_previous;
+  sorted_previous.reserve(live.size());
+  for (const auto& entry : live) {
+    sorted_previous.emplace_back(entry.source.get(), entry.command);
+  }
+  const auto by_identity = [](const StreamingClipSource* lhs, const StreamingClipSource* rhs) {
+    return std::less<const StreamingClipSource*>{}(lhs, rhs);
+  };
+  std::sort(sorted_previous.begin(), sorted_previous.end(),
+            [&by_identity](const auto& lhs, const auto& rhs) {
+              return by_identity(lhs.first, rhs.first);
+            });
   next.clear();
   next.reserve(m_sources.size());
   for (auto it = m_sources.begin(); it != m_sources.end();) {
     if (auto source = it->lock()) {
       SourceService entry{std::move(source), {}};
-      for (auto& previous : live) {
-        if (previous.source.get() == entry.source.get()) {
-          entry.command = previous.command;
-          break;
-        }
+      const StreamingClipSource* const identity = entry.source.get();
+      const auto match =
+          std::lower_bound(sorted_previous.begin(), sorted_previous.end(), identity,
+                           [&by_identity](const auto& candidate, const StreamingClipSource* key) {
+                             return by_identity(candidate.first, key);
+                           });
+      if (match != sorted_previous.end() && match->first == identity) {
+        entry.command = match->second;
       }
       next.push_back(std::move(entry));
       ++it;
