@@ -1092,10 +1092,6 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     auto& group_buffer = m_group_buffers[group_index];
     auto& meter_left = m_channel_meter_buffer.channels[0];
     auto& meter_right = m_channel_meter_buffer.channels[1];
-    if (config.enable_metering) {
-      std::fill_n(meter_left.begin(), num_frames, 0.0f);
-      std::fill_n(meter_right.begin(), num_frames, 0.0f);
-    }
 
     // The ramp state is acquired once per block and stepped per sample, so
     // the smoothers no longer perform an atomic load per sample.
@@ -1121,6 +1117,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         }
         if (config.enable_metering) {
           meter_left[frame] = gained;
+          meter_right[frame] = 0.0f;
         }
         break;
       case SourceChannelPolicy::StereoPairs: {
@@ -1135,6 +1132,8 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
           if (config.enable_metering) {
             meter_right[frame] = right;
           }
+        } else if (config.enable_metering) {
+          meter_right[frame] = 0.0f;
         }
         break;
       }
@@ -1142,6 +1141,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         group_buffer.channels[0][frame] = sanitize(group_buffer.channels[0][frame] + gained);
         if (config.enable_metering) {
           meter_left[frame] = gained;
+          meter_right[frame] = 0.0f;
         }
         break;
       }
