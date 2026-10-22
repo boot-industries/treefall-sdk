@@ -653,8 +653,13 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
 
-  for (auto& lane : m_clipChannelBuffers) {
-    std::memset(lane.data(), 0, numFrames * sizeof(float));
+  // Zero only the lanes owned by active voices. Inactive slots were zeroed
+  // when the voice was admitted or retired and are never written afterwards.
+  for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
+    const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+      std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
+    }
   }
 
   // Render each active voice into its preallocated routing lanes. Playback
@@ -2038,6 +2043,16 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
+  // A reused slot must start clean: the per-block lane clear only covers the
+  // lanes of active voices, and a later, larger block must not read a stale
+  // tail left by the voice that previously occupied this slot.
+  {
+    const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+      std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0,
+                  m_config.maxBlockFrames * sizeof(float));
+    }
+  }
   clip.segmentCount = context->segmentCount;
   clip.segments = context->segments;
   resetSegmentCursor(clip);
@@ -2222,6 +2237,14 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
       m_activeClips[m_activeClipCount - 1].streamingSource = nullptr;
       m_activeClips[m_activeClipCount - 1].streamingDemandIndex = 0;
       m_activeClips[m_activeClipCount - 1].sourceLifetime = nullptr;
+      // The vacated slot's lanes are no longer owned by an active voice.
+      {
+        const size_t vacatedLaneBase = (m_activeClipCount - 1) * m_config.maxSourceChannels;
+        for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+          std::memset(m_clipChannelBuffers[vacatedLaneBase + lane].data(), 0,
+                      m_config.maxBlockFrames * sizeof(float));
+        }
+      }
       --m_activeClipCount;
       releaseActiveSource(removedLifetime);
       return;
