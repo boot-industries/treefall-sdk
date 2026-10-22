@@ -27,16 +27,16 @@ namespace orpheus {
 class TransportControllerTestAccess {
 public:
   static std::shared_ptr<IClipSource> source(TransportController& transport, ClipHandle handle) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    return transport.m_audioFiles.at(handle).source;
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    return transport.m_sourceRegistry.entries().at(handle).source;
   }
 
   // Called before Start captures the registered source into its command context
   // and before either test thread runs. No public source-injection API.
   static void replaceSource(TransportController& transport, ClipHandle handle,
                             std::shared_ptr<IClipSource> source) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    transport.m_audioFiles.at(handle).source = std::move(source);
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    transport.m_sourceRegistry.entries().at(handle).source = std::move(source);
   }
 };
 } // namespace orpheus

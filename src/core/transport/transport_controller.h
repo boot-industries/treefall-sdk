@@ -7,6 +7,8 @@
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
+#include "clip_source_registry.h"
+
 #include <array>
 #include <atomic>
 #include <memory>
@@ -21,13 +23,6 @@ namespace orpheus {
 namespace core {
 class SessionGraph;
 } // namespace core
-
-/// Control-thread-owned token which pins a registered source while a Start or
-/// Seek command still carries a raw source pointer through the bounded MPSC pool.
-struct SourceCommandLifetime {
-  std::atomic<uint32_t> unread{0};
-  std::atomic<uint32_t> active_voices{0};
-};
 
 /// Playback context (thread-safe state transfer from UI to Audio thread)
 /// Contains all immutable state required to start a clip
@@ -239,8 +234,8 @@ struct ActiveClip {
   uint16_t numChannels; // Number of channels in audio file
   RoutingGroupIndex routingGroup{0};
 
-  // ORP134 G1: thread-safe clip-source reference (captured from AudioFileEntry
-  // when the clip starts). shared_ptr gives reference-counted lifetime:
+  // ORP134 G1: thread-safe clip-source reference (captured from the registry
+  // entry when the clip starts). shared_ptr gives reference-counted lifetime:
   // - Audio thread holds a reference until the voice is removed
   // - The source can't be destroyed while the audio thread still reads it
   // - Atomic refcount increment/decrement (lock-free, broadcast-safe)
@@ -393,7 +388,7 @@ public:
   /// frames stream from a page ring instead of being fully decoded to memory.
   /// Control thread only; affects sources prepared after the call.
   void setPreparedSourceMaxFrames(int64_t maxFrames) {
-    m_preparedSourceMaxFrames = maxFrames;
+    m_sourceRegistry.setPreparedSourceMaxFrames(maxFrames);
   }
 
   /// Test-only control of the next RT voice-ID candidate.
@@ -568,9 +563,6 @@ private:
   uint32_t m_sampleRate;
   ITransportCallback* m_callback; // User-provided callback
 
-  // Session defaults (UI thread access, mutex protected)
-  SessionDefaults m_sessionDefaults;
-
   // Lock-free command queue (UI → Audio thread)
   static constexpr size_t MAX_COMMANDS = 255;
   struct CommandNode {
@@ -737,77 +729,6 @@ private:
   size_t m_fadeOutSamples;          // Calculated from sample rate
   size_t m_restartCrossfadeSamples; // Calculated from sample rate
 
-  static constexpr size_t MAX_FILE_CHANNELS = 8;
-
-  // Audio file registry (UI thread access, mutex protected)
-  struct AudioFileEntry {
-    std::shared_ptr<orpheus::IAudioFileReader> reader;
-    AudioFileMetadata metadata;
-
-    // Persistent clip metadata (stored with audio file registration)
-    int64_t trimInSamples = 0;
-    int64_t trimOutSamples = 0; // 0 means use file duration
-    double fadeInSeconds = 0.0;
-    double fadeOutSeconds = 0.0;
-    FadeCurve fadeInCurve = FadeCurve::Linear;
-    FadeCurve fadeOutCurve = FadeCurve::Linear;
-    double stopFadeOutSeconds = 0.01;
-    FadeCurve stopFadeOutCurve = FadeCurve::Linear;
-    float gainDb = 0.0f;           // Gain in decibels (0.0 = unity)
-    bool loopEnabled = false;      // true = loop indefinitely
-    bool stopOthersOnPlay = false; // true = stop all other clips when this one starts
-    bool muted = false;
-    float pan = 0.0f;
-    double playbackRate = 1.0;
-    double playDelaySeconds = 0.0;
-
-    // ORP127 G5: voice allocation policy for this clip (default preserves the
-    // SDK's historical polyphonic behavior).
-    VoiceMode voiceMode = VoiceMode::Polyphonic;
-    RoutingGroupIndex routingGroup = 0;
-    ChannelLayout sourceLayout = ChannelLayout::Unspecified;
-    uint8_t speakerPatchSize = 0;
-    std::array<Speaker, MAX_FILE_CHANNELS> speakerPatch = {
-        Speaker::None, Speaker::None, Speaker::None, Speaker::None,
-        Speaker::None, Speaker::None, Speaker::None, Speaker::None};
-    uint32_t segmentCount = 0;
-    std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
-    ClipDspProgram dsp;
-
-    // ORP134 G1: the realtime playback source built by prepareClipAudio()
-    // (or lazily by startClip). The reader above remains the background
-    // decode/metadata handle; the audio thread only ever touches `source`.
-    std::shared_ptr<IClipSource> source;
-
-    // Stable across unordered-map moves. The registry owns this token until
-    // every queued registered-source Start/Seek command has been consumed.
-    std::unique_ptr<SourceCommandLifetime> commandLifetime;
-
-    // Cue points (stored sorted by position)
-    std::vector<CuePoint> cuePoints;
-  };
-  SessionGraphError registerClipAudioImpl(ClipHandle handle, const std::string& file_path,
-                                          const ClipMetadata* initialMetadata);
-  SessionGraphError validateClipMetadataFields(const AudioFileEntry& entry,
-                                               const ClipMetadata& metadata,
-                                               int64_t& trimOut) const;
-  static void applyClipMetadata(AudioFileEntry& entry, const ClipMetadata& metadata,
-                                int64_t trimOut);
-
-  std::mutex m_audioFilesMutex;
-  std::unordered_map<ClipHandle, AudioFileEntry> m_audioFiles;
-
-  /// ORP134 G1: Ensure entry.source exists (decode-to-memory or streaming
-  /// ring). Control thread only; caller holds m_audioFilesMutex. A non-null
-  /// reservation receives a command-owned pin for an existing source's
-  /// first-render page.
-  SessionGraphError
-  ensurePreparedSourceLocked(AudioFileEntry& entry,
-                             StreamingClipSource::PrimeReservation* reservation = nullptr);
-  void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
-  void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
-  void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;
-  void releaseActiveSource(SourceCommandLifetime* lifetime) noexcept;
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
 
@@ -826,14 +747,8 @@ private:
   // Fixed-capacity audio-thread → message-thread telemetry bridge.
   RealtimeTelemetry m_realtimeTelemetry{};
 
-  // ORP134 G1: streaming-source machinery. The worker thread is created
-  // lazily when the first streaming source is prepared (short-clip-only hosts
-  // never spawn it). DEFAULT_PREPARED_SOURCE_MAX_FRAMES ≈ 30s @ 48k: below
-  // it, clips decode fully to memory (soundboard case, ~11.5 MB stereo max);
-  // above it, they stream through a fixed page ring (long beds, songs).
-  static constexpr int64_t DEFAULT_PREPARED_SOURCE_MAX_FRAMES = 48000ll * 30;
-  int64_t m_preparedSourceMaxFrames{DEFAULT_PREPARED_SOURCE_MAX_FRAMES};
-  std::unique_ptr<MediaStreamWorker> m_streamWorker; // guarded by m_audioFilesMutex
+  // Control-side clip-source registry and its streaming-worker lifetime.
+  ClipSourceRegistry m_sourceRegistry;
 
   // Compile-time ceilings; each instance allocates only its configured shape.
   static constexpr size_t MAX_BUFFER_FRAMES = 2048;
