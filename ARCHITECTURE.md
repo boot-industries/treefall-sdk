@@ -250,8 +250,8 @@ Real-time audio playback engine:
 Decodes audio files for playback:
 
 - **Supported Formats** – WAV, AIFF, FLAC via libsndfile
-- **Memory Management** – Pre-loaded into memory for real-time access
-- **Sample Rate** – Currently requires 48kHz (no resampling yet)
+- **Memory Management** – Decoded off the audio thread; the callback reads an `IClipSource` view (whole file prepared in memory, or paged streaming), never an `IAudioFileReader`
+- **Sample Rate** – Engine rate 48 kHz; sources at other rates are resampled off the audio thread by `ResamplingAudioFileReader` (polyphase)
 
 **File:** `include/orpheus/audio_file_reader.h`, `src/core/audio_io/audio_file_reader.cpp`
 
@@ -260,11 +260,11 @@ Decodes audio files for playback:
 Platform-agnostic audio I/O abstraction:
 
 - **CoreAudio** (macOS) – Native low-latency driver
-- **WASAPI** (Windows) – Planned for v1.0
+- **WASAPI** (Windows) – Implemented in `src/platform/audio_drivers/wasapi/`; source/fake-test capable, not release-supported
 - **ALSA** (Linux) – Planned for v1.0
 - **Dummy Driver** – For testing without hardware
 
-**File:** `include/orpheus/audio_driver.h`, `src/core/audio_io/drivers/`
+**File:** `include/orpheus/audio_driver.h`, `src/platform/audio_drivers/` (CoreAudio, WASAPI; Dummy driver: `src/core/audio_io/dummy_audio_driver.cpp`)
 
 #### 5. Session JSON (`orpheus::core::session_json`)
 
@@ -274,7 +274,7 @@ Session serialization utilities:
 - **Validation** – Structural validation on load
 - **Filesystem Helpers** – Path resolution, filename generation
 
-**File:** `include/orpheus/session_json.h`, `src/core/session/session_json.cpp`
+**File:** `include/orpheus/session_io.h` (namespace `orpheus::core::session_json`), `src/core/session/json_io.cpp`
 
 #### 6. ABI Negotiation (`orpheus::AbiVersion`)
 
@@ -365,10 +365,11 @@ UI Thread                   Audio Thread
 
 ```cpp
 struct ActiveClip {
-    std::atomic<uint64_t> currentFrame;
+    int64_t currentSample;       // Audio-thread-owned position; not atomic
+    double sourcePosition;       // Fractional source cursor for varispeed interpolation
     std::atomic<float> gainLinear;
     std::atomic<bool> loopEnabled;
-    std::shared_ptr<IClipSource> source; // Prepared/streamed PCM view (ORP134 G1)
+    // The clip's IClipSource view is held by ClipPlaybackContext.
     // ... fade state, trim points
 };
 ```
