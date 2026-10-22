@@ -952,6 +952,57 @@ TEST_F(RoutingMatrixTest, HeadroomModePerGroupAttenuates) {
   EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_per_group, 0.05f);
 }
 
+TEST_F(RoutingMatrixTest, HeadroomModeGlobalAttenuatesAcrossGroups) {
+  // HeadroomMode::Global attenuates by 1/n where n is the number of active
+  // channels across every group, not the number in one group.
+  config.headroom_mode = HeadroomMode::Global;
+  config.num_channels = 4;
+  config.num_groups = 2;
+  config.gain_smoothing_ms = 0.1f;
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  // Two channels carry the signal in group 0; two silent channels occupy
+  // group 1. The global count is therefore 4 while group 0 alone holds 2, so
+  // the two modes attenuate differently.
+  matrix->setChannelGroup(0, 0);
+  matrix->setChannelGroup(1, 0);
+  matrix->setChannelGroup(2, 1);
+  matrix->setChannelGroup(3, 1);
+  for (RoutingChannelIndex channel = 0; channel < 4; ++channel) {
+    matrix->setChannelGain(channel, 0.0f);
+  }
+  matrix->setGroupGain(0, 0.0f);
+  matrix->setGroupGain(1, 0.0f);
+  matrix->setMasterGain(0.0f);
+
+  std::vector<std::vector<float>> inputs(4);
+  for (auto& in : inputs) {
+    in.resize(BUFFER_SIZE, 0.0f);
+  }
+  inputs[0].assign(BUFFER_SIZE, 0.5f);
+  inputs[1].assign(BUFFER_SIZE, 0.5f);
+  auto input_ptrs = toPointerArray(inputs);
+
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // Four active channels: the global headroom is 1/4, where the per-group
+  // headroom for group 0 would have been 1/2.
+  const float expected_none = 2.0f * (0.707107f * 0.5f);
+  const float expected_global = expected_none * 0.25f;
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_global, 0.05f);
+}
+
 TEST_F(RoutingMatrixTest, TruePeakMeteringDetectsInterSamplePeaks) {
   // ORP121 Q-04: True-peak metering should detect peaks between samples
   config.metering_mode = MeteringMode::TruePeak;

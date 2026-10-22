@@ -1006,6 +1006,11 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   if (topologyChanged) {
     resetLogicalGroupTruePeakHistories();
   }
+  // ORP273 F-08: the headroom compensation needs the active channel counts.
+  // Accumulate them here, once per block, instead of rescanning every channel
+  // for every group.
+  m_active_channel_counts.fill(0u);
+  m_total_active_channels = 0u;
   for (RoutingChannelIndex channel_index = 0; channel_index < config.num_channels;
        ++channel_index) {
     const uint32_t packedRoute =
@@ -1013,6 +1018,16 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     route_snapshots[channel_index] = packedRoute;
     const RoutingGroupIndex group_index = detail::unpackRoutingGroup(packedRoute);
     const RoutingOutputIndex logicalLane = detail::unpackRoutingLane(packedRoute);
+    // The total count excludes only the unassigned group, and the per-group
+    // count covers valid groups only — the predicates the per-group rescan
+    // used.
+    if (group_index != UNASSIGNED_GROUP &&
+        !m_channels[channel_index].mute.load(std::memory_order_acquire)) {
+      ++m_total_active_channels;
+      if (group_index < config.num_groups) {
+        ++m_active_channel_counts[group_index];
+      }
+    }
     if (group_index == UNASSIGNED_GROUP || group_index >= config.num_groups) {
       continue;
     }
@@ -1687,28 +1702,11 @@ float RoutingMatrix::linearToDb(float linear) const {
 // ORP121 Q-05: Headroom Management
 // ============================================================================
 
-uint32_t RoutingMatrix::countActiveChannelsInGroup(RoutingGroupIndex group_index) const {
-  uint32_t count = 0;
-  for (const auto& channel : m_channels) {
-    const RoutingGroupIndex assignedGroup =
-        detail::unpackRoutingGroup(channel.packed_route.load(std::memory_order_acquire));
-    if (assignedGroup == group_index && !channel.mute.load(std::memory_order_acquire)) {
-      ++count;
-    }
+uint32_t RoutingMatrix::activeChannelCount(RoutingGroupIndex group_index) const noexcept {
+  if (group_index >= kRoutingControlMaxGroups) {
+    return 0u;
   }
-  return count;
-}
-
-uint32_t RoutingMatrix::countTotalActiveChannels() const {
-  uint32_t count = 0;
-  for (const auto& channel : m_channels) {
-    const RoutingGroupIndex assignedGroup =
-        detail::unpackRoutingGroup(channel.packed_route.load(std::memory_order_acquire));
-    if (assignedGroup != UNASSIGNED_GROUP && !channel.mute.load(std::memory_order_acquire)) {
-      ++count;
-    }
-  }
-  return count;
+  return m_active_channel_counts[group_index];
 }
 
 float RoutingMatrix::getHeadroomCompensation(RoutingGroupIndex group_index) const {
@@ -1721,18 +1719,18 @@ float RoutingMatrix::getHeadroomCompensation(RoutingGroupIndex group_index) cons
     return 1.0f;
 
   case HeadroomMode::PerGroup: {
-    uint32_t active = countActiveChannelsInGroup(group_index);
+    const uint32_t active = activeChannelCount(group_index);
     return active > 0 ? 1.0f / static_cast<float>(active) : 1.0f;
   }
 
   case HeadroomMode::Global: {
-    uint32_t active = countTotalActiveChannels();
+    const uint32_t active = m_total_active_channels;
     return active > 0 ? 1.0f / static_cast<float>(active) : 1.0f;
   }
 
   case HeadroomMode::Logarithmic: {
     // -3 dB per doubling of channels: 1/sqrt(n)
-    uint32_t active = countActiveChannelsInGroup(group_index);
+    const uint32_t active = activeChannelCount(group_index);
     return active > 0 ? 1.0f / std::sqrt(static_cast<float>(active)) : 1.0f;
   }
 
