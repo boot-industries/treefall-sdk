@@ -1,4 +1,52 @@
 # ORP068 Implementation Progress
+## Refactoring and performance remediation sprint — 2026-10-22
+
+- Recorded `docs/orp/ORP274 Refactoring and Performance Remediation Sprint
+  Delivery.md`, the delivery record for the ORP273 remediation sprint on
+  branch `feat/orp273-sprint-remediation`, based on `ad62b0f8c`.
+- All 20 ORP273 findings landed, in ORP273 §5's wave order, across 24
+  focused commits.
+- Realtime path: the CoreAudio device callback publishes the route-monitor
+  terminal state without notifying a waiter (F-01), and every CoreAudio route
+  has one explicit callback-frame ceiling, enforced before buffers are
+  allocated (F-11).
+- Render path: the libm dependence is replaced with platform-independent
+  elementary functions, so the render hash is pinned as a constant (F-02);
+  the per-block lane clear, the per-sample smoother calls, the meter
+  scratch clears, the duplicated TruePeak pass, the per-group headroom rescan
+  and the 17,936-byte telemetry rebuild are all removed (F-03, F-04, F-05,
+  F-08, F-09, F-10); the compressor's per-frame pow is skipped when it is
+  not reducing (F-06).
+- Measurement: `budgets.json` declares one enforced budget and the validator
+  reports what it measured and fails when a budget cannot be measured
+  (F-07); timing assertions are guarded under sanitizers (F-17); the
+  worst-case deadline harness becomes a registered CTest gate with a clamped
+  p99 ratio (F-18); the five stale `ARCHITECTURE.md` statements are
+  corrected (F-19).
+- Structure: the control-side clip-source registry is extracted from
+  `TransportController` (F-15), the matrix-level meter state from
+  `RoutingMatrix` (F-16), the session layer gains bulk clip construction and
+  an allocation-free transaction rollback (F-13, F-14) plus explicit document
+  and JSON limits (F-12), and the worker snapshot's quadratic identity scan
+  becomes a sorted lookup (F-20).
+- Measured on an unsanitized Release build against the base revision, the
+  worst-case render block's p99 fell from 13,885.4 µs to 12,883.1 µs and
+  from 4,258.42 µs to 3,644.54 µs; the worst p99 ratio against the
+  42,666.7 µs deadline fell from 0.325 to 0.302, below the 0.5 ceiling, so
+  the gate's threshold was not moved.
+- Verification: repository gates green, 86/86 Debug tests pass, the release
+  tree passes the registered deadline gate, the budget validator reports all
+  budgets met, determinism and an offline render smoke pass.
+- Evidence limits: one arm64 macOS measurement host; the cross-platform
+  golden proof is the Windows and Ubuntu Release CI legs; the `std::fma` cost
+  on a baseline x86-64 target is unmeasured; the routing per-entity meters,
+  the post-master output-lane true-peak path and F-20's slot-array variant
+  remain deferred.
+- Downstream: `include/orpheus/clip_dsp.h`, `include/orpheus/json.hpp` and
+  `include/orpheus/session_graph.h` changed — Clip Composer rebuild, FreqFinder
+  package re-consumption — and the render hash moves from `0xfce554ccf7c66ab9`
+  to `0x2885ce8fbb52d42d`.
+
 ## Refactoring and performance optimization review — 2026-10-21
 
 - Recorded `docs/orp/ORP273 Refactoring and Performance Optimization Review.md`,

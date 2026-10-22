@@ -46,7 +46,11 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   core at `0325c6400`: 20 ranked findings with `path:line` anchors, cost
   bounds and downstream impact, reconciled against ORP104, ORP116, ORP121,
   ORP138, ORP263, ORP266, ORP267 and ORP268.
-  Next free document number: ORP274.
+- **ORP274** — Refactoring and performance remediation sprint delivery: all
+  twenty ORP273 findings landed in ORP273 §5's wave order, with the
+  release-tree before/after measurements, the recorded deviations and the
+  downstream consumer impact.
+  Next free document number: ORP275.
 
 ---
 

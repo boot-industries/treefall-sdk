@@ -1,5 +1,53 @@
 # Progress
 
+## Refactoring and performance remediation sprint — 2026-10-22
+
+**Branch:** `feat/orp273-sprint-remediation`
+**Record:** `docs/orp/ORP274 Refactoring and Performance Remediation Sprint Delivery.md`
+**Status:** Complete with recorded deviations; 20 of 20 ORP273 findings landed.
+
+The sprint remediated every finding ORP273 recorded, in ORP273 §5's wave
+order: Wave 0 (measurement hygiene) → Wave 1 (realtime correctness) →
+Wave 2 (render-path redundancy) → Wave 3 (structural decomposition) →
+Wave 4 (tooling, calibration and documentation). Twenty-four commits, one
+focused commit per finding.
+
+The two realtime-path defects are closed: the CoreAudio device callback no
+longer notifies a waiter (F-01), and every CoreAudio route now has one
+explicit callback-frame ceiling, enforced before any buffer is allocated
+(F-11). The render path no longer depends on the host libm (F-02), so the
+render-hash golden is pinned as a constant and the rendered bytes are
+reproducible across platforms.
+
+The release-tree measurement is the sprint's headline number. Against the
+base revision `ad62b0f8c`, measured as an unsanitized Release build with the
+same harness shape and the same host, the p99 of the worst-case render block
+fell from 13,885.4 µs to 12,883.1 µs on the TruePeak routing mix and from
+4,258.42 µs to 3,644.54 µs on the 32-voice transport mix. The worst p99
+ratio against the 42,666.7 µs frame deadline fell from 0.325 to 0.302,
+below the gate's 0.5 ceiling, so the threshold was not moved.
+
+Verification: the repository gates are green, the full 86-test Debug suite
+passes, the release tree passes the registered
+`realtime_render_deadline_distribution` gate, the budget validator reports
+`✅ All performance budgets met!` against the release tree, the determinism
+script and a real offline render smoke both pass, and the render hash is
+pinned and asserted.
+
+Evidence limits: the measurements come from one arm64 macOS host; the
+cross-platform golden proof is the Windows and Ubuntu Release CI legs; the
+pinned mathematics' `std::fma` cost on a baseline x86-64 target was not
+measured; and the routing matrix's per-entity meters, the post-master
+output-lane true-peak path and F-20's slot-array variant remain deferred.
+The deviations are recorded in ORP274 §6 and the evidence limits in §7.
+
+Downstream: `include/orpheus/clip_dsp.h`, `include/orpheus/json.hpp` and
+`include/orpheus/session_graph.h` changed, so Clip Composer needs a rebuild
+and FreqFinder a package re-consumption. Any artefact that pins a rendered-
+audio hash must be regenerated: the scenario hash moves from
+`0xfce554ccf7c66ab9` to `0x2885ce8fbb52d42d`. No consumer repository was
+modified.
+
 ## Refactoring and performance optimization review — 2026-10-21
 
 **Branch:** `docs/orp273-refactoring-performance-review`

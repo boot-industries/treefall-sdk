@@ -9,6 +9,12 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP274 Refactoring and Performance Remediation Sprint Delivery]] —
+  delivery record for the ORP273 remediation sprint: all twenty findings
+  landed in ORP273 §5's wave order on `feat/orp273-sprint-remediation`, with
+  the release-tree before/after measurements, the deviations, and the
+  downstream consumer impact (2026-10-22)
+
 - [[ORP273 Refactoring and Performance Optimization Review]] —
   source-grounded refactoring and performance review of the SDK core at
   `0325c6400`; 20 ranked findings with cost bounds, prior-record
@@ -131,6 +137,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ## Records
 
+- [ORP274 Refactoring and Performance Remediation Sprint Delivery](ORP274%20Refactoring%20and%20Performance%20Remediation%20Sprint%20Delivery.md)
 - [ORP273 Refactoring and Performance Optimization Review](ORP273%20Refactoring%20and%20Performance%20Optimization%20Review.md)
 - [ORP270 Transport Initial Metadata Registration Delivery](ORP270%20Transport%20Initial%20Metadata%20Registration%20Delivery.md)
 - [ORP269 Suite Floating Development Coordinator Repair](ORP269%20Suite%20Floating%20Development%20Coordinator%20Repair.md)
@@ -287,6 +294,7 @@ Record titles below keep their original `ORP...` identifiers and naming.
 - [[ORP269 Suite Floating Development Coordinator Repair]]
 - [[ORP270 Transport Initial Metadata Registration Delivery]]
 - [[ORP273 Refactoring and Performance Optimization Review]]
+- [[ORP274 Refactoring and Performance Remediation Sprint Delivery]]
 
 ## Navigation
 
@@ -300,4 +308,4 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 ---
 
-**Last Generated:** 2026-10-21
+**Last Generated:** 2026-10-22
