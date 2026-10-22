@@ -769,7 +769,9 @@ release tree is `build-release-clean` (Release, no sanitizers).
 
 `git diff --check` reports no whitespace errors; `git status --porcelain` is
 empty at the delivery commit; `git log --oneline origin/main..HEAD` lists
-25 commits.
+the sprint branch's commits: one focused commit per finding, plus the sprint
+plan, the delivery record, the fade-assertion follow-up and the
+delivery-hygiene fix.
 
 ### 7.6 Evidence limits
 
