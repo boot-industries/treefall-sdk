@@ -46,40 +46,6 @@ float GainSmoother::getTarget() const {
   return m_target;
 }
 
-float GainSmoother::process() {
-  // Check for pending target update (lock-free)
-  if (m_has_pending.load(std::memory_order_acquire)) {
-    m_target = m_pending_target.load(std::memory_order_acquire);
-    m_has_pending.store(false, std::memory_order_release);
-  }
-
-  // ORP127 G4 (F-SDK-5): with smoothing disabled, snap to target immediately.
-  if (m_smoothing_disabled) {
-    m_current = m_target;
-    return m_current;
-  }
-
-  // Save current value to return (before ramping)
-  float output = m_current;
-
-  // Ramp toward target for next sample
-  if (m_current < m_target) {
-    // Ramping up
-    m_current += m_increment;
-    if (m_current >= m_target) {
-      m_current = m_target; // Clamp to target (no overshoot)
-    }
-  } else if (m_current > m_target) {
-    // Ramping down
-    m_current -= m_increment;
-    if (m_current <= m_target) {
-      m_current = m_target; // Clamp to target (no overshoot)
-    }
-  }
-
-  return output;
-}
-
 void GainSmoother::reset(float gain) {
   // ORP121 C-01: Allow gains up to +12 dB (3.981 linear)
   gain = std::clamp(gain, 0.0f, MAX_LINEAR_GAIN);

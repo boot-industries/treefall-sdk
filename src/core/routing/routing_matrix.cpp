@@ -1097,10 +1097,16 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       std::fill_n(meter_right.begin(), num_frames, 0.0f);
     }
 
+    // The ramp state is acquired once per block and stepped per sample, so
+    // the smoothers no longer perform an atomic load per sample.
+    auto gain_state = channel.gain_smoother->beginBlock();
+    auto pan_left_state = channel.pan_left->beginBlock();
+    auto pan_right_state = channel.pan_right->beginBlock();
+
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float channel_gain = sanitize(channel.gain_smoother->process());
-      const float pan_left = sanitize(channel.pan_left->process());
-      const float pan_right = sanitize(channel.pan_right->process());
+      const float channel_gain = sanitize(channel.gain_smoother->next(gain_state));
+      const float pan_left = sanitize(channel.pan_left->next(pan_left_state));
+      const float pan_right = sanitize(channel.pan_right->next(pan_right_state));
       if (muted) {
         continue;
       }
@@ -1140,6 +1146,10 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         break;
       }
     }
+
+    channel.gain_smoother->endBlock(gain_state);
+    channel.pan_left->endBlock(pan_left_state);
+    channel.pan_right->endBlock(pan_right_state);
 
     if (config.enable_metering) {
       if (muted) {
@@ -1191,8 +1201,9 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       }
     }
 
+    auto group_gain_state = group.gain_smoother->beginBlock();
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      float group_gain = sanitize(group.gain_smoother->process());
+      const float group_gain = sanitize(group.gain_smoother->next(group_gain_state));
       for (RoutingOutputIndex lane = 0; lane < config.num_outputs; ++lane) {
         if ((occupiedLanes & (uint32_t{1} << lane)) == 0) {
           continue;
@@ -1206,6 +1217,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         group_buffer.channels[lane][frame] = sample;
       }
     }
+    group.gain_smoother->endBlock(group_gain_state);
 
     if (config.enable_metering) {
       for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
@@ -1268,15 +1280,18 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   }
 
   const bool master_muted = m_master_mute.load(std::memory_order_acquire);
+  auto master_gain_state = m_master_gain_smoother->beginBlock();
   for (uint32_t frame = 0; frame < num_frames; ++frame) {
-    const float master_gain = master_muted ? 0.0f : sanitize(m_master_gain_smoother->process());
+    const float master_gain =
+        master_muted ? 0.0f : sanitize(m_master_gain_smoother->next(master_gain_state));
     if (master_muted) {
-      m_master_gain_smoother->process();
+      m_master_gain_smoother->next(master_gain_state);
     }
     for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
       master_output[output][frame] = sanitize(master_output[output][frame] * master_gain);
     }
   }
+  m_master_gain_smoother->endBlock(master_gain_state);
 
   if (config.enable_metering) {
     processStereoMetering(master_output[0], config.num_outputs > 1 ? master_output[1] : nullptr,
