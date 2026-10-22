@@ -23,6 +23,7 @@
 
 #define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
+#include "../support/sanitizer_guard.hpp"
 
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
@@ -772,20 +773,7 @@ TEST_F(RealtimeHarnessTest, CallbackDurationWithinBudget) {
 
   // Wall-clock bounds are skipped under sanitizers (same policy as the
   // waveform and multi-clip perf bounds).
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-
-  if (!kUnderSanitizer) {
+  if (orpheus::test::timingAssertionsEnabled()) {
     EXPECT_LT(maxUs, budgetUs) << "a single reader-less callback exceeded the realtime budget";
   } else {
     std::cout << "  - duration bound skipped under sanitizer\n";
@@ -887,18 +875,7 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     outputPointers.push_back(lane.data());
   }
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
+  const bool timingAssertionsEnabled = orpheus::test::timingAssertionsEnabled();
 
   const auto runMode = [&](MeteringMode mode, const char* label) {
     config.metering_mode = mode;
@@ -955,7 +932,7 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     EXPECT_EQ(RtGuardState::allocViolations(), 0u);
     EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 #if defined(NDEBUG)
-    if (!kUnderSanitizer) {
+    if (timingAssertionsEnabled) {
 #if defined(__APPLE__) || defined(__linux__)
       std::sort(cpuDurations.begin(), cpuDurations.end());
       const double cpuMaximum = cpuDurations.back();
@@ -979,14 +956,10 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
 TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
 #if !defined(NDEBUG)
   GTEST_SKIP() << "Requires unsanitized Release and ORPHEUS_RUN_WORST_CASE_BENCHMARK=1";
-#elif defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
 #endif
-#endif
+  if (orpheus::test::underSanitizer()) {
+    GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
+  }
   const char* enabled = std::getenv("ORPHEUS_RUN_WORST_CASE_BENCHMARK");
   if (enabled == nullptr || std::string_view(enabled) != "1") {
     GTEST_SKIP() << "Opt-in measurement disabled; R-01 is not qualified by this skip";

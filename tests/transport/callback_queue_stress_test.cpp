@@ -7,6 +7,7 @@
 #include "../../src/core/transport/transport_controller.h"
 #define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
+#include "../support/sanitizer_guard.hpp"
 #include <orpheus/audio_file_writer.h>
 
 #include <array>
@@ -398,20 +399,7 @@ TEST_F(CallbackQueueStressTest, CallbackLatency) {
   // Callbacks should complete within reasonable time (< 10ms). Sanitizer
   // builds (notably TSan, ~19ms observed) inflate the wall clock, so — as with
   // the waveform and multi-clip perf bounds — the assertion is skipped there.
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-
-  if (!kUnderSanitizer) {
+  if (orpheus::test::timingAssertionsEnabled()) {
     EXPECT_LT(avg_lat, 10000.0);
   } else {
     std::cout << "  - Latency bound skipped under sanitizer\n";
