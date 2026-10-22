@@ -121,8 +121,15 @@ for (const name of budgetNames) {
   const ctest = spawnSync(
     'ctest',
     ['--test-dir', buildDir, '-R', `^${gate}$`, '--output-on-failure'],
-    { stdio: 'inherit' },
+    { encoding: 'utf8' },
   );
+
+  if (ctest.stdout) {
+    process.stdout.write(ctest.stdout);
+  }
+  if (ctest.stderr) {
+    process.stderr.write(ctest.stderr);
+  }
 
   if (ctest.error) {
     console.log(`❌ ${name}: ${gate} is not measurable in this configuration (${ctest.error.message})`);
@@ -130,8 +137,17 @@ for (const name of budgetNames) {
     continue;
   }
 
-  if (ctest.status === 0) {
+  // A gate that skipped did not measure the budget. Reporting that as a pass
+  // would repeat the defect F-07 exists to remove.
+  const skipped = new RegExp(`^.*${gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*Skipped`, 'm').test(
+    ctest.stdout ?? '',
+  );
+
+  if (ctest.status === 0 && !skipped) {
     console.log(`✅ ${name}: ${gate} passed`);
+  } else if (skipped) {
+    console.log(`❌ ${name}: ${gate} is not measurable in this configuration`);
+    failures.push(name);
   } else {
     console.log(`❌ ${name}: ${gate} failed`);
     failures.push(name);

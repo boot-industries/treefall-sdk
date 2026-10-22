@@ -618,6 +618,20 @@ if(TARGET orpheus_audio_io)
         COMMAND realtime_harness_test
     )
 
+    # ORP273 F-18: the registered render-path deadline measurement. The
+    # observation count is reduced so the gate fits CI's budget; the full
+    # 10,000-observation qualification stays available by setting
+    # ORPHEUS_DEADLINE_OBSERVATIONS when running the binary directly.
+    add_test(
+        NAME realtime_render_deadline_distribution
+        COMMAND realtime_harness_test --gtest_filter=RealtimeHarnessTest.WorstCaseTopologyDeadlineDistribution
+    )
+    set_tests_properties(realtime_render_deadline_distribution PROPERTIES
+        LABELS "extended;perf"
+        ENVIRONMENT "ORPHEUS_RUN_WORST_CASE_BENCHMARK=1;ORPHEUS_DEADLINE_OBSERVATIONS=500;ORPHEUS_DEADLINE_WARMUPS=20;ORPHEUS_DEADLINE_RATES=48000;ORPHEUS_DEADLINE_P99_RATIO=0.5"
+        SKIP_REGULAR_EXPRESSION "Requires unsanitized Release|not performance acceptance|Opt-in measurement disabled"
+        TIMEOUT 900)
+
     # ORP168: rendered streaming seek priming and failure-atomic page leases.
     add_executable(streaming_seek_test
         streaming_seek_test.cpp

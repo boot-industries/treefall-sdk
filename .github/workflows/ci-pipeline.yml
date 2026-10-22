@@ -140,14 +140,17 @@ jobs:
       - name: Test
         run: |
           set +e
+          set -o pipefail
+          mkdir -p build/ci-evidence
           if [ "${{ matrix.build_type }}" == "Debug" ] && [ "${{ matrix.sanitizers }}" == "ON" ]; then
             ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 ORP_SANITIZED_BUILD=1 \
-              ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+              ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }} \
+              2>&1 | tee build/ci-evidence/ctest.log
           else
-            ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }}
+            ctest --test-dir build --output-on-failure --build-config ${{ matrix.build_type }} \
+              2>&1 | tee build/ci-evidence/ctest.log
           fi
           status=$?
-          mkdir -p build/ci-evidence
           printf '%s\n' "$status" > build/ci-evidence/ctest-exit.txt
           exit "$status"
         shell: bash

@@ -965,15 +965,71 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
     GTEST_SKIP() << "Opt-in measurement disabled; R-01 is not qualified by this skip";
   }
   constexpr size_t frames = 2048;
-  constexpr size_t warmups = 100;
-  constexpr size_t observations = 10000;
+  // ORP273 F-18: the measurement's shape is environment-overridable so the
+  // registered CTest gate can run a reduced observation count, while the full
+  // 10,000-observation qualification stays available by setting the variables
+  // when invoking the binary directly. The p99 ratio is clamped so that no
+  // configuration can raise the bar above the documented 0.5 ceiling.
+  const auto envUnsigned = [](const char* name, size_t fallback) -> size_t {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+      return fallback;
+    }
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(raw, &end, 10);
+    if (end == raw || parsed == 0ull) {
+      return fallback;
+    }
+    return static_cast<size_t>(parsed);
+  };
+  const auto envRatio = [](const char* name, double fallback, double ceiling) -> double {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+      return fallback;
+    }
+    char* end = nullptr;
+    const double parsed = std::strtod(raw, &end);
+    if (end == raw || !(parsed > 0.0)) {
+      return fallback;
+    }
+    return std::min(parsed, ceiling);
+  };
+  const size_t warmups = envUnsigned("ORPHEUS_DEADLINE_WARMUPS", 100u);
+  const size_t observations = envUnsigned("ORPHEUS_DEADLINE_OBSERVATIONS", 10000u);
+  const double p99_ratio = envRatio("ORPHEUS_DEADLINE_P99_RATIO", 0.5, 0.5);
+
+  std::vector<uint32_t> rates;
+  if (const char* raw = std::getenv("ORPHEUS_DEADLINE_RATES")) {
+    const std::string text(raw);
+    size_t start = 0;
+    while (start <= text.size()) {
+      const size_t comma = text.find(',', start);
+      const std::string token =
+          text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      if (!token.empty()) {
+        char* end = nullptr;
+        const unsigned long long parsed = std::strtoull(token.c_str(), &end, 10);
+        if (end != token.c_str() && parsed > 0ull) {
+          rates.push_back(static_cast<uint32_t>(parsed));
+        }
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      start = comma + 1;
+    }
+  }
+  if (rates.empty()) {
+    rates = {44100u, 48000u, 96000u, 192000u};
+  }
 #if defined(_MSC_VER)
   std::cout << "[WorstCase] compiler=MSVC-" << _MSC_VER;
 #else
   std::cout << "[WorstCase] compiler=" << __VERSION__;
 #endif
   std::cout << " build=Release-unsanitized rates=synthetic-not-negotiated"
-            << " frames=2048 warmup=100 blocks=10000 outliers=retained\n";
+            << " frames=" << frames << " warmup=" << warmups << " blocks=" << observations
+            << " p99_ratio=" << p99_ratio << " outliers=retained\n";
   const auto measure = [&](uint32_t rate, const char* mix, auto&& prepare, auto&& render,
                            auto&& verify) {
     std::vector<double> wall(observations);
@@ -1063,10 +1119,12 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
     EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
     EXPECT_LT(wall[observations * 99 / 100], deadline);
     EXPECT_LT(wall.back(), deadline);
+    EXPECT_LT(wall[observations * 99 / 100], deadline * p99_ratio)
+        << mix << " wall-clock p99 exceeded " << p99_ratio << " of the frame deadline";
     // /proc sampling itself performs reads; exact callback syscall attribution
     // remains a separate Linux trace gate, never a zero-I/O claim from this aggregate.
   };
-  for (uint32_t rate : {44100u, 48000u, 96000u, 192000u}) {
+  for (uint32_t rate : rates) {
     {
       TransportConfig config;
       config.sampleRate = rate;
