@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/clip_dsp.h>
 
+#include "pinned_math.h" // ORP273 F-02: libm-independent render-path math
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -14,7 +16,7 @@ bool finiteInRange(float value, float minimum, float maximum) noexcept {
 }
 
 float dbToLinear(float db) noexcept {
-  return std::pow(10.0f, db / 20.0f);
+  return orpheus::pinned::pow10(db / 20.0f);
 }
 
 float timeCoefficient(float milliseconds, double sampleRate) noexcept {

@@ -13,12 +13,12 @@
 //
 // Cross-platform tolerance strategy (documented per ORP136 §2.3): the target
 // is bit-identical output everywhere. Within one platform+toolchain this test
-// asserts exact equality. Hashes are NOT hard-coded as cross-platform golden
-// constants yet, because the EqualPower fade path calls std::sin per sample
-// and libm results differ across platforms; pinning that math (e.g. a
-// polynomial or table, std::bit_cast discipline) is ORP134 G4 scope. Any
-// cross-platform drift observed before then is a determinism bug to FILE,
-// not to mask in this test.
+// asserts exact equality. ORP273 F-02 pinned the render path's libm
+// dependence — the EqualPower fade, the pan law and the clip-gain conversion
+// now use the platform-independent elementary functions in
+// src/core/transport/pinned_math.h — so the hash below is pinned as a
+// cross-platform golden constant. Any cross-platform drift is now a
+// determinism bug to FILE, not to mask in this test.
 //
 // Scenario constraints that keep the output block-size-invariant:
 //  * all starts/metadata land before the first rendered buffer (command
@@ -51,6 +51,12 @@ constexpr uint32_t kSampleRate = 48000;
 // 98304 = 2^15 * 3: divisible by every tested block size.
 constexpr size_t kTotalFrames = 98304;
 constexpr size_t kBlockSizes[] = {256, 512, 1024, 2048};
+
+// ORP273 F-02: the cross-platform golden render hash. The render path no
+// longer depends on the host libm, so the same scenario must produce these
+// exact bytes on every platform. Regenerate deliberately — and review the
+// change as an intentional render change — when the render path changes.
+inline constexpr uint64_t kGoldenRenderHash = 0x2885ce8fbb52d42dull;
 
 // Deterministic PCM16 WAV writer fed from the integer-table sine in
 // synth.hpp — no libm in fixture generation, so fixture bytes are identical
@@ -225,6 +231,10 @@ TEST_F(TransportRenderHashTest, HashIsIdenticalAcrossBlockSizes) {
                                  << " — the render path is block-size dependent (determinism bug)";
     }
   }
+
+  EXPECT_EQ(reference, kGoldenRenderHash)
+      << "the rendered bytes changed — the pinned cross-platform golden must be regenerated "
+         "deliberately and reviewed as an intentional render change";
 }
 
 TEST_F(TransportRenderHashTest, HashIsReproducibleAcrossRuns) {

@@ -2,6 +2,7 @@
 #include "transport_controller.h"
 #include "../common/realtime_counter.h"
 #include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
+#include "pinned_math.h"                           // ORP273 F-02: libm-independent render-path math
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -106,14 +107,16 @@ std::pair<float, float> panGains(float pan, uint16_t numChannels) noexcept {
   if (numChannels == 1) {
     const double angle =
         (static_cast<double>(normalized) + 1.0) * (static_cast<double>(M_PI_2) * 0.5);
-    return {static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))};
+    return {static_cast<float>(orpheus::pinned::cos(angle)),
+            static_cast<float>(orpheus::pinned::sin(angle))};
   }
 
   const double leftAngle =
       static_cast<double>(std::max(normalized, 0.0f)) * static_cast<double>(M_PI_2);
   const double rightAngle =
       static_cast<double>(std::max(-normalized, 0.0f)) * static_cast<double>(M_PI_2);
-  return {static_cast<float>(std::cos(leftAngle)), static_cast<float>(std::cos(rightAngle))};
+  return {static_cast<float>(orpheus::pinned::cos(leftAngle)),
+          static_cast<float>(orpheus::pinned::cos(rightAngle))};
 }
 void beginOperatorStop(ActiveClip& clip) noexcept {
   const bool wasWaitingForDelay = clip.playDelayFramesRemaining > 0;
@@ -358,7 +361,7 @@ SessionGraphError TransportController::makeStartContextLocked(
       context->fadeInCurve = entry.fadeInCurve;
       context->fadeOutCurve = entry.fadeOutCurve;
       context->gainDb = entry.gainDb;
-      context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
+      context->gainLinear = orpheus::pinned::pow10(entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
       context->segmentCount = entry.segmentCount;
       context->segments = entry.segments;
@@ -3022,7 +3025,7 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   cmd.type = TransportCommand::Type::UpdateGain;
   cmd.handle = handle;
   cmd.data.gain.db = gainDb;
-  cmd.data.gain.linear = std::pow(10.0f, gainDb / 20.0f);
+  cmd.data.gain.linear = orpheus::pinned::pow10(gainDb / 20.0f);
   const SessionGraphError result = reservation.publish();
   if (result != SessionGraphError::OK)
     return result;
@@ -3236,7 +3239,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.stopFadeOutCurve = metadata.stopFadeOutCurve;
   cmd.data.metadata.loopEnabled = metadata.loopEnabled;
   cmd.data.metadata.gainDb = metadata.gainDb;
-  cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
+  cmd.data.metadata.gainLinear = orpheus::pinned::pow10(metadata.gainDb / 20.0f);
   cmd.data.metadata.muted = metadata.muted;
   cmd.data.metadata.pan = metadata.pan;
   cmd.data.metadata.panLeftGain = panLeftGain;
@@ -3373,8 +3376,10 @@ float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve
   case FadeCurve::Linear:
     return normalizedPosition; // y = x
 
-  case FadeCurve::EqualPower:
-    return std::sin(normalizedPosition * static_cast<float>(M_PI_2)); // y = sin(x * π/2)
+  case FadeCurve::EqualPower: {
+    const float argument = normalizedPosition * static_cast<float>(M_PI_2);
+    return static_cast<float>(orpheus::pinned::sin(static_cast<double>(argument)));
+  }
 
   case FadeCurve::Exponential:
     return normalizedPosition * normalizedPosition; // y = x²
