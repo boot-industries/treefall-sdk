@@ -4,6 +4,8 @@
 #include "coreaudio/coreaudio_route_monitor.h"
 #include "coreaudio_property_api_test_support.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -243,6 +245,48 @@ TEST(CoreAudioRouteMonitorTest, StopWakesAtomicWorkerWait) {
   fixture.monitor->stop();
   worker.join();
   EXPECT_TRUE(returned.load(std::memory_order_acquire));
+}
+
+TEST(CoreAudioRouteMonitorTest, DeviceCallbackTerminalTransitionDoesNotNotify) {
+  RouteMonitorFixture fixture;
+  ASSERT_TRUE(fixture.initialization_ok);
+  const uint64_t notifications_before = fixture.monitor->notificationCount();
+
+  // The device (realtime) callback publishes the terminal state and returns.
+  // Notifying a waiter there is a futex wake per callback, and the audio
+  // thread must not perform system calls.
+  fixture.monitor->closeAdmissionFromCallback();
+  EXPECT_TRUE(fixture.monitor->isTerminal());
+  EXPECT_EQ(fixture.monitor->notificationCount(), notifications_before)
+      << "the device-callback terminal transition must not notify a waiter";
+
+  // The control path still notifies, so the worker is woken promptly.
+  RouteMonitorFixture control;
+  ASSERT_TRUE(control.initialization_ok);
+  const uint64_t control_before = control.monitor->notificationCount();
+  control.monitor->closeAdmission();
+  EXPECT_TRUE(control.monitor->isTerminal());
+  EXPECT_GT(control.monitor->notificationCount(), control_before)
+      << "the control terminal transition must notify a waiting route worker";
+}
+
+TEST(CoreAudioRouteMonitorTest, WorkerObservesCallbackPublishedTerminalState) {
+  RouteMonitorFixture fixture;
+  ASSERT_TRUE(fixture.initialization_ok);
+  std::atomic<bool> returned{false};
+  std::thread worker([&] {
+    fixture.monitor->waitForChange();
+    returned.store(true, std::memory_order_release);
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  fixture.monitor->closeAdmissionFromCallback();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (!returned.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  worker.join();
+  EXPECT_TRUE(returned.load(std::memory_order_acquire))
+      << "the route worker must observe a callback-published terminal state";
 }
 
 } // namespace

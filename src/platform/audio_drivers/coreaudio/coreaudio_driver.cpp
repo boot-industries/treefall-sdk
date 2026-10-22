@@ -698,7 +698,7 @@ void CoreAudioDriver::failRealtimeConversion(AudioRouteRuntimeOutcome outcome) n
     recordOutputConversionFailure();
   }
   if (route_monitor_) {
-    route_monitor_->closeAdmission();
+    route_monitor_->closeAdmissionFromCallback();
   }
   publishTerminalRouteOutcome(outcome);
 }
@@ -785,7 +785,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
   if (malformed_output) {
     if (driver->route_monitor_) {
-      driver->route_monitor_->closeAdmission();
+      driver->route_monitor_->closeAdmissionFromCallback();
     }
     driver->publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BufferSizeChanged);
     return noErr;
@@ -794,13 +794,6 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   // Clear exactly the frames this callback owns, not the advertised capacity.
   for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
     std::memset(ioData->mBuffers[channel].mData, 0, static_cast<size_t>(native_frame_bytes));
-  }
-  if (malformed_output) {
-    if (driver->route_monitor_) {
-      driver->route_monitor_->closeAdmission();
-    }
-    driver->publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BufferSizeChanged);
-    return noErr;
   }
 
   auto output_state_lease = driver->output_callback_target_.tryAcquire();

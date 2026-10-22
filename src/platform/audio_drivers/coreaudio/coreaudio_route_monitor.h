@@ -6,7 +6,10 @@
 #include <CoreAudio/CoreAudio.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace orpheus {
@@ -55,11 +58,27 @@ public:
   bool start() noexcept;
   void stop() noexcept;
   void requestCheck() noexcept;
+
+  /// Terminal transition for the control/worker context: publishes the
+  /// terminal state and wakes a waiting route worker.
   void closeAdmission() noexcept;
+
+  /// Terminal transition for the CoreAudio device (realtime) callback.
+  /// Lock-free atomics only — no notification, no lock, no allocation, no
+  /// syscall. Safe to call from the render callback.
+  void closeAdmissionFromCallback() noexcept;
+
   void waitForChange() noexcept;
   CoreAudioRoutePollResult poll() noexcept;
   bool permitsRendering() const noexcept;
   bool isTerminal() const noexcept;
+
+  /// Number of times a waiting route worker has been notified. Exposed so the
+  /// notification behaviour of the monitor is observable: the device-callback
+  /// terminal transition must never increment it.
+  uint64_t notificationCount() const noexcept {
+    return notification_count_.load(std::memory_order_acquire);
+  }
 
 private:
   struct ListenerRegistration {
@@ -84,6 +103,11 @@ private:
   enum class State : uint8_t { Stopped, Active, Terminal };
   void signalStateChange() noexcept;
 
+  /// Upper bound on how long the route worker sleeps before it re-checks the
+  /// terminal state. A device-callback terminal transition cannot notify the
+  /// worker, so the worker observes it within this bound.
+  static constexpr std::chrono::milliseconds kRouteMonitorWaitTimeout{100};
+
   ICoreAudioPropertyApi& property_api_;
   const Float64 expected_sample_rate_;
   const UInt32 expected_buffer_frames_;
@@ -91,9 +115,11 @@ private:
   std::vector<CoreAudioRouteStream> streams_;
   std::vector<ListenerRegistration> registrations_;
   std::atomic<State> state_{State::Stopped};
-  std::atomic<uint64_t> generation_{0};
   std::atomic<bool> pending_{false};
+  std::atomic<uint64_t> notification_count_{0};
   size_t registered_count_{0};
+  std::mutex changeMutex_;
+  std::condition_variable changeCv_;
 };
 
 } // namespace orpheus
