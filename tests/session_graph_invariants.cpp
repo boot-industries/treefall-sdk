@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
+#include "support/rt_guard.hpp"
+
 #include <orpheus/session_graph.h>
 
 #include <gtest/gtest.h>
@@ -468,5 +471,30 @@ TEST(SessionGraphInvariants, EmptyBulkClipConstructionIsNotAnEdit) {
   const std::uint64_t revision = session.revision();
   EXPECT_TRUE(session.add_clips(*track, {}).empty());
   EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, TransactionRollbackRestoresTheGraphWithoutAllocating) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  ASSERT_NE(session.add_clip(*track, "Clip", 0.0, 1.0), nullptr);
+
+  auto transaction = session.begin_transaction();
+  session.set_name("Renamed");
+  ASSERT_NE(session.add_clip(*track, "Added", 4.0, 1.0), nullptr);
+
+  orpheus::tests::support::RtGuardState::reset();
+  {
+    orpheus::tests::support::RtSection section;
+    transaction.rollback();
+  }
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::allocViolations(), 0u)
+      << "the rollback must not allocate";
+  EXPECT_EQ(session.name(), "Session");
+  // The rollback replaces the graph's tracks, so the borrowed track pointer
+  // from before the transaction is stale and the track is re-resolved.
+  ASSERT_EQ(session.tracks().size(), 1u);
+  ASSERT_EQ(session.tracks()[0]->clips().size(), 1u);
+  EXPECT_EQ(session.tracks()[0]->clips()[0]->name(), "Clip");
 }
 } // namespace orpheus::core::tests
