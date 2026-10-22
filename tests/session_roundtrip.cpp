@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <orpheus/json.hpp>
 #include <orpheus/session_io.h>
 
 #include <cmath>
@@ -335,6 +336,65 @@ TEST(SessionRoundTrip, FailedLoadLeavesExistingGraphAndRevisionUntouched) {
   EXPECT_EQ(graph.name(), "Retained");
   EXPECT_EQ(graph.revision(), revision);
   fs::remove(path);
+}
+
+TEST(SessionJsonLimits, StructuralLimitsAreExplicitErrors) {
+  using ::orpheus::json::JsonParseLimits;
+  using ::orpheus::json::JsonParser;
+
+  const auto parseMessage = [](const std::string& text, JsonParseLimits limits) {
+    try {
+      JsonParser parser(text, limits);
+      static_cast<void>(parser.Parse());
+    } catch (const std::runtime_error& error) {
+      return std::string(error.what());
+    }
+    return std::string();
+  };
+
+  // Nesting depth: the 64th nested container is accepted, the 65th is not.
+  const auto nested = [](int levels) {
+    std::string text;
+    for (int level = 0; level < levels; ++level) {
+      text += "[";
+    }
+    text += "1";
+    for (int level = 0; level < levels; ++level) {
+      text += "]";
+    }
+    return text;
+  };
+  EXPECT_EQ(parseMessage(nested(64), JsonParseLimits{}), "");
+  EXPECT_EQ(parseMessage(nested(65), JsonParseLimits{}), "JSON nesting depth limit exceeded");
+
+  // Node budget: one node per parsed value, including the root.
+  JsonParseLimits nodeLimits;
+  nodeLimits.max_nodes = 3u;
+  EXPECT_EQ(parseMessage("[1,2]", nodeLimits), "");
+  EXPECT_EQ(parseMessage("[1,2,3]", nodeLimits), "JSON node budget exceeded");
+
+  // Object member budget.
+  JsonParseLimits memberLimits;
+  memberLimits.max_object_members = 2u;
+  EXPECT_EQ(parseMessage(R"({"a":1,"b":2})", memberLimits), "");
+  EXPECT_EQ(parseMessage(R"({"a":1,"b":2,"c":3})", memberLimits),
+            "JSON object member budget exceeded");
+
+  // Array element budget.
+  JsonParseLimits arrayLimits;
+  arrayLimits.max_array_elements = 2u;
+  EXPECT_EQ(parseMessage("[1,2]", arrayLimits), "");
+  EXPECT_EQ(parseMessage("[1,2,3]", arrayLimits), "JSON array element budget exceeded");
+}
+
+TEST(SessionJsonLimits, SessionDocumentByteLimitIsAnExplicitError) {
+  const std::string oversized(67108865u, ' ');
+  try {
+    static_cast<void>(ParseSession(oversized));
+    FAIL() << "an oversized session document must be rejected";
+  } catch (const std::runtime_error& error) {
+    EXPECT_EQ(std::string(error.what()), "Session document exceeds maximum size of 67108864 bytes");
+  }
 }
 
 } // namespace orpheus::core::session_json::tests

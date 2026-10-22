@@ -11,7 +11,26 @@
 
 namespace orpheus::json {
 
+namespace {
+
+/// Decrements the parser's nesting depth when the scope exits, including on
+/// an exception thrown out of a nested container.
+struct DepthScope {
+  std::size_t& depth;
+  explicit DepthScope(std::size_t& value) : depth(value) {}
+  ~DepthScope() {
+    --depth;
+  }
+  DepthScope(const DepthScope&) = delete;
+  DepthScope& operator=(const DepthScope&) = delete;
+};
+
+} // namespace
+
 JsonParser::JsonParser(std::string_view input) : data_(input.data()), size_(input.size()) {}
+
+JsonParser::JsonParser(std::string_view input, JsonParseLimits limits)
+    : data_(input.data()), size_(input.size()), limits_(limits) {}
 
 JsonValue JsonParser::Parse() {
   SkipWhitespace();
@@ -48,6 +67,10 @@ void JsonParser::SkipWhitespace() {
 }
 
 JsonValue JsonParser::ParseValue() {
+  if (nodeCount_ >= limits_.max_nodes) {
+    throw std::runtime_error("JSON node budget exceeded");
+  }
+  ++nodeCount_;
   SkipWhitespace();
   const char c = Peek();
   switch (c) {
@@ -84,6 +107,11 @@ JsonValue JsonParser::ParseValue() {
 }
 
 JsonValue JsonParser::ParseObject() {
+  if (depth_ >= limits_.max_depth) {
+    throw std::runtime_error("JSON nesting depth limit exceeded");
+  }
+  ++depth_;
+  const DepthScope depthScope(depth_);
   JsonValue value;
   value.type = JsonValue::Type::kObject;
   Consume(); // '{'
@@ -103,6 +131,9 @@ JsonValue JsonParser::ParseObject() {
       throw std::runtime_error("Expected ':' after object key");
     }
     JsonValue element = ParseValue();
+    if (value.object.size() >= limits_.max_object_members) {
+      throw std::runtime_error("JSON object member budget exceeded");
+    }
     if (!value.object.emplace(key, std::move(element)).second) {
       throw std::runtime_error("Duplicate JSON object key: " + key);
     }
@@ -119,6 +150,11 @@ JsonValue JsonParser::ParseObject() {
 }
 
 JsonValue JsonParser::ParseArray() {
+  if (depth_ >= limits_.max_depth) {
+    throw std::runtime_error("JSON nesting depth limit exceeded");
+  }
+  ++depth_;
+  const DepthScope depthScope(depth_);
   JsonValue value;
   value.type = JsonValue::Type::kArray;
   Consume(); // '['
@@ -129,6 +165,9 @@ JsonValue JsonParser::ParseArray() {
   }
   while (true) {
     JsonValue element = ParseValue();
+    if (value.array.size() >= limits_.max_array_elements) {
+      throw std::runtime_error("JSON array element budget exceeded");
+    }
     value.array.push_back(std::move(element));
     SkipWhitespace();
     const char next = Consume();

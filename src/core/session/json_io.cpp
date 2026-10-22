@@ -45,6 +45,10 @@ using ::orpheus::core::json::RequireString;
 using ::orpheus::core::json::WriteIndent;
 
 constexpr double kClipOrderingTolerance = 1e-9;
+// ORP273 F-12: a session document is bounded in bytes and in structure. The
+// limits are explicit errors, never a truncated document.
+constexpr std::size_t kMaxSessionDocumentBytes = 67108864u; // 64 MiB
+constexpr ::orpheus::json::JsonParseLimits kSessionJsonLimits{};
 
 std::string ReadTextFile(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary);
@@ -190,7 +194,10 @@ std::string SanitizeSessionName(const std::string& session_name) {
 namespace {
 
 SessionGraph parseSessionDocument(const std::string& json_text) {
-  JsonParser parser(json_text);
+  if (json_text.size() > kMaxSessionDocumentBytes) {
+    throw std::runtime_error("Session document exceeds maximum size of 67108864 bytes");
+  }
+  JsonParser parser(json_text, kSessionJsonLimits);
   const JsonValue root = parser.Parse();
   const JsonValue& object = ExpectObject(root, "session root");
   if (auto schema_it = object.object.find("schema_version"); schema_it != object.object.end()) {
@@ -289,7 +296,7 @@ SessionGraph parseSessionDocument(const std::string& json_text) {
     Track* track = session.add_track(track_name);
     const JsonValue* clips_field = RequireField(track_object, "clips");
     const JsonValue& clips_value = ExpectArray(*clips_field, "track.clips");
-    for (const auto& clip_value : clips_value.array) {
+    for (const JsonValue& clip_value : clips_value.array) {
       const JsonValue& clip_object = ExpectObject(clip_value, "clip");
       const JsonValue* clip_name_field = RequireField(clip_object, "name");
       const std::string clip_name = RequireString(*clip_name_field, "clip.name");

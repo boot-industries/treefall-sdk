@@ -26,9 +26,19 @@ struct JsonValue {
   std::vector<JsonValue> array;
 };
 
+/// Structural limits applied while parsing. Exceeding any limit is an
+/// explicit error, not a truncation.
+struct JsonParseLimits {
+  std::size_t max_depth{64u};
+  std::size_t max_nodes{1000000u};
+  std::size_t max_object_members{1024u};
+  std::size_t max_array_elements{65536u};
+};
+
 class ORPHEUS_API JsonParser {
 public:
   explicit JsonParser(std::string_view input);
+  explicit JsonParser(std::string_view input, JsonParseLimits limits);
 
   [[nodiscard]] JsonValue Parse();
 
@@ -52,6 +62,10 @@ private:
   std::size_t size_ = 0;
 
   std::size_t index_ = 0;
+
+  JsonParseLimits limits_{};
+  std::size_t depth_{0u};
+  std::size_t nodeCount_{0u};
 };
 
 [[nodiscard]] ORPHEUS_API const JsonValue& ExpectObject(const JsonValue& value,
