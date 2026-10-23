@@ -56,7 +56,7 @@ constexpr size_t kBlockSizes[] = {256, 512, 1024, 2048};
 // longer depends on the host libm, so the same scenario must produce these
 // exact bytes on every platform. Regenerate deliberately — and review the
 // change as an intentional render change — when the render path changes.
-inline constexpr uint64_t kGoldenRenderHash = 0x2885ce8fbb52d42dull;
+inline constexpr uint64_t kGoldenRenderHash = 0x2c62d3e2104b576dull;
 
 // Deterministic PCM16 WAV writer fed from the integer-table sine in
 // synth.hpp — no libm in fixture generation, so fixture bytes are identical

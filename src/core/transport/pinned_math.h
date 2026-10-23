@@ -6,15 +6,15 @@
 namespace orpheus::pinned {
 
 // ORP273 F-02: libm-independent elementary functions for the render path.
-// Every Horner step uses std::fma, which IEEE-754 requires to be correctly
-// rounded, so the results are bit-identical on every platform and do not
-// depend on the host libm. The constants are hex-float literals so that they
-// parse to the same double on every compiler.
+// Horner steps explicitly round the multiply before the add, avoiding both
+// baseline x86 libm fma calls and target-dependent implicit contraction.
+// Transport/routing targets also disable implicit contraction in surrounding
+// render arithmetic. Hex-float constants parse identically on each compiler.
 //
-// Verified maxima over the used ranges: |pinnedSin - sin| <= 3.4e-16,
-// |pinnedCos - cos| <= 3.4e-16, |pinnedExp - exp| <= 1.1e-14. The float32
-// results differ from the host libm in one sample per million, by at most
-// one ulp of the float32 result.
+// Accuracy smoke over 1,000,001 positions: sin/cos absolute error <= 3.34e-16
+// on [0, pi/2]; pow10 matches float-rounded libm on [-4.8, 1.2] (the clip
+// gain and DSP threshold range). This is accuracy evidence, not proof of every
+// DSP program's cross-platform determinism.
 
 inline constexpr double kPiOver4 = 0x1.921fb54442d18p-1;  // pi / 4
 inline constexpr double kSqrtHalf = 0x1.6a09e667f3bcdp-1; // sqrt(1/2)
@@ -39,18 +39,26 @@ inline constexpr double kInvFact15 = 0x1.ae7f3e733b81fp-41;
 inline constexpr double kInvFact16 = 0x1.ae7f3e733b81fp-45;
 inline constexpr double kInvFact17 = 0x1.952c77030ad4ap-49;
 
+/// Multiply and add with exactly two IEEE roundings, never fused into a
+/// single-rounding FMA. The volatile product forces the multiply to be
+/// rounded before the add.
+inline double mulAdd(double a, double b, double c) noexcept {
+  volatile double product = a * b;
+  return product + c;
+}
+
 /// sin(u) for |u| <= pi/4, Taylor series truncated after the u^17 term.
 inline double sinKernel(double u) noexcept {
   const double u2 = u * u;
   double s = kInvFact17;
-  s = std::fma(s, u2, -kInvFact15);
-  s = std::fma(s, u2, kInvFact13);
-  s = std::fma(s, u2, -kInvFact11);
-  s = std::fma(s, u2, kInvFact9);
-  s = std::fma(s, u2, -kInvFact7);
-  s = std::fma(s, u2, kInvFact5);
-  s = std::fma(s, u2, -kInvFact3);
-  s = std::fma(s, u2, 1.0);
+  s = mulAdd(s, u2, -kInvFact15);
+  s = mulAdd(s, u2, kInvFact13);
+  s = mulAdd(s, u2, -kInvFact11);
+  s = mulAdd(s, u2, kInvFact9);
+  s = mulAdd(s, u2, -kInvFact7);
+  s = mulAdd(s, u2, kInvFact5);
+  s = mulAdd(s, u2, -kInvFact3);
+  s = mulAdd(s, u2, 1.0);
   return s * u;
 }
 
@@ -58,14 +66,14 @@ inline double sinKernel(double u) noexcept {
 inline double cosKernel(double u) noexcept {
   const double u2 = u * u;
   double c = kInvFact16;
-  c = std::fma(c, u2, -kInvFact14);
-  c = std::fma(c, u2, kInvFact12);
-  c = std::fma(c, u2, -kInvFact10);
-  c = std::fma(c, u2, kInvFact8);
-  c = std::fma(c, u2, -kInvFact6);
-  c = std::fma(c, u2, kInvFact4);
-  c = std::fma(c, u2, -kInvFact2);
-  c = std::fma(c, u2, 1.0);
+  c = mulAdd(c, u2, -kInvFact14);
+  c = mulAdd(c, u2, kInvFact12);
+  c = mulAdd(c, u2, -kInvFact10);
+  c = mulAdd(c, u2, kInvFact8);
+  c = mulAdd(c, u2, -kInvFact6);
+  c = mulAdd(c, u2, kInvFact4);
+  c = mulAdd(c, u2, -kInvFact2);
+  c = mulAdd(c, u2, 1.0);
   return c;
 }
 
@@ -81,8 +89,8 @@ inline double cos(double x) noexcept {
   return kSqrtHalf * (cosKernel(u) - sinKernel(u));
 }
 
-/// exp(x) for |x| <= 4. Range-reduces by ln 2 and scales with std::ldexp,
-/// which is an exact power-of-two scaling and therefore platform-independent.
+/// exp(x) over the gain/threshold range [-12, 4]. Reduces by ln 2 and
+/// scales with std::ldexp (an exact power-of-two scaling).
 inline double exp(double x) noexcept {
   constexpr int kSeriesTerms = 14;
   const double k = std::floor((x / kLn2) + 0.5);
@@ -96,7 +104,7 @@ inline double exp(double x) noexcept {
   return std::ldexp(sum, static_cast<int>(k));
 }
 
-/// 10^exponent for |exponent| <= 2.
+/// 10^exponent for the gain/threshold range [-4.8, 1.2].
 inline float pow10(float exponent) noexcept {
   return static_cast<float>(exp(static_cast<double>(exponent) * kLn10));
 }

@@ -9,6 +9,14 @@ add_library(orpheus_transport STATIC
 
 target_compile_features(orpheus_transport PUBLIC cxx_std_20)
 
+# Keep multiply/add rounding identical on FMA and baseline targets. Explicit
+# arithmetic in pinned_math.h must not be changed by implicit contraction.
+if(MSVC)
+  target_compile_options(orpheus_transport PRIVATE /fp:strict)
+else()
+  target_compile_options(orpheus_transport PRIVATE -ffp-contract=off)
+endif()
+
 target_include_directories(orpheus_transport
     PUBLIC
         $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>

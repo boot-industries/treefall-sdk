@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Transport and routing disable implicit floating-point contraction, and pinned
+  fade/pan polynomials use separately rounded multiply/add operations instead
+  of potentially software-emulated `fma` calls. The deterministic render
+  fixture's golden is now `0x2c62d3e2104b576d`; consumers pinning rendered bytes
+  must regenerate their own artifacts after rebuilding. This fixture does not
+  establish cross-platform determinism for every enabled DSP program.
 - The suite coordination manifest now records the governed state of the
   five-repository Treefall Suite. The `sdk-shmui-juce-package` artifact
   records the imported content hash

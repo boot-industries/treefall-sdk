@@ -10,6 +10,13 @@ add_library(orpheus_routing STATIC
 
 target_compile_features(orpheus_routing PUBLIC cxx_std_20)
 
+# Mixing and smoothing participate in the cross-platform render-byte contract.
+if(MSVC)
+  target_compile_options(orpheus_routing PRIVATE /fp:strict)
+else()
+  target_compile_options(orpheus_routing PRIVATE -ffp-contract=off)
+endif()
+
 target_include_directories(orpheus_routing
     PUBLIC
         $<BUILD_INTERFACE:${ORPHEUS_ROOT_SOURCE_DIR}/include>
