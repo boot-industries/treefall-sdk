@@ -50,7 +50,11 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   twenty ORP273 findings landed in ORP273 §5's wave order, with the
   release-tree before/after measurements, the recorded deviations and the
   downstream consumer impact.
-  Next free document number: ORP275.
+- **ORP275** — ORP273 consumer-safety review, corrective fixes, verification and
+  merge evidence for PR #277; supersedes broad claims in the original delivery.
+- **ORP276** — ShmUI private-source compartmentalization handoff: upstream
+  integration, coordinated SDK/consumer cutover and public-payload acceptance.
+  Next free document number: ORP277.
 
 ---
 

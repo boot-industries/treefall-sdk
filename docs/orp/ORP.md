@@ -9,6 +9,13 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP275 ORP273 Consumer Safety Review and Merge Verification]] —
+  review findings, corrections, downstream obligations and observed verification
+  for PR #277; supersedes ORP274's broad cross-platform claims (2026-10-23)
+- [[ORP276 ShmUI Private Source Compartmentalization Handoff]] —
+  upstream ownership/package cutover requirements; no ShmUI source or consumer
+  repository is modified by the SDK optimization review (2026-10-23)
+
 - [[ORP274 Refactoring and Performance Remediation Sprint Delivery]] —
   delivery record for the ORP273 remediation sprint: all twenty findings
   landed in ORP273 §5's wave order on `feat/orp273-sprint-remediation`, with

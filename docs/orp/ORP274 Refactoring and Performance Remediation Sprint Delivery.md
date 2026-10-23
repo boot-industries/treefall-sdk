@@ -15,6 +15,13 @@
 `budgets.json`
 **Status:** Complete with recorded deviations
 
+**Review supersession (2026-10-23):** This is the original local delivery
+record, not final merge qualification. ORP275 records the subsequent failing CI,
+consumer-safety findings, corrected arithmetic golden and verification.
+Its evidence supersedes this record's broad libm/cross-platform claims and the
+per-round worker scratch-allocation deferral. ORP276 carries the separate
+ShmUI ownership handoff; no import migration is claimed here.
+
 ## 1. Executive summary
 
 ORP273 recorded twenty findings against the SDK's render path, realtime

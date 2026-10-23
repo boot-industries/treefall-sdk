@@ -1,4 +1,30 @@
 # ORP068 Implementation Progress
+
+## ORP273 consumer-safety review — 2026-10-23
+
+This progress update is duplicated in the PREFIX record
+`docs/orp/ORP275 ORP273 Consumer Safety Review and Merge Verification.md`;
+ORP276 is the separate ShmUI private-source compartmentalization handoff.
+
+Resolved contraction drift and extreme finite exponent conversion, smoother
+lost updates, inactive-lane replay, repeated worker scratch allocation, exact
+rollback/grid state, failed-batch ID consumption, parser budget ordering,
+bounded reads and serialization/load symmetry. Isolated allocation hooks,
+required actual measured CTest results, forwarded Release configuration and
+isolated Windows fixture runtime outputs. Independent final reviewers report
+no remaining code blockers in their slices.
+
+Focused Release and ASan/UBSan tests and installed-package/ABI fixtures pass;
+the real minhost smoke produces a 4-second stereo PCM16 WAV. The isolated
+Release gate passes at unchanged ratio 0.5, TruePeak p99 10,352.7 microseconds,
+with zero guarded allocations/deallocations. The shared scenario golden is
+`0x2c62d3e2104b576d`; clean hosted CI is required before merge. ORP275 retains
+the initial failures and contaminated concurrent-build timing evidence.
+
+Consumer repositories, pins and the governed ShmUI import are unchanged;
+matching-header C++ rebuilds remain required. The 2026-10-22 record below is
+historical; its broad cross-platform/libm claims are superseded by ORP275.
+
 ## Refactoring and performance remediation sprint — 2026-10-22
 
 - Recorded `docs/orp/ORP274 Refactoring and Performance Remediation Sprint

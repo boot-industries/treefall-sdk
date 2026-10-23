@@ -1,5 +1,32 @@
 # Progress
 
+## ORP273 consumer-safety review — 2026-10-23
+
+**Records:** ORP275 (review/verification) and ORP276 (ShmUI handoff).
+**Branch:** `feat/orp273-sprint-remediation`; merge requires clean hosted CI.
+
+Resolved floating-point contraction drift, extreme-gain exponent conversion,
+block-smoother lost updates, inactive-lane replay through direct host route edits,
+worker scratch churn, exact-beat rollback/grid dirtiness, failed-batch allocator
+state, pre-allocation parser budgets, bounded file reads and save/load limit
+symmetry. Isolated allocation hooks, required an actual measured CTest result,
+forwarded its Release configuration and separated installed-fixture DLL outputs.
+Independent realtime and math/CI reviewers report no remaining code blockers.
+
+Focused Release and ASan/UBSan tests and installed-package/ABI consumers pass.
+A real minhost render produces the expected 4-second stereo PCM16 WAV.
+The isolated Release deadline gate passes with unchanged ratio 0.5; TruePeak
+wall p99 is 10,352.7 microseconds against a 21,333.3 ceiling, with zero guarded
+allocations/deallocations. The earlier concurrent-build timing failure remains
+recorded in ORP275. The shared scenario golden is `0x2c62d3e2104b576d`; hosted
+cross-platform parity is still a merge requirement, not inferred from local math.
+
+No consumer repository, SDK pin or governed ShmUI import changed. All affected
+C++ consumers need matching-header rebuilds. Default ShmUI-off does not hide
+source files present in the SDK; ORP276 defines the separate upstream handoff.
+The 2026-10-22 section below is historical and its cross-platform claims are
+superseded by ORP275.
+
 ## Refactoring and performance remediation sprint — 2026-10-22
 
 **Branch:** `feat/orp273-sprint-remediation`
