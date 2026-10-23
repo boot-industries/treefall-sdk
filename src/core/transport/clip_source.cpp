@@ -6,6 +6,8 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <functional>
+#include <utility>
 
 namespace orpheus {
 
@@ -1270,7 +1272,8 @@ void MediaStreamWorker::attach(const std::shared_ptr<StreamingClipSource>& sourc
 }
 
 void MediaStreamWorker::snapshotSources(std::vector<SourceService>& live,
-                                        std::vector<SourceService>& next) {
+                                        std::vector<SourceService>& next,
+                                        std::vector<PreviousSource>& previous) {
   // Drop idle snapshot ownership before locking weak references. Only an
   // in-progress transaction keeps its source alive between service rounds.
   for (auto& entry : live) {
@@ -1279,16 +1282,36 @@ void MediaStreamWorker::snapshotSources(std::vector<SourceService>& live,
     }
   }
   std::erase_if(live, [](const SourceService& entry) { return !entry.source; });
+  // Carry the command-fill state forward by source identity. The previous
+  // round's entries are sorted by source pointer once, so every source below
+  // resolves its predecessor with a binary search instead of a linear scan of
+  // the whole snapshot. std::less gives a total order over unrelated
+  // pointers, so the ordering is well defined.
+  previous.clear();
+  previous.reserve(live.size());
+  for (const auto& entry : live) {
+    previous.push_back({entry.source.get(), entry.command});
+  }
+  const auto by_identity = [](const StreamingClipSource* lhs, const StreamingClipSource* rhs) {
+    return std::less<const StreamingClipSource*>{}(lhs, rhs);
+  };
+  std::sort(previous.begin(), previous.end(),
+            [&by_identity](const PreviousSource& lhs, const PreviousSource& rhs) {
+              return by_identity(lhs.identity, rhs.identity);
+            });
   next.clear();
   next.reserve(m_sources.size());
   for (auto it = m_sources.begin(); it != m_sources.end();) {
     if (auto source = it->lock()) {
       SourceService entry{std::move(source), {}};
-      for (auto& previous : live) {
-        if (previous.source.get() == entry.source.get()) {
-          entry.command = previous.command;
-          break;
-        }
+      const StreamingClipSource* const identity = entry.source.get();
+      const auto match = std::lower_bound(
+          previous.begin(), previous.end(), identity,
+          [&by_identity](const PreviousSource& candidate, const StreamingClipSource* key) {
+            return by_identity(candidate.identity, key);
+          });
+      if (match != previous.end() && match->identity == identity) {
+        entry.command = match->command;
       }
       next.push_back(std::move(entry));
       ++it;
@@ -1325,9 +1348,10 @@ void MediaStreamWorker::run() {
   std::unique_lock<std::mutex> lock(m_mutex);
   std::vector<SourceService> live;
   std::vector<SourceService> next;
+  std::vector<PreviousSource> previous;
   size_t cursor = 0;
   while (!m_stop) {
-    snapshotSources(live, next);
+    snapshotSources(live, next, previous);
     lock.unlock();
     serviceRound(live, cursor);
     lock.lock();

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/clip_dsp.h>
 
+#include "../common/pinned_math.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -14,7 +16,7 @@ bool finiteInRange(float value, float minimum, float maximum) noexcept {
 }
 
 float dbToLinear(float db) noexcept {
-  return std::pow(10.0f, db / 20.0f);
+  return orpheus::pinned::pow10(db / 20.0f);
 }
 
 float timeCoefficient(float milliseconds, double sampleRate) noexcept {
@@ -75,6 +77,7 @@ ClipDspValidationError ClipDspProcessor::prepare(const ClipDspProgram& program, 
       timeCoefficient(program.compressor.releaseMs, sampleRate);
   prepared.m_limiterReleaseCoefficient = timeCoefficient(program.limiter.releaseMs, sampleRate);
   prepared.m_limiterCeilingLinear = dbToLinear(program.limiter.ceilingDb);
+  prepared.m_compressorMakeupLinear = dbToLinear(program.compressor.makeupGainDb);
 
   for (size_t index = 0; index < program.eq.size(); ++index) {
     const auto& band = program.eq[index];
@@ -196,9 +199,16 @@ void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexce
     m_compressorEnvelope =
         envelopeCoefficient * m_compressorEnvelope + (1.0f - envelopeCoefficient) * peak;
     const float inputDb = 20.0f * std::log10(std::max(m_compressorEnvelope, 1.0e-12f));
-    const float overDb = std::max(0.0f, inputDb - m_program.compressor.thresholdDb);
-    const float reductionDb = overDb / m_program.compressor.ratio - overDb;
-    const float compressorGain = dbToLinear(reductionDb + m_program.compressor.makeupGainDb);
+    const float overDb = inputDb - m_program.compressor.thresholdDb;
+    float compressorGain;
+    if (overDb <= 0.0f) {
+      // No reduction: reductionDb would be +0.0f, so the gain is exactly the
+      // constant makeup gain. Skip the per-frame pow.
+      compressorGain = m_compressorMakeupLinear;
+    } else {
+      const float reductionDb = overDb / m_program.compressor.ratio - overDb;
+      compressorGain = dbToLinear(reductionDb + m_program.compressor.makeupGainDb);
+    }
     for (size_t channel = 0; channel < channelCount; ++channel)
       channels[channel] *= compressorGain;
   }

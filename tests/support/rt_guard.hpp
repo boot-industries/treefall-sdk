@@ -9,9 +9,8 @@
 //
 //  * RtSection — RAII marker for "this thread is now inside an audio
 //    callback". Thread-local, nestable.
-//  * Allocation hooks — the including test binary defines
-//    ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS in exactly ONE translation unit to
-//    install global operator new/delete overrides. Any C++ allocation or
+//  * Allocation hooks — guarded test binaries link tests/support/rt_guard.cpp
+//    to install global operator new/delete overrides. Any C++ allocation or
 //    deallocation performed while the calling thread is inside an RtSection
 //    is counted as a violation (the allocation itself still succeeds, so the
 //    system under test keeps running and the test can report precisely).
@@ -119,84 +118,3 @@ inline std::optional<ProcIoCounters> readProcIoCounters() {
 }
 
 } // namespace orpheus::tests::support
-
-// ---------------------------------------------------------------------------
-// Global allocation hooks. Define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS in
-// exactly one TU of the test binary before including this header.
-// The hooks delegate to std::malloc/std::free (which sanitizers intercept
-// normally) and count — but do not block — allocations inside RtSections.
-// ---------------------------------------------------------------------------
-#ifdef ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
-
-namespace orpheus::tests::support {
-
-thread_local int RtGuardState::t_sectionDepth = 0;
-std::atomic<std::uint64_t> RtGuardState::s_allocViolations{0};
-std::atomic<std::uint64_t> RtGuardState::s_deallocViolations{0};
-std::atomic<std::uint64_t> RtGuardState::s_allocViolationBytes{0};
-
-namespace detail {
-
-inline void* guardedAlloc(std::size_t size) {
-  if (RtGuardState::t_sectionDepth > 0) {
-    RtGuardState::s_allocViolations.fetch_add(1, std::memory_order_relaxed);
-    RtGuardState::s_allocViolationBytes.fetch_add(size, std::memory_order_relaxed);
-  }
-  return std::malloc(size);
-}
-
-inline void guardedFree(void* ptr) {
-  if (ptr != nullptr && RtGuardState::t_sectionDepth > 0) {
-    RtGuardState::s_deallocViolations.fetch_add(1, std::memory_order_relaxed);
-  }
-  std::free(ptr);
-}
-
-} // namespace detail
-} // namespace orpheus::tests::support
-
-void* operator new(std::size_t size) {
-  void* ptr = orpheus::tests::support::detail::guardedAlloc(size);
-  if (!ptr) {
-    throw std::bad_alloc();
-  }
-  return ptr;
-}
-
-void* operator new[](std::size_t size) {
-  return ::operator new(size);
-}
-
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
-  return orpheus::tests::support::detail::guardedAlloc(size);
-}
-
-void* operator new[](std::size_t size, const std::nothrow_t&) noexcept {
-  return orpheus::tests::support::detail::guardedAlloc(size);
-}
-
-void operator delete(void* ptr) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-void operator delete[](void* ptr) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-void operator delete(void* ptr, std::size_t) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-void operator delete[](void* ptr, std::size_t) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-void operator delete(void* ptr, const std::nothrow_t&) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
-  orpheus::tests::support::detail::guardedFree(ptr);
-}
-
-#endif // ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS

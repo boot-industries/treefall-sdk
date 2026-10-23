@@ -70,10 +70,7 @@ Track::~Track() = default;
 
 Clip* Track::add_clip(ClipId id, std::string name, double start_beats, double length_beats,
                       std::uint32_t scene_index) {
-  auto clip =
-      std::unique_ptr<Clip>(new Clip(id, std::move(name), start_beats, length_beats, scene_index));
-  Clip* raw = clip.get();
-  clips_.push_back(std::move(clip));
+  Clip* raw = append_clip(id, std::move(name), start_beats, length_beats, scene_index);
   sort_clips();
   try {
     validate_clip_layout();
@@ -82,6 +79,15 @@ Clip* Track::add_clip(ClipId id, std::string name, double start_beats, double le
     (void)removed;
     throw;
   }
+  return raw;
+}
+
+Clip* Track::append_clip(ClipId id, std::string name, double start_beats, double length_beats,
+                         std::uint32_t scene_index) {
+  auto clip =
+      std::unique_ptr<Clip>(new Clip(id, std::move(name), start_beats, length_beats, scene_index));
+  Clip* raw = clip.get();
+  clips_.push_back(std::move(clip));
   return raw;
 }
 
@@ -185,21 +191,21 @@ SessionGraph::SessionGraph(SessionId session_id) : session_id_(session_id), name
 
 SessionGraph::~SessionGraph() = default;
 
-SessionGraph::Transaction::Transaction(SessionGraph& graph, SessionGraphSnapshot before)
-    : graph_(&graph), before_(std::move(before)), before_change_(graph.last_change_),
-      base_revision_(graph.revision_) {}
+SessionGraph::Transaction::Transaction(SessionGraph& graph, RollbackImage image)
+    : graph_(&graph), before_change_(graph.last_change_), base_revision_(graph.revision_),
+      rollback_image_(std::move(image)) {}
 
 SessionGraph::Transaction::Transaction(Transaction&& other) noexcept
-    : graph_(std::exchange(other.graph_, nullptr)), before_(std::move(other.before_)),
-      before_change_(other.before_change_), base_revision_(other.base_revision_) {}
+    : graph_(std::exchange(other.graph_, nullptr)), before_change_(other.before_change_),
+      base_revision_(other.base_revision_), rollback_image_(std::move(other.rollback_image_)) {}
 
 SessionGraph::Transaction& SessionGraph::Transaction::operator=(Transaction&& other) noexcept {
   if (this != &other) {
     rollback();
     graph_ = std::exchange(other.graph_, nullptr);
-    before_ = std::move(other.before_);
     before_change_ = other.before_change_;
     base_revision_ = other.base_revision_;
+    rollback_image_ = std::move(other.rollback_image_);
   }
   return *this;
 }
@@ -229,7 +235,7 @@ void SessionGraph::Transaction::rollback() noexcept {
     return;
   }
   if (graph_->transaction_active_) {
-    graph_->restore_unchecked(before_);
+    graph_->apply_rollback_image_noexcept(std::move(rollback_image_));
     graph_->revision_ = base_revision_;
     graph_->last_change_ = before_change_;
     graph_->pending_changes_ = SessionChangeFlags::None;
@@ -242,10 +248,11 @@ SessionGraph::Transaction SessionGraph::begin_transaction() {
   if (transaction_active_) {
     throw std::logic_error("Nested session transactions are not supported");
   }
-  auto before = snapshot();
+  // Clone the exact internal edit state: snapshots quantize beat values to samples.
+  auto image = build_rollback_image();
   transaction_active_ = true;
   pending_changes_ = SessionChangeFlags::None;
-  return Transaction(*this, std::move(before));
+  return Transaction(*this, std::move(image));
 }
 
 void SessionGraph::record_change(SessionChangeFlags changes) {
@@ -294,7 +301,38 @@ SessionGraphSnapshot SessionGraph::snapshot() const {
   return result;
 }
 
+SessionGraph::RollbackImage SessionGraph::build_rollback_image() const {
+  RollbackImage image;
+  image.tracks.reserve(tracks_.size());
+  for (const auto& source_track : tracks_) {
+    auto track = std::unique_ptr<Track>(new Track(source_track->id(), source_track->name()));
+    track->clips_.reserve(source_track->clips().size());
+    for (const auto& clip : source_track->clips()) {
+      static_cast<void>(track->append_clip(clip->id(), clip->name(), clip->start(), clip->length(),
+                                           clip->scene_index()));
+    }
+    image.tracks.push_back(std::move(track));
+  }
+  image.clip_assignments = clip_assignments_;
+  image.name = name_;
+  image.tempo_bpm = tempo_bpm_;
+  image.render_sample_rate_hz = render_sample_rate_hz_;
+  image.render_bit_depth_bits = render_bit_depth_bits_;
+  image.render_dither_enabled = render_dither_enabled_;
+  image.session_start_beats = session_start_beats_;
+  image.session_end_beats = session_end_beats_;
+  image.next_track_id_raw = track_ids_.nextRaw();
+  image.next_clip_id_raw = clip_ids_.nextRaw();
+  image.clip_grid_dirty = clip_grid_dirty_;
+  return image;
+}
+
 void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
+  apply_rollback_image_noexcept(build_rollback_image(state));
+}
+
+SessionGraph::RollbackImage
+SessionGraph::build_rollback_image(const SessionGraphSnapshot& state) const {
   constexpr std::uint32_t kMinimumSupportedSchemaVersion = 1u;
   if (state.schema_version < kMinimumSupportedSchemaVersion ||
       state.schema_version > SessionGraphSnapshot::kSchemaVersion) {
@@ -314,8 +352,8 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
     throw std::invalid_argument("Snapshot bit depth is unsupported");
   }
 
-  std::vector<std::unique_ptr<Track>> rebuilt_tracks;
-  rebuilt_tracks.reserve(state.tracks.size());
+  RollbackImage image;
+  image.tracks.reserve(state.tracks.size());
   // Restoring must never lower a live watermark: an ID issued and then rolled
   // back or restored away stays spent. Schema 1 carries no watermark, so it
   // seeds from the live value and relies on reserveThrough() below to supply
@@ -345,15 +383,16 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
           BeatsFromTime(clip_state.range.start(), state.tempo_bpm, state.render_sample_rate_hz);
       const double end_beats =
           BeatsFromTime(RangeEnd(clip_state.range), state.tempo_bpm, state.render_sample_rate_hz);
-      static_cast<void>(track->add_clip(clip_state.id, clip_state.name, start_beats,
-                                        end_beats - start_beats, clip_state.scene_index));
+      static_cast<void>(track->append_clip(clip_state.id, clip_state.name, start_beats,
+                                           end_beats - start_beats, clip_state.scene_index));
       rebuilt_clip_ids.reserveThrough(clip_state.id);
     }
-    rebuilt_tracks.push_back(std::move(track));
+    track->sort_clips();
+    track->validate_clip_layout();
+    image.tracks.push_back(std::move(track));
   }
 
-  std::vector<std::uint64_t> rebuilt_assignments;
-  rebuilt_assignments.reserve(state.clip_assignments.size());
+  image.clip_assignments.reserve(state.clip_assignments.size());
   for (const ClipId assignment : state.clip_assignments) {
     if (!assignment.isValid()) {
       throw std::invalid_argument("Clip assignment ID must be valid");
@@ -361,26 +400,36 @@ void SessionGraph::restore_unchecked(const SessionGraphSnapshot& state) {
     if (seen_clip_ids.find(assignment.raw()) == seen_clip_ids.end()) {
       throw std::invalid_argument("Clip assignment ID is not a member of the session");
     }
-    rebuilt_assignments.push_back(assignment.raw());
+    image.clip_assignments.push_back(assignment.raw());
   }
 
-  const double session_start =
+  image.name = state.name;
+  image.tempo_bpm = state.tempo_bpm;
+  image.render_sample_rate_hz = state.render_sample_rate_hz;
+  image.render_bit_depth_bits = state.render_bit_depth_bits;
+  image.render_dither_enabled = state.render_dither_enabled;
+  image.session_start_beats =
       BeatsFromTime(state.session_range.start(), state.tempo_bpm, state.render_sample_rate_hz);
-  const double session_end =
+  image.session_end_beats =
       BeatsFromTime(RangeEnd(state.session_range), state.tempo_bpm, state.render_sample_rate_hz);
+  image.next_track_id_raw = rebuilt_track_ids.nextRaw();
+  image.next_clip_id_raw = rebuilt_clip_ids.nextRaw();
+  return image;
+}
 
-  track_ids_ = rebuilt_track_ids;
-  clip_ids_ = rebuilt_clip_ids;
-  name_ = state.name;
-  tempo_bpm_ = state.tempo_bpm;
-  render_sample_rate_hz_ = state.render_sample_rate_hz;
-  render_bit_depth_bits_ = state.render_bit_depth_bits;
-  render_dither_enabled_ = state.render_dither_enabled;
-  session_start_beats_ = session_start;
-  session_end_beats_ = session_end;
-  tracks_ = std::move(rebuilt_tracks);
-  clip_assignments_ = std::move(rebuilt_assignments);
-  clip_grid_dirty_ = false;
+void SessionGraph::apply_rollback_image_noexcept(RollbackImage&& image) noexcept {
+  track_ids_ = IdAllocator<TrackId>(std::max(image.next_track_id_raw, track_ids_.nextRaw()));
+  clip_ids_ = IdAllocator<ClipId>(std::max(image.next_clip_id_raw, clip_ids_.nextRaw()));
+  name_ = std::move(image.name);
+  tempo_bpm_ = image.tempo_bpm;
+  render_sample_rate_hz_ = image.render_sample_rate_hz;
+  render_bit_depth_bits_ = image.render_bit_depth_bits;
+  render_dither_enabled_ = image.render_dither_enabled;
+  session_start_beats_ = image.session_start_beats;
+  session_end_beats_ = image.session_end_beats;
+  tracks_ = std::move(image.tracks);
+  clip_assignments_ = std::move(image.clip_assignments);
+  clip_grid_dirty_ = image.clip_grid_dirty;
   scene_timeline_.clear();
   active_scenes_.clear();
   committed_clips_.clear();
@@ -499,8 +548,9 @@ void SessionGraph::set_clip_assignment_ids(std::vector<ClipId> assignments) {
 }
 
 Track* SessionGraph::add_track(std::string name) {
-  const TrackId id = track_ids_.allocate();
+  const TrackId id = TrackId::fromRaw(track_ids_.nextRaw());
   auto& slot = tracks_.emplace_back(std::unique_ptr<Track>(new Track(id, std::move(name))));
+  static_cast<void>(track_ids_.allocate());
   mark_clip_grid_dirty();
   record_change(SessionChangeFlags::Structure);
   return slot.get();
@@ -608,11 +658,65 @@ Clip* SessionGraph::add_clip(Track& track, std::string name, double start_beats,
   RangeFromBeats(start_beats,
                  std::max(RequireFinite(length_beats, "Clip length"), kMinimumLengthBeats),
                  tempo_bpm_, render_sample_rate_hz_);
-  Clip* clip = target->add_clip(clip_ids_.allocate(), std::move(name), start_beats, length_beats,
-                                scene_index);
+  const ClipId id = ClipId::fromRaw(clip_ids_.nextRaw());
+  Clip* clip = target->add_clip(id, std::move(name), start_beats, length_beats, scene_index);
+  static_cast<void>(clip_ids_.allocate());
   mark_clip_grid_dirty();
   record_change(SessionChangeFlags::Structure);
   return clip;
+}
+
+std::vector<Clip*> SessionGraph::add_clips(Track& track, const std::vector<ClipSpec>& specs) {
+  if (specs.empty()) {
+    return {};
+  }
+  Track* target = find_track(&track);
+  if (target == nullptr) {
+    throw std::invalid_argument("Track does not belong to session");
+  }
+  // Validate every spec's numbers before appending anything, so a numeric
+  // rejection unwinds nothing.
+  for (const ClipSpec& spec : specs) {
+    RangeFromBeats(spec.start_beats,
+                   std::max(RequireFinite(spec.length_beats, "Clip length"), kMinimumLengthBeats),
+                   tempo_bpm_, render_sample_rate_hz_);
+  }
+
+  std::vector<Clip*> created;
+  created.reserve(specs.size());
+  const std::uint64_t first_clip_id_raw = clip_ids_.nextRaw();
+  try {
+    for (const ClipSpec& spec : specs) {
+      created.push_back(target->append_clip(
+          clip_ids_.allocate(), spec.name, spec.start_beats,
+          std::max(RequireFinite(spec.length_beats, "Clip length"), kMinimumLengthBeats),
+          spec.scene_index));
+    }
+    target->sort_clips();
+    target->validate_clip_layout();
+  } catch (...) {
+    for (Clip* clip : created) {
+      const bool removed = target->remove_clip(clip);
+      (void)removed;
+    }
+    target->sort_clips();
+    clip_ids_ = IdAllocator<ClipId>(first_clip_id_raw);
+    throw;
+  }
+
+  // Match the track comparator so the returned subset is already in track order.
+  std::sort(created.begin(), created.end(), [](const Clip* lhs, const Clip* rhs) {
+    if (lhs->start() < rhs->start()) {
+      return true;
+    }
+    if (rhs->start() < lhs->start()) {
+      return false;
+    }
+    return lhs->name() < rhs->name();
+  });
+  mark_clip_grid_dirty();
+  record_change(SessionChangeFlags::Structure);
+  return created;
 }
 
 bool SessionGraph::remove_clip(const Clip* clip) {

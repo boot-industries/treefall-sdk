@@ -21,8 +21,8 @@
 // (voice_state_tsan_test + this file built under -fsanitize=thread); a
 // dlsym-interpose lock detector would fight the sanitizers' own interceptors.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
+#include "../support/sanitizer_guard.hpp"
 
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
@@ -772,20 +772,7 @@ TEST_F(RealtimeHarnessTest, CallbackDurationWithinBudget) {
 
   // Wall-clock bounds are skipped under sanitizers (same policy as the
   // waveform and multi-clip perf bounds).
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-
-  if (!kUnderSanitizer) {
+  if (orpheus::test::timingAssertionsEnabled()) {
     EXPECT_LT(maxUs, budgetUs) << "a single reader-less callback exceeded the realtime budget";
   } else {
     std::cout << "  - duration bound skipped under sanitizer\n";
@@ -887,18 +874,7 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     outputPointers.push_back(lane.data());
   }
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
+  const bool timingAssertionsEnabled = orpheus::test::timingAssertionsEnabled();
 
   const auto runMode = [&](MeteringMode mode, const char* label) {
     config.metering_mode = mode;
@@ -955,7 +931,7 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     EXPECT_EQ(RtGuardState::allocViolations(), 0u);
     EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
 #if defined(NDEBUG)
-    if (!kUnderSanitizer) {
+    if (timingAssertionsEnabled) {
 #if defined(__APPLE__) || defined(__linux__)
       std::sort(cpuDurations.begin(), cpuDurations.end());
       const double cpuMaximum = cpuDurations.back();
@@ -979,28 +955,80 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
 TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
 #if !defined(NDEBUG)
   GTEST_SKIP() << "Requires unsanitized Release and ORPHEUS_RUN_WORST_CASE_BENCHMARK=1";
-#elif defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
 #endif
-#endif
+  if (orpheus::test::underSanitizer()) {
+    GTEST_SKIP() << "Sanitizer execution is not performance acceptance";
+  }
   const char* enabled = std::getenv("ORPHEUS_RUN_WORST_CASE_BENCHMARK");
   if (enabled == nullptr || std::string_view(enabled) != "1") {
     GTEST_SKIP() << "Opt-in measurement disabled; R-01 is not qualified by this skip";
   }
   constexpr size_t frames = 2048;
-  constexpr size_t warmups = 100;
-  constexpr size_t observations = 10000;
+  // ORP273 F-18: the measurement's shape is environment-overridable so the
+  // registered CTest gate can run a reduced observation count, while the full
+  // 10,000-observation qualification stays available by setting the variables
+  // when invoking the binary directly. The p99 ratio is clamped so that no
+  // configuration can raise the bar above the documented 0.5 ceiling.
+  const auto envUnsigned = [](const char* name, size_t fallback) -> size_t {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+      return fallback;
+    }
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(raw, &end, 10);
+    if (end == raw || parsed == 0ull) {
+      return fallback;
+    }
+    return static_cast<size_t>(parsed);
+  };
+  const auto envRatio = [](const char* name, double fallback, double ceiling) -> double {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+      return fallback;
+    }
+    char* end = nullptr;
+    const double parsed = std::strtod(raw, &end);
+    if (end == raw || !(parsed > 0.0)) {
+      return fallback;
+    }
+    return std::min(parsed, ceiling);
+  };
+  const size_t warmups = envUnsigned("ORPHEUS_DEADLINE_WARMUPS", 100u);
+  const size_t observations = envUnsigned("ORPHEUS_DEADLINE_OBSERVATIONS", 10000u);
+  const double p99_ratio = envRatio("ORPHEUS_DEADLINE_P99_RATIO", 0.5, 0.5);
+
+  std::vector<uint32_t> rates;
+  if (const char* raw = std::getenv("ORPHEUS_DEADLINE_RATES")) {
+    const std::string text(raw);
+    size_t start = 0;
+    while (start <= text.size()) {
+      const size_t comma = text.find(',', start);
+      const std::string token =
+          text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      if (!token.empty()) {
+        char* end = nullptr;
+        const unsigned long long parsed = std::strtoull(token.c_str(), &end, 10);
+        if (end != token.c_str() && parsed > 0ull) {
+          rates.push_back(static_cast<uint32_t>(parsed));
+        }
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      start = comma + 1;
+    }
+  }
+  if (rates.empty()) {
+    rates = {44100u, 48000u, 96000u, 192000u};
+  }
 #if defined(_MSC_VER)
   std::cout << "[WorstCase] compiler=MSVC-" << _MSC_VER;
 #else
   std::cout << "[WorstCase] compiler=" << __VERSION__;
 #endif
   std::cout << " build=Release-unsanitized rates=synthetic-not-negotiated"
-            << " frames=2048 warmup=100 blocks=10000 outliers=retained\n";
+            << " frames=" << frames << " warmup=" << warmups << " blocks=" << observations
+            << " p99_ratio=" << p99_ratio << " outliers=retained\n";
   const auto measure = [&](uint32_t rate, const char* mix, auto&& prepare, auto&& render,
                            auto&& verify) {
     std::vector<double> wall(observations);
@@ -1090,10 +1118,12 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
     EXPECT_EQ(RtGuardState::deallocViolations(), 0u);
     EXPECT_LT(wall[observations * 99 / 100], deadline);
     EXPECT_LT(wall.back(), deadline);
+    EXPECT_LT(wall[observations * 99 / 100], deadline * p99_ratio)
+        << mix << " wall-clock p99 exceeded " << p99_ratio << " of the frame deadline";
     // /proc sampling itself performs reads; exact callback syscall attribution
     // remains a separate Linux trace gate, never a zero-I/O claim from this aggregate.
   };
-  for (uint32_t rate : {44100u, 48000u, 96000u, 192000u}) {
+  for (uint32_t rate : rates) {
     {
       TransportConfig config;
       config.sampleRate = rate;

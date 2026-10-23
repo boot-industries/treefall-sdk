@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
+#include "support/rt_guard.hpp"
+
 #include <orpheus/session_graph.h>
 
 #include <gtest/gtest.h>
 
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace orpheus::core::tests {
 namespace {
@@ -419,5 +423,77 @@ TEST(SessionGraphInvariants, ExtremeTimingRejectionPreservesGraphAndRevision) {
       TimeRange::fromStartLength(TimePoint::fromSamples(std::numeric_limits<int64_t>::max()), 1);
   EXPECT_THROW(session.restore(snapshot), std::invalid_argument);
   EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, BulkClipConstructionIsOneEditAndSortsTheTrack) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  const std::uint64_t revision = session.revision();
+
+  std::vector<SessionGraph::ClipSpec> specs;
+  specs.push_back(SessionGraph::ClipSpec{"Second", 4.0, 2.0, 0u});
+  specs.push_back(SessionGraph::ClipSpec{"First", 0.0, 2.0, 0u});
+  specs.push_back(SessionGraph::ClipSpec{"Third", 8.0, 2.0, 0u});
+
+  const std::vector<Clip*> clips = session.add_clips(*track, specs);
+  ASSERT_EQ(clips.size(), 3u);
+  EXPECT_EQ(session.revision(), revision + 1u) << "a bulk add is one logical edit";
+  ASSERT_EQ(track->clips().size(), 3u);
+  EXPECT_EQ(track->clips()[0]->name(), "First");
+  EXPECT_EQ(track->clips()[1]->name(), "Second");
+  EXPECT_EQ(track->clips()[2]->name(), "Third");
+  for (const Clip* clip : clips) {
+    EXPECT_NE(clip, nullptr);
+  }
+}
+
+TEST(SessionGraphInvariants, BulkClipConstructionRejectsOverlapsWithoutSideEffects) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  ASSERT_NE(session.add_clip(*track, "Existing", 0.0, 2.0), nullptr);
+  const std::uint64_t revision = session.revision();
+  const size_t clip_count = track->clips().size();
+
+  std::vector<SessionGraph::ClipSpec> specs;
+  specs.push_back(SessionGraph::ClipSpec{"Overlap", 1.0, 2.0, 0u});
+  EXPECT_THROW(static_cast<void>(session.add_clips(*track, specs)), std::invalid_argument);
+  EXPECT_EQ(track->clips().size(), clip_count) << "a rejected batch leaves the track unchanged";
+  EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, EmptyBulkClipConstructionIsNotAnEdit) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  const std::uint64_t revision = session.revision();
+  EXPECT_TRUE(session.add_clips(*track, {}).empty());
+  EXPECT_EQ(session.revision(), revision);
+}
+
+TEST(SessionGraphInvariants, TransactionRollbackRestoresTheGraphWithoutAllocating) {
+  SessionGraph session;
+  auto* track = session.add_track("Music");
+  ASSERT_NE(track, nullptr);
+  ASSERT_NE(session.add_clip(*track, "Clip", 0.0, 1.0), nullptr);
+
+  auto transaction = session.begin_transaction();
+  session.set_name("Renamed");
+  ASSERT_NE(session.add_clip(*track, "Added", 4.0, 1.0), nullptr);
+
+  orpheus::tests::support::RtGuardState::reset();
+  {
+    orpheus::tests::support::RtSection section;
+    transaction.rollback();
+  }
+  EXPECT_EQ(orpheus::tests::support::RtGuardState::allocViolations(), 0u)
+      << "the rollback must not allocate";
+  EXPECT_EQ(session.name(), "Session");
+  // The rollback replaces the graph's tracks, so the borrowed track pointer
+  // from before the transaction is stale and the track is re-resolved.
+  ASSERT_EQ(session.tracks().size(), 1u);
+  ASSERT_EQ(session.tracks()[0]->clips().size(), 1u);
+  EXPECT_EQ(session.tracks()[0]->clips()[0]->name(), "Clip");
 }
 } // namespace orpheus::core::tests

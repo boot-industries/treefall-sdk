@@ -7,6 +7,8 @@
 // Access implementation for processAudio
 #include "../../src/core/transport/transport_controller.h"
 
+#include "../support/sanitizer_guard.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -454,20 +456,7 @@ TEST_F(MultiClipStressTest, CPUUsageMeasurement) {
   // inflate render timings unpredictably, so — matching the waveform perf
   // bound — the wall-clock assertion is skipped there; the 16-clips-playing
   // correctness check above still runs.
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-
-  if (!kUnderSanitizer) {
+  if (orpheus::test::timingAssertionsEnabled()) {
     EXPECT_LT(budget_fraction, 0.5)
         << "16-clip render should use <50% of the buffer's real-time budget";
   } else {

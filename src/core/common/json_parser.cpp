@@ -11,7 +11,26 @@
 
 namespace orpheus::json {
 
+namespace {
+
+/// Decrements the parser's nesting depth when the scope exits, including on
+/// an exception thrown out of a nested container.
+struct DepthScope {
+  std::size_t& depth;
+  explicit DepthScope(std::size_t& value) : depth(value) {}
+  ~DepthScope() {
+    --depth;
+  }
+  DepthScope(const DepthScope&) = delete;
+  DepthScope& operator=(const DepthScope&) = delete;
+};
+
+} // namespace
+
 JsonParser::JsonParser(std::string_view input) : data_(input.data()), size_(input.size()) {}
+
+JsonParser::JsonParser(std::string_view input, JsonParseLimits limits)
+    : data_(input.data()), size_(input.size()), limits_(limits) {}
 
 JsonValue JsonParser::Parse() {
   SkipWhitespace();
@@ -48,6 +67,10 @@ void JsonParser::SkipWhitespace() {
 }
 
 JsonValue JsonParser::ParseValue() {
+  if (nodeCount_ >= limits_.max_nodes) {
+    throw std::runtime_error("JSON node budget exceeded");
+  }
+  ++nodeCount_;
   SkipWhitespace();
   const char c = Peek();
   switch (c) {
@@ -84,6 +107,11 @@ JsonValue JsonParser::ParseValue() {
 }
 
 JsonValue JsonParser::ParseObject() {
+  if (depth_ >= limits_.max_depth) {
+    throw std::runtime_error("JSON nesting depth limit exceeded");
+  }
+  ++depth_;
+  const DepthScope depthScope(depth_);
   JsonValue value;
   value.type = JsonValue::Type::kObject;
   Consume(); // '{'
@@ -94,6 +122,9 @@ JsonValue JsonParser::ParseObject() {
   }
   while (true) {
     SkipWhitespace();
+    if (value.object.size() >= limits_.max_object_members) {
+      throw std::runtime_error("JSON object member budget exceeded");
+    }
     if (Peek() != '"') {
       throw std::runtime_error("JSON object keys must be strings");
     }
@@ -101,6 +132,9 @@ JsonValue JsonParser::ParseObject() {
     SkipWhitespace();
     if (Consume() != ':') {
       throw std::runtime_error("Expected ':' after object key");
+    }
+    if (value.object.find(key) != value.object.end()) {
+      throw std::runtime_error("Duplicate JSON object key: " + key);
     }
     JsonValue element = ParseValue();
     if (!value.object.emplace(key, std::move(element)).second) {
@@ -119,6 +153,11 @@ JsonValue JsonParser::ParseObject() {
 }
 
 JsonValue JsonParser::ParseArray() {
+  if (depth_ >= limits_.max_depth) {
+    throw std::runtime_error("JSON nesting depth limit exceeded");
+  }
+  ++depth_;
+  const DepthScope depthScope(depth_);
   JsonValue value;
   value.type = JsonValue::Type::kArray;
   Consume(); // '['
@@ -128,6 +167,9 @@ JsonValue JsonParser::ParseArray() {
     return value;
   }
   while (true) {
+    if (value.array.size() >= limits_.max_array_elements) {
+      throw std::runtime_error("JSON array element budget exceeded");
+    }
     JsonValue element = ParseValue();
     value.array.push_back(std::move(element));
     SkipWhitespace();
@@ -211,6 +253,9 @@ std::string JsonParser::ParseString() {
         throw std::runtime_error("Unsupported escape sequence");
       }
     } else {
+      if (static_cast<unsigned char>(c) < 0x20u) {
+        throw std::runtime_error("Unescaped control character in JSON string");
+      }
       result.push_back(c);
     }
   }
@@ -366,6 +411,12 @@ std::string EscapeString(const std::string& value) {
     case '\\':
       result += "\\\\";
       break;
+    case '\b':
+      result += "\\b";
+      break;
+    case '\f':
+      result += "\\f";
+      break;
     case '\n':
       result += "\\n";
       break;
@@ -375,9 +426,18 @@ std::string EscapeString(const std::string& value) {
     case '\t':
       result += "\\t";
       break;
-    default:
-      result.push_back(c);
+    default: {
+      const auto byte = static_cast<unsigned char>(c);
+      if (byte < 0x20u) {
+        constexpr char kHexDigits[] = "0123456789abcdef";
+        result += "\\u00";
+        result.push_back(kHexDigits[byte >> 4u]);
+        result.push_back(kHexDigits[byte & 0x0fu]);
+      } else {
+        result.push_back(c);
+      }
       break;
+    }
     }
   }
   return result;

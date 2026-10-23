@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Transport and routing disable implicit floating-point contraction, and pinned
+  fade/pan polynomials use separately rounded multiply/add operations instead
+  of potentially software-emulated `fma` calls. The deterministic render
+  fixture's golden is now `0x212b8a01988459a9`; consumers pinning rendered bytes
+  must regenerate their own artifacts after rebuilding. This fixture does not
+  establish cross-platform determinism for every enabled DSP program.
+- The routing soft-clip knee uses a pinned bounded rational approximation
+  instead of host `tanh`. Clipping remains enabled, signed and capped at the
+  same ceiling; the exercised million-point output sweep differs from local
+  libm by at most one float ULP. This deliberately changes rendered bytes.
 - The suite coordination manifest now records the governed state of the
   five-repository Treefall Suite. The `sdk-shmui-juce-package` artifact
   records the imported content hash
@@ -81,6 +91,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bounded session parsing checks collection limits before consuming the next
+  value and caps file reads at 64 MiB. Serialization refuses documents outside
+  loader limits before replacing the saved document. Rollback preserves exact
+  beat values and pending grid refresh; failed bulk construction publishes no
+  clips and consumes no unissued IDs.
+- Block gain smoothing retains targets published while a block adopts an
+  earlier update. Inactive transport routing lanes remain silent even when a
+  host directly changes their routes. True-peak SIMD uses canonical phase
+  accumulation order on x64 and arm64, and worker snapshot scratch is reused.
+- Extreme finite clip gains saturate during pinned exponential conversion
+  before integer narrowing, preserving underflow/overflow behavior without
+  undefined conversion.
+- Performance validation requires an actual passing CTest gate, rejects
+  unmeasurable/skipped gates and accepts `--config` (default `Release`) for
+  multi-configuration generators. Installed-package fixtures use separate
+  runtime directories to avoid concurrent Windows app-local DLL copies.
 - Shared-source streaming Stop/refire overlaps retain independent current and
   look-ahead pages through bounded voice-demand snapshots and page-copy pins.
   Worker refill remains current-first and source-fair; the six steady/four

@@ -5,8 +5,8 @@
 // events from the audio thread to the UI thread.
 
 #include "../../src/core/transport/transport_controller.h"
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
+#include "../support/sanitizer_guard.hpp"
 #include <orpheus/audio_file_writer.h>
 
 #include <array>
@@ -26,16 +26,16 @@ namespace orpheus {
 class TransportControllerTestAccess {
 public:
   static std::shared_ptr<IClipSource> source(TransportController& transport, ClipHandle handle) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    return transport.m_audioFiles.at(handle).source;
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    return transport.m_sourceRegistry.entries().at(handle).source;
   }
 
   // Called before Start captures the registered source into its command context
   // and before either test thread runs. No public source-injection API.
   static void replaceSource(TransportController& transport, ClipHandle handle,
                             std::shared_ptr<IClipSource> source) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    transport.m_audioFiles.at(handle).source = std::move(source);
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    transport.m_sourceRegistry.entries().at(handle).source = std::move(source);
   }
 };
 } // namespace orpheus
@@ -398,20 +398,7 @@ TEST_F(CallbackQueueStressTest, CallbackLatency) {
   // Callbacks should complete within reasonable time (< 10ms). Sanitizer
   // builds (notably TSan, ~19ms observed) inflate the wall clock, so — as with
   // the waveform and multi-clip perf bounds — the assertion is skipped there.
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  constexpr bool kUnderSanitizer = true;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-  constexpr bool kUnderSanitizer = true;
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-#else
-  constexpr bool kUnderSanitizer = false;
-#endif
-
-  if (!kUnderSanitizer) {
+  if (orpheus::test::timingAssertionsEnabled()) {
     EXPECT_LT(avg_lat, 10000.0);
   } else {
     std::cout << "  - Latency bound skipped under sanitizer\n";

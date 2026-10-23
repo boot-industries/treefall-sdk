@@ -9,6 +9,8 @@
 #include <mutex>
 #include <thread>
 
+#include "../support/sanitizer_guard.hpp"
+
 using namespace orpheus;
 
 // Mock session graph for testing
@@ -298,8 +300,14 @@ TEST_F(PerformanceMonitorTest, PerformanceOfGetMetrics) {
 
   double avgNanoseconds = static_cast<double>(duration.count()) / kIterations;
 
-  // Should average less than 1000 nanoseconds (generous target for CI)
-  EXPECT_LT(avgNanoseconds, 1000.0);
+  // Should average less than 1000 nanoseconds (generous target for CI).
+  // Sanitizer builds inflate the wall clock unpredictably, so the ceiling is
+  // only asserted in an unsanitized build.
+  if (orpheus::test::timingAssertionsEnabled()) {
+    EXPECT_LT(avgNanoseconds, 1000.0);
+  } else {
+    std::cout << "  - getMetrics() timing bound skipped under sanitizer" << std::endl;
+  }
 
   // Print for informational purposes
   std::cout << "Average getMetrics() time: " << avgNanoseconds << " ns" << std::endl;

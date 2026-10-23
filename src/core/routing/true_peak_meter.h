@@ -4,7 +4,9 @@
 
 #include <array>
 #include <cmath>
-#if defined(_M_X64) || defined(__SSE2__)
+#if defined(__aarch64__) || defined(__arm64__)
+#include <arm_neon.h>
+#elif defined(_M_X64) || defined(__SSE2__)
 #include <emmintrin.h>
 #endif
 
@@ -21,6 +23,8 @@ namespace orpheus {
 /// - 12-tap polyphase filter per phase (48 total coefficients)
 /// - Zero allocation and bounded work per input sample
 class TruePeakMeter {
+  friend struct TruePeakMeterTestAccess;
+
 public:
   static constexpr int OVERSAMPLE_FACTOR = 4;
   static constexpr int TAPS_PER_PHASE = 12;
@@ -49,39 +53,32 @@ public:
 
     float peak = std::abs(sample); // Include original sample
     const float* history = &m_history[m_history_head];
-#if defined(_M_X64)
-    // Accumulate all four FIR phases in parallel.  Each tap contributes one
-    // broadcast history value multiplied by the four canonical coefficients,
-    // leaving one independent accumulator lane per phase.  Keeping the phase
-    // lanes separate is important: they are candidates for the maximum, not
-    // terms of one horizontal sum.
+#if defined(_M_X64) || defined(__SSE2__)
+    // Accumulate all four FIR phases in parallel. Each lane keeps its
+    // canonical tap order; transposed coefficients make each tap contiguous.
     __m128 phaseSums = _mm_setzero_ps();
     for (size_t tap = 0; tap < static_cast<size_t>(TAPS_PER_PHASE); ++tap) {
-      phaseSums = _mm_add_ps(
-          phaseSums, _mm_mul_ps(_mm_set1_ps(history[tap]),
-                                _mm_setr_ps(s_filterCoeffs[0][tap], s_filterCoeffs[1][tap],
-                                            s_filterCoeffs[2][tap], s_filterCoeffs[3][tap])));
+      const __m128 coefficients = _mm_loadu_ps(s_transposedFilterCoeffs[tap].data());
+      phaseSums = _mm_add_ps(phaseSums, _mm_mul_ps(_mm_set1_ps(history[tap]), coefficients));
     }
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(phaseSums)));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 1))));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 2))));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 3))));
-#elif defined(__SSE2__)
-    const __m128 history0 = _mm_loadu_ps(history);
-    const __m128 history1 = _mm_loadu_ps(history + 4);
-    const __m128 history2 = _mm_loadu_ps(history + 8);
-    for (size_t phase = 0; phase < static_cast<size_t>(OVERSAMPLE_FACTOR); ++phase) {
-      const auto& coefficients = s_filterCoeffs[phase];
-      __m128 sum = _mm_mul_ps(history0, _mm_loadu_ps(coefficients.data()));
-      sum = _mm_add_ps(sum, _mm_mul_ps(history1, _mm_loadu_ps(coefficients.data() + 4)));
-      sum = _mm_add_ps(sum, _mm_mul_ps(history2, _mm_loadu_ps(coefficients.data() + 8)));
-      __m128 high = _mm_movehl_ps(sum, sum);
-      sum = _mm_add_ps(sum, high);
-      high = _mm_shuffle_ps(sum, sum, 1);
-      sum = _mm_add_ss(sum, high);
-      const float interpolated = _mm_cvtss_f32(sum);
-      peak = std::max(peak, std::abs(interpolated));
+    // Keep the current peak as MAXPS's second operand so a NaN phase retains
+    // the earlier peak, matching the sequential std::max updates below.
+    const __m128 phaseAbs = _mm_andnot_ps(_mm_set1_ps(-0.0f), phaseSums);
+    const __m128 withSamplePeak = _mm_max_ps(phaseAbs, _mm_set1_ps(peak));
+    const __m128 pairPeaks =
+        _mm_max_ps(withSamplePeak, _mm_movehl_ps(withSamplePeak, withSamplePeak));
+    peak = _mm_cvtss_f32(_mm_max_ss(pairPeaks, _mm_shuffle_ps(pairPeaks, pairPeaks, 1)));
+#elif defined(__aarch64__) || defined(__arm64__)
+    float32x4_t phaseSums = vdupq_n_f32(0.0f);
+    for (size_t tap = 0; tap < static_cast<size_t>(TAPS_PER_PHASE); ++tap) {
+      const float32x4_t coefficients = vld1q_f32(s_transposedFilterCoeffs[tap].data());
+      const float32x4_t input = vdupq_n_f32(history[tap]);
+      phaseSums = vaddq_f32(phaseSums, vmulq_f32(input, coefficients));
     }
+    peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 0)));
+    peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 1)));
+    peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 2)));
+    peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 3)));
 #else
     for (size_t phase = 0; phase < static_cast<size_t>(OVERSAMPLE_FACTOR); ++phase) {
       const auto& coefficients = s_filterCoeffs[phase];
@@ -148,11 +145,27 @@ private:
            0.0476074218750f, 0.2220458984375f, 0.4438476562500f, 0.2919921875000f, 0.0476074218750f,
            -0.0482177734375f, -0.0133056640625f, 0.0030517578125f},
       }};
+
+  // Generated from the canonical filter table for contiguous four-phase loads.
+  static constexpr std::array<std::array<float, OVERSAMPLE_FACTOR>, TAPS_PER_PHASE>
+      s_transposedFilterCoeffs = [] {
+        std::array<std::array<float, OVERSAMPLE_FACTOR>, TAPS_PER_PHASE> transposed{};
+        for (size_t tap = 0; tap < static_cast<size_t>(TAPS_PER_PHASE); ++tap) {
+          for (size_t phase = 0; phase < static_cast<size_t>(OVERSAMPLE_FACTOR); ++phase) {
+            transposed[tap][phase] = s_filterCoeffs[phase][tap];
+          }
+        }
+        return transposed;
+      }();
 };
 
 // Static member definition
 constexpr std::array<std::array<float, TruePeakMeter::TAPS_PER_PHASE>,
                      TruePeakMeter::OVERSAMPLE_FACTOR>
     TruePeakMeter::s_filterCoeffs;
+
+constexpr std::array<std::array<float, TruePeakMeter::OVERSAMPLE_FACTOR>,
+                     TruePeakMeter::TAPS_PER_PHASE>
+    TruePeakMeter::s_transposedFilterCoeffs;
 
 } // namespace orpheus

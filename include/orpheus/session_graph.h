@@ -84,6 +84,10 @@ private:
   Track(TrackId id, std::string name);
   [[nodiscard]] Clip* add_clip(ClipId id, std::string name, double start_beats, double length_beats,
                                std::uint32_t scene_index);
+  /// Append a clip without sorting or validating the track. The caller owns
+  /// the ordering and the layout check.
+  [[nodiscard]] Clip* append_clip(ClipId id, std::string name, double start_beats,
+                                  double length_beats, std::uint32_t scene_index);
   [[nodiscard]] bool remove_clip(const Clip* clip);
   [[nodiscard]] Clip* find_clip(const Clip* clip);
   void sort_clips();
@@ -254,6 +258,27 @@ struct SessionGraphSnapshot {
 /// boundaries and re-resolve through the current graph's tracks/clips.
 /// Application undo and presentation policy are not owned by this graph.
 class SessionGraph {
+private:
+  /// Prebuilt, fully-owned rollback state. Built while allocation is still
+  /// permitted (begin_transaction); applied by a noexcept move during
+  /// Transaction::rollback(). Holding the objects, not a description of them,
+  /// is what makes the rollback allocation-free.
+  struct RollbackImage {
+    std::vector<std::unique_ptr<Track>> tracks;
+    std::vector<std::uint64_t> clip_assignments;
+    std::string name;
+    double tempo_bpm{120.0};
+    std::uint32_t render_sample_rate_hz{48000u};
+    std::uint16_t render_bit_depth_bits{24u};
+    bool render_dither_enabled{true};
+    double session_start_beats{0.0};
+    bool clip_grid_dirty{false};
+
+    double session_end_beats{0.0};
+    std::uint64_t next_track_id_raw{1u};
+    std::uint64_t next_clip_id_raw{1u};
+  };
+
 public:
   class Transaction {
   public:
@@ -268,12 +293,12 @@ public:
 
   private:
     friend class SessionGraph;
-    Transaction(SessionGraph& graph, SessionGraphSnapshot before);
+    Transaction(SessionGraph& graph, RollbackImage image);
 
     SessionGraph* graph_{nullptr};
-    SessionGraphSnapshot before_{};
     SessionGraphChangeSet before_change_{};
     std::uint64_t base_revision_{0u};
+    RollbackImage rollback_image_{};
   };
 
   ORPHEUS_API SessionGraph();
@@ -348,8 +373,20 @@ public:
     return session_end_beats_;
   }
 
+  /// One clip to create in a bulk construction.
+  struct ClipSpec {
+    std::string name;
+    double start_beats{0.0};
+    double length_beats{0.0};
+    std::uint32_t scene_index{0u};
+  };
+
   [[nodiscard]] ORPHEUS_API Clip* add_clip(Track& track, std::string name, double start_beats,
                                            double length_beats, std::uint32_t scene_index = 0u);
+  /// Bulk construction: append every clip, then sort and validate the track
+  /// once. Returns the created clips in track order.
+  [[nodiscard]] ORPHEUS_API std::vector<Clip*> add_clips(Track& track,
+                                                         const std::vector<ClipSpec>& specs);
   [[nodiscard]] ORPHEUS_API bool remove_clip(const Clip* clip);
   ORPHEUS_API void set_clip_start(Clip& clip, double start_beats);
   ORPHEUS_API void set_clip_length(Clip& clip, double length_beats);
@@ -420,6 +457,13 @@ private:
   Clip* find_clip(ClipId clip_id);
   void record_change(SessionChangeFlags changes);
   void restore_unchecked(const SessionGraphSnapshot& snapshot);
+  /// Clones the current edit state for transaction rollback. Allocates; may throw std::bad_alloc.
+  [[nodiscard]] RollbackImage build_rollback_image() const;
+  /// Builds a validated rollback image from a public snapshot. Allocates; may throw
+  /// std::invalid_argument for an invalid snapshot and std::bad_alloc.
+  [[nodiscard]] RollbackImage build_rollback_image(const SessionGraphSnapshot& state) const;
+  /// Applies a prebuilt image. Moves only: no allocation, no throw.
+  void apply_rollback_image_noexcept(RollbackImage&& image) noexcept;
   void mark_clip_grid_dirty() {
     clip_grid_dirty_ = true;
   }

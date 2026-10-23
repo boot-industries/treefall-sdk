@@ -200,8 +200,12 @@ TEST_F(TransportIntegrationTest, TransportPositionAdvances) {
   // Get initial position
   auto pos1 = m_transport->getCurrentPosition();
 
-  // Wait for audio processing
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // Wait for audio processing. The dummy driver fires processAudio from a
+  // background thread on a timer, so a fixed sleep can miss the first tick on
+  // a loaded runner; wait up to a generous deadline instead, the same way the
+  // callback waits above do.
+  ASSERT_TRUE(
+      waitForCallback([&] { return m_transport->getCurrentPosition().samples > pos1.samples; }));
 
   // Get new position
   auto pos2 = m_transport->getCurrentPosition();

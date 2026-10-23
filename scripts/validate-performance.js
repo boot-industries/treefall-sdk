@@ -3,19 +3,37 @@
 /**
  * Performance Budget Validation Script
  *
- * Validates bundle sizes, command latencies, and event frequencies against
- * budgets defined in budgets.json.
+ * Every budget declared in budgets.json names the CTest gate that enforces it
+ * through its `enforcedBy` field. This script proves three things for each
+ * declared budget:
+ *
+ *   1. the gate is registered in the repository's CTest inventory,
+ *   2. the gate is measurable in the requested build tree, and
+ *   3. the gate passes.
+ *
+ * A budget that cannot be measured is a failure, never a pass. Budgets that
+ * nothing enforces are not declared, because an unenforced budget is a claim
+ * without a mechanism.
  *
  * Usage: node scripts/validate-performance.js [--budgets=path/to/budgets.json]
+ *                                              [--build-dir=build] [--config=Release]
  */
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
-// Parse command line arguments
-const args = process.argv.slice(2);
-const budgetsPath =
-  args.find((arg) => arg.startsWith('--budgets='))?.split('=')[1] || 'budgets.json';
+const repoRoot = path.resolve(__dirname, '..');
+
+function optionValue(flag) {
+  const prefix = `${flag}=`;
+  const match = process.argv.slice(2).find((arg) => arg.startsWith(prefix));
+  return match === undefined ? undefined : match.slice(prefix.length);
+}
+
+const budgetsPath = optionValue('--budgets') ?? path.resolve(repoRoot, 'budgets.json');
+const buildDir = optionValue('--build-dir') ?? 'build';
+const buildConfig = optionValue('--config') ?? 'Release';
 
 // Load budgets
 let budgets;
@@ -28,156 +46,130 @@ try {
   process.exit(1);
 }
 
-const violations = [];
-const warnings = [];
-
-// ============================================================================
-// Bundle Size Validation
-// ============================================================================
-console.log('\n📦 Validating Bundle Sizes...\n');
-
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+const declared = budgets.budgets ?? {};
+const budgetNames = Object.keys(declared);
+if (budgetNames.length === 0) {
+  console.error('❌ budgets.json declares no budgets.');
+  process.exit(1);
 }
 
-function validateBundleSize(packageName, config) {
-  const packagePath = path.join('packages', packageName.split('/')[1]);
-  const distPath = path.join(packagePath, 'dist');
-
-  if (!fs.existsSync(distPath)) {
-    console.log(`  ⚠️  ${packageName}: dist/ not found (skipping)`);
-    return;
+/**
+ * Collect the CTest test names registered by the repository's test tree.
+ * Both the single-line `add_test(NAME foo ...)` form and the multi-line
+ * `add_test(\n  NAME foo\n  ...)` form are recognised.
+ */
+function collectRegisteredTests() {
+  const testsRoot = path.join(repoRoot, 'tests');
+  const cmakeFiles = [];
+  const rootManifest = path.join(testsRoot, 'CMakeLists.txt');
+  if (fs.existsSync(rootManifest)) {
+    cmakeFiles.push(rootManifest);
   }
-
-  // Calculate total bundle size
-  let totalSize = 0;
-  function calculateDirSize(dirPath) {
-    const files = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const file of files) {
-      const fullPath = path.join(dirPath, file.name);
-      if (file.isDirectory()) {
-        calculateDirSize(fullPath);
-      } else {
-        const stats = fs.statSync(fullPath);
-        totalSize += stats.size;
-      }
+  for (const entry of fs.readdirSync(testsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const candidate = path.join(testsRoot, entry.name, 'CMakeLists.txt');
+    if (fs.existsSync(candidate)) {
+      cmakeFiles.push(candidate);
     }
   }
-  calculateDirSize(distPath);
 
-  const { max, warn, description } = config;
-  const degradationTolerance = parseFloat(budgets.budgets.degradationTolerance?.size || '0%') / 100;
-  const maxWithTolerance = Math.floor(max * (1 + degradationTolerance));
-
-  console.log(`  ${packageName}:`);
-  console.log(`    Actual: ${formatBytes(totalSize)}`);
-  console.log(
-    `    Budget: ${formatBytes(max)} (with ${degradationTolerance * 100}% tolerance: ${formatBytes(maxWithTolerance)})`,
-  );
-
-  if (totalSize > maxWithTolerance) {
-    const overage = totalSize - maxWithTolerance;
-    violations.push({
-      type: 'Bundle Size',
-      package: packageName,
-      actual: formatBytes(totalSize),
-      budget: formatBytes(maxWithTolerance),
-      overage: formatBytes(overage),
-      description,
-    });
-    console.log(`    ❌ VIOLATION: Exceeds budget by ${formatBytes(overage)}`);
-  } else if (totalSize > warn) {
-    warnings.push({
-      type: 'Bundle Size',
-      package: packageName,
-      actual: formatBytes(totalSize),
-      warn: formatBytes(warn),
-      description,
-    });
-    console.log(`    ⚠️  WARNING: Exceeds warning threshold`);
-  } else {
-    console.log(`    ✓ Within budget`);
+  const registered = new Set();
+  const pattern = /add_test\s*\(\s*NAME\s+([A-Za-z0-9_.-]+)/g;
+  for (const file of cmakeFiles) {
+    const text = fs.readFileSync(file, 'utf8');
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      registered.add(match[1]);
+    }
   }
+  return registered;
 }
 
-if (budgets.budgets.bundleSize) {
-  for (const [packageName, config] of Object.entries(budgets.budgets.bundleSize)) {
-    validateBundleSize(packageName, config);
-  }
-} else {
-  console.log('  No bundle size budgets defined');
-}
+const registeredTests = collectRegisteredTests();
 
-// ============================================================================
-// Command Latency Validation
-// ============================================================================
-console.log('\n⏱️  Command Latency Budgets:\n');
-
-if (budgets.budgets.commandLatency) {
-  for (const [command, config] of Object.entries(budgets.budgets.commandLatency)) {
-    console.log(`  ${command}:`);
-    console.log(`    P95 budget: ${config.p95} ${config.unit}`);
-    console.log(`    P99 budget: ${config.p99} ${config.unit}`);
-    console.log(`    ℹ️  Actual latency measurement requires runtime profiling`);
-  }
-} else {
-  console.log('  No command latency budgets defined');
-}
-
-// ============================================================================
-// Event Frequency Validation
-// ============================================================================
-console.log('\n📡 Event Frequency Budgets:\n');
-
-if (budgets.budgets.eventFrequency) {
-  for (const [event, config] of Object.entries(budgets.budgets.eventFrequency)) {
-    console.log(`  ${event}:`);
-    console.log(`    Max frequency: ${config.max} ${config.unit}`);
-    console.log(`    ✓ Validated by frequency-validator.test.ts`);
-  }
-} else {
-  console.log('  No event frequency budgets defined');
-}
-
-// ============================================================================
-// Summary
-// ============================================================================
 console.log('\n' + '='.repeat(80));
-console.log('PERFORMANCE BUDGET VALIDATION SUMMARY');
+console.log('PERFORMANCE BUDGET VALIDATION');
 console.log('='.repeat(80) + '\n');
 
-if (violations.length > 0) {
-  console.log('❌ VIOLATIONS FOUND:\n');
-  violations.forEach((v, i) => {
-    console.log(`${i + 1}. ${v.type}: ${v.package}`);
-    console.log(`   Actual: ${v.actual}`);
-    console.log(`   Budget: ${v.budget}`);
-    console.log(`   Overage: ${v.overage}`);
-    console.log(`   ${v.description}\n`);
-  });
+const failures = [];
+
+for (const name of budgetNames) {
+  const config = declared[name] ?? {};
+  const gate = config.enforcedBy;
+
+  if (typeof gate !== 'string' || gate.length === 0) {
+    console.log(`❌ ${name}: no enforcing gate declared (missing "enforcedBy")`);
+    failures.push(name);
+    continue;
+  }
+
+  if (!registeredTests.has(gate)) {
+    console.log(`❌ ${name}: ${gate} is not registered`);
+    failures.push(name);
+    continue;
+  }
+
+  if (!fs.existsSync(buildDir)) {
+    console.log(
+      `❌ ${name}: ${gate} is not measurable in this configuration (build tree "${buildDir}" does not exist)`,
+    );
+    failures.push(name);
+    continue;
+  }
+
+  const escapedGate = gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ctest = spawnSync(
+    'ctest',
+    [
+      '--test-dir',
+      buildDir,
+      '--build-config',
+      buildConfig,
+      '-R',
+      `^${escapedGate}$`,
+      '--output-on-failure',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  const output = `${ctest.stdout ?? ''}\n${ctest.stderr ?? ''}`;
+  if (ctest.stdout) {
+    process.stdout.write(ctest.stdout);
+  }
+  if (ctest.stderr) {
+    process.stderr.write(ctest.stderr);
+  }
+
+  if (ctest.error) {
+    console.log(`❌ ${name}: ${gate} is not measurable in this configuration (${ctest.error.message})`);
+    failures.push(name);
+    continue;
+  }
+
+  const resultPattern = new RegExp(
+    `^\\s*\\d+\\/\\d+\\s+Test\\s+#\\d+:\\s+${escapedGate}\\s+.*?\\b(Passed|Failed|Skipped|Not Run)\\b`,
+    'm',
+  );
+  const result = resultPattern.exec(output);
+  if (!result || result[1] === 'Skipped' || result[1] === 'Not Run') {
+    console.log(`❌ ${name}: ${gate} is not measurable in this configuration`);
+    failures.push(name);
+  } else if (ctest.status === 0 && result[1] === 'Passed') {
+    console.log(`✅ ${name}: ${gate} passed`);
+  } else {
+    console.log(`❌ ${name}: ${gate} failed`);
+    failures.push(name);
+  }
 }
 
-if (warnings.length > 0) {
-  console.log('⚠️  WARNINGS:\n');
-  warnings.forEach((w, i) => {
-    console.log(`${i + 1}. ${w.type}: ${w.package}`);
-    console.log(`   Actual: ${w.actual}`);
-    console.log(`   Warning threshold: ${w.warn}`);
-    console.log(`   ${w.description}\n`);
-  });
-}
+console.log('\n' + '='.repeat(80));
 
-if (violations.length === 0 && warnings.length === 0) {
+if (failures.length === 0) {
   console.log('✅ All performance budgets met!\n');
   process.exit(0);
-} else if (violations.length > 0) {
-  console.log(`❌ ${violations.length} violation(s) found. CI should fail.\n`);
-  process.exit(1);
-} else {
-  console.log(`⚠️  ${warnings.length} warning(s) found. Consider optimizing.\n`);
-  process.exit(0);
 }
+
+console.log(`❌ ${failures.length} budget(s) not met.\n`);
+process.exit(1);

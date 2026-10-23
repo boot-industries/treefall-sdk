@@ -14,6 +14,13 @@
 namespace orpheus {
 namespace {
 
+/// The SDK's supported maximum callback-frame count, identical for every
+/// CoreAudio route (converting and non-converting). A device whose advertised
+/// buffer-frame capacity exceeds this is refused during initialisation with
+/// SessionGraphError::NotSupported, before buffers are allocated and before
+/// the AudioUnit is started.
+constexpr uint32_t kMaxSupportedCallbackFrames = 4096u;
+
 bool checkedAddFrames(uint32_t lhs, uint32_t rhs, uint32_t& result) {
   if (rhs > std::numeric_limits<uint32_t>::max() - lhs) {
     return false;
@@ -356,7 +363,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
     cleanupAudioUnit();
     return SessionGraphError::InternalError;
   }
-  if ((input_conversion_active_ || output_conversion_active_) && maximum_frames > 4096u) {
+  if (maximum_frames > kMaxSupportedCallbackFrames) {
     route_outcome_.store(AudioRouteRuntimeOutcome::BackendFailure, std::memory_order_release);
     restoreAutomaticHogModeLocked();
     cleanupAudioUnit();
@@ -397,7 +404,7 @@ SessionGraphError CoreAudioDriver::initialize(const AudioDriverConfig& config) {
   render_sample_rate_.store(config_.sample_rate, std::memory_order_release);
   render_max_callback_frames_.store(maximum_frames, std::memory_order_release);
   input_render_max_callback_frames_.store(input_maximum_frames, std::memory_order_release);
-  render_chunk_frames_.store(std::min<uint32_t>(config_.buffer_size, 4096u),
+  render_chunk_frames_.store(std::min<uint32_t>(config_.buffer_size, kMaxSupportedCallbackFrames),
                              std::memory_order_release);
   render_input_channels_.store(input_client_channels_, std::memory_order_release);
   render_output_channels_.store(output_client_channels_, std::memory_order_release);
@@ -482,7 +489,7 @@ SessionGraphError CoreAudioDriver::start(IAudioCallback* callback) {
   render_sample_rate_.store(config_.sample_rate, std::memory_order_release);
   render_max_callback_frames_.store(render_capacity_frames_, std::memory_order_release);
   input_render_max_callback_frames_.store(input_render_capacity_frames_, std::memory_order_release);
-  render_chunk_frames_.store(std::min<uint32_t>(config_.buffer_size, 4096u),
+  render_chunk_frames_.store(std::min<uint32_t>(config_.buffer_size, kMaxSupportedCallbackFrames),
                              std::memory_order_release);
   render_input_channels_.store(input_client_channels_, std::memory_order_release);
   render_output_channels_.store(output_client_channels_, std::memory_order_release);
@@ -698,7 +705,7 @@ void CoreAudioDriver::failRealtimeConversion(AudioRouteRuntimeOutcome outcome) n
     recordOutputConversionFailure();
   }
   if (route_monitor_) {
-    route_monitor_->closeAdmission();
+    route_monitor_->closeAdmissionFromCallback();
   }
   publishTerminalRouteOutcome(outcome);
 }
@@ -785,7 +792,7 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   }
   if (malformed_output) {
     if (driver->route_monitor_) {
-      driver->route_monitor_->closeAdmission();
+      driver->route_monitor_->closeAdmissionFromCallback();
     }
     driver->publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BufferSizeChanged);
     return noErr;
@@ -794,13 +801,6 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
   // Clear exactly the frames this callback owns, not the advertised capacity.
   for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
     std::memset(ioData->mBuffers[channel].mData, 0, static_cast<size_t>(native_frame_bytes));
-  }
-  if (malformed_output) {
-    if (driver->route_monitor_) {
-      driver->route_monitor_->closeAdmission();
-    }
-    driver->publishTerminalRouteOutcome(AudioRouteRuntimeOutcome::BufferSizeChanged);
-    return noErr;
   }
 
   auto output_state_lease = driver->output_callback_target_.tryAcquire();
@@ -1817,11 +1817,12 @@ std::optional<std::string> CoreAudioDriver::getDeviceUID(AudioDeviceID device_id
 
 bool CoreAudioDriver::prepareConverters() {
   input_prime_frames_ = 0;
-  const uint32_t chunk_frames = std::min<uint32_t>(config_.buffer_size, 4096u);
+  const uint32_t chunk_frames =
+      std::min<uint32_t>(config_.buffer_size, kMaxSupportedCallbackFrames);
   if (input_conversion_active_) {
     if (config_.num_inputs == 0 || input_physical_rate_ == 0 ||
         input_physical_rate_ == config_.sample_rate || input_render_capacity_frames_ == 0 ||
-        input_render_capacity_frames_ > 4096u || chunk_frames == 0) {
+        input_render_capacity_frames_ > kMaxSupportedCallbackFrames || chunk_frames == 0) {
       return false;
     }
     audio_utils::DirectionalSrcConfig input_config;
@@ -1844,7 +1845,7 @@ bool CoreAudioDriver::prepareConverters() {
 
   if (output_conversion_active_) {
     if (output_physical_rate_ == 0 || output_physical_rate_ == config_.sample_rate ||
-        render_capacity_frames_ > 4096u) {
+        render_capacity_frames_ > kMaxSupportedCallbackFrames) {
       return false;
     }
     audio_utils::DirectionalSrcConfig output_config;

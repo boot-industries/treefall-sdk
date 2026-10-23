@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "transport_controller.h"
+#include "../common/pinned_math.h"
 #include "../common/realtime_counter.h"
-#include "audio_io/resampling_audio_file_reader.h" // ORP127 G6: SRC decorator
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -20,79 +20,6 @@ namespace orpheus {
 
 namespace {
 
-std::optional<ChannelFormat> standardChannelFormat(ChannelLayout layout) {
-  switch (layout) {
-  case ChannelLayout::Mono:
-    return ChannelFormat::Mono();
-  case ChannelLayout::Stereo:
-    return ChannelFormat::Stereo();
-  case ChannelLayout::LCR:
-    return ChannelFormat::LCR();
-  case ChannelLayout::Quad:
-    return ChannelFormat::Quad();
-  case ChannelLayout::Surround_5_0:
-    return ChannelFormat::Surround50();
-  case ChannelLayout::Surround_5_1:
-    return ChannelFormat::Surround51();
-  case ChannelLayout::Surround_7_1:
-    return ChannelFormat::Surround71();
-  case ChannelLayout::SMPTE_51_ST:
-    return ChannelFormat::SMPTE51Stereo();
-  case ChannelLayout::SMPTE_51_LTRT:
-    return ChannelFormat::SMPTE51MatrixStereo();
-  default:
-    return std::nullopt;
-  }
-}
-
-std::optional<ChannelFormat> inferUnambiguousChannelFormat(uint16_t channels) {
-  switch (channels) {
-  case 1:
-    return ChannelFormat::Mono();
-  case 2:
-    return ChannelFormat::Stereo();
-  case 3:
-    return ChannelFormat::LCR();
-  case 4:
-    return ChannelFormat::Quad();
-  case 5:
-    return ChannelFormat::Surround50();
-  case 6:
-    return ChannelFormat::Surround51();
-  default:
-    return std::nullopt;
-  }
-}
-
-bool isValidSpeakerPatch(ChannelLayout layout, uint8_t patchSize,
-                         const std::array<Speaker, 8>& patch, uint16_t fileChannels) {
-  if (layout == ChannelLayout::Unspecified) {
-    return patchSize == 0;
-  }
-  if (fileChannels == 0 || fileChannels > patch.size() || patchSize != fileChannels) {
-    return false;
-  }
-  for (size_t channel = 0; channel < patchSize; ++channel) {
-    if (patch[channel] == Speaker::None) {
-      return false;
-    }
-    for (size_t earlier = 0; earlier < channel; ++earlier) {
-      if (patch[channel] == patch[earlier]) {
-        return false;
-      }
-    }
-  }
-
-  if (layout == ChannelLayout::Custom) {
-    return true;
-  }
-  const auto standard = standardChannelFormat(layout);
-  if (!standard.has_value() || standard->num_channels != fileChannels) {
-    return false;
-  }
-  return std::equal(patch.begin(), patch.begin() + patchSize, standard->channel_map.begin());
-}
-
 uint64_t incrementSaturated(uint64_t value) noexcept {
   return value == std::numeric_limits<uint64_t>::max() ? value : value + 1;
 }
@@ -106,14 +33,16 @@ std::pair<float, float> panGains(float pan, uint16_t numChannels) noexcept {
   if (numChannels == 1) {
     const double angle =
         (static_cast<double>(normalized) + 1.0) * (static_cast<double>(M_PI_2) * 0.5);
-    return {static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))};
+    return {static_cast<float>(orpheus::pinned::cos(angle)),
+            static_cast<float>(orpheus::pinned::sin(angle))};
   }
 
   const double leftAngle =
       static_cast<double>(std::max(normalized, 0.0f)) * static_cast<double>(M_PI_2);
   const double rightAngle =
       static_cast<double>(std::max(-normalized, 0.0f)) * static_cast<double>(M_PI_2);
-  return {static_cast<float>(std::cos(leftAngle)), static_cast<float>(std::cos(rightAngle))};
+  return {static_cast<float>(orpheus::pinned::cos(leftAngle)),
+          static_cast<float>(orpheus::pinned::cos(rightAngle))};
 }
 void beginOperatorStop(ActiveClip& clip) noexcept {
   const bool wasWaitingForDelay = clip.playDelayFramesRemaining > 0;
@@ -169,7 +98,7 @@ PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled)
 TransportController::TransportController(core::SessionGraph* sessionGraph,
                                          const TransportConfig& config)
     : m_sessionGraph(sessionGraph), m_config(config), m_sampleRate(config.sampleRate),
-      m_callback(nullptr) {
+      m_callback(nullptr), m_sourceRegistry(config.sampleRate, config, m_groupOutputWidths.data()) {
   m_fadeOutSamples =
       static_cast<size_t>((FADE_OUT_DURATION_MS / 1000.0f) * static_cast<float>(m_sampleRate));
   m_restartCrossfadeSamples = static_cast<size_t>((RESTART_CROSSFADE_DURATION_MS / 1000.0f) *
@@ -237,10 +166,7 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     buffer.resize(m_config.maxBlockFrames, 0.0f);
   }
 
-  m_clipChannelPointers.resize(routingLaneCount);
-  for (size_t lane = 0; lane < routingLaneCount; ++lane) {
-    m_clipChannelPointers[lane] = m_clipChannelBuffers[lane].data();
-  }
+  m_clipChannelPointers.resize(routingLaneCount, nullptr);
 
   if (m_sessionGraph) {
     m_tempoBpm.store(m_sessionGraph->tempo(), std::memory_order_relaxed);
@@ -250,9 +176,9 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
 TransportController::~TransportController() {
   // Destruction is externally serialized against processAudio(). Stop and join
   // the worker before releasing any source held only by unread raw commands.
-  m_streamWorker.reset();
+  m_sourceRegistry.shutdown();
   for (size_t index = 0; index < m_activeClipCount; ++index) {
-    releaseActiveSource(m_activeClips[index].sourceLifetime);
+    m_sourceRegistry.releaseActiveSource(m_activeClips[index].sourceLifetime);
     m_activeClips[index].sourceLifetime = nullptr;
     m_activeClips[index].source.reset();
   }
@@ -282,7 +208,7 @@ TransportController::~TransportController() {
         command.startSource && command.startPrime.pageMask != 0)
       command.startSource->releaseCommandPrime(command.startPrime);
     if (command.sourceLifetime) {
-      releaseSourceCommand(command.sourceLifetime);
+      m_sourceRegistry.releaseSourceCommand(command.sourceLifetime);
       command.sourceLifetime = nullptr;
     }
     releaseCommandNode(nodeIndex);
@@ -313,8 +239,8 @@ SessionGraphError TransportController::makeStartContextLocked(
   try {
     context = std::make_shared<ClipPlaybackContext>();
     context->handle = handle;
-    auto it = m_audioFiles.find(handle);
-    if (it != m_audioFiles.end()) {
+    auto it = m_sourceRegistry.entries().find(handle);
+    if (it != m_sourceRegistry.entries().end()) {
       auto& entry = it->second;
       stopOthersOnPlay = entry.stopOthersOnPlay;
       if (entry.sourceLayout == ChannelLayout::Unspecified ||
@@ -327,7 +253,8 @@ SessionGraphError TransportController::makeStartContextLocked(
       // Registered sources never fall back to the historical source-less test
       // default. Decode/cache preparation must succeed before this Start's
       // already-reserved command can be published.
-      const SessionGraphError prepareResult = ensurePreparedSourceLocked(entry, &startPrime);
+      const SessionGraphError prepareResult =
+          m_sourceRegistry.ensurePreparedSourceLocked(entry, &startPrime);
       if (prepareResult != SessionGraphError::OK) {
         releaseStartPrime();
         context.reset();
@@ -358,7 +285,7 @@ SessionGraphError TransportController::makeStartContextLocked(
       context->fadeInCurve = entry.fadeInCurve;
       context->fadeOutCurve = entry.fadeOutCurve;
       context->gainDb = entry.gainDb;
-      context->gainLinear = std::pow(10.0f, entry.gainDb / 20.0f);
+      context->gainLinear = orpheus::pinned::pow10(entry.gainDb / 20.0f);
       context->loopEnabled = entry.loopEnabled;
       context->segmentCount = entry.segmentCount;
       context->segments = entry.segments;
@@ -376,7 +303,7 @@ SessionGraphError TransportController::makeStartContextLocked(
         return SessionGraphError::InternalError;
       }
       context->sourceLifetime = entry.commandLifetime.get();
-      retainSourceCommand(entry.commandLifetime.get());
+      m_sourceRegistry.retainSourceCommand(entry.commandLifetime.get());
       sourceLifetime = entry.commandLifetime.get();
       return SessionGraphError::OK;
     }
@@ -423,9 +350,9 @@ SessionGraphError TransportController::makeStartContextLocked(
 SessionGraphError TransportController::startClip(ClipHandle handle, StartRequestTag requestTag) {
   if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  const auto entry = m_audioFiles.find(handle);
-  if (entry != m_audioFiles.end() &&
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  const auto entry = m_sourceRegistry.entries().find(handle);
+  if (entry != m_sourceRegistry.entries().end() &&
       (entry->second.sourceLayout == ChannelLayout::Unspecified ||
        !isValidSpeakerPatch(entry->second.sourceLayout, entry->second.speakerPatchSize,
                             entry->second.speakerPatch, entry->second.metadata.num_channels)))
@@ -451,7 +378,7 @@ SessionGraphError TransportController::startClip(ClipHandle handle, StartRequest
     if (source != nullptr && prime.pageMask != 0)
       source->releaseCommandPrime(prime);
     if (lifetime != nullptr)
-      releaseSourceCommand(lifetime);
+      m_sourceRegistry.releaseSourceCommand(lifetime);
     return result;
   }
   cmd.type = stopOthers ? TransportCommand::Type::StartWithStopOthers : cmd.type;
@@ -469,9 +396,9 @@ SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle
                                                                StartRequestTag requestTag) {
   if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  const auto entry = m_audioFiles.find(handle);
-  if (entry == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  const auto entry = m_sourceRegistry.entries().find(handle);
+  if (entry == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   if (entry->second.sourceLayout == ChannelLayout::Unspecified ||
       !isValidSpeakerPatch(entry->second.sourceLayout, entry->second.speakerPatchSize,
@@ -498,7 +425,7 @@ SessionGraphError TransportController::startClipWithGroupChoke(ClipHandle handle
     if (source != nullptr && prime.pageMask != 0)
       source->releaseCommandPrime(prime);
     if (lifetime != nullptr)
-      releaseSourceCommand(lifetime);
+      m_sourceRegistry.releaseSourceCommand(lifetime);
     return result;
   }
   cmd.startContext = std::move(context);
@@ -650,8 +577,14 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
 
-  for (auto& lane : m_clipChannelBuffers) {
-    std::memset(lane.data(), 0, numFrames * sizeof(float));
+  // Only active lanes expose sample storage to routing. Clearing them here
+  // keeps reused slots clean; inactive pointers stay null even if a host edits
+  // their routes directly through the exposed routing matrix.
+  for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
+    const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+      std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
+    }
   }
 
   // Render each active voice into its preallocated routing lanes. Playback
@@ -1123,27 +1056,39 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
     return;
   }
 
-  RoutingMeterTelemetry current{};
-  current.schema_version = kRoutingMeterTelemetrySchemaVersion;
-  current.availability = MeterAvailability::Measured;
-  current.group_aggregate_availability.fill(MeterAvailability::Unconfigured);
-  current.post_master_output_availability.fill(MeterAvailability::Unconfigured);
-  current.aggregate_peak_definition = routingConfig.metering_mode == MeteringMode::TruePeak
-                                          ? MeterPeakDefinition::TruePeak4x
-                                          : (routingConfig.metering_mode == MeteringMode::LUFS
-                                                 ? MeterPeakDefinition::LegacyLufsProxy
-                                                 : MeterPeakDefinition::SamplePeak);
-  current.post_master_output_peak_definition = MeterPeakDefinition::TruePeak4x;
-  current.post_master_output_count = routingConfig.num_outputs;
+  // ORP273 F-05: the block's readings are collected into a small local that
+  // carries only what the block measures. The published payload lives in
+  // m_routingMeterAccumulator and is written field by field, so no
+  // 17,936-byte value is constructed and copied on the audio thread.
+  struct BlockReadings {
+    std::array<AudioMeter, kRoutingControlMaxGroups> group_meters{};
+    std::array<MeterAvailability, kRoutingControlMaxGroups> group_availability{};
+    std::array<AudioMeter, kRoutingMaxOutputs> output_meters{};
+    std::array<MeterAvailability, kRoutingMaxOutputs> output_availability{};
+    AudioMeter master_meter{};
+    MeterAvailability master_availability{MeterAvailability::Unmeasured};
+    MeterPeakDefinition aggregate_peak_definition{MeterPeakDefinition::SamplePeak};
+    uint16_t output_count{0};
+  };
+  BlockReadings readings;
+
+  readings.group_availability.fill(MeterAvailability::Unconfigured);
+  readings.output_availability.fill(MeterAvailability::Unconfigured);
+  readings.aggregate_peak_definition = routingConfig.metering_mode == MeteringMode::TruePeak
+                                           ? MeterPeakDefinition::TruePeak4x
+                                           : (routingConfig.metering_mode == MeteringMode::LUFS
+                                                  ? MeterPeakDefinition::LegacyLufsProxy
+                                                  : MeterPeakDefinition::SamplePeak);
+  readings.output_count = routingConfig.num_outputs;
   for (RoutingGroupIndex group = 0; group < routingConfig.num_groups; ++group) {
-    current.group_aggregate_availability[group] = MeterAvailability::Measured;
-    current.group_aggregate_meters[group] = m_routingMatrix->getGroupMeter(group);
+    readings.group_availability[group] = MeterAvailability::Measured;
+    readings.group_meters[group] = m_routingMatrix->getGroupMeter(group);
   }
-  current.master_aggregate_availability = MeterAvailability::Measured;
-  current.master_aggregate_meter = m_routingMatrix->getMasterMeter();
+  readings.master_availability = MeterAvailability::Measured;
+  readings.master_meter = m_routingMatrix->getMasterMeter();
   for (RoutingOutputIndex output = 0; output < routingConfig.num_outputs; ++output) {
-    current.post_master_output_availability[output] = MeterAvailability::Measured;
-    current.post_master_output_lane_meters[output] = m_routingMatrix->getOutputMeter(output);
+    readings.output_availability[output] = MeterAvailability::Measured;
+    readings.output_meters[output] = m_routingMatrix->getOutputMeter(output);
   }
   bool logicalExtensionImplemented = false;
   for (uint32_t attempt = 0; attempt < 3; ++attempt) {
@@ -1155,86 +1100,90 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
     }
   }
 
-  current.group_output_meters = m_groupOutputMeterScratch;
-  current.group_output_meters.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
+  // The group-output payload has a single holder: the scratch buffer.
+  m_groupOutputMeterScratch.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
   const bool logicalMeasured =
-      logicalExtensionImplemented && current.group_output_meters.coherent != 0 &&
-      current.group_output_meters.availability == MeterAvailability::Measured;
+      logicalExtensionImplemented && m_groupOutputMeterScratch.coherent != 0 &&
+      m_groupOutputMeterScratch.availability == MeterAvailability::Measured;
   const bool logicalRetryFailed = logicalExtensionImplemented && !logicalMeasured;
   if (logicalRetryFailed) {
-    current.group_output_meters.availability = MeterAvailability::Unmeasured;
-    current.group_output_meters.coherent = 0;
+    m_groupOutputMeterScratch.availability = MeterAvailability::Unmeasured;
+    m_groupOutputMeterScratch.coherent = 0;
     const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-        current.group_output_meters.group_count, kRoutingControlMaxGroups);
+        m_groupOutputMeterScratch.group_count, kRoutingControlMaxGroups);
     for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
-      current.group_output_meters.groups[group].availability = MeterAvailability::Unmeasured;
+      m_groupOutputMeterScratch.groups[group].availability = MeterAvailability::Unmeasured;
     }
   }
 
   const bool topologyChanged =
       m_routingMeterAccumulatorValid && logicalExtensionImplemented &&
       m_routingMeterAccumulator.group_output_meters.routing_topology_revision !=
-          current.group_output_meters.routing_topology_revision;
+          m_groupOutputMeterScratch.routing_topology_revision;
   if (!m_routingMeterAccumulatorValid || topologyChanged) {
-    m_routingMeterAccumulator = current;
+    m_routingMeterAccumulator.group_aggregate_availability = readings.group_availability;
+    m_routingMeterAccumulator.group_aggregate_meters = readings.group_meters;
+    m_routingMeterAccumulator.master_aggregate_availability = readings.master_availability;
+    m_routingMeterAccumulator.master_aggregate_meter = readings.master_meter;
+    m_routingMeterAccumulator.post_master_output_availability = readings.output_availability;
+    m_routingMeterAccumulator.post_master_output_lane_meters = readings.output_meters;
+    m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
     m_routingMeterAccumulatorValid = true;
     m_routingMeterAccumulator.peak_window_frames = 0;
     m_routingMeterAccumulator.rms_window_frames = 0;
   } else {
     for (RoutingGroupIndex group = 0; group < kRoutingControlMaxGroups; ++group) {
-      if (current.group_aggregate_availability[group] == MeterAvailability::Measured) {
+      if (readings.group_availability[group] == MeterAvailability::Measured) {
         if (m_routingMeterAccumulator.group_aggregate_availability[group] !=
             MeterAvailability::Measured) {
-          m_routingMeterAccumulator.group_aggregate_meters[group] =
-              current.group_aggregate_meters[group];
+          m_routingMeterAccumulator.group_aggregate_meters[group] = readings.group_meters[group];
         } else {
           mergeAudioMeter(m_routingMeterAccumulator.group_aggregate_meters[group],
-                          current.group_aggregate_meters[group]);
+                          readings.group_meters[group]);
         }
         m_routingMeterAccumulator.group_aggregate_availability[group] = MeterAvailability::Measured;
       } else {
         m_routingMeterAccumulator.group_aggregate_availability[group] =
-            current.group_aggregate_availability[group];
+            readings.group_availability[group];
       }
     }
-    if (current.master_aggregate_availability == MeterAvailability::Measured) {
+    if (readings.master_availability == MeterAvailability::Measured) {
       if (m_routingMeterAccumulator.master_aggregate_availability != MeterAvailability::Measured) {
-        m_routingMeterAccumulator.master_aggregate_meter = current.master_aggregate_meter;
+        m_routingMeterAccumulator.master_aggregate_meter = readings.master_meter;
       } else {
-        mergeAudioMeter(m_routingMeterAccumulator.master_aggregate_meter,
-                        current.master_aggregate_meter);
+        mergeAudioMeter(m_routingMeterAccumulator.master_aggregate_meter, readings.master_meter);
       }
       m_routingMeterAccumulator.master_aggregate_availability = MeterAvailability::Measured;
     }
     for (RoutingOutputIndex output = 0; output < kRoutingMaxOutputs; ++output) {
-      if (current.post_master_output_availability[output] == MeterAvailability::Measured) {
+      if (readings.output_availability[output] == MeterAvailability::Measured) {
         if (m_routingMeterAccumulator.post_master_output_availability[output] !=
             MeterAvailability::Measured) {
           m_routingMeterAccumulator.post_master_output_lane_meters[output] =
-              current.post_master_output_lane_meters[output];
+              readings.output_meters[output];
         } else {
           mergeAudioMeter(m_routingMeterAccumulator.post_master_output_lane_meters[output],
-                          current.post_master_output_lane_meters[output]);
+                          readings.output_meters[output]);
         }
         m_routingMeterAccumulator.post_master_output_availability[output] =
             MeterAvailability::Measured;
       } else {
         m_routingMeterAccumulator.post_master_output_availability[output] =
-            current.post_master_output_availability[output];
+            readings.output_availability[output];
       }
     }
 
     if (!logicalExtensionImplemented ||
-        current.group_output_meters.availability == MeterAvailability::Unsupported) {
-      m_routingMeterAccumulator.group_output_meters = current.group_output_meters;
+        m_groupOutputMeterScratch.availability == MeterAvailability::Unsupported) {
+      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
     } else if (logicalMeasured) {
       const GroupOutputMeterSnapshot previous = m_routingMeterAccumulator.group_output_meters;
-      m_routingMeterAccumulator.group_output_meters = current.group_output_meters;
+      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
       const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-          current.group_output_meters.group_count, kRoutingControlMaxGroups);
+          m_groupOutputMeterScratch.group_count, kRoutingControlMaxGroups);
       if (previous.availability == MeterAvailability::Measured &&
           previous.routing_topology_revision ==
-              current.group_output_meters.routing_topology_revision) {
+              m_groupOutputMeterScratch.routing_topology_revision) {
         for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
           auto& accumulatedFrame = m_routingMeterAccumulator.group_output_meters.groups[group];
           const auto& previousFrame = previous.groups[group];
@@ -1247,20 +1196,20 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
           for (uint16_t lane = 0; lane < laneCount; ++lane) {
             mergeAudioMeter(accumulatedFrame.lane_meters[lane], previousFrame.lane_meters[lane]);
             mergeAudioMeter(accumulatedFrame.lane_meters[lane],
-                            current.group_output_meters.groups[group].lane_meters[lane]);
+                            m_groupOutputMeterScratch.groups[group].lane_meters[lane]);
           }
         }
       }
     } else {
-      m_routingMeterAccumulator.group_output_meters = current.group_output_meters;
+      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
     }
   }
 
   m_routingMeterAccumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;
   m_routingMeterAccumulator.availability = MeterAvailability::Measured;
-  m_routingMeterAccumulator.aggregate_peak_definition = current.aggregate_peak_definition;
+  m_routingMeterAccumulator.aggregate_peak_definition = readings.aggregate_peak_definition;
   m_routingMeterAccumulator.post_master_output_peak_definition = MeterPeakDefinition::TruePeak4x;
-  m_routingMeterAccumulator.post_master_output_count = current.post_master_output_count;
+  m_routingMeterAccumulator.post_master_output_count = readings.output_count;
   m_routingMeterAccumulator.peak_window_frames =
       detail::saturatingAdd(m_routingMeterAccumulator.peak_window_frames, numFrames);
   m_routingMeterAccumulator.rms_window_frames = numFrames;
@@ -1637,7 +1586,7 @@ void TransportController::processCommands() {
       cmd.loopAnchorSource = nullptr;
     }
     if (cmd.sourceLifetime) {
-      releaseSourceCommand(cmd.sourceLifetime);
+      m_sourceRegistry.releaseSourceCommand(cmd.sourceLifetime);
       cmd.sourceLifetime = nullptr;
     }
     // Detach the link before making this slot available.  The retained
@@ -1646,34 +1595,6 @@ void TransportController::processCommands() {
     node.next = UINT32_MAX;
     incrementIngressCounter(m_ingressProcessed);
     node.ownership.store(0, std::memory_order_release);
-  }
-}
-
-void TransportController::retainSourceCommand(SourceCommandLifetime* lifetime) noexcept {
-  if (lifetime) {
-    lifetime->unread.fetch_add(1, std::memory_order_relaxed);
-  }
-}
-
-void TransportController::releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept {
-  if (lifetime) {
-    const uint32_t previous = lifetime->unread.fetch_sub(1, std::memory_order_release);
-    assert(previous > 0);
-    static_cast<void>(previous);
-  }
-}
-
-void TransportController::retainActiveSource(SourceCommandLifetime* lifetime) noexcept {
-  if (lifetime) {
-    lifetime->active_voices.fetch_add(1, std::memory_order_relaxed);
-  }
-}
-
-void TransportController::releaseActiveSource(SourceCommandLifetime* lifetime) noexcept {
-  if (lifetime) {
-    const uint32_t previous = lifetime->active_voices.fetch_sub(1, std::memory_order_release);
-    assert(previous > 0);
-    static_cast<void>(previous);
   }
 }
 
@@ -2025,7 +1946,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 
   // The incoming source pin is acquired before same-handle replacement drops
   // the old pin, so unregister cannot observe a transient zero.
-  retainActiveSource(context->sourceLifetime);
+  m_sourceRegistry.retainActiveSource(context->sourceLifetime);
   if (replacementVoiceId != 0) {
     removeActiveVoice(replacementVoiceId);
   }
@@ -2035,6 +1956,10 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize clip with immutable context - NO MUTEX NEEDED HERE
   const size_t voiceIndex = m_activeClipCount++;
   ActiveClip& clip = m_activeClips[voiceIndex];
+  const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
+  for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+    m_clipChannelPointers[laneBase + lane] = m_clipChannelBuffers[laneBase + lane].data();
+  }
   clip.segmentCount = context->segmentCount;
   clip.segments = context->segments;
   resetSegmentCursor(clip);
@@ -2214,13 +2139,17 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
         dest.dspProcessor = src.dspProcessor;
         configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
+      const size_t vacatedLaneBase = (m_activeClipCount - 1) * m_config.maxSourceChannels;
+      for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+        m_clipChannelPointers[vacatedLaneBase + lane] = nullptr;
+      }
       configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
       m_activeClips[m_activeClipCount - 1].source.reset();
       m_activeClips[m_activeClipCount - 1].streamingSource = nullptr;
       m_activeClips[m_activeClipCount - 1].streamingDemandIndex = 0;
       m_activeClips[m_activeClipCount - 1].sourceLifetime = nullptr;
       --m_activeClipCount;
-      releaseActiveSource(removedLifetime);
+      m_sourceRegistry.releaseActiveSource(removedLifetime);
       return;
     }
   }
@@ -2295,7 +2224,7 @@ void TransportController::cancelCommandNode(uint32_t index) noexcept {
     command.startPrime = {};
   }
   if (command.sourceLifetime != nullptr) {
-    releaseSourceCommand(command.sourceLifetime);
+    m_sourceRegistry.releaseSourceCommand(command.sourceLifetime);
     command.sourceLifetime = nullptr;
   }
   node.next = UINT32_MAX;
@@ -2602,128 +2531,13 @@ void TransportController::processCallbacks() {
 
 SessionGraphError TransportController::registerClipAudio(ClipHandle handle,
                                                          const std::string& file_path) {
-  return registerClipAudioImpl(handle, file_path, nullptr);
+  return m_sourceRegistry.registerClipAudioImpl(handle, file_path, nullptr);
 }
 
 SessionGraphError TransportController::registerClipAudioWithMetadata(ClipHandle handle,
                                                                      const std::string& file_path,
                                                                      const ClipMetadata& metadata) {
-  return registerClipAudioImpl(handle, file_path, &metadata);
-}
-
-SessionGraphError TransportController::registerClipAudioImpl(ClipHandle handle,
-                                                             const std::string& file_path,
-                                                             const ClipMetadata* initialMetadata) {
-  if (handle == 0) {
-    return SessionGraphError::InvalidHandle;
-  }
-
-  if (file_path.empty()) {
-    return SessionGraphError::InvalidParameter;
-  }
-
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  if (m_audioFiles.find(handle) != m_audioFiles.end()) {
-    // Registration is a clean-cutover operation: callers must stop, drain,
-    // and unregister before supplying replacement media for a handle.
-    return SessionGraphError::NotReady;
-  }
-
-  // Create audio file reader (convert unique_ptr to shared_ptr for thread-safe lifetime)
-  auto uniqueReader = createAudioFileReader();
-
-  // Check if audio file reader is available (may be nullptr if libsndfile not installed)
-  if (!uniqueReader) {
-    fprintf(stderr, "TransportController: createAudioFileReader() returned nullptr\n");
-    return SessionGraphError::NotReady; // Audio file reading not available
-  }
-
-  auto result = uniqueReader->open(file_path);
-
-  if (!result.isOk()) {
-    fprintf(stderr, "TransportController: AudioFileReader::open('%s') failed with error %d\n",
-            file_path.c_str(), (int)result.error);
-    return result.error;
-  }
-
-  // Store reader and metadata for this clip.
-  AudioFileEntry entry;
-  try {
-    entry.commandLifetime = std::make_unique<SourceCommandLifetime>();
-  } catch (const std::bad_alloc&) {
-    return SessionGraphError::InternalError;
-  }
-
-  // ORP127 G6: if the file's sample rate differs from the engine rate, wrap the
-  // reader in a deterministic polyphase resampler so it plays at correct pitch.
-  // The decorator presents metadata/positions in the ENGINE-rate timeline, so
-  // trims/fades/cues stay sample-accurate against the transport.
-  if (result.value.sample_rate != m_sampleRate) {
-    auto inner = std::shared_ptr<IAudioFileReader>(std::move(uniqueReader));
-    auto resampling = std::make_shared<ResamplingAudioFileReader>(inner, m_sampleRate);
-    // Re-open through the decorator to capture engine-rate metadata.
-    auto rres = resampling->open(file_path);
-    if (!rres.isOk()) {
-      return rres.error;
-    }
-    entry.reader = resampling;
-    entry.metadata = rres.value; // sample_rate == m_sampleRate, duration in engine frames
-  } else {
-    entry.reader = std::shared_ptr<IAudioFileReader>(std::move(uniqueReader));
-    entry.metadata = result.value;
-  }
-
-  if (entry.metadata.num_channels == 0 ||
-      entry.metadata.num_channels > m_config.maxSourceChannels ||
-      (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete &&
-       entry.metadata.num_channels > m_config.outputChannels)) {
-    return SessionGraphError::InvalidParameter;
-  }
-
-  if (const auto inferred = inferUnambiguousChannelFormat(entry.metadata.num_channels)) {
-    entry.sourceLayout = inferred->layout;
-    entry.speakerPatchSize = inferred->num_channels;
-    std::copy_n(inferred->channel_map.begin(), inferred->num_channels, entry.speakerPatch.begin());
-  }
-  const double clipDurationSeconds =
-      static_cast<double>(entry.metadata.duration_samples) / static_cast<double>(m_sampleRate);
-  entry.stopFadeOutSeconds = std::min(m_sessionDefaults.stopFadeOutSeconds, clipDurationSeconds);
-  entry.stopFadeOutCurve = m_sessionDefaults.stopFadeOutCurve;
-
-  // Apply session defaults to new clip
-  entry.muted = m_sessionDefaults.muted;
-  entry.pan = m_sessionDefaults.pan;
-  entry.playbackRate = m_sessionDefaults.playbackRate;
-  entry.playDelaySeconds = m_sessionDefaults.playDelaySeconds;
-  entry.fadeInSeconds = m_sessionDefaults.fadeInSeconds;
-  entry.fadeOutSeconds = m_sessionDefaults.fadeOutSeconds;
-  entry.fadeInCurve = m_sessionDefaults.fadeInCurve;
-  entry.fadeOutCurve = m_sessionDefaults.fadeOutCurve;
-  entry.loopEnabled = m_sessionDefaults.loopEnabled;
-  entry.stopOthersOnPlay = m_sessionDefaults.stopOthersOnPlay;
-  entry.gainDb = m_sessionDefaults.gainDb;
-
-  // Trim points default to full file duration. Use entry.metadata (engine-rate
-  // for resampled files) so trims are in the same timeline as the transport.
-  entry.trimInSamples = 0;
-  entry.trimOutSamples = entry.metadata.duration_samples;
-
-  if (initialMetadata != nullptr) {
-    int64_t trimOut = 0;
-    const auto validation = validateClipMetadataFields(entry, *initialMetadata, trimOut);
-    if (validation != SessionGraphError::OK)
-      return validation;
-    ClipDspProcessor preparedDsp;
-    if (preparedDsp.prepare(initialMetadata->dsp, m_sampleRate, entry.metadata.num_channels) !=
-        ClipDspValidationError::OK) {
-      return SessionGraphError::InvalidParameter;
-    }
-    applyClipMetadata(entry, *initialMetadata, trimOut);
-  }
-
-  m_audioFiles.emplace(handle, std::move(entry));
-
-  return SessionGraphError::OK;
+  return m_sourceRegistry.registerClipAudioImpl(handle, file_path, &metadata);
 }
 
 SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
@@ -2739,12 +2553,12 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::NotReady;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
-  return ensurePreparedSourceLocked(it->second);
+  return m_sourceRegistry.ensurePreparedSourceLocked(it->second);
 }
 
 SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
@@ -2763,9 +2577,9 @@ SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
     return SessionGraphError::NotReady;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     // Idempotent: releasing an unregistered handle is a no-op success so hosts
     // can call it unconditionally on slot teardown.
     return SessionGraphError::OK;
@@ -2779,82 +2593,7 @@ SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
       streaming && streaming->hasPendingCommandPrimes()) {
     return SessionGraphError::NotReady;
   }
-  m_audioFiles.erase(it);
-  return SessionGraphError::OK;
-}
-
-SessionGraphError TransportController::ensurePreparedSourceLocked(
-    AudioFileEntry& entry, StreamingClipSource::PrimeReservation* reservation) {
-  // ORP134 G1: build the realtime playback source on the CONTROL thread. All
-  // decode/resample/file I/O happens here (or on the stream worker) - the
-  // audio thread only ever memcpy-reads the published source.
-  const auto prepareStreaming = [&](const std::shared_ptr<StreamingClipSource>& streaming) {
-    StreamingClipSource::LoopAnchorTransition transition{};
-    SessionGraphError result =
-        streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
-    if (result != SessionGraphError::OK) {
-      return result;
-    }
-    result = reservation != nullptr
-                 ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                 : streaming->prefill(entry.trimInSamples);
-    if (result != SessionGraphError::OK) {
-      streaming->rollbackLoopAnchorTransition(transition);
-      return result;
-    }
-    streaming->commitLoopAnchorTransition(transition);
-    return SessionGraphError::OK;
-  };
-
-  if (entry.source) {
-    if (auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source)) {
-      return prepareStreaming(streaming);
-    }
-    return SessionGraphError::OK;
-  }
-
-  const uint16_t numChannels = entry.metadata.num_channels;
-  if (!entry.reader || !entry.reader->isOpen() || numChannels == 0 ||
-      numChannels > m_config.maxSourceChannels) {
-    return SessionGraphError::NotReady;
-  }
-
-  const int64_t lengthFrames = entry.metadata.duration_samples;
-  if (lengthFrames <= m_preparedSourceMaxFrames) {
-    // Short clip: decode the whole file (engine-rate; entry.reader is already
-    // wrapped in the ORP127 G6 resampler when rates differ).
-    auto prepared = PreparedClipSource::decode(*entry.reader, numChannels, lengthFrames);
-    if (!prepared) {
-      return SessionGraphError::InternalError;
-    }
-    entry.source = prepared;
-    return SessionGraphError::OK;
-  }
-
-  // Attach before publishing the source into the registry. If any preparation
-  // step fails, only the worker's weak reference remains and the source is
-  // destroyed without leaving a partially prepared registry entry.
-  auto streaming = std::make_shared<StreamingClipSource>(entry.reader, numChannels, lengthFrames);
-  if (!m_streamWorker) {
-    m_streamWorker = std::make_unique<MediaStreamWorker>();
-  }
-  m_streamWorker->attach(streaming);
-  streaming->setDemand(entry.trimInSamples);
-
-  StreamingClipSource::LoopAnchorTransition transition{};
-  SessionGraphError result =
-      streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
-  if (result != SessionGraphError::OK) {
-    return result;
-  }
-  result = reservation != nullptr ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                                  : streaming->prefill(entry.trimInSamples);
-  if (result != SessionGraphError::OK) {
-    streaming->rollbackLoopAnchorTransition(transition);
-    return result;
-  }
-  streaming->commitLoopAnchorTransition(transition);
-  entry.source = streaming;
+  m_sourceRegistry.entries().erase(it);
   return SessionGraphError::OK;
 }
 
@@ -2863,9 +2602,9 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
                                                             int64_t trimOutSamples) {
   if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const int64_t duration = it->second.metadata.duration_samples;
   for (uint32_t i = 0; i < it->second.segmentCount; ++i)
@@ -2893,7 +2632,7 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
     if (cmd.sourceLifetime == nullptr) {
       return SessionGraphError::InternalError;
     }
-    retainSourceCommand(cmd.sourceLifetime);
+    m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
     const auto result =
         streaming->prepareLoopAnchorTransition(trimInSamples, true, cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
@@ -2920,9 +2659,9 @@ SessionGraphError TransportController::updateClipFades(ClipHandle handle, double
 
   // Registry state includes every previously admitted trim, even if the
   // consumer has not rendered it yet. Validate and publish in one transaction.
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const auto& entry = it->second;
   const int64_t trimOut =
@@ -2979,9 +2718,9 @@ SessionGraphError TransportController::getClipTrimPoints(ClipHandle handle, int6
   // NOTE: const_cast needed because this is a query method (read-only, but mutex requires
   // non-const)
   {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+    auto it = m_sourceRegistry.entries().find(handle);
+    if (it == m_sourceRegistry.entries().end()) {
       return SessionGraphError::ClipNotRegistered;
     }
 
@@ -3008,9 +2747,9 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
     return SessionGraphError::InvalidParameter;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const uint32_t index = acquireCommandNode();
   if (index == UINT32_MAX) {
@@ -3022,7 +2761,7 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
   cmd.type = TransportCommand::Type::UpdateGain;
   cmd.handle = handle;
   cmd.data.gain.db = gainDb;
-  cmd.data.gain.linear = std::pow(10.0f, gainDb / 20.0f);
+  cmd.data.gain.linear = orpheus::pinned::pow10(gainDb / 20.0f);
   const SessionGraphError result = reservation.publish();
   if (result != SessionGraphError::OK)
     return result;
@@ -3034,9 +2773,9 @@ SessionGraphError TransportController::updateClipGain(ClipHandle handle, float g
 SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool shouldLoop) {
   if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const uint32_t index = acquireCommandNode();
   if (index == UINT32_MAX) {
@@ -3055,7 +2794,7 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
     if (!cmd.sourceLifetime) {
       return SessionGraphError::InternalError;
     }
-    retainSourceCommand(cmd.sourceLifetime);
+    m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
     const auto result = streaming->prepareLoopAnchorTransition(it->second.trimInSamples, shouldLoop,
                                                                cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
@@ -3095,10 +2834,10 @@ SessionGraphError TransportController::setClipStopOthersMode(ClipHandle handle, 
     return SessionGraphError::InvalidHandle;
   }
 
-  // Store mode persistently in AudioFileEntry
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  // Store mode persistently in the registry entry
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
 
@@ -3107,89 +2846,13 @@ SessionGraphError TransportController::setClipStopOthersMode(ClipHandle handle, 
 }
 
 bool TransportController::getClipStopOthersMode(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return false;
   }
 
   return it->second.stopOthersOnPlay;
-}
-
-SessionGraphError TransportController::validateClipMetadataFields(const AudioFileEntry& entry,
-                                                                  const ClipMetadata& metadata,
-                                                                  int64_t& trimOut) const {
-  const int64_t fileDurationSamples = entry.metadata.duration_samples;
-  const uint16_t fileChannels = entry.metadata.num_channels;
-  trimOut = metadata.trimOutSamples == 0 ? fileDurationSamples : metadata.trimOutSamples;
-  if (metadata.trimInSamples < 0 || metadata.trimInSamples >= fileDurationSamples ||
-      trimOut <= metadata.trimInSamples || trimOut > fileDurationSamples) {
-    return SessionGraphError::InvalidClipTrimPoints;
-  }
-  if (metadata.segmentCount > kMaxClipPlaybackSegments)
-    return SessionGraphError::InvalidParameter;
-  for (uint32_t index = 0; index < metadata.segmentCount; ++index) {
-    const auto& segment = metadata.segments[index];
-    if (segment.startSample < metadata.trimInSamples || segment.endSample <= segment.startSample ||
-        segment.endSample > trimOut || segment.repeatCount == 0 ||
-        segment.repeatCount > kMaxClipSegmentRepeatCount) {
-      return SessionGraphError::InvalidParameter;
-    }
-  }
-
-  const int64_t clipDuration = trimOut - metadata.trimInSamples;
-  const double clipDurationSeconds =
-      static_cast<double>(clipDuration) / static_cast<double>(m_sampleRate);
-  if (metadata.fadeInSeconds < 0.0 || metadata.fadeInSeconds > clipDurationSeconds ||
-      metadata.fadeOutSeconds < 0.0 || metadata.fadeOutSeconds > clipDurationSeconds ||
-      !std::isfinite(metadata.stopFadeOutSeconds) || metadata.stopFadeOutSeconds < 0.0 ||
-      metadata.stopFadeOutSeconds > clipDurationSeconds) {
-    return SessionGraphError::InvalidFadeDuration;
-  }
-
-  if (!std::isfinite(metadata.gainDb) || !std::isfinite(metadata.pan) || metadata.pan < -1.0f ||
-      metadata.pan > 1.0f || !std::isfinite(metadata.playbackRate) ||
-      metadata.playbackRate < 0.25 || metadata.playbackRate > 4.0 ||
-      !std::isfinite(metadata.playDelaySeconds) || metadata.playDelaySeconds < 0.0 ||
-      metadata.playDelaySeconds > 99.9) {
-    return SessionGraphError::InvalidParameter;
-  }
-  if (metadata.routingGroup >= m_config.numGroups ||
-      fileChannels > m_groupOutputWidths[metadata.routingGroup].load(std::memory_order_acquire)) {
-    return SessionGraphError::InvalidParameter;
-  }
-  if (!isValidSpeakerPatch(metadata.sourceLayout, metadata.speakerPatchSize, metadata.speakerPatch,
-                           fileChannels)) {
-    return SessionGraphError::InvalidParameter;
-  }
-  return SessionGraphError::OK;
-}
-
-void TransportController::applyClipMetadata(AudioFileEntry& entry, const ClipMetadata& metadata,
-                                            int64_t trimOut) {
-  entry.trimInSamples = metadata.trimInSamples;
-  entry.trimOutSamples = trimOut;
-  entry.fadeInSeconds = metadata.fadeInSeconds;
-  entry.fadeOutSeconds = metadata.fadeOutSeconds;
-  entry.fadeInCurve = metadata.fadeInCurve;
-  entry.fadeOutCurve = metadata.fadeOutCurve;
-  entry.stopFadeOutSeconds = metadata.stopFadeOutSeconds;
-  entry.stopFadeOutCurve = metadata.stopFadeOutCurve;
-  entry.loopEnabled = metadata.loopEnabled;
-  entry.stopOthersOnPlay = metadata.stopOthersOnPlay;
-  entry.voiceMode = metadata.voiceMode;
-  entry.gainDb = metadata.gainDb;
-  entry.muted = metadata.muted;
-  entry.pan = metadata.pan;
-  entry.playbackRate = metadata.playbackRate;
-  entry.playDelaySeconds = metadata.playDelaySeconds;
-  entry.routingGroup = metadata.routingGroup;
-  entry.sourceLayout = metadata.sourceLayout;
-  entry.speakerPatchSize = metadata.speakerPatchSize;
-  entry.speakerPatch = metadata.speakerPatch;
-  entry.segmentCount = metadata.segmentCount;
-  entry.segments = metadata.segments;
-  entry.dsp = metadata.dsp;
 }
 
 SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
@@ -3198,13 +2861,14 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return SessionGraphError::InvalidHandle;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const uint16_t fileChannels = it->second.metadata.num_channels;
   int64_t trimOut = 0;
-  const auto validation = validateClipMetadataFields(it->second, metadata, trimOut);
+  const auto validation =
+      m_sourceRegistry.validateClipMetadataFields(it->second, metadata, trimOut);
   if (validation != SessionGraphError::OK)
     return validation;
 
@@ -3236,7 +2900,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.stopFadeOutCurve = metadata.stopFadeOutCurve;
   cmd.data.metadata.loopEnabled = metadata.loopEnabled;
   cmd.data.metadata.gainDb = metadata.gainDb;
-  cmd.data.metadata.gainLinear = std::pow(10.0f, metadata.gainDb / 20.0f);
+  cmd.data.metadata.gainLinear = orpheus::pinned::pow10(metadata.gainDb / 20.0f);
   cmd.data.metadata.muted = metadata.muted;
   cmd.data.metadata.pan = metadata.pan;
   cmd.data.metadata.panLeftGain = panLeftGain;
@@ -3278,7 +2942,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     admitted.loopAnchorSource = streaming;
     admitted.loopAnchorTransition = transition;
     admitted.sourceLifetime = lifetime;
-    retainSourceCommand(lifetime);
+    m_sourceRegistry.retainSourceCommand(lifetime);
   }
 
   const SessionGraphError postResult = reservation.publish();
@@ -3286,7 +2950,7 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     return postResult;
   reservation.disarm();
 
-  applyClipMetadata(it->second, metadata, trimOut);
+  ClipSourceRegistry::applyClipMetadata(it->second, metadata, trimOut);
   return SessionGraphError::OK;
 }
 
@@ -3295,9 +2959,9 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
     return std::nullopt;
   }
 
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return std::nullopt;
   }
 
@@ -3342,8 +3006,8 @@ SessionGraphError TransportController::setGroupOutputBus(RoutingGroupIndex group
     return SessionGraphError::InvalidParameter;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  for (const auto& [handle, entry] : m_audioFiles) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  for (const auto& [handle, entry] : m_sourceRegistry.entries()) {
     (void)handle;
     if (entry.routingGroup == group && entry.metadata.num_channels > route.channelCount) {
       return SessionGraphError::InvalidParameter;
@@ -3373,8 +3037,10 @@ float TransportController::calculateFadeGain(float normalizedPosition, FadeCurve
   case FadeCurve::Linear:
     return normalizedPosition; // y = x
 
-  case FadeCurve::EqualPower:
-    return std::sin(normalizedPosition * static_cast<float>(M_PI_2)); // y = sin(x * π/2)
+  case FadeCurve::EqualPower: {
+    const float argument = normalizedPosition * static_cast<float>(M_PI_2);
+    return static_cast<float>(orpheus::pinned::sin(static_cast<double>(argument)));
+  }
 
   case FadeCurve::Exponential:
     return normalizedPosition * normalizedPosition; // y = x²
@@ -3396,13 +3062,11 @@ void TransportController::setSessionDefaults(const SessionDefaults& defaults) {
                                    ? std::clamp(sanitized.playDelaySeconds, 0.0, 99.9)
                                    : 0.0;
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  m_sessionDefaults = sanitized;
+  m_sourceRegistry.setSessionDefaults(sanitized);
 }
 
 SessionDefaults TransportController::getSessionDefaults() const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-  return m_sessionDefaults;
+  return m_sourceRegistry.getSessionDefaults();
 }
 
 bool TransportController::isClipLooping(ClipHandle handle) const {
@@ -3424,9 +3088,9 @@ SessionGraphError TransportController::setClipVoiceMode(ClipHandle handle, Voice
     return SessionGraphError::InvalidHandle;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
   it->second.voiceMode = mode;
@@ -3434,9 +3098,9 @@ SessionGraphError TransportController::setClipVoiceMode(ClipHandle handle, Voice
 }
 
 VoiceMode TransportController::getClipVoiceMode(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return VoiceMode::Polyphonic;
   }
   return it->second.voiceMode;
@@ -3580,9 +3244,9 @@ ActiveVoiceSnapshot TransportController::getActiveVoiceSnapshot() const noexcept
 SessionGraphError TransportController::restartClip(ClipHandle handle) {
   if (handle == 0)
     return SessionGraphError::InvalidHandle;
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  const auto entry = m_audioFiles.find(handle);
-  if (entry == m_audioFiles.end())
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  const auto entry = m_sourceRegistry.entries().find(handle);
+  if (entry == m_sourceRegistry.entries().end())
     return SessionGraphError::ClipNotRegistered;
   const bool needsStart = countActiveVoicesSnapshot(handle) == 0;
   if (needsStart &&
@@ -3616,12 +3280,12 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     return SessionGraphError::InvalidHandle;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
-  AudioFileEntry& entry = it->second;
+  ClipSourceRegistry::Entry& entry = it->second;
   const int64_t fileLength = entry.metadata.duration_samples;
 
   // A published active voice is the authoritative control-thread admission
@@ -3645,7 +3309,7 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
   cmd.data.seekPosition = clampedPosition;
   if (!entry.commandLifetime)
     return SessionGraphError::InternalError;
-  retainSourceCommand(entry.commandLifetime.get());
+  m_sourceRegistry.retainSourceCommand(entry.commandLifetime.get());
   cmd.sourceLifetime = entry.commandLifetime.get();
   if (auto* streaming = dynamic_cast<StreamingClipSource*>(entry.source.get())) {
     cmd.seekSource = streaming;
@@ -3696,9 +3360,9 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
     return -1; // Invalid handle
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return -1; // Clip not registered
   }
 
@@ -3725,9 +3389,9 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
 }
 
 std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_audioFilesMutex));
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return {}; // Return empty vector if clip not found
   }
 
@@ -3742,9 +3406,9 @@ SessionGraphError TransportController::seekToCuePoint(ClipHandle handle, uint32_
   // Get cue point position
   int64_t cuePosition = 0;
   {
-    std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-    auto it = m_audioFiles.find(handle);
-    if (it == m_audioFiles.end()) {
+    std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+    auto it = m_sourceRegistry.entries().find(handle);
+    if (it == m_sourceRegistry.entries().end()) {
       return SessionGraphError::ClipNotRegistered;
     }
 
@@ -3765,9 +3429,9 @@ SessionGraphError TransportController::removeCuePoint(ClipHandle handle, uint32_
     return SessionGraphError::InvalidHandle;
   }
 
-  std::lock_guard<std::mutex> lock(m_audioFilesMutex);
-  auto it = m_audioFiles.find(handle);
-  if (it == m_audioFiles.end()) {
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
+  auto it = m_sourceRegistry.entries().find(handle);
+  if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
 

@@ -3,11 +3,23 @@
 add_library(orpheus_routing STATIC
     audio_graph.cpp # ORP134 G3: graph-neutral routing seam
     routing_matrix.cpp
+    routing_meter_state.cpp
     gain_smoother.cpp
     clip_routing.cpp
 )
 
 target_compile_features(orpheus_routing PUBLIC cxx_std_20)
+
+# Mixing and smoothing participate in the cross-platform render-byte contract.
+if(MSVC)
+  if(MSVC_VERSION GREATER_EQUAL 1930)
+    target_compile_options(orpheus_routing PRIVATE /fp:precise)
+  else()
+    target_compile_options(orpheus_routing PRIVATE /fp:strict)
+  endif()
+else()
+  target_compile_options(orpheus_routing PRIVATE -ffp-contract=off)
+endif()
 
 target_include_directories(orpheus_routing
     PUBLIC

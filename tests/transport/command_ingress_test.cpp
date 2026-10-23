@@ -23,8 +23,9 @@ public:
     t.m_commandPublicationTestState = state;
   }
   static std::shared_ptr<StreamingClipSource> source(TransportController& t, ClipHandle handle) {
-    std::lock_guard lock(t.m_audioFilesMutex);
-    return std::dynamic_pointer_cast<StreamingClipSource>(t.m_audioFiles.at(handle).source);
+    std::lock_guard lock(t.m_sourceRegistry.mutex());
+    return std::dynamic_pointer_cast<StreamingClipSource>(
+        t.m_sourceRegistry.entries().at(handle).source);
   }
   static void seed(TransportController& t, uint64_t count) {
     t.m_ingressAttempted.store(count);

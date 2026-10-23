@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // ORP168: rendered first-block streaming seek and command-prime transactions.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 
 #include "audio_io/resampling_audio_file_reader.h"
@@ -49,6 +48,7 @@ public:
   struct WorkerDrive {
     std::vector<MediaStreamWorker::SourceService> live;
     std::vector<MediaStreamWorker::SourceService> next;
+    std::vector<MediaStreamWorker::PreviousSource> previous;
     size_t cursor{0};
   };
 
@@ -64,7 +64,7 @@ public:
   static void serviceRound(MediaStreamWorker& worker, WorkerDrive& drive) {
     {
       std::lock_guard<std::mutex> lock(worker.m_mutex);
-      worker.snapshotSources(drive.live, drive.next);
+      worker.snapshotSources(drive.live, drive.next, drive.previous);
     }
     MediaStreamWorker::serviceRound(drive.live, drive.cursor);
   }
@@ -192,8 +192,9 @@ class TransportControllerTestAccess {
 public:
   static std::shared_ptr<StreamingClipSource> source(TransportController& transport,
                                                      ClipHandle handle) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    return std::dynamic_pointer_cast<StreamingClipSource>(transport.m_audioFiles.at(handle).source);
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    return std::dynamic_pointer_cast<StreamingClipSource>(
+        transport.m_sourceRegistry.entries().at(handle).source);
   }
   static bool readSourceDemands(TransportController& transport, ClipHandle handle,
                                 StreamingClipSourceTestAccess::PublishedDemandSnapshot& snapshot) {
@@ -211,15 +212,15 @@ public:
 
   static std::shared_ptr<IClipSource> playbackSource(TransportController& transport,
                                                      ClipHandle handle) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    return transport.m_audioFiles.at(handle).source;
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    return transport.m_sourceRegistry.entries().at(handle).source;
   }
 
   static void replaceUnpreparedReader(TransportController& transport, ClipHandle handle,
                                       std::shared_ptr<IAudioFileReader> reader,
                                       const AudioFileMetadata& metadata) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
-    auto& entry = transport.m_audioFiles.at(handle);
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
+    auto& entry = transport.m_sourceRegistry.entries().at(handle);
     assert(!entry.source);
     entry.reader = std::move(reader);
     entry.metadata = metadata;
@@ -233,13 +234,13 @@ public:
   static SessionGraphError rejectPreparedLoopTransition(TransportController& transport,
                                                         ClipHandle handle, int64_t trimIn,
                                                         size_t& replacementIndex) {
-    std::lock_guard lock(transport.m_audioFilesMutex);
+    std::lock_guard lock(transport.m_sourceRegistry.mutex());
     const uint32_t index = transport.acquireCommandNode();
     if (index == UINT32_MAX) {
       return SessionGraphError::NotReady;
     }
     TransportController::CommandReservation reservation(transport, index);
-    auto& entry = transport.m_audioFiles.at(handle);
+    auto& entry = transport.m_sourceRegistry.entries().at(handle);
     auto* streaming = dynamic_cast<StreamingClipSource*>(entry.source.get());
     if (streaming == nullptr || !entry.commandLifetime) {
       return SessionGraphError::NotReady;
@@ -250,7 +251,7 @@ public:
     command.handle = handle;
     command.data.trim = {trimIn, entry.trimOutSamples};
     command.sourceLifetime = entry.commandLifetime.get();
-    transport.retainSourceCommand(command.sourceLifetime);
+    transport.m_sourceRegistry.retainSourceCommand(command.sourceLifetime);
     const auto result =
         streaming->prepareLoopAnchorTransition(trimIn, true, command.loopAnchorTransition);
     if (result != SessionGraphError::OK) {

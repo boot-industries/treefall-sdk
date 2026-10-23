@@ -241,9 +241,6 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
         ),
     ]
     for function in (
-        "releaseSourceCommand",
-        "retainActiveSource",
-        "releaseActiveSource",
         "releasePendingStartReservations",
         "releasePendingSeekReservations",
         "publishStartSettlement",
@@ -260,6 +257,22 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                 f"Transport consumer helper {function}",
                 root / "src/core/transport/transport_controller.cpp",
                 rf"(?:void|bool|uint32_t|uint64_t)\s+TransportController::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
+    # ORP273 F-15: the registered-source lifetime helpers moved out of the
+    # controller into the clip-source registry. The same realtime rules apply
+    # to their new home.
+    for function in (
+        "releaseSourceCommand",
+        "retainActiveSource",
+        "releaseActiveSource",
+    ):
+        targets.append(
+            ScanTarget(
+                f"Transport consumer helper {function}",
+                root / "src/core/transport/clip_source_registry.cpp",
+                rf"(?:void|bool|uint32_t|uint64_t)\s+ClipSourceRegistry::{function}\s*\(",
                 pattern_sets=(HARD_REALTIME_SET,),
             )
         )

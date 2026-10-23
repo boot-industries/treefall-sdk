@@ -2,7 +2,9 @@
 #include "../../include/orpheus/routing_matrix.h"
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
+#include "../../src/core/routing/true_peak_meter.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <limits>
@@ -28,12 +30,47 @@ public:
                                                   std::memory_order_release);
     matrix.m_channel_route_generation.fetch_add(1, std::memory_order_release);
   }
-
   static void endRoutePublication(RoutingMatrix& matrix) noexcept {
     matrix.endChannelRouteWrite();
   }
 };
+
+struct TruePeakMeterTestAccess {
+  static const auto& coefficients() noexcept {
+    return TruePeakMeter::s_filterCoeffs;
+  }
+};
 } // namespace orpheus
+TEST(TruePeakMeterTest, KernelMatchesScalarPhaseAccumulator) {
+  TruePeakMeter meter;
+  std::array<float, TruePeakMeter::TAPS_PER_PHASE> history{};
+  size_t historyHead = 0;
+  const auto& coefficients = TruePeakMeterTestAccess::coefficients();
+
+  auto processScalar = [&](float sample) {
+    historyHead =
+        historyHead == 0 ? static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE - 1) : historyHead - 1;
+    history[historyHead] = sample;
+    float peak = std::abs(sample);
+    for (size_t phase = 0; phase < static_cast<size_t>(TruePeakMeter::OVERSAMPLE_FACTOR); ++phase) {
+      float interpolated = 0.0f;
+      for (size_t tap = 0; tap < static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE); ++tap) {
+        volatile float product =
+            history[(historyHead + tap) % static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE)] *
+            coefficients[phase][tap];
+        interpolated += product;
+      }
+      peak = std::max(peak, std::abs(interpolated));
+    }
+    return peak;
+  };
+
+  for (uint32_t index = 0; index < 4096; ++index) {
+    const int32_t quantized = static_cast<int32_t>((index * 73u + 19u) % 257u) - 128;
+    const float sample = static_cast<float>(quantized) / 128.0f;
+    EXPECT_NEAR(meter.process(sample), processScalar(sample), 2.0e-6f) << "sample " << index;
+  }
+}
 
 class RoutingMatrixTest : public ::testing::Test {
 protected:
@@ -434,29 +471,55 @@ TEST_F(RoutingMatrixTest, MeteringDetectsPeak) {
   EXPECT_NEAR(meter.peak_db, -3.0f, 1.0f); // -3 dB due to pan law at center
 }
 
-TEST_F(RoutingMatrixTest, MeteringDetectsClipping) {
-  matrix->initialize(config);
+TEST_F(RoutingMatrixTest, SoftClippingPreservesKneeCeilingAndSign) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_clipping_protection = true;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 0), SessionGraphError::OK);
 
-  // Create input that will clip (amplitude > 1.0)
-  auto inputs = createTestInputs(4, BUFFER_SIZE, 0.5f);
-  auto input_ptrs = toPointerArray(inputs);
+  const std::array<float, 16> input{-std::numeric_limits<float>::max(),
+                                    -2.0f,
+                                    -1.1f,
+                                    -0.9f,
+                                    -0.794f,
+                                    -0.5f,
+                                    -0.0f,
+                                    0.0f,
+                                    0.5f,
+                                    0.794f,
+                                    std::nextafter(0.794f, 1.0f),
+                                    0.9f,
+                                    1.0f,
+                                    1.1f,
+                                    2.0f,
+                                    std::numeric_limits<float>::max()};
+  std::array<float, input.size()> left{};
+  std::array<float, input.size()> right{};
+  const float* inputs[] = {input.data()};
+  float* outputs[] = {left.data(), right.data()};
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, static_cast<uint32_t>(input.size())),
+            SessionGraphError::OK);
 
-  // Create outputs
-  std::vector<std::vector<float>> outputs(2);
-  for (auto& out : outputs) {
-    out.resize(BUFFER_SIZE);
+  for (size_t frame = 0; frame < input.size(); ++frame) {
+    const float magnitude = std::abs(input[frame]);
+    const float expected =
+        magnitude <= 0.794f
+            ? input[frame]
+            : std::copysign(
+                  std::min(0.794f + std::tanh((magnitude - 0.794f) / 0.3f) * 0.3f, 0.9999f),
+                  input[frame]);
+    EXPECT_NEAR(left[frame], expected, 2.0e-7f) << "frame " << frame;
+    EXPECT_LE(std::abs(left[frame]), 0.9999f);
+    EXPECT_EQ(right[frame], 0.0f);
+    if (frame > 0) {
+      EXPECT_GE(left[frame], left[frame - 1]);
+    }
   }
-  auto output_ptrs = toPointerArray(outputs);
-
-  // Sum 4 channels (each 0.5) into 2 groups into master = potential clipping
-  matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
-
-  // Check master meter
-  auto meter = matrix->getMasterMeter();
-
-  // May or may not clip depending on signal phase, but clipping should be tracked
-  // (This is a basic smoke test - clipping detection works)
-  EXPECT_GE(meter.clip_count, 0); // Non-negative
+  EXPECT_GT(matrix->getMasterMeter().clip_count, 0u);
 }
 
 TEST_F(RoutingMatrixTest, StereoMetersIncludeRightOnlySignal) {
@@ -950,6 +1013,57 @@ TEST_F(RoutingMatrixTest, HeadroomModePerGroupAttenuates) {
   float expected_none = 2.0f * (0.707107f * 0.5f);
   float expected_per_group = expected_none * 0.5f;
   EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_per_group, 0.05f);
+}
+
+TEST_F(RoutingMatrixTest, HeadroomModeGlobalAttenuatesAcrossGroups) {
+  // HeadroomMode::Global attenuates by 1/n where n is the number of active
+  // channels across every group, not the number in one group.
+  config.headroom_mode = HeadroomMode::Global;
+  config.num_channels = 4;
+  config.num_groups = 2;
+  config.gain_smoothing_ms = 0.1f;
+  config.enable_clipping_protection = false;
+  matrix->initialize(config);
+
+  // Two channels carry the signal in group 0; two silent channels occupy
+  // group 1. The global count is therefore 4 while group 0 alone holds 2, so
+  // the two modes attenuate differently.
+  matrix->setChannelGroup(0, 0);
+  matrix->setChannelGroup(1, 0);
+  matrix->setChannelGroup(2, 1);
+  matrix->setChannelGroup(3, 1);
+  for (RoutingChannelIndex channel = 0; channel < 4; ++channel) {
+    matrix->setChannelGain(channel, 0.0f);
+  }
+  matrix->setGroupGain(0, 0.0f);
+  matrix->setGroupGain(1, 0.0f);
+  matrix->setMasterGain(0.0f);
+
+  std::vector<std::vector<float>> inputs(4);
+  for (auto& in : inputs) {
+    in.resize(BUFFER_SIZE, 0.0f);
+  }
+  inputs[0].assign(BUFFER_SIZE, 0.5f);
+  inputs[1].assign(BUFFER_SIZE, 0.5f);
+  auto input_ptrs = toPointerArray(inputs);
+
+  std::vector<std::vector<float>> outputs(2);
+  for (auto& out : outputs) {
+    out.resize(BUFFER_SIZE, 0.0f);
+  }
+  auto output_ptrs = toPointerArray(outputs);
+
+  for (int i = 0; i < 10; ++i) {
+    std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+    std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+    matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
+  }
+
+  // Four active channels: the global headroom is 1/4, where the per-group
+  // headroom for group 0 would have been 1/2.
+  const float expected_none = 2.0f * (0.707107f * 0.5f);
+  const float expected_global = expected_none * 0.25f;
+  EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], expected_global, 0.05f);
 }
 
 TEST_F(RoutingMatrixTest, TruePeakMeteringDetectsInterSamplePeaks) {

@@ -34,6 +34,7 @@ target_link_libraries(clip_dsp_test
         GTest::gtest
         GTest::gtest_main
 )
+target_link_libraries(clip_dsp_test PRIVATE orpheus_test_rt_guard)
 add_test(NAME clip_dsp_test COMMAND clip_dsp_test)
 
 # Bounded multi-producer command-ingress regressions (D3).
@@ -381,6 +382,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(callback_queue_stress_test PRIVATE orpheus_test_rt_guard)
 
     target_include_directories(callback_queue_stress_test
         PRIVATE
@@ -433,6 +435,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(voice_state_tsan_test PRIVATE orpheus_test_rt_guard)
 
     target_include_directories(voice_state_tsan_test
         PRIVATE
@@ -580,6 +583,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(occ155_api_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(occ155_api_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -606,6 +610,7 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
+    target_link_libraries(realtime_harness_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(realtime_harness_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -617,6 +622,20 @@ if(TARGET orpheus_audio_io)
         NAME realtime_harness_test
         COMMAND realtime_harness_test
     )
+
+    # ORP273 F-18: the registered render-path deadline measurement. The
+    # observation count is reduced so the gate fits CI's budget; the full
+    # 10,000-observation qualification stays available by setting
+    # ORPHEUS_DEADLINE_OBSERVATIONS when running the binary directly.
+    add_test(
+        NAME realtime_render_deadline_distribution
+        COMMAND realtime_harness_test --gtest_filter=RealtimeHarnessTest.WorstCaseTopologyDeadlineDistribution
+    )
+    set_tests_properties(realtime_render_deadline_distribution PROPERTIES
+        LABELS "extended;perf"
+        ENVIRONMENT "ORPHEUS_RUN_WORST_CASE_BENCHMARK=1;ORPHEUS_DEADLINE_OBSERVATIONS=500;ORPHEUS_DEADLINE_WARMUPS=20;ORPHEUS_DEADLINE_RATES=48000;ORPHEUS_DEADLINE_P99_RATIO=0.5"
+        SKIP_REGULAR_EXPRESSION "Requires unsanitized Release|not performance acceptance|Opt-in measurement disabled"
+        TIMEOUT 900)
 
     # ORP168: rendered streaming seek priming and failure-atomic page leases.
     add_executable(streaming_seek_test
@@ -630,6 +649,7 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
+    target_link_libraries(streaming_seek_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(streaming_seek_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include

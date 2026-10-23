@@ -169,8 +169,12 @@ TEST_F(ClipAudioControlsTest, InitialFadeInAppliesWithAndWithoutLooping) {
       ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
       ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
       render(left, right);
-      EXPECT_FLOAT_EQ(left.front(), 0.0f);
-      EXPECT_FLOAT_EQ(right.front(), 0.0f);
+      // The fade starts from silence. The EqualPower curve is now evaluated
+      // with the pinned platform-independent elementary function, whose
+      // absolute error near zero is below the float32 noise floor, so the
+      // first sample is silent rather than bit-exactly zero.
+      EXPECT_NEAR(left.front(), 0.0f, 1.0e-15f);
+      EXPECT_NEAR(right.front(), 0.0f, 1.0e-15f);
       EXPECT_NEAR(left[120], 0.25f * midpointGain, 1.0e-5f);
       EXPECT_NEAR(right[120], 0.5f * midpointGain, 1.0e-5f);
       EXPECT_NEAR(left[240], 0.25f, 1.0e-5f);
@@ -342,6 +346,33 @@ TEST_F(ClipAudioControlsTest, HardLeftPanSuppressesOnlyRightOutput) {
   render(left, right);
 
   EXPECT_GT(std::abs(left[0]), 0.1f);
+  for (float sample : right) {
+    EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
+  }
+}
+
+TEST_F(ClipAudioControlsTest, InactiveLaneStaysSilentAfterHostRouteEdit) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+  ASSERT_GT(std::abs(left.front()), 0.1f);
+
+  ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+  render(left, right);
+  auto* routing = transport->getRoutingMatrix();
+  ASSERT_NE(routing, nullptr);
+  ASSERT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::OK);
+  render(left, right);
+
+  for (float sample : left) {
+    EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
+  }
   for (float sample : right) {
     EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
   }

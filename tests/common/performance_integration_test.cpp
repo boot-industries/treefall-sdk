@@ -10,6 +10,8 @@
 #include <future>
 #include <thread>
 
+#include "../support/sanitizer_guard.hpp"
+
 using namespace orpheus;
 
 // Integration test fixture with real SessionGraph
@@ -180,7 +182,15 @@ TEST_F(PerformanceIntegrationTest, OverheadMeasurement) {
   // Target: <100 CPU cycles
   // On a 3 GHz CPU: 100 cycles = ~33 ns
   // We'll use a more generous target for CI: 500 ns
-  EXPECT_LT(avgNanoseconds, 500.0) << "getMetrics() is too slow for real-time use";
+  //
+  // Sanitizer builds inflate the wall clock unpredictably, so both ceilings are
+  // only asserted in an unsanitized build; the measurement and the report
+  // below still run either way.
+  if (orpheus::test::timingAssertionsEnabled()) {
+    EXPECT_LT(avgNanoseconds, 500.0) << "getMetrics() is too slow for real-time use";
+  } else {
+    std::cout << "  - getMetrics() timing bound skipped under sanitizer" << std::endl;
+  }
 
   // Calculate overhead as percentage of 48kHz audio buffer (1024 samples = ~21ms)
   double bufferDurationUs = (1024.0 / 48000.0) * 1'000'000.0; // ~21,333 µs
@@ -189,7 +199,9 @@ TEST_F(PerformanceIntegrationTest, OverheadMeasurement) {
   std::cout << "  Overhead per 1024-sample buffer: " << overheadPercent << "%" << std::endl;
 
   // Target: <0.01% overhead (much less than the 2% target for overall monitoring)
-  EXPECT_LT(overheadPercent, 0.01) << "getMetrics() overhead is too high";
+  if (orpheus::test::timingAssertionsEnabled()) {
+    EXPECT_LT(overheadPercent, 0.01) << "getMetrics() overhead is too high";
+  }
 }
 
 TEST_F(PerformanceIntegrationTest, StressTestWithMultipleClips) {

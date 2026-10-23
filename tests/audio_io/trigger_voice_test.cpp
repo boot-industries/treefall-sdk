@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 
 #include <orpheus/trigger_voice.h>

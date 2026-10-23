@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 
+#include "../../src/core/common/pinned_math.h"
 #include "../../src/core/transport/transport_controller.h"
 #include <cmath>
 #include <filesystem>
@@ -22,7 +23,8 @@ using namespace orpheus;
 class ClipGainTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
+    m_transport = std::make_unique<TransportController>(
+        nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_gain.wav").string();
     // Create test audio file with known samples for verification
     createTestAudioFile();
@@ -83,6 +85,26 @@ protected:
   std::unique_ptr<TransportController> m_transport;
   std::string m_testFilePath;
 };
+
+TEST(PinnedGainMathTest, ExtremeFiniteBoostOverflowsToInfinity) {
+  EXPECT_EQ(pinned::pow10(std::numeric_limits<float>::max() / 20.0f),
+            std::numeric_limits<float>::infinity());
+}
+
+TEST_F(ClipGainTest, ExtremeFiniteAttenuationRendersSilence) {
+  constexpr ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_testFilePath), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->updateClipGain(handle, -1.0e20f), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  std::vector<float> left(512, 1.0f);
+  std::vector<float> right(512, 1.0f);
+  float* output[] = {left.data(), right.data()};
+  m_transport->processAudio(output, 2, 512);
+  for (std::size_t frame = 0; frame < left.size(); ++frame) {
+    EXPECT_EQ(left[frame], 0.0f);
+    EXPECT_EQ(right[frame], 0.0f);
+  }
+}
 
 // Test 1: Gain initialization at 0 dB (unity gain)
 TEST_F(ClipGainTest, GainInitializesToUnityGain) {

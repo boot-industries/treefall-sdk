@@ -3,6 +3,7 @@
 
 #include <orpheus/routing_matrix.h>
 
+#include "routing_meter_state.h"
 #include "true_peak_meter.h"
 
 #include <array>
@@ -244,13 +245,13 @@ private:
 
   // ORP121 Q-05: Headroom compensation
   float getHeadroomCompensation(RoutingGroupIndex group_index) const;
-  uint32_t countActiveChannelsInGroup(RoutingGroupIndex group_index) const;
-  uint32_t countTotalActiveChannels() const;
+  /// Active-channel counts for one group, read from the per-block
+  /// accumulation. Audio thread only.
+  uint32_t activeChannelCount(RoutingGroupIndex group_index) const noexcept;
 
   void processStereoMetering(const float* left, const float* right, size_t num_frames,
-                             std::array<TruePeakMeter, 2>& true_peak_meters,
-                             std::atomic<float>& peak, std::atomic<float>& rms,
-                             std::atomic<uint32_t>* clip_count);
+                             std::array<TruePeakMeter, 2>& true_peak_meters, float& peak,
+                             float& rms, std::atomic<uint32_t>* clip_count);
   void publishChannelMeterSilence(ChannelState& channel);
   bool detectClipping(const float* buffer, size_t num_frames) const;
 
@@ -266,17 +267,9 @@ private:
   // Master output
   std::unique_ptr<GainSmoother> m_master_gain_smoother;
   std::atomic<bool> m_master_mute;
-  std::atomic<float> m_master_peak;
-  std::atomic<float> m_master_rms;
-  std::atomic<uint32_t> m_master_clip_count;
 
-  // Matrix-wide seqlock publication for the logical group-output extension.
-  std::atomic<uint64_t> m_group_output_meter_publication_sequence{0};
-  std::atomic<RoutingGroupIndex> m_group_output_meter_group_count{0};
-  std::atomic<uint64_t> m_group_output_meter_topology_revision{0};
-  std::atomic<uint8_t> m_group_output_meter_availability{
-      static_cast<uint8_t>(MeterAvailability::Unmeasured)};
-  std::atomic<uint8_t> m_group_output_meter_coherent{0};
+  // ORP273 F-16: matrix-level meter storage and publication.
+  RoutingMeterState m_meter_state;
 
   // Control-thread generation inputs and audio-thread rendered watermarks.
   // One seqlock publication covers a complete channel-route transaction.
@@ -290,11 +283,6 @@ private:
   uint64_t m_rendered_group_geometry_generation{0};
   uint64_t m_last_published_group_geometry_generation{0};
   uint64_t m_rendered_topology_revision{0};
-  std::array<TruePeakMeter, 2> m_master_true_peak_meters;
-  std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_peak{};
-  std::array<std::atomic<float>, kRoutingMaxOutputs> m_output_rms{};
-  std::array<std::atomic<uint32_t>, kRoutingMaxOutputs> m_output_clip_count{};
-  std::array<TruePeakMeter, kRoutingMaxOutputs> m_output_true_peak_meters{};
 
   // Solo domains are independent: a group solo must not mute every source
   // channel before group summing, and a channel solo must not mute every
@@ -322,6 +310,11 @@ private:
   // only lanes that were written before, plus lanes newly observed in its
   // route snapshot.
   std::array<uint32_t, kRoutingControlMaxGroups> m_previous_occupied_lane_masks{};
+  // ORP273 F-08: the headroom compensation needs the number of active
+  // channels per group and in total. They are accumulated once per block from
+  // the route snapshot instead of rescanning every channel for every group.
+  std::array<uint32_t, kRoutingControlMaxGroups> m_active_channel_counts{};
+  uint32_t m_total_active_channels{0u};
   MultichannelGroupBuffer m_channel_meter_buffer;
   std::vector<float> m_temp_buffer;
 

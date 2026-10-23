@@ -2,11 +2,25 @@
 
 add_library(orpheus_transport STATIC
     clip_source.cpp # ORP134 G1: prepared/streaming realtime clip sources
+    clip_source_registry.cpp
     clip_dsp.cpp
     transport_controller.cpp
 )
 
 target_compile_features(orpheus_transport PUBLIC cxx_std_20)
+
+# Keep multiply/add rounding identical on FMA and baseline targets. Explicit
+# arithmetic in pinned_math.h must not be changed by implicit contraction.
+if(MSVC)
+  # VS 2022 precise preserves ordering without contraction or fenv trap cost.
+  if(MSVC_VERSION GREATER_EQUAL 1930)
+    target_compile_options(orpheus_transport PRIVATE /fp:precise)
+  else()
+    target_compile_options(orpheus_transport PRIVATE /fp:strict)
+  endif()
+else()
+  target_compile_options(orpheus_transport PRIVATE -ffp-contract=off)
+endif()
 
 target_include_directories(orpheus_transport
     PUBLIC

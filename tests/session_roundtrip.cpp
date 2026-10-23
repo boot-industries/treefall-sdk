@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <orpheus/json.hpp>
 #include <orpheus/session_io.h>
 
 #include <cmath>
@@ -335,6 +336,193 @@ TEST(SessionRoundTrip, FailedLoadLeavesExistingGraphAndRevisionUntouched) {
   EXPECT_EQ(graph.name(), "Retained");
   EXPECT_EQ(graph.revision(), revision);
   fs::remove(path);
+}
+
+TEST(SessionJsonLimits, StructuralLimitsAreExplicitErrors) {
+  using ::orpheus::json::JsonParseLimits;
+  using ::orpheus::json::JsonParser;
+
+  const auto parseMessage = [](const std::string& text, JsonParseLimits limits) {
+    try {
+      JsonParser parser(text, limits);
+      static_cast<void>(parser.Parse());
+    } catch (const std::runtime_error& error) {
+      return std::string(error.what());
+    }
+    return std::string();
+  };
+
+  // Nesting depth: the 64th nested container is accepted, the 65th is not.
+  const auto nested = [](int levels) {
+    std::string text;
+    for (int level = 0; level < levels; ++level) {
+      text += "[";
+    }
+    text += "1";
+    for (int level = 0; level < levels; ++level) {
+      text += "]";
+    }
+    return text;
+  };
+  EXPECT_EQ(parseMessage(nested(64), JsonParseLimits{}), "");
+  EXPECT_EQ(parseMessage(nested(65), JsonParseLimits{}), "JSON nesting depth limit exceeded");
+
+  // Node budget: one node per parsed value, including the root.
+  JsonParseLimits nodeLimits;
+  nodeLimits.max_nodes = 3u;
+  EXPECT_EQ(parseMessage("[1,2]", nodeLimits), "");
+  EXPECT_EQ(parseMessage("[1,2,3]", nodeLimits), "JSON node budget exceeded");
+
+  // Object member budget.
+  JsonParseLimits memberLimits;
+  memberLimits.max_object_members = 2u;
+  EXPECT_EQ(parseMessage(R"({"a":1,"b":2})", memberLimits), "");
+  EXPECT_EQ(parseMessage(R"({"a":1,"b":2,"c":3})", memberLimits),
+            "JSON object member budget exceeded");
+
+  // Array element budget.
+  JsonParseLimits arrayLimits;
+  arrayLimits.max_array_elements = 2u;
+  EXPECT_EQ(parseMessage("[1,2]", arrayLimits), "");
+  EXPECT_EQ(parseMessage("[1,2,3]", arrayLimits), "JSON array element budget exceeded");
+
+  // A container budget is enforced before parsing (and allocating) the next
+  // value, even when the node budget would otherwise fail first.
+  JsonParseLimits memberBeforeNodeLimit;
+  memberBeforeNodeLimit.max_object_members = 1u;
+  memberBeforeNodeLimit.max_nodes = 2u;
+  EXPECT_EQ(parseMessage(R"({"a":0,"b":[0]})", memberBeforeNodeLimit),
+            "JSON object member budget exceeded");
+
+  JsonParseLimits arrayBeforeNodeLimit;
+  arrayBeforeNodeLimit.max_array_elements = 1u;
+  arrayBeforeNodeLimit.max_nodes = 2u;
+  EXPECT_EQ(parseMessage("[0,[0]]", arrayBeforeNodeLimit), "JSON array element budget exceeded");
+}
+
+TEST(SessionJsonLimits, SessionDocumentByteLimitIsAnExplicitError) {
+  const std::string oversized(67108865u, ' ');
+  try {
+    static_cast<void>(ParseSession(oversized));
+    FAIL() << "an oversized session document must be rejected";
+  } catch (const std::runtime_error& error) {
+    EXPECT_EQ(std::string(error.what()), "Session document exceeds maximum size of 67108864 bytes");
+  }
+}
+
+TEST(SessionJsonLimits, SessionFileReadEnforcesTheDocumentByteLimit) {
+  const auto path = fs::temp_directory_path() / "orpheus-session-oversized-file.json";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.is_open());
+    file.seekp(static_cast<std::streamoff>(67108864u));
+    file.put('x');
+    ASSERT_TRUE(file.good());
+  }
+  ASSERT_EQ(fs::file_size(path), 67108865u);
+
+  try {
+    static_cast<void>(LoadSessionFromFile(path.string()));
+    FAIL() << "an oversized session file must be rejected";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("Session document exceeds maximum size"),
+              std::string::npos);
+  }
+  fs::remove(path);
+}
+
+TEST(SessionJsonLimits, FailedOversizedSavePreservesPreviousDocument) {
+  const auto path = fs::temp_directory_path() / "orpheus-session-save-limit.json";
+  SessionGraph previous;
+  previous.set_name("Preserved");
+  SaveSessionToFile(previous, path.string());
+  const std::string saved_document = LoadFixtureText(path);
+
+  SessionGraph oversized;
+  oversized.set_name(std::string(11184811u, '\x01'));
+  EXPECT_THROW(SaveSessionToFile(oversized, path.string()), std::runtime_error);
+  EXPECT_EQ(LoadFixtureText(path), saved_document);
+  EXPECT_FALSE(fs::exists(path.string() + ".tmp"));
+  fs::remove(path);
+}
+
+TEST(SessionJsonSemantics, RejectsUnescapedControlCharacters) {
+  std::string invalid_json{"\"a"};
+  invalid_json.push_back('\x01');
+  invalid_json += "b\"";
+  ::orpheus::json::JsonParser parser(invalid_json);
+  EXPECT_THROW(static_cast<void>(parser.Parse()), std::runtime_error);
+}
+
+TEST(SessionJsonSemantics, SerializesControlCharactersAsValidEscapes) {
+  SessionGraph graph;
+  std::string name{"Control"};
+  name.push_back('\0');
+  name.push_back('\b');
+  name.push_back('\f');
+  name.push_back('\x01');
+  name.push_back('\x1f');
+  graph.set_name(name);
+
+  const std::string json = SerializeSession(graph);
+  EXPECT_NE(json.find("\\u0000"), std::string::npos);
+  EXPECT_NE(json.find("\\b"), std::string::npos);
+  EXPECT_NE(json.find("\\f"), std::string::npos);
+  EXPECT_NE(json.find("\\u0001"), std::string::npos);
+  EXPECT_NE(json.find("\\u001f"), std::string::npos);
+  EXPECT_EQ(ParseSession(json).name(), name);
+}
+
+TEST(SessionRoundTrip, FailedBulkInsertDoesNotConsumeClipIds) {
+  SessionGraph graph;
+  Track* track = graph.add_track("Track");
+  ASSERT_NE(track, nullptr);
+  const ClipId existing_id = graph.add_clip(*track, "Existing", 0.0, 2.0)->id();
+  const std::uint64_t revision = graph.revision();
+
+  const std::vector<SessionGraph::ClipSpec> specs{
+      {"Valid before overlap", 4.0, 1.0, 0u},
+      {"Overlapping", 1.0, 2.0, 0u},
+  };
+  EXPECT_THROW(static_cast<void>(graph.add_clips(*track, specs)), std::invalid_argument);
+  EXPECT_EQ(graph.revision(), revision);
+  ASSERT_EQ(graph.tracks().front()->clips().size(), 1u);
+
+  const ClipId next_id = graph.add_clip(*graph.tracks().front(), "Next", 2.0, 1.0)->id();
+  EXPECT_EQ(next_id.raw(), existing_id.raw() + 1u);
+}
+
+TEST(SessionRoundTrip, RollbackPreservesPendingClipGridRefresh) {
+  SessionGraph graph;
+  Track* track = graph.add_track("Track");
+  ASSERT_NE(track, nullptr);
+  ASSERT_NE(graph.add_clip(*track, "Clip", 4.0, 2.0), nullptr);
+
+  auto transaction = graph.begin_transaction();
+  graph.set_name("Temporary");
+  transaction.rollback();
+
+  graph.commit_clip_grid();
+  EXPECT_DOUBLE_EQ(graph.session_start_beats(), 4.0);
+  EXPECT_DOUBLE_EQ(graph.session_end_beats(), 6.0);
+}
+
+TEST(SessionRoundTrip, RollbackPreservesExactBeatValues) {
+  SessionGraph graph;
+  Track* track = graph.add_track("Track");
+  ASSERT_NE(track, nullptr);
+  const double start = 0.123456789;
+  const double length = 1.234567891;
+  ASSERT_NE(graph.add_clip(*track, "Clip", start, length), nullptr);
+
+  auto transaction = graph.begin_transaction();
+  graph.set_name("Temporary");
+  transaction.rollback();
+
+  ASSERT_EQ(graph.tracks().size(), 1u);
+  ASSERT_EQ(graph.tracks().front()->clips().size(), 1u);
+  EXPECT_DOUBLE_EQ(graph.tracks().front()->clips().front()->start(), start);
+  EXPECT_DOUBLE_EQ(graph.tracks().front()->clips().front()->length(), length);
 }
 
 } // namespace orpheus::core::session_json::tests

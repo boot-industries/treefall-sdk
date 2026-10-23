@@ -81,8 +81,6 @@ bool CoreAudioRouteMonitor::start() noexcept {
 
   state_.store(State::Active, std::memory_order_release);
   pending_.store(false, std::memory_order_release);
-  generation_.fetch_add(1, std::memory_order_acq_rel);
-  generation_.notify_one();
 
   for (const ListenerRegistration& registration : registrations_) {
     if (property_api_.addPropertyListener(registration.object_id, &registration.address,
@@ -114,21 +112,24 @@ void CoreAudioRouteMonitor::requestCheck() noexcept {
   signalStateChange();
 }
 
-void CoreAudioRouteMonitor::closeAdmission() noexcept {
+void CoreAudioRouteMonitor::closeAdmissionFromCallback() noexcept {
   State expected = State::Active;
   state_.compare_exchange_strong(expected, State::Terminal, std::memory_order_acq_rel,
                                  std::memory_order_acquire);
   pending_.store(true, std::memory_order_release);
+}
+
+void CoreAudioRouteMonitor::closeAdmission() noexcept {
+  closeAdmissionFromCallback();
   signalStateChange();
 }
 
 void CoreAudioRouteMonitor::waitForChange() noexcept {
-  uint64_t observed = generation_.load(std::memory_order_acquire);
-  while (state_.load(std::memory_order_acquire) == State::Active &&
-         !pending_.load(std::memory_order_acquire)) {
-    generation_.wait(observed, std::memory_order_acquire);
-    observed = generation_.load(std::memory_order_acquire);
-  }
+  std::unique_lock<std::mutex> lock(changeMutex_);
+  changeCv_.wait_for(lock, kRouteMonitorWaitTimeout, [this] {
+    return state_.load(std::memory_order_acquire) != State::Active ||
+           pending_.load(std::memory_order_acquire);
+  });
 }
 
 CoreAudioRoutePollResult CoreAudioRouteMonitor::poll() noexcept {
@@ -284,8 +285,15 @@ bool CoreAudioRouteMonitor::readFormat(ICoreAudioPropertyApi& property_api, Audi
 }
 
 void CoreAudioRouteMonitor::signalStateChange() noexcept {
-  generation_.fetch_add(1, std::memory_order_acq_rel);
-  generation_.notify_one();
+  // The lock is taken so a notification cannot race the waiter's predicate
+  // evaluation: the waiter either observes the published state before it
+  // blocks, or it is already registered with the condition variable. The
+  // device-callback path deliberately does not call this — it publishes the
+  // terminal state only, and the worker observes it within
+  // kRouteMonitorWaitTimeout.
+  notification_count_.fetch_add(1, std::memory_order_acq_rel);
+  std::lock_guard<std::mutex> lock(changeMutex_);
+  changeCv_.notify_one();
 }
 
 } // namespace orpheus
