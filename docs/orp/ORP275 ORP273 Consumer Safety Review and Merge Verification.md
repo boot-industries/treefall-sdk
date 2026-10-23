@@ -153,6 +153,50 @@ per-phase tap order; scalar-reference tests guard numerical parity. These are
 synthetic CPU measurements, not physical-device or downstream UI qualification.
 Windows acceptance still requires hosted CI against the same unchanged budget.
 
+## Hosted review follow-through
+
+Run `39932281768` at reviewed head `51c1cc79f` still failed the golden on Linux
+and Windows, plus the unsanitized x86 deadlines. The unique runtime-directory
+change fixed the Windows package-consumer failure and the isolated allocation
+hooks fixed GCC compilation; those checks reached/passed their intended paths.
+Lint, macOS Debug, Linux TSan and syscall evidence passed. The failing run is
+not acceptance evidence.
+
+The exact golden exercises soft clipping: already around frame 20, left-channel
+input exceeds the 0.794 knee threshold. Thus `std::tanh(float)` still changed
+audio bytes by platform/build even after contraction was pinned. The correction
+keeps clipping enabled for every consumer, moves shared numeric helpers to
+`src/core/common/pinned_math.h` without an old-path shim and evaluates the knee
+with the seven-level continued-fraction rational [6]. The float argument/return
+boundaries remain unchanged. For knee arguments >= 1 the original expression
+already exceeds the final 0.9999 ceiling; the bounded branch preserves that
+saturated output without evaluating a wider transcendental.
+
+The exercised 1,000,001-point final-output sweep over magnitudes `[0,4]` reports
+maximum error one float ULP (`5.9604644775390625e-08`) against local libm,
+monotonic output and unchanged ceiling. The permanent routing test covers signed
+threshold/nextafter, finite extremes, inactive right output and clipping count;
+it replaces a previous nonnegative-counter tautology. The deliberately reviewed
+new scenario golden is `0x212b8a01988459a9`. Release routing/hash tests pass,
+Debug ASan/UBSan routing/hash/gain tests pass (3/3), the unchanged Release budget
+validator passes in 9.90 seconds and the real minhost render succeeds.
+
+The hosted deadline failures were compute cost, not dismissed as scheduling:
+Linux TruePeak wall/thread-CPU p99 was 28,448/28,450 microseconds, Windows wall
+p99 33,578. SSE2 now uses the same ordered phase-parallel kernel as x64, with
+vector absolute/max reduction instead of four scalar lane reductions. VS 2022
+uses `/fp:precise`, which Microsoft documents as non-contracting by default,
+without `/fp:strict`'s floating-environment exception/trap overhead [7].
+Older MSVC retains strict mode.
+
+A throwaway Rosetta x86_64 AppleClang smoke compared finite and zero/Inf/NaN
+kernel checksums with the preceding implementation: both matched. A separate
+maximum-topology routing smoke produced output lane 0 = 0.32 with p99 13,242.38
+microseconds, below the unchanged 21,333.33 ceiling. This is emulated x86 evidence,
+not GCC/MSVC or hardware acceptance. Small paired per-sample timing differences
+were inconsistent by branch and are not claimed as a measured speedup.
+Hosted checks must still pass the single golden and unchanged budgets.
+
 ## Consumer obligations
 
 - Rebuild C++ SDK libraries and consumers against the matching headers. Public
@@ -176,3 +220,7 @@ Windows acceptance still requires hosted CI against the same unchanged budget.
 [3] ORP273, original review requirements.  
 [4] ORP274, original remediation and local measurement record.  
 [5] ORP276, ShmUI private-source compartmentalization handoff.
+[6] NIST, “§4.39 Continued Fractions,” *Digital Library of Mathematical
+Functions*, Eq. 4.39.1. https://dlmf.nist.gov/4.39.E1 (accessed 2026-10-23).  
+[7] Microsoft, “/fp (Specify floating-point behavior),” VS 2022 `/fp:precise`
+and `/fp:strict`. https://learn.microsoft.com/en-us/cpp/build/reference/fp-specify-floating-point-behavior?view=msvc-170 (accessed 2026-10-23).

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "transport_controller.h"
+#include "../common/pinned_math.h"
 #include "../common/realtime_counter.h"
-#include "pinned_math.h" // ORP273 F-02: libm-independent render-path math
 #include <algorithm>
 #include <bit>
 #include <cassert>

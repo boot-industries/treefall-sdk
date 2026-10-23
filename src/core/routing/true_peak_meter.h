@@ -53,7 +53,7 @@ public:
 
     float peak = std::abs(sample); // Include original sample
     const float* history = &m_history[m_history_head];
-#if defined(_M_X64)
+#if defined(_M_X64) || defined(__SSE2__)
     // Accumulate all four FIR phases in parallel. Each lane keeps its
     // canonical tap order; transposed coefficients make each tap contiguous.
     __m128 phaseSums = _mm_setzero_ps();
@@ -61,10 +61,13 @@ public:
       const __m128 coefficients = _mm_loadu_ps(s_transposedFilterCoeffs[tap].data());
       phaseSums = _mm_add_ps(phaseSums, _mm_mul_ps(_mm_set1_ps(history[tap]), coefficients));
     }
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(phaseSums)));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 1))));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 2))));
-    peak = std::max(peak, std::abs(_mm_cvtss_f32(_mm_shuffle_ps(phaseSums, phaseSums, 3))));
+    // Keep the current peak as MAXPS's second operand so a NaN phase retains
+    // the earlier peak, matching the sequential std::max updates below.
+    const __m128 phaseAbs = _mm_andnot_ps(_mm_set1_ps(-0.0f), phaseSums);
+    const __m128 withSamplePeak = _mm_max_ps(phaseAbs, _mm_set1_ps(peak));
+    const __m128 pairPeaks =
+        _mm_max_ps(withSamplePeak, _mm_movehl_ps(withSamplePeak, withSamplePeak));
+    peak = _mm_cvtss_f32(_mm_max_ss(pairPeaks, _mm_shuffle_ps(pairPeaks, pairPeaks, 1)));
 #elif defined(__aarch64__) || defined(__arm64__)
     float32x4_t phaseSums = vdupq_n_f32(0.0f);
     for (size_t tap = 0; tap < static_cast<size_t>(TAPS_PER_PHASE); ++tap) {
@@ -76,22 +79,6 @@ public:
     peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 1)));
     peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 2)));
     peak = std::max(peak, std::abs(vgetq_lane_f32(phaseSums, 3)));
-#elif defined(__SSE2__)
-    const __m128 history0 = _mm_loadu_ps(history);
-    const __m128 history1 = _mm_loadu_ps(history + 4);
-    const __m128 history2 = _mm_loadu_ps(history + 8);
-    for (size_t phase = 0; phase < static_cast<size_t>(OVERSAMPLE_FACTOR); ++phase) {
-      const auto& coefficients = s_filterCoeffs[phase];
-      __m128 sum = _mm_mul_ps(history0, _mm_loadu_ps(coefficients.data()));
-      sum = _mm_add_ps(sum, _mm_mul_ps(history1, _mm_loadu_ps(coefficients.data() + 4)));
-      sum = _mm_add_ps(sum, _mm_mul_ps(history2, _mm_loadu_ps(coefficients.data() + 8)));
-      __m128 high = _mm_movehl_ps(sum, sum);
-      sum = _mm_add_ps(sum, high);
-      high = _mm_shuffle_ps(sum, sum, 1);
-      sum = _mm_add_ss(sum, high);
-      const float interpolated = _mm_cvtss_f32(sum);
-      peak = std::max(peak, std::abs(interpolated));
-    }
 #else
     for (size_t phase = 0; phase < static_cast<size_t>(OVERSAMPLE_FACTOR); ++phase) {
       const auto& coefficients = s_filterCoeffs[phase];

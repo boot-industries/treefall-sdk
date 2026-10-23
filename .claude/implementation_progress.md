@@ -18,8 +18,11 @@ Focused Release and ASan/UBSan tests and installed-package/ABI fixtures pass;
 the real minhost smoke produces a 4-second stereo PCM16 WAV. The isolated
 Release gate passes at unchanged ratio 0.5, TruePeak p99 10,352.7 microseconds,
 with zero guarded allocations/deallocations. The shared scenario golden is
-`0x2c62d3e2104b576d`; clean hosted CI is required before merge. ORP275 retains
-the initial failures and contaminated concurrent-build timing evidence.
+`0x212b8a01988459a9`; clean hosted CI is required before merge. The first review
+CI exposed active soft-clip `tanh` dependence and x86 deadline misses. The
+pinned knee, shared SSE2 phase kernel and VS 2022 precise policy address those
+without disabling clipping or changing the deadline budget. ORP275 records
+the failures and subsequent scoped accuracy/runtime evidence.
 
 Consumer repositories, pins and the governed ShmUI import are unchanged;
 matching-header C++ rebuilds remain required. The 2026-10-22 record below is

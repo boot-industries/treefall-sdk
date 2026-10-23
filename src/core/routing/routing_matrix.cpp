@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "routing_matrix.h"
+#include "../common/pinned_math.h"
 #include "../common/realtime_counter.h"
 #include "gain_smoother.h"
 
@@ -1303,7 +1304,8 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         const float magnitude = std::abs(sample);
         if (magnitude > threshold) {
           const float compressed =
-              threshold + std::tanh((magnitude - threshold) / knee_width) * knee_width;
+              threshold +
+              pinned::tanhPositiveKnee((magnitude - threshold) / knee_width) * knee_width;
           sample = std::copysign(std::min(compressed, ceiling), sample);
         }
         master_output[output][frame] = sanitize(sample);

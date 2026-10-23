@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/clip_dsp.h>
 
-#include "pinned_math.h" // ORP273 F-02: libm-independent render-path math
+#include "../common/pinned_math.h"
 
 #include <algorithm>
 #include <cmath>

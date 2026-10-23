@@ -120,4 +120,19 @@ inline float pow10(float exponent) noexcept {
   return static_cast<float>(exp(static_cast<double>(exponent) * kLn10));
 }
 
+/// Soft-clip knee tanh approximation. The caller's final ceiling is already
+/// saturated for arguments >= 1, where returning one preserves its output.
+/// Below one, evaluate seven levels of Lambert's continued fraction as a
+/// [7/6] rational in double, then retain the original float return boundary.
+inline float tanhPositiveKnee(float value) noexcept {
+  if (value >= 1.0f) {
+    return 1.0f;
+  }
+  const double x = static_cast<double>(value);
+  const double square = x * x;
+  const double numerator = x * (135135.0 + square * (17325.0 + square * (378.0 + square)));
+  const double denominator = 135135.0 + square * (62370.0 + square * (3150.0 + square * 28.0));
+  return static_cast<float>(numerator / denominator);
+}
+
 } // namespace orpheus::pinned

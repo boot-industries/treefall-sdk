@@ -12,7 +12,11 @@ target_compile_features(orpheus_routing PUBLIC cxx_std_20)
 
 # Mixing and smoothing participate in the cross-platform render-byte contract.
 if(MSVC)
-  target_compile_options(orpheus_routing PRIVATE /fp:strict)
+  if(MSVC_VERSION GREATER_EQUAL 1930)
+    target_compile_options(orpheus_routing PRIVATE /fp:precise)
+  else()
+    target_compile_options(orpheus_routing PRIVATE /fp:strict)
+  endif()
 else()
   target_compile_options(orpheus_routing PRIVATE -ffp-contract=off)
 endif()

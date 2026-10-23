@@ -471,29 +471,55 @@ TEST_F(RoutingMatrixTest, MeteringDetectsPeak) {
   EXPECT_NEAR(meter.peak_db, -3.0f, 1.0f); // -3 dB due to pan law at center
 }
 
-TEST_F(RoutingMatrixTest, MeteringDetectsClipping) {
-  matrix->initialize(config);
+TEST_F(RoutingMatrixTest, SoftClippingPreservesKneeCeilingAndSign) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 2;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_clipping_protection = true;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setChannelRoute(0, 0, 0), SessionGraphError::OK);
 
-  // Create input that will clip (amplitude > 1.0)
-  auto inputs = createTestInputs(4, BUFFER_SIZE, 0.5f);
-  auto input_ptrs = toPointerArray(inputs);
+  const std::array<float, 16> input{-std::numeric_limits<float>::max(),
+                                    -2.0f,
+                                    -1.1f,
+                                    -0.9f,
+                                    -0.794f,
+                                    -0.5f,
+                                    -0.0f,
+                                    0.0f,
+                                    0.5f,
+                                    0.794f,
+                                    std::nextafter(0.794f, 1.0f),
+                                    0.9f,
+                                    1.0f,
+                                    1.1f,
+                                    2.0f,
+                                    std::numeric_limits<float>::max()};
+  std::array<float, input.size()> left{};
+  std::array<float, input.size()> right{};
+  const float* inputs[] = {input.data()};
+  float* outputs[] = {left.data(), right.data()};
+  ASSERT_EQ(matrix->processRouting(inputs, outputs, static_cast<uint32_t>(input.size())),
+            SessionGraphError::OK);
 
-  // Create outputs
-  std::vector<std::vector<float>> outputs(2);
-  for (auto& out : outputs) {
-    out.resize(BUFFER_SIZE);
+  for (size_t frame = 0; frame < input.size(); ++frame) {
+    const float magnitude = std::abs(input[frame]);
+    const float expected =
+        magnitude <= 0.794f
+            ? input[frame]
+            : std::copysign(
+                  std::min(0.794f + std::tanh((magnitude - 0.794f) / 0.3f) * 0.3f, 0.9999f),
+                  input[frame]);
+    EXPECT_NEAR(left[frame], expected, 2.0e-7f) << "frame " << frame;
+    EXPECT_LE(std::abs(left[frame]), 0.9999f);
+    EXPECT_EQ(right[frame], 0.0f);
+    if (frame > 0) {
+      EXPECT_GE(left[frame], left[frame - 1]);
+    }
   }
-  auto output_ptrs = toPointerArray(outputs);
-
-  // Sum 4 channels (each 0.5) into 2 groups into master = potential clipping
-  matrix->processRouting(input_ptrs.data(), output_ptrs.data(), BUFFER_SIZE);
-
-  // Check master meter
-  auto meter = matrix->getMasterMeter();
-
-  // May or may not clip depending on signal phase, but clipping should be tracked
-  // (This is a basic smoke test - clipping detection works)
-  EXPECT_GE(meter.clip_count, 0); // Non-negative
+  EXPECT_GT(matrix->getMasterMeter().clip_count, 0u);
 }
 
 TEST_F(RoutingMatrixTest, StereoMetersIncludeRightOnlySignal) {

@@ -18,8 +18,12 @@ A real minhost render produces the expected 4-second stereo PCM16 WAV.
 The isolated Release deadline gate passes with unchanged ratio 0.5; TruePeak
 wall p99 is 10,352.7 microseconds against a 21,333.3 ceiling, with zero guarded
 allocations/deallocations. The earlier concurrent-build timing failure remains
-recorded in ORP275. The shared scenario golden is `0x2c62d3e2104b576d`; hosted
-cross-platform parity is still a merge requirement, not inferred from local math.
+recorded in ORP275. The shared scenario golden is `0x212b8a01988459a9`; hosted
+cross-platform parity remains required. The first review CI exposed the soft
+clipper's remaining `tanh` dependency and x86 deadline misses. The knee is now
+pinned without disabling clipping; x86 reductions are vectorized, and VS 2022
+uses non-contracting `/fp:precise` without unnecessary floating-environment trap
+overhead. ORP275 records failed CI and subsequent scoped accuracy/runtime proof.
 
 No consumer repository, SDK pin or governed ShmUI import changed. All affected
 C++ consumers need matching-header rebuilds. Default ShmUI-off does not hide

@@ -53,7 +53,7 @@ constexpr size_t kBlockSizes[] = {256, 512, 1024, 2048};
 // Shared scenario golden. Regenerate deliberately and review the numerical
 // change when render arithmetic changes; never choose an expected hash by
 // platform to conceal a portability failure.
-inline constexpr uint64_t kGoldenRenderHash = 0x2c62d3e2104b576dull;
+inline constexpr uint64_t kGoldenRenderHash = 0x212b8a01988459a9ull;
 
 // Deterministic PCM16 WAV writer fed from the integer-table sine in
 // synth.hpp — no libm in fixture generation, so fixture bytes are identical

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 
-#include "../../src/core/transport/pinned_math.h"
+#include "../../src/core/common/pinned_math.h"
 #include "../../src/core/transport/transport_controller.h"
 #include <cmath>
 #include <filesystem>
