@@ -21,7 +21,6 @@
 // (voice_state_tsan_test + this file built under -fsanitize=thread); a
 // dlsym-interpose lock detector would fight the sanitizers' own interceptors.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 #include "../support/sanitizer_guard.hpp"
 

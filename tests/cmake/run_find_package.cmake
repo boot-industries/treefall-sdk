@@ -74,6 +74,9 @@ function(run_consumer mode consumer_binary_dir)
       "Configure failed for discovery mode ${mode} with code ${configure_result}:\n${configure_output}")
   endif()
 
+  # Each fixture gets a separate runtime directory so parallel vcpkg z-applocal
+  # copies cannot collide on shared DLLs (run 39755340663 failed reading
+  # find_package_build-treefall-first/Release/sndfile.dll with permission denied).
   execute_process(
     COMMAND "${CMAKE_COMMAND}" --build "${consumer_binary_dir}"
             --config "${build_type}" --parallel

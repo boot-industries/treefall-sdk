@@ -5,7 +5,6 @@
 // events from the audio thread to the UI thread.
 
 #include "../../src/core/transport/transport_controller.h"
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 #include "../support/sanitizer_guard.hpp"
 #include <orpheus/audio_file_writer.h>

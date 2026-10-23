@@ -350,6 +350,33 @@ TEST_F(ClipAudioControlsTest, HardLeftPanSuppressesOnlyRightOutput) {
     EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
   }
 }
+
+TEST_F(ClipAudioControlsTest, InactiveLaneStaysSilentAfterHostRouteEdit) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+  ASSERT_GT(std::abs(left.front()), 0.1f);
+
+  ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+  render(left, right);
+  auto* routing = transport->getRoutingMatrix();
+  ASSERT_NE(routing, nullptr);
+  ASSERT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::OK);
+  render(left, right);
+
+  for (float sample : left) {
+    EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
+  }
+  for (float sample : right) {
+    EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
+  }
+}
 TEST_F(ClipAudioControlsTest, MonoCenterPanDuplicatesWithConstantPowerGain) {
   constexpr ClipHandle monoHandle = 2;
   ASSERT_EQ(transport->registerClipAudio(monoHandle, monoPath.c_str()), SessionGraphError::OK);

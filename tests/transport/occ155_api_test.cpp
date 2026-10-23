@@ -17,7 +17,6 @@
 //   Ask #5 (HIGH)     — panic() hard-cuts all voices with no fade (immediate
 //                       mute), in contrast to stopAllClips()'s fade envelope.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../../src/core/transport/transport_controller.h"
 #include "../support/rt_guard.hpp"
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // ORP168: rendered first-block streaming seek and command-prime transactions.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 
 #include "audio_io/resampling_audio_file_reader.h"
@@ -49,6 +48,7 @@ public:
   struct WorkerDrive {
     std::vector<MediaStreamWorker::SourceService> live;
     std::vector<MediaStreamWorker::SourceService> next;
+    std::vector<MediaStreamWorker::PreviousSource> previous;
     size_t cursor{0};
   };
 
@@ -64,7 +64,7 @@ public:
   static void serviceRound(MediaStreamWorker& worker, WorkerDrive& drive) {
     {
       std::lock_guard<std::mutex> lock(worker.m_mutex);
-      worker.snapshotSources(drive.live, drive.next);
+      worker.snapshotSources(drive.live, drive.next, drive.previous);
     }
     MediaStreamWorker::serviceRound(drive.live, drive.cursor);
   }

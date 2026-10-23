@@ -355,6 +355,22 @@ TEST_F(GainSmootherTest, ConcurrentGetTarget) {
   EXPECT_TRUE(true);
 }
 
+TEST_F(GainSmootherTest, BlockRampDefersMidBlockTargetUpdateToNextBlock) {
+  GainSmoother smoother(SAMPLE_RATE, 10.0f);
+  smoother.reset(0.0f);
+  smoother.setTarget(1.0f);
+
+  auto firstBlock = smoother.beginBlock();
+  EXPECT_FLOAT_EQ(firstBlock.target, 1.0f);
+  EXPECT_FLOAT_EQ(smoother.next(firstBlock), 0.0f);
+  smoother.setTarget(0.5f);
+  smoother.endBlock(firstBlock);
+
+  auto secondBlock = smoother.beginBlock();
+  EXPECT_FLOAT_EQ(secondBlock.target, 0.5f);
+  EXPECT_FLOAT_EQ(secondBlock.current, firstBlock.current);
+}
+
 // ============================================================================
 // Performance Tests
 // ============================================================================

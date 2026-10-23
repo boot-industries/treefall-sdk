@@ -39,11 +39,9 @@ void GainSmoother::setTarget(float target) {
 }
 
 float GainSmoother::getTarget() const {
-  // Check if pending update exists
-  if (m_has_pending.load(std::memory_order_acquire)) {
-    return m_pending_target.load(std::memory_order_acquire);
-  }
-  return m_target;
+  // The control-thread query must not read m_target, which belongs exclusively
+  // to the audio thread.
+  return m_pending_target.load(std::memory_order_acquire);
 }
 
 void GainSmoother::reset(float gain) {

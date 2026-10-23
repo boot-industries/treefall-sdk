@@ -272,6 +272,8 @@ private:
     std::uint16_t render_bit_depth_bits{24u};
     bool render_dither_enabled{true};
     double session_start_beats{0.0};
+    bool clip_grid_dirty{false};
+
     double session_end_beats{0.0};
     std::uint64_t next_track_id_raw{1u};
     std::uint64_t next_clip_id_raw{1u};
@@ -291,10 +293,9 @@ public:
 
   private:
     friend class SessionGraph;
-    Transaction(SessionGraph& graph, SessionGraphSnapshot before, RollbackImage image);
+    Transaction(SessionGraph& graph, RollbackImage image);
 
     SessionGraph* graph_{nullptr};
-    SessionGraphSnapshot before_{};
     SessionGraphChangeSet before_change_{};
     std::uint64_t base_revision_{0u};
     RollbackImage rollback_image_{};
@@ -456,7 +457,9 @@ private:
   Clip* find_clip(ClipId clip_id);
   void record_change(SessionChangeFlags changes);
   void restore_unchecked(const SessionGraphSnapshot& snapshot);
-  /// Builds the owned rollback image from a snapshot. Allocates; may throw
+  /// Clones the current edit state for transaction rollback. Allocates; may throw std::bad_alloc.
+  [[nodiscard]] RollbackImage build_rollback_image() const;
+  /// Builds a validated rollback image from a public snapshot. Allocates; may throw
   /// std::invalid_argument for an invalid snapshot and std::bad_alloc.
   [[nodiscard]] RollbackImage build_rollback_image(const SessionGraphSnapshot& state) const;
   /// Applies a prebuilt image. Moves only: no allocation, no throw.

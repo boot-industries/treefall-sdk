@@ -64,11 +64,7 @@ public:
   /// @return Current smoothed gain value
   /// @note Call once per sample, returns ramped value toward target
   float process() {
-    // Check for pending target update (lock-free)
-    if (m_has_pending.load(std::memory_order_acquire)) {
-      m_target = m_pending_target.load(std::memory_order_acquire);
-      m_has_pending.store(false, std::memory_order_release);
-    }
+    adoptPendingTarget();
 
     // ORP127 G4 (F-SDK-5): with smoothing disabled, snap to target immediately.
     if (m_smoothing_disabled) {
@@ -107,10 +103,7 @@ public:
 
   /// Begin a block: adopt any pending target exactly once. Audio thread only.
   inline RampState beginBlock() {
-    if (m_has_pending.load(std::memory_order_acquire)) {
-      m_target = m_pending_target.load(std::memory_order_acquire);
-      m_has_pending.store(false, std::memory_order_release);
-    }
+    adoptPendingTarget();
     return RampState{m_current, m_target, m_increment, m_smoothing_disabled};
   }
 
@@ -166,13 +159,21 @@ public:
   }
 
 private:
+  // Consume before loading the target. A producer that publishes while the
+  // target is being read leaves the flag set for the next sample/block.
+  void adoptPendingTarget() noexcept {
+    if (m_has_pending.exchange(false, std::memory_order_acq_rel)) {
+      m_target = m_pending_target.load(std::memory_order_acquire);
+    }
+  }
+
   // Configuration (set once in constructor)
   float m_increment;                ///< Gain change per sample
   bool m_smoothing_disabled{false}; ///< ORP127 G4: true when constructed with 0ms
 
   // State (audio thread only)
   float m_current; ///< Current gain value
-  float m_target;  ///< Target gain value (updated atomically)
+  float m_target;  ///< Audio-thread target adopted from m_pending_target
 
   // Thread-safe target update (UI → audio thread)
   std::atomic<float> m_pending_target;

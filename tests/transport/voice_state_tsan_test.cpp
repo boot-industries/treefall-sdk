@@ -20,7 +20,6 @@
 // The harness itself always passes (it asserts liveness, not correctness);
 // the *verdict* is whether TSan reports races. Post-T3 it must be clean.
 
-#define ORPHEUS_TEST_DEFINE_RT_ALLOC_HOOKS
 #include "../support/rt_guard.hpp"
 #include <gtest/gtest.h>
 #include <orpheus/audio_file_reader.h>

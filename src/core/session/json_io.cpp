@@ -55,12 +55,30 @@ std::string ReadTextFile(const std::filesystem::path& path) {
   if (!file.is_open()) {
     throw std::runtime_error("Unable to open session: " + path.string());
   }
-  std::ostringstream buffer;
-  buffer << file.rdbuf();
-  if (!file.eof() && file.fail()) {
+
+  std::error_code size_error;
+  const std::uintmax_t file_size = std::filesystem::file_size(path, size_error);
+  if (!size_error && file_size > kMaxSessionDocumentBytes) {
+    throw std::runtime_error("Session document exceeds maximum size of 67108864 bytes");
+  }
+
+  std::string contents;
+  char chunk[8192];
+  while (file) {
+    file.read(chunk, static_cast<std::streamsize>(sizeof(chunk)));
+    const std::streamsize count = file.gcount();
+    if (count > 0) {
+      const std::size_t bytes = static_cast<std::size_t>(count);
+      if (bytes > kMaxSessionDocumentBytes - contents.size()) {
+        throw std::runtime_error("Session document exceeds maximum size of 67108864 bytes");
+      }
+      contents.append(chunk, bytes);
+    }
+  }
+  if (file.bad() || (!file.eof() && file.fail())) {
     throw std::runtime_error("Failed to read session: " + path.string());
   }
-  return buffer.str();
+  return contents;
 }
 
 // A primary document written by a newer SDK is never substituted with an
@@ -187,6 +205,88 @@ std::string SanitizeSessionName(const std::string& session_name) {
   }
 
   return sanitized;
+}
+
+void AddSerializedJsonNodes(std::size_t count, std::size_t& total) {
+  if (total > kSessionJsonLimits.max_nodes || count > kSessionJsonLimits.max_nodes - total) {
+    throw std::runtime_error("JSON node budget exceeded");
+  }
+  total += count;
+}
+
+void RequireSerializedArraySize(std::size_t size) {
+  if (size > kSessionJsonLimits.max_array_elements) {
+    throw std::runtime_error("JSON array element budget exceeded");
+  }
+}
+
+void AddSerializedStringBytes(const std::string& value, std::size_t& total) {
+  for (const char character : value) {
+    std::size_t encoded_bytes = 1u;
+    switch (character) {
+    case '"':
+    case '\\':
+    case '\b':
+    case '\f':
+    case '\n':
+    case '\r':
+    case '\t':
+      encoded_bytes = 2u;
+      break;
+    default:
+      if (static_cast<unsigned char>(character) < 0x20u) {
+        encoded_bytes = 6u;
+      }
+      break;
+    }
+    if (total > kMaxSessionDocumentBytes || encoded_bytes > kMaxSessionDocumentBytes - total) {
+      throw std::runtime_error("Serialized session exceeds maximum size of 67108864 bytes");
+    }
+    total += encoded_bytes;
+  }
+}
+
+void ValidateSessionSerializationLimits(const SessionGraph& session) {
+  std::size_t nodes = 0u;
+  std::size_t escaped_string_bytes = 0u;
+  // Root plus its nine field values and the three render fields.
+  AddSerializedJsonNodes(13u, nodes);
+  AddSerializedStringBytes(session.name(), escaped_string_bytes);
+
+  const auto& marker_sets = session.marker_sets();
+  RequireSerializedArraySize(marker_sets.size());
+  for (const auto& marker_set : marker_sets) {
+    AddSerializedJsonNodes(3u, nodes); // Marker-set object, name, and markers array.
+    AddSerializedStringBytes(marker_set->name(), escaped_string_bytes);
+    const auto& markers = marker_set->markers();
+    RequireSerializedArraySize(markers.size());
+    for (const auto& marker : markers) {
+      if (!std::isfinite(marker.position_beats)) {
+        throw std::invalid_argument("marker.position_beats must be finite");
+      }
+      AddSerializedJsonNodes(3u, nodes); // Marker object, name, and position.
+      AddSerializedStringBytes(marker.name, escaped_string_bytes);
+    }
+  }
+
+  const auto& playlist_lanes = session.playlist_lanes();
+  RequireSerializedArraySize(playlist_lanes.size());
+  for (const auto& lane : playlist_lanes) {
+    AddSerializedJsonNodes(3u, nodes); // Lane object, name, and active flag.
+    AddSerializedStringBytes(lane->name(), escaped_string_bytes);
+  }
+
+  const auto& tracks = session.tracks();
+  RequireSerializedArraySize(tracks.size());
+  for (const auto& track : tracks) {
+    AddSerializedJsonNodes(3u, nodes); // Track object, name, and clips array.
+    AddSerializedStringBytes(track->name(), escaped_string_bytes);
+    RequireSerializedArraySize(track->clips().size());
+    for (const auto& clip : track->clips()) {
+      AddSerializedJsonNodes(4u, nodes); // Clip object, name, start, and length.
+      AddSerializedStringBytes(clip->name(), escaped_string_bytes);
+    }
+  }
 }
 
 } // namespace
@@ -329,6 +429,7 @@ SessionGraph ParseSession(const std::string& json_text) {
 }
 
 std::string SerializeSession(const SessionGraph& session) {
+  ValidateSessionSerializationLimits(session);
   std::ostringstream stream;
   stream << "{\n";
   WriteIndent(stream, 2);
@@ -507,7 +608,11 @@ std::string SerializeSession(const SessionGraph& session) {
   WriteIndent(stream, 2);
   stream << "]\n";
   stream << "}\n";
-  return stream.str();
+  std::string text = stream.str();
+  if (text.size() > kMaxSessionDocumentBytes) {
+    throw std::runtime_error("Serialized session exceeds maximum size of 67108864 bytes");
+  }
+  return text;
 }
 
 SessionLoadResult LoadSessionWithRecovery(const std::string& path) {

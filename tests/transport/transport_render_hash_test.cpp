@@ -11,14 +11,12 @@
 // sources, these hashes are the proof of parity: the streaming path must
 // reproduce the hash the reading path produced (same platform, same build).
 //
-// Cross-platform tolerance strategy (documented per ORP136 §2.3): the target
-// is bit-identical output everywhere. Within one platform+toolchain this test
-// asserts exact equality. ORP273 F-02 pinned the render path's libm
-// dependence — the EqualPower fade, the pan law and the clip-gain conversion
-// now use the platform-independent elementary functions in
-// src/core/transport/pinned_math.h — so the hash below is pinned as a
-// cross-platform golden constant. Any cross-platform drift is now a
-// determinism bug to FILE, not to mask in this test.
+// This scenario has one shared golden on every tested platform/toolchain.
+// ORP273 pins its fade, pan and clip-gain math, and transport/routing disable
+// implicit contraction. Remaining paths (including soft clipping) can still
+// use libm: only hosted runs of this exact scenario establish cross-platform
+// parity. This is not a determinism claim for every enabled DSP program.
+// Any drift is a bug to investigate, not a reason for per-platform goldens.
 //
 // Scenario constraints that keep the output block-size-invariant:
 //  * all starts/metadata land before the first rendered buffer (command
@@ -52,10 +50,9 @@ constexpr uint32_t kSampleRate = 48000;
 constexpr size_t kTotalFrames = 98304;
 constexpr size_t kBlockSizes[] = {256, 512, 1024, 2048};
 
-// ORP273 F-02: the cross-platform golden render hash. The render path no
-// longer depends on the host libm, so the same scenario must produce these
-// exact bytes on every platform. Regenerate deliberately — and review the
-// change as an intentional render change — when the render path changes.
+// Shared scenario golden. Regenerate deliberately and review the numerical
+// change when render arithmetic changes; never choose an expected hash by
+// platform to conceal a portability failure.
 inline constexpr uint64_t kGoldenRenderHash = 0x2c62d3e2104b576dull;
 
 // Deterministic PCM16 WAV writer fed from the integer-table sine in

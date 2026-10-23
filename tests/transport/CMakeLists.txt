@@ -34,6 +34,7 @@ target_link_libraries(clip_dsp_test
         GTest::gtest
         GTest::gtest_main
 )
+target_link_libraries(clip_dsp_test PRIVATE orpheus_test_rt_guard)
 add_test(NAME clip_dsp_test COMMAND clip_dsp_test)
 
 # Bounded multi-producer command-ingress regressions (D3).
@@ -381,6 +382,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(callback_queue_stress_test PRIVATE orpheus_test_rt_guard)
 
     target_include_directories(callback_queue_stress_test
         PRIVATE
@@ -433,6 +435,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(voice_state_tsan_test PRIVATE orpheus_test_rt_guard)
 
     target_include_directories(voice_state_tsan_test
         PRIVATE
@@ -580,6 +583,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(occ155_api_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(occ155_api_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -606,6 +610,7 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
+    target_link_libraries(realtime_harness_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(realtime_harness_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
@@ -644,6 +649,7 @@ if(TARGET orpheus_audio_io)
             orpheus_session
             GTest::gtest
     )
+    target_link_libraries(streaming_seek_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(streaming_seek_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include

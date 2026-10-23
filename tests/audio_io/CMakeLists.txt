@@ -41,6 +41,7 @@ target_link_libraries(trigger_voice_test
         GTest::gtest
         GTest::gtest_main
 )
+target_link_libraries(trigger_voice_test PRIVATE orpheus_test_rt_guard)
 
 target_include_directories(trigger_voice_test
     PRIVATE

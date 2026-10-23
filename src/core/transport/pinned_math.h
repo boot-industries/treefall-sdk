@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 
 namespace orpheus::pinned {
 
@@ -89,9 +90,19 @@ inline double cos(double x) noexcept {
   return kSqrtHalf * (cosKernel(u) - sinKernel(u));
 }
 
-/// exp(x) over the gain/threshold range [-12, 4]. Reduces by ln 2 and
-/// scales with std::ldexp (an exact power-of-two scaling).
+/// exp(x), range-reduced by ln 2 with exact power-of-two scaling.
+/// Saturate outside the double result range before narrowing the scale to int:
+/// public gain updates accept any finite dB value, not only the normal range.
 inline double exp(double x) noexcept {
+  if (std::isnan(x)) {
+    return x;
+  }
+  if (x <= -746.0) {
+    return 0.0;
+  }
+  if (x >= 710.0) {
+    return std::numeric_limits<double>::infinity();
+  }
   constexpr int kSeriesTerms = 14;
   const double k = std::floor((x / kLn2) + 0.5);
   const double r = x - (k * kLn2);

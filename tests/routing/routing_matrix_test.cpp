@@ -2,7 +2,9 @@
 #include "../../include/orpheus/routing_matrix.h"
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
+#include "../../src/core/routing/true_peak_meter.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <limits>
@@ -28,12 +30,47 @@ public:
                                                   std::memory_order_release);
     matrix.m_channel_route_generation.fetch_add(1, std::memory_order_release);
   }
-
   static void endRoutePublication(RoutingMatrix& matrix) noexcept {
     matrix.endChannelRouteWrite();
   }
 };
+
+struct TruePeakMeterTestAccess {
+  static const auto& coefficients() noexcept {
+    return TruePeakMeter::s_filterCoeffs;
+  }
+};
 } // namespace orpheus
+TEST(TruePeakMeterTest, KernelMatchesScalarPhaseAccumulator) {
+  TruePeakMeter meter;
+  std::array<float, TruePeakMeter::TAPS_PER_PHASE> history{};
+  size_t historyHead = 0;
+  const auto& coefficients = TruePeakMeterTestAccess::coefficients();
+
+  auto processScalar = [&](float sample) {
+    historyHead =
+        historyHead == 0 ? static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE - 1) : historyHead - 1;
+    history[historyHead] = sample;
+    float peak = std::abs(sample);
+    for (size_t phase = 0; phase < static_cast<size_t>(TruePeakMeter::OVERSAMPLE_FACTOR); ++phase) {
+      float interpolated = 0.0f;
+      for (size_t tap = 0; tap < static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE); ++tap) {
+        volatile float product =
+            history[(historyHead + tap) % static_cast<size_t>(TruePeakMeter::TAPS_PER_PHASE)] *
+            coefficients[phase][tap];
+        interpolated += product;
+      }
+      peak = std::max(peak, std::abs(interpolated));
+    }
+    return peak;
+  };
+
+  for (uint32_t index = 0; index < 4096; ++index) {
+    const int32_t quantized = static_cast<int32_t>((index * 73u + 19u) % 257u) - 128;
+    const float sample = static_cast<float>(quantized) / 128.0f;
+    EXPECT_NEAR(meter.process(sample), processScalar(sample), 2.0e-6f) << "sample " << index;
+  }
+}
 
 class RoutingMatrixTest : public ::testing::Test {
 protected:

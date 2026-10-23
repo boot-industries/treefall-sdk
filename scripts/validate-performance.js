@@ -16,7 +16,7 @@
  * without a mechanism.
  *
  * Usage: node scripts/validate-performance.js [--budgets=path/to/budgets.json]
- *                                              [--build-dir=build]
+ *                                              [--build-dir=build] [--config=Release]
  */
 
 const fs = require('fs');
@@ -33,6 +33,7 @@ function optionValue(flag) {
 
 const budgetsPath = optionValue('--budgets') ?? path.resolve(repoRoot, 'budgets.json');
 const buildDir = optionValue('--build-dir') ?? 'build';
+const buildConfig = optionValue('--config') ?? 'Release';
 
 // Load budgets
 let budgets;
@@ -118,12 +119,22 @@ for (const name of budgetNames) {
     continue;
   }
 
+  const escapedGate = gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const ctest = spawnSync(
     'ctest',
-    ['--test-dir', buildDir, '-R', `^${gate}$`, '--output-on-failure'],
+    [
+      '--test-dir',
+      buildDir,
+      '--build-config',
+      buildConfig,
+      '-R',
+      `^${escapedGate}$`,
+      '--output-on-failure',
+    ],
     { encoding: 'utf8' },
   );
 
+  const output = `${ctest.stdout ?? ''}\n${ctest.stderr ?? ''}`;
   if (ctest.stdout) {
     process.stdout.write(ctest.stdout);
   }
@@ -137,17 +148,16 @@ for (const name of budgetNames) {
     continue;
   }
 
-  // A gate that skipped did not measure the budget. Reporting that as a pass
-  // would repeat the defect F-07 exists to remove.
-  const skipped = new RegExp(`^.*${gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*Skipped`, 'm').test(
-    ctest.stdout ?? '',
+  const resultPattern = new RegExp(
+    `^\\s*\\d+\\/\\d+\\s+Test\\s+#\\d+:\\s+${escapedGate}\\s+.*?\\b(Passed|Failed|Skipped|Not Run)\\b`,
+    'm',
   );
-
-  if (ctest.status === 0 && !skipped) {
-    console.log(`✅ ${name}: ${gate} passed`);
-  } else if (skipped) {
+  const result = resultPattern.exec(output);
+  if (!result || result[1] === 'Skipped' || result[1] === 'Not Run') {
     console.log(`❌ ${name}: ${gate} is not measurable in this configuration`);
     failures.push(name);
+  } else if (ctest.status === 0 && result[1] === 'Passed') {
+    console.log(`✅ ${name}: ${gate} passed`);
   } else {
     console.log(`❌ ${name}: ${gate} failed`);
     failures.push(name);

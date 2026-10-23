@@ -50,6 +50,11 @@ enable_testing()
 
 function(add_orpheus_fixture target source)
   add_executable(${target} ${source})
+  # vcpkg's z-applocal post-build steps copy runtime DLLs beside each fixture.
+  # Keep those destinations distinct so parallel fixture links cannot race on
+  # a shared multi-config output directory.
+  set_target_properties(${target} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/runtime/${target}")
   if(source MATCHES "\\.c$")
     target_compile_features(${target} PRIVATE c_std_11)
   else()

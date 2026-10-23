@@ -108,6 +108,14 @@ consumer header. Loading an unsupported future primary schema is a hard error,
 not permission to recover an older backup; missing or corrupt primary documents
 remain recoverable under the existing recovery API.
 
+Session input and serialized output are limited to 64 MiB. JSON parsing also
+defaults to depth 64, 1,000,000 value nodes, 1,024 members per object and 65,536
+elements per array; `<orpheus/json.hpp>` exposes `JsonParseLimits` for direct
+parser callers. Exceeding a limit is an error, never truncation. Serialization
+rejects documents outside the loader's limits before save replaces an existing
+document. Parsing, serialization and transaction setup remain control-thread
+work.
+
 `SessionGraph` exposes stable `TrackId`/`ClipId` values and pointer-free
 snapshots. Borrowed `Track*`, `Clip*`, and `CommittedClip::clip` are invalidated
 by removal or graph rebuild/restore; re-resolve IDs after these operations
@@ -115,6 +123,13 @@ instead of retaining pointers. Transactions/snapshots exclude scene definitions
 and runtime scene-trigger, marker, playlist and transport state. Application
 undo and presentation policy remain host-owned. Issued IDs are not reused after
 rollback or restore.
+
+`SessionGraph::add_clips(track, specs)` constructs a batch with one revision,
+returns the created clips in track order and rejects an invalid batch without
+publishing partial edits. Transaction rollback restores the original beat
+values and pending grid refresh without allocating in the rollback path.
+Rebuild C++ SDK consumers against matching headers: the parser and transaction
+storage changed; this does not change the stable C ABI 1.0 tables.
 
 Invalid numeric conversions, duplicate JSON object keys, and clip assignments
 to IDs absent from the session are rejected before publication/mutation.

@@ -38,6 +38,8 @@ if(TARGET reaper_orpheus)
   list(APPEND ORPHEUS_TEST_SOURCES reaper_adapter.cpp)
 endif()
 
+add_library(orpheus_test_rt_guard OBJECT support/rt_guard.cpp)
+
 add_executable(orpheus_tests ${ORPHEUS_TEST_SOURCES})
 
 target_link_libraries(orpheus_tests
@@ -45,6 +47,7 @@ target_link_libraries(orpheus_tests
     Orpheus::core
     GTest::gtest_main
 )
+target_link_libraries(orpheus_tests PRIVATE orpheus_test_rt_guard)
 
 if(ORPHEUS_THREADS_TARGET)
   target_link_libraries(orpheus_tests PRIVATE ${ORPHEUS_THREADS_TARGET})

@@ -87,6 +87,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bounded session parsing checks collection limits before consuming the next
+  value and caps file reads at 64 MiB. Serialization refuses documents outside
+  loader limits before replacing the saved document. Rollback preserves exact
+  beat values and pending grid refresh; failed bulk construction publishes no
+  clips and consumes no unissued IDs.
+- Block gain smoothing retains targets published while a block adopts an
+  earlier update. Inactive transport routing lanes remain silent even when a
+  host directly changes their routes. True-peak SIMD uses canonical phase
+  accumulation order on x64 and arm64, and worker snapshot scratch is reused.
+- Extreme finite clip gains saturate during pinned exponential conversion
+  before integer narrowing, preserving underflow/overflow behavior without
+  undefined conversion.
+- Performance validation requires an actual passing CTest gate, rejects
+  unmeasurable/skipped gates and accepts `--config` (default `Release`) for
+  multi-configuration generators. Installed-package fixtures use separate
+  runtime directories to avoid concurrent Windows app-local DLL copies.
 - Shared-source streaming Stop/refire overlaps retain independent current and
   look-ahead pages through bounded voice-demand snapshots and page-copy pins.
   Worker refill remains current-first and source-fair; the six steady/four

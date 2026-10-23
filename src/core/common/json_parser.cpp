@@ -122,6 +122,9 @@ JsonValue JsonParser::ParseObject() {
   }
   while (true) {
     SkipWhitespace();
+    if (value.object.size() >= limits_.max_object_members) {
+      throw std::runtime_error("JSON object member budget exceeded");
+    }
     if (Peek() != '"') {
       throw std::runtime_error("JSON object keys must be strings");
     }
@@ -130,10 +133,10 @@ JsonValue JsonParser::ParseObject() {
     if (Consume() != ':') {
       throw std::runtime_error("Expected ':' after object key");
     }
-    JsonValue element = ParseValue();
-    if (value.object.size() >= limits_.max_object_members) {
-      throw std::runtime_error("JSON object member budget exceeded");
+    if (value.object.find(key) != value.object.end()) {
+      throw std::runtime_error("Duplicate JSON object key: " + key);
     }
+    JsonValue element = ParseValue();
     if (!value.object.emplace(key, std::move(element)).second) {
       throw std::runtime_error("Duplicate JSON object key: " + key);
     }
@@ -164,10 +167,10 @@ JsonValue JsonParser::ParseArray() {
     return value;
   }
   while (true) {
-    JsonValue element = ParseValue();
     if (value.array.size() >= limits_.max_array_elements) {
       throw std::runtime_error("JSON array element budget exceeded");
     }
+    JsonValue element = ParseValue();
     value.array.push_back(std::move(element));
     SkipWhitespace();
     const char next = Consume();
@@ -250,6 +253,9 @@ std::string JsonParser::ParseString() {
         throw std::runtime_error("Unsupported escape sequence");
       }
     } else {
+      if (static_cast<unsigned char>(c) < 0x20u) {
+        throw std::runtime_error("Unescaped control character in JSON string");
+      }
       result.push_back(c);
     }
   }
@@ -405,6 +411,12 @@ std::string EscapeString(const std::string& value) {
     case '\\':
       result += "\\\\";
       break;
+    case '\b':
+      result += "\\b";
+      break;
+    case '\f':
+      result += "\\f";
+      break;
     case '\n':
       result += "\\n";
       break;
@@ -414,9 +426,18 @@ std::string EscapeString(const std::string& value) {
     case '\t':
       result += "\\t";
       break;
-    default:
-      result.push_back(c);
+    default: {
+      const auto byte = static_cast<unsigned char>(c);
+      if (byte < 0x20u) {
+        constexpr char kHexDigits[] = "0123456789abcdef";
+        result += "\\u00";
+        result.push_back(kHexDigits[byte >> 4u]);
+        result.push_back(kHexDigits[byte & 0x0fu]);
+      } else {
+        result.push_back(c);
+      }
       break;
+    }
     }
   }
   return result;

@@ -386,10 +386,15 @@ private:
     StreamingClipSource::CommandFillWork command;
     bool commandServiced{false};
   };
+  struct PreviousSource {
+    const StreamingClipSource* identity;
+    StreamingClipSource::CommandFillWork command;
+  };
 
   // Caller holds m_mutex. Active transactions retain their source until their
   // claims/pins are published or rolled back; idle snapshots own no registration.
-  void snapshotSources(std::vector<SourceService>& live, std::vector<SourceService>& next);
+  void snapshotSources(std::vector<SourceService>& live, std::vector<SourceService>& next,
+                       std::vector<PreviousSource>& previous);
   static void serviceRound(std::vector<SourceService>& live, size_t& cursor);
   void run();
 
