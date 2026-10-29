@@ -54,7 +54,10 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
   merge evidence for PR #277; supersedes broad claims in the original delivery.
 - **ORP276** — ShmUI private-source compartmentalization handoff: upstream
   integration, coordinated SDK/consumer cutover and public-payload acceptance.
-  Next free document number: ORP277.
+- **ORP277** — Treefall SDK coherence audit, downstream suite sync, and strategic
+  roadmap: post-PR #277 architecture coherence, downstream suite drift analysis,
+  status of deferred ORP268/276 requirements, and prioritized 4-horizon roadmap.
+  Next free document number: ORP278.
 
 ---
 

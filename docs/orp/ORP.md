@@ -9,6 +9,11 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap]] —
+  comprehensive technical audit of post-PR #277 codebase coherence, downstream
+  suite synchronization drift, status of deferred ORP268/276 requirements, and
+  prioritized engineering roadmap (2026-10-29)
+
 - [[ORP275 ORP273 Consumer Safety Review and Merge Verification]] —
   review findings, corrections, downstream obligations and observed verification
   for PR #277; supersedes ORP274's broad cross-platform claims (2026-10-23)

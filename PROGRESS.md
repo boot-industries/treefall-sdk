@@ -1,5 +1,16 @@
 # Progress
 
+## Treefall SDK coherence audit and suite roadmap — 2026-10-29
+
+**Record:** `docs/orp/ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap.md`
+**Scope:** Post-PR #277 SDK core (`901fc1d33`), Orpheus Suite (`shmui`, `fourtrack`, `freqfinder`, `clip-composer`), and open requirements register.
+
+Conducted a technical audit of codebase coherence, deferred objectives, and downstream synchronization. PR #277 remediated all 20 findings from ORP273, pinned platform-independent elementary math (`0x212b8a01988459a9`), enforced a 4096-frame CoreAudio ceiling, and validated 0 audio allocations with TruePeak p99 deadline ratio 0.485 (10,352.7 µs vs 21,333.3 µs ceiling). An immediate refactoring/optimization pass is rejected as premature churn prior to downstream adoption.
+
+Key deferred objectives audited: ORP268 Requirement A (critical: transport clock-domain, host timestamp, and discontinuity propagation across `AudioProcessBlock` -> `ITransportController::processAudio` -> `RealtimeTelemetrySnapshot` schema v4); ORP268 Requirement B (high: sized C ABI table handshake in `include/orpheus/abi.h`); ORP276 (ShmUI private source compartmentalization handoff); and ORP143 §7 (Windows WASAPI physical hardware acceptance gating).
+
+Suite status audit (`tools/suite.py status`) reveals that all 4 downstream applications are drifted or uncommitted (`fourtrack` and `clip-composer` on local branches advancing SDK to `901fc1d33`, `freqfinder` dirty with CMake override, `shmui` drifted from upstream). Established a 4-horizon strategic roadmap prioritizing Horizon 1 downstream suite synchronization, Horizon 2 realtime temporal coherence plumbing, Horizon 3 ShmUI compartmentalization, and Horizon 4 WASAPI hardware qualification and stable 1.0 promotion.
+
 ## ORP273 consumer-safety review — 2026-10-23
 
 **Records:** ORP275 (review/verification) and ORP276 (ShmUI handoff).
