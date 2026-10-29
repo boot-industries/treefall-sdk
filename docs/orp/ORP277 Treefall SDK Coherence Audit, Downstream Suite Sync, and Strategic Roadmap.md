@@ -21,10 +21,10 @@ This audit evaluates the current technical state of the Treefall SDK codebase fo
    - **ORP268 Requirement B (High):** Sized C ABI table handshake and negotiation in `include/orpheus/abi.h`.
    - **ORP276:** ShmUI private source compartmentalization and packaging handoff (decoupling private UI source bytes from public SDK discovery).
    - **AGENTS.md & ORP143 §7:** Windows/WASAPI physical hardware qualification via `tools/wasapi_hardware_acceptance.cpp` remains gated on real-device acceptance records.
-   - **ORP262:** Unresolved active branches and pull requests (PR #250 for directional sample-rate conversion, PR #247 for directional buffer monitoring, and PR #260 for URL standardization).
+   - **ORP262 PRs (verified live via `gh pr view`):** PR #247 (directional buffer monitoring) and PR #250 (directional sample-rate conversion) remain OPEN; PR #260 (URLs) is CLOSED (unmerged).
 
 2. **Should we run a refactoring and optimization pass?**  
-   **No.** An extensive, 20-finding refactoring and performance remediation sprint (ORP273) was executed across 5 waves (ORP274), validated through consumer-safety review (ORP275), and merged into `main` at commit `901fc1d33` via PR #277 on 2026-10-23. The render-path p99 deadline ratio is currently 0.485 (10,352.7 µs vs 21,333.3 µs ceiling), math is strictly deterministic across target architectures (`0x212b8a01988459a9`), and the audio thread is verified 100% allocation-free. Initiating another immediate SDK-internal optimization pass before downstream consumers adopt and soak PR #277 would represent premature optimization and unproductive churn.
+   **No.** An extensive, 20-finding refactoring and performance remediation sprint (ORP273) was executed across 5 waves (recorded in ORP274), validated through consumer-safety review (recorded in ORP275), and verified as merged into `main` at commit `901fc1d33` via PR #277 (verified live via `gh pr view 277`: merged at 2026-10-23T10:38:53Z). As cited from the ORP275 §3 baseline measurements, the render-path p99 deadline ratio was 0.485 (10,352.7 µs vs 21,333.3 µs ceiling), math was pinned to constant golden `0x212b8a01988459a9`, and the audio thread was proven 100% allocation-free under test allocator hooks. Initiating another immediate SDK-internal optimization pass before downstream consumers adopt and soak PR #277 would represent premature optimization and unproductive churn.
 
 3. **Check sync against downstream consumer apps:**  
    **Substantially drifted.** A non-destructive inventory using `python3 tools/suite.py status` reveals that all four downstream suite repositories (`shmui`, `fourtrack`, `freqfinder`, and `clip-composer`) are in a drifted or uncommitted state relative to `main` and PR #277. While local worktrees for `fourtrack` and `clip-composer` have updated submodule pointers to `901fc1d33` on experimental feature branches, these have not been harmonized, tested against release packages, or merged upstream.
@@ -32,7 +32,7 @@ This audit evaluates the current technical state of the Treefall SDK codebase fo
 4. **Check overall coherence of the Treefall SDK codebase:**  
    **Strong internal coherence with one major architectural seam.**  
    - *Branding vs ABI:* The product rebrand to Treefall SDK (ORP265) is cleanly maintained alongside the strict preservation of the `orpheus` C++ namespace, `include/orpheus/` headers, `Orpheus::*` CMake targets, and C ABI 1.0.
-   - *Realtime Safety:* Strict static audit passes with 0 hard failures and 0 debt items; CoreAudio route changes and buffer limits (4096-frame ceiling) are atomic and safe.
+   - *Realtime Safety:* Strict static audit passes live with 0 hard failures and 0 debt items (`python3 tools/realtime_audit.py`); CoreAudio route changes and buffer limits (4096-frame ceiling established in ORP274 F-11) are enforced.
    - *Temporal Coherence:* Phase and sample alignment within the transport render loop are verified; however, the lack of clock-domain and hardware timestamp propagation across the `AudioProcessBlock` boundary represents an unfulfilled requirement of `ARCHITECTURE.md` §Temporal Coherence.
 
 ---
@@ -87,12 +87,13 @@ This audit evaluates the current technical state of the Treefall SDK codebase fo
 - **Problem Statement:** While the WASAPI backend compiles and passes format reconciliation unit tests in CI (`wasapi_format_reconciliation_test`), it cannot be promoted to supported status in `docs/SUPPORT_MATRIX.md` without execution on physical Windows audio hardware.
 - **Current Status:** The hardware acceptance fixture exists in `tools/wasapi_hardware_acceptance.cpp`, but execution records from real hardware remain pending.
 
-### 2.5 ORP262: Branch Resolution and Open PR Inventory
-- **Unresolved Pull Requests:**
-  - PR #250 (`release/orp176-coreaudio-directional-src`): Directional sample-rate conversion.
-  - PR #247 (`fix/coreaudio-directional-buffer-monitor`): Directional buffer monitoring telemetry.
-  - PR #260 (`chore/boot-industries-urls`): Documentation URL cleanup.
-- **Branches:** Local and remote branches need pruning once PRs #247 and #250 are formally merged or retired.
+### 2.5 Historical Open PR Inventory vs Live Verification
+- **Live Verification of Older ORP262 PRs (verified via `gh pr view`):**
+  - PR #247 (`fix(coreaudio): admit settled Bluetooth routes`): **OPEN** (head branch `fix/coreaudio-directional-buffer-monitor`).
+  - PR #250 (`feat(coreaudio): deliver directional Bluetooth SRC candidate`): **OPEN** (head branch `release/orp176-coreaudio-directional-src`).
+  - PR #260 (`Use Boot Industries repository URLs`): **CLOSED** (unmerged; closed without merging, superseding ORP262's active listing).
+  - PR #277 (`feat(orp273): land the ORP273 remediation sprint`): **MERGED** (merge commit `901fc1d3305ed0dead21f39f261fb755ba92c538`).
+- **Branches:** Remote tracking refs for PR #260 can be pruned; branches for PRs #247 and #250 must remain until resolved.
 
 ---
 
@@ -108,16 +109,15 @@ The ORP273 remediation sprint addressed 20 comprehensive findings across 5 waves
 - **Wave 3 (Decomposition):** Bounded JSON and session document parser memory (F-12); implemented allocation-free transaction rollback (F-14); extracted the control-side clip-source registry (F-15); extracted matrix-level meter state (F-16).
 - **Wave 4 (Tooling & Calibration):** Calibrated the TruePeak release deadline gate with vectorized x86 reduction and strict MSVC `/fp:precise` flags.
 
-### 3.2 Observed Performance and Budget Metrics
-Evidence recorded in ORP274 and ORP275 confirms that current performance is well within all contractual budgets:
+### 3.2 Cited Performance and Budget Metrics (from ORP274 / ORP275)
+The benchmark metrics below are cited directly from the release-tree measurements and consumer safety reviews in ORP274 §3 and ORP275 §3; they reflect the post-PR #277 baseline rather than freshly executed benchmarks in this audit:
 
-| Metric | Measured Value | Budget Ceiling | Margin / Headroom |
-| :--- | :--- | :--- | :--- |
-| **TruePeak Wall p99** | 10,352.7 µs | 21,333.3 µs | +51.5% headroom (Ratio: 0.485 vs 0.500) |
-| **Render Hash Golden** | `0x212b8a01988459a9` | Fixed Constant | Exact match across ARM64 & x86_64 |
-| **Audio-Thread Allocations** | 0 allocations / 0 frees | 0 | 100% allocation-free |
-| **CoreAudio Route Ceiling** | 4096 frames | 4096 frames | Validated refusal on overflow |
-
+| Metric | Cited Value (ORP274/275) | Budget Ceiling | Margin / Headroom | Source Record |
+| :--- | :--- | :--- | :--- | :--- |
+| **TruePeak Wall p99** | 10,352.7 µs | 21,333.3 µs | +51.5% headroom (Ratio: 0.485 vs 0.500) | ORP275 §3 |
+| **Render Hash Golden** | `0x212b8a01988459a9` | Fixed Constant | Exact match across ARM64 & x86_64 | ORP274 §3 / ORP275 §2 |
+| **Audio-Thread Allocations** | 0 allocations / 0 frees | 0 | 100% allocation-free | ORP274 Wave 0 / ORP275 §3 |
+| **CoreAudio Route Ceiling** | 4096 frames | 4096 frames | Validated refusal on overflow | ORP274 F-11 |
 ### 3.3 Strategic Conclusion
 Core DSP performance and memory boundaries are currently optimal and heavily guarded. Any further optimization at this stage would lack real-world profiling data from downstream applications. Priority must shift from engine micro-optimization to downstream consumer integration.
 
@@ -132,7 +132,7 @@ A complete audit of downstream suite checkouts was conducted using `python3 tool
 | Repository | Current Branch | Worktree State | SDK Pin (Actual) | SDK Pin (Expected) | Pin Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **orpheus-sdk** | `main` | Clean | `901fc1d33` (HEAD) | `901fc1d33` | Floating (Authoritative) |
-| **shmui** | `main` | Clean | N/A (Upstream) | N/A | Drifted from `origin/main` |
+| **shmui** | `main` | Clean | N/A (Upstream) | N/A | Ahead 2 commits (`e8c8f1e`) |
 | **fourtrack** | `chore/ftr-sdk-901fc1d` | Clean | `901fc1d33` | `56a81fcdff` | Drifted against manifest |
 | **freqfinder** | `main` | **Dirty** | `901fc1d33` | `901fc1d33` | CMake source override pinned |
 | **clip-composer** | `fix/occ-menu-transport-stability` | Clean | `901fc1d33` | `e885ddcf7d` | Drifted against manifest |
@@ -158,11 +158,12 @@ A complete audit of downstream suite checkouts was conducted using `python3 tool
    - However, its `shmui` dependency pin is drifted: actual revision is `e8c8f1ea` while expected remote tracking revision is `452fb204`.
    - *Requirement:* Clean worktree modifications and align `shmui` revision.
 
-4. **`shmui`:**
+4. **`shmui` (verified via `git -C ../shmui status` and `rev-parse`):**
    - Local checkout is at commit `e8c8f1ea347ee4b1040e5468785ff86a00858355`.
-   - Remote tracking branch `origin/main` is ahead at `452fb2042ac63254e68fbc7f8d41d299e3c9d72d`.
-   - *Requirement:* Fast-forward local `shmui` checkout to `origin/main` and sync tokens into downstream packages.
-
+   - Remote tracking branch `origin/main` is at `452fb2042ac63254e68fbc7f8d41d299e3c9d72d`.
+   - Live check confirms `shmui` is **2 commits ahead** of `origin/main` (`219a81a feat(juce): establish private source integration boundary` and `e8c8f1e docs(shm): record clean private checkout qualification`).
+   - `suite.py status` marks `shmui` as drifted because its floating channel definition tracks `origin/main` (`452fb204`), not the unpushed local boundary commits.
+   - *Requirement:* Complete review of the unpushed private source integration boundary in `shmui`, coordinate upstream PR/push to `origin/main`, then sync downstream token consumers.
 ---
 
 ## 5. Treefall SDK Codebase Coherence Assessment
@@ -201,7 +202,7 @@ To translate this audit into actionable execution, work is organized into four p
 ```mermaid
 timeline
     title Treefall SDK Engineering Horizons
-    Horizon 1 (Immediate) : Downstream Suite Sync : FourTrack & Clip-Composer PRs : Shmui Fast-Forward & Token Sync : FreqFinder Worktree Cleanup
+    Horizon 1 (Immediate) : Downstream Suite Sync : FourTrack & Clip-Composer PRs : Shmui Boundary Publish & Token Sync : FreqFinder Worktree Cleanup
     Horizon 2 (Near-Term) : Realtime Temporal Coherence : Add AudioProcessBlock Overload : Realtime Telemetry Schema v4 : Discontinuity Propagation
     Horizon 3 (Mid-Term) : ShmUI Compartmentalization : Upstream Private Artifacts : Decouple SDK Source Mirror : Clean Package Discovery
     Horizon 4 (Long-Term) : Release Qualification : Physical WASAPI Acceptance : Sized ABI Policy : 1.0 Candidate Promotion
@@ -210,7 +211,7 @@ timeline
 ### Horizon 1: Downstream Suite Synchronization & Pin Harmonization (Immediate)
 - **Goal:** Eliminate downstream drift and bring all child applications onto SDK HEAD (`901fc1d33`).
 - **Steps:**
-  1. Fast-forward `/Users/chrislyons/dev/shmui` to `origin/main` (`452fb204`).
+  1. Review and publish `/Users/chrislyons/dev/shmui` unpushed commits (`219a81a` and `e8c8f1e`) to `origin/main`.
   2. Sync ShmUI manifest and tokens using `python3 tools/shmui_juce_manifest.py --sync`.
   3. Finalize and merge `chore/ftr-sdk-901fc1d` in `fourtrack` and `fix/occ-menu-transport-stability` in `clip-composer`.
   4. Clean modified files in `freqfinder`.
