@@ -45,11 +45,6 @@ if(NOT TARGET occ_app_platform)
   add_subdirectory(${OCC_APP_PLATFORM_PATH} ${CMAKE_CURRENT_BINARY_DIR}/occ-app-platform)
 endif()
 
-set(SHMUI_JUCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/shmui-juce")
-if(NOT TARGET orpheus_shmui_juce)
-  add_subdirectory(${SHMUI_JUCE_PATH} ${CMAKE_CURRENT_BINARY_DIR}/shmui-juce)
-endif()
-
 # Create JUCE GUI application
 juce_add_gui_app(orpheus_wave_finder_app
   PRODUCT_NAME "Orpheus Wave Finder"
@@ -93,7 +88,6 @@ target_link_libraries(orpheus_wave_finder_app
     juce::juce_audio_utils
     juce::juce_events
     sqlite3
-    orpheus_shmui_juce
     occ_app_platform
 )
 

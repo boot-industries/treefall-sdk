@@ -1,5 +1,17 @@
 # Progress
 
+## ShmUI package removal and SDK source decoupling (SHM029) — 2026-11-02
+
+**Record:** `docs/orp/ORP278 ShmUI Package Removal and SDK Source Decoupling.md`
+**Branch:** `feat/orp-shmui-package-removal`
+**Status:** Implementation complete; SHM029 Gates 1–6 satisfied.
+
+Executed the full decoupling and removal of the mirrored `packages/shmui-juce` package from the Treefall SDK per SHM029 Gate 4 and ORP276. Downstream consumers (`freqfinder`, `fourtrack`, `clip-composer`) have transitioned to direct private source and token integration with `boot-industries/shmui`.
+
+Removed 77 mirrored package files under `packages/shmui-juce/`, manifest verification tooling (`tools/shmui_juce_manifest.py`), CMake build options (`ORPHEUS_ENABLE_SHMUI_JUCE`), target export definitions (`Orpheus::shmui_juce`, `Orpheus::shmui_juce_gl`, `Treefall::shmui_juce`, `Treefall::shmui_juce_gl`), obsolete test fixtures (`tests/cmake/shmui_*`), and JUCE FetchContent dependencies.
+
+Updated `suite/orpheus-suite.json` to eliminate legacy mirror artifacts and freshness checks, decoupling `orpheus-sdk` from changes in `shmui`. Verified that `cmake_find_package` clean-prefix installed discovery passes across all modes without JUCE or private credentials, all suite tests pass (13/13), realtime audit passes with 0 debt, and doc path audits pass cleanly.
+
 ## Treefall SDK coherence audit and suite roadmap — 2026-10-29
 
 **Record:** `docs/orp/ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap.md`

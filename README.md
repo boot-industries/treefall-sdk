@@ -468,7 +468,7 @@ The Treefall SDK provides deterministic session/transport control for profession
 ├── cmake/              # CMake helper modules and compiler policies
 ├── docs/               # Architecture, roadmaps, API reference, ORP documents
 ├── include/            # Public C++ headers (install these with your app)
-├── packages/           # Shared C++/JUCE app packages (occ-app-platform, shmui-juce)
+├── packages/           # Shared C++ app packages (occ-app-platform)
 ├── src/                # Core library implementation (C++20)
 │   ├── core/           # Transport, routing, audio I/O, session
 │   └── platform/       # Platform-specific drivers (CoreAudio, WASAPI, ASIO)
@@ -481,20 +481,9 @@ The Treefall SDK provides deterministic session/transport control for profession
 - `packages/occ-app-platform` — **active** C++ application-platform helpers
   (session recovery, preferences, health telemetry) consumed by the external
   Clip Composer repo through its SDK submodule.
-- `packages/shmui-juce` — **active** JUCE UI component library (waveform,
-  meters, transport widgets) consumed by downstream JUCE apps; not part of the
-  core SDK libraries.
-  The governed meter retains static chrome, segmented geometry and baked-ladder
-  caches with physical-scale-aware invalidation. `setMinRepaintIntervalMs()`
-  caps display-sync repaint requests without delaying paint-time consumption
-  of the newest coherent peak/RMS pair. Separate bounded interval peaks retain
-  hold/needle attack and exact clip crossings; unchanged settled and hidden
-  meters do not repaint. Rebuild C++ consumers with the matching headers.
-  The console icon set (loop, stop-peers badge, fade wedges, hotkey-legend
-  shift mark and the transport symbols) carries upstream artwork: the geometry
-  is generated into the package, and the licence texts, the NOTICE and the
-  machine-readable provenance record install with it under
-  `share/shmui-juce/ThirdParty/`.
+- The former **ShmUI-JUCE package** (`packages/shmui-juce`) has been decoupled to
+  `boot-industries/shmui` per SHM028/SHM029; downstream applications consume
+  it directly.
 - The former **TypeScript** packages (`@orpheus/engine-*`, `@orpheus/client`,
   `@orpheus/shmui`) are **archived** as part of the C++ SDK focus; they are not
   part of this repository.

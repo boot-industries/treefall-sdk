@@ -179,20 +179,6 @@ jobs:
             build/**/Testing/Temporary/**
             cmake_output.log
 
-
-      - name: Build ShmUI-JUCE consumer without OpenGL
-        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Release'
-        run: |
-          cmake \
-            -Dsource_dir=tests/cmake/shmui_no_opengl \
-            -Dbinary_dir="${RUNNER_TEMP}/shmui-no-opengl" \
-            -Dshmui_source_dir=packages/shmui-juce \
-            -Dbuild_type=Release \
-            -P tests/cmake/run_shmui_no_opengl.cmake
-        shell: bash
-        timeout-minutes: 10
-
-
   # ============================================================================
   # C++ Build, ABI, Installed-Package Test (Windows)
   # ============================================================================

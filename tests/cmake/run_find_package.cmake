@@ -47,7 +47,7 @@ function(run_consumer mode consumer_binary_dir)
     -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
     -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
     -DORP_ENABLE_UBSAN=OFF)
-  foreach(feature EXPECTED_REALTIME EXPECTED_COREAUDIO EXPECTED_WASAPI EXPECTED_SHMUI EXPECTED_SHMUI_GL)
+  foreach(feature EXPECTED_REALTIME EXPECTED_COREAUDIO EXPECTED_WASAPI)
     if(DEFINED ${feature})
       list(APPEND configure_args "-D${feature}=${${feature}}")
     endif()
