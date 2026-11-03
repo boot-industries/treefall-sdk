@@ -143,6 +143,44 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
         self.assertEqual({finding.pattern for finding in findings}, {"readSamples(", "std::mutex"})
         self.assertEqual({finding.hard_fail for finding in findings}, {True, False})
 
+    def test_event_signalling_is_a_hard_failure_in_a_callback(self):
+        # juce::WaitableEvent::signal() takes the mutex the waiting worker
+        # holds, so signalling from a render callback is a lock.
+        findings = self.scan(
+            """
+            void render() {
+              jobAvailableEvent_.signal();
+            }
+            """
+        )
+        self.assertEqual([finding.pattern for finding in findings], [".signal("])
+        self.assertTrue(findings[0].hard_fail)
+        self.assertFalse(self.scan("void render() { juce::Thread::signalThreadShouldExit(); }"))
+
+    def test_adjacent_freqfinder_hand_off_is_scanned_with_hard_rules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "orpheus-sdk"
+            engine = Path(directory) / "freqfinder" / "src" / "audio" / "AnalysisEngine.cpp"
+            engine.parent.mkdir(parents=True)
+            engine.write_text(
+                """
+                void AnalysisEngine::submitBlock(int n) { n += 1; }
+                bool AnalysisEngine::enqueueJob(int n) {
+                  jobAvailableEvent_.signal();
+                  return n > 0;
+                }
+                void AnalysisEngine::populateJob(int n) { n += 1; }
+                """,
+                encoding="utf-8",
+            )
+            findings = []
+            for target in AUDIT.default_targets(root, True):
+                if target.path == engine:
+                    findings.extend(AUDIT.scan_target(target))
+            self.assertEqual([(f.target, f.pattern) for f in findings],
+                             [("FreqFinder analysis hand-off enqueueJob", ".signal(")])
+            self.assertTrue(findings[0].hard_fail)
+
     def test_default_adjacent_targets_are_opt_in(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -155,6 +193,15 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
             target = AUDIT.ScanTarget("missing callback", path, r"void\s+render\s*\(")
             with self.assertRaises(AUDIT.AuditConfigurationError):
                 AUDIT.scan_target(target)
+
+    def test_optional_adjacent_target_tolerates_a_renamed_function(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.cpp"
+            path.write_text("void unrelated() {}\n", encoding="utf-8")
+            optional = AUDIT.ScanTarget(
+                "adjacent callback", path, r"void\s+render\s*\(", required=False
+            )
+            self.assertEqual(AUDIT.scan_target(optional), [])
 
 
 
