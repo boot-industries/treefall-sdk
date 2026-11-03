@@ -26,6 +26,8 @@ FORBIDDEN_DRIVER_PATTERNS = {
     ".notify_one(": "audio callbacks must not notify waiters",
     ".notify_all(": "audio callbacks must not notify waiters",
     "std::condition_variable": "audio callbacks must not use condition variables",
+    ".signal(": "audio callbacks must not signal events (juce::WaitableEvent::signal locks a mutex)",
+    "WaitableEvent": "audio callbacks must not use WaitableEvent",
     "std::lock_guard": "audio callbacks must not take locks",
     "std::unique_lock": "audio callbacks must not take locks",
     "std::scoped_lock": "audio callbacks must not take locks",
@@ -155,7 +157,15 @@ def scan_target(target: ScanTarget) -> list[Finding]:
 
     text = target.path.read_text(encoding="utf-8", errors="replace")
     if target.function_regex:
-        base_line, lines = extract_function(text, target.function_regex, target.label)
+        try:
+            base_line, lines = extract_function(text, target.function_regex, target.label)
+        except AuditConfigurationError:
+            # An optional (adjacent-repo) target follows the sibling checkout:
+            # a renamed or inlined function there is not a configuration error
+            # of this repository, exactly as an absent file is not.
+            if target.required:
+                raise
+            return []
     else:
         base_line, lines = 1, text.splitlines()
 
@@ -285,6 +295,46 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                 pattern_sets=(HARD_REALTIME_SET,),
             )
         )
+    # ORP-SUITE-20261103-001: functions the render callback calls on every
+    # block. They were outside the strict gate, so a reintroduced lock or
+    # allocation in the telemetry ring, the callback queue, the snapshot
+    # publishers or the clip-source read paths would not have failed it.
+    for function, signature in (
+        ("beginRealtimeBlock", r"bool"),
+        ("reportUnderrunFromRealtime", r"void"),
+        ("publishFromRealtime", r"bool"),
+    ):
+        targets.append(
+            ScanTarget(
+                f"Realtime telemetry {function}",
+                root / "src/core/common/realtime_telemetry.cpp",
+                rf"{signature}\s+RealtimeTelemetry::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
+    for function in ("postTransportEvent", "publishVoiceSnapshot", "publishCallbackTelemetry"):
+        targets.append(
+            ScanTarget(
+                f"Transport callback publisher {function}",
+                root / "src/core/transport/transport_controller.cpp",
+                rf"void\s+TransportController::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
+    for owner, function in (
+        ("PreparedClipSource", "read"),
+        ("StreamingClipSource", "read"),
+        ("StreamingClipSource", "readCached"),
+        ("StreamingClipSource", "readForVoice"),
+    ):
+        targets.append(
+            ScanTarget(
+                f"Clip source callback read {owner}::{function}",
+                root / "src/core/transport/clip_source.cpp",
+                rf"bool\s+{owner}::{function}\s*\(",
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+        )
 
     if include_adjacent:
         dev = root.parent
@@ -312,6 +362,16 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                     pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
             ]
+        )
+        targets.extend(
+            ScanTarget(
+                f"FreqFinder analysis hand-off {function}",
+                dev / "freqfinder/src/audio/AnalysisEngine.cpp",
+                rf"(?:void|bool)\s+AnalysisEngine::{function}\s*\(",
+                required=False,
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+            for function in ("submitBlock", "enqueueJob", "populateJob")
         )
     return targets
 

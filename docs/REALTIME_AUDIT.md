@@ -41,6 +41,12 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   `releaseCommandNode`, and the command-lease/settlement cleanup helpers in
   addition to `processAudio`. This lexical gate is a bounded source audit, not
   a recursive call-graph proof.
+  The same hard rules cover the per-block callees the transport render path
+  reaches: `RealtimeTelemetry::{beginRealtimeBlock,reportUnderrunFromRealtime,
+  publishFromRealtime}`, `TransportController::{postTransportEvent,
+  publishVoiceSnapshot,publishCallbackTelemetry}`, and the clip-source callback
+  reads `PreparedClipSource::read` and `StreamingClipSource::{read,readCached,
+  readForVoice}`.
 - Whole command calls are non-realtime: registry preparation and retained-payload
   reclamation may lock, allocate, or perform I/O on the producer. The atomic
   admission primitives are bounded, not a wall-clock wait-free guarantee.
@@ -361,6 +367,13 @@ temporal-coherence acceptance remain separate release/support-promotion gates.
 - `tools/realtime_audit.py --fail-known-debt --include-adjacent` is the
   cross-repo strict gate. It still reports the ADJACENT-repo debt below and
   will pass once the app-side sprints land in those repos.
+- The adjacent scan also applies the hard callback rules (no locks, mutexes,
+  waits, notifies, event `signal()`/`WaitableEvent`, allocation or logging) to
+  FreqFinder's audio-thread analysis hand-off (`AnalysisEngine::submitBlock`,
+  `enqueueJob`, `populateJob`), not only to `processBlock`: a lock taken in a
+  callee of the callback is still a lock in the callback. It resolves the
+  sibling `freqfinder` checkout of the workspace, so its result describes
+  whatever revision that checkout has, not a pinned release.
 
 ## Resolved Architecture Debt
 
