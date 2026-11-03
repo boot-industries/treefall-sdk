@@ -1,5 +1,23 @@
 # Progress
 
+## Suite realtime audit coverage — 2026-11-03
+
+ORP279 records the expanded realtime audit and adjacent FreqFinder enqueue
+coverage (`2c54382`), historical mutation and consumer rehearsals, and
+remaining SDK contract and suite pin findings. Final local serial CTest
+recorded 85 passed, 0 failed and one skipped of 86 in 366.28 seconds,
+including package, documentation, realtime static/unit and manifest checks.
+Suite manifest validation returned valid, but suite status returned nonzero
+for checkout, pin, token-hash and provenance drift. The adjacent audit against
+actual siblings failed on two FreqFinder main event signals and reported one
+existing Clip Composer debt; the historical sprint overlay was clean. The
+skipped realtime deadline test and downstream qualification remain pending.
+Quiet-machine Clip Composer main `990d378` with sprint SDK `2c54382` recorded
+1207 passed, 0 failed and 18 skipped of 1225 in serial private-home CTest
+(679.89 s). The earlier 1224/1225 run and swatch failure remain historical
+evidence. Log:
+`/Users/nesbitt/dev/.suite-audit-261103/logs/cc-main-sprint-sdk-serial.log`.
+
 ## Treefall SDK coherence audit and suite roadmap — 2026-10-29
 
 **Record:** `docs/orp/ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap.md`

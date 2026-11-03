@@ -9,6 +9,10 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP279 Suite Realtime Audit Coverage and Coherence]] —
+  expanded callback audit coverage and suite findings; final qualification pending
+  (2026-11-03)
+
 - [[ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap]] —
   comprehensive technical audit of post-PR #277 codebase coherence, downstream
   suite synchronization drift, status of deferred ORP268/276 requirements, and

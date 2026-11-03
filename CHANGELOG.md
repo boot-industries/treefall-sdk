@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Expanded realtime static audit coverage to per-block callees and optional
+  adjacent FreqFinder analysis enqueue; final suite qualification is pending.
+
 - Transport and routing disable implicit floating-point contraction, and pinned
   fade/pan polynomials use separately rounded multiply/add operations instead
   of potentially software-emulated `fma` calls. The deterministic render
