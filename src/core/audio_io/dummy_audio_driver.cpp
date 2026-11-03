@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "dummy_audio_driver.h"
 
+#include <orpheus/routing_matrix.h>
+
 #include <algorithm>
 #include <chrono>
 
@@ -18,7 +20,7 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
     return SessionGraphError::InternalError;
   }
   if (config.sample_rate == 0 || config.buffer_size == 0 || config.num_inputs > 32 ||
-      config.num_outputs > 32) {
+      config.num_outputs > kRoutingMaxOutputs) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -44,11 +46,11 @@ SessionGraphError DummyAudioDriver::initialize(const AudioDriverConfig& config) 
 SessionGraphError DummyAudioDriver::initializeAudioOutput(const AudioOutputRouteRequest& request) {
   if (request.output_channel_map.empty() || request.requested_sample_rate == 0 ||
       request.requested_buffer_size == 0 || request.requested_buffer_size > 0xffffu ||
-      request.output_channel_map.size() > 32 ||
+      request.output_channel_map.size() > kRoutingMaxOutputs ||
       (!request.output_device_id.empty() && request.output_device_id != "dummy")) {
     return SessionGraphError::InvalidParameter;
   }
-  std::vector<bool> seen(32, false);
+  std::vector<bool> seen(kRoutingMaxOutputs, false);
   for (const uint16_t channel : request.output_channel_map) {
     if (channel >= seen.size() || seen[channel]) {
       return SessionGraphError::InvalidParameter;
@@ -203,8 +205,8 @@ AudioRouteCompatibility DummyAudioDriver::probeRoute(const AudioDriverConfig& co
   }
 
   const auto resolve_map = [](const std::vector<uint16_t>& requested, uint16_t logical_count,
-                              std::vector<uint16_t>& resolved) {
-    if (logical_count > 32) {
+                              size_t channel_limit, std::vector<uint16_t>& resolved) {
+    if (logical_count > channel_limit) {
       return false;
     }
     if (requested.empty()) {
@@ -220,7 +222,8 @@ AudioRouteCompatibility DummyAudioDriver::probeRoute(const AudioDriverConfig& co
     resolved.clear();
     resolved.reserve(requested.size());
     for (const uint16_t channel : requested) {
-      if (channel >= 32 || std::find(resolved.begin(), resolved.end(), channel) != resolved.end()) {
+      if (channel >= channel_limit ||
+          std::find(resolved.begin(), resolved.end(), channel) != resolved.end()) {
         return false;
       }
       resolved.push_back(channel);
@@ -229,14 +232,15 @@ AudioRouteCompatibility DummyAudioDriver::probeRoute(const AudioDriverConfig& co
   };
 
   std::vector<uint16_t> resolved_output;
-  if (!resolve_map(config.channel_map.output_channels, config.num_outputs, resolved_output)) {
+  if (!resolve_map(config.channel_map.output_channels, config.num_outputs, kRoutingMaxOutputs,
+                   resolved_output)) {
     compatibility.status = AudioRouteCompatibilityStatus::InvalidChannelMap;
     compatibility.detail = "map:output";
     return compatibility;
   }
   if (config.num_inputs > 0) {
     std::vector<uint16_t> resolved_input;
-    if (!resolve_map(config.channel_map.input_channels, config.num_inputs, resolved_input)) {
+    if (!resolve_map(config.channel_map.input_channels, config.num_inputs, 32, resolved_input)) {
       compatibility.status = AudioRouteCompatibilityStatus::InvalidChannelMap;
       compatibility.detail = "map:input";
       return compatibility;
