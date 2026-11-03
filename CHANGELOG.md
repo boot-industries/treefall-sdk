@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `kRoutingMaxOutputs` rises from 32 to 64 (ORP278). `RoutingMatrix`,
+  `TransportController` (`TransportConfig::outputChannels`), the routing meter
+  state, `GroupOutputMeterSnapshot` lane meters and the
+  `RealtimeTelemetrySnapshot` post-master output arrays now carry up to 64 output
+  lanes, and the dummy audio driver accepts up to 64 output channels. The
+  per-lane and per-output occupancy masks in the render path are 64-bit; the
+  audio callback remains allocation-free and lock-free. **Migration: rebuild
+  every consumer.** Public C++ class and struct layouts changed
+  (`GroupOutputMeterSnapshot` and `RealtimeTelemetrySnapshot` lane arrays doubled);
+  the C ABI 1.0 headers embed no output-lane-sized array and are unchanged.
+  Hosts that sized buffers from `kRoutingMaxOutputs` get the new capacity
+  automatically; hosts that hard-coded 32 keep working unchanged.
 - Transport and routing disable implicit floating-point contraction, and pinned
   fade/pan polynomials use separately rounded multiply/add operations instead
   of potentially software-emulated `fma` calls. The deterministic render

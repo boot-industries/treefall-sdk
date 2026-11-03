@@ -9,6 +9,11 @@ Record titles below keep their original `ORP...` identifiers and naming.
 
 
 ## Current Records
+- [[ORP278 64-Output Routing Capacity]] —
+  raises `kRoutingMaxOutputs` from 32 to 64 with 64-bit lane occupancy masks,
+  64-lane regression tests and the rebuild-consumers migration note
+  (2026-11-03)
+
 - [[ORP277 Treefall SDK Coherence Audit, Downstream Suite Sync, and Strategic Roadmap]] —
   comprehensive technical audit of post-PR #277 codebase coherence, downstream
   suite synchronization drift, status of deferred ORP268/276 requirements, and

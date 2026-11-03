@@ -694,7 +694,7 @@ Treefall SDK has been extended with 7 major features for professional workflows:
 
 **Capabilities:**
 
-- N×M routing: 64 channels → 16 groups → 32 outputs
+- N×M routing: 64 channels → 16 groups → up to 64 outputs (`kRoutingMaxOutputs`)
 - Multiple solo modes (SIP, AFL, PFL, Destructive)
 - Per-channel and per-group gain/pan/mute/solo controls
 - Real-time metering (Peak/RMS/TruePeak/LUFS)
