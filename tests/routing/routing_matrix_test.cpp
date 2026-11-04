@@ -157,6 +157,15 @@ TEST_F(RoutingMatrixTest, InitializeWithInvalidGroupCount) {
   EXPECT_EQ(result, SessionGraphError::InvalidParameter);
 }
 
+TEST_F(RoutingMatrixTest, InitializeAcceptsMaxOutputsAndRejectsOneMore) {
+  config.num_outputs = kRoutingMaxOutputs;
+  EXPECT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  auto rejected = createRoutingMatrix();
+  config.num_outputs = static_cast<RoutingOutputIndex>(kRoutingMaxOutputs + 1);
+  EXPECT_EQ(rejected->initialize(config), SessionGraphError::InvalidParameter);
+}
+
 TEST_F(RoutingMatrixTest, InitializeWithMonoOutput) {
   config.num_outputs = 1;
   auto result = matrix->initialize(config);
@@ -1570,6 +1579,85 @@ TEST_F(RoutingMatrixTest, GroupOutputMeterFrameSeparatesOverlappingPhysicalRoute
   EXPECT_NEAR(linear(snapshot.groups[1].lane_meters[0].peak_db), 0.5f, 0.001f);
   EXPECT_NEAR(outputs[0][BUFFER_SIZE - 1], 0.75f, 0.001f);
   EXPECT_FLOAT_EQ(outputs[1][BUFFER_SIZE - 1], 0.0f);
+}
+
+TEST_F(RoutingMatrixTest, SixtyFourOutputRenderRoutesGroupToLastTwoLanes) {
+  static_assert(kRoutingMaxOutputs == 64);
+  config.num_channels = 2;
+  config.num_groups = 1;
+  config.num_outputs = 64;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  ChannelConfig left;
+  left.group_index = 0;
+  left.output_channel = 0;
+  ChannelConfig right = left;
+  right.output_channel = 1;
+  ASSERT_EQ(matrix->configureChannel(0, left), SessionGraphError::OK);
+  ASSERT_EQ(matrix->configureChannel(1, right), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupOutputRoute(0, 62, 2), SessionGraphError::OK);
+
+  std::vector<float> source0(BUFFER_SIZE, 0.25f);
+  std::vector<float> source1(BUFFER_SIZE, 0.5f);
+  const float* inputs[2] = {source0.data(), source1.data()};
+  std::vector<std::vector<float>> outputs(64, std::vector<float>(BUFFER_SIZE, 0.0f));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  for (size_t lane = 0; lane < 62; ++lane) {
+    EXPECT_FLOAT_EQ(outputs[lane][BUFFER_SIZE - 1], 0.0f) << "lane " << lane;
+  }
+  EXPECT_NEAR(outputs[62][BUFFER_SIZE - 1], 0.25f, 0.001f);
+  EXPECT_NEAR(outputs[63][BUFFER_SIZE - 1], 0.5f, 0.001f);
+
+  const auto linear = [](float db) { return std::pow(10.0f, db / 20.0f); };
+  // Output meters report true peak, which may exceed the sample peak of a DC step.
+  EXPECT_GE(linear(matrix->getOutputMeter(62).peak_db), 0.25f - 0.001f);
+  EXPECT_GE(linear(matrix->getOutputMeter(63).peak_db), 0.5f - 0.001f);
+  EXPECT_LT(matrix->getOutputMeter(61).peak_db, -90.0f);
+
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  ASSERT_EQ(snapshot.coherent, 1);
+  EXPECT_EQ(snapshot.groups[0].routing_output_start, 62);
+  EXPECT_EQ(snapshot.groups[0].logical_lane_count, 2);
+  EXPECT_NEAR(linear(snapshot.groups[0].lane_meters[0].peak_db), 0.25f, 0.001f);
+  EXPECT_NEAR(linear(snapshot.groups[0].lane_meters[1].peak_db), 0.5f, 0.001f);
+}
+
+TEST_F(RoutingMatrixTest, LogicalLanesAtOrAboveThirtyTwoAreMarkedOccupied) {
+  config.num_channels = 1;
+  config.num_groups = 1;
+  config.num_outputs = 64;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+
+  ChannelConfig channel;
+  channel.group_index = 0;
+  channel.output_channel = 40;
+  ASSERT_EQ(matrix->configureChannel(0, channel), SessionGraphError::OK);
+  ASSERT_EQ(matrix->setGroupOutputRoute(0, 0, 64), SessionGraphError::OK);
+
+  std::vector<float> source(BUFFER_SIZE, 0.5f);
+  const float* inputs[1] = {source.data()};
+  std::vector<std::vector<float>> outputs(64, std::vector<float>(BUFFER_SIZE, 0.0f));
+  auto outputPointers = toPointerArray(outputs);
+  ASSERT_EQ(matrix->processRouting(inputs, outputPointers.data(), BUFFER_SIZE),
+            SessionGraphError::OK);
+
+  for (size_t lane = 0; lane < 64; ++lane) {
+    const float expected = lane == 40 ? 0.5f : 0.0f;
+    EXPECT_NEAR(outputs[lane][BUFFER_SIZE - 1], expected, 0.001f) << "lane " << lane;
+  }
+  GroupOutputMeterSnapshot snapshot;
+  matrix->copyGroupOutputMeterSnapshot(snapshot);
+  ASSERT_EQ(snapshot.coherent, 1);
+  EXPECT_NEAR(std::pow(10.0f, snapshot.groups[0].lane_meters[40].peak_db / 20.0f), 0.5f, 0.001f);
+  EXPECT_GE(std::pow(10.0f, matrix->getOutputMeter(40).peak_db / 20.0f), 0.5f - 0.001f);
 }
 
 TEST_F(RoutingMatrixTest, GroupOutputMeterFrameDistinguishesSilenceUnmeasuredAndUnconfigured) {

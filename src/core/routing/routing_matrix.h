@@ -309,7 +309,7 @@ private:
   // Route occupancy from the previous realtime block. The next block clears
   // only lanes that were written before, plus lanes newly observed in its
   // route snapshot.
-  std::array<uint32_t, kRoutingControlMaxGroups> m_previous_occupied_lane_masks{};
+  std::array<uint64_t, kRoutingControlMaxGroups> m_previous_occupied_lane_masks{};
   // ORP273 F-08: the headroom compensation needs the number of active
   // channels per group and in total. They are accumulated once per block from
   // the route snapshot instead of rescanning every channel for every group.

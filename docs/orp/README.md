@@ -57,7 +57,10 @@ executable, verified sprints. **Start with ORP132.** All work is confirmed local
 - **ORP277** — Treefall SDK coherence audit, downstream suite sync, and strategic
   roadmap: post-PR #277 architecture coherence, downstream suite drift analysis,
   status of deferred ORP268/276 requirements, and prioritized 4-horizon roadmap.
-  Next free document number: ORP278.
+- **ORP278** — 64-output routing capacity: `kRoutingMaxOutputs` 32 → 64,
+  64-bit lane occupancy masks, 64-lane render/meter regression tests and the
+  rebuild-consumers migration note (C ABI 1.0 unchanged).
+  Next free document number: ORP279.
 
 ---
 

@@ -216,7 +216,7 @@ TEST(MultichannelTransportConfigTest, RejectsUnsupportedRealtimeBounds) {
   TransportConfig config;
   config.sampleRate = kSampleRate;
 
-  config.outputChannels = 33;
+  config.outputChannels = static_cast<uint32_t>(kRoutingMaxOutputs + 1);
   EXPECT_EQ(createTransportController(nullptr, config), nullptr);
 
   config.outputChannels = 2;

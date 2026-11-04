@@ -50,7 +50,8 @@ RoutingMatrix::~RoutingMatrix() {
 SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
   // Validate fixed-capacity realtime bounds.
   if (config.num_channels == 0 || config.num_channels > 256 || config.num_groups == 0 ||
-      config.num_groups > 32 || config.num_outputs == 0 || config.num_outputs > 32) {
+      config.num_groups > 32 || config.num_outputs == 0 ||
+      config.num_outputs > kRoutingMaxOutputs) {
     return SessionGraphError::InvalidParameter;
   }
 
@@ -914,7 +915,7 @@ SessionGraphError RoutingMatrix::processRouting(const float* const* channel_inpu
   {
     // Fixed stack scratch at the validated realtime maxima.
     const float* input_slice_ptrs[256];
-    float* output_slice_ptrs[32];
+    float* output_slice_ptrs[kRoutingMaxOutputs];
 
     uint32_t offset = 0;
     while (offset < num_frames) {
@@ -954,8 +955,8 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   // Route occupancy is stable for this callback's observed route snapshot. It
   // lets the hot group/output loops skip lanes that cannot contain a routed
   // signal while preserving zero publication and true-peak resets for them.
-  std::array<uint32_t, 32> occupied_lane_masks{};
-  uint32_t occupied_output_mask = 0;
+  std::array<uint64_t, kRoutingControlMaxGroups> occupied_lane_masks{};
+  uint64_t occupied_output_mask = 0;
   std::array<uint32_t, 256> route_snapshots{};
 
   const uint64_t routePublicationSequence =
@@ -998,17 +999,17 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     switch (config.source_channel_policy) {
     case SourceChannelPolicy::Discrete:
       if (logicalLane < config.num_outputs && logicalLane < kRoutingMaxOutputs) {
-        occupied_lane_masks[group_index] |= (uint32_t{1} << logicalLane);
+        occupied_lane_masks[group_index] |= (uint64_t{1} << logicalLane);
       }
       break;
     case SourceChannelPolicy::StereoPairs:
-      occupied_lane_masks[group_index] |= uint32_t{1};
+      occupied_lane_masks[group_index] |= uint64_t{1};
       if (config.num_outputs > 1) {
-        occupied_lane_masks[group_index] |= uint32_t{1} << 1;
+        occupied_lane_masks[group_index] |= uint64_t{1} << 1;
       }
       break;
     case SourceChannelPolicy::MonoFoldDown:
-      occupied_lane_masks[group_index] |= uint32_t{1};
+      occupied_lane_masks[group_index] |= uint64_t{1};
       break;
     }
   }
@@ -1038,11 +1039,11 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
   }
 
   for (RoutingGroupIndex group = 0; group < config.num_groups; ++group) {
-    const uint32_t lanes_to_clear =
+    const uint64_t lanes_to_clear =
         m_previous_occupied_lane_masks[group] | occupied_lane_masks[group];
     auto& channels = m_group_buffers[group].channels;
     for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
-      if ((lanes_to_clear & (uint32_t{1} << lane)) != 0 && lane < channels.size()) {
+      if ((lanes_to_clear & (uint64_t{1} << lane)) != 0 && lane < channels.size()) {
         std::fill_n(channels[lane].begin(), num_frames, 0.0f);
       }
     }
@@ -1156,13 +1157,13 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     const float headroom = sanitize(getHeadroomCompensation(group_index));
     const RoutingOutputIndex outputStart = controls.output_start;
     const uint16_t outputWidth = controls.output_width;
-    const uint32_t occupiedLanes = occupied_lane_masks[group_index];
+    const uint64_t occupiedLanes = occupied_lane_masks[group_index];
     for (RoutingOutputIndex lane = 0;
          lane < config.num_outputs && lane < outputWidth && lane < kRoutingMaxOutputs; ++lane) {
-      if ((occupiedLanes & (uint32_t{1} << lane)) != 0) {
+      if ((occupiedLanes & (uint64_t{1} << lane)) != 0) {
         const RoutingOutputIndex output = outputStart + lane;
         if (output < config.num_outputs && output < kRoutingMaxOutputs) {
-          occupied_output_mask |= (uint32_t{1} << output);
+          occupied_output_mask |= (uint64_t{1} << output);
         }
       }
     }
@@ -1176,7 +1177,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       group.peak_level.store(group_peak, std::memory_order_release);
       group.rms_level.store(group_rms, std::memory_order_release);
       for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
-        if ((occupiedLanes & (uint32_t{1} << output)) != 0 &&
+        if ((occupiedLanes & (uint64_t{1} << output)) != 0 &&
             detectClipping(group_buffer.channels[output].data(), num_frames)) {
           group.clip_count.fetch_add(1, std::memory_order_relaxed);
           break;
@@ -1188,7 +1189,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     for (uint32_t frame = 0; frame < num_frames; ++frame) {
       const float group_gain = sanitize(group.gain_smoother->next(group_gain_state));
       for (RoutingOutputIndex lane = 0; lane < config.num_outputs; ++lane) {
-        if ((occupiedLanes & (uint32_t{1} << lane)) == 0) {
+        if ((occupiedLanes & (uint64_t{1} << lane)) == 0) {
           continue;
         }
         float sample = 0.0f;
@@ -1212,7 +1213,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
           laneRms.store(0.0f, std::memory_order_relaxed);
           continue;
         }
-        if ((occupiedLanes & (uint32_t{1} << lane)) == 0) {
+        if ((occupiedLanes & (uint64_t{1} << lane)) == 0) {
           lanePeak.store(0.0f, std::memory_order_relaxed);
           laneRms.store(0.0f, std::memory_order_relaxed);
           group.lane_true_peak_meters[lane].reset();
@@ -1285,7 +1286,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     m_meter_state.publishMasterPeak(master_peak);
     m_meter_state.publishMasterRms(master_rms);
     for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
-      if ((occupied_output_mask & (uint32_t{1} << output)) != 0 &&
+      if ((occupied_output_mask & (uint64_t{1} << output)) != 0 &&
           detectClipping(master_output[output], num_frames)) {
         m_meter_state.incrementMasterClip();
         break;
@@ -1321,7 +1322,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       output_true_peak_meters[output].reset();
       continue;
     }
-    if ((occupied_output_mask & (uint32_t{1} << output)) == 0) {
+    if ((occupied_output_mask & (uint64_t{1} << output)) == 0) {
       m_meter_state.publishOutputPeak(output, 0.0f);
       m_meter_state.publishOutputRms(output, 0.0f);
       output_true_peak_meters[output].reset();

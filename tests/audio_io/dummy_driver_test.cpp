@@ -178,6 +178,20 @@ TEST_F(DummyDriverTest, OutputRouteRequestRejectsDuplicateMap) {
   EXPECT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::InvalidParameter);
 }
 
+TEST_F(DummyDriverTest, OutputRouteRequestAcceptsSixtyFourOutputsAndRejectsMore) {
+  AudioOutputRouteRequest request;
+  request.requested_sample_rate = 48000;
+  request.requested_buffer_size = 512;
+  for (uint16_t channel = 0; channel < 64; ++channel) {
+    request.output_channel_map.push_back(channel);
+  }
+  EXPECT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getConfig().num_outputs, 64u);
+
+  request.output_channel_map.push_back(64);
+  EXPECT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::InvalidParameter);
+}
+
 TEST_F(DummyDriverTest, InitializeRejectsInvalidConfig) {
   AudioDriverConfig config;
   config.sample_rate = 0; // Invalid

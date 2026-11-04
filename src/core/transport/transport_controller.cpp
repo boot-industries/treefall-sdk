@@ -3525,11 +3525,12 @@ std::unique_ptr<ITransportController> createTransportController(core::SessionGra
   constexpr uint32_t maxSourceChannels = 8;
   const uint64_t routingLanes =
       static_cast<uint64_t>(config.maxActiveVoices) * config.maxSourceChannels;
-  if (config.sampleRate == 0 || config.outputChannels == 0 || config.outputChannels > 32 ||
-      config.maxBlockFrames == 0 || config.maxBlockFrames > maxBlockFrames ||
-      config.maxActiveVoices == 0 || config.maxActiveVoices > maxActiveVoices ||
-      config.numGroups == 0 || config.numGroups > 32 || config.maxSourceChannels == 0 ||
-      config.maxSourceChannels > maxSourceChannels || routingLanes > 256) {
+  if (config.sampleRate == 0 || config.outputChannels == 0 ||
+      config.outputChannels > kRoutingMaxOutputs || config.maxBlockFrames == 0 ||
+      config.maxBlockFrames > maxBlockFrames || config.maxActiveVoices == 0 ||
+      config.maxActiveVoices > maxActiveVoices || config.numGroups == 0 || config.numGroups > 32 ||
+      config.maxSourceChannels == 0 || config.maxSourceChannels > maxSourceChannels ||
+      routingLanes > 256) {
     return nullptr;
   }
   return std::make_unique<TransportController>(sessionGraph, config);

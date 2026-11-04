@@ -49,7 +49,7 @@ constexpr uint32_t kRoutingSliceFrames = 2048;
 /// Fixed public capacity for coherent group-control snapshots.
 constexpr size_t kRoutingControlMaxGroups = 32;
 /// Maximum routing output lanes exposed by routing and telemetry.
-constexpr size_t kRoutingMaxOutputs = 32;
+constexpr size_t kRoutingMaxOutputs = 64;
 /// Encoded exact silence for all public meter dB fields.
 inline constexpr float kAudioMeterSilenceDb = -100.0f;
 
@@ -193,7 +193,7 @@ static_assert(std::is_standard_layout_v<RoutingControlSnapshot>);
 struct RoutingConfig {
   RoutingChannelIndex num_channels; ///< Number of input routing lanes [1-256]
   RoutingGroupIndex num_groups;     ///< Number of logical groups [1-32]
-  RoutingOutputIndex num_outputs;   ///< Number of output channels [1-32]
+  RoutingOutputIndex num_outputs;   ///< Number of output channels [1-64]
 
   SoloMode solo_mode;         ///< Solo behavior
   MeteringMode metering_mode; ///< Metering algorithm
@@ -337,7 +337,7 @@ struct RoutingSnapshot {
 /// - Yamaha CL/QL: Scene memory, smooth parameter changes
 ///
 /// Key Features:
-/// - Up to 256 source channels → 32 logical groups → 32 routing outputs
+/// - Up to 256 source channels → 32 logical groups → 64 routing outputs
 /// - Multiple solo modes (SIP, AFL, PFL, Destructive)
 /// - Per-channel and per-group gain with smoothing (click-free)
 /// - Real-time metering (sample peak/RMS/SDK true-peak plus legacy LUFS proxy)
