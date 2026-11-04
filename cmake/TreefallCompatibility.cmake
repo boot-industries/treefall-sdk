@@ -15,8 +15,6 @@ set(${result}
   audio_driver_coreaudio|orpheus_audio_driver_coreaudio
   audio_driver_wasapi|orpheus_audio_driver_wasapi
   sanitizers|orpheus_sanitizers
-  shmui_juce|orpheus_shmui_juce
-  shmui_juce_gl|orpheus_shmui_juce_gl
   adapters_common|orpheus_adapters_common PARENT_SCOPE)
 endfunction()
 _treefall_compatibility_target_table(TREEFALL_COMPATIBILITY_TARGETS)
@@ -36,7 +34,6 @@ if(NOT COMMAND _orpheus_sdk_alias)
   endfunction()
 endif()
 
-# Call again after adding optional SDK-owned ShmUI targets in source integrations.
 # No GLOBAL include guard: imported facades must be available in each discovery scope.
 function(treefall_register_compatibility_targets)
   _treefall_compatibility_target_table(TREEFALL_COMPATIBILITY_TARGETS)

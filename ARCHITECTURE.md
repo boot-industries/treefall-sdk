@@ -180,7 +180,7 @@ Treefall is organized into distinct layers, each with clear responsibilities:
 ```mermaid
 graph TD
     A[External apps: Clip Composer, FourTrack, FreqFinder] --> B[Adapters: REAPER, minhost]
-    A --> C[Shared app packages: occ-app-platform, shmui-juce]
+    A --> C[Shared app package: occ-app-platform]
     B --> D[Core SDK: Transport, Session, Audio I/O]
     C --> D
     D --> E[Platform: CoreAudio, WASAPI, ALSA, libsndfile]
@@ -196,10 +196,11 @@ graph TD
 
 - **Core SDK** (`src/`, `include/`) – Minimal, deterministic primitives. No UI, no network, no host assumptions.
 - **Adapters** (`adapters/`) – Optional, platform-specific integrations. Thin wrappers around core SDK.
-- **Shared app packages** (`packages/`) – Active C++/JUCE building blocks for
+- **Shared app packages** (`packages/`) – Active C++ building block for
   downstream applications: `occ-app-platform` (session recovery, preferences,
-  health telemetry) and `shmui-juce` (JUCE UI components). Not part of the
-  core SDK libraries. The former TypeScript driver layer is archived.
+  health telemetry). Not part of the core SDK libraries. The former
+  `shmui-juce` package has been decoupled to `boot-industries/shmui` per
+  SHM028/SHM029; the former TypeScript driver layer is archived.
 - **In-tree apps** (`apps/`) – `wave-finder` (app-platform smoke-test shell)
   and `juce-demo-host` (JUCE demo host). Production applications — Clip
   Composer, FourTrack, FreqFinder — live in their own repositories and consume
@@ -312,7 +313,7 @@ active contract.
 
 ## Shared App Packages (`packages/`)
 
-The `packages/` directory contains **active C++/JUCE building blocks** shared
+The `packages/` directory contains **active C++ building blocks** shared
 by downstream applications (they are consumed through each app repo's SDK
 submodule):
 
@@ -322,11 +323,12 @@ Application-platform helpers extracted from Clip Composer for reuse: session
 recovery/autosave scaffolding, preferences persistence, and realtime health
 telemetry surfaces. Exercised in-tree by the `apps/wave-finder` smoke shell.
 
-### `shmui-juce`
+### Decoupled ShmUI UI components
 
-JUCE UI component library (waveform displays, meters, transport widgets,
-audio/UI thread-safe communication helpers) for application-level UI. NOT part
-of the core SDK libraries — the core stays UI-free.
+The former `packages/shmui-juce` UI component package has been decoupled to
+its independent private repository `boot-industries/shmui` per SHM028/SHM029.
+Downstream applications consume ShmUI directly; the SDK core remains 100%
+UI-free and JUCE-free.
 
 ### Archived TypeScript driver layer
 

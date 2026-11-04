@@ -88,9 +88,6 @@ ctest --test-dir build --output-on-failure -R '^realtime_static_audit$'
 
 # Documentation links and removed paths
 ctest --test-dir build --output-on-failure -R '^docs_path_audit$'
-
-# ShmUI imported-content contract
-python3 tools/shmui_juce_manifest.py --check
 ```
 
 Use sanitizer, TSan, deterministic render-hash, and hardware tests when the
@@ -123,10 +120,6 @@ Documented installed targets include:
 - `Orpheus::audio_driver_manager`
 - `Orpheus::routing`
 - `Orpheus::transport`
-
-`packages/shmui-juce` is an `add_subdirectory` package with
-`Orpheus::shmui_juce`; OpenGL is opt-in through
-`SHMUI_JUCE_ENABLE_OPENGL` and `Orpheus::shmui_juce_gl`.
 
 Treefall compatibility rules:
 
@@ -170,18 +163,19 @@ callbacks through allocating wrappers, or execute unbounded work.
   rollback on destruction, reject nesting, and restore ID allocator watermarks.
 - Application undo stacks and presentation state stay outside the graph.
 
-## ShmUI import updates
+## ShmUI private source boundary
 
-ShmUI is the upstream source authority. Orpheus owns a governed imported copy.
-For an intentional import update:
+ShmUI is an independent private component library owned by `boot-industries/shmui`
+per SHM028/SHM029. It is consumed directly by child applications (`freqfinder`,
+`fourtrack`, `clip-composer`) via direct source trees, generated token
+artifacts, or application-level submodules.
 
-1. update the imported files and named upstream revision together;
-2. preserve the declared target/component/module/token contract;
-3. run `python3 tools/shmui_juce_manifest.py --sync`;
-4. run the manifest check; and
-5. build and run the pinned JUCE non-OpenGL consumer.
-
-Do not hand-edit only the manifest hash or enable OpenGL by default.
+- The Treefall SDK is a public-only SDK with zero dependencies on ShmUI, JUCE,
+  or private credentials.
+- Do not add ShmUI source files, mirrored packages, or JUCE UI dependencies to
+  the SDK repository.
+- Do not re-add `Orpheus::shmui_juce` or `Treefall::shmui_juce` target facades or
+  compatibility shims.
 
 ## Tests and documentation
 

@@ -2,7 +2,7 @@
 
 This directory is the versioned suite coordination contract. The Treefall SDK
 repository is the system of record because it already owns the cross-cutting
-release tooling and generated ShmUI-JUCE manifest check. The suite is **not** a
+release tooling and suite validation checks. The suite is **not** a
 new superproject: FourTrack and Clip Composer retain their application-owned
 SDK submodules, while FreqFinder retains its package/source resolution modes.
 
@@ -204,12 +204,14 @@ The manifest edges are based on repository evidence, not repository names:
 
 | Provider | Consumer | Evidence |
 | --- | --- | --- |
-| `shmui` | `orpheus-sdk` | `shmui/scripts/sync-juce.sh` identifies `shmui/juce/Source` as the source of truth and mirrors it to `orpheus-sdk/packages/shmui-juce`. |
+| `shmui` | `clip-composer` | `clip-composer/.gitmodules` and `clip-composer/CMakeLists.txt` consume `third_party/shmui` directly (SHM030). |
 | `orpheus-sdk` | `fourtrack` | `fourtrack/.gitmodules` and `fourtrack/CMakeLists.txt` consume `third_party/orpheus-sdk`. |
 | `orpheus-sdk` | `clip-composer` | `clip-composer/.gitmodules` and `clip-composer/CMakeLists.txt` consume `third_party/orpheus-sdk`. |
 | `orpheus-sdk` | `freqfinder` | `freqfinder/CMakeLists.txt` supports an installed package or `ORPHEUS_SDK_SOURCE_DIR`; the qualified `build/CMakeCache.txt` uses an explicit immutable source override. |
 | `shmui` | `fourtrack` | `fourtrack/apps/fourtrack-mac/Generated/Shmui/provenance.json` records the ShmUI revision, SDK revision, token contract, and generated manifest hash. |
 | `shmui` | `freqfinder` | `freqfinder/CMakeLists.txt` supports `SHMUI_JUCE_SOURCE_DIR`; the observed cache resolves the sibling `shmui/juce`. |
+
+The legacy mirror edge between `shmui` and `orpheus-sdk` has been removed (SHM029): ShmUI is an independent private component library consumed directly by child applications (`clip-composer`, `fourtrack`, `freqfinder`), not mirrored through the SDK.
 
 The edge direction is provider → consumer. `suite.py affected shmui` computes
 its transitive downstream closure and returns the declared release order.

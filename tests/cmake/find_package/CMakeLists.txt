@@ -7,21 +7,6 @@ if(NOT DEFINED ORPHEUS_REQUIRED_VERSION)
   message(FATAL_ERROR "ORPHEUS_REQUIRED_VERSION is required")
 endif()
 
-# Optional installed ShmUI exports refer to application-provided JUCE modules,
-# exactly as in the existing dedicated package consumer. Only SDK discovery is
-# prefix-only; never substitute SDK build-tree targets for these dependencies.
-if(EXPECTED_SHMUI OR EXPECTED_SHMUI_GL)
-  include(FetchContent)
-  set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    JUCE
-    URL https://github.com/juce-framework/JUCE/archive/refs/tags/8.0.4.tar.gz
-    URL_HASH SHA256=0effe9823a6fd8a4f98e5c08be7d308350e417b2d15dcf34011e778fefbbf005
-    DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
-  FetchContent_MakeAvailable(JUCE)
-endif()
-
 if(NOT DEFINED TREEFALL_DISCOVERY_MODE)
   set(TREEFALL_DISCOVERY_MODE legacy)
 endif()

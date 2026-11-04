@@ -71,49 +71,10 @@
       ],
       "compatibility": {
         "api_line": "0.9.x",
-        "stable_c_abi": "1.0",
-        "shmui_juce_contract": "0.6.0"
+        "stable_c_abi": "1.0"
       },
-      "generated_artifacts": [
-        {
-          "id": "sdk-shmui-juce-package",
-          "path": "packages/shmui-juce",
-          "hash_type": "sha256-path-nul-content-v1",
-          "exclude_paths": [
-            "shmui-juce-import.json"
-          ],
-          "expected_sha256": "4d2d4c5ba354b52fbeb0c6c59b44bb15bac90e4b65e3aa5c3bb096881a9645d7",
-          "source_repository": "shmui",
-          "source_revision": "d420ec64dcb5fd16baa0b95d5048ee09bb95eee8",
-          "current_source_revision": "d420ec64dcb5fd16baa0b95d5048ee09bb95eee8",
-          "source_paths": [
-            "juce/Source",
-            "juce/tests",
-            "juce/CMakeLists.txt",
-            "juce/ImportContract.json"
-          ],
-          "freshness_check": "python3 tools/shmui_juce_manifest.py --check"
-        }
-      ],
+      "generated_artifacts": [],
       "verification": [
-        {
-          "id": "sdk-shmui-manifest",
-          "cwd": "orpheus-sdk",
-          "command": [
-            "python3",
-            "tools/shmui_juce_manifest.py",
-            "--check"
-          ],
-          "tier": "quick",
-          "platforms": [
-            "macos",
-            "linux"
-          ],
-          "required_for": [
-            "candidate",
-            "stable"
-          ]
-        },
         {
           "id": "sdk-version-contract",
           "cwd": "orpheus-sdk",
@@ -186,27 +147,6 @@
         }
       ],
       "verification": [
-        {
-          "id": "shmui-juce-freshness",
-          "cwd": "shmui",
-          "command": [
-            "bash",
-            "scripts/sync-juce.sh",
-            "--check"
-          ],
-          "environment": {
-            "SDK_ROOT": "../orpheus-sdk"
-          },
-          "tier": "quick",
-          "platforms": [
-            "macos",
-            "linux"
-          ],
-          "required_for": [
-            "candidate",
-            "stable"
-          ]
-        },
         {
           "id": "shmui-token-contract",
           "cwd": "shmui",
@@ -458,10 +398,11 @@
   "dependencies": [
     {
       "from": "shmui",
-      "to": "orpheus-sdk",
-      "kind": "generated-artifact",
+      "to": "clip-composer",
+      "kind": "build-time",
       "required": true,
-      "compatibility": "package content and import manifest must match the ShmUI JUCE source and contract version"
+      "pin_policy": "exact consumer submodule revision",
+      "compatibility": "0.7.0"
     },
     {
       "from": "orpheus-sdk",
