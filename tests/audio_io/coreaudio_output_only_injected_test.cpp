@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -79,6 +80,26 @@ struct CoreAudioDriverTestAccess {
   static bool mutexBusy(CoreAudioDriver& driver) {
     std::unique_lock<std::mutex> lock(driver.mutex_, std::try_to_lock);
     return !lock.owns_lock();
+  }
+
+  // Widens the synthetic route to `output_channels` client lanes, then runs
+  // the production converter preparation and render-storage allocation that
+  // initialize() runs, so a started fixture drives the production render
+  // callback without an AudioUnit.
+  static bool prepareRenderPath(CoreAudioDriver& driver, uint16_t output_channels) {
+    driver.config_.num_outputs = output_channels;
+    driver.output_client_channels_ = output_channels;
+    driver.available_output_channels_ = output_channels;
+    driver.output_channel_map_.resize(output_channels);
+    for (uint16_t channel = 0; channel < output_channels; ++channel) {
+      driver.output_channel_map_[channel] = channel;
+    }
+    return driver.prepareConverters() &&
+           driver.allocateRenderBuffers(driver.render_capacity_frames_);
+  }
+
+  static bool inputPrimed(CoreAudioDriver& driver) {
+    return driver.input_converter_.isPrimed();
   }
 
   static audio_utils::DirectionalSrcTransfer supplyInput(CoreAudioDriver& driver) {
@@ -876,6 +897,129 @@ TEST(CoreAudioSyntheticPrimeTest, InputAndOutputStartFailuresPublishBackendStatu
     EXPECT_EQ(fixture.output.starts.load(), fail_input ? 0u : 1u);
     EXPECT_EQ(fixture.driver.start(&fixture.callback), SessionGraphError::NotReady);
   }
+}
+
+constexpr uint32_t kRenderFrames = 128;
+constexpr uint16_t kRenderLanes = 2;
+constexpr float kHostSample = 0.5f;
+constexpr float kIoSentinel = -7.0f;
+
+// processAudio call `n` writes kHostSample to every lane whose bit is set in
+// write_masks[n] and leaves every other lane untouched, as a host may.
+class ScriptedOutputCallback final : public IAudioCallback {
+public:
+  explicit ScriptedOutputCallback(std::vector<uint32_t> masks) : write_masks(std::move(masks)) {}
+
+  void processAudio(const AudioProcessBlock& block) noexcept override {
+    const uint32_t call = calls.fetch_add(1, std::memory_order_relaxed);
+    const uint32_t mask = call < write_masks.size() ? write_masks[call] : 0u;
+    for (uint16_t channel = 0; channel < block.num_output_channels; ++channel) {
+      if ((mask & (uint32_t{1} << channel)) != 0) {
+        std::fill_n(block.output_buffers[channel], block.num_frames, kHostSample);
+      }
+    }
+  }
+
+  const std::vector<uint32_t> write_masks;
+  std::atomic<uint32_t> calls{0};
+};
+
+struct RenderTarget {
+  alignas(AudioBufferList) std::array<std::byte, sizeof(AudioBufferList) +
+                                                     (kRenderLanes - 1) * sizeof(AudioBuffer)>
+      storage{};
+  std::array<std::array<float, kRenderFrames>, kRenderLanes> lanes{};
+
+  AudioBufferList* list() {
+    return reinterpret_cast<AudioBufferList*>(storage.data());
+  }
+
+  // Pre-fills ioData with a sentinel so every asserted value was written by
+  // the callback under test.
+  void reset(uint16_t lane_count) {
+    AudioBufferList* buffers = list();
+    buffers->mNumberBuffers = lane_count;
+    for (uint16_t lane = 0; lane < lane_count; ++lane) {
+      lanes[lane].fill(kIoSentinel);
+      buffers->mBuffers[lane].mNumberChannels = 1u;
+      buffers->mBuffers[lane].mDataByteSize = kRenderFrames * sizeof(float);
+      buffers->mBuffers[lane].mData = lanes[lane].data();
+    }
+  }
+};
+
+void startRenderingFixture(SyntheticStartup& fixture, ScriptedOutputCallback& callback,
+                           uint16_t lane_count) {
+  ASSERT_EQ(fixture.prepare(true), SessionGraphError::OK);
+  ASSERT_TRUE(CoreAudioDriverTestAccess::prepareRenderPath(fixture.driver, lane_count));
+  // Satisfy the production prime target before start() so its readiness poll
+  // never waits on the synthetic clock.
+  for (int supply = 0; supply < 16 && !CoreAudioDriverTestAccess::inputPrimed(fixture.driver);
+       ++supply) {
+    ASSERT_EQ(CoreAudioDriverTestAccess::supplyInput(fixture.driver).status,
+              audio_utils::DirectionalSrcStatus::Ok);
+  }
+  ASSERT_TRUE(CoreAudioDriverTestAccess::inputPrimed(fixture.driver));
+  ASSERT_EQ(fixture.driver.start(&callback), SessionGraphError::OK);
+  ASSERT_TRUE(fixture.driver.isRunning());
+}
+
+void renderOnce(SyntheticStartup& fixture, RenderTarget& target, uint16_t lane_count) {
+  ASSERT_EQ(CoreAudioDriverTestAccess::supplyInput(fixture.driver).status,
+            audio_utils::DirectionalSrcStatus::Ok);
+  target.reset(lane_count);
+  AudioUnitRenderActionFlags action_flags = 0;
+  ASSERT_EQ(CoreAudioDriver::renderCallbackForTesting(&fixture.driver, &action_flags, nullptr, 0,
+                                                      kRenderFrames, target.list()),
+            noErr);
+}
+
+void expectLane(const RenderTarget& target, uint16_t lane, float expected) {
+  for (uint32_t frame = 0; frame < kRenderFrames; ++frame) {
+    ASSERT_EQ(target.lanes[lane][frame], expected) << "lane " << lane << " frame " << frame;
+  }
+}
+
+TEST(CoreAudioOutputOnlyInjectedTest, HostWritingNothingYieldsSilence) {
+  SyntheticStartup fixture;
+  ScriptedOutputCallback callback({0b11u, 0b00u});
+  ASSERT_NO_FATAL_FAILURE(startRenderingFixture(fixture, callback, kRenderLanes));
+  RenderTarget target;
+
+  ASSERT_NO_FATAL_FAILURE(renderOnce(fixture, target, kRenderLanes));
+  ASSERT_EQ(callback.calls.load(), 1u);
+  for (uint16_t lane = 0; lane < kRenderLanes; ++lane) {
+    expectLane(target, lane, kHostSample);
+  }
+
+  // The host writes nothing: the previous callback's audio must not reappear.
+  ASSERT_NO_FATAL_FAILURE(renderOnce(fixture, target, kRenderLanes));
+  ASSERT_EQ(callback.calls.load(), 2u);
+  for (uint16_t lane = 0; lane < kRenderLanes; ++lane) {
+    expectLane(target, lane, 0.0f);
+  }
+
+  EXPECT_EQ(fixture.driver.stop(), SessionGraphError::OK);
+}
+
+TEST(CoreAudioOutputOnlyInjectedTest, HostWritingOneChannelLeavesOthersSilent) {
+  SyntheticStartup fixture;
+  ScriptedOutputCallback callback({0b11u, 0b01u});
+  ASSERT_NO_FATAL_FAILURE(startRenderingFixture(fixture, callback, kRenderLanes));
+  RenderTarget target;
+
+  ASSERT_NO_FATAL_FAILURE(renderOnce(fixture, target, kRenderLanes));
+  ASSERT_EQ(callback.calls.load(), 1u);
+  expectLane(target, 0, kHostSample);
+  expectLane(target, 1, kHostSample);
+
+  // Only lane 0 is written; lane 1 must be silence, not the previous chunk.
+  ASSERT_NO_FATAL_FAILURE(renderOnce(fixture, target, kRenderLanes));
+  ASSERT_EQ(callback.calls.load(), 2u);
+  expectLane(target, 0, kHostSample);
+  expectLane(target, 1, 0.0f);
+
+  EXPECT_EQ(fixture.driver.stop(), SessionGraphError::OK);
 }
 
 } // namespace

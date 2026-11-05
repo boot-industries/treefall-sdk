@@ -124,6 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their seqlock reads, so a snapshot reported `coherent` can no longer mix
   lanes from two render publications on weakly ordered CPUs. Decibel
   conversion now runs after the read window closes.
+- CoreAudio output clears each render chunk before the host callback runs, so
+  a channel or frame the host leaves unwritten plays silence instead of the
+  previous callback's audio, on both the direct and the converting output
+  paths. This matches the WASAPI and Dummy drivers.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

@@ -875,8 +875,13 @@ OSStatus CoreAudioDriver::renderCallback(void* inRefCon, AudioUnitRenderActionFl
       driver->input_render_chunk_buffers_[channel] = driver->input_buffers_[channel] + offset;
       driver->input_chunk_buffers_[channel] = driver->input_buffers_[channel] + offset;
     }
+    // The host may leave any lane or frame unwritten; it must hear silence
+    // there, never the previous callback's audio still held in this storage.
+    const uint64_t output_chunk_bytes = requiredBytes(frames);
     for (uint32_t channel = 0; channel < num_output_channels; ++channel) {
       driver->output_chunk_buffers_[channel] = driver->output_buffers_[channel] + offset;
+      std::memset(driver->output_chunk_buffers_[channel], 0,
+                  static_cast<size_t>(output_chunk_bytes));
     }
 
     if (driver->input_conversion_active_) {
