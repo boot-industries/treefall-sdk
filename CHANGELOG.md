@@ -159,6 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `orpheus_minhost` integer options such as `--sr` and `--bd` reject values
   outside `uint32_t`, signs and surrounding whitespace. `--sr 4294967297` was
   previously accepted as 1 Hz and `-1` as 4294967295.
+- Seeking a sample-rate-converted streaming source no longer restarts the
+  polyphase resampler with empty history at an arbitrary phase. The seek now
+  restarts at a phase-aligned source frame before the target, primes the FIR
+  and discards the priming output, so the samples after a page seek are
+  bit-identical to a continuous decode and the page seam artifact is gone.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

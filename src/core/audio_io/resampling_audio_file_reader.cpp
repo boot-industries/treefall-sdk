@@ -3,28 +3,31 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 
 namespace orpheus {
 
 namespace {
 constexpr size_t kInputBlockFrames = 4096; // frames read from inner per pump
-}
+// Passed explicitly to PolyphaseResampler so seek() derives the same FIR span.
+constexpr uint32_t kTapsPerPhase = 16;
+} // namespace
 
 ResamplingAudioFileReader::ResamplingAudioFileReader(std::shared_ptr<IAudioFileReader> inner,
                                                      uint32_t targetRate)
     : m_inner(std::move(inner)), m_targetRate(targetRate == 0 ? 48000 : targetRate) {}
 
 void ResamplingAudioFileReader::rebuildResampler() {
-  m_resampler = std::make_unique<PolyphaseResampler>(m_sourceRate, m_targetRate, m_numChannels);
+  m_resampler =
+      std::make_unique<PolyphaseResampler>(m_sourceRate, m_targetRate, m_numChannels, kTapsPerPhase);
   m_outBuffer.clear();
   m_outReadFrame = 0;
   m_sourceEof = false;
 
   // Reserve steady-state capacity so readSamples() does not reallocate in the
   // common case. One input block converts to ~block * targetRate/sourceRate
-  // output frames; reserve a few blocks' worth plus headroom. (The SDK reads
-  // files inside processAudio today, so this is best-effort RT hygiene, not a
-  // hard guarantee — see class docs.)
+  // output frames; reserve a few blocks' worth plus headroom. Callers read from
+  // streaming worker or control threads, never from processAudio.
   const uint16_t ch = m_numChannels == 0 ? 1 : m_numChannels;
   const double ratio =
       static_cast<double>(m_targetRate) / static_cast<double>(m_sourceRate == 0 ? 1 : m_sourceRate);
@@ -138,24 +141,55 @@ Result<size_t> ResamplingAudioFileReader::readSamples(float* buffer, size_t num_
 }
 
 SessionGraphError ResamplingAudioFileReader::seek(int64_t sample_position) {
-  if (!m_open) {
+  if (!m_open || m_numChannels == 0) {
     return SessionGraphError::NotReady;
   }
-  // sample_position is in TARGET-rate frames. Map back to source frames.
-  int64_t clampedTarget = std::clamp<int64_t>(sample_position, 0, m_targetDurationSamples);
-  int64_t sourcePos = static_cast<int64_t>(
-      std::llround(static_cast<double>(clampedTarget) * static_cast<double>(m_sourceRate) /
-                   static_cast<double>(m_targetRate)));
-  sourcePos = std::clamp<int64_t>(sourcePos, 0, m_sourceDurationSamples);
+  // sample_position is in TARGET-rate frames.
+  const int64_t target = std::clamp<int64_t>(sample_position, 0, m_targetDurationSamples);
 
-  const SessionGraphError err = m_inner->seek(sourcePos);
+  // L, M and the FIR half-width, with the exact expressions of the
+  // PolyphaseResampler constructor (polyphase_resampler.cpp).
+  const uint32_t inputRate = m_sourceRate == 0 ? 1 : m_sourceRate;
+  const uint32_t outputRate = m_targetRate == 0 ? 1 : m_targetRate;
+  const int64_t g = std::gcd<int64_t>(outputRate, inputRate);
+  const int64_t L = outputRate / g;
+  const int64_t M = inputRate / g;
+  const double ratio = static_cast<double>(outputRate) / static_cast<double>(inputRate);
+  const double cutoff = 0.5 * std::min(1.0, ratio);
+  const double halfWidthInput = static_cast<double>(kTapsPerPhase) * (0.5 / cutoff);
+  uint32_t firHalf = static_cast<uint32_t>(std::ceil(halfWidthInput));
+  if (firHalf < 1) {
+    firHalf = 1;
+  }
+
+  // Output frame n is centred on source frame n*M/L. Restart the converter at a
+  // source frame s0 that is a multiple of M, so output n0 = (s0/M)*L of the
+  // fresh converter has the same FIR phase as the whole-file decode, and that
+  // lies at least firHalf frames before the target's centre, so every tap of
+  // every output from the target onward reads real source history.
+  const int64_t centre = target * M / L;
+  const int64_t primedStart = std::max<int64_t>(0, centre - static_cast<int64_t>(firHalf));
+  const int64_t sourceStart = M * (primedStart / M);
+  const int64_t outputStart = (sourceStart / M) * L;
+
+  const SessionGraphError err = m_inner->seek(sourceStart);
   if (err != SessionGraphError::OK) {
     return err;
   }
   // Reset the streaming converter only after the wrapped reader accepted the
   // seek, so a failed seek leaves its prior phase, buffers, and position intact.
   rebuildResampler();
-  m_targetPos = clampedTarget;
+  m_targetPos = outputStart;
+
+  // Discard the priming outputs that precede the target.
+  const auto discard = static_cast<size_t>(target - outputStart);
+  const SessionGraphError primeResult = produceUntil(discard);
+  if (primeResult != SessionGraphError::OK) {
+    return primeResult;
+  }
+  const size_t available = (m_outBuffer.size() / m_numChannels) - m_outReadFrame;
+  m_outReadFrame += std::min(discard, available);
+  m_targetPos = target;
   return SessionGraphError::OK;
 }
 
