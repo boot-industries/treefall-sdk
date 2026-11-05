@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <limits>
 
 #include <cmath>
@@ -1604,6 +1605,95 @@ TEST_F(RoutingMatrixTest, ConcurrentRenderObservesOnlyCompleteGroupControlTransa
 
   EXPECT_FALSE(writerFailed.load(std::memory_order_acquire));
   EXPECT_EQ(tornBlocks, 0u) << "of " << blocks << " blocks";
+}
+
+// ORP282 A3: copyGroupOutputMeterSnapshot is a fenced seqlock reader. A
+// snapshot that reports coherent must hold lanes from one publication only:
+// the render thread alternates loud and silent blocks on every lane, so a
+// coherent snapshot mixing loud and silent lanes is a torn read. Single-frame
+// blocks over 32 groups keep each publication short enough to overlap the
+// reader's copy. Probabilistic; arm64 masks most of the race.
+TEST_F(RoutingMatrixTest, GroupOutputMeterSnapshotNeverMixesPublications) {
+  constexpr uint16_t kGroups = 32;
+  constexpr uint16_t kLanesPerGroup = 1;
+  constexpr uint16_t kChannels = kGroups * kLanesPerGroup;
+  constexpr uint32_t kFrames = 1;
+  config.num_channels = kChannels;
+  config.num_groups = kGroups;
+  config.num_outputs = kChannels;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.metering_mode = MeteringMode::Peak;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_metering = true;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  for (uint16_t group = 0; group < kGroups; ++group) {
+    ASSERT_EQ(matrix->setGroupOutputRoute(group, group * kLanesPerGroup, kLanesPerGroup),
+              SessionGraphError::OK);
+  }
+  for (uint16_t channelIndex = 0; channelIndex < kChannels; ++channelIndex) {
+    ChannelConfig channel;
+    channel.group_index = channelIndex / kLanesPerGroup;
+    channel.output_channel = channelIndex % kLanesPerGroup;
+    ASSERT_EQ(matrix->configureChannel(channelIndex, channel), SessionGraphError::OK);
+  }
+
+  std::vector<std::vector<float>> loud(kChannels, std::vector<float>(kFrames, 0.5f));
+  std::vector<std::vector<float>> silent(kChannels, std::vector<float>(kFrames, 0.0f));
+  auto loudPointers = toPointerArray(loud);
+  auto silentPointers = toPointerArray(silent);
+  std::vector<std::vector<float>> outputs(kChannels, std::vector<float>(kFrames));
+  auto outputPointers = toPointerArray(outputs);
+
+  std::atomic<bool> renderDone{false};
+  std::atomic<bool> renderFailed{false};
+  std::thread render([&] {
+    for (uint32_t block = 0; block < 6000u; ++block) {
+      auto& inputs = (block & 1u) == 0u ? loudPointers : silentPointers;
+      if (matrix->processRouting(reinterpret_cast<const float* const*>(inputs.data()),
+                                 outputPointers.data(), kFrames) != SessionGraphError::OK) {
+        renderFailed.store(true, std::memory_order_release);
+      }
+      // Leave the publication closed for a moment so coherent reads occur.
+      if ((block % 64u) == 63u) {
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
+      }
+    }
+    renderDone.store(true, std::memory_order_release);
+  });
+
+  uint32_t coherentSnapshots = 0;
+  uint32_t mixedSnapshots = 0;
+  GroupOutputMeterSnapshot snapshot;
+  while (!renderDone.load(std::memory_order_acquire)) {
+    matrix->copyGroupOutputMeterSnapshot(snapshot);
+    if (snapshot.coherent != 1) {
+      continue;
+    }
+    ++coherentSnapshots;
+    uint32_t loudLanes = 0;
+    uint32_t totalLanes = 0;
+    for (uint16_t group = 0; group < kGroups; ++group) {
+      const auto& frame = snapshot.groups[group];
+      if (frame.logical_lane_count != kLanesPerGroup) {
+        ++mixedSnapshots;
+        continue;
+      }
+      for (uint16_t lane = 0; lane < kLanesPerGroup; ++lane) {
+        ++totalLanes;
+        if (frame.lane_meters[lane].peak_db > kAudioMeterSilenceDb) {
+          ++loudLanes;
+        }
+      }
+    }
+    if (loudLanes != 0u && loudLanes != totalLanes) {
+      ++mixedSnapshots;
+    }
+  }
+  render.join();
+
+  EXPECT_FALSE(renderFailed.load(std::memory_order_acquire));
+  EXPECT_GT(coherentSnapshots, 0u);
+  EXPECT_EQ(mixedSnapshots, 0u) << "of " << coherentSnapshots << " coherent snapshots";
 }
 
 TEST_F(RoutingMatrixTest, GroupOutputMeterFrameUsesPostGroupLogicalLanes) {

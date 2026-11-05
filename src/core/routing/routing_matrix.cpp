@@ -484,7 +484,8 @@ RoutingControlSnapshot RoutingMatrix::getRoutingControlSnapshot() const noexcept
       state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
     }
 
-    const uint64_t after = m_group_control_sequence.load(std::memory_order_acquire);
+    std::atomic_thread_fence(std::memory_order_acquire);
+    const uint64_t after = m_group_control_sequence.load(std::memory_order_relaxed);
     if (before == after) {
       snapshot.revision = after / 2u;
       return snapshot;
@@ -723,7 +724,7 @@ AudioMeter RoutingMatrix::getMasterMeter() const {
 
 void RoutingMatrix::copyGroupOutputMeterSnapshot(
     GroupOutputMeterSnapshot& destination) const noexcept {
-  const uint64_t before = m_meter_state.groupOutputPublicationSequence();
+  const uint64_t before = m_meter_state.groupOutputReadBegin();
   destination = {};
   destination.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
   destination.availability = m_meter_state.groupOutputAvailability();
@@ -731,6 +732,8 @@ void RoutingMatrix::copyGroupOutputMeterSnapshot(
   destination.render_sequence = before / 2u;
   destination.routing_topology_revision = m_meter_state.groupOutputTopologyRevision();
 
+  // The read window copies raw linear levels only; the decibel conversion
+  // runs after the window closes so it does not widen the race window.
   const RoutingGroupIndex groupCount =
       std::min<RoutingGroupIndex>(destination.group_count, kRoutingControlMaxGroups);
   for (RoutingGroupIndex groupIndex = 0; groupIndex < groupCount; ++groupIndex) {
@@ -745,18 +748,28 @@ void RoutingMatrix::copyGroupOutputMeterSnapshot(
     frame.raw_block_frames = source.meter_raw_block_frames.load(std::memory_order_relaxed);
     const uint16_t laneCount = std::min<uint16_t>(frame.logical_lane_count, kRoutingMaxOutputs);
     for (uint16_t lane = 0; lane < laneCount; ++lane) {
-      AudioMeter meter;
-      meter.peak_db = linearToDb(source.lane_peak_level[lane].load(std::memory_order_relaxed));
-      meter.rms_db = linearToDb(source.lane_rms_level[lane].load(std::memory_order_relaxed));
+      auto& meter = frame.lane_meters[lane];
+      meter.peak_db = source.lane_peak_level[lane].load(std::memory_order_relaxed);
+      meter.rms_db = source.lane_rms_level[lane].load(std::memory_order_relaxed);
       meter.clip_count = source.lane_clip_count[lane].load(std::memory_order_relaxed);
-      meter.clipping = meter.clip_count > 0;
-      frame.lane_meters[lane] = meter;
     }
   }
+  const bool publishedCoherent = m_meter_state.groupOutputCoherent();
 
-  const uint64_t after = m_meter_state.groupOutputPublicationSequence();
-  destination.coherent = static_cast<uint8_t>(before == after && (after & 1u) == 0u &&
-                                              m_meter_state.groupOutputCoherent());
+  const uint64_t after = m_meter_state.groupOutputReadEnd();
+  destination.coherent =
+      static_cast<uint8_t>(before == after && (after & 1u) == 0u && publishedCoherent);
+
+  for (RoutingGroupIndex groupIndex = 0; groupIndex < groupCount; ++groupIndex) {
+    auto& frame = destination.groups[groupIndex];
+    const uint16_t laneCount = std::min<uint16_t>(frame.logical_lane_count, kRoutingMaxOutputs);
+    for (uint16_t lane = 0; lane < laneCount; ++lane) {
+      auto& meter = frame.lane_meters[lane];
+      meter.peak_db = linearToDb(meter.peak_db);
+      meter.rms_db = linearToDb(meter.rms_db);
+      meter.clipping = meter.clip_count > 0;
+    }
+  }
 }
 
 // ============================================================================

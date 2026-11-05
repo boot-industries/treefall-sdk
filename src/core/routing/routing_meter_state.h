@@ -79,8 +79,14 @@ public:
   /// initialization publishes.
   void resetGroupOutputPublication(RoutingGroupIndex group_count) noexcept;
 
-  /// Read the publication sequence of the matrix-wide group-output meter.
-  uint64_t groupOutputPublicationSequence() const noexcept;
+  /// Open a seqlock read of the matrix-wide group-output meter: returns the
+  /// publication sequence with acquire ordering.
+  uint64_t groupOutputReadBegin() const noexcept;
+
+  /// Close a seqlock read: an acquire fence orders the window's payload loads
+  /// before the returned sequence. The read is coherent only when the begin
+  /// and end values are equal and even.
+  uint64_t groupOutputReadEnd() const noexcept;
 
   /// Read the published logical group count.
   RoutingGroupIndex groupOutputGroupCount() const noexcept;

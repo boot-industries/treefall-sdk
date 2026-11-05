@@ -78,7 +78,10 @@ AudioMeter RoutingMeterState::outputMeter(RoutingOutputIndex index) const noexce
 }
 
 void RoutingMeterState::beginGroupOutputPublication() noexcept {
-  m_group_output_meter_publication_sequence.fetch_add(1, std::memory_order_acq_rel);
+  // Seqlock writer: the odd value must be visible before any payload store, so
+  // a reader that observes a new payload value also observes the odd sequence.
+  m_group_output_meter_publication_sequence.fetch_add(1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
 }
 
 void RoutingMeterState::publishGroupOutputHeader(RoutingGroupIndex group_count,
@@ -110,8 +113,15 @@ void RoutingMeterState::resetGroupOutputPublication(RoutingGroupIndex group_coun
   m_group_output_meter_coherent.store(0, std::memory_order_release);
 }
 
-uint64_t RoutingMeterState::groupOutputPublicationSequence() const noexcept {
+uint64_t RoutingMeterState::groupOutputReadBegin() const noexcept {
   return m_group_output_meter_publication_sequence.load(std::memory_order_acquire);
+}
+
+uint64_t RoutingMeterState::groupOutputReadEnd() const noexcept {
+  // Orders every payload load of the read window before the closing sequence
+  // load, so an equal even pair proves the payload came from one publication.
+  std::atomic_thread_fence(std::memory_order_acquire);
+  return m_group_output_meter_publication_sequence.load(std::memory_order_relaxed);
 }
 
 RoutingGroupIndex RoutingMeterState::groupOutputGroupCount() const noexcept {
