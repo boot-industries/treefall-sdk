@@ -128,6 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a channel or frame the host leaves unwritten plays silence instead of the
   previous callback's audio, on both the direct and the converting output
   paths. This matches the WASAPI and Dummy drivers.
+- Stopping CoreAudio endpoint-change monitoring can no longer hang: the stop
+  and listener wakeups are published under the worker's wait mutex, so a
+  wakeup can no longer be lost between the worker's check and its wait.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

@@ -116,6 +116,11 @@ void CoreAudioEndpointMonitor::stop() noexcept {
   }
   listener_count_ = 0;
   state_->pending.store(true, std::memory_order_release);
+  // Passing through the wait mutex orders this wakeup after any predicate check
+  // the worker made, so the notify cannot fall between its check and its wait.
+  {
+    std::lock_guard<std::mutex> guard(state_->changed_mutex);
+  }
   state_->changed.notify_one();
 
   if (worker_.joinable()) {
@@ -138,6 +143,9 @@ OSStatus CoreAudioEndpointMonitor::propertyChanged(AudioObjectID object_id, UInt
     return noErr;
   }
   state->pending.store(true, std::memory_order_release);
+  {
+    std::lock_guard<std::mutex> guard(state->changed_mutex);
+  }
   state->changed.notify_one();
   return noErr;
 }
