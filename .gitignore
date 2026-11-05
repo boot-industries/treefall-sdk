@@ -98,6 +98,10 @@ docs/api/
 .claude/CLAUDE.local.md
 .claude/scratch/
 
-# Keep ORP working records local-only; do not ignore other documentation.
+# ORP working records live in the private companion repo
+# (boot-industries/treefall-sdk-docs) cloned at docs/ORP. Never track them here.
 /docs/orp/
+/docs/ORP/
+/.claude/implementation_progress.md
+/.claude/progress.md
 /suite/.backups/

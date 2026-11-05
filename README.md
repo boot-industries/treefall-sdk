@@ -729,14 +729,9 @@ The Treefall SDK provides the foundation for a family of professional audio appl
 
 ### PREFIX Registry
 
-**ORP Docs (SDK):**
-**PREFIX:** ORP
-**Next Doc:** ORP138
-**Local ORP records:** The SDK maintains ignored engineering records for
-historical planning and handoff provenance. They are not public documentation
+**ORP records:** Engineering planning and handoff records are kept in a private
+companion repository, not in this repository. They are not public documentation
 links and are not required to build or consume the SDK.
-Historical ORP files use the workspace PREFIX convention but remain ignored
-local records rather than shipped documentation.
 
 **OCC Docs (Clip Composer):** live in the external Clip Composer repo
 ([`chrislyons/clip-composer`](https://github.com/chrislyons/clip-composer),
