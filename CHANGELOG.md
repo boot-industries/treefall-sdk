@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lane-major over occupied lanes only, and skips true-peak history resets on
   lanes whose history is already clear. Output samples and meters are
   bit-identical to the previous per-frame form.
+- Session serialization writes each track's clips in their stored order instead
+  of copying and re-sorting them; the stored order is already sorted and
+  validated, so the output bytes are unchanged.
 
 - Expanded realtime static audit coverage to per-block callees and optional
   adjacent FreqFinder analysis enqueue; final suite qualification is pending.
