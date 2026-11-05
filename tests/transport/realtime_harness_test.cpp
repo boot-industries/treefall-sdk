@@ -848,7 +848,10 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
   constexpr RoutingChannelIndex kRoutingChannels = 256;
   constexpr RoutingGroupIndex kRoutingGroups = 32;
   constexpr RoutingOutputIndex kRoutingOutputs = 32;
-  constexpr int kCallbacks = 300;
+  // Timing assertions only exist in unsanitized Release builds, which keep the
+  // full 300-callback sample; Debug and sanitized runs only need the
+  // allocation and no-deadlock checks, which every callback exercises.
+  const int kCallbacks = orpheus::test::fullStressEnabled() ? 300 : 16;
 
   RoutingConfig config;
   config.num_channels = kRoutingChannels;
@@ -891,10 +894,10 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     }
 
     std::vector<double> durations;
-    durations.reserve(kCallbacks);
+    durations.reserve(static_cast<size_t>(kCallbacks));
 #if defined(__APPLE__) || defined(__linux__)
     std::vector<double> cpuDurations;
-    cpuDurations.reserve(kCallbacks);
+    cpuDurations.reserve(static_cast<size_t>(kCallbacks));
 #endif
     RtGuardState::reset();
     for (int callback = 0; callback < kCallbacks; ++callback) {
