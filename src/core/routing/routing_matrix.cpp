@@ -608,14 +608,16 @@ SessionGraphError RoutingMatrix::applyGroupControlSnapshot(const RoutingControlS
 }
 
 void RoutingMatrix::beginGroupControlWrite() noexcept {
+  // Writer-to-writer exclusion only; the audio thread never holds this flag.
   bool expected = false;
   while (!m_group_control_publication_in_progress.compare_exchange_weak(
-      expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      expected, true, std::memory_order_acquire, std::memory_order_relaxed)) {
     expected = false;
   }
-  while (m_group_control_render_reading.load(std::memory_order_acquire)) {
-  }
-  m_group_control_sequence.fetch_add(1, std::memory_order_acq_rel);
+  // Seqlock writer: the odd value must be visible before any field store, so
+  // a reader that observes a new field also observes the odd sequence.
+  m_group_control_sequence.fetch_add(1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
 }
 
 void RoutingMatrix::endGroupControlWrite() noexcept {
@@ -624,38 +626,48 @@ void RoutingMatrix::endGroupControlWrite() noexcept {
 }
 
 void RoutingMatrix::refreshRenderGroupControls() noexcept {
-  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
+  // Non-waiting seqlock read: on an odd or changed sequence the audio thread
+  // keeps rendering the prior complete controls and retries next block.
+  const uint64_t before = m_group_control_sequence.load(std::memory_order_acquire);
+  if ((before & 1u) != 0u) {
     return;
   }
 
-  m_group_control_render_reading.store(true, std::memory_order_release);
-  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
-    m_group_control_render_reading.store(false, std::memory_order_release);
+  std::array<RoutingGroupControlState, kRoutingControlMaxGroups> controls{};
+  for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
+    const auto& group = m_groups[index];
+    auto& state = controls[index];
+    state.gain_db = group.configured_gain_db.load(std::memory_order_relaxed);
+    state.output_start = group.output_start.load(std::memory_order_relaxed);
+    state.output_width = group.output_width.load(std::memory_order_relaxed);
+    state.configured_mute = group.mute.load(std::memory_order_relaxed);
+    state.configured_solo = group.solo.load(std::memory_order_relaxed);
+  }
+  const uint64_t geometryGeneration = m_group_geometry_generation.load(std::memory_order_relaxed);
+
+  std::atomic_thread_fence(std::memory_order_acquire);
+  if (m_group_control_sequence.load(std::memory_order_relaxed) != before) {
     return;
   }
 
   bool groupSoloActive = false;
   for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
-    const auto& group = m_groups[index];
-    auto& state = m_render_group_controls[index];
-    const float gainDb = group.configured_gain_db.load(std::memory_order_relaxed);
-    if (gainDb != state.gain_db) {
-      state.gain_db = gainDb;
-      group.gain_smoother->setTarget(dbToLinear(gainDb));
-    }
-    state.output_start = group.output_start.load(std::memory_order_relaxed);
-    state.output_width = group.output_width.load(std::memory_order_relaxed);
-    state.configured_mute = group.mute.load(std::memory_order_relaxed);
-    state.configured_solo = group.solo.load(std::memory_order_relaxed);
-    groupSoloActive = groupSoloActive || state.configured_solo;
+    groupSoloActive = groupSoloActive || controls[index].configured_solo;
   }
   for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
     auto& state = m_render_group_controls[index];
-    state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
+    const auto& next = controls[index];
+    if (next.gain_db != state.gain_db) {
+      m_groups[index].gain_smoother->setTarget(dbToLinear(next.gain_db));
+    }
+    state.gain_db = next.gain_db;
+    state.output_start = next.output_start;
+    state.output_width = next.output_width;
+    state.configured_mute = next.configured_mute;
+    state.configured_solo = next.configured_solo;
+    state.effective_mute = next.configured_mute || (groupSoloActive && !next.configured_solo);
   }
-  m_rendered_group_geometry_generation =
-      m_group_geometry_generation.load(std::memory_order_acquire);
-  m_group_control_render_reading.store(false, std::memory_order_release);
+  m_rendered_group_geometry_generation = geometryGeneration;
 }
 
 AudioMeter RoutingMatrix::getChannelMeter(RoutingChannelIndex channel_index) const {

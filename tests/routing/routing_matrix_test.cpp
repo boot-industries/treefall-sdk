@@ -1510,6 +1510,102 @@ TEST_F(RoutingMatrixTest, ConcurrentRenderAndQueryObserveOnlyCompleteTransaction
   EXPECT_FALSE(failed.load(std::memory_order_acquire));
 }
 
+// ORP282 A2: the audio thread reads group controls through a non-waiting
+// seqlock. Every rendered block must use one complete transaction: a torn read
+// (gain from one snapshot, mute from the other) produces an output vector that
+// matches neither reference. The race is probabilistic and masked by arm64's
+// ordering; x86 hosts are the effective check.
+TEST_F(RoutingMatrixTest, ConcurrentRenderObservesOnlyCompleteGroupControlTransactions) {
+  constexpr uint16_t kGroups = 4;
+  constexpr uint32_t kFrames = 32;
+  config.num_channels = kGroups;
+  config.num_groups = kGroups;
+  config.num_outputs = kGroups;
+  config.source_channel_policy = SourceChannelPolicy::Discrete;
+  config.gain_smoothing_ms = 0.0f;
+  config.enable_metering = false;
+  ASSERT_EQ(matrix->initialize(config), SessionGraphError::OK);
+  for (uint16_t index = 0; index < kGroups; ++index) {
+    ChannelConfig channel;
+    channel.group_index = index;
+    channel.output_channel = 0;
+    ASSERT_EQ(matrix->configureChannel(index, channel), SessionGraphError::OK);
+  }
+
+  auto stateA = matrix->getRoutingControlSnapshot();
+  for (uint16_t index = 0; index < kGroups; ++index) {
+    stateA.groups[index].gain_db = -6.0f;
+    stateA.groups[index].configured_mute = false;
+    stateA.groups[index].configured_solo = false;
+    stateA.groups[index].output_start = index;
+    stateA.groups[index].output_width = 1;
+  }
+  auto stateB = stateA;
+  for (uint16_t index = 0; index < kGroups; ++index) {
+    stateB.groups[index].gain_db = 0.0f;
+  }
+  stateB.groups[0].configured_mute = true;
+
+  std::vector<std::vector<float>> inputs(kGroups, std::vector<float>(kFrames, 0.5f));
+  auto inputPointers = toPointerArray(inputs);
+  const auto* const* inputArray = reinterpret_cast<const float* const*>(inputPointers.data());
+  std::vector<std::vector<float>> outputs(kGroups, std::vector<float>(kFrames));
+  auto outputPointers = toPointerArray(outputs);
+
+  auto renderReference = [&](const RoutingControlSnapshot& state) {
+    EXPECT_EQ(matrix->applyGroupControlSnapshot(state), SessionGraphError::OK);
+    EXPECT_EQ(matrix->processRouting(inputArray, outputPointers.data(), kFrames),
+              SessionGraphError::OK);
+    std::array<float, kGroups> values{};
+    for (uint16_t output = 0; output < kGroups; ++output) {
+      values[output] = outputs[output][0];
+    }
+    return values;
+  };
+  const auto expectedB = renderReference(stateB);
+  const auto expectedA = renderReference(stateA);
+  ASSERT_EQ(expectedB[0], 0.0f);
+  ASSERT_NE(expectedA[0], expectedB[0]);
+  ASSERT_NE(expectedA[1], expectedB[1]);
+
+  std::atomic<bool> stop{false};
+  std::atomic<uint32_t> writerIterations{0};
+  std::atomic<bool> writerFailed{false};
+  std::thread writer([&] {
+    for (uint32_t iteration = 0; !stop.load(std::memory_order_acquire); ++iteration) {
+      const auto& state = (iteration & 1u) == 0u ? stateB : stateA;
+      if (matrix->applyGroupControlSnapshot(state) != SessionGraphError::OK) {
+        writerFailed.store(true, std::memory_order_release);
+      }
+      writerIterations.fetch_add(1, std::memory_order_release);
+    }
+  });
+
+  uint32_t blocks = 0;
+  uint32_t tornBlocks = 0;
+  while (blocks < 20000u || writerIterations.load(std::memory_order_acquire) < 2u) {
+    ASSERT_EQ(matrix->processRouting(inputArray, outputPointers.data(), kFrames),
+              SessionGraphError::OK);
+    bool isA = true;
+    bool isB = true;
+    for (uint16_t output = 0; output < kGroups; ++output) {
+      for (uint32_t frame = 0; frame < kFrames; ++frame) {
+        isA = isA && outputs[output][frame] == expectedA[output];
+        isB = isB && outputs[output][frame] == expectedB[output];
+      }
+    }
+    if (!isA && !isB) {
+      ++tornBlocks;
+    }
+    ++blocks;
+  }
+  stop.store(true, std::memory_order_release);
+  writer.join();
+
+  EXPECT_FALSE(writerFailed.load(std::memory_order_acquire));
+  EXPECT_EQ(tornBlocks, 0u) << "of " << blocks << " blocks";
+}
+
 TEST_F(RoutingMatrixTest, GroupOutputMeterFrameUsesPostGroupLogicalLanes) {
   config.num_channels = 1;
   config.num_groups = 1;

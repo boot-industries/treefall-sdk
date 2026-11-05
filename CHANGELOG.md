@@ -110,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Routing group-control publication is a fenced, non-waiting seqlock. The
+  audio thread renders only complete group gain, mute, solo and output-route
+  transactions on every architecture (a torn read was reachable on x86), and
+  control-thread writers no longer spin waiting for the audio thread.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

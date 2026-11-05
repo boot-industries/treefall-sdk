@@ -291,14 +291,15 @@ private:
   std::atomic<bool> m_group_solo_active{false};
   std::atomic<bool> m_solo_active{false};
   std::atomic<uint64_t> m_snapshot_revision{0};
-  /// Seqlock for fixed-capacity coherent group-control publication. The host's
-  /// control thread is the sole writer; readers may run concurrently.
+  /// Seqlock for fixed-capacity coherent group-control publication. Control
+  /// writers serialize on m_group_control_publication_in_progress, make the
+  /// sequence odd, store the fields, then make it even. Readers (the audio
+  /// thread and getRoutingControlSnapshot) copy the fields between two
+  /// sequence loads and discard the copy unless both loads are equal and even.
+  /// No side waits on the audio thread: on a torn read the audio thread keeps
+  /// rendering the prior complete controls and retries on the next block.
   std::atomic<uint64_t> m_group_control_sequence{0};
-  /// Control writers defer until the audio thread finishes its bounded snapshot
-  /// copy. The audio thread never waits; it renders the prior complete value
-  /// when publication is in progress.
   std::atomic<bool> m_group_control_publication_in_progress{false};
-  std::atomic<bool> m_group_control_render_reading{false};
   std::array<RoutingGroupControlState, kRoutingControlMaxGroups> m_render_group_controls{};
 
   // Callback
