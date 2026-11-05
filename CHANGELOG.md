@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of copying and re-sorting them; the stored order is already sorted and
   validated, so the output bytes are unchanged.
 
+- `SessionGraph::add_clip`, `set_clip_start` and `set_clip_range` insert or move
+  the one clip to its sorted position and validate only its neighbours, and
+  `set_clip_length` checks only the following clip, instead of re-sorting and
+  re-validating the whole track. Accept/reject outcomes, clip order, error
+  messages and revisions are unchanged; per-call cost is now O(N).
+
 - Expanded realtime static audit coverage to per-block callees and optional
   adjacent FreqFinder analysis enqueue; final suite qualification is pending.
 

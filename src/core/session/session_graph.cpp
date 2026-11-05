@@ -3,10 +3,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
+#include <memory>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace orpheus::core {
 
@@ -42,6 +46,67 @@ TimePoint RangeEnd(TimeRange range) {
   }
   return TimePoint::fromSamples(range.start().samples() + range.length());
 }
+
+using ClipList = std::vector<std::unique_ptr<Clip>>;
+
+/// Track clip order: start, then name. A valid layout never holds two clips
+/// with equal keys, because such clips would overlap.
+bool ClipBefore(const std::unique_ptr<Clip>& lhs, const std::unique_ptr<Clip>& rhs) {
+  if (lhs->start() < rhs->start()) {
+    return true;
+  }
+  if (rhs->start() < lhs->start()) {
+    return false;
+  }
+  return lhs->name() < rhs->name();
+}
+
+void ValidateClipPair(const Clip& previous, const Clip& current, const std::string& track_name) {
+  if (current.start() + kClipOrderingTolerance < previous.start()) {
+    throw std::invalid_argument("Clips on track \"" + track_name +
+                                "\" must be sorted by start time");
+  }
+  const double previous_end = previous.start() + previous.length();
+  if (previous_end > current.start() + kClipOrderingTolerance) {
+    throw std::invalid_argument("Clips on track \"" + track_name + "\" must not overlap");
+  }
+}
+
+/// Layout validation is purely adjacent-pair, so when every other pair was
+/// already valid, checking the clip at `index` against its two neighbours is
+/// equivalent to validating the whole track.
+void ValidateNeighbours(const ClipList& clips, std::size_t index, const std::string& track_name) {
+  if (index > 0) {
+    ValidateClipPair(*clips[index - 1], *clips[index], track_name);
+  }
+  if (index + 1 < clips.size()) {
+    ValidateClipPair(*clips[index], *clips[index + 1], track_name);
+  }
+}
+
+std::size_t ClipIndex(const ClipList& clips, const Clip* clip) {
+  const auto it =
+      std::find_if(clips.begin(), clips.end(),
+                   [&](const std::unique_ptr<Clip>& candidate) { return candidate.get() == clip; });
+  return static_cast<std::size_t>(it - clips.begin());
+}
+
+/// Moves clips[from] to its sorted position, given that every other clip is
+/// already sorted. Returns the clip's new index.
+std::size_t RepositionClip(ClipList& clips, std::size_t from) {
+  const auto it = clips.begin() + static_cast<std::ptrdiff_t>(from);
+  if (from > 0 && ClipBefore(*it, *(it - 1))) {
+    const auto target = std::upper_bound(clips.begin(), it, *it, ClipBefore);
+    std::rotate(target, it, it + 1);
+    return static_cast<std::size_t>(target - clips.begin());
+  }
+  if (from + 1 < clips.size() && ClipBefore(*(it + 1), *it)) {
+    const auto target = std::upper_bound(it + 1, clips.end(), *it, ClipBefore);
+    std::rotate(it, it + 1, target);
+    return static_cast<std::size_t>(target - clips.begin()) - 1u;
+  }
+  return from;
+}
 } // namespace
 
 Clip::Clip(ClipId id, std::string name, double start_beats, double length_beats,
@@ -70,13 +135,16 @@ Track::~Track() = default;
 
 Clip* Track::add_clip(ClipId id, std::string name, double start_beats, double length_beats,
                       std::uint32_t scene_index) {
-  Clip* raw = append_clip(id, std::move(name), start_beats, length_beats, scene_index);
-  sort_clips();
+  auto clip =
+      std::unique_ptr<Clip>(new Clip(id, std::move(name), start_beats, length_beats, scene_index));
+  Clip* raw = clip.get();
+  const auto position = std::upper_bound(clips_.begin(), clips_.end(), clip, ClipBefore);
+  const auto inserted = clips_.insert(position, std::move(clip));
+  const auto index = static_cast<std::size_t>(inserted - clips_.begin());
   try {
-    validate_clip_layout();
+    ValidateNeighbours(clips_, index, name_);
   } catch (...) {
-    const bool removed = remove_clip(raw);
-    (void)removed;
+    clips_.erase(clips_.begin() + static_cast<std::ptrdiff_t>(index));
     throw;
   }
   return raw;
@@ -113,32 +181,12 @@ Clip* Track::find_clip(const Clip* clip) {
 }
 
 void Track::sort_clips() {
-  std::sort(clips_.begin(), clips_.end(),
-            [](const std::unique_ptr<Clip>& lhs, const std::unique_ptr<Clip>& rhs) {
-              if (lhs->start() < rhs->start()) {
-                return true;
-              }
-              if (rhs->start() < lhs->start()) {
-                return false;
-              }
-              return lhs->name() < rhs->name();
-            });
+  std::sort(clips_.begin(), clips_.end(), ClipBefore);
 }
 
 void Track::validate_clip_layout() const {
-  if (clips_.empty()) {
-    return;
-  }
   for (std::size_t index = 1; index < clips_.size(); ++index) {
-    const Clip& previous = *clips_[index - 1];
-    const Clip& current = *clips_[index];
-    if (current.start() + kClipOrderingTolerance < previous.start()) {
-      throw std::invalid_argument("Clips on track \"" + name_ + "\" must be sorted by start time");
-    }
-    const double previous_end = previous.start() + previous.length();
-    if (previous_end > current.start() + kClipOrderingTolerance) {
-      throw std::invalid_argument("Clips on track \"" + name_ + "\" must not overlap");
-    }
+    ValidateClipPair(*clips_[index - 1], *clips_[index], name_);
   }
 }
 
@@ -486,13 +534,14 @@ void SessionGraph::set_clip_range(ClipId clip_id, TimeRange range) {
   RangeFromBeats(start_beats, end_beats - start_beats, tempo_bpm_, render_sample_rate_hz_);
   target->set_start(start_beats);
   target->set_length(end_beats - start_beats);
-  owner->sort_clips();
+  ClipList& clips = owner->clips_;
+  const std::size_t index = RepositionClip(clips, ClipIndex(clips, target));
   try {
-    owner->validate_clip_layout();
+    ValidateNeighbours(clips, index, owner->name());
   } catch (...) {
     target->set_start(previous_start);
     target->set_length(previous_length);
-    owner->sort_clips();
+    static_cast<void>(RepositionClip(clips, index));
     throw;
   }
   mark_clip_grid_dirty();
@@ -739,12 +788,13 @@ void SessionGraph::set_clip_start(Clip& clip, double start_beats) {
   RangeFromBeats(start_beats, target->length(), tempo_bpm_, render_sample_rate_hz_);
   const double previous_start = target->start();
   target->set_start(start_beats);
-  owner->sort_clips();
+  ClipList& clips = owner->clips_;
+  const std::size_t index = RepositionClip(clips, ClipIndex(clips, target));
   try {
-    owner->validate_clip_layout();
+    ValidateNeighbours(clips, index, owner->name());
   } catch (...) {
     target->set_start(previous_start);
-    owner->sort_clips();
+    static_cast<void>(RepositionClip(clips, index));
     throw;
   }
   mark_clip_grid_dirty();
@@ -762,8 +812,13 @@ void SessionGraph::set_clip_length(Clip& clip, double length_beats) {
                  tempo_bpm_, render_sample_rate_hz_);
   const double previous_length = target->length();
   target->set_length(length_beats);
+  // Only this clip's end moved, so only the (clip, next) pair can change.
+  const ClipList& clips = owner->clips_;
+  const std::size_t index = ClipIndex(clips, target);
   try {
-    owner->validate_clip_layout();
+    if (index + 1 < clips.size()) {
+      ValidateClipPair(*clips[index], *clips[index + 1], owner->name());
+    }
   } catch (...) {
     target->set_length(previous_length);
     throw;
