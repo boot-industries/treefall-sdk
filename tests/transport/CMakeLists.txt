@@ -627,14 +627,27 @@ if(TARGET orpheus_audio_io)
     # observation count is reduced so the gate fits CI's budget; the full
     # 10,000-observation qualification stays available by setting
     # ORPHEUS_DEADLINE_OBSERVATIONS when running the binary directly.
+    #
+    # The p99 budget has one source, budgets.json. The harness clamps any
+    # configured ratio to a 0.5 ceiling, so a budget above it is rejected here
+    # instead of being silently lowered at run time.
+    file(READ "${PROJECT_SOURCE_DIR}/budgets.json" _orp_budgets)
+    string(JSON _orp_p99 GET "${_orp_budgets}" budgets renderBlockTime p99FractionOfDeadline)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/budgets.json")
+    if(_orp_p99 GREATER 0.5)
+        message(FATAL_ERROR "budgets.json p99FractionOfDeadline (${_orp_p99}) exceeds the harness ceiling 0.5")
+    endif()
     add_test(
         NAME realtime_render_deadline_distribution
         COMMAND realtime_harness_test --gtest_filter=RealtimeHarnessTest.WorstCaseTopologyDeadlineDistribution
     )
+    # GTEST_SKIP exits 0, so a skipped measurement is detected structurally from
+    # gtest's own "[  SKIPPED ]" line rather than from message text. CTest then
+    # reports it as Skipped, which scripts/validate-performance.js treats as a failure.
     set_tests_properties(realtime_render_deadline_distribution PROPERTIES
         LABELS "extended;perf"
-        ENVIRONMENT "ORPHEUS_RUN_WORST_CASE_BENCHMARK=1;ORPHEUS_DEADLINE_OBSERVATIONS=500;ORPHEUS_DEADLINE_WARMUPS=20;ORPHEUS_DEADLINE_RATES=48000;ORPHEUS_DEADLINE_P99_RATIO=0.5"
-        SKIP_REGULAR_EXPRESSION "Requires unsanitized Release|not performance acceptance|Opt-in measurement disabled"
+        ENVIRONMENT "ORPHEUS_RUN_WORST_CASE_BENCHMARK=1;ORPHEUS_DEADLINE_OBSERVATIONS=500;ORPHEUS_DEADLINE_WARMUPS=20;ORPHEUS_DEADLINE_RATES=48000;ORPHEUS_DEADLINE_P99_RATIO=${_orp_p99}"
+        SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]"
         TIMEOUT 900)
 
     # ORP168: rendered streaming seek priming and failure-atomic page leases.

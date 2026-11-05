@@ -995,6 +995,9 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
   };
   const size_t warmups = envUnsigned("ORPHEUS_DEADLINE_WARMUPS", 100u);
   const size_t observations = envUnsigned("ORPHEUS_DEADLINE_OBSERVATIONS", 10000u);
+  // 0.5 is the clamp ceiling, not the budget: the budget is budgets.json
+  // (p99FractionOfDeadline), delivered through ORPHEUS_DEADLINE_P99_RATIO by
+  // tests/transport/CMakeLists.txt, which rejects a budget above this ceiling.
   const double p99_ratio = envRatio("ORPHEUS_DEADLINE_P99_RATIO", 0.5, 0.5);
 
   std::vector<uint32_t> rates;

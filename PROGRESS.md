@@ -191,6 +191,12 @@ budgets met!", but the only configured bundle was skipped and neither the
 command-latency nor the event-frequency budgets was measured, so that exit
 code is not performance evidence. The `perf_render_click` figures time an
 end-to-end offline render that includes the WAV file write, not a callback.
+
+*Correction (2026-11-05):* `scripts/validate-performance.js` already fails with
+exit 1 when the render-deadline test is Skipped or Not Run, so a skipped bundle
+is a failed gate, not a pass. The render-deadline p99 budget is single-sourced
+from `budgets.json` into the CTest environment at configure time.
+
 No Windows, Linux, or physical-device evidence was gathered. All 255
 `path:line` anchors in the record were re-verified to resolve against the
 committed tree.
