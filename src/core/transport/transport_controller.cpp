@@ -93,6 +93,21 @@ PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled)
   return loopEnabled ? PlaybackBoundaryAction::Looped : PlaybackBoundaryAction::Ended;
 }
 
+// Every disabled stage of ClipDspProcessor::processFrame is an exact identity,
+// so a voice whose program enables none of them can skip the per-frame call.
+bool clipDspProgramActive(const ClipDspProgram& program) noexcept {
+  if (program.gate.enabled || program.compressor.enabled || program.width.enabled ||
+      program.limiter.enabled) {
+    return true;
+  }
+  for (const ClipEqBandSettings& band : program.eq) {
+    if (band.enabled) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
 
 TransportController::TransportController(core::SessionGraph* sessionGraph,
@@ -579,10 +594,16 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
   // Only active lanes expose sample storage to routing. Clearing them here
   // keeps reused slots clean; inactive pointers stay null even if a host edits
-  // their routes directly through the exposed routing matrix.
+  // their routes directly through the exposed routing matrix. A voice renders
+  // at most max(numChannels, 2) lanes (a mono voice pans into two), and
+  // configureVoiceRouting() leaves every lane beyond its channel count
+  // unassigned, so only the lanes the voice can write need clearing.
   for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+    const uint16_t voiceChannels = m_activeClips[voiceIndex].numChannels;
+    const size_t laneCount = std::min<size_t>(m_config.maxSourceChannels,
+                                              voiceChannels == 1 ? size_t{2} : voiceChannels);
+    for (size_t lane = 0; lane < laneCount; ++lane) {
       std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
     }
   }
@@ -609,6 +630,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const float panRight = clip.panRightGain.load(std::memory_order_acquire);
     const float clipGainTarget = muted ? 0.0f : clip.gainLinear.load(std::memory_order_acquire);
     const size_t numFileChannels = clip.numChannels;
+    const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
     const bool panMonoToStereo =
         numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
@@ -818,7 +840,9 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                          : clipReadBuffer[secondInputFrame * numFileChannels + channel]);
           sourceFrame[channel] = first + (second - first) * fraction;
         }
-        clip.dspProcessor.processFrame(sourceFrame.data(), numFileChannels);
+        if (dspActive) {
+          clip.dspProcessor.processFrame(sourceFrame.data(), numFileChannels);
+        }
 
         const size_t destinationFrame = outputFrame + frame;
         if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {

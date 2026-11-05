@@ -212,6 +212,56 @@ TEST_F(MultichannelTransportTest, RoutesStereoThroughLogicalGroupToSelectedOutpu
   }
 }
 
+TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange) {
+  const auto monoPath =
+      (std::filesystem::temp_directory_path() / "orpheus_mono_width_change.wav").string();
+  writeFixture(monoPath, 1);
+
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = 2;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  ASSERT_EQ(transport->registerClipAudio(30, monoPath), SessionGraphError::OK);
+  auto metadata = transport->getClipMetadata(30);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->loopEnabled = true;
+  metadata->fadeInSeconds = 0.0;
+  metadata->fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(30, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(30), SessionGraphError::OK);
+
+  std::array<std::array<float, kFrames>, 2> storage{};
+  std::array<float*, 2> outputs = {storage[0].data(), storage[1].data()};
+  transport->processAudio(outputs.data(), outputs.size(), kFrames);
+  // The group starts two lanes wide, so the mono voice pans into both lanes.
+  ASSERT_GT(std::abs(storage[0][kFrames - 1]), 0.01f);
+  ASSERT_GT(std::abs(storage[1][kFrames - 1]), 0.01f);
+
+  // Narrowing the live group stops the voice writing its second lane. The lane
+  // keeps the route it got at voice start, so the routing matrix still meters
+  // it: it must read silence, not keep replaying the last block it rendered.
+  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  for (int block = 0; block < 3; ++block) {
+    storage = {};
+    transport->processAudio(outputs.data(), outputs.size(), kFrames);
+    EXPECT_GT(std::abs(storage[0][kFrames - 1]), 0.01f) << "block " << block;
+    for (size_t frame = 0; frame < kFrames; ++frame) {
+      EXPECT_EQ(storage[1][frame], 0.0f) << "block " << block << " frame " << frame;
+    }
+    EXPECT_EQ(transport->getRoutingMatrix()->getChannelMeter(1).peak_db, kAudioMeterSilenceDb)
+        << "block " << block;
+  }
+
+  std::error_code ignored;
+  std::filesystem::remove(monoPath, ignored);
+}
+
 TEST(MultichannelTransportConfigTest, RejectsUnsupportedRealtimeBounds) {
   TransportConfig config;
   config.sampleRate = kSampleRate;

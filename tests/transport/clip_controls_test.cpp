@@ -591,4 +591,38 @@ TEST_F(ClipAudioControlsTest, PerVoiceDspRunsBeforeClipGainAndPan) {
   }
 }
 
+TEST_F(ClipAudioControlsTest, DspEnableTakesEffectOnNextBlock) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> identityLeft{};
+  std::array<float, 16> identityRight{};
+  render(identityLeft, identityRight);
+  ASSERT_NE(identityLeft.front(), identityRight.front());
+
+  // The program update reaches the voice through the command queue, which the
+  // next render drains before it renders, so that block is already collapsed.
+  value.dsp.width.enabled = true;
+  value.dsp.width.amount = 0.0f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  std::array<float, 16> left{};
+  std::array<float, 16> right{};
+  render(left, right);
+  for (size_t frame = 0; frame < left.size(); ++frame) {
+    EXPECT_EQ(left[frame], right[frame]) << "frame " << frame;
+    EXPECT_GT(std::abs(left[frame]), 0.1f) << "frame " << frame;
+  }
+
+  value.dsp.width.enabled = false;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  render(left, right);
+  for (size_t frame = 0; frame < left.size(); ++frame) {
+    EXPECT_EQ(left[frame], identityLeft[frame]) << "frame " << frame;
+    EXPECT_EQ(right[frame], identityRight[frame]) << "frame " << frame;
+  }
+}
+
 } // namespace

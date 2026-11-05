@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PreparedTapeVarispeed::process` computes its 128 windowed-sinc coefficients
   once per output frame instead of once per channel. Output is bit-identical.
+- The transport render path skips per-voice clip DSP when a voice's program
+  enables no stage, and clears only the source lanes a voice can write. Output
+  is bit-identical; the per-voice render cost drops (ORP282).
 
 - `kRoutingMaxOutputs` rises from 32 to 64 (ORP278). `RoutingMatrix`,
   `TransportController` (`TransportConfig::outputChannels`), the routing meter

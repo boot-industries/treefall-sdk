@@ -388,6 +388,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "playbackWindowEnd",
                 "resetSegmentCursor",
                 "advancePlaybackWindow",
+                "clipDspProgramActive",
             ),
         ),
         TargetRow(
