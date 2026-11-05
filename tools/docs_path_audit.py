@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import urllib.parse
 from dataclasses import dataclass
@@ -235,6 +236,40 @@ def check_installed_header_contract(root: Path) -> list[Violation]:
     return violations
 
 
+# Private engineering records must never be tracked in this public repository.
+# They live in a separate private companion repo cloned (and gitignored) at
+# docs/ORP/. Case-insensitive: macOS filesystems fold docs/orp and docs/ORP.
+PRIVATE_TRACKED_RE = re.compile(
+    r"^(docs/orp/|\.claude/(implementation_progress|progress)\.md$)", re.IGNORECASE
+)
+
+
+def check_private_records_untracked(root: Path) -> list[Violation]:
+    """Fail if private ORP records or progress logs are tracked by git."""
+    if not (root / ".git").exists():
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    tracked = result.stdout.decode("utf-8", errors="replace").split("\0")
+    return [
+        Violation(
+            root / name,
+            1,
+            "private-record",
+            "private engineering record is tracked; move it to the companion docs "
+            "repo and `git rm --cached` it",
+        )
+        for name in tracked
+        if name and PRIVATE_TRACKED_RE.match(name)
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -244,6 +279,7 @@ def main() -> int:
     valid_tokens = repo_cmake_tokens(root)
     violations: list[Violation] = check_authority_documents(root)
     violations.extend(check_installed_header_contract(root))
+    violations.extend(check_private_records_untracked(root))
 
     docs = iter_docs(root)
     for doc in docs:
