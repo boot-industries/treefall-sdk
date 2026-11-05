@@ -199,13 +199,16 @@ This repository is public; the engineering record is not. This section
 overrides the workspace "Automatic Documentation Protocol" for this repo.
 
 - ORP records, sprint/session reports, and progress logs live in a separate
-  private repository cloned at `docs/ORP/` (gitignored here, with its own
-  `.git`). Commit and push them there, not in this repository.
-- Start of session: `git -C docs/ORP pull --ff-only`. End of session: commit and
-  push `docs/ORP` before yielding. Pick new ORP numbers with the workspace
-  `next-prefix.sh ORP`, never by guessing.
-- Never track `docs/orp/`, `docs/ORP/`, or `.claude/implementation_progress.md`
-  here; `tools/docs_path_audit.py` fails the build if they are tracked.
+  private docs repository checked out beside this one. `docs/ORP` here is a
+  gitignored symlink into it. Commit and push them there (through the symlink:
+  `git -C docs/ORP`), not in this repository.
+- Start of session: `git -C docs/ORP pull --ff-only`. End of session: stage
+  `docs/ORP` with `git -C docs/ORP add -A .`, commit, and push before
+  yielding. Pick new ORP numbers with the workspace `next-prefix.sh ORP`, never
+  by guessing.
+- Never track `docs/orp`, `docs/ORP` (file, directory or symlink), or
+  `.claude/implementation_progress.md` here; `tools/docs_path_audit.py` fails
+  the build if they are tracked.
 - Public history is `CHANGELOG.md` and `docs/`. Keep private repository names,
   host names, absolute home paths, and unpublished commit SHAs out of tracked
   files.

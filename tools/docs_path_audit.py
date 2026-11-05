@@ -237,10 +237,11 @@ def check_installed_header_contract(root: Path) -> list[Violation]:
 
 
 # Private engineering records must never be tracked in this public repository.
-# They live in a separate private companion repo cloned (and gitignored) at
-# docs/ORP/. Case-insensitive: macOS filesystems fold docs/orp and docs/ORP.
+# They live in a separate private repository reached through a gitignored
+# symlink at docs/ORP. Case-insensitive: macOS filesystems fold docs/orp and
+# docs/ORP. The pattern also matches a tracked file or symlink named docs/ORP.
 PRIVATE_TRACKED_RE = re.compile(
-    r"^(docs/orp/|\.claude/(implementation_progress|progress)\.md$)", re.IGNORECASE
+    r"^(docs/orp(/|$)|\.claude/(implementation_progress|progress)\.md$)", re.IGNORECASE
 )
 
 
