@@ -4,6 +4,8 @@
 #include "coreaudio/coreaudio_sample_rate_transaction.h"
 #include "coreaudio_property_api_test_support.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -171,6 +173,54 @@ TEST_F(CoreAudioSampleRateTransactionTest, WriteRefusalIsSampleRateChangeFailure
   EXPECT_EQ(transaction.begin(), AudioRouteRuntimeOutcome::SampleRateChangeFailed);
   EXPECT_EQ(api.listenerCount(), 0u);
   EXPECT_TRUE(api.writeLedger().empty());
+}
+
+TEST_F(CoreAudioSampleRateTransactionTest, ConcurrentListenerDeliveryIsNeverLost) {
+  // A listener event delivered between the waiter's predicate check and its
+  // wait is lost, and begin() then sleeps to its deadline and rolls back.
+  // Oversubscribed racers make preemption inside that window likely.
+  constexpr int kIterations = 300;
+  constexpr auto kBound = std::chrono::milliseconds(500);
+  const unsigned racer_count = std::max(4u, std::thread::hardware_concurrency());
+  std::atomic<int> lost{0};
+  std::atomic<int> completed{0};
+
+  std::vector<std::thread> racers;
+  racers.reserve(racer_count);
+  for (unsigned racer = 0; racer < racer_count; ++racer) {
+    racers.emplace_back([&] {
+      for (int iteration = 0; iteration < kIterations; ++iteration) {
+        test_support::FakeCoreAudioPropertyApi racer_api;
+        seedRates(racer_api);
+        racer_api.suppressListenerDelivery();
+        CoreAudioSampleRateTransaction transaction(racer_api, writePlans(true), kBound);
+        std::atomic<bool> delivering{true};
+        std::thread delivery([&] {
+          while (delivering.load(std::memory_order_acquire)) {
+            racer_api.deliverPendingListeners();
+            std::this_thread::yield();
+          }
+        });
+        const auto started = std::chrono::steady_clock::now();
+        const AudioRouteRuntimeOutcome result = transaction.begin();
+        const auto elapsed = std::chrono::steady_clock::now() - started;
+        delivering.store(false, std::memory_order_release);
+        delivery.join();
+        if (result != AudioRouteRuntimeOutcome::Healthy || elapsed >= kBound) {
+          lost.fetch_add(1);
+        } else {
+          completed.fetch_add(1);
+          transaction.commit();
+        }
+      }
+    });
+  }
+  for (std::thread& racer : racers) {
+    racer.join();
+  }
+
+  EXPECT_EQ(lost.load(), 0) << "begin() missed a delivered listener event";
+  EXPECT_EQ(completed.load(), static_cast<int>(racer_count) * kIterations);
 }
 
 } // namespace

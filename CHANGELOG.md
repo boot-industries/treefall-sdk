@@ -131,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stopping CoreAudio endpoint-change monitoring can no longer hang: the stop
   and listener wakeups are published under the worker's wait mutex, so a
   wakeup can no longer be lost between the worker's check and its wait.
+- A CoreAudio sample-rate change no longer fails spuriously when its listener
+  event arrives just as the transaction starts waiting. The event was lost,
+  so the transaction slept to its 2 s deadline, reported
+  `SampleRateChangeFailed` and rolled the rate back.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact
