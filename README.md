@@ -37,10 +37,10 @@ cmake --build build -j8
 ctest --test-dir build --output-on-failure
 ```
 
-**Required specialized gates.** `AGENTS.md` names four gates that a change to a
-public contract, a realtime path, or the imported ShmUI content must satisfy. The
-full `ctest` run above executes all four as registered tests; run each on its own
-while iterating on the surface it guards:
+**Required specialized gates.** `AGENTS.md` names three gates that a change to a
+public contract or a realtime path must satisfy. The full `ctest` run above
+executes all three as registered tests; run each on its own while iterating on
+the surface it guards:
 
 ```sh
 # Installed public-package consumer
@@ -57,10 +57,11 @@ ctest --test-dir build --output-on-failure -R '^realtime_static_audit$'
 ctest --test-dir build --output-on-failure -R '^docs_path_audit$'
 ```
 
-```sh
-# ShmUI imported-content contract
-python3 tools/shmui_juce_manifest.py --check
-```
+The CI `C++ Lint` job also runs the realtime audit and its unit tests as
+standalone steps (`python3 tools/realtime_audit.py --root . --fail-known-debt`
+and `python3 tests/realtime_audit_test.py`), so the gate does not depend on
+the CTest registration succeeding. A new audio-thread function must gain a row
+in the audit's target table in the same change.
 
 **Prerequisites:**
 
@@ -544,7 +545,7 @@ Planned backends are not shipped capabilities.
 
    These commands produce the `orpheus_core` static library, build the
    `orpheus_minhost` adapter, and run the GoogleTest suite by default.
-   The required specialized gates are the same four listed under
+   The required specialized gates are the same three listed under
    "Required specialized gates" in the quick start above; run them after the
    full-suite pass.
 
