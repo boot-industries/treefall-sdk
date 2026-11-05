@@ -135,6 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event arrives just as the transaction starts waiting. The event was lost,
   so the transaction slept to its 2 s deadline, reported
   `SampleRateChangeFailed` and rolled the rate back.
+- `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
+  mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
+  flight that called a manager getter could deadlock against that join.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact
