@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded realtime static audit coverage to per-block callees and optional
   adjacent FreqFinder analysis enqueue; final suite qualification is pending.
 
+- `PreparedTapeVarispeed::process` computes its 128 windowed-sinc coefficients
+  once per output frame instead of once per channel. Output is bit-identical.
+
 - `kRoutingMaxOutputs` rises from 32 to 64 (ORP278). `RoutingMatrix`,
   `TransportController` (`TransportConfig::outputChannels`), the routing meter
   state, `GroupOutputMeterSnapshot` lane meters and the

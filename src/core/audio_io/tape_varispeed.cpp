@@ -3,6 +3,7 @@
 #include "orpheus/tape_varispeed.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -50,6 +51,8 @@ struct PreparedTapeVarispeed::Impl {
   TapeVarispeedConfig config{};
   std::vector<float> history;
   std::vector<double> window;
+  // Per-output-frame sinc coefficients, shared by every channel.
+  std::array<double, kTapCount> coefficients{};
   double phase = 0.0;
   double applied = 1.0;
   double target = 1.0;
@@ -215,19 +218,22 @@ TapeVarispeedProcessResult PreparedTapeVarispeed::process(const float* input, si
     }
     const double fraction = impl_->phase - static_cast<double>(centre);
     const double cutoff = 0.5 / std::max(1.0, impl_->applied);
+    double normalization = 0.0;
+    for (size_t tap = 0; tap < kTapCount; ++tap) {
+      const double distance =
+          static_cast<double>(tap) - static_cast<double>(kHalfTaps - 1) - fraction;
+      const double coefficient =
+          2.0 * cutoff * sinc(2.0 * cutoff * distance) * impl_->window[tap];
+      impl_->coefficients[tap] = coefficient;
+      normalization += coefficient;
+    }
     for (uint16_t channel = 0; channel < impl_->config.channels; ++channel) {
       double sum = 0.0;
-      double normalization = 0.0;
       for (size_t tap = 0; tap < kTapCount; ++tap) {
         const int64_t source =
             centre + static_cast<int64_t>(tap) - static_cast<int64_t>(kHalfTaps - 1);
-        const double distance =
-            static_cast<double>(tap) - static_cast<double>(kHalfTaps - 1) - fraction;
-        const double coefficient =
-            2.0 * cutoff * sinc(2.0 * cutoff * distance) * impl_->window[tap];
         sum += static_cast<double>(impl_->source_sample(input, input_frames, source, channel)) *
-               coefficient;
-        normalization += coefficient;
+               impl_->coefficients[tap];
       }
       output[result.output_frames_produced * impl_->config.channels + channel] =
           static_cast<float>(sum / normalization);
