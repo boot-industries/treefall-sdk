@@ -98,10 +98,11 @@ docs/api/
 .claude/CLAUDE.local.md
 .claude/scratch/
 
-# ORP working records live in the private companion repo
-# (boot-industries/treefall-sdk-docs) cloned at docs/ORP. Never track them here.
-/docs/orp/
-/docs/ORP/
+# ORP working records live in a private repository outside this one and are
+# reached through a local symlink at docs/ORP (no trailing slash: a symlink is
+# not a directory to git). Never track them here.
+/docs/orp
+/docs/ORP
 /.claude/implementation_progress.md
 /.claude/progress.md
 /suite/.backups/
