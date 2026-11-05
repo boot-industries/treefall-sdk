@@ -537,6 +537,12 @@ jobs:
       - name: Verify CMake-sourced SDK version
         run: python3 tools/version_contract.py --check
 
+      - name: Realtime static audit
+        run: python3 tools/realtime_audit.py --root . --fail-known-debt
+
+      - name: Realtime audit unit tests
+        run: python3 tests/realtime_audit_test.py
+
       - name: Lint Windows includes
         run: |
           python3 - <<'PY'

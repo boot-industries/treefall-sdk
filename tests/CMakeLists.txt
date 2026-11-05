@@ -112,7 +112,9 @@ if(ORPHEUS_ENABLE_REALTIME)
   endif()
 endif()
 
-find_package(Python3 COMPONENTS Interpreter)
+# The realtime, docs and version gates below run through Python; configuring
+# without an interpreter must fail rather than silently drop them.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   # ORP134 G1: the streaming-reader migration landed, so the audit runs as the
   # STRICT gate (ORP136 §2.1 / §4 "fail closed on realtime"): a reintroduced
