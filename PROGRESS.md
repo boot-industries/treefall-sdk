@@ -1,5 +1,16 @@
 # Progress
 
+## Realtime audit coverage — 2026-11-05
+
+The realtime static audit masks comments and string/char literals before
+scanning, so statements that begin with `*` (such as `*out = new ...`) are no
+longer skipped. Coverage extends to per-block callees (`publishFromRealtime`,
+`postTransportEvent`, `StreamingClipSource::readCached` and related helpers)
+and to the adjacent FreqFinder analysis enqueue when that sibling checkout is
+present. The audit unit tests (`tests/realtime_audit_test.py`) and the strict
+audit (`tools/realtime_audit.py --root . --fail-known-debt`) pass on the
+current tree. Downstream qualification is pending.
+
 ## ShmUI package removal and SDK source decoupling (SHM029) — 2026-11-02
 
 **Record:** `docs/orp/ORP278 ShmUI Package Removal and SDK Source Decoupling.md`
