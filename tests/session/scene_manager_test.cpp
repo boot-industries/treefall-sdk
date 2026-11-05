@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "../../include/orpheus/scene_manager.h"
+#include "../support/global_locale_guard.hpp"
 #include "common/checked_numeric.h"
 #include <cmath>
 #include <limits>
@@ -566,6 +567,35 @@ TEST_F(SceneManagerTest, ImportRejectsNumericAndDuplicateBoundariesWithoutPublis
     EXPECT_EQ(sessionGraph->revision(), revision);
   }
   std::remove(path.c_str());
+}
+
+TEST_F(SceneManagerTest, ExportIgnoresGlobalLocale) {
+  const auto sourcePath = getTempFilePath("locale_source.json");
+  const auto exportPath = getTempFilePath("locale_export.json");
+  {
+    std::ofstream file(sourcePath);
+    file << "{\"sceneId\":\"input\",\"name\":\"Locale\",\"timestamp\":1,\"assignedClips\":[],"
+            "\"clipGroups\":[],\"groupGains\":[-6.5]}";
+  }
+  const std::string sourceId = sceneManager->importScene(sourcePath);
+  ASSERT_FALSE(sourceId.empty());
+
+  {
+    orpheus::test::GlobalLocaleGuard guard;
+    orpheus::test::GlobalLocaleGuard::installCommaGroupingCppLocale();
+    ASSERT_EQ(sceneManager->exportScene(sourceId, exportPath), SessionGraphError::OK);
+
+    // FormatDouble keeps 6 decimal places (a known limit), which -6.5 survives exactly.
+    const std::string reimportedId = sceneManager->importScene(exportPath);
+    ASSERT_FALSE(reimportedId.empty());
+    const SceneSnapshot* scene = sceneManager->getScene(reimportedId);
+    ASSERT_NE(scene, nullptr);
+    ASSERT_EQ(scene->groupGains.size(), 1u);
+    EXPECT_EQ(scene->groupGains[0], -6.5f);
+  }
+
+  std::remove(sourcePath.c_str());
+  std::remove(exportPath.c_str());
 }
 
 // ============================================================================

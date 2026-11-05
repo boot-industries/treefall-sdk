@@ -9,6 +9,8 @@
 #include <limits>
 #include <stdexcept>
 
+#include "common/classic_locale.h"
+
 namespace orpheus::json {
 
 namespace {
@@ -61,7 +63,13 @@ char JsonParser::Consume() {
 }
 
 void JsonParser::SkipWhitespace() {
-  while (!AtEnd() && std::isspace(static_cast<unsigned char>(Peek()))) {
+  // RFC 8259 whitespace only; std::isspace would also accept \v and \f and
+  // follow the host's C locale.
+  while (!AtEnd()) {
+    const char c = Peek();
+    if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+      break;
+    }
     ++index_;
   }
 }
@@ -321,7 +329,7 @@ double JsonParser::ParseNumber() {
   const std::string number_string(number_view);
   errno = 0;
   char* end_ptr = nullptr;
-  const double value = std::strtod(number_string.c_str(), &end_ptr);
+  const double value = ::orpheus::core::detail::strtodClassic(number_string.c_str(), &end_ptr);
   if (end_ptr != number_string.c_str() + number_string.size() || errno == ERANGE ||
       end_ptr == number_string.c_str()) {
     throw std::runtime_error("Failed to parse number");
@@ -377,7 +385,7 @@ std::string RequireString(const JsonValue& value, const std::string& key) {
 }
 
 std::string FormatDouble(double value) {
-  std::ostringstream stream;
+  ::orpheus::core::detail::ClassicOStringStream stream;
   stream.setf(std::ios::fixed);
   stream.precision(6);
   stream << value;

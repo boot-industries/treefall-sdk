@@ -9,6 +9,8 @@
 #include <string_view>
 #include <utility>
 
+#include "common/classic_locale.h"
+
 namespace orpheus::core::adm {
 namespace {
 constexpr double kSlopeTolerance = 1e-7;
@@ -246,7 +248,7 @@ std::size_t EntityGraph::object_count() const {
 }
 
 std::string EntityGraph::DebugDumpJson(ThinningPolicy policy) const {
-  std::ostringstream oss;
+  ::orpheus::core::detail::ClassicOStringStream oss;
   oss << "{";
 
   oss << "\"programmes\":[";

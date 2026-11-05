@@ -28,6 +28,7 @@
 #endif
 
 #include "common/checked_numeric.h"
+#include "common/classic_locale.h"
 #include "common/json_parser.h"
 
 namespace orpheus::core::session_json {
@@ -161,7 +162,7 @@ std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
   if (sample_rate_hz == 0u) {
     return "0k";
   }
-  std::ostringstream builder;
+  ::orpheus::core::detail::ClassicOStringStream builder;
   builder << (sample_rate_hz / 1000u);
   std::uint32_t remainder = sample_rate_hz % 1000u;
   if (remainder != 0u) {
@@ -430,7 +431,7 @@ SessionGraph ParseSession(const std::string& json_text) {
 
 std::string SerializeSession(const SessionGraph& session) {
   ValidateSessionSerializationLimits(session);
-  std::ostringstream stream;
+  ::orpheus::core::detail::ClassicOStringStream stream;
   stream << "{\n";
   WriteIndent(stream, 2);
   stream << "\"schema_version\": " << kCurrentSessionSchemaVersion << ",\n";

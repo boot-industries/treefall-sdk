@@ -138,6 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
   mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
   flight that called a manager getter could deadlock against that join.
+- Session, scene, reconform-plan and ADM debug JSON, plus `orpheus_minhost`
+  JSON numbers and numeric arguments, now ignore the host's global locale. A
+  host that installed a comma-decimal or digit-grouping C++ locale previously
+  wrote files such as `"tempo_bpm": 120,500000` that could not be read back,
+  and a comma-decimal C locale made the parser reject `120.5`. The parser also
+  accepts only JSON whitespace, so `\v` and `\f` between tokens are rejected.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

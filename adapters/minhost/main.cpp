@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "abi_negotiation.h"
 #include "common/checked_numeric.h"
+#include "common/classic_locale.h"
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
 #include "orpheus/json.hpp"
@@ -100,7 +101,7 @@ void PrintError(const CliGlobalOptions& global, const ErrorInfo& error) {
 bool ParseDouble(const std::string& text, double& value) {
   char* end_ptr = nullptr;
   errno = 0;
-  value = std::strtod(text.c_str(), &end_ptr);
+  value = orpheus::core::detail::strtodClassic(text.c_str(), &end_ptr);
   if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
     return false;
   }
@@ -201,7 +202,7 @@ std::string JsonEscape(std::string_view value) {
 }
 
 std::string FormatNumber(double value, int precision = 6) {
-  std::ostringstream stream;
+  orpheus::core::detail::ClassicOStringStream stream;
   stream.setf(std::ios::fixed);
   stream.precision(precision);
   stream << value;

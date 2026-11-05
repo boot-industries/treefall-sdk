@@ -2,12 +2,16 @@
 #include <orpheus/json.hpp>
 #include <orpheus/session_io.h>
 
+#include "otio/reconform_plan.h"
+#include "support/global_locale_guard.hpp"
+
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -523,6 +527,58 @@ TEST(SessionRoundTrip, RollbackPreservesExactBeatValues) {
   ASSERT_EQ(graph.tracks().front()->clips().size(), 1u);
   EXPECT_DOUBLE_EQ(graph.tracks().front()->clips().front()->start(), start);
   EXPECT_DOUBLE_EQ(graph.tracks().front()->clips().front()->length(), length);
+}
+
+TEST(SessionJsonLocaleTest, StreamsIgnoreGlobalLocale) {
+  const std::string session_text = LoadFixtureText(FixturesRoot() / "two_tracks.json");
+  const SessionGraph session = ParseSession(session_text);
+  const std::string classic_session = SerializeSession(session);
+  ASSERT_EQ(classic_session, session_text);
+
+  const std::string plan_text =
+      LoadFixtureText(fs::path(__FILE__).parent_path() / "fixtures" / "reconform" / "insert.json");
+  const otio::ReconformPlan plan = otio::ParseReconformPlan(plan_text);
+  const std::string classic_plan = otio::SerializeReconformPlan(plan);
+  ASSERT_EQ(classic_plan, plan_text);
+
+  orpheus::test::GlobalLocaleGuard guard;
+  orpheus::test::GlobalLocaleGuard::installCommaGroupingCppLocale();
+  EXPECT_EQ(SerializeSession(session), classic_session);
+  EXPECT_EQ(otio::SerializeReconformPlan(plan), classic_plan);
+}
+
+TEST(SessionJsonLocaleTest, ParseIgnoresCLocale) {
+  const std::string text = R"({
+    "name": "Locale",
+    "tempo_bpm": 120.5,
+    "start_beats": 0,
+    "end_beats": 8,
+    "render": {
+      "sample_rate_hz": 48000,
+      "bit_depth": 24,
+      "dither": true
+    },
+    "marker_sets": [],
+    "playlist_lanes": [],
+    "tracks": []
+  })";
+
+  orpheus::test::GlobalLocaleGuard guard;
+  if (!orpheus::test::GlobalLocaleGuard::installCommaDecimalCLocale()) {
+    GTEST_SKIP() << "No comma-decimal C locale is installed on this host";
+  }
+  const SessionGraph session = ParseSession(text);
+  EXPECT_EQ(session.tempo(), 120.5);
+}
+
+TEST(SessionJsonLocaleTest, WhitespaceIsJsonOnly) {
+  for (const std::string_view text : {"\v1", "\f1", "1\v", "1\f"}) {
+    EXPECT_THROW(static_cast<void>(::orpheus::json::JsonParser(text).Parse()), std::runtime_error)
+        << "accepted non-JSON whitespace";
+  }
+  const ::orpheus::json::JsonValue value = ::orpheus::json::JsonParser(" \t\r\n1 \t\r\n").Parse();
+  EXPECT_EQ(value.type, ::orpheus::json::JsonValue::Type::kNumber);
+  EXPECT_EQ(value.number, 1.0);
 }
 
 } // namespace orpheus::core::session_json::tests
