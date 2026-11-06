@@ -18,7 +18,14 @@ public:
   explicit SimpleAudioCallback(treefall::ITransportController* transport) : transport_(transport) {}
 
   void processAudio(const treefall::AudioProcessBlock& block) noexcept override {
-    transport_->processAudio(block.output_buffers, block.num_output_channels, block.num_frames);
+    // Forward the backend clock reference with the buffers; dropping it would
+    // leave transport telemetry without device time or discontinuities.
+    treefall::TransportTimeReference reference;
+    reference.device_sample_position = block.device_sample_position;
+    reference.host_time_nanoseconds = block.host_time_nanoseconds;
+    reference.discontinuity = block.discontinuity;
+    transport_->processAudioWithTimeReference(block.output_buffers, block.num_output_channels,
+                                              block.num_frames, reference);
   }
 
 private:

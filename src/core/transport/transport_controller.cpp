@@ -99,8 +99,34 @@ TransportPosition TransportController::getCurrentPosition() const {
   return positionAtSamples(m_currentSample.load(std::memory_order_relaxed));
 }
 
+void TransportController::processAudioWithTimeReference(
+    float* const* outputs, size_t channels, size_t frames,
+    const TransportTimeReference& reference) noexcept {
+  m_pendingTimeReference = reference;
+  processAudio(outputs, channels, frames);
+}
+
+void TransportController::consumeTimeReference(size_t numFrames) noexcept {
+  const TransportTimeReference reference = m_pendingTimeReference;
+  m_pendingTimeReference = TransportTimeReference{};
+  // The pending snapshot carries the clock state between publications, so a
+  // decimated or dropped publication cannot lose a discontinuity.
+  RealtimeClockTelemetry& clock = m_realtimeTelemetrySnapshot.clock;
+  clock.device_sample_position = reference.device_sample_position;
+  clock.host_time_nanoseconds = reference.host_time_nanoseconds;
+  clock.device_sample_position_valid = reference.device_sample_position != 0;
+  clock.host_time_valid = reference.host_time_nanoseconds != 0;
+  clock.block_frames =
+      static_cast<uint32_t>(std::min<size_t>(numFrames, std::numeric_limits<uint32_t>::max()));
+  if (reference.discontinuity) {
+    clock.discontinuity_count = detail::saturatingIncrement(clock.discontinuity_count);
+    clock.discontinuity_in_window = true;
+  }
+}
+
 void TransportController::processAudio(float* const* outputBuffers, size_t numChannels,
                                        size_t numFrames) noexcept {
+  consumeTimeReference(numFrames);
   if (outputBuffers == nullptr || numChannels != m_config.outputChannels ||
       numFrames > m_config.maxBlockFrames) {
     return;
@@ -526,6 +552,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       // A successful enqueue transfers the pending canonical window to the
       // ring; the next successful render starts a fresh window.
       rearmRoutingMeterWindow();
+      m_realtimeTelemetrySnapshot.clock.discontinuity_in_window = false;
     }
   }
 }

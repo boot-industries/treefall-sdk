@@ -137,8 +137,12 @@ public:
   orpheus::TransportConfig getRenderConfig() const noexcept override {
     return {};
   }
-  void processAudio(float* const*, size_t, size_t) noexcept override {}
+  void processAudio(float* const*, size_t, size_t numFrames) noexcept override {
+    renderedFrames += numFrames;
+  }
   void processCallbacks() override {}
+
+  size_t renderedFrames = 0;
 
 private:
   static constexpr auto ok = orpheus::SessionGraphError::OK;
@@ -152,6 +156,12 @@ int main() {
   LegacyTransportImplementation legacy;
   const auto telemetry = legacy.getCallbackDeliveryTelemetry();
   const auto snapshot = legacy.getActiveVoiceSnapshot();
+  // The appended timed entry point defaults to the legacy render path.
+  orpheus::ITransportController& base = legacy;
+  base.processAudioWithTimeReference(nullptr, 0, 32, orpheus::TransportTimeReference{1, 2, true});
+  if (legacy.renderedFrames != 32) {
+    return 2;
+  }
   return telemetry.lastAttemptedSequence == 0 && telemetry.cumulativeDroppedCount == 0 &&
                  telemetry.activeVoiceSnapshotSequence == 0 && snapshot.entryCount == 0 &&
                  snapshot.totalActiveVoiceCount == 0

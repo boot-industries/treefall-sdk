@@ -81,6 +81,13 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   telemetry supplies no duration, so zero threshold counts are not timing
   health evidence or an audio-onset measurement. Opt-in backend timing feeds
   the performance monitor only.
+- `processAudioWithTimeReference()` copies the backend clock reference into an
+  audio-thread-owned pending slot and renders through `processAudio()`, whose
+  `consumeTimeReference()` helper resets the slot and updates the pending
+  telemetry snapshot's clock fields by plain stores. The discontinuity count is
+  cumulative and the in-window flag clears only on a successful enqueue, so
+  decimation and a full ring cannot drop a clock break; no backpressure, lock
+  or allocation is added. Both functions are rows in `repository_target_rows()`.
 - Loop-anchor preparation and rollback belong to the control thread. Admission
   transfers exclusive transition ownership to a command; bounded audio-safe
   commit releases the previous pin only when that command executes. Rejected

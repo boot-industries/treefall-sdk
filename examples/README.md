@@ -46,6 +46,7 @@ There is no `IOfflineRenderer`, `OfflineRenderJob`, or `offline_renderer` execut
 
 - Reader/writer open, close, probing, and file hashing are control/background operations; never call them from an audio callback.
 - `processAudio()` receives exactly the configured output-channel buffers and no more than `maxBlockFrames` frames.
+- A driver callback bridge calls `processAudioWithTimeReference()` with the `AudioProcessBlock` device sample position, host time and discontinuity flag, so transport telemetry keeps the backend clock reference; offline renders without a device clock call `processAudio()`.
 - Always check factory pointers and every returned `SessionGraphError`/`Result` before proceeding.
 - The real-time examples use CoreAudio where enabled on macOS and the existing Dummy driver where hardware backends are disabled on other platforms. The Dummy driver is not part of the offline recipe.
 - Supported file-format policy is WAV, AIFF, and FLAC; MP3 and OGG encoding are not supported.

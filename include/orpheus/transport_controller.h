@@ -383,6 +383,26 @@ public:
                                         TransportPosition /*position*/) {}
 };
 
+/// Backend clock reference for one transport render block.
+///
+/// Fields carry the AudioProcessBlock values of the same callback unchanged:
+/// device_sample_position is the first frame of the block on the backend
+/// device timeline, host_time_nanoseconds is the monotonic host-clock stamp of
+/// that frame, and zero in either field means the backend cannot provide it.
+/// The two clocks are independent domains: hosts must not derive one from the
+/// other or treat a missing value as zero time. discontinuity marks a device
+/// reset, gap, or non-contiguous stream position before this block; positions
+/// and timestamps on either side of it are not comparable. The transport
+/// position is a separate timeline that advances by every rendered block.
+/// A value-initialized reference reports every field unavailable.
+struct TransportTimeReference {
+  uint64_t device_sample_position{0};
+  uint64_t host_time_nanoseconds{0};
+  bool discontinuity{false};
+};
+
+static_assert(std::is_trivially_copyable_v<TransportTimeReference>);
+
 /// Transport controller interface for sample-accurate clip playback
 ///
 /// This interface provides real-time control over clip playback with
@@ -1025,6 +1045,9 @@ public:
   /// getRenderConfig().maxBlockFrames frames per call.
   ///
   /// Real-time contract: no allocation, locks, blocking, I/O, or host callbacks.
+  /// This entry point carries no backend clock reference: telemetry reports the
+  /// device position and host time unavailable. Hosts bridging an
+  /// IAudioCallback should call processAudioWithTimeReference() instead.
   virtual void processAudio(float* const* outputBuffers, size_t numChannels,
                             size_t numFrames) noexcept = 0;
 
@@ -1104,6 +1127,25 @@ public:
                                                           const std::string& /*file_path*/,
                                                           const ClipMetadata& /*metadata*/) {
     return SessionGraphError::NotSupported;
+  }
+
+  /// Render one transport block with the backend clock reference of the
+  /// AudioProcessBlock that supplied its buffers.
+  ///
+  /// Same audio-thread entry point, buffer contract and realtime contract as
+  /// processAudio(): call it instead of, never in addition to, processAudio()
+  /// for a block. Rendered audio is identical to processAudio(); the reference
+  /// only feeds RealtimeTelemetrySnapshot::clock. The reference is copied
+  /// during the call and never retained. processAudio() itself reports the
+  /// reference as unavailable.
+  ///
+  /// The default forwards to processAudio() and discards the reference, so
+  /// recompiled custom implementations keep their behavior. Adding this
+  /// virtual requires a C++ rebuild; an old prebuilt subclass must not receive
+  /// this call. The stable C ABI tables are unchanged.
+  virtual void processAudioWithTimeReference(float* const* outputs, size_t channels, size_t frames,
+                                             const TransportTimeReference&) noexcept {
+    processAudio(outputs, channels, frames);
   }
 };
 

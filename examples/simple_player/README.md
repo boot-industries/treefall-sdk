@@ -81,7 +81,12 @@ The `SimpleAudioCallback` class connects the audio driver to the transport contr
 class SimpleAudioCallback : public treefall::IAudioCallback {
 public:
   void processAudio(const treefall::AudioProcessBlock& block) noexcept override {
-    transport_->processAudio(block.output_buffers, block.num_output_channels, block.num_frames);
+    treefall::TransportTimeReference reference;
+    reference.device_sample_position = block.device_sample_position;
+    reference.host_time_nanoseconds = block.host_time_nanoseconds;
+    reference.discontinuity = block.discontinuity;
+    transport_->processAudioWithTimeReference(block.output_buffers, block.num_output_channels,
+                                              block.num_frames, reference);
   }
 private:
   treefall::ITransportController* transport_;
@@ -89,6 +94,8 @@ private:
 ```
 
 This callback runs on a **real-time audio thread** - no allocations, no locks, no I/O!
+The block's device sample position, host time and discontinuity flag travel with the buffers, so
+`RealtimeTelemetrySnapshot::clock` reports the backend clock reference and every clock break.
 
 ### Clip Registration
 

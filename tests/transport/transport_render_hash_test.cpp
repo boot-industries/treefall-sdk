@@ -140,8 +140,10 @@ protected:
 
   // Build the standard scenario on a fresh controller and render the whole
   // window at the given block size, returning the FNV-1a hash of every
-  // output sample (L bytes then R bytes, buffer by buffer).
-  uint64_t renderScenarioHash(size_t blockFrames) {
+  // output sample (L bytes then R bytes, buffer by buffer). withTimeReference
+  // renders through the timed entry point with a device timeline that breaks
+  // on the first and a middle block.
+  uint64_t renderScenarioHash(size_t blockFrames, bool withTimeReference = false) {
     EXPECT_EQ(kTotalFrames % blockFrames, 0u) << "block size must divide the render window";
 
     auto transport = std::make_unique<TransportController>(
@@ -189,7 +191,15 @@ protected:
 
     const size_t numBuffers = kTotalFrames / blockFrames;
     for (size_t i = 0; i < numBuffers; ++i) {
-      transport->processAudio(buffers, 2, blockFrames);
+      if (withTimeReference) {
+        const uint64_t position = 1 + i * blockFrames;
+        const bool discontinuity = i == 0 || i == numBuffers / 2;
+        const uint64_t hostTime = 1'000'000 + position * 20'833;
+        const TransportTimeReference reference{position, hostTime, discontinuity};
+        transport->processAudioWithTimeReference(buffers, 2, blockFrames, reference);
+      } else {
+        transport->processAudio(buffers, 2, blockFrames);
+      }
       streamL.insert(streamL.end(), left.begin(), left.end());
       streamR.insert(streamR.end(), right.begin(), right.end());
     }
@@ -239,6 +249,12 @@ TEST_F(TransportRenderHashTest, HashIsReproducibleAcrossRuns) {
   const uint64_t second = renderScenarioHash(512);
   EXPECT_EQ(first, second) << "same input, same block size, different output — "
                               "the render path is nondeterministic";
+}
+
+TEST_F(TransportRenderHashTest, TimedEntryPointRendersIdenticalAudio) {
+  for (size_t blockFrames : kBlockSizes) {
+    EXPECT_EQ(renderScenarioHash(blockFrames, true), kGoldenRenderHash) << blockFrames;
+  }
 }
 
 int main(int argc, char** argv) {

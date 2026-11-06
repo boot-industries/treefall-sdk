@@ -16,7 +16,7 @@
 namespace orpheus {
 
 /// Stable schema version for RealtimeTelemetrySnapshot.
-inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 3;
+inline constexpr uint32_t kRealtimeTelemetrySchemaVersion = 4;
 
 /// Schema version for the canonical routing-meter payload.
 inline constexpr uint32_t kRoutingMeterTelemetrySchemaVersion = 1;
@@ -72,6 +72,39 @@ struct RoutingMeterTelemetry {
 static_assert(std::is_trivially_copyable_v<RoutingMeterTelemetry>);
 static_assert(std::is_standard_layout_v<RoutingMeterTelemetry>);
 
+/// Backend clock reference observed by the transport, carried unchanged from
+/// ITransportController::processAudioWithTimeReference().
+///
+/// device_sample_position and host_time_nanoseconds identify the first frame
+/// of the final rendered callback before this publication; block_frames is
+/// that callback's frame count, so the snapshot position corresponds to
+/// device_sample_position + block_frames on the same device segment. Each
+/// value is meaningful only when its *_valid flag is set: zero from the
+/// backend, and every processAudio() block, reports unavailable. The device
+/// and host clocks are independent domains; consumers must not infer one from
+/// the other.
+///
+/// discontinuity_count is the saturating cumulative number of rendered or
+/// rejected blocks that reported a discontinuity since construction. It is a
+/// clock epoch: values from snapshots with different counts are not
+/// comparable. Because it is cumulative, decimated callbacks and dropped
+/// snapshots never hide a clock break; compare against the last count read.
+/// discontinuity_in_window is set when at least one discontinuity occurred
+/// since the previous successfully enqueued snapshot.
+struct RealtimeClockTelemetry {
+  uint64_t device_sample_position{0};
+  uint64_t host_time_nanoseconds{0};
+  uint64_t discontinuity_count{0};
+  uint32_t block_frames{0};
+  bool device_sample_position_valid{false};
+  bool host_time_valid{false};
+  bool discontinuity_in_window{false};
+  uint8_t reserved0{0};
+};
+
+static_assert(std::is_trivially_copyable_v<RealtimeClockTelemetry>);
+static_assert(std::is_standard_layout_v<RealtimeClockTelemetry>);
+
 /// Fixed-size transport, routing, and callback-health observation.
 ///
 /// This is deliberately presentation-neutral. Hosts may build meter histories,
@@ -92,6 +125,7 @@ struct RealtimeTelemetrySnapshot {
   std::array<AudioMeter, kRealtimeTelemetryMaxOutputs> output_meters{};
   AudioMeter master_meter{};
   RoutingMeterTelemetry routing_meters{};
+  RealtimeClockTelemetry clock{}; ///< Backend clock reference; see RealtimeClockTelemetry.
 };
 
 static_assert(std::is_trivially_copyable_v<RealtimeTelemetrySnapshot>);
