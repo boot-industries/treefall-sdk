@@ -8,6 +8,7 @@
 // engine-rate samples so trims stay sample-accurate.
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -87,7 +88,7 @@ double measureFreqFromChannel(const std::vector<float>& mono, uint32_t rate, siz
 class SampleRateConversionTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_dir = std::filesystem::temp_directory_path() / "orp127_src";
+    m_dir = orpheus::tests::support::UniqueTempPath("orp127_src");
     std::filesystem::create_directories(m_dir);
     m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kEngineRate)});
   }

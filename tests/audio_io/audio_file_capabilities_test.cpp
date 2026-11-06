@@ -3,8 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include "../support/unique_temp_dir.hpp"
+
 #include <array>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -14,9 +15,7 @@ using namespace orpheus;
 class AudioFileCapabilitiesTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    directory = std::filesystem::temp_directory_path() /
-                ("orpheus-capabilities-" +
-                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    directory = orpheus::tests::support::UniqueTempPath("orpheus-capabilities");
     ASSERT_TRUE(std::filesystem::create_directory(directory));
   }
   void TearDown() override {

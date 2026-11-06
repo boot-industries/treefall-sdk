@@ -3,6 +3,8 @@
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
+#include "../../support/unique_temp_dir.hpp"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -44,7 +46,8 @@ std::filesystem::path writeFixtureWav() {
   constexpr uint32_t fmtSize = 16;
   constexpr uint32_t byteRate = sampleRate * channels * sizeof(int16_t);
   constexpr uint16_t blockAlign = channels * sizeof(int16_t);
-  const auto path = std::filesystem::temp_directory_path() / "orpheus-find-package-transport.wav";
+  const auto path =
+      orpheus::tests::support::UniqueTempPath("orpheus-find-package-transport", ".wav");
 
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
   file.write("RIFF", 4);
@@ -174,6 +177,42 @@ int main() {
   if (transport->startClipWithGroupChoke(0) != orpheus::SessionGraphError::InvalidHandle ||
       transport->startClipWithGroupChoke(42) != orpheus::SessionGraphError::ClipNotRegistered) {
     return 4;
+  }
+
+  // A standalone matrix stays fully writable; a transport's matrix rejects
+  // channel-route edits (the transport owns its voice lanes) and accepts
+  // group-level routing.
+  if (routing->setChannelRoute(0, 0, 1) != orpheus::SessionGraphError::OK) {
+    return 14;
+  }
+  orpheus::IRoutingMatrix* transportRouting = transport->getRoutingMatrix();
+  if (transportRouting == nullptr ||
+      transportRouting->setChannelRoute(0, 0, 1) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->setChannelGroup(0, 0) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->setChannelPan(0, 0.0f) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->configureChannel(0, orpheus::ChannelConfig{}) !=
+          orpheus::SessionGraphError::NotSupported) {
+    return 15;
+  }
+  if (transportRouting->setGroupGain(0, -3.0f) != orpheus::SessionGraphError::OK ||
+      transportRouting->setGroupOutputRoute(0, 0, 2) != orpheus::SessionGraphError::OK ||
+      transportRouting->getRoutingControlSnapshot().groups[0].gain_db != -3.0f) {
+    return 16;
+  }
+  // getGroupOutputBus() reports the matrix's geometry, whichever path set it.
+  if (transportRouting->setGroupOutputRoute(0, 1, 1) != orpheus::SessionGraphError::OK) {
+    return 17;
+  }
+  const auto matrixBus = transport->getGroupOutputBus(0);
+  if (!matrixBus || matrixBus->outputStart != 1 || matrixBus->channelCount != 1 ||
+      transport->setGroupOutputBus(0, orpheus::OutputBusRoute{0, 2}) !=
+          orpheus::SessionGraphError::OK) {
+    return 17;
+  }
+  const auto restoredBus = transport->getGroupOutputBus(0);
+  if (!restoredBus || restoredBus->outputStart != 0 || restoredBus->channelCount != 2 ||
+      transportRouting->getRoutingControlSnapshot().groups[0].output_width != 2) {
+    return 17;
   }
 
   const auto wav = writeFixtureWav();

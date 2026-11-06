@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/media_integrity.h>
 
+#include "../../support/unique_temp_dir.hpp"
+
 #include <filesystem>
 #include <fstream>
 
 int main() {
-  const auto root = std::filesystem::temp_directory_path() / "orpheus_installed_media_fixture";
+  const auto root = orpheus::tests::support::UniqueTempPath("orpheus_installed_media_fixture");
   std::filesystem::create_directories(root);
   const auto path = root / "media.bin";
   {

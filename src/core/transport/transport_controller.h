@@ -7,6 +7,7 @@
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
+#include "../routing/routing_matrix.h"
 #include "clip_source_registry.h"
 
 #include <array>
@@ -297,6 +298,8 @@ public:
   TransportConfig getRenderConfig() const noexcept override;
   void processAudio(float* const* outputBuffers, size_t numChannels,
                     size_t numFrames) noexcept override;
+  void processAudioWithTimeReference(float* const* outputs, size_t channels, size_t frames,
+                                     const TransportTimeReference& reference) noexcept override;
   void processCallbacks() override;
 
   // ITransportController interface
@@ -752,9 +755,19 @@ private:
   // shrink resets exactly the entries it leaves behind. Audio thread only.
   uint8_t m_snapshotGroupHigh{0};
   uint8_t m_snapshotOutputHigh{0};
-  std::unique_ptr<IRoutingMatrix> m_routingMatrix;
+  // Clock reference handed from processAudioWithTimeReference() to the next
+  // processAudio() body; consumed (reset to unavailable) by every render call
+  // so the reference-less entry point always reports unavailable. Audio thread only.
+  TransportTimeReference m_pendingTimeReference{};
+  void consumeTimeReference(size_t numFrames) noexcept;
+  // Concrete type: the transport publishes its voice lanes through the internal
+  // RoutingMatrix::setTransportChannelRoute(), which is not on IRoutingMatrix.
+  std::unique_ptr<RoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;
-  std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS> m_groupOutputStarts{};
+  // Group widths last accepted by setGroupOutputBus(). They gate clip
+  // admission (a clip may not be wider than its group's bus) and nothing else:
+  // rendering and getGroupOutputBus() read the routing matrix's own group
+  // geometry, which hosts may also change through getRoutingMatrix().
   std::array<std::atomic<uint16_t>, MAX_LOGICAL_GROUPS> m_groupOutputWidths{};
 
   // Fixed-capacity audio-thread → message-thread telemetry bridge.

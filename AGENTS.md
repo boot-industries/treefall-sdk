@@ -90,6 +90,46 @@ ctest --test-dir build --output-on-failure -R '^realtime_static_audit$'
 ctest --test-dir build --output-on-failure -R '^docs_path_audit$'
 ```
 
+CI (`.github/workflows/ci-pipeline.yml`) also blocks on these checks; run the
+ones your change touches before pushing:
+
+- Formatting: `clang-format-14 --dry-run --Werror` over every `*.cpp`, `*.h`,
+  and `*.hpp` under `src` and `include`. Newer local clang-format releases
+  disagree with 14: do not write brace-only scopes such as
+  `{ std::lock_guard g(m); }` (use `m.lock(); m.unlock();`), and wrap long
+  declarations by hand within the 100-column limit the way 14 does.
+- Version contract: `python3 tools/version_contract.py --check`.
+- Linux TSan (Debug, `-fsanitize=thread`, extended tests on, ABI dynamic and
+  shared core off) builds and runs only `command_ingress_test`,
+  `voice_state_tsan_test`, `callback_loss_telemetry_test`,
+  `realtime_harness_test`, `streaming_seek_test`, `performance_monitor_test`,
+  `performance_integration_test`, `realtime_diagnostics_test`, and
+  `callback_queue_stress_test`, with
+  `TSAN_OPTIONS=halt_on_error=1:exitcode=66 ORP_SANITIZED_BUILD=1` and
+  `ctest -j 1 --timeout 300`.
+- GCC rejects a direct `std::atomic_thread_fence` under `-fsanitize=thread`
+  (`-Wtsan` with `-Werror`). Use the helpers in
+  `src/core/common/seqlock_fence.h` instead of calling the fence directly.
+
+Tests give every scratch file a per-process unique path through
+`tests/support/unique_temp_dir.hpp`, so `ctest -j` is safe, even with two
+checkouts testing at once. That stays true only while tests use the helper
+and never write a fixed name under the temp directory.
+
+The performance gate is not run by CI. Run it in a Release tree on an idle
+machine:
+
+```sh
+cmake --preset sdk-release
+cmake --build --preset sdk-release
+ctest --test-dir build-sdk-release --output-on-failure -R '^realtime_render_deadline_distribution$'
+node scripts/validate-performance.js --build-dir=build-sdk-release --config=Release
+```
+
+`validate-performance.js` accepts only the `--option=value` form. A
+space-separated value is ignored, and the script falls back to its defaults
+(`build`, `Release`).
+
 Use sanitizer, TSan, deterministic render-hash, and hardware tests when the
 changed surface requires them. Do not substitute macOS or Dummy-driver results
 for Windows or real-device evidence.
@@ -221,6 +261,16 @@ Do not silently implement or mark these complete:
   records enumerated in ORP173; the observed development snapshot is not a
   release claim.
 - Windows/WASAPI support promotion remains gated on the evidence in ORP143 §7.
+- Clock-domain correlation beyond the delivered plumbing. The transport carries
+  the backend's device sample position, host time and discontinuity into
+  telemetry schema 4. Still open: correlating the device and host clocks with
+  `AudioLatencyBreakdown` and presentation time, a rate/origin/epoch on
+  `TimePoint`, real WASAPI position and host time (shared mode reports 0), and
+  consumer adoption of `processAudioWithTimeReference`. Owner and target
+  release are to be assigned by the repository owner; `ARCHITECTURE.md`
+  §Temporal Coherence states exactly what is delivered.
+- Bluetooth directional-SRC candidate (PR #250): parked pending hardware
+  re-acceptance; not a current priority.
 
 Reopen any of these only with an explicit task and the stated prerequisite
 proof.

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <orpheus/transport_controller.h>
 
+#include "../support/unique_temp_dir.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -85,7 +86,7 @@ public:
 class AtomicGroupChokeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    directory = std::filesystem::temp_directory_path() / "orp150_atomic_group_choke";
+    directory = orpheus::tests::support::UniqueTempPath("orp150_atomic_group_choke");
     std::filesystem::create_directories(directory);
     createTransport(8);
   }

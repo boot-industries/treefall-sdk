@@ -4,6 +4,7 @@
 
 #include "otio/reconform_plan.h"
 #include "support/global_locale_guard.hpp"
+#include "support/unique_temp_dir.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -180,7 +181,7 @@ TEST(SessionRoundTrip, MigratesLegacySchemaAndRejectsFutureSchema) {
 }
 
 TEST(SessionRoundTrip, AtomicSaveKeepsBackupAndRecoversCorruptPrimary) {
-  const fs::path root = fs::temp_directory_path() / "orpheus_session_atomic_test";
+  const fs::path root = orpheus::tests::support::UniqueTempPath("orpheus_session_atomic_test");
   fs::remove_all(root);
   fs::create_directories(root);
   const fs::path path = root / "session.json";
@@ -210,7 +211,8 @@ TEST(SessionRoundTrip, AtomicSaveKeepsBackupAndRecoversCorruptPrimary) {
 }
 
 TEST(SessionRoundTrip, FutureSchemaPrimaryNeverFallsBackToBackup) {
-  const fs::path root = fs::temp_directory_path() / "orpheus_session_future_schema_test";
+  const fs::path root =
+      orpheus::tests::support::UniqueTempPath("orpheus_session_future_schema_test");
   fs::remove_all(root);
   fs::create_directories(root);
   const fs::path path = root / "session.json";
@@ -330,7 +332,8 @@ TEST(SessionRoundTrip, FailedLoadLeavesExistingGraphAndRevisionUntouched) {
   SessionGraph graph;
   graph.set_name("Retained");
   const auto revision = graph.revision();
-  const auto path = fs::temp_directory_path() / "orpheus-session-invalid-numeric.json";
+  const auto path =
+      orpheus::tests::support::UniqueTempPath("orpheus-session-invalid-numeric", ".json");
   {
     std::ofstream file(path);
     file
@@ -415,7 +418,8 @@ TEST(SessionJsonLimits, SessionDocumentByteLimitIsAnExplicitError) {
 }
 
 TEST(SessionJsonLimits, SessionFileReadEnforcesTheDocumentByteLimit) {
-  const auto path = fs::temp_directory_path() / "orpheus-session-oversized-file.json";
+  const auto path =
+      orpheus::tests::support::UniqueTempPath("orpheus-session-oversized-file", ".json");
   {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(file.is_open());
@@ -436,7 +440,7 @@ TEST(SessionJsonLimits, SessionFileReadEnforcesTheDocumentByteLimit) {
 }
 
 TEST(SessionJsonLimits, FailedOversizedSavePreservesPreviousDocument) {
-  const auto path = fs::temp_directory_path() / "orpheus-session-save-limit.json";
+  const auto path = orpheus::tests::support::UniqueTempPath("orpheus-session-save-limit", ".json");
   SessionGraph previous;
   previous.set_name("Preserved");
   SaveSessionToFile(previous, path.string());

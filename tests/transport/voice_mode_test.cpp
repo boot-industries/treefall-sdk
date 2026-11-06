@@ -10,6 +10,7 @@
 //                         a single voice at all times.
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -96,7 +97,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-    m_dir = std::filesystem::temp_directory_path() / "orp127_voicemode";
+    m_dir = orpheus::tests::support::UniqueTempPath("orp127_voicemode");
     std::filesystem::create_directories(m_dir);
     m_path = writeSineWav(m_dir / "vm.wav", 440.0f, 2.0f);
   }

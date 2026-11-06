@@ -8,6 +8,7 @@
 // setMaxVoicesPerClip bounds voice layering as a resource guard.
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -87,7 +88,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-    m_dir = std::filesystem::temp_directory_path() / "orp127_choke";
+    m_dir = orpheus::tests::support::UniqueTempPath("orp127_choke");
     std::filesystem::create_directories(m_dir);
   }
   void TearDown() override {

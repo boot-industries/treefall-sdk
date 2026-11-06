@@ -10,6 +10,7 @@
 #include <orpheus/audio_file_writer.h>
 #include <orpheus/audio_input.h>
 
+#include "../support/unique_temp_dir.hpp"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -206,7 +207,7 @@ TEST(AudioInputStreamTest, CaptureToDiskPairsWithAudioFileWriter) {
     GTEST_SKIP() << "libsndfile not available";
   }
 
-  const auto dir = std::filesystem::temp_directory_path() / "orp134_capture";
+  const auto dir = orpheus::tests::support::UniqueTempPath("orp134_capture");
   std::filesystem::create_directories(dir);
   const std::string path = (dir / "capture.wav").string();
 

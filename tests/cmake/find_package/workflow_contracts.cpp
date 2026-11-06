@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <array>
 #include <memory>
 #include <orpheus/realtime_telemetry.h>
 #include <orpheus/session_graph.h>
@@ -15,6 +16,9 @@ using PublishFromRealtimeSignature =
     bool (orpheus::RealtimeTelemetry::*)(const orpheus::RealtimeTelemetrySnapshot&) noexcept;
 static_assert(std::is_same_v<decltype(&orpheus::RealtimeTelemetry::publishFromRealtime),
                              PublishFromRealtimeSignature>);
+static_assert(orpheus::kRealtimeTelemetrySchemaVersion == 4u);
+static_assert(std::is_trivially_copyable_v<orpheus::RealtimeClockTelemetry>);
+static_assert(std::is_standard_layout_v<orpheus::RealtimeClockTelemetry>);
 
 int main() {
   orpheus::core::SessionGraph graph;
@@ -85,6 +89,28 @@ int main() {
   if (!transport || !transport->getRealtimeTelemetry()) {
     return 5;
   }
-  transport->getRealtimeTelemetry()->setDecimationBlocks(4);
-  return transport->getRealtimeTelemetry()->decimationBlocks() == 4 ? 0 : 6;
+  orpheus::RealtimeTelemetry& transportTelemetry = *transport->getRealtimeTelemetry();
+  transportTelemetry.setDecimationBlocks(1);
+  std::array<float, 64> left{};
+  std::array<float, 64> right{};
+  float* outputs[2] = {left.data(), right.data()};
+  const orpheus::TransportTimeReference reference{960, 5'000'000, true};
+  transport->processAudioWithTimeReference(outputs, 2, left.size(), reference);
+  auto clockStorage = std::make_unique<orpheus::RealtimeTelemetrySnapshot>();
+  auto& clockOutput = *clockStorage;
+  if (!transportTelemetry.tryRead(clockOutput) || clockOutput.schema_version != 4u ||
+      !clockOutput.clock.device_sample_position_valid ||
+      clockOutput.clock.device_sample_position != 960 || !clockOutput.clock.host_time_valid ||
+      clockOutput.clock.host_time_nanoseconds != 5'000'000 ||
+      clockOutput.clock.discontinuity_count != 1 || !clockOutput.clock.discontinuity_in_window ||
+      clockOutput.clock.block_frames != left.size()) {
+    return 10;
+  }
+  transport->processAudio(outputs, 2, left.size());
+  if (!transportTelemetry.tryRead(clockOutput) || clockOutput.clock.device_sample_position_valid ||
+      clockOutput.clock.host_time_valid || clockOutput.clock.discontinuity_count != 1) {
+    return 9;
+  }
+  transportTelemetry.setDecimationBlocks(4);
+  return transportTelemetry.decimationBlocks() == 4 ? 0 : 6;
 }

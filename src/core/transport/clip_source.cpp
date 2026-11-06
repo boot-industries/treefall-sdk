@@ -67,6 +67,52 @@ bool PreparedClipSource::read(int64_t pos, float* dest, size_t frames, size_t& f
 // StreamingClipSource
 // ============================================================================
 
+namespace {
+
+// Budget the steady pages per distinct page-aligned cursor: voices on the same
+// page share one window, and windows rank by first appearance. Audio-side
+// retention (publishVoiceDemands/keepsPage) and the worker refill
+// (serviceVoiceWindow) both derive their windows here from the same published
+// positions, so neither can evict or refill against the other's plan.
+// Realtime-safe: at most Capacity^2 integer compares, no allocation, no locks.
+template <size_t Capacity>
+void computeVoiceWindowPages(const int64_t* positions, size_t count,
+                             std::array<uint8_t, Capacity>& pages) noexcept {
+  static_assert(Capacity <= UINT8_MAX, "window ranks are stored in the plan bytes");
+  constexpr int64_t kPage = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr size_t kBudget = StreamingClipSource::kWindowPages;
+  count = std::min(count, Capacity);
+
+  // First pass: store each voice's window rank in its plan byte.
+  size_t windows = 0;
+  for (size_t voice = 0; voice < count; ++voice) {
+    const int64_t page = std::max<int64_t>(0, positions[voice]) / kPage;
+    size_t rank = windows;
+    for (size_t earlier = 0; earlier < voice; ++earlier) {
+      if (std::max<int64_t>(0, positions[earlier]) / kPage == page) {
+        rank = pages[earlier];
+        break;
+      }
+    }
+    if (rank == windows) {
+      ++windows;
+    }
+    pages[voice] = static_cast<uint8_t>(rank);
+  }
+  if (windows == 0) {
+    return;
+  }
+
+  // Second pass: replace each rank with its window's share of the budget.
+  const size_t base = kBudget / windows;
+  const size_t remainder = kBudget % windows;
+  for (size_t voice = 0; voice < count; ++voice) {
+    pages[voice] = static_cast<uint8_t>(base + (pages[voice] < remainder ? 1u : 0u));
+  }
+}
+
+} // namespace
+
 StreamingClipSource::StreamingClipSource(std::shared_ptr<IAudioFileReader> reader,
                                          uint16_t numChannels, int64_t lengthFrames)
     : m_reader(std::move(reader)), m_numChannels(numChannels), m_lengthFrames(lengthFrames) {
@@ -188,8 +234,10 @@ void StreamingClipSource::refreshVoicePagePins() noexcept {
 }
 
 void StreamingClipSource::publishVoiceDemands() noexcept {
-  // Keep command-pool pages owned by the live audio-side windows even if the
+  // Derive the window plan from exactly the positions published below, then
+  // keep command-pool pages owned by the live audio-side windows even if the
   // worker is concurrently reading the preceding coherent demand snapshot.
+  computeVoiceWindowPages(m_voiceDemands.data(), m_voiceDemandCount, m_voiceWindowPlan);
   refreshVoicePagePins();
   const uint32_t active = m_activeVoiceDemandBuffer.load(std::memory_order_relaxed);
   uint32_t target = kVoiceDemandBufferCount;
@@ -251,15 +299,6 @@ bool StreamingClipSource::readWorkerVoiceDemands(VoiceDemandSnapshot& snapshot) 
   return false;
 }
 
-size_t StreamingClipSource::voiceWindowPages(size_t count, size_t demandIndex) noexcept {
-  if (count == 0) {
-    return kWindowPages;
-  }
-  const size_t base = kWindowPages / count;
-  const size_t remainder = kWindowPages % count;
-  return base + (demandIndex < remainder ? 1u : 0u);
-}
-
 bool StreamingClipSource::keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept {
   const size_t count = m_voiceDemandCount;
   const auto keepsPosition = [=](int64_t position, size_t pages) {
@@ -277,7 +316,7 @@ bool StreamingClipSource::keepsPage(int64_t pageStart, int64_t fallbackPosition)
     return keepsPosition(fallbackPosition, kWindowPages);
   }
   for (size_t voice = 0; voice < count; ++voice) {
-    if (keepsPosition(m_voiceDemands[voice], voiceWindowPages(count, voice))) {
+    if (keepsPosition(m_voiceDemands[voice], m_voiceWindowPlan[voice])) {
       return true;
     }
   }
@@ -878,9 +917,18 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
     return;
   }
   const size_t count = snapshot.count;
-  const size_t maxPagesPerVoice = voiceWindowPages(count, 0);
-  const size_t maxBehind = maxPagesPerVoice >= 3 ? 1 : 0;
-  const size_t maxForward = maxPagesPerVoice - maxBehind - 1;
+  std::array<uint8_t, kMaxVoiceDemands> plan{};
+  computeVoiceWindowPages(snapshot.positions.data(), count, plan);
+  size_t maxBehind = 0;
+  size_t maxForward = 0;
+  for (size_t voice = 0; voice < count; ++voice) {
+    const size_t voicePages = plan[voice];
+    const size_t behind = voicePages >= 3 ? 1 : 0;
+    maxBehind = std::max(maxBehind, behind);
+    if (voicePages > behind) {
+      maxForward = std::max(maxForward, voicePages - behind - 1);
+    }
+  }
   const size_t firstVoice = m_voiceDemandServiceCursor % count;
   const size_t attemptLimit = std::min(pageOpportunities, kWindowPages);
   size_t attempts = 0;
@@ -913,7 +961,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
   // rotate the first voice so a full steady ring cannot starve later cursors.
   for (size_t offset = 0; offset < count && attempts < attemptLimit; ++offset) {
     const size_t voice = (firstVoice + offset) % count;
-    if (voiceWindowPages(count, voice) == 0) {
+    if (plan[voice] == 0) {
       continue;
     }
     const int64_t base = alignDown(std::max<int64_t>(0, snapshot.positions[voice]));
@@ -924,7 +972,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
   for (size_t ahead = 1; ahead <= maxForward && attempts < attemptLimit; ++ahead) {
     for (size_t offset = 0; offset < count && attempts < attemptLimit; ++offset) {
       const size_t voice = (firstVoice + offset) % count;
-      const size_t voicePages = voiceWindowPages(count, voice);
+      const size_t voicePages = plan[voice];
       const size_t behind = voicePages >= 3 ? 1 : 0;
       if (voicePages <= ahead + behind) {
         continue;
@@ -938,7 +986,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
   if (maxBehind != 0 && attempts < attemptLimit) {
     for (size_t offset = 0; offset < count && attempts < attemptLimit; ++offset) {
       const size_t voice = (firstVoice + offset) % count;
-      if (voiceWindowPages(count, voice) < 3) {
+      if (plan[voice] < 3) {
         continue;
       }
       const int64_t base = alignDown(std::max<int64_t>(0, snapshot.positions[voice]));

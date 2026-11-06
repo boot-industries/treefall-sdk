@@ -10,6 +10,7 @@
 
 #include "../support/fnv1a64.hpp"
 #include "../support/synth.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -49,7 +50,7 @@ protected:
     if (!m_writer) {
       GTEST_SKIP() << "libsndfile not available - writer disabled";
     }
-    m_tempDir = std::filesystem::temp_directory_path() / "orp134_writer";
+    m_tempDir = orpheus::tests::support::UniqueTempPath("orp134_writer");
     std::filesystem::create_directories(m_tempDir);
     m_signal = makeStereoTestSignal(kFrames);
   }

@@ -68,6 +68,11 @@ RoutingMatrix::~RoutingMatrix() {
 // ============================================================================
 
 SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
+  // The transport sized this matrix to its voice lanes and renders through it;
+  // reconfiguring it underneath the transport is not permitted.
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   // Validate fixed-capacity realtime bounds.
   if (config.num_channels == 0 || config.num_channels > 256 || config.num_groups == 0 ||
       config.num_groups > 32 || config.num_outputs == 0 ||
@@ -169,12 +174,62 @@ void RoutingMatrix::publishChannelRoute(ChannelState& channel, RoutingGroupIndex
   endChannelRouteWrite();
 }
 
+SessionGraphError
+RoutingMatrix::setTransportChannelRoute(RoutingChannelIndex channel_index,
+                                        RoutingGroupIndex group_index,
+                                        RoutingOutputIndex output_index) noexcept {
+  if (!m_initialized.load(std::memory_order_acquire)) {
+    return SessionGraphError::NotInitialized;
+  }
+  if (channel_index >= m_channels.size() ||
+      (group_index != UNASSIGNED_GROUP && group_index >= m_groups.size())) {
+    return SessionGraphError::InvalidParameter;
+  }
+  const auto& config = m_config_buffers[m_active_config_idx.load(std::memory_order_acquire)];
+  if (output_index >= config.num_outputs) {
+    return SessionGraphError::InvalidParameter;
+  }
+
+  // Single writer: every public channel-route writer rejects a transport-owned
+  // matrix, so the writer exclusion is never contended and is not taken here.
+  // The odd/even sequence still brackets the store for publication readers.
+  m_channel_route_publication_sequence.fetch_add(1, std::memory_order_acq_rel);
+  m_channels[channel_index].packed_route.store(detail::packRoutingRoute(group_index, output_index),
+                                               std::memory_order_release);
+  detail::publishSaturatingIncrement(m_channel_route_generation);
+  m_channel_route_publication_sequence.fetch_add(1, std::memory_order_release);
+  return SessionGraphError::OK;
+}
+
+void RoutingMatrix::claimChannelRoutesForTransport() noexcept {
+  m_channel_routes_transport_owned = true;
+}
+
+uint16_t RoutingMatrix::groupOutputWidth(RoutingGroupIndex group_index) const noexcept {
+  if (group_index >= m_groups.size()) {
+    return 0;
+  }
+  return m_groups[group_index].output_width.load(std::memory_order_acquire);
+}
+
+void RoutingMatrix::applyChannelControls(RoutingChannelIndex channel_index,
+                                         const ChannelConfig& normalized) {
+  auto& channel = m_channels[channel_index];
+  channel.gain_smoother->setTarget(dbToLinear(normalized.gain_db));
+  updatePanLaw(channel_index, normalized.pan);
+  channel.mute.store(normalized.mute, std::memory_order_release);
+  channel.solo.store(normalized.solo, std::memory_order_release);
+}
+
 // ============================================================================
 // Channel Configuration
 // ============================================================================
 
 SessionGraphError RoutingMatrix::setChannelGroup(RoutingChannelIndex channel_index,
                                                  RoutingGroupIndex group_index) {
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
@@ -201,6 +256,9 @@ SessionGraphError RoutingMatrix::setChannelGroup(RoutingChannelIndex channel_ind
 SessionGraphError RoutingMatrix::setChannelRoute(RoutingChannelIndex channel_index,
                                                  RoutingGroupIndex group_index,
                                                  RoutingOutputIndex output_index) {
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
@@ -240,6 +298,9 @@ SessionGraphError RoutingMatrix::setChannelGain(RoutingChannelIndex channel_inde
 }
 
 SessionGraphError RoutingMatrix::setChannelPan(RoutingChannelIndex channel_index, float pan) {
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
@@ -290,6 +351,9 @@ SessionGraphError RoutingMatrix::setChannelSolo(RoutingChannelIndex channel_inde
 
 SessionGraphError RoutingMatrix::configureChannel(RoutingChannelIndex channel_index,
                                                   const ChannelConfig& config) {
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
@@ -304,10 +368,7 @@ SessionGraphError RoutingMatrix::configureChannel(RoutingChannelIndex channel_in
   channel.config = normalized;
   publishChannelRoute(channel, normalized.group_index, normalized.output_channel);
 
-  channel.gain_smoother->setTarget(dbToLinear(normalized.gain_db));
-  updatePanLaw(channel_index, normalized.pan);
-  channel.mute.store(normalized.mute, std::memory_order_release);
-  channel.solo.store(normalized.solo, std::memory_order_release);
+  applyChannelControls(channel_index, normalized);
   updateSoloState();
 
   if (m_callback) {
@@ -570,8 +631,15 @@ bool RoutingMatrix::validateRoutingSnapshot(const RoutingSnapshot& snapshot) con
     }
   }
   for (const auto& channel : snapshot.channels) {
-    if (!std::isfinite(channel.gain_db) || !std::isfinite(channel.pan) ||
-        channel.output_channel >= routingConfig.num_outputs) {
+    if (!std::isfinite(channel.gain_db) || !std::isfinite(channel.pan)) {
+      return false;
+    }
+    // A transport-owned matrix ignores snapshot channel routes, so they need
+    // not fit its current group geometry.
+    if (m_channel_routes_transport_owned) {
+      continue;
+    }
+    if (channel.output_channel >= routingConfig.num_outputs) {
       return false;
     }
     if (channel.group_index != UNASSIGNED_GROUP &&
@@ -862,25 +930,32 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     m_groups[index].config = std::move(normalizedGroup);
   }
 
-  beginChannelRouteWrite();
-
+  // The transport is the only writer of its matrix's channel routes and lane
+  // pans; a transport-owned matrix restores every other channel control.
+  const bool restoreRoutes = !m_channel_routes_transport_owned;
+  if (restoreRoutes) {
+    beginChannelRouteWrite();
+  }
   for (size_t i = 0; i < snapshot.channels.size(); ++i) {
     ChannelConfig normalizedChannel = snapshot.channels[i];
     normalizedChannel.gain_db = std::clamp(normalizedChannel.gain_db, -100.0f, 12.0f);
     normalizedChannel.pan = std::clamp(normalizedChannel.pan, -1.0f, 1.0f);
     auto& channel = m_channels[i];
+    if (!restoreRoutes) {
+      normalizedChannel.pan = channel.config.pan;
+    }
     channel.config = normalizedChannel;
-    channel.packed_route.store(
-        detail::packRoutingRoute(normalizedChannel.group_index, normalizedChannel.output_channel),
-        std::memory_order_release);
-
-    channel.gain_smoother->setTarget(dbToLinear(normalizedChannel.gain_db));
-    updatePanLaw(static_cast<RoutingChannelIndex>(i), normalizedChannel.pan);
-    channel.mute.store(normalizedChannel.mute, std::memory_order_release);
-    channel.solo.store(normalizedChannel.solo, std::memory_order_release);
+    if (restoreRoutes) {
+      channel.packed_route.store(
+          detail::packRoutingRoute(normalizedChannel.group_index, normalizedChannel.output_channel),
+          std::memory_order_release);
+    }
+    applyChannelControls(static_cast<RoutingChannelIndex>(i), normalizedChannel);
   }
-  detail::publishSaturatingIncrement(m_channel_route_generation);
-  endChannelRouteWrite();
+  if (restoreRoutes) {
+    detail::publishSaturatingIncrement(m_channel_route_generation);
+    endChannelRouteWrite();
+  }
 
   updateSoloState();
   m_master_gain_smoother->setTarget(
@@ -894,10 +969,24 @@ SessionGraphError RoutingMatrix::reset() {
     return SessionGraphError::NotInitialized;
   }
 
-  // Reset all channels to default
+  // Reset all channels to default. A transport-owned matrix keeps the routes
+  // and lane pans its transport installed and resets the other controls.
   for (size_t i = 0; i < m_channels.size(); ++i) {
+    const auto index = static_cast<RoutingChannelIndex>(i);
     ChannelConfig default_config;
-    configureChannel(static_cast<RoutingChannelIndex>(i), default_config);
+    if (!m_channel_routes_transport_owned) {
+      configureChannel(index, default_config);
+      continue;
+    }
+    default_config.pan = m_channels[i].config.pan;
+    m_channels[i].config = default_config;
+    applyChannelControls(index, default_config);
+    if (m_callback) {
+      m_callback->onChannelGainChanged(index, default_config.gain_db);
+    }
+  }
+  if (m_channel_routes_transport_owned) {
+    updateSoloState();
   }
 
   // Reset all groups in one validated transaction.

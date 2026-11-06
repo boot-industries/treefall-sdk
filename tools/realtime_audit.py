@@ -348,10 +348,17 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
         TargetRow("Transport command release helper", _TRANSPORT, "TransportController", ("releaseCommandNode",)),
         TargetRow("Transport render path", _TRANSPORT, "TransportController", ("processAudio",)),
         TargetRow(
+            "Transport timed render path",
+            _TRANSPORT,
+            "TransportController",
+            ("processAudioWithTimeReference",),
+        ),
+        TargetRow(
             "Transport consumer helper {name}",
             _TRANSPORT,
             "TransportController",
             (
+                "consumeTimeReference",
                 "releasePendingStartReservations",
                 "releasePendingSeekReservations",
                 "publishStartSettlement",
@@ -432,9 +439,14 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "addVoiceDemand",
                 "refreshVoicePagePins",
                 "publishVoiceDemands",
-                "voiceWindowPages",
                 "keepsPage",
             ),
+        ),
+        TargetRow(
+            "Streaming callback free helper {name}",
+            _CLIP_SOURCE,
+            None,
+            ("computeVoiceWindowPages",),
         ),
         TargetRow("Clip source callback read {owner}::{name}", _CLIP_SOURCE, "PreparedClipSource", ("read",)),
         TargetRow(
@@ -476,6 +488,8 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "dbToLinear",
                 "activeChannelCount",
                 "getHeadroomCompensation",
+                "setTransportChannelRoute",
+                "groupOutputWidth",
                 ("fillRamp", r"\bvoid\s+fillRamp\s*\("),
             ),
         ),

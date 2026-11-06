@@ -2,6 +2,7 @@
 // ORP168: rendered first-block streaming seek and command-prime transactions.
 
 #include "../support/rt_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include "audio_io/resampling_audio_file_reader.h"
 #include "transport/transport_controller.h"
@@ -515,7 +516,7 @@ private:
 class StreamingSeekMatrixTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
-    s_directory = std::filesystem::temp_directory_path() / "orp168_streaming_seek";
+    s_directory = orpheus::tests::support::UniqueTempPath("orp168_streaming_seek");
     std::filesystem::create_directories(s_directory);
   }
 
@@ -1868,6 +1869,121 @@ TEST(StreamingClipSourceDemandTest, SixCurrentPageCapacityReportsMissAndRecovers
   EXPECT_EQ(framesRead, samples.size());
   EXPECT_FLOAT_EQ(samples.front(), static_cast<float>(recoveryPosition));
   EXPECT_FLOAT_EQ(samples.back(), static_cast<float>(recoveryPosition + samples.size() - 1));
+}
+
+TEST(StreamingClipSourceDemandTest, CoLocatedVoicesShareOneWindowWithLookahead) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(16 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 16 * page);
+  constexpr size_t kVoices = 8;
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  for (size_t voice = 0; voice < kVoices; ++voice) {
+    positions[voice] = page + 16 + static_cast<int64_t>(voice) * 64;
+  }
+  StreamingClipSourceTestAccess::publishDemands(source, positions, kVoices);
+  source.service();
+
+  // Eight voices on one page are one cursor: the whole steady budget forms a
+  // single behind/current/four-forward window, and the audio-side reads keep it.
+  std::array<float, 16> samples{};
+  size_t framesRead = 0;
+  for (size_t voice = 0; voice < kVoices; ++voice) {
+    ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(
+        source, voice, positions[voice], samples.data(), samples.size(), framesRead));
+    ASSERT_EQ(framesRead, samples.size());
+    EXPECT_FLOAT_EQ(samples[0], static_cast<float>(positions[voice]));
+  }
+  EXPECT_NE(StreamingClipSourceTestAccess::residentPageIndex(source, 0),
+            StreamingClipSource::kNumPages)
+      << "missing behind page";
+  for (int64_t ahead = 1; ahead <= 4; ++ahead) {
+    EXPECT_NE(StreamingClipSourceTestAccess::residentPageIndex(source, (1 + ahead) * page),
+              StreamingClipSource::kNumPages)
+        << "missing look-ahead page " << ahead;
+  }
+}
+
+TEST(StreamingClipSourceDemandTest, CoLocatedVoicesCrossPageBoundaryWithoutMiss) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr size_t kBlockFrames = 512;
+  // Three page crossings at one worker service per audio block.
+  const size_t blocks = static_cast<size_t>(3 * page) / kBlockFrames + 8;
+  for (const size_t voices : {size_t{6}, size_t{8}, size_t{32}}) {
+    SCOPED_TRACE(::testing::Message() << "voices=" << voices);
+    ASSERT_LE(voices, kVoiceDemandTestCapacity);
+    auto reader = std::make_shared<FaultReader>(16 * page);
+    ASSERT_TRUE(reader->open("").isOk());
+    StreamingClipSource source(reader, 1, 16 * page);
+    std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+    for (size_t voice = 0; voice < voices; ++voice) {
+      positions[voice] = page + 16 + static_cast<int64_t>(voice) * 64;
+    }
+    StreamingClipSourceTestAccess::publishDemands(source, positions, voices);
+    source.service();
+
+    std::vector<float> samples(kBlockFrames);
+    size_t failedReads = 0;
+    size_t wrongReads = 0;
+    for (size_t block = 0; block < blocks; ++block) {
+      StreamingClipSourceTestAccess::publishDemands(source, positions, voices);
+      for (size_t voice = 0; voice < voices; ++voice) {
+        size_t framesRead = 0;
+        const bool hit = StreamingClipSourceTestAccess::readForVoice(
+            source, voice, positions[voice], samples.data(), kBlockFrames, framesRead);
+        const int64_t last = positions[voice] + static_cast<int64_t>(kBlockFrames) - 1;
+        if (!hit) {
+          ++failedReads;
+        } else if (framesRead != kBlockFrames ||
+                   samples.front() != static_cast<float>(positions[voice]) ||
+                   samples.back() != static_cast<float>(last)) {
+          ++wrongReads;
+        }
+        positions[voice] += static_cast<int64_t>(kBlockFrames);
+      }
+      source.service();
+    }
+    EXPECT_GE(positions[voices - 1], 4 * page);
+    EXPECT_EQ(failedReads, 0u);
+    EXPECT_EQ(wrongReads, 0u);
+  }
+}
+
+TEST(StreamingClipSourceDemandTest, GroupedVoicesSplitBudgetPerDistinctCursor) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(16 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 16 * page);
+  constexpr size_t kVoices = 8;
+  std::array<int64_t, kVoiceDemandTestCapacity> positions{};
+  // Interleave four voices on page 2 with four voices on page 10.
+  for (size_t voice = 0; voice < kVoices; ++voice) {
+    const int64_t groupPage = voice % 2 == 0 ? 2 * page : 10 * page;
+    positions[voice] = groupPage + 16 + static_cast<int64_t>(voice) * 64;
+  }
+  StreamingClipSourceTestAccess::publishDemands(source, positions, kVoices);
+  source.service();
+
+  std::array<float, 16> samples{};
+  size_t framesRead = 0;
+  for (size_t voice = 0; voice < kVoices; ++voice) {
+    ASSERT_TRUE(StreamingClipSourceTestAccess::readForVoice(
+        source, voice, positions[voice], samples.data(), samples.size(), framesRead));
+    ASSERT_EQ(framesRead, samples.size());
+  }
+  source.service();
+
+  // Two distinct cursors split six steady pages into two three-page windows.
+  for (const int64_t start : {page, 2 * page, 3 * page, 9 * page, 10 * page, 11 * page}) {
+    EXPECT_NE(StreamingClipSourceTestAccess::residentPageIndex(source, start),
+              StreamingClipSource::kNumPages)
+        << "missing grouped voice window page " << start;
+  }
+  for (const int64_t start : {4 * page, 12 * page}) {
+    EXPECT_EQ(StreamingClipSourceTestAccess::residentPageIndex(source, start),
+              StreamingClipSource::kNumPages)
+        << "grouped window exceeded its three-page share at " << start;
+  }
 }
 
 TEST(StreamingClipSourceDemandTest, TransientReadPinExcludesRetirementAndReuse) {

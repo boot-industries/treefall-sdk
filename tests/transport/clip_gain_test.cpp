@@ -3,6 +3,7 @@
 
 #include "../../src/core/common/pinned_math.h"
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -25,7 +26,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
-    m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_gain.wav").string();
+    m_testFilePath = orpheus::tests::support::UniqueTempPath("test_clip_gain", ".wav").string();
     // Create test audio file with known samples for verification
     createTestAudioFile();
   }

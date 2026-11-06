@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include "../support/unique_temp_dir.hpp"
+
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -179,7 +181,8 @@ TEST(ReverseReadBaseTest, ReversePlaybackDescendsWhenWalkedBackward) {
 namespace {
 // Write a mono 48k WAV ramp (value == frame index) and return its path.
 std::string writeRampWav(int64_t frames) {
-  std::string path = std::string(::testing::TempDir()) + "orpheus_reverse_read_ramp.wav";
+  std::string path =
+      orpheus::tests::support::UniqueTempPath("orpheus_reverse_read_ramp", ".wav").string();
   SF_INFO info;
   info.samplerate = 48000;
   info.channels = 1;

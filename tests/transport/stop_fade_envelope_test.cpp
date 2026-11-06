@@ -10,6 +10,7 @@
 // constant plateaus (which a per-buffer staircase would produce).
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -70,7 +71,7 @@ class StopFadeEnvelopeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-    m_path = (std::filesystem::temp_directory_path() / "orp127_stop_fade.wav").string();
+    m_path = orpheus::tests::support::UniqueTempPath("orp127_stop_fade", ".wav").string();
     writeConstantWav(m_path, 2.0f, kSampleRate);
   }
 

@@ -3,6 +3,7 @@
 
 #include "orpheus/adapters/reaper/entry.h"
 
+#include "support/unique_temp_dir.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -30,7 +31,7 @@ TEST(ReaperAdapterIntegration, ImportsMarkerSetsAndPlaylistLanes) {
 
   const std::string json = session_json::SerializeSession(graph);
   const std::filesystem::path temp_path =
-      std::filesystem::temp_directory_path() / "orpheus_reaper_adapter.json";
+      orpheus::tests::support::UniqueTempPath("orpheus_reaper_adapter", ".json");
   {
     std::ofstream file(temp_path);
     ASSERT_TRUE(file.is_open());

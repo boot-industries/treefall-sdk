@@ -29,6 +29,7 @@
 #include "../../src/core/transport/transport_controller.h"
 #include "../support/fnv1a64.hpp"
 #include "../support/synth.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -109,7 +110,7 @@ std::vector<float> interleaveStereo(const std::vector<float>& left,
 class TransportRenderHashTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_tempDir = std::filesystem::temp_directory_path() / "orp136_render_hash";
+    m_tempDir = orpheus::tests::support::UniqueTempPath("orp136_render_hash");
     std::filesystem::create_directories(m_tempDir);
 
     // Fixture 1: stereo dual sine, 1.5s — plays to natural EOF inside the
@@ -140,8 +141,10 @@ protected:
 
   // Build the standard scenario on a fresh controller and render the whole
   // window at the given block size, returning the FNV-1a hash of every
-  // output sample (L bytes then R bytes, buffer by buffer).
-  uint64_t renderScenarioHash(size_t blockFrames) {
+  // output sample (L bytes then R bytes, buffer by buffer). withTimeReference
+  // renders through the timed entry point with a device timeline that breaks
+  // on the first and a middle block.
+  uint64_t renderScenarioHash(size_t blockFrames, bool withTimeReference = false) {
     EXPECT_EQ(kTotalFrames % blockFrames, 0u) << "block size must divide the render window";
 
     auto transport = std::make_unique<TransportController>(
@@ -189,7 +192,15 @@ protected:
 
     const size_t numBuffers = kTotalFrames / blockFrames;
     for (size_t i = 0; i < numBuffers; ++i) {
-      transport->processAudio(buffers, 2, blockFrames);
+      if (withTimeReference) {
+        const uint64_t position = 1 + i * blockFrames;
+        const bool discontinuity = i == 0 || i == numBuffers / 2;
+        const uint64_t hostTime = 1'000'000 + position * 20'833;
+        const TransportTimeReference reference{position, hostTime, discontinuity};
+        transport->processAudioWithTimeReference(buffers, 2, blockFrames, reference);
+      } else {
+        transport->processAudio(buffers, 2, blockFrames);
+      }
       streamL.insert(streamL.end(), left.begin(), left.end());
       streamR.insert(streamR.end(), right.begin(), right.end());
     }
@@ -239,6 +250,12 @@ TEST_F(TransportRenderHashTest, HashIsReproducibleAcrossRuns) {
   const uint64_t second = renderScenarioHash(512);
   EXPECT_EQ(first, second) << "same input, same block size, different output — "
                               "the render path is nondeterministic";
+}
+
+TEST_F(TransportRenderHashTest, TimedEntryPointRendersIdenticalAudio) {
+  for (size_t blockFrames : kBlockSizes) {
+    EXPECT_EQ(renderScenarioHash(blockFrames, true), kGoldenRenderHash) << blockFrames;
+  }
 }
 
 int main(int argc, char** argv) {

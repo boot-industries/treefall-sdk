@@ -100,6 +100,32 @@ worktrees may still be named `orpheus-sdk`, while the clone command above
 creates `treefall-sdk`. The root CMake project remains
 `project(orpheus VERSION ...)` for compatibility.
 
+### C ABI 1.x compatibility contract and known limitation
+
+The three C ABI function tables, `orpheus_session_api_v1`,
+`orpheus_clipgrid_api_v1` and `orpheus_render_api_v1` (also spelled
+`treefall_*_api_v1`), follow this contract for every ABI 1.x release:
+
+- Tables are append-only within 1.x. Existing members never move, change type
+  or disappear; a later minor version may add members only at the end of a
+  table.
+- Each `*_abi_v1(want_major, &got_major, &got_minor)` entry point returns its
+  table only when `want_major` matches the library's major version, and
+  otherwise returns null. It always reports the library's own major and minor
+  through `got_major` and `got_minor`.
+- Consumers must not assume a table is larger than the version they
+  negotiated. Use a member added in minor version N only when `got_minor` is at
+  least N.
+
+**Known limitation:** ABI 1.x has no size handshake. The tables carry no size
+field or reserved tail, and each table's leading `caps` member is a capability
+bitmask, not a size. A consumer built against a newer header and linked to an
+older library therefore cannot detect an extension from the table itself; the
+negotiated `got_minor` is the only safeguard. The append-only rule is enforced
+by review, not by the table layout. Adding a size field would change the 1.x
+layout, so a sized handshake will be introduced only with the next major
+version, ABI 2.0, together with migration guidance.
+
 ## Lightweight Integration Targets
 
 For downstream integrations that only need diagnostics or audio utilities, link the
@@ -297,14 +323,16 @@ transport->updateClipMetadata(handle, metadata);
 ```
 
 Streaming clips share one decoder across their voices. The source keeps six
-steady pages and four separate command-prime pages; a Stop/refire overlap with
-two independent cursors receives three steady pages per cursor (behind, current,
+steady pages and four separate command-prime pages. Steady pages are budgeted
+per distinct page-aligned cursor: voices on the same page share one window
+(behind, current and four forward pages), and a Stop/refire overlap with two
+independent cursors receives three steady pages per cursor (behind, current,
 and forward). Audio reads retain transient pins, while the worker consumes a
 coherent bounded cursor snapshot and refills current pages before look-ahead.
 First-render primes and loop anchors retain independent ownership.
 
-This fixed cache is not an arbitrary-polyphony guarantee. More cursor demands
-reduce their windows; demands beyond the six steady-page budget can miss.
+This fixed cache is not an arbitrary-polyphony guarantee. More distinct cursors
+reduce their windows; cursors beyond the six steady-page budget can miss.
 Unavailable command-prime capacity returns `NotReady`; a render cache miss
 remains observable silence plus an underrun, never synchronous decoding.
 Rebuild consumers with matching SDK headers/libraries when adopting this change:
@@ -420,7 +448,7 @@ The Treefall SDK provides deterministic session/transport control for profession
 1. **Host-neutral Core** – C++20 library works across DAWs, plugins, and standalone apps
 2. **Real-time Safe** – Zero allocations on audio thread, lock-free command processing
 3. **Sample-accurate** – ±0 sample tolerance for transport operations
-4. **Deterministic** – Same input → same output, always (bit-identical)
+4. **Deterministic** – Same input → same output for a given toolchain, libm and floating-point contraction setting. Cross-platform bit identity is established only for the exact scenarios that assert one shared golden on every tested runner (the transport render-hash scenario and the installed-package offline render fixture), each for its own path; resampled, varispeed and other DSP paths that use libm may differ in the last bits between architectures
 
 ## Core Capabilities
 

@@ -39,7 +39,7 @@ The Treefall SDK is built on four non-negotiable principles:
 
 1. **Offline-first** – No runtime network calls for core features. All essential functionality works without internet connectivity.
 
-2. **Deterministic** – Same input produces bit-identical output across platforms and runs. Sample-accurate timing, reproducible renders.
+2. **Deterministic** – Same input produces the same output across runs for a given toolchain, libm and floating-point contraction setting. Sample-accurate timing, reproducible renders. Cross-platform bit identity is established only for the exact scenarios that assert one shared golden on every tested runner (the transport render-hash scenario and the installed-package offline render fixture), each for its own path; resampled, varispeed and other DSP paths that use libm may differ in the last bits between architectures.
 
 3. **Host-neutral** – Core SDK works across REAPER, standalone apps, plugins, embedded systems without host-specific dependencies.
 
@@ -98,6 +98,27 @@ validity/discontinuity/uncertainty, observation sequence and measurement interva
 Device time advances during transport stop; transport may seek, loop or reverse.
 Conversions are valid only within declared segments. Never compare unrelated
 clocks or add output latency without knowing whether the timestamp includes it.
+
+Delivered: `ITransportController::processAudioWithTimeReference()` takes a
+`TransportTimeReference` copied from the callback's `AudioProcessBlock`
+(device sample position, host time, discontinuity; zero means unavailable),
+and the shipped examples forward it. The transport carries the reference on
+the audio thread without allocation or locks and publishes it in
+`RealtimeTelemetrySnapshot::clock` (schema version 4): the final rendered
+block's device position and host time with separate validity flags, its frame
+count, a saturating cumulative discontinuity count that acts as the clock epoch
+across decimated callbacks and dropped snapshots, and a flag for a break since
+the previous enqueued snapshot. Rendered audio is unchanged. The legacy
+`processAudio()` entry point reports the reference unavailable.
+
+Still open: the device and host clocks are only carried, never correlated with
+each other, with `AudioLatencyBreakdown`, or with presentation time. The epoch
+counts backend-reported discontinuities only; route changes, clip seeks and
+loops, and transport segments do not advance it. `TimePoint` still carries no
+rate, origin or epoch. Backend coverage differs: CoreAudio supplies device
+position and host time when the HAL timestamp is valid, the dummy driver
+supplies both, and WASAPI shared mode supplies neither but does report
+discontinuities. ShmUI and child apps must still consume these fields.
 
 ### Atomic observation publication
 
@@ -513,7 +534,7 @@ Comprehensive test suite ensures correctness across platforms.
 #### 2. Integration Tests
 
 - **Multi-Clip Stress Test** (`tests/transport/multi_clip_stress_test.cpp`) – 16 simultaneous clips
-- **Offline Render Test** (`tests/determinism/offline_render_test.cpp`) – Cross-platform determinism
+- **Offline Render Fixture** (`tests/cmake/find_package/offline_render.cpp`) – Portable PCM golden for its own installed-package render path
 
 #### 3. Conformance Tools
 

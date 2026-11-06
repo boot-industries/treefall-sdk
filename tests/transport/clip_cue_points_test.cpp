@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <filesystem>
 #include <fstream>
 #include <orpheus/transport_controller.h>
@@ -21,7 +22,7 @@ protected:
     m_fileDuration = 10 * m_sampleRate; // 10 seconds
 
     // Generate temporary test audio file
-    m_testFilePath = (std::filesystem::temp_directory_path() / "test_cue_points.wav").string();
+    m_testFilePath = orpheus::tests::support::UniqueTempPath("test_cue_points", ".wav").string();
     createTestAudioFile();
 
     auto result = m_transport->registerClipAudio(m_clipHandle, m_testFilePath);

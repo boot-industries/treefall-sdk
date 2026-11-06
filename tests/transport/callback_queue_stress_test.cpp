@@ -7,6 +7,7 @@
 #include "../../src/core/transport/transport_controller.h"
 #include "../support/rt_guard.hpp"
 #include "../support/sanitizer_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 #include <orpheus/audio_file_writer.h>
 
 #include <array>
@@ -583,9 +584,7 @@ TEST_F(CallbackQueueStressTest, EventOrderingPreserved) {
 TEST_F(CallbackQueueStressTest, CacheMissCallbacksRequireControlPump) {
   constexpr ClipHandle kHandle = 71;
   constexpr StartRequestTag kTag = 207;
-  m_mediaDirectory = std::filesystem::temp_directory_path() /
-                     ("orpheus-callback-pump-" +
-                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  m_mediaDirectory = orpheus::tests::support::UniqueTempPath("orpheus-callback-pump");
   std::filesystem::create_directories(m_mediaDirectory);
   const auto path = m_mediaDirectory / "cache-miss.wav";
   auto writer = createAudioFileWriter();
