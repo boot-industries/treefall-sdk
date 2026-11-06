@@ -19,6 +19,13 @@ target_include_directories(polyphase_resampler_test
         ${CMAKE_SOURCE_DIR}/include
 )
 
+# ResamplingAudioFileReader is built only with a libsndfile provider.
+if(NOT ORPHEUS_SNDFILE_PROVIDER_RESOLVED STREQUAL "None")
+    target_sources(polyphase_resampler_test PRIVATE resampling_seek_test.cpp)
+    target_include_directories(polyphase_resampler_test
+        PRIVATE ${CMAKE_SOURCE_DIR}/src/core/audio_io)
+endif()
+
 add_test(NAME polyphase_resampler_test COMMAND polyphase_resampler_test)
 
 add_executable(realtime_borrowed_target_test
