@@ -700,12 +700,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       }
 
       if (!readSucceeded) {
-        TransportEvent event{};
-        event.type = TransportEventType::BufferUnderrun;
-        event.handle = clip.handle;
-        event.voiceId = clip.voiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+        postVoiceEvent(TransportEventType::BufferUnderrun, clip.handle, 0, clip.voiceId,
+                       getCurrentPosition());
         m_realtimeTelemetry.reportUnderrunFromRealtime();
         clip.source->setDemand(readStart);
         framesRead = 0;
@@ -900,13 +896,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         // Publish every retired voice. Hosts that present handle-level state
         // can reconcile against getClipState(); durable consumers need the
         // voice identity even when a freshly fired sibling remains live.
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStopped;
-        event.handle = stoppedHandle;
-        event.requestTag = stoppedRequestTag;
-        event.voiceId = stoppedVoiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+        postVoiceEvent(TransportEventType::ClipStopped, stoppedHandle, stoppedRequestTag,
+                       stoppedVoiceId, getCurrentPosition());
         continue;
       }
 
@@ -996,15 +987,22 @@ PlaybackBoundaryAction TransportController::handlePlaybackBoundary(ActiveClip& c
   }
   clip.hasLoopedOnce = true;
   if (boundary == PlaybackBoundaryAction::Looped) {
-    TransportEvent event{};
-    event.type = TransportEventType::ClipLooped;
-    event.handle = clip.handle;
-    event.requestTag = clip.startRequestTag;
-    event.voiceId = clip.voiceId;
-    event.position = getCurrentPosition();
-    postTransportEvent(event);
+    postVoiceEvent(TransportEventType::ClipLooped, clip.handle, clip.startRequestTag,
+                   clip.voiceId, getCurrentPosition());
   }
   return boundary;
+}
+
+void TransportController::postVoiceEvent(TransportEventType type, ClipHandle handle,
+                                         StartRequestTag requestTag, uint32_t voiceId,
+                                         TransportPosition position) noexcept {
+  TransportEvent event{};
+  event.type = type;
+  event.handle = handle;
+  event.requestTag = requestTag;
+  event.voiceId = voiceId;
+  event.position = position;
+  postTransportEvent(event);
 }
 
 void TransportController::mergeAudioMeter(AudioMeter& accumulated,
@@ -1314,13 +1312,8 @@ void TransportController::processCommands() {
     }
 
     if (voiceId != 0) {
-      TransportEvent event{};
-      event.type = TransportEventType::ClipStarted;
-      event.handle = command.handle;
-      event.requestTag = command.requestTag;
-      event.voiceId = voiceId;
-      event.position = position;
-      postTransportEvent(event);
+      postVoiceEvent(TransportEventType::ClipStarted, command.handle, command.requestTag, voiceId,
+                     position);
     }
     return voiceId;
   };
@@ -1391,13 +1384,8 @@ void TransportController::processCommands() {
         const StartRequestTag stoppedRequestTag = voice.startRequestTag;
         const uint32_t stoppedVoiceId = voice.voiceId;
         removeActiveVoice(stoppedVoiceId);
-        TransportEvent event{};
-        event.type = TransportEventType::ClipStopped;
-        event.handle = stoppedHandle;
-        event.requestTag = stoppedRequestTag;
-        event.voiceId = stoppedVoiceId;
-        event.position = getCurrentPosition();
-        postTransportEvent(event);
+        postVoiceEvent(TransportEventType::ClipStopped, stoppedHandle, stoppedRequestTag,
+                       stoppedVoiceId, getCurrentPosition());
       }
       break;
 
@@ -1498,11 +1486,8 @@ void TransportController::processCommands() {
       }
 
       if (foundAnyVoice) {
-        TransportEvent event{};
-        event.type = TransportEventType::ClipRestarted;
-        event.handle = cmd.handle;
-        event.position = positionAtSamples(startPosition);
-        postTransportEvent(event);
+        postVoiceEvent(TransportEventType::ClipRestarted, cmd.handle, 0, 0,
+                       positionAtSamples(startPosition));
       }
     } break;
 
@@ -1554,11 +1539,8 @@ void TransportController::processCommands() {
         }
       }
 
-      TransportEvent event{};
-      event.type = TransportEventType::ClipSeeked;
-      event.handle = cmd.handle;
-      event.position = positionAtSamples(position);
-      postTransportEvent(event);
+      postVoiceEvent(TransportEventType::ClipSeeked, cmd.handle, 0, 0,
+                     positionAtSamples(position));
     } break;
 
     case TransportCommand::Type::UpdateMetadata:
@@ -1964,12 +1946,8 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   }
 
   if (m_activeClipCount >= m_config.maxActiveVoices && replacementVoiceId == 0) {
-    TransportEvent event{};
-    event.type = TransportEventType::ActiveClipLimitReached;
-    event.handle = handle;
-    event.requestTag = requestTag;
-    event.position = getCurrentPosition();
-    postTransportEvent(event);
+    postVoiceEvent(TransportEventType::ActiveClipLimitReached, handle, requestTag, 0,
+                   getCurrentPosition());
     return false;
   }
 

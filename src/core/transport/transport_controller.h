@@ -494,6 +494,11 @@ private:
   /// Every attempt advances cumulative telemetry before the capacity check.
   void postTransportEvent(const TransportEvent& event) noexcept;
 
+  /// Build and post one voice- or handle-scoped transport event (audio thread
+  /// only). Zero requestTag/voiceId mark events that carry no start identity.
+  void postVoiceEvent(TransportEventType type, ClipHandle handle, StartRequestTag requestTag,
+                      uint32_t voiceId, TransportPosition position) noexcept;
+
   /// Publish callback delivery counters through a coherent atomic seqlock.
   void publishCallbackTelemetry() noexcept;
 
