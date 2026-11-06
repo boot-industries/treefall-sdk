@@ -3,6 +3,7 @@
 
 #include <orpheus/routing_matrix.h>
 
+#include "gain_smoother.h"
 #include "routing_meter_state.h"
 #include "true_peak_meter.h"
 
@@ -13,8 +14,6 @@
 
 namespace orpheus {
 
-// Forward declaration for gain smoother
-class GainSmoother;
 class RoutingMatrixTestAccess;
 
 namespace detail {
@@ -208,6 +207,23 @@ public:
                                    uint32_t num_frames) override;
   uint32_t maxBlockFrames() const override;
 
+  // Transport-owned channel routes (internal; not part of IRoutingMatrix).
+  //
+  // A TransportController claims its matrix once, after configuring it and
+  // before audio starts. From then on the public channel-route writers
+  // (setChannelGroup, setChannelRoute, configureChannel) and initialize()
+  // return SessionGraphError::NotSupported, and loadSnapshot()/reset() leave
+  // channel routes untouched, so no control-thread call ever holds the
+  // channel-route writer exclusion.
+  void claimChannelRoutesForTransport() noexcept;
+
+  /// Publish one channel route from the transport's audio thread. Same
+  /// validation as setChannelRoute(), but no writer exclusion: on a claimed
+  /// matrix this is the only channel-route writer, so it never waits.
+  SessionGraphError setTransportChannelRoute(RoutingChannelIndex channel_index,
+                                             RoutingGroupIndex group_index,
+                                             RoutingOutputIndex output_index) noexcept;
+
 private:
   friend class RoutingMatrixTestAccess;
 
@@ -230,6 +246,7 @@ private:
   void endChannelRouteWrite() noexcept;
   void publishChannelRoute(ChannelState& channel, RoutingGroupIndex group,
                            RoutingOutputIndex lane) noexcept;
+  void applyChannelControls(RoutingChannelIndex channel_index, const ChannelConfig& normalized);
 
   void beginGroupControlWrite() noexcept;
   void endGroupControlWrite() noexcept;
@@ -271,11 +288,15 @@ private:
   // ORP273 F-16: matrix-level meter storage and publication.
   RoutingMeterState m_meter_state;
 
-  // Control-thread generation inputs and audio-thread rendered watermarks.
+  // Channel-route generation inputs and audio-thread rendered watermarks.
   // One seqlock publication covers a complete channel-route transaction.
-  // Control writers serialize; the audio thread only observes and never waits.
+  // Control writers of a standalone matrix serialize on the in-progress flag;
+  // on a transport-owned matrix the audio thread is the only writer and takes
+  // no exclusion, and processRouting() only observes and never waits.
   std::atomic<uint64_t> m_channel_route_publication_sequence{0};
   std::atomic<bool> m_channel_route_publication_in_progress{false};
+  // Set once by claimChannelRoutesForTransport() before the matrix is shared.
+  bool m_channel_routes_transport_owned{false};
 
   std::atomic<uint64_t> m_channel_route_generation{0};
   std::atomic<uint64_t> m_group_geometry_generation{0};

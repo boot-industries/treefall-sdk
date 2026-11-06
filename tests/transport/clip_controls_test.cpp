@@ -365,9 +365,13 @@ TEST_F(ClipAudioControlsTest, InactiveLaneStaysSilentAfterHostRouteEdit) {
 
   ASSERT_EQ(transport->panic(), SessionGraphError::OK);
   render(left, right);
+  // The transport owns its channel routes: every public channel-route writer
+  // is rejected, so the inactive lane cannot be routed back into the mix.
   auto* routing = transport->getRoutingMatrix();
   ASSERT_NE(routing, nullptr);
-  ASSERT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::OK);
+  EXPECT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::NotSupported);
+  EXPECT_EQ(routing->setChannelGroup(0, 0), SessionGraphError::NotSupported);
+  EXPECT_EQ(routing->configureChannel(0, ChannelConfig{}), SessionGraphError::NotSupported);
   render(left, right);
 
   for (float sample : left) {

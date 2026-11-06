@@ -1404,8 +1404,8 @@ void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupI
     const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
     const auto output =
         activeLane ? static_cast<RoutingOutputIndex>(lane) : static_cast<RoutingOutputIndex>(0);
-    (void)m_routingMatrix->setChannelRoute(static_cast<RoutingChannelIndex>(laneBase + lane),
-                                           routeGroup, output);
+    (void)m_routingMatrix->setTransportChannelRoute(
+        static_cast<RoutingChannelIndex>(laneBase + lane), routeGroup, output);
   }
 }
 

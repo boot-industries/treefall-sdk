@@ -176,6 +176,26 @@ int main() {
     return 4;
   }
 
+  // A standalone matrix stays fully writable; a transport's matrix rejects
+  // channel-route edits (the transport owns its voice lanes) and accepts
+  // group-level routing.
+  if (routing->setChannelRoute(0, 0, 1) != orpheus::SessionGraphError::OK) {
+    return 14;
+  }
+  orpheus::IRoutingMatrix* transportRouting = transport->getRoutingMatrix();
+  if (transportRouting == nullptr ||
+      transportRouting->setChannelRoute(0, 0, 1) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->setChannelGroup(0, 0) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->configureChannel(0, orpheus::ChannelConfig{}) !=
+          orpheus::SessionGraphError::NotSupported) {
+    return 15;
+  }
+  if (transportRouting->setGroupGain(0, -3.0f) != orpheus::SessionGraphError::OK ||
+      transportRouting->setGroupOutputRoute(0, 0, 2) != orpheus::SessionGraphError::OK ||
+      transportRouting->getRoutingControlSnapshot().groups[0].gain_db != -3.0f) {
+    return 16;
+  }
+
   const auto wav = writeFixtureWav();
   orpheus::ClipMetadata initialMetadata;
   initialMetadata.trimInSamples = 8;

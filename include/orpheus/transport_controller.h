@@ -563,6 +563,14 @@ public:
   /// Thread-safety: the pointer itself is stable; IRoutingMatrix defines its own
   /// per-method threading contract (UI-thread config, any-thread lock-free
   /// reads). See routing_matrix.h.
+  ///
+  /// Ownership: the transport assigns every voice lane's channel route from its
+  /// audio thread and is their only writer, so its render path never waits on
+  /// a host edit. On this matrix setChannelRoute(), setChannelGroup(),
+  /// configureChannel() and initialize() return SessionGraphError::NotSupported,
+  /// and loadSnapshot()/reset() leave channel routes untouched. Route transport
+  /// audio with the group-level calls (group gain/mute/solo, configureGroup(),
+  /// setGroupOutputRoute(), applyGroupControlSnapshot()).
   virtual IRoutingMatrix* getRoutingMatrix() const = 0;
 
   /// Register a callback for transport events

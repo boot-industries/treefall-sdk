@@ -20,8 +20,16 @@ namespace orpheus {
 class TransportControllerTestAccess {
 public:
   static void replaceRoutingMatrix(TransportController& controller,
-                                   std::unique_ptr<IRoutingMatrix> replacement) {
+                                   std::unique_ptr<RoutingMatrix> replacement) {
+    replacement->claimChannelRoutesForTransport();
     controller.m_routingMatrix = std::move(replacement);
+  }
+
+  // Publishes a route through the transport's internal writer. Tests call it
+  // between blocks on the thread that drives processAudio().
+  static SessionGraphError routeLane(TransportController& controller, RoutingChannelIndex lane,
+                                     RoutingGroupIndex group, RoutingOutputIndex output) {
+    return controller.m_routingMatrix->setTransportChannelRoute(lane, group, output);
   }
 };
 } // namespace orpheus
@@ -333,7 +341,9 @@ TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange)
 
 // A voice slot exposes all maxSourceChannels lanes to routing, including the
 // lanes beyond the voice's own channel count. Those lanes must read silence,
-// not the last block a wider voice rendered into the same slot.
+// not the last block a wider voice rendered into the same slot. Hosts can no
+// longer route a transport lane, so the test publishes the route through the
+// transport's internal writer to make the lane's content audible.
 TEST_F(MultichannelTransportTest, LaneBeyondVoiceChannelsStaysSilentAfterSlotReuse) {
   TransportConfig config;
   config.sampleRate = kSampleRate;
@@ -386,10 +396,15 @@ TEST_F(MultichannelTransportTest, LaneBeyondVoiceChannelsStaysSilentAfterSlotReu
   ASSERT_EQ(transport->startClip(41), SessionGraphError::OK);
   render();
 
-  // Route lane 5 to output 5 so whatever the lane holds becomes audible.
+  // Hosts may not edit transport-owned channel routes.
   auto* routing = transport->getRoutingMatrix();
   ASSERT_NE(routing, nullptr);
-  ASSERT_EQ(routing->setChannelRoute(5, 0, 5), SessionGraphError::OK);
+  EXPECT_EQ(routing->setChannelRoute(5, 0, 5), SessionGraphError::NotSupported);
+
+  // Route lane 5 to output 5 so whatever the lane holds becomes audible.
+  auto* controller = dynamic_cast<TransportController*>(transport.get());
+  ASSERT_NE(controller, nullptr);
+  ASSERT_EQ(TransportControllerTestAccess::routeLane(*controller, 5, 0, 5), SessionGraphError::OK);
   for (int block = 0; block < 4; ++block) {
     render();
     EXPECT_GT(std::abs(storage[0][kFrames - 1]), 0.01f) << "block " << block;
