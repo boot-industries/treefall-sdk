@@ -625,4 +625,97 @@ TEST_F(ClipAudioControlsTest, DspEnableTakesEffectOnNextBlock) {
   }
 }
 
+// Renders the survivors of a voice-pool compaction and compares them with a
+// run in which the removed voice never existed. Each survivor carries its own
+// gain, pan, rate, loop and trim state, so a field the compaction move drops
+// or mixes up changes the output.
+class TransportCompactionTest : public ::testing::Test {
+protected:
+  static constexpr size_t kBlock = 256;
+
+  void SetUp() override {
+    path = (std::filesystem::temp_directory_path() / "orpheus_transport_compaction.wav").string();
+    auto writer = createAudioFileWriter();
+    ASSERT_NE(writer, nullptr);
+    AudioFileWriterConfig config;
+    config.format = AudioFileFormat::WAV;
+    config.sample_rate = kSampleRate;
+    config.num_channels = 2;
+    config.sample_format = AudioSampleFormat::Float32;
+    ASSERT_EQ(writer->open(path, config), SessionGraphError::OK);
+    std::array<float, kFileFrames * 2> samples{};
+    for (size_t frame = 0; frame < kFileFrames; ++frame) {
+      samples[frame * 2] = static_cast<float>(frame % 97) / 194.0f;
+      samples[frame * 2 + 1] = -static_cast<float>(frame % 61) / 122.0f;
+    }
+    const Result<size_t> written = writer->writeSamples(samples.data(), kFileFrames);
+    ASSERT_TRUE(written.isOk()) << written.errorMessage;
+    ASSERT_EQ(writer->close(), SessionGraphError::OK);
+  }
+
+  void TearDown() override {
+    std::error_code error;
+    std::filesystem::remove(path, error);
+  }
+
+  // Registers handles 1-3 with distinct controls; handle 2 starts muted so it
+  // contributes exact silence while it is live.
+  std::unique_ptr<TransportController> makeTransport() const {
+    auto transport =
+        std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = kSampleRate});
+    for (ClipHandle clip = 1; clip <= 3; ++clip) {
+      EXPECT_EQ(transport->registerClipAudio(clip, path.c_str()), SessionGraphError::OK);
+      auto value = transport->getClipMetadata(clip);
+      EXPECT_TRUE(value.has_value());
+      if (!value) {
+        continue;
+      }
+      value->fadeInSeconds = 0.0;
+      value->fadeOutSeconds = 0.0;
+      value->loopEnabled = clip != 2;
+      value->muted = clip == 2;
+      value->gainDb = clip == 1 ? -3.0f : -9.0f;
+      value->pan = clip == 1 ? 0.25f : -0.5f;
+      value->playbackRate = clip == 3 ? 0.75 : 1.0;
+      value->trimInSamples = clip == 3 ? 100 : 0;
+      EXPECT_EQ(transport->updateClipMetadata(clip, *value), SessionGraphError::OK);
+    }
+    return transport;
+  }
+
+  std::string path;
+};
+
+TEST_F(TransportCompactionTest, RemovingMiddleVoicePreservesSurvivors) {
+  auto compacted = makeTransport();
+  auto reference = makeTransport();
+  ASSERT_EQ(compacted->startClip(1), SessionGraphError::OK);
+  ASSERT_EQ(compacted->startClip(2), SessionGraphError::OK);
+  ASSERT_EQ(compacted->startClip(3), SessionGraphError::OK);
+  ASSERT_EQ(reference->startClip(1), SessionGraphError::OK);
+  ASSERT_EQ(reference->startClip(3), SessionGraphError::OK);
+
+  std::array<float, kBlock> left{};
+  std::array<float, kBlock> right{};
+  std::array<float, kBlock> referenceLeft{};
+  std::array<float, kBlock> referenceRight{};
+  float* outputs[] = {left.data(), right.data()};
+  float* referenceOutputs[] = {referenceLeft.data(), referenceRight.data()};
+  for (int block = 0; block < 24; ++block) {
+    if (block == 3) {
+      // The middle voice fades out over silence, then the last voice is
+      // compacted into its slot.
+      ASSERT_EQ(compacted->stopClip(2), SessionGraphError::OK);
+    }
+    compacted->processAudio(outputs, 2, kBlock);
+    reference->processAudio(referenceOutputs, 2, kBlock);
+    for (size_t frame = 0; frame < kBlock; ++frame) {
+      ASSERT_EQ(left[frame], referenceLeft[frame]) << "block " << block << " frame " << frame;
+      ASSERT_EQ(right[frame], referenceRight[frame]) << "block " << block << " frame " << frame;
+    }
+  }
+  EXPECT_EQ(compacted->getTotalActiveVoiceCount(), 2u);
+  EXPECT_GT(std::abs(left[kBlock - 1]) + std::abs(right[kBlock - 1]), 0.0f);
+}
+
 } // namespace

@@ -159,7 +159,9 @@ struct TransportCommand {
   TransportCommand() noexcept : type(Type::Start), handle(0), data{} {}
 };
 
-/// Active clip state (in audio thread)
+/// Active clip state. Owned and accessed only by the audio thread (control
+/// threads read the published voice snapshot), so every field is plain and
+/// compaction moves a voice with the defaulted move assignment.
 struct ActiveClip {
   ClipHandle handle;
   uint32_t voiceId; // Unique voice instance ID (for multi-voice layering)
@@ -169,33 +171,33 @@ struct ActiveClip {
   int64_t currentSample; // Current position within clip audio
   double sourcePosition; // Fractional source cursor for varispeed interpolation
 
-  // Trim points (atomic for thread safety)
-  std::atomic<int64_t> trimInSamples{0};  // Trim IN point (from metadata)
-  std::atomic<int64_t> trimOutSamples{0}; // Trim OUT point (from metadata)
+  // Trim points
+  int64_t trimInSamples{0};  // Trim IN point (from metadata)
+  int64_t trimOutSamples{0}; // Trim OUT point (from metadata)
 
-  // ORP127 G3: true file length in samples. Non-atomic (set once at start,
-  // audio-thread-read only). Bounds how far past trimOut the OUT-boundary stop
-  // fade may keep reading so the fade renders real audio instead of a hard cut.
+  // ORP127 G3: true file length in samples (set once at start). Bounds how far
+  // past trimOut the OUT-boundary stop fade may keep reading so the fade
+  // renders real audio instead of a hard cut.
   int64_t fileLengthSamples{0};
 
-  // Fade settings (atomic for thread safety)
-  std::atomic<FadeCurve> fadeInCurve{FadeCurve::Linear};
-  std::atomic<FadeCurve> fadeOutCurve{FadeCurve::Linear};
+  // Fade settings
+  FadeCurve fadeInCurve{FadeCurve::Linear};
+  FadeCurve fadeOutCurve{FadeCurve::Linear};
 
   // Cached fade sample counts (computed when fades are updated)
-  std::atomic<int64_t> fadeInSamples{0};
-  std::atomic<int64_t> fadeOutSamples{0};
-  std::atomic<FadeCurve> stopFadeOutCurve{FadeCurve::Linear};
-  std::atomic<int64_t> stopFadeOutSamples{0};
+  int64_t fadeInSamples{0};
+  int64_t fadeOutSamples{0};
+  FadeCurve stopFadeOutCurve{FadeCurve::Linear};
+  int64_t stopFadeOutSamples{0};
   int64_t stopFadeFramesElapsed{0};
 
-  // Gain control (atomic for thread safety)
-  std::atomic<float> gainLinear{1.0f}; // Cached linear gain target (precomputed from gainDb)
-  std::atomic<bool> muted{false};
-  std::atomic<float> panLeftGain{1.0f};
-  std::atomic<float> panRightGain{1.0f};
-  std::atomic<double> playbackRate{1.0};
-  std::atomic<int64_t> playDelayFrames{0};
+  // Gain control
+  float gainLinear{1.0f}; // Linear gain target (precomputed on the control thread)
+  bool muted{false};
+  float panLeftGain{1.0f};
+  float panRightGain{1.0f};
+  double playbackRate{1.0};
+  int64_t playDelayFrames{0};
   int64_t playDelayFramesRemaining{0};
 
   // ORP127 G4: per-voice gain smoothing state (audio-thread only). gainCurrent
@@ -204,8 +206,8 @@ struct ActiveClip {
   float gainCurrent{1.0f};       // Current smoothed linear gain
   float gainRampIncrement{0.0f}; // Linear gain change per sample (0 = snap)
 
-  // Loop mode (atomic for thread safety)
-  std::atomic<bool> loopEnabled{false}; // true = loop indefinitely
+  // Loop mode
+  bool loopEnabled{false}; // true = loop indefinitely
   uint32_t segmentCount{0};
   uint32_t segmentIndex{0};
   uint32_t segmentRepeatsRemaining{0};

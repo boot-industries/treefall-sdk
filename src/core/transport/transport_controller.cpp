@@ -51,17 +51,17 @@ void beginOperatorStop(ActiveClip& clip) noexcept {
   clip.playDelayFramesRemaining = 0;
   clip.stopFadeFramesElapsed =
       wasWaitingForDelay
-          ? std::max<int64_t>(clip.stopFadeOutSamples.load(std::memory_order_relaxed), 0)
+          ? std::max<int64_t>(clip.stopFadeOutSamples, 0)
           : 0;
 }
 
 int64_t playbackWindowStart(const ActiveClip& clip) noexcept {
-  return clip.segmentCount == 0 ? clip.trimInSamples.load(std::memory_order_relaxed)
+  return clip.segmentCount == 0 ? clip.trimInSamples
                                 : clip.segments[clip.segmentIndex].startSample;
 }
 
 int64_t playbackWindowEnd(const ActiveClip& clip) noexcept {
-  return clip.segmentCount == 0 ? clip.trimOutSamples.load(std::memory_order_relaxed)
+  return clip.segmentCount == 0 ? clip.trimOutSamples
                                 : clip.segments[clip.segmentIndex].endSample;
 }
 
@@ -596,18 +596,18 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       continue;
     }
 
-    const int64_t fadeInSampleCount = clip.fadeInSamples.load(std::memory_order_acquire);
-    const int64_t fadeOutSampleCount = clip.fadeOutSamples.load(std::memory_order_acquire);
-    const FadeCurve fadeInCurveType = clip.fadeInCurve.load(std::memory_order_acquire);
-    const FadeCurve fadeOutCurveType = clip.fadeOutCurve.load(std::memory_order_acquire);
-    const int64_t operatorStopFadeSamples = clip.stopFadeOutSamples.load(std::memory_order_acquire);
-    const FadeCurve operatorStopFadeCurve = clip.stopFadeOutCurve.load(std::memory_order_acquire);
-    const bool loopEnabled = clip.loopEnabled.load(std::memory_order_acquire);
-    const double playbackRate = clip.playbackRate.load(std::memory_order_acquire);
-    const bool muted = clip.muted.load(std::memory_order_acquire);
-    const float panLeft = clip.panLeftGain.load(std::memory_order_acquire);
-    const float panRight = clip.panRightGain.load(std::memory_order_acquire);
-    const float clipGainTarget = muted ? 0.0f : clip.gainLinear.load(std::memory_order_acquire);
+    const int64_t fadeInSampleCount = clip.fadeInSamples;
+    const int64_t fadeOutSampleCount = clip.fadeOutSamples;
+    const FadeCurve fadeInCurveType = clip.fadeInCurve;
+    const FadeCurve fadeOutCurveType = clip.fadeOutCurve;
+    const int64_t operatorStopFadeSamples = clip.stopFadeOutSamples;
+    const FadeCurve operatorStopFadeCurve = clip.stopFadeOutCurve;
+    const bool loopEnabled = clip.loopEnabled;
+    const double playbackRate = clip.playbackRate;
+    const bool muted = clip.muted;
+    const float panLeft = clip.panLeftGain;
+    const float panRight = clip.panRightGain;
+    const float clipGainTarget = muted ? 0.0f : clip.gainLinear;
     const size_t numFileChannels = clip.numChannels;
     const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
@@ -854,7 +854,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       clip.playDelayFramesRemaining -= static_cast<int64_t>(delayedFrames);
       activeFrames -= delayedFrames;
     }
-    const double playbackRate = clip.playbackRate.load(std::memory_order_acquire);
+    const double playbackRate = clip.playbackRate;
     clip.sourcePosition += playbackRate * static_cast<double>(activeFrames);
     clip.currentSample = static_cast<int64_t>(std::floor(clip.sourcePosition));
     if (clip.isStopping) {
@@ -879,8 +879,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
     if (clip.isStopping) {
       int64_t stopFadeSamples = clip.isNaturalEnding
-                                    ? clip.fadeOutSamples.load(std::memory_order_acquire)
-                                    : clip.stopFadeOutSamples.load(std::memory_order_acquire);
+                                    ? clip.fadeOutSamples
+                                    : clip.stopFadeOutSamples;
       if (clip.isNaturalEnding && stopFadeSamples == 0) {
         stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
       }
@@ -904,7 +904,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     }
 
     if (clip.currentSample >= playbackWindowEnd(clip)) {
-      (void)handlePlaybackBoundary(clip, clip.loopEnabled.load(std::memory_order_acquire));
+      (void)handlePlaybackBoundary(clip, clip.loopEnabled);
     }
     ++i;
   }
@@ -1399,8 +1399,8 @@ void TransportController::processCommands() {
           int64_t trimIn = cmd.data.trim.in;
           int64_t trimOut = cmd.data.trim.out;
 
-          m_activeClips[i].trimInSamples.store(trimIn, std::memory_order_release);
-          m_activeClips[i].trimOutSamples.store(trimOut, std::memory_order_release);
+          m_activeClips[i].trimInSamples = trimIn;
+          m_activeClips[i].trimOutSamples = trimOut;
 
           // ORP114 Fix: Clamp position to new trim range immediately
           // This prevents fade calculation overflow in processAudio()
@@ -1422,8 +1422,8 @@ void TransportController::processCommands() {
     case TransportCommand::Type::UpdateFade:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
-          m_activeClips[i].fadeInCurve.store(cmd.data.fade.inCurve, std::memory_order_release);
-          m_activeClips[i].fadeOutCurve.store(cmd.data.fade.outCurve, std::memory_order_release);
+          m_activeClips[i].fadeInCurve = cmd.data.fade.inCurve;
+          m_activeClips[i].fadeOutCurve = cmd.data.fade.outCurve;
 
           // Recalculate sample counts (safe to do in audio thread)
           int64_t inSamples =
@@ -1431,13 +1431,12 @@ void TransportController::processCommands() {
           int64_t outSamples =
               static_cast<int64_t>(cmd.data.fade.outSeconds * static_cast<double>(m_sampleRate));
 
-          m_activeClips[i].fadeInSamples.store(inSamples, std::memory_order_release);
-          m_activeClips[i].fadeOutSamples.store(outSamples, std::memory_order_release);
+          m_activeClips[i].fadeInSamples = inSamples;
+          m_activeClips[i].fadeOutSamples = outSamples;
           // Preserve updateClipFades()'s historical meaning for callers that
           // predate the independently configurable operator-stop fields.
-          m_activeClips[i].stopFadeOutCurve.store(cmd.data.fade.outCurve,
-                                                  std::memory_order_release);
-          m_activeClips[i].stopFadeOutSamples.store(outSamples, std::memory_order_release);
+          m_activeClips[i].stopFadeOutCurve = cmd.data.fade.outCurve;
+          m_activeClips[i].stopFadeOutSamples = outSamples;
         }
       }
       break;
@@ -1445,7 +1444,7 @@ void TransportController::processCommands() {
     case TransportCommand::Type::UpdateGain:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
-          m_activeClips[i].gainLinear.store(cmd.data.gain.linear, std::memory_order_release);
+          m_activeClips[i].gainLinear = cmd.data.gain.linear;
         }
       }
       break;
@@ -1453,7 +1452,7 @@ void TransportController::processCommands() {
     case TransportCommand::Type::UpdateLoop:
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
-          m_activeClips[i].loopEnabled.store(cmd.data.booleanValue, std::memory_order_release);
+          m_activeClips[i].loopEnabled = cmd.data.booleanValue;
         }
       }
       break;
@@ -1557,23 +1556,21 @@ void TransportController::processCommands() {
               clip.source->setDemand(startPosition);
             }
           }
-          clip.trimInSamples.store(cmd.data.metadata.trimIn, std::memory_order_release);
-          clip.trimOutSamples.store(cmd.data.metadata.trimOut, std::memory_order_release);
-          clip.fadeInCurve.store(cmd.data.metadata.fadeInCurve, std::memory_order_release);
-          clip.fadeOutCurve.store(cmd.data.metadata.fadeOutCurve, std::memory_order_release);
-          clip.fadeInSamples.store(cmd.data.metadata.fadeInSamples, std::memory_order_release);
-          clip.fadeOutSamples.store(cmd.data.metadata.fadeOutSamples, std::memory_order_release);
-          clip.stopFadeOutSamples.store(cmd.data.metadata.stopFadeOutSamples,
-                                        std::memory_order_release);
-          clip.stopFadeOutCurve.store(cmd.data.metadata.stopFadeOutCurve,
-                                      std::memory_order_release);
-          clip.loopEnabled.store(cmd.data.metadata.loopEnabled, std::memory_order_release);
-          clip.gainLinear.store(cmd.data.metadata.gainLinear, std::memory_order_release);
-          clip.muted.store(cmd.data.metadata.muted, std::memory_order_release);
-          clip.panLeftGain.store(cmd.data.metadata.panLeftGain, std::memory_order_release);
-          clip.panRightGain.store(cmd.data.metadata.panRightGain, std::memory_order_release);
-          clip.playbackRate.store(cmd.data.metadata.playbackRate, std::memory_order_release);
-          clip.playDelayFrames.store(cmd.data.metadata.playDelayFrames, std::memory_order_release);
+          clip.trimInSamples = cmd.data.metadata.trimIn;
+          clip.trimOutSamples = cmd.data.metadata.trimOut;
+          clip.fadeInCurve = cmd.data.metadata.fadeInCurve;
+          clip.fadeOutCurve = cmd.data.metadata.fadeOutCurve;
+          clip.fadeInSamples = cmd.data.metadata.fadeInSamples;
+          clip.fadeOutSamples = cmd.data.metadata.fadeOutSamples;
+          clip.stopFadeOutSamples = cmd.data.metadata.stopFadeOutSamples;
+          clip.stopFadeOutCurve = cmd.data.metadata.stopFadeOutCurve;
+          clip.loopEnabled = cmd.data.metadata.loopEnabled;
+          clip.gainLinear = cmd.data.metadata.gainLinear;
+          clip.muted = cmd.data.metadata.muted;
+          clip.panLeftGain = cmd.data.metadata.panLeftGain;
+          clip.panRightGain = cmd.data.metadata.panRightGain;
+          clip.playbackRate = cmd.data.metadata.playbackRate;
+          clip.playDelayFrames = cmd.data.metadata.playDelayFrames;
           if (clip.playDelayFramesRemaining > 0) {
             clip.playDelayFramesRemaining = cmd.data.metadata.playDelayFrames;
           }
@@ -1748,7 +1745,7 @@ int64_t TransportController::restartVoiceInPlace(ActiveClip& clip) {
   const int64_t startPosition = playbackWindowStart(clip);
   clip.currentSample = startPosition;
   clip.sourcePosition = static_cast<double>(startPosition);
-  clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
+  clip.playDelayFramesRemaining = clip.playDelayFrames;
   clip.isNaturalEnding = false;
   if (clip.source) {
     clip.source->setDemand(startPosition);
@@ -1813,7 +1810,7 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
     const int64_t startPosition = playbackWindowStart(*primary);
     primary->currentSample = startPosition;
     primary->sourcePosition = static_cast<double>(startPosition);
-    primary->playDelayFramesRemaining = primary->playDelayFrames.load(std::memory_order_relaxed);
+    primary->playDelayFramesRemaining = primary->playDelayFrames;
     primary->isNaturalEnding = false;
     if (primary->source)
       primary->source->setDemand(startPosition);
@@ -1896,9 +1893,9 @@ bool TransportController::setVoiceSnapshotFieldsForTesting(uint32_t voiceId, boo
       continue;
     }
     voice.isStopping = stopping;
-    voice.loopEnabled.store(looping, std::memory_order_relaxed);
-    voice.trimInSamples.store(trimIn, std::memory_order_relaxed);
-    voice.trimOutSamples.store(trimOut, std::memory_order_relaxed);
+    voice.loopEnabled = looping;
+    voice.trimInSamples = trimIn;
+    voice.trimOutSamples = trimOut;
     voice.currentSample = currentSample;
     voice.sourcePosition = static_cast<double>(currentSample);
     return true;
@@ -1965,12 +1962,12 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.currentSample = startPosition;
 
   // Initialize trim points
-  clip.trimInSamples.store(context->trimInSamples, std::memory_order_release);
-  clip.trimOutSamples.store(context->trimOutSamples, std::memory_order_release);
+  clip.trimInSamples = context->trimInSamples;
+  clip.trimOutSamples = context->trimOutSamples;
 
   // Initialize fade settings
-  clip.fadeInCurve.store(context->fadeInCurve, std::memory_order_release);
-  clip.fadeOutCurve.store(context->fadeOutCurve, std::memory_order_release);
+  clip.fadeInCurve = context->fadeInCurve;
+  clip.fadeOutCurve = context->fadeOutCurve;
 
   // Calculate and store fade sample counts.
   const int64_t fadeInSampleCount =
@@ -1979,25 +1976,25 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
       static_cast<int64_t>(context->fadeOutSeconds * static_cast<double>(m_sampleRate));
   const int64_t stopFadeOutSampleCount =
       static_cast<int64_t>(context->stopFadeOutSeconds * static_cast<double>(m_sampleRate));
-  clip.fadeInSamples.store(fadeInSampleCount, std::memory_order_release);
-  clip.fadeOutSamples.store(fadeOutSampleCount, std::memory_order_release);
-  clip.stopFadeOutCurve.store(context->stopFadeOutCurve, std::memory_order_release);
-  clip.stopFadeOutSamples.store(stopFadeOutSampleCount, std::memory_order_release);
+  clip.fadeInSamples = fadeInSampleCount;
+  clip.fadeOutSamples = fadeOutSampleCount;
+  clip.stopFadeOutCurve = context->stopFadeOutCurve;
+  clip.stopFadeOutSamples = stopFadeOutSampleCount;
 
   // A muted start must remain silent from its first frame. Unmuting later
   // ramps from zero through the normal gain-smoothing path.
-  clip.gainLinear.store(context->gainLinear, std::memory_order_release);
+  clip.gainLinear = context->gainLinear;
   clip.gainCurrent = context->muted ? 0.0f : context->gainLinear;
   clip.gainRampIncrement = m_clipGainRampIncrement;
 
   // Initialize loop mode
-  clip.muted.store(context->muted, std::memory_order_release);
-  clip.panLeftGain.store(context->panLeftGain, std::memory_order_release);
-  clip.panRightGain.store(context->panRightGain, std::memory_order_release);
-  clip.playbackRate.store(context->playbackRate, std::memory_order_release);
-  clip.playDelayFrames.store(context->playDelayFrames, std::memory_order_release);
+  clip.muted = context->muted;
+  clip.panLeftGain = context->panLeftGain;
+  clip.panRightGain = context->panRightGain;
+  clip.playbackRate = context->playbackRate;
+  clip.playDelayFrames = context->playDelayFrames;
   clip.playDelayFramesRemaining = context->playDelayFrames;
-  clip.loopEnabled.store(context->loopEnabled, std::memory_order_release);
+  clip.loopEnabled = context->loopEnabled;
 
   clip.source = context->source; // Store shared_ptr (maintains reference count)
   clip.streamingSource = context->streamingSource;
@@ -2045,72 +2042,12 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
           removedSource->publishVoiceDemands();
         }
       }
-      // Remove by moving last clip into this slot (manual field-by-field copy since atomic fields
-      // can't be copied)
+      // Remove by moving the last voice into this slot. Every ActiveClip field
+      // is audio-thread-only plain state, so the defaulted move carries the
+      // whole voice, including its gain ramp and source references.
       if (i < m_activeClipCount - 1) {
         ActiveClip& dest = m_activeClips[i];
-        ActiveClip& src = m_activeClips[m_activeClipCount - 1];
-
-        dest.handle = src.handle;
-        dest.voiceId = src.voiceId; // Multi-voice: copy voice ID
-        dest.startRequestTag = src.startRequestTag;
-        dest.startOrdinal = src.startOrdinal;
-        dest.startSample = src.startSample;
-        dest.currentSample = src.currentSample;
-        dest.sourcePosition = src.sourcePosition;
-        dest.trimInSamples.store(src.trimInSamples.load(std::memory_order_relaxed),
-                                 std::memory_order_relaxed);
-        dest.trimOutSamples.store(src.trimOutSamples.load(std::memory_order_relaxed),
-                                  std::memory_order_relaxed);
-        dest.fadeInCurve.store(src.fadeInCurve.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-        dest.fadeOutCurve.store(src.fadeOutCurve.load(std::memory_order_relaxed),
-                                std::memory_order_relaxed);
-        dest.fadeInSamples.store(src.fadeInSamples.load(std::memory_order_relaxed),
-                                 std::memory_order_relaxed);
-        dest.fadeOutSamples.store(src.fadeOutSamples.load(std::memory_order_relaxed),
-                                  std::memory_order_relaxed);
-        dest.stopFadeOutCurve.store(src.stopFadeOutCurve.load(std::memory_order_relaxed),
-                                    std::memory_order_relaxed);
-        dest.stopFadeOutSamples.store(src.stopFadeOutSamples.load(std::memory_order_relaxed),
-                                      std::memory_order_relaxed);
-        dest.stopFadeFramesElapsed = src.stopFadeFramesElapsed;
-        // ORP127 G4: carry the linear gain target + smoothing ramp state across
-        // the slot move (gainLinear was previously not copied here).
-        dest.gainLinear.store(src.gainLinear.load(std::memory_order_relaxed),
-                              std::memory_order_relaxed);
-        dest.gainCurrent = src.gainCurrent;
-        dest.gainRampIncrement = src.gainRampIncrement;
-        dest.muted.store(src.muted.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        dest.panLeftGain.store(src.panLeftGain.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-        dest.panRightGain.store(src.panRightGain.load(std::memory_order_relaxed),
-                                std::memory_order_relaxed);
-        dest.playbackRate.store(src.playbackRate.load(std::memory_order_relaxed),
-                                std::memory_order_relaxed);
-        dest.playDelayFrames.store(src.playDelayFrames.load(std::memory_order_relaxed),
-                                   std::memory_order_relaxed);
-        dest.playDelayFramesRemaining = src.playDelayFramesRemaining;
-        dest.loopEnabled.store(src.loopEnabled.load(std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-        dest.segmentCount = src.segmentCount;
-        dest.segmentIndex = src.segmentIndex;
-        dest.segmentRepeatsRemaining = src.segmentRepeatsRemaining;
-        dest.segments = src.segments;
-        dest.isStopping = src.isStopping;
-        dest.isNaturalEnding = src.isNaturalEnding;
-        dest.isRestarting = src.isRestarting;
-        dest.restartFadeFramesRemaining = src.restartFadeFramesRemaining;
-        dest.hasLoopedOnce = src.hasLoopedOnce;
-        dest.source = src.source;
-        dest.streamingSource = src.streamingSource;
-        dest.streamingDemandIndex = src.streamingDemandIndex;
-        dest.sourceLifetime = src.sourceLifetime;
-        dest.numChannels = src.numChannels;
-        dest.fileLengthSamples = src.fileLengthSamples; // ORP127 G3
-        dest.voiceMode = src.voiceMode;                 // ORP127 G5
-        dest.routingGroup = src.routingGroup;
-        dest.dspProcessor = src.dspProcessor;
+        dest = std::move(m_activeClips[m_activeClipCount - 1]);
         configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
       }
       const size_t vacatedLaneBase = (m_activeClipCount - 1) * m_config.maxSourceChannels;
@@ -2278,10 +2215,10 @@ void TransportController::publishVoiceSnapshot() noexcept {
       entry.newestVoiceId = voice.voiceId;
       entry.newestStartRequestTag = voice.startRequestTag;
       entry.newestVoiceStopping = voice.isStopping ? 1 : 0;
-      entry.newestVoiceLoopEnabled = voice.loopEnabled.load(std::memory_order_relaxed) ? 1 : 0;
+      entry.newestVoiceLoopEnabled = voice.loopEnabled ? 1 : 0;
       entry.newestStartSample = voice.startSample;
-      entry.newestTrimInSamples = voice.trimInSamples.load(std::memory_order_relaxed);
-      entry.newestTrimOutSamples = voice.trimOutSamples.load(std::memory_order_relaxed);
+      entry.newestTrimInSamples = voice.trimInSamples;
+      entry.newestTrimOutSamples = voice.trimOutSamples;
       entry.newestPosition = positionAtSamples(voice.currentSample);
       m_voiceSnapshotHasNewest[entryIndex] = true;
       m_voiceSnapshotNewestStartOrdinal[entryIndex] = voice.startOrdinal;
