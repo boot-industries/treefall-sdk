@@ -1318,6 +1318,17 @@ void TransportController::processCommands() {
     return voiceId;
   };
 
+  // Every operator-stop command applies the same stop fade to the voices its
+  // predicate selects; only StopAll also restarts fades already in progress.
+  const auto stopVoicesWhere = [this](const auto& shouldStop) noexcept {
+    for (size_t i = 0; i < m_activeClipCount; ++i) {
+      ActiveClip& voice = m_activeClips[i];
+      if (shouldStop(voice)) {
+        beginOperatorStop(voice);
+      }
+    }
+  };
+
   while (commandPosition != 0) {
     const uint32_t nodeIndex = m_commandScratch[--commandPosition];
     CommandNode& node = m_commandNodes[nodeIndex];
@@ -1337,12 +1348,9 @@ void TransportController::processCommands() {
         // normal configured stop fades. The firing handle is always spared so
         // MonoWithFadeOverlap and other per-handle policies remain authoritative.
         const RoutingGroupIndex group = cmd.startContext->routingGroup;
-        for (size_t i = 0; i < m_activeClipCount; ++i) {
-          ActiveClip& peer = m_activeClips[i];
-          if (peer.handle != cmd.handle && peer.routingGroup == group && !peer.isStopping) {
-            beginOperatorStop(peer);
-          }
-        }
+        stopVoicesWhere([&](const ActiveClip& peer) {
+          return peer.handle != cmd.handle && peer.routingGroup == group && !peer.isStopping;
+        });
       }
     } break;
 
@@ -1351,28 +1359,21 @@ void TransportController::processCommands() {
       // share one queue slot, so a full queue cannot partially mutate peers.
       const uint32_t voiceId = processStart(cmd);
       if (voiceId != 0) {
-        for (size_t i = 0; i < m_activeClipCount; ++i) {
-          ActiveClip& peer = m_activeClips[i];
-          if (peer.handle != cmd.handle && !peer.isStopping) {
-            beginOperatorStop(peer);
-          }
-        }
+        stopVoicesWhere([&](const ActiveClip& peer) {
+          return peer.handle != cmd.handle && !peer.isStopping;
+        });
       }
     } break;
 
-    case TransportCommand::Type::Stop: {
+    case TransportCommand::Type::Stop:
       // Multi-voice: Stop ALL voice instances for this handle
-      for (size_t i = 0; i < m_activeClipCount; ++i) {
-        if (m_activeClips[i].handle == cmd.handle && !m_activeClips[i].isStopping) {
-          beginOperatorStop(m_activeClips[i]);
-        }
-      }
-    } break;
+      stopVoicesWhere([&](const ActiveClip& voice) {
+        return voice.handle == cmd.handle && !voice.isStopping;
+      });
+      break;
 
     case TransportCommand::Type::StopAll:
-      for (size_t i = 0; i < m_activeClipCount; ++i) {
-        beginOperatorStop(m_activeClips[i]);
-      }
+      stopVoicesWhere([](const ActiveClip&) { return true; });
       break;
 
     case TransportCommand::Type::Panic:
@@ -1391,11 +1392,9 @@ void TransportController::processCommands() {
 
     case TransportCommand::Type::StopOthers:
       // ORP127 G7: choke primitive — stop every voice except cmd.handle.
-      for (size_t i = 0; i < m_activeClipCount; ++i) {
-        if (m_activeClips[i].handle != cmd.handle && !m_activeClips[i].isStopping) {
-          beginOperatorStop(m_activeClips[i]);
-        }
-      }
+      stopVoicesWhere([&](const ActiveClip& voice) {
+        return voice.handle != cmd.handle && !voice.isStopping;
+      });
       break;
 
     case TransportCommand::Type::UpdateTrim:
