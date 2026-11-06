@@ -284,6 +284,37 @@ TEST_F(ClipRestartCallbackTest, RestartCallbackFired) {
   EXPECT_DOUBLE_EQ(m_callback->restartedPosition.beats, 0.75);
 }
 
+TEST_F(ClipRestartCallbackTest, RestartedEventCarriesRestartPosition) {
+  auto handle = static_cast<ClipHandle>(1);
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_testFilePath.c_str()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->updateClipTrimPoints(handle, 24000, 48000), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setMaxVoicesPerClip(4), SessionGraphError::OK);
+
+  std::vector<float> leftBuffer(512, 0.0f);
+  std::vector<float> rightBuffer(512, 0.0f);
+  float* buffers[2] = {leftBuffer.data(), rightBuffer.data()};
+  // Two layered voices of one handle, at different source positions.
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  m_transport->processAudio(buffers, 2, 512);
+  ASSERT_EQ(m_transport->startClip(handle), SessionGraphError::OK);
+  m_transport->processAudio(buffers, 2, 512);
+  m_transport->processCallbacks();
+  ASSERT_EQ(m_transport->getTotalActiveVoiceCount(), 2u);
+
+  // One Restart command restarts every voice and reports the restart position
+  // once for the handle.
+  ASSERT_EQ(m_transport->restartClip(handle), SessionGraphError::OK);
+  m_transport->processAudio(buffers, 2, 512);
+  m_transport->processCallbacks();
+
+  EXPECT_EQ(m_callback->restartCount, 1);
+  EXPECT_EQ(m_callback->restartedHandle, handle);
+  EXPECT_EQ(m_callback->restartedPosition.samples, 24000);
+  EXPECT_DOUBLE_EQ(m_callback->restartedPosition.seconds, 0.5);
+  EXPECT_DOUBLE_EQ(m_callback->restartedPosition.beats, 0.75);
+  EXPECT_EQ(m_transport->getTotalActiveVoiceCount(), 2u);
+}
+
 TEST_F(ClipRestartCallbackTest, RestartCallbackNotFiredForStart) {
   auto handle = static_cast<ClipHandle>(1);
 

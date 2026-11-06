@@ -1509,29 +1509,9 @@ void TransportController::processCommands() {
       for (size_t i = 0; i < m_activeClipCount; ++i) {
         if (m_activeClips[i].handle == cmd.handle) {
           foundAnyVoice = true;
-          ActiveClip& clip = m_activeClips[i];
-
-          resetSegmentCursor(clip);
-          startPosition = playbackWindowStart(clip);
-          clip.currentSample = startPosition;
-          clip.sourcePosition = static_cast<double>(startPosition);
-          clip.playDelayFramesRemaining = clip.playDelayFrames.load(std::memory_order_relaxed);
-          clip.isNaturalEnding = false;
-          if (clip.source) {
-            clip.source->setDemand(startPosition);
-          }
-
-          // Cancel any fade-out in progress.
-          clip.isStopping = false;
-          clip.fadeOutGain = 1.0f;
-
           // Manual restart re-applies the clip fade-in (user action), unlike
           // auto-loop which suppresses it.
-          clip.hasLoopedOnce = false;
-
-          // Broadcast-safe restart crossfade (5ms) to avoid a click at reset.
-          clip.isRestarting = true;
-          clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
+          startPosition = restartVoiceInPlace(m_activeClips[i]);
         }
       }
 
@@ -1815,8 +1795,9 @@ uint64_t TransportController::allocateVoiceStartOrdinal() noexcept {
   ++m_nextVoiceStartOrdinal;
   return ordinal;
 }
-void TransportController::restartVoiceInPlace(ActiveClip& clip) {
-  // ORP127 G5: reset a live voice to its first programmed source window.
+int64_t TransportController::restartVoiceInPlace(ActiveClip& clip) {
+  // ORP127 G5: reset a live voice to its first programmed source window and
+  // cancel any fade-out in progress.
   resetSegmentCursor(clip);
   const int64_t startPosition = playbackWindowStart(clip);
   clip.currentSample = startPosition;
@@ -1832,6 +1813,7 @@ void TransportController::restartVoiceInPlace(ActiveClip& clip) {
   // Broadcast-safe restart crossfade to avoid a click at the reset point.
   clip.isRestarting = true;
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
+  return startPosition;
 }
 
 uint32_t

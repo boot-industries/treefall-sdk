@@ -472,10 +472,11 @@ private:
   uint32_t startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context,
                               StartRequestTag requestTag);
 
-  /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
-  /// restart (used by the mono voice modes). Applies the broadcast-safe restart
-  /// crossfade so the reset does not click. Audio thread only.
-  void restartVoiceInPlace(ActiveClip& clip);
+  /// ORP127 G5: Reset an existing voice back to its first programmed source
+  /// window for an in-place restart (Restart commands and the mono voice
+  /// modes). Applies the broadcast-safe restart crossfade so the reset does not
+  /// click. Returns the restart position. Audio thread only.
+  int64_t restartVoiceInPlace(ActiveClip& clip);
 
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove
