@@ -705,8 +705,7 @@ TEST_F(MultichannelTransportTest, PostPublishWindowRestarts) {
   EXPECT_EQ(snapshot->routing_meters.peak_window_frames, kFrames);
   EXPECT_EQ(snapshot->routing_meters.rms_window_frames, kFrames);
   EXPECT_EQ(snapshot->routing_meters.group_aggregate_availability[0], MeterAvailability::Measured);
-  EXPECT_EQ(snapshot->routing_meters.group_output_meters.availability,
-            MeterAvailability::Measured);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.availability, MeterAvailability::Measured);
   EXPECT_GT(snapshot->routing_meters.group_output_meters.groups[0].lane_meters[1].peak_db,
             kAudioMeterSilenceDb);
 

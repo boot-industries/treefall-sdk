@@ -1309,8 +1309,7 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
   accumulator.aggregate_peak_definition = readings.aggregate_peak_definition;
   accumulator.post_master_output_peak_definition = MeterPeakDefinition::TruePeak4x;
   accumulator.post_master_output_count = readings.output_count;
-  accumulator.peak_window_frames =
-      detail::saturatingAdd(accumulator.peak_window_frames, numFrames);
+  accumulator.peak_window_frames = detail::saturatingAdd(accumulator.peak_window_frames, numFrames);
   accumulator.rms_window_frames = numFrames;
   if (logicalRetryFailed) {
     markLogicalGroupOutputUnmeasured();
