@@ -467,6 +467,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "dbToLinear",
                 "activeChannelCount",
                 "getHeadroomCompensation",
+                ("fillRamp", r"\bvoid\s+fillRamp\s*\("),
             ),
         ),
         TargetRow(

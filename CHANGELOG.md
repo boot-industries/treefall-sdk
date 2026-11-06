@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `RoutingMatrix::processRouting()` materializes each gain and pan smoother
+  ramp once per slice (a settled ramp is a constant fill), mixes groups
+  lane-major over occupied lanes only, and skips true-peak history resets on
+  lanes whose history is already clear. Output samples and meters are
+  bit-identical to the previous per-frame form.
+
 - Expanded realtime static audit coverage to per-block callees and optional
   adjacent FreqFinder analysis enqueue; final suite qualification is pending.
 
