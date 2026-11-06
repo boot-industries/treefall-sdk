@@ -99,6 +99,27 @@ Device time advances during transport stop; transport may seek, loop or reverse.
 Conversions are valid only within declared segments. Never compare unrelated
 clocks or add output latency without knowing whether the timestamp includes it.
 
+Delivered: `ITransportController::processAudioWithTimeReference()` takes a
+`TransportTimeReference` copied from the callback's `AudioProcessBlock`
+(device sample position, host time, discontinuity; zero means unavailable),
+and the shipped examples forward it. The transport carries the reference on
+the audio thread without allocation or locks and publishes it in
+`RealtimeTelemetrySnapshot::clock` (schema version 4): the final rendered
+block's device position and host time with separate validity flags, its frame
+count, a saturating cumulative discontinuity count that acts as the clock epoch
+across decimated callbacks and dropped snapshots, and a flag for a break since
+the previous enqueued snapshot. Rendered audio is unchanged. The legacy
+`processAudio()` entry point reports the reference unavailable.
+
+Still open: the device and host clocks are only carried, never correlated with
+each other, with `AudioLatencyBreakdown`, or with presentation time. The epoch
+counts backend-reported discontinuities only; route changes, clip seeks and
+loops, and transport segments do not advance it. `TimePoint` still carries no
+rate, origin or epoch. Backend coverage differs: CoreAudio supplies device
+position and host time when the HAL timestamp is valid, the dummy driver
+supplies both, and WASAPI shared mode supplies neither but does report
+discontinuities. ShmUI and child apps must still consume these fields.
+
 ### Atomic observation publication
 
 A reader receives immutable, internally consistent state, not a collection of

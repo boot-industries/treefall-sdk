@@ -270,6 +270,190 @@ TEST_F(TransportControllerTest, PublishesDecimatedPostRenderTelemetry) {
   EXPECT_FALSE(telemetry->tryRead(snapshot));
 }
 
+namespace {
+
+constexpr size_t kClockBlockFrames = 128;
+
+struct StereoBlock {
+  std::vector<float> left = std::vector<float>(kClockBlockFrames, 0.0f);
+  std::vector<float> right = std::vector<float>(kClockBlockFrames, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+};
+
+void renderTimed(ITransportController& transport, StereoBlock& block,
+                 const TransportTimeReference& reference) {
+  transport.processAudioWithTimeReference(block.buffers, 2, kClockBlockFrames, reference);
+}
+
+RealtimeTelemetrySnapshot readOnly(RealtimeTelemetry& telemetry) {
+  RealtimeTelemetrySnapshot snapshot;
+  EXPECT_TRUE(telemetry.tryRead(snapshot));
+  RealtimeTelemetrySnapshot extra;
+  EXPECT_FALSE(telemetry.tryRead(extra));
+  return snapshot;
+}
+
+} // namespace
+
+TEST_F(TransportControllerTest, TelemetrySchemaVersionIsFour) {
+  static_assert(kRealtimeTelemetrySchemaVersion == 4u);
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  StereoBlock block;
+  m_transport->processAudio(block.buffers, 2, kClockBlockFrames);
+  EXPECT_EQ(readOnly(*telemetry).schema_version, 4u);
+}
+
+TEST_F(TransportControllerTest, TimeReferencePublishesClockTelemetry) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  renderTimed(*m_transport, block, {4096, 7'000'000, true});
+  RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.position.samples(), static_cast<int64_t>(kClockBlockFrames));
+  EXPECT_TRUE(snapshot.clock.device_sample_position_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 4096u);
+  EXPECT_TRUE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.host_time_nanoseconds, 7'000'000u);
+  EXPECT_EQ(snapshot.clock.block_frames, kClockBlockFrames);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+
+  renderTimed(*m_transport, block, {4096 + kClockBlockFrames, 9'666'667, false});
+  snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 4096u + kClockBlockFrames);
+  EXPECT_EQ(snapshot.clock.host_time_nanoseconds, 9'666'667u);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_FALSE(snapshot.clock.discontinuity_in_window);
+
+  renderTimed(*m_transport, block, {64, 12'000'000, true});
+  snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 64u);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 2u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+}
+
+TEST_F(TransportControllerTest, LegacyRenderPublishesUnavailableClock) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  m_transport->processAudio(block.buffers, 2, kClockBlockFrames);
+  RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+  EXPECT_FALSE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 0u);
+  EXPECT_EQ(snapshot.clock.host_time_nanoseconds, 0u);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 0u);
+  EXPECT_FALSE(snapshot.clock.discontinuity_in_window);
+
+  // A timed block does not leak its reference into a following legacy block;
+  // the cumulative epoch remains.
+  renderTimed(*m_transport, block, {512, 3'000, true});
+  (void)readOnly(*telemetry);
+  m_transport->processAudio(block.buffers, 2, kClockBlockFrames);
+  snapshot = readOnly(*telemetry);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+  EXPECT_FALSE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 0u);
+  EXPECT_EQ(snapshot.clock.host_time_nanoseconds, 0u);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_FALSE(snapshot.clock.discontinuity_in_window);
+}
+
+TEST_F(TransportControllerTest, ZeroClockValuesMeanUnavailable) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  renderTimed(*m_transport, block, {});
+  RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+  EXPECT_FALSE(snapshot.clock.host_time_valid);
+
+  renderTimed(*m_transport, block, {0, 77, false});
+  snapshot = readOnly(*telemetry);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+  EXPECT_TRUE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.host_time_nanoseconds, 77u);
+
+  renderTimed(*m_transport, block, {900, 0, false});
+  snapshot = readOnly(*telemetry);
+  EXPECT_TRUE(snapshot.clock.device_sample_position_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 900u);
+  EXPECT_FALSE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 0u);
+}
+
+TEST_F(TransportControllerTest, DiscontinuityInsideDecimatedWindowSurfaces) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(4);
+  StereoBlock block;
+
+  // Breaks on the first and third undelivered blocks of a four-block window.
+  const bool breaks[] = {true, false, true, false};
+  uint64_t device = 1000;
+  for (bool discontinuity : breaks) {
+    renderTimed(*m_transport, block, {device, device * 10, discontinuity});
+    device += kClockBlockFrames;
+  }
+  RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 2u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 1000u + 3 * kClockBlockFrames);
+
+  for (int index = 0; index < 4; ++index) {
+    renderTimed(*m_transport, block, {device, device * 10, false});
+    device += kClockBlockFrames;
+  }
+  snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 2u);
+  EXPECT_FALSE(snapshot.clock.discontinuity_in_window);
+}
+
+TEST_F(TransportControllerTest, DiscontinuitySurvivesDroppedSnapshots) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  for (size_t index = 0; index < kRealtimeTelemetryCapacity; ++index) {
+    renderTimed(*m_transport, block, {1, 1, false});
+  }
+  ASSERT_EQ(telemetry->pendingSnapshotCount(), kRealtimeTelemetryCapacity);
+  ASSERT_EQ(telemetry->droppedSnapshotCount(), 0u);
+
+  // Both publications are dropped by the full ring.
+  renderTimed(*m_transport, block, {5, 5, true});
+  renderTimed(*m_transport, block, {6, 6, false});
+  EXPECT_EQ(telemetry->droppedSnapshotCount(), 2u);
+
+  RealtimeTelemetrySnapshot snapshot;
+  while (telemetry->tryRead(snapshot)) {
+    EXPECT_EQ(snapshot.clock.discontinuity_count, 0u);
+  }
+
+  renderTimed(*m_transport, block, {7, 7, false});
+  snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 7u);
+}
+
+TEST_F(TransportControllerTest, RejectedTimedBlockStillCountsDiscontinuity) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  const TransportTimeReference rejected{3, 3, true};
+  m_transport->processAudioWithTimeReference(nullptr, 2, kClockBlockFrames, rejected);
+  EXPECT_EQ(telemetry->pendingSnapshotCount(), 0u);
+  m_transport->processAudio(block.buffers, 2, kClockBlockFrames);
+  const RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+}
+
 // TODO: Add more comprehensive tests:
 // - Sample-accurate timing (±1 sample)
 // - Multi-clip playback (16 simultaneous)

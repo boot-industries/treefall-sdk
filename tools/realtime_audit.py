@@ -348,10 +348,17 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
         TargetRow("Transport command release helper", _TRANSPORT, "TransportController", ("releaseCommandNode",)),
         TargetRow("Transport render path", _TRANSPORT, "TransportController", ("processAudio",)),
         TargetRow(
+            "Transport timed render path",
+            _TRANSPORT,
+            "TransportController",
+            ("processAudioWithTimeReference",),
+        ),
+        TargetRow(
             "Transport consumer helper {name}",
             _TRANSPORT,
             "TransportController",
             (
+                "consumeTimeReference",
                 "releasePendingStartReservations",
                 "releasePendingSeekReservations",
                 "publishStartSettlement",

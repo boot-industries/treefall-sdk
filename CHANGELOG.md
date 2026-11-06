@@ -33,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source revision and content hash, and the upstream provenance record, the
   NOTICE and the MIT licence texts install with the package under
   `share/shmui-juce/ThirdParty/`.
+- `ITransportController::processAudioWithTimeReference()` renders a block with
+  a `TransportTimeReference` carrying the `AudioProcessBlock` device sample
+  position, host time and discontinuity flag into transport telemetry. Rendered
+  audio is identical to `processAudio()`, which now reports the clock reference
+  unavailable. The shipped `simple_player` and `multi_clip_trigger` examples
+  forward the block through it. Migration: the virtual is appended to the
+  interface with a default that forwards to `processAudio()`, so custom
+  implementations keep compiling, but every consumer and subclass must
+  rebuild; an old prebuilt subclass must not receive the call. The stable C
+  ABI tables are unchanged.
 
 ### Changed
 
@@ -134,6 +144,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documents `display_name` as presentation-only, and that UID embeds the driver
   instance address, so it was never a stable cross-run identifier. A host that
   matches devices by display name instead of `device_id` sees the new label.
+
+- `RealtimeTelemetrySnapshot` schema version is now 4
+  (`kRealtimeTelemetrySchemaVersion == 4`). The snapshot appends a
+  `RealtimeClockTelemetry clock` member: the backend device sample position
+  and host time of the final rendered block with per-field validity (a zero
+  backend value, or any block rendered through `processAudio()`, is
+  unavailable), that block's frame count, a saturating cumulative
+  `discontinuity_count` that survives decimation and dropped snapshots, and
+  `discontinuity_in_window` for a break since the previous enqueued snapshot.
+  Migration: the snapshot size changed, so consumers that copy, store or
+  compare the schema version must rebuild and accept version 4.
 
 ### Fixed
 
