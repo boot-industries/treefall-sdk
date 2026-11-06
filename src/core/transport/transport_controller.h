@@ -229,6 +229,7 @@ struct ActiveClip {
 
   uint16_t numChannels; // Number of channels in audio file
   RoutingGroupIndex routingGroup{0};
+  bool routingPansMonoToStereo{false}; // Pan decision represented by this slot's routes
 
   // ORP134 G1: thread-safe clip-source reference (captured from the registry
   // entry when the clip starts). shared_ptr gives reference-counted lifetime:
@@ -459,8 +460,9 @@ private:
   /// bounded by the fixed active-voice capacity. ignoredVoiceId is reserved
   /// for same-handle replacement preflight.
   uint32_t allocateVoiceId(uint32_t ignoredVoiceId = 0) noexcept;
-  void configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
-                             uint16_t numChannels) noexcept;
+  bool shouldPanMonoToStereo(RoutingGroupIndex group, uint16_t numChannels) const noexcept;
+  void configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group, uint16_t numChannels,
+                             bool panMonoToStereo) noexcept;
 
   /// ORP127 G5: Fire a voice honoring the context's VoiceMode (audio thread).
   /// Returns the accepted nonzero voice identity, including for an in-place

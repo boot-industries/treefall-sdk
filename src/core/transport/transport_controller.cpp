@@ -199,9 +199,12 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const size_t numFileChannels = clip.numChannels;
     const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    const bool panMonoToStereo = numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
-                                 clip.routingGroup < m_config.numGroups &&
-                                 m_routingMatrix->groupOutputWidth(clip.routingGroup) >= 2;
+    // Keep rendering and lane routes on the same width decision for this block.
+    // Stable voices do not republish their routes.
+    const bool panMonoToStereo = shouldPanMonoToStereo(clip.routingGroup, clip.numChannels);
+    if (panMonoToStereo != clip.routingPansMonoToStereo) {
+      configureVoiceRouting(voiceIndex, clip.routingGroup, clip.numChannels, panMonoToStereo);
+    }
     float* const clipReadBuffer = m_clipReadBuffers[voiceIndex].data();
     const size_t clipReadBufferSize = m_clipReadBuffers[voiceIndex].size();
 
@@ -1159,7 +1162,8 @@ void TransportController::processCommands() {
           }
           clip.routingGroup = cmd.data.metadata.routingGroup;
           clip.dspProcessor = cmd.dspProcessor;
-          configureVoiceRouting(i, clip.routingGroup, clip.numChannels);
+          configureVoiceRouting(i, clip.routingGroup, clip.numChannels,
+                                shouldPanMonoToStereo(clip.routingGroup, clip.numChannels));
         }
       }
       break;
@@ -1418,12 +1422,17 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
   return addVoice();
 }
 
+bool TransportController::shouldPanMonoToStereo(RoutingGroupIndex group,
+                                                uint16_t numChannels) const noexcept {
+  return numChannels == 1 && m_config.maxSourceChannels > 1 && group < m_config.numGroups &&
+         m_routingMatrix->groupOutputWidth(group) >= 2;
+}
+
 void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupIndex group,
-                                                uint16_t numChannels) noexcept {
+                                                uint16_t numChannels,
+                                                bool panMonoToStereo) noexcept {
+  m_activeClips[voiceIndex].routingPansMonoToStereo = panMonoToStereo;
   const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-  const bool panMonoToStereo = numChannels == 1 && m_config.maxSourceChannels > 1 &&
-                               group < m_config.numGroups &&
-                               m_routingMatrix->groupOutputWidth(group) >= 2;
   const uint16_t renderedChannels = panMonoToStereo ? 2 : numChannels;
   for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
     const bool activeLane = lane < renderedChannels;
@@ -1558,7 +1567,8 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   clip.voiceMode = context->voiceMode;                 // ORP127 G5
   clip.routingGroup = context->routingGroup;
   clip.dspProcessor = context->dspProcessor;
-  configureVoiceRouting(voiceIndex, clip.routingGroup, clip.numChannels);
+  configureVoiceRouting(voiceIndex, clip.routingGroup, clip.numChannels,
+                        shouldPanMonoToStereo(clip.routingGroup, clip.numChannels));
   clip.isStopping = false;
 
   // Initialize restart crossfade state
@@ -1601,13 +1611,13 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
       if (i < m_activeClipCount - 1) {
         ActiveClip& dest = m_activeClips[i];
         dest = std::move(m_activeClips[m_activeClipCount - 1]);
-        configureVoiceRouting(i, dest.routingGroup, dest.numChannels);
+        configureVoiceRouting(i, dest.routingGroup, dest.numChannels, dest.routingPansMonoToStereo);
       }
       const size_t vacatedLaneBase = (m_activeClipCount - 1) * m_config.maxSourceChannels;
       for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
         m_clipChannelPointers[vacatedLaneBase + lane] = nullptr;
       }
-      configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0);
+      configureVoiceRouting(m_activeClipCount - 1, UNASSIGNED_GROUP, 0, false);
       m_activeClips[m_activeClipCount - 1].source.reset();
       m_activeClips[m_activeClipCount - 1].streamingSource = nullptr;
       m_activeClips[m_activeClipCount - 1].streamingDemandIndex = 0;
