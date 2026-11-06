@@ -50,19 +50,15 @@ void beginOperatorStop(ActiveClip& clip) noexcept {
   clip.isNaturalEnding = false;
   clip.playDelayFramesRemaining = 0;
   clip.stopFadeFramesElapsed =
-      wasWaitingForDelay
-          ? std::max<int64_t>(clip.stopFadeOutSamples, 0)
-          : 0;
+      wasWaitingForDelay ? std::max<int64_t>(clip.stopFadeOutSamples, 0) : 0;
 }
 
 int64_t playbackWindowStart(const ActiveClip& clip) noexcept {
-  return clip.segmentCount == 0 ? clip.trimInSamples
-                                : clip.segments[clip.segmentIndex].startSample;
+  return clip.segmentCount == 0 ? clip.trimInSamples : clip.segments[clip.segmentIndex].startSample;
 }
 
 int64_t playbackWindowEnd(const ActiveClip& clip) noexcept {
-  return clip.segmentCount == 0 ? clip.trimOutSamples
-                                : clip.segments[clip.segmentIndex].endSample;
+  return clip.segmentCount == 0 ? clip.trimOutSamples : clip.segments[clip.segmentIndex].endSample;
 }
 
 void resetSegmentCursor(ActiveClip& clip) noexcept {
@@ -878,9 +874,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     ActiveClip& clip = m_activeClips[i];
 
     if (clip.isStopping) {
-      int64_t stopFadeSamples = clip.isNaturalEnding
-                                    ? clip.fadeOutSamples
-                                    : clip.stopFadeOutSamples;
+      int64_t stopFadeSamples =
+          clip.isNaturalEnding ? clip.fadeOutSamples : clip.stopFadeOutSamples;
       if (clip.isNaturalEnding && stopFadeSamples == 0) {
         stopFadeSamples = static_cast<int64_t>(m_fadeOutSamples);
       }
@@ -982,8 +977,8 @@ PlaybackBoundaryAction TransportController::handlePlaybackBoundary(ActiveClip& c
   }
   clip.hasLoopedOnce = true;
   if (boundary == PlaybackBoundaryAction::Looped) {
-    postVoiceEvent(TransportEventType::ClipLooped, clip.handle, clip.startRequestTag,
-                   clip.voiceId, getCurrentPosition());
+    postVoiceEvent(TransportEventType::ClipLooped, clip.handle, clip.startRequestTag, clip.voiceId,
+                   getCurrentPosition());
   }
   return boundary;
 }
@@ -1354,17 +1349,15 @@ void TransportController::processCommands() {
       // share one queue slot, so a full queue cannot partially mutate peers.
       const uint32_t voiceId = processStart(cmd);
       if (voiceId != 0) {
-        stopVoicesWhere([&](const ActiveClip& peer) {
-          return peer.handle != cmd.handle && !peer.isStopping;
-        });
+        stopVoicesWhere(
+            [&](const ActiveClip& peer) { return peer.handle != cmd.handle && !peer.isStopping; });
       }
     } break;
 
     case TransportCommand::Type::Stop:
       // Multi-voice: Stop ALL voice instances for this handle
-      stopVoicesWhere([&](const ActiveClip& voice) {
-        return voice.handle == cmd.handle && !voice.isStopping;
-      });
+      stopVoicesWhere(
+          [&](const ActiveClip& voice) { return voice.handle == cmd.handle && !voice.isStopping; });
       break;
 
     case TransportCommand::Type::StopAll:
@@ -1387,9 +1380,8 @@ void TransportController::processCommands() {
 
     case TransportCommand::Type::StopOthers:
       // ORP127 G7: choke primitive — stop every voice except cmd.handle.
-      stopVoicesWhere([&](const ActiveClip& voice) {
-        return voice.handle != cmd.handle && !voice.isStopping;
-      });
+      stopVoicesWhere(
+          [&](const ActiveClip& voice) { return voice.handle != cmd.handle && !voice.isStopping; });
       break;
 
     case TransportCommand::Type::UpdateTrim:
@@ -1526,8 +1518,7 @@ void TransportController::processCommands() {
         }
       }
 
-      postVoiceEvent(TransportEventType::ClipSeeked, cmd.handle, 0, 0,
-                     positionAtSamples(position));
+      postVoiceEvent(TransportEventType::ClipSeeked, cmd.handle, 0, 0, positionAtSamples(position));
     } break;
 
     case TransportCommand::Type::UpdateMetadata:

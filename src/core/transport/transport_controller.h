@@ -214,8 +214,8 @@ struct ActiveClip {
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
   ClipDspProcessor dspProcessor;
 
-  bool isStopping;         // true if fade-out in progress
-  bool isNaturalEnding;    // true when OUT, false for operator/choke stop
+  bool isStopping;      // true if fade-out in progress
+  bool isNaturalEnding; // true when OUT, false for operator/choke stop
 
   // Restart crossfade state (broadcast-safe restart mechanism)
   bool isRestarting; // true if restart crossfade in progress
