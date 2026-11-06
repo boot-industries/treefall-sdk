@@ -112,10 +112,12 @@ private:
 
 /// Fixed-page streaming source for long files.
 ///
-/// Six steady pages are shared across active voice cursors. A single cursor
-/// retains one page behind, its current page and four forward pages; two
-/// independent cursors receive behind/current/forward windows of three pages
-/// each. Higher fan-out reduces runway and can exceed this fixed cache budget.
+/// Six steady pages are shared across distinct page-aligned voice cursors;
+/// voices whose cursors sit on the same page share one window. A single
+/// cursor retains one page behind, its current page and four forward pages;
+/// two distinct cursors receive behind/current/forward windows of three pages
+/// each. More distinct cursors reduce runway and can exceed this fixed cache
+/// budget.
 /// Four separate command-prime pages retain first-render and loop-anchor leases.
 class StreamingClipSource : public IClipSource {
 public:
@@ -222,9 +224,10 @@ private:
   friend class TransportController;
 
   // The worker receives one coherent bounded snapshot of every active voice
-  // cursor for this source. Six steady pages can support two three-page
-  // windows, three two-page windows, or up to six current pages; larger
-  // fan-out is a real cache-capacity limit, not a polyphony guarantee.
+  // cursor for this source. The six steady pages are budgeted per distinct
+  // page-aligned cursor, not per voice: they support two three-page windows,
+  // three two-page windows, or up to six current pages. More distinct cursors
+  // are a real cache-capacity limit, not a polyphony guarantee.
   static constexpr size_t kMaxVoiceDemands = 32;
   static constexpr uint32_t kVoiceDemandWriter = uint32_t{1} << 31;
   // One active view, possible worker/control readers, and an inactive writer slot.
@@ -237,7 +240,6 @@ private:
                     size_t& framesRead);
   bool readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead);
   bool keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept;
-  static size_t voiceWindowPages(size_t count, size_t demandIndex = 0) noexcept;
 
   struct VoiceDemandSnapshot {
     std::array<int64_t, kMaxVoiceDemands> positions{};
@@ -350,6 +352,10 @@ private:
   // immutable multi-buffer snapshot below.
   size_t m_voiceDemandCount{0};
   std::array<int64_t, kMaxVoiceDemands> m_voiceDemands{};
+  // Audio-thread-owned per-voice steady-page budget, derived at publication
+  // from the same positions the worker snapshot carries, so retention and
+  // refill follow one plan.
+  std::array<uint8_t, kMaxVoiceDemands> m_voiceWindowPlan{};
   std::array<VoiceDemandBuffer, kVoiceDemandBufferCount> m_voiceDemandBuffers{};
   std::atomic<uint32_t> m_activeVoiceDemandBuffer{0};
   size_t m_voiceDemandServiceCursor{0}; // worker-thread only

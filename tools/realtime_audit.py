@@ -432,9 +432,14 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "addVoiceDemand",
                 "refreshVoicePagePins",
                 "publishVoiceDemands",
-                "voiceWindowPages",
                 "keepsPage",
             ),
+        ),
+        TargetRow(
+            "Streaming callback free helper {name}",
+            _CLIP_SOURCE,
+            None,
+            ("computeVoiceWindowPages",),
         ),
         TargetRow("Clip source callback read {owner}::{name}", _CLIP_SOURCE, "PreparedClipSource", ("read",)),
         TargetRow(

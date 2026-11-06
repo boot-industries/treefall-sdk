@@ -137,6 +137,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `StreamingClipSource` budgets its six steady pages per distinct page-aligned
+  voice cursor instead of per voice. Voices of one clip that sit on the same
+  page now share one behind/current/four-forward window, so six or more
+  co-located voices (the default per-clip cap is eight) no longer drop to zero
+  look-ahead and underrun at every page crossing. The audio thread and the
+  stream worker derive the same plan from each published demand snapshot.
+  Distinct cursors keep the existing capacity limit. Migration: the class
+  gains a private member, so its layout grows; consumers must rebuild against
+  the updated `orpheus/clip_source.h`. No API or C ABI table changes.
 - Routing group-control publication is a fenced, non-waiting seqlock. The
   audio thread renders only complete group gain, mute, solo and output-route
   transactions on every architecture (a torn read was reachable on x86), and

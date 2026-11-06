@@ -297,14 +297,16 @@ transport->updateClipMetadata(handle, metadata);
 ```
 
 Streaming clips share one decoder across their voices. The source keeps six
-steady pages and four separate command-prime pages; a Stop/refire overlap with
-two independent cursors receives three steady pages per cursor (behind, current,
+steady pages and four separate command-prime pages. Steady pages are budgeted
+per distinct page-aligned cursor: voices on the same page share one window
+(behind, current and four forward pages), and a Stop/refire overlap with two
+independent cursors receives three steady pages per cursor (behind, current,
 and forward). Audio reads retain transient pins, while the worker consumes a
 coherent bounded cursor snapshot and refills current pages before look-ahead.
 First-render primes and loop anchors retain independent ownership.
 
-This fixed cache is not an arbitrary-polyphony guarantee. More cursor demands
-reduce their windows; demands beyond the six steady-page budget can miss.
+This fixed cache is not an arbitrary-polyphony guarantee. More distinct cursors
+reduce their windows; cursors beyond the six steady-page budget can miss.
 Unavailable command-prime capacity returns `NotReady`; a render cache miss
 remains observable silence plus an underrun, never synchronous decoding.
 Rebuild consumers with matching SDK headers/libraries when adopting this change:
