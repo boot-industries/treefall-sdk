@@ -57,8 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PreparedTapeVarispeed::process` computes its 128 windowed-sinc coefficients
   once per output frame instead of once per channel. Output is bit-identical.
 - The transport render path skips per-voice clip DSP when a voice's program
-  enables no stage, and clears only the source lanes a voice can write. Output
-  is bit-identical; the per-voice render cost drops (ORP282).
+  enables no stage. Output is bit-identical; the per-voice render cost drops
+  (ORP282). Every routing lane of an active voice slot is still cleared each
+  block, so a lane beyond the voice's channel count never replays a previous
+  voice's audio.
 
 - Routing telemetry collection merges logical group-output lanes in place and
   copies only the populated group and lane region of each snapshot instead of

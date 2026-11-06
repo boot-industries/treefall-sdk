@@ -138,18 +138,13 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
 
-  // Only active lanes expose sample storage to routing. Clearing them here
-  // keeps reused slots clean; inactive pointers stay null even if a host edits
-  // their routes directly through the exposed routing matrix. A voice renders
-  // at most max(numChannels, 2) lanes (a mono voice pans into two), and
-  // configureVoiceRouting() leaves every lane beyond its channel count
-  // unassigned, so only the lanes the voice can write need clearing.
+  // addActiveClip() points every lane of an active voice slot at its sample
+  // storage, including lanes beyond the voice's channel count, and the routing
+  // matrix reads whichever of them carry a route. Clear all of them each block
+  // so a reused slot never replays the last block a wider voice rendered.
   for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    const uint16_t voiceChannels = m_activeClips[voiceIndex].numChannels;
-    const size_t laneCount = std::min<size_t>(m_config.maxSourceChannels,
-                                              voiceChannels == 1 ? size_t{2} : voiceChannels);
-    for (size_t lane = 0; lane < laneCount; ++lane) {
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
       std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
     }
   }

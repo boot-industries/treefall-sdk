@@ -331,6 +331,74 @@ TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange)
   std::filesystem::remove(monoPath, ignored);
 }
 
+// A voice slot exposes all maxSourceChannels lanes to routing, including the
+// lanes beyond the voice's own channel count. Those lanes must read silence,
+// not the last block a wider voice rendered into the same slot.
+TEST_F(MultichannelTransportTest, LaneBeyondVoiceChannelsStaysSilentAfterSlotReuse) {
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = kChannels;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = kChannels;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  std::array<std::array<float, kFrames>, kChannels> storage{};
+  std::array<float*, kChannels> outputs{};
+  for (size_t channel = 0; channel < kChannels; ++channel) {
+    outputs[channel] = storage[channel].data();
+  }
+  const auto render = [&] {
+    storage = {};
+    transport->processAudio(outputs.data(), outputs.size(), kFrames);
+  };
+
+  // An 8-channel voice writes every lane of the only voice slot, then ends.
+  ASSERT_EQ(transport->registerClipAudio(40, filePath), SessionGraphError::OK);
+  auto wide = transport->getClipMetadata(40);
+  ASSERT_TRUE(wide.has_value());
+  wide->loopEnabled = true;
+  wide->fadeInSeconds = 0.0;
+  wide->fadeOutSeconds = 0.0;
+  const auto format = ChannelFormat::SMPTE51Stereo();
+  wide->sourceLayout = format.layout;
+  wide->speakerPatchSize = format.num_channels;
+  std::copy_n(format.channel_map.begin(), format.num_channels, wide->speakerPatch.begin());
+  ASSERT_EQ(transport->updateClipMetadata(40, *wide), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(40), SessionGraphError::OK);
+  render();
+  ASSERT_GT(std::abs(storage[5][kFrames - 1]), 0.01f);
+  ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+  render();
+  render();
+
+  // A stereo voice reuses the slot; lanes 2..7 are beyond its channel count,
+  // so it never writes them and voice routing leaves them unassigned.
+  ASSERT_EQ(transport->registerClipAudio(41, stereoPath), SessionGraphError::OK);
+  auto narrow = transport->getClipMetadata(41);
+  ASSERT_TRUE(narrow.has_value());
+  narrow->loopEnabled = true;
+  narrow->fadeInSeconds = 0.0;
+  narrow->fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(41, *narrow), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(41), SessionGraphError::OK);
+  render();
+
+  // Route lane 5 to output 5 so whatever the lane holds becomes audible.
+  auto* routing = transport->getRoutingMatrix();
+  ASSERT_NE(routing, nullptr);
+  ASSERT_EQ(routing->setChannelRoute(5, 0, 5), SessionGraphError::OK);
+  for (int block = 0; block < 4; ++block) {
+    render();
+    EXPECT_GT(std::abs(storage[0][kFrames - 1]), 0.01f) << "block " << block;
+    for (size_t frame = 0; frame < kFrames; ++frame) {
+      ASSERT_EQ(storage[5][frame], 0.0f) << "block " << block << " frame " << frame;
+    }
+  }
+}
+
 TEST(MultichannelTransportConfigTest, RejectsUnsupportedRealtimeBounds) {
   TransportConfig config;
   config.sampleRate = kSampleRate;
