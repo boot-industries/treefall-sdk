@@ -179,24 +179,19 @@ struct ActiveClip {
   int64_t fileLengthSamples{0};
 
   // Fade settings (atomic for thread safety)
-  std::atomic<double> fadeInSeconds{0.0};
-  std::atomic<double> fadeOutSeconds{0.0};
   std::atomic<FadeCurve> fadeInCurve{FadeCurve::Linear};
   std::atomic<FadeCurve> fadeOutCurve{FadeCurve::Linear};
 
   // Cached fade sample counts (computed when fades are updated)
   std::atomic<int64_t> fadeInSamples{0};
   std::atomic<int64_t> fadeOutSamples{0};
-  std::atomic<double> stopFadeOutSeconds{0.01};
   std::atomic<FadeCurve> stopFadeOutCurve{FadeCurve::Linear};
   std::atomic<int64_t> stopFadeOutSamples{0};
   int64_t stopFadeFramesElapsed{0};
 
   // Gain control (atomic for thread safety)
-  std::atomic<float> gainDb{0.0f};     // Gain in decibels (0.0 = unity)
   std::atomic<float> gainLinear{1.0f}; // Cached linear gain target (precomputed from gainDb)
   std::atomic<bool> muted{false};
-  std::atomic<float> pan{0.0f};
   std::atomic<float> panLeftGain{1.0f};
   std::atomic<float> panRightGain{1.0f};
   std::atomic<double> playbackRate{1.0};
@@ -217,9 +212,7 @@ struct ActiveClip {
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
   ClipDspProcessor dspProcessor;
 
-  float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
   bool isStopping;         // true if fade-out in progress
-  int64_t fadeOutStartPos; // Sample position when fade-out started (for additive time)
   bool isNaturalEnding;    // true when OUT, false for operator/choke stop
 
   // Restart crossfade state (broadcast-safe restart mechanism)
