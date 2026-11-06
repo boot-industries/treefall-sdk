@@ -261,6 +261,16 @@ Do not silently implement or mark these complete:
   records enumerated in ORP173; the observed development snapshot is not a
   release claim.
 - Windows/WASAPI support promotion remains gated on the evidence in ORP143 §7.
+- Clock-domain correlation beyond the delivered plumbing. The transport carries
+  the backend's device sample position, host time and discontinuity into
+  telemetry schema 4. Still open: correlating the device and host clocks with
+  `AudioLatencyBreakdown` and presentation time, a rate/origin/epoch on
+  `TimePoint`, real WASAPI position and host time (shared mode reports 0), and
+  consumer adoption of `processAudioWithTimeReference`. Owner and target
+  release are to be assigned by the repository owner; `ARCHITECTURE.md`
+  §Temporal Coherence states exactly what is delivered.
+- Bluetooth directional-SRC candidate (PR #250): parked pending hardware
+  re-acceptance; not a current priority.
 
 Reopen any of these only with an explicit task and the stated prerequisite
 proof.
