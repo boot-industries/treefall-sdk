@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The dummy audio endpoint advertises 64 output channels instead of 32,
+  matching the driver's existing 64-channel configuration limit. Clip
+  Composer's `AudioEngine::initialize(config)` widens its identity map to
+  every advertised output, so its headless tests will see 64 rather than 32
+  outputs after bumping the SDK. Hosts wanting fewer lanes must select that
+  width explicitly.
+- The transport's private C++ `ActiveClip` layout changes to retain its
+  configured lane-routing decision. Downstream consumers must rebuild; the
+  stable C ABI 1.0 headers and tables are unchanged.
 - **Behavior change:** the routing matrix returned by
   `ITransportController::getRoutingMatrix()` is transport-owned. Its
   `setChannelRoute()`, `setChannelGroup()`, `configureChannel()` and
@@ -187,6 +196,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ABI 2.0, which will ship with migration guidance. No header, table or export
   changed.
 
+### Documentation
+
+- Clarified the distinction between rendered group geometry and clip-admission
+  width. Admission width is the width last accepted by `setGroupOutputBus()`,
+  initially `TransportConfig::outputChannels`; direct matrix edits and routing
+  snapshot recalls do not change it. `registerClipAudioWithMetadata()` and
+  `updateClipMetadata()` enforce that width, intentionally permitting a clip
+  wider than matrix geometry after direct matrix narrowing. Plain
+  `registerClipAudio()` only enforces source/output channel limits and does not
+  perform the metadata APIs' group-width check. `getGroupOutputBus()` reports
+  committed matrix geometry; `setGroupOutputBus()` rejects widths narrower than
+  registered clips assigned to the group. These admission rules are unchanged.
+- Aligned the clock-start contract in `audio_driver.h`,
+  `transport_controller.h` and `realtime_telemetry.h`: a backend whose first
+  block is at device sample position zero reports that position unavailable
+  for that one block, and the same block carries `discontinuity=true`. This
+  does not make host time unavailable; the two clocks have independent validity.
+
 ### Fixed
 
 - `StreamingClipSource` budgets its six steady pages per distinct page-aligned
@@ -198,15 +225,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Distinct cursors keep the existing capacity limit. Migration: the class
   gains a private member, so its layout grows; consumers must rebuild against
   the updated `orpheus/clip_source.h`. No API or C ABI table changes.
-- A mono voice's decision to pan into two lanes now follows the group width
-  its transport's routing matrix actually renders. It read a transport-side
-  copy that only `setGroupOutputBus()` updated, so a group narrowed or widened
-  through `getRoutingMatrix()` (`setGroupOutputRoute()`, `configureGroup()`,
-  `applyGroupControlSnapshot()`) rendered mono voices wrong: 3 dB low in a
-  one-lane group, or on one lane only in a group widened to two.
-  `getGroupOutputBus()` reports the matrix's geometry for the same reason.
-  Routes set through `setGroupOutputBus()` behave as before; clip admission
-  still checks the width last accepted by `setGroupOutputBus()`.
+- Lane routes for an already-playing mono voice now follow live group-width
+  changes. A group widened from one lane to two previously rendered the
+  second lane into an unassigned route, leaving it silent. Narrowing and
+  widening now update the routes using the same width decision as rendering.
+- A mono voice's decision to pan into two lanes follows the group width its
+  transport's routing matrix actually renders. Previously it read a
+  transport-side copy that only `setGroupOutputBus()` updated, so matrix
+  group-width edits could render newly started voices incorrectly.
+  `getGroupOutputBus()` reports the matrix's geometry for the same reason;
+  metadata admission still checks the width last accepted by `setGroupOutputBus()`.
+- The dummy driver's first block at device sample position zero now also
+  carries `discontinuity=true`. Zero still reports the device sample position
+  unavailable for that one block; host time remains independently available.
 - Routing group-control publication is a fenced, non-waiting seqlock. The
   audio thread renders only complete group gain, mute, solo and output-route
   transactions on every architecture (a torn read was reachable on x86), and

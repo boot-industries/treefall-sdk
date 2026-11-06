@@ -83,6 +83,9 @@ static_assert(std::is_standard_layout_v<RoutingMeterTelemetry>);
 /// backend, and every processAudio() block, reports unavailable. The device
 /// and host clocks are independent domains; consumers must not infer one from
 /// the other.
+/// A backend whose first block is at device sample position zero reports the
+/// device sample position unavailable for that one block, and that same block
+/// carries discontinuity=true. Host time availability is independent.
 ///
 /// discontinuity_count is the saturating cumulative number of rendered or
 /// rejected blocks that reported a discontinuity since construction. It is a
