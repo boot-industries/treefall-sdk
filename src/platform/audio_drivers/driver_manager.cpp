@@ -82,9 +82,15 @@ void appendUnique(std::vector<uint32_t>& values, uint32_t value) {
 class AudioDriverManager : public IAudioDriverManager {
 public:
   using DriverFactory = std::function<std::unique_ptr<IAudioDriver>(const std::string&)>;
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  using EndpointMonitorFactory = std::function<std::unique_ptr<CoreAudioEndpointMonitor>()>;
+#endif
 
   AudioDriverManager();
   explicit AudioDriverManager(DriverFactory factory);
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  AudioDriverManager(DriverFactory factory, EndpointMonitorFactory endpoint_monitor_factory);
+#endif
   ~AudioDriverManager() override;
 
   std::vector<AudioDeviceInfo> enumerateDevices() override;
@@ -109,6 +115,7 @@ private:
   AudioDeviceInfo getDummyDeviceInfo();
   std::unique_ptr<IAudioDriver> createDriverForDevice(const std::string& deviceId);
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+  EndpointMonitorFactory m_endpointMonitorFactory{&createCoreAudioEndpointMonitor};
   std::unique_ptr<CoreAudioEndpointMonitor> m_endpointMonitor;
 #endif
 
@@ -128,6 +135,13 @@ AudioDriverManager::AudioDriverManager()
 
 AudioDriverManager::AudioDriverManager(DriverFactory factory)
     : m_driverFactory(std::move(factory)) {}
+
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+AudioDriverManager::AudioDriverManager(DriverFactory factory,
+                                       EndpointMonitorFactory endpoint_monitor_factory)
+    : m_endpointMonitorFactory(std::move(endpoint_monitor_factory)),
+      m_driverFactory(std::move(factory)) {}
+#endif
 
 AudioDriverManager::~AudioDriverManager() {
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
@@ -341,7 +355,7 @@ void AudioDriverManager::setEndpointChangeCallback(std::function<void()> callbac
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_endpointMonitor) {
-      m_endpointMonitor = createCoreAudioEndpointMonitor();
+      m_endpointMonitor = m_endpointMonitorFactory();
     }
     monitor = m_endpointMonitor.get();
   }
@@ -809,6 +823,15 @@ std::unique_ptr<IAudioDriverManager> createAudioDriverManagerForTesting(
     std::function<std::unique_ptr<IAudioDriver>(const std::string&)> factory) {
   return std::make_unique<AudioDriverManager>(std::move(factory));
 }
+
+#if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
+std::unique_ptr<IAudioDriverManager> createAudioDriverManagerForTesting(
+    std::function<std::unique_ptr<IAudioDriver>(const std::string&)> factory,
+    std::function<std::unique_ptr<CoreAudioEndpointMonitor>()> endpoint_monitor_factory) {
+  return std::make_unique<AudioDriverManager>(std::move(factory),
+                                              std::move(endpoint_monitor_factory));
+}
+#endif
 
 } // namespace detail
 

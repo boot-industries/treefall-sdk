@@ -39,7 +39,7 @@ The Treefall SDK is built on four non-negotiable principles:
 
 1. **Offline-first** – No runtime network calls for core features. All essential functionality works without internet connectivity.
 
-2. **Deterministic** – Same input produces bit-identical output across platforms and runs. Sample-accurate timing, reproducible renders.
+2. **Deterministic** – Same input produces the same output across runs for a given toolchain, libm and floating-point contraction setting. Sample-accurate timing, reproducible renders. Cross-platform bit identity is established only for the exact scenarios that assert one shared golden on every tested runner (the transport render-hash scenario and the installed-package offline render fixture), each for its own path; resampled, varispeed and other DSP paths that use libm may differ in the last bits between architectures.
 
 3. **Host-neutral** – Core SDK works across REAPER, standalone apps, plugins, embedded systems without host-specific dependencies.
 
@@ -534,7 +534,7 @@ Comprehensive test suite ensures correctness across platforms.
 #### 2. Integration Tests
 
 - **Multi-Clip Stress Test** (`tests/transport/multi_clip_stress_test.cpp`) – 16 simultaneous clips
-- **Offline Render Test** (`tests/determinism/offline_render_test.cpp`) – Cross-platform determinism
+- **Offline Render Fixture** (`tests/cmake/find_package/offline_render.cpp`) – Portable PCM golden for its own installed-package render path
 
 #### 3. Conformance Tools
 

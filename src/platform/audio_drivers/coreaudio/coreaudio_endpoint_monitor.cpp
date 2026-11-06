@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -44,11 +45,30 @@ const std::array<AudioObjectPropertyAddress, 3>& endpointPropertyAddresses() {
 struct CoreAudioEndpointMonitor::State {
   std::atomic<bool> active{false};
   std::atomic<bool> pending{false};
+  // A worker runs only while this matches the generation it was started with.
+  // Every start and stop advances it, so a retired worker exits even if the
+  // callback it was running restarted monitoring.
+  std::atomic<std::uint64_t> generation{0};
   std::condition_variable changed;
   std::mutex changed_mutex;
   std::mutex callback_mutex;
   std::function<void()> callback;
+  // Serializes start and stop. A stop joins its worker after releasing this
+  // mutex, because the callback on that worker may itself start or stop
+  // monitoring. `retiring` counts such joins; other threads wait on `retired`
+  // for them, so stop() still returns only after the worker it retired exits.
+  std::mutex lifecycle_mutex;
+  std::condition_variable retired;
+  size_t retiring{0};
 };
+
+namespace {
+
+// Set on each monitor worker thread. A lifecycle call from a worker's own
+// callback must not wait for retiring workers: it may be one of them.
+thread_local const void* tls_worker_state = nullptr;
+
+} // namespace
 
 CoreAudioEndpointMonitor::CoreAudioEndpointMonitor(ICoreAudioEndpointPropertyApi& property_api)
     : property_api_(property_api), state_(std::make_shared<State>()) {}
@@ -70,7 +90,8 @@ void CoreAudioEndpointMonitor::setCallback(std::function<void()> callback) {
     return;
   }
 
-  std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+  std::unique_lock<std::mutex> lifecycle_lock(state_->lifecycle_mutex);
+  awaitRetiredWorkers(lifecycle_lock);
   if (state_->active.exchange(true, std::memory_order_acq_rel)) {
     return;
   }
@@ -90,8 +111,9 @@ void CoreAudioEndpointMonitor::setCallback(std::function<void()> callback) {
     ++listener_count_;
   }
 
+  const std::uint64_t generation = state_->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   try {
-    worker_ = std::thread(&CoreAudioEndpointMonitor::monitorLoop, state_);
+    worker_ = std::thread(&CoreAudioEndpointMonitor::monitorLoop, state_, generation);
   } catch (...) {
     for (size_t index = 0; index < listener_count_; ++index) {
       const AudioObjectPropertyAddress& registered = endpointPropertyAddresses()[index];
@@ -104,31 +126,53 @@ void CoreAudioEndpointMonitor::setCallback(std::function<void()> callback) {
 }
 
 void CoreAudioEndpointMonitor::stop() noexcept {
-  std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-  if (!state_->active.exchange(false, std::memory_order_acq_rel) && !worker_.joinable()) {
+  // The local reference keeps the lifecycle mutex alive after the join even if
+  // the joined callback destroyed this monitor.
+  const std::shared_ptr<State> state = state_;
+  std::unique_lock<std::mutex> lifecycle_lock(state->lifecycle_mutex);
+  awaitRetiredWorkers(lifecycle_lock);
+  if (!state->active.exchange(false, std::memory_order_acq_rel) && !worker_.joinable()) {
     return;
   }
 
   for (size_t index = 0; index < listener_count_; ++index) {
     const AudioObjectPropertyAddress& address = endpointPropertyAddresses()[index];
     property_api_.removePropertyListener(kAudioObjectSystemObject, &address, &propertyChanged,
-                                         state_.get());
+                                         state.get());
   }
   listener_count_ = 0;
-  state_->pending.store(true, std::memory_order_release);
+  state->generation.fetch_add(1, std::memory_order_acq_rel);
   // Passing through the wait mutex orders this wakeup after any predicate check
-  // the worker made, so the notify cannot fall between its check and its wait.
-  state_->changed_mutex.lock();
-  state_->changed_mutex.unlock();
-  state_->changed.notify_one();
+  // a worker made, so the notify cannot fall between its check and its wait.
+  state->changed_mutex.lock();
+  state->changed_mutex.unlock();
+  state->changed.notify_all();
 
-  if (worker_.joinable()) {
-    if (worker_.get_id() == std::this_thread::get_id()) {
-      worker_.detach();
-    } else {
-      worker_.join();
-    }
+  std::thread worker = std::move(worker_);
+  if (!worker.joinable()) {
+    return;
   }
+  if (worker.get_id() == std::this_thread::get_id()) {
+    worker.detach();
+    return;
+  }
+
+  // Join outside the lifecycle mutex: the callback in flight on this worker may
+  // start or stop monitoring, which needs that mutex.
+  ++state->retiring;
+  lifecycle_lock.unlock();
+  worker.join();
+  lifecycle_lock.lock();
+  --state->retiring;
+  lifecycle_lock.unlock();
+  state->retired.notify_all();
+}
+
+void CoreAudioEndpointMonitor::awaitRetiredWorkers(std::unique_lock<std::mutex>& lifecycle_lock) {
+  if (tls_worker_state == state_.get()) {
+    return;
+  }
+  state_->retired.wait(lifecycle_lock, [this] { return state_->retiring == 0; });
 }
 
 OSStatus CoreAudioEndpointMonitor::propertyChanged(AudioObjectID object_id, UInt32 address_count,
@@ -148,17 +192,20 @@ OSStatus CoreAudioEndpointMonitor::propertyChanged(AudioObjectID object_id, UInt
   return noErr;
 }
 
-void CoreAudioEndpointMonitor::monitorLoop(std::shared_ptr<State> state) {
-  while (state->active.load(std::memory_order_acquire)) {
+void CoreAudioEndpointMonitor::monitorLoop(std::shared_ptr<State> state, std::uint64_t generation) {
+  tls_worker_state = state.get();
+  const auto current = [&state, generation] {
+    return state->generation.load(std::memory_order_acquire) == generation;
+  };
+  while (true) {
     std::unique_lock<std::mutex> lock(state->changed_mutex);
-    state->changed.wait(lock, [&state] {
-      return state->pending.load(std::memory_order_acquire) ||
-             !state->active.load(std::memory_order_acquire);
+    state->changed.wait(lock, [&state, &current] {
+      return state->pending.load(std::memory_order_acquire) || !current();
     });
-    state->pending.store(false, std::memory_order_release);
-    if (!state->active.load(std::memory_order_acquire)) {
+    if (!current()) {
       return;
     }
+    state->pending.store(false, std::memory_order_release);
 
     std::function<void()> callback;
     {

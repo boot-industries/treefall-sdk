@@ -155,6 +155,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `discontinuity_in_window` for a break since the previous enqueued snapshot.
   Migration: the snapshot size changed, so consumers that copy, store or
   compare the schema version must rebuild and accept version 4.
+- Documentation: the README now records the C ABI 1.x compatibility contract.
+  The session, clipgrid and render tables are append-only within 1.x, and
+  consumers must gate any member added in a later minor version on the
+  negotiated `got_minor`. Known limitation: 1.x has no size handshake, so a
+  consumer built against a newer header and linked to an older library cannot
+  detect an extension from the table itself. A sized handshake is deferred to
+  ABI 2.0, which will ship with migration guidance. No header, table or export
+  changed.
 
 ### Fixed
 
@@ -189,6 +197,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
   mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
   flight that called a manager getter could deadlock against that join.
+- Stopping CoreAudio endpoint-change monitoring no longer deadlocks when the
+  endpoint callback in flight clears, replaces or re-registers itself (directly
+  or through `AudioDriverManager::setEndpointChangeCallback`) while another
+  thread is stopping the monitor: the stop joins the worker outside the monitor's
+  lifecycle lock. A worker retired by its own callback now exits after that
+  callback returns, even if the callback restarted monitoring, instead of
+  running beside the new worker. Concurrent stops still return only after the
+  retired worker has exited.
 - Session, scene, reconform-plan and ADM debug JSON, plus `orpheus_minhost`
   JSON numbers and numeric arguments, now ignore the host's global locale. A
   host that installed a comma-decimal or digit-grouping C++ locale previously
@@ -293,6 +309,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state. A null `master_output` or a null configured output lane is now a true
   no-touch return: routing control state, the group-output meter snapshot, and
   telemetry are all left unchanged.
+
+- Documentation correction: `PolyphaseResampler`, the README and
+  `ARCHITECTURE.md` no longer claim bit-identical output across platforms.
+  Output is deterministic for a given toolchain, libm and floating-point
+  contraction setting; the resampler's tap design uses libm `sin`/`cos` and is
+  not built with contraction disabled, so arm64 and x86 results may differ in
+  the last bits. Cross-platform bit identity is established only by the
+  scenarios that assert one shared golden on every tested runner (the transport
+  render-hash scenario and the installed-package offline render fixture), each
+  for its own path. No code or compiler flag changed.
 
 ### Verification and remaining acceptance
 
