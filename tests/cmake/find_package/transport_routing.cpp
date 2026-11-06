@@ -3,6 +3,8 @@
 #include <orpheus/routing_matrix.h>
 #include <orpheus/transport_controller.h>
 
+#include "../../support/unique_temp_dir.hpp"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -44,7 +46,8 @@ std::filesystem::path writeFixtureWav() {
   constexpr uint32_t fmtSize = 16;
   constexpr uint32_t byteRate = sampleRate * channels * sizeof(int16_t);
   constexpr uint16_t blockAlign = channels * sizeof(int16_t);
-  const auto path = std::filesystem::temp_directory_path() / "orpheus-find-package-transport.wav";
+  const auto path =
+      orpheus::tests::support::UniqueTempPath("orpheus-find-package-transport", ".wav");
 
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
   file.write("RIFF", 4);

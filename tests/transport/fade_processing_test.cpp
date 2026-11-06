@@ -2,6 +2,7 @@
 // Integration test for fade curve processing in TransportController
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -16,7 +17,7 @@ class FadeProcessingTest : public ::testing::Test {
 protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
-    m_testFilePath = (std::filesystem::temp_directory_path() / "test_fade_audio.wav").string();
+    m_testFilePath = orpheus::tests::support::UniqueTempPath("test_fade_audio", ".wav").string();
     // Create a test audio file (1 second of silence at 48kHz)
     createTestAudioFile();
   }

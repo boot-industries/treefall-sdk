@@ -24,7 +24,9 @@ NC='\033[0m' # No Color
 # Configuration
 MINHOST_BIN="./build/adapters/minhost/orpheus_minhost"
 SESSION_FILE="tools/fixtures/solo_click.json"
-OUTPUT_FILE="/tmp/orpheus_render_test.wav"
+# Unique per run so concurrent invocations never overwrite each other's render.
+OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/orpheus-determinism.XXXXXX")"
+OUTPUT_FILE="$OUTPUT_DIR/orpheus_render_test.wav"
 # Calculate range in beats: 2 bars at 4/4 = 8 beats
 RANGE="0:8"
 

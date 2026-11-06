@@ -29,6 +29,7 @@
 #include "../../src/core/transport/transport_controller.h"
 #include "../support/fnv1a64.hpp"
 #include "../support/synth.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -109,7 +110,7 @@ std::vector<float> interleaveStereo(const std::vector<float>& left,
 class TransportRenderHashTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_tempDir = std::filesystem::temp_directory_path() / "orp136_render_hash";
+    m_tempDir = orpheus::tests::support::UniqueTempPath("orp136_render_hash");
     std::filesystem::create_directories(m_tempDir);
 
     // Fixture 1: stereo dual sine, 1.5s — plays to natural EOF inside the

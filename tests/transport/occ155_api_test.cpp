@@ -19,6 +19,7 @@
 
 #include "../../src/core/transport/transport_controller.h"
 #include "../support/rt_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <algorithm>
 #include <array>
@@ -144,7 +145,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-    m_dir = std::filesystem::temp_directory_path() / "occ155_api";
+    m_dir = orpheus::tests::support::UniqueTempPath("occ155_api");
     std::filesystem::create_directories(m_dir);
     m_constPath = writeConstantWav(m_dir / "const.wav", 2.0f, kSampleRate);
     m_sinePath = writeSineWav(m_dir / "sine.wav", 4000.0f, 2.0f, kSampleRate);

@@ -3,6 +3,8 @@
 #include "treefall/abi.h"
 #include "treefall/errors.h"
 
+#include "../support/unique_temp_dir.hpp"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -466,13 +468,14 @@ int main() {
                        *old_session(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
                        *old_clipgrid(ORPHEUS_ABI_MAJOR, nullptr, nullptr),
                        *old_render(ORPHEUS_ABI_MAJOR, nullptr, nullptr), handle, clip);
-    const fs::path render_output = fs::temp_directory_path() / "abi_link_cross_dso.json";
+    // render_tracks writes its stems into this directory.
+    const fs::path render_output = orpheus::tests::support::UniqueTempPath("abi_link_cross_dso");
     if (old_render(ORPHEUS_ABI_MAJOR, nullptr, nullptr)
             ->render_tracks(handle, render_output.string().c_str()) != ORPHEUS_STATUS_OK)
       throw std::runtime_error(
           "Cross-DSO render_tracks failed: the session registry is not shared");
     std::error_code ignored;
-    fs::remove(render_output, ignored);
+    fs::remove_all(render_output, ignored);
 
     // The same validation applies across module boundaries.
     const auto fabricated = reinterpret_cast<orpheus_session_handle>(static_cast<uintptr_t>(0x1));

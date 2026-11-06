@@ -55,7 +55,7 @@ AUTHORITY_DOCS = {
     "docs/SUPPORT_MATRIX.md",
 }
 EXCLUDED_CMAKE_COMPONENTS = {".git", "_deps", "CMakeFiles"}
-HISTORICAL_DOC_PREFIXES = ("docs/orp/", "docs/archive/", "docs/api/archive/", "docs/tmp/")
+HISTORICAL_DOC_PREFIXES = ("docs/orp/", "docs/archive/", "docs/api/archive/")
 # Handles both [t](path) and the angle-bracket form [t](<path with (parens)>).
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\((<[^>]*>|[^)\s]+)\)")
 EXTRACTED_APP_RE = re.compile(r"apps/clip-composer")
@@ -125,6 +125,7 @@ def iter_docs(root: Path) -> list[Path]:
         for doc in docs
         if doc.relative_to(root).as_posix() not in HISTORICAL_DOCS
         and not doc.relative_to(root).as_posix().startswith(HISTORICAL_DOC_PREFIXES)
+        and not PRIVATE_TRACKED_RE.match(doc.relative_to(root).as_posix())
     ]
 
 
@@ -240,8 +241,10 @@ def check_installed_header_contract(root: Path) -> list[Violation]:
 # They live in a separate private repository reached through a gitignored
 # symlink at docs/ORP. Case-insensitive: macOS filesystems fold docs/orp and
 # docs/ORP. The pattern also matches a tracked file or symlink named docs/ORP.
+# docs/tmp/ holds gitignored local working prompts under the same rule. Local
+# copies of these paths are never live docs, so iter_docs skips them too.
 PRIVATE_TRACKED_RE = re.compile(
-    r"^(docs/orp(/|$)|\.claude/(implementation_progress|progress)\.md$)", re.IGNORECASE
+    r"^(docs/(orp|tmp)(/|$)|\.claude/(implementation_progress|progress)\.md$)", re.IGNORECASE
 )
 
 

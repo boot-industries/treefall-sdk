@@ -12,6 +12,7 @@
 
 #include <orpheus/session_graph.h>
 
+#include "../support/unique_temp_dir.hpp"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -184,7 +185,7 @@ TEST_F(SceneRoutingTest, DanglingHistoricalSceneRejectsBeforePlaybackRoutingOrGr
   m_graph->set_clip_assignments({live, live});
   assignTopology(2, 3.0f);
 
-  m_audioPath = std::filesystem::temp_directory_path() / "orpheus-scene-prevalidation.wav";
+  m_audioPath = orpheus::tests::support::UniqueTempPath("orpheus-scene-prevalidation", ".wav");
   const auto& path = m_audioPath;
   {
     std::ofstream file(path, std::ios::binary);

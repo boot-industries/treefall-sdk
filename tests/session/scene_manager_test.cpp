@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "../../include/orpheus/scene_manager.h"
 #include "../support/global_locale_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 #include "common/checked_numeric.h"
 #include <cmath>
 #include <limits>
@@ -31,29 +32,16 @@ protected:
     transport = createTransportController(
         sessionGraph.get(), TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
     sceneManager->setTransportController(transport.get());
-
-    // Use std::filesystem for portable temp directory
-    tempDir = std::filesystem::temp_directory_path().string();
-  }
-
-  void TearDown() override {
-    // Clean up temporary files
-    cleanupTempFiles();
-  }
-
-  void cleanupTempFiles() {
-    // Remove any temp files created during tests
-    // Note: This is basic cleanup, production code would use a proper temp dir library
   }
 
   std::string getTempFilePath(const std::string& filename) {
-    return (std::filesystem::path(tempDir) / ("orpheus_test_" + filename)).string();
+    return (tempDir / ("orpheus_test_" + filename)).string();
   }
 
   std::unique_ptr<core::SessionGraph> sessionGraph;
   std::unique_ptr<ISceneManager> sceneManager;
   std::unique_ptr<ITransportController> transport;
-  std::string tempDir;
+  orpheus::tests::support::UniqueTempDir tempDir{"orpheus_scene_manager_test"};
 };
 
 // ============================================================================

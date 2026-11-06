@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "../support/unique_temp_dir.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -65,10 +66,11 @@ constexpr size_t kFrames = 64;
 class MultichannelTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    filePath = (std::filesystem::temp_directory_path() / "orpheus_multichannel_transport_test.wav")
-                   .string();
+    filePath =
+        orpheus::tests::support::UniqueTempPath("orpheus_multichannel_transport_test", ".wav")
+            .string();
     stereoPath =
-        (std::filesystem::temp_directory_path() / "orpheus_stereo_route_test.wav").string();
+        orpheus::tests::support::UniqueTempPath("orpheus_stereo_route_test", ".wav").string();
     writeFixture(filePath, kChannels);
     writeFixture(stereoPath, 2);
   }
@@ -283,7 +285,7 @@ TEST_F(MultichannelTransportTest, RoutesStereoThroughLogicalGroupToSelectedOutpu
 
 TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange) {
   const auto monoPath =
-      (std::filesystem::temp_directory_path() / "orpheus_mono_width_change.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_mono_width_change", ".wav").string();
   writeFixture(monoPath, 1);
 
   TransportConfig config;
@@ -371,9 +373,9 @@ TEST(ChannelFormatTest, DistinguishesSMPTE51StereoBundleFromSurround71Bed) {
 }
 TEST_F(MultichannelTransportTest, PublishesIndependentLogicalGroupOutputTelemetry) {
   const auto group0Path =
-      (std::filesystem::temp_directory_path() / "orpheus_meter_group0.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_meter_group0", ".wav").string();
   const auto group1Path =
-      (std::filesystem::temp_directory_path() / "orpheus_meter_group1.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_meter_group1", ".wav").string();
   writeFixture(group0Path, 1, 2048);
   writeFixture(group1Path, 1, 4096);
 
@@ -594,7 +596,7 @@ TEST_F(MultichannelTransportTest, CanonicalFrameStampsSchemas) {
 
 TEST_F(MultichannelTransportTest, TopologyShrinkClearsLanesBeyondLogicalCount) {
   const auto path =
-      (std::filesystem::temp_directory_path() / "orpheus_meter_topology_shrink.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_meter_topology_shrink", ".wav").string();
   writeMonoBlockFixture(path, {8192});
   auto transport = startLoopingMonoVoice(path, 4);
   ASSERT_NE(transport, nullptr);
@@ -634,7 +636,7 @@ TEST_F(MultichannelTransportTest, TopologyShrinkClearsLanesBeyondLogicalCount) {
 
 TEST_F(MultichannelTransportTest, DecimationMergeMatchesBlockMaxima) {
   const auto path =
-      (std::filesystem::temp_directory_path() / "orpheus_meter_alternating.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_meter_alternating", ".wav").string();
   writeMonoBlockFixture(path, {16384, 2048, 16384, 2048});
   auto reference = startLoopingMonoVoice(path, 1);
   auto decimated = startLoopingMonoVoice(path, 4);
@@ -690,7 +692,7 @@ TEST_F(MultichannelTransportTest, DecimationMergeMatchesBlockMaxima) {
 
 TEST_F(MultichannelTransportTest, PostPublishWindowRestarts) {
   const auto path =
-      (std::filesystem::temp_directory_path() / "orpheus_meter_window_restart.wav").string();
+      orpheus::tests::support::UniqueTempPath("orpheus_meter_window_restart", ".wav").string();
   writeMonoBlockFixture(path, {8192});
   auto transport = startLoopingMonoVoice(path, 1);
   ASSERT_NE(transport, nullptr);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <gtest/gtest.h>
 #include <orpheus/audio_file_capabilities.h>
 #include <orpheus/audio_file_writer.h>
@@ -309,9 +310,7 @@ protected:
   void SetUp() override {
     if (!getAudioFileCapabilities().file_io_available)
       GTEST_SKIP() << "real file provider required";
-    directory = std::filesystem::temp_directory_path() /
-                ("command-ingress-" +
-                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    directory = orpheus::tests::support::UniqueTempPath("command-ingress");
     ASSERT_TRUE(std::filesystem::create_directory(directory));
     const auto path = directory / "source.wav";
     auto writer = createAudioFileWriter();

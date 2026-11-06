@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <orpheus/transport_controller.h>
 
 #include <array>
 #include <atomic>
 #include <barrier>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -121,9 +121,7 @@ const orpheus::ActiveVoiceSnapshotEntry* findEntry(const orpheus::ActiveVoiceSna
 class CallbackLossTelemetryTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
-    directory =
-        std::filesystem::temp_directory_path() / ("orp151-callback-loss-" + std::to_string(suffix));
+    directory = orpheus::tests::support::UniqueTempPath("orp151-callback-loss");
     std::filesystem::create_directories(directory);
     audioPath = writeSilentWav(directory / "voices.wav");
 

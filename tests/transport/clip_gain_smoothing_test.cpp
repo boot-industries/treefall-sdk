@@ -9,6 +9,7 @@
 // sample jump (a step would jump by |Δgain|*steady in one sample).
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -66,7 +67,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});
-    m_path = (std::filesystem::temp_directory_path() / "orp127_gain_smooth.wav").string();
+    m_path = orpheus::tests::support::UniqueTempPath("orp127_gain_smooth", ".wav").string();
     writeConstantWav(m_path, 2.0f, kSampleRate);
   }
   void TearDown() override {

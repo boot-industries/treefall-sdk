@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "../support/sanitizer_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -93,7 +94,7 @@ class WaveformProcessorTest : public ::testing::Test {
 protected:
   void SetUp() override {
     // Create temporary directory for test files
-    testDir = std::filesystem::temp_directory_path() / "orpheus_waveform_test";
+    testDir = orpheus::tests::support::UniqueTempPath("orpheus_waveform_test");
     std::filesystem::create_directories(testDir);
   }
 

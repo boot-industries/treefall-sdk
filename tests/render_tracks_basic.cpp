@@ -3,6 +3,7 @@
 
 #include "support/fnv1a64.hpp"
 #include "support/synth.hpp"
+#include "support/unique_temp_dir.hpp"
 #include "support/wav_parse.hpp"
 
 #include <algorithm>
@@ -25,27 +26,11 @@ namespace support = orpheus::tests::support;
 
 namespace {
 
-class ScratchDir {
+// Per-test scratch directory, unique per process so concurrent runs never collide.
+class ScratchDir : public support::UniqueTempDir {
 public:
-  explicit ScratchDir(const std::string& name) {
-    const fs::path base = fs::temp_directory_path();
-    path_ = base / ("orpheus_render_tracks_basic_" + name);
-    std::error_code ec;
-    fs::remove_all(path_, ec);
-    fs::create_directories(path_);
-  }
-
-  ~ScratchDir() {
-    std::error_code ec;
-    fs::remove_all(path_, ec);
-  }
-
-  const fs::path& path() const {
-    return path_;
-  }
-
-private:
-  fs::path path_;
+  explicit ScratchDir(const std::string& name)
+      : support::UniqueTempDir("orpheus_render_tracks_basic_" + name) {}
 };
 
 class FailureArtifactGuard {
