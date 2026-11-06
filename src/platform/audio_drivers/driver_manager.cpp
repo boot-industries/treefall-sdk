@@ -337,11 +337,19 @@ AudioDriverManager::getEndpointCapabilities(const std::string& deviceId) {
 
 void AudioDriverManager::setEndpointChangeCallback(std::function<void()> callback) {
 #if defined(__APPLE__) && defined(ORPHEUS_ENABLE_COREAUDIO)
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (!m_endpointMonitor) {
-    m_endpointMonitor = createCoreAudioEndpointMonitor();
+  CoreAudioEndpointMonitor* monitor = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_endpointMonitor) {
+      m_endpointMonitor = createCoreAudioEndpointMonitor();
+    }
+    monitor = m_endpointMonitor.get();
   }
-  m_endpointMonitor->setCallback(std::move(callback));
+  // Replacing or clearing the callback may stop and join the monitor worker.
+  // A callback in flight on that worker may call back into this manager, so
+  // the join must not run under m_mutex. The monitor serializes itself, and
+  // the pointer stays valid until this manager is destroyed.
+  monitor->setCallback(std::move(callback));
 #else
   (void)callback;
 #endif

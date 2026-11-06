@@ -284,14 +284,38 @@ if(APPLE AND ORPHEUS_ENABLE_COREAUDIO)
 
     add_test(NAME coreaudio_route_probe_test COMMAND coreaudio_route_probe_test)
     set_tests_properties(coreaudio_route_probe_test PROPERTIES LABELS "unit")
+
+    # Hardware-free route-monitor and sample-rate-transaction contracts run
+    # against the injected property fake, so they belong in the fast loop.
+    add_executable(coreaudio_route_unit_test
+        coreaudio_route_monitor_test.cpp
+        coreaudio_sample_rate_transaction_test.cpp
+    )
+
+    target_link_libraries(coreaudio_route_unit_test
+        PRIVATE
+            orpheus_audio_driver_coreaudio
+            orpheus_session
+            GTest::gtest
+            GTest::gtest_main
+            "-framework CoreFoundation"
+    )
+
+    target_include_directories(coreaudio_route_unit_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/core
+            ${CMAKE_SOURCE_DIR}/src/platform/audio_drivers
+    )
+
+    add_test(NAME coreaudio_route_unit_test COMMAND coreaudio_route_unit_test)
+    set_tests_properties(coreaudio_route_unit_test PROPERTIES LABELS "fast;unit")
 endif()
 
 # CoreAudio driver tests (macOS only)
 if(ORPHEUS_ENABLE_COREAUDIO AND ORPHEUS_ENABLE_EXTENDED_TESTS)
     add_executable(coreaudio_driver_test
         coreaudio_driver_test.cpp
-        coreaudio_route_monitor_test.cpp
-        coreaudio_sample_rate_transaction_test.cpp
         coreaudio_output_only_injected_test.cpp
     )
 

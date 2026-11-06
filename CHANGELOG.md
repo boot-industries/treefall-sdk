@@ -124,6 +124,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their seqlock reads, so a snapshot reported `coherent` can no longer mix
   lanes from two render publications on weakly ordered CPUs. Decibel
   conversion now runs after the read window closes.
+- CoreAudio output clears each render chunk before the host callback runs, so
+  a channel or frame the host leaves unwritten plays silence instead of the
+  previous callback's audio, on both the direct and the converting output
+  paths. This matches the WASAPI and Dummy drivers.
+- Stopping CoreAudio endpoint-change monitoring can no longer hang: the stop
+  and listener wakeups are published under the worker's wait mutex, so a
+  wakeup can no longer be lost between the worker's check and its wait.
+- A CoreAudio sample-rate change no longer fails spuriously when its listener
+  event arrives just as the transaction starts waiting. The event was lost,
+  so the transaction slept to its 2 s deadline, reported
+  `SampleRateChangeFailed` and rolled the rate back.
+- `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
+  mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
+  flight that called a manager getter could deadlock against that join.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

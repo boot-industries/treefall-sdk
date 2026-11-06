@@ -9,7 +9,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace orpheus {
@@ -118,6 +120,49 @@ TEST(CoreAudioEndpointMonitorTest, CallbackMayDestroyMonitor) {
 
   EXPECT_EQ(completion.wait_for(std::chrono::seconds(1)), std::future_status::ready);
   EXPECT_EQ(api.listenerCount(), 0u);
+}
+
+TEST(CoreAudioEndpointMonitorTest, StopNeverLosesTheWakeup) {
+  // Each iteration races a listener wakeup against stop(). A wakeup published
+  // between the worker's predicate check and its wait is lost, the worker never
+  // wakes, and stop() joins it forever. Oversubscribed racers make preemption
+  // inside that window likely. They run detached and own their state, so a hang
+  // fails this test instead of blocking the suite.
+  struct Racer {
+    FakeCoreAudioEndpointPropertyApi api;
+  };
+  struct Shared {
+    std::vector<Racer> racers;
+    std::atomic<size_t> remaining{0};
+    std::promise<void> finished;
+  };
+  const size_t racer_count = std::max(4u, 2u * std::thread::hardware_concurrency());
+  auto shared = std::make_shared<Shared>();
+  shared->racers = std::vector<Racer>(racer_count);
+  shared->remaining.store(racer_count);
+  auto completion = shared->finished.get_future();
+
+  for (size_t index = 0; index < racer_count; ++index) {
+    std::thread([shared, index] {
+      FakeCoreAudioEndpointPropertyApi& api = shared->racers[index].api;
+      CoreAudioEndpointMonitor monitor(api);
+      for (int iteration = 0; iteration < 2000; ++iteration) {
+        monitor.setCallback([] {});
+        std::thread notifier([&api] { api.notify(kAudioHardwarePropertyDefaultOutputDevice); });
+        monitor.setCallback({});
+        notifier.join();
+      }
+      if (shared->remaining.fetch_sub(1) == 1) {
+        shared->finished.set_value();
+      }
+    }).detach();
+  }
+
+  ASSERT_EQ(completion.wait_for(std::chrono::seconds(10)), std::future_status::ready)
+      << "stop() did not return: a worker missed its stop wakeup";
+  for (const Racer& racer : shared->racers) {
+    EXPECT_EQ(racer.api.listenerCount(), 0u);
+  }
 }
 
 } // namespace

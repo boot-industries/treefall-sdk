@@ -151,6 +151,10 @@ OSStatus CoreAudioSampleRateTransaction::propertyChanged(AudioObjectID object_id
   for (size_t index = 0; index < transaction->endpoint_count_; ++index) {
     if (transaction->endpoints_[index].device_id == object_id) {
       transaction->notification_bits_.fetch_or(uint32_t{1} << index, std::memory_order_release);
+      // Passing through the wait mutex orders this wakeup after any predicate
+      // check begin() made, so the notify cannot fall between check and wait.
+      transaction->notification_mutex_.lock();
+      transaction->notification_mutex_.unlock();
       transaction->notification_changed_.notify_one();
       break;
     }
