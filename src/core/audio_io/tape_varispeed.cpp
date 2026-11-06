@@ -222,8 +222,7 @@ TapeVarispeedProcessResult PreparedTapeVarispeed::process(const float* input, si
     for (size_t tap = 0; tap < kTapCount; ++tap) {
       const double distance =
           static_cast<double>(tap) - static_cast<double>(kHalfTaps - 1) - fraction;
-      const double coefficient =
-          2.0 * cutoff * sinc(2.0 * cutoff * distance) * impl_->window[tap];
+      const double coefficient = 2.0 * cutoff * sinc(2.0 * cutoff * distance) * impl_->window[tap];
       impl_->coefficients[tap] = coefficient;
       normalization += coefficient;
     }

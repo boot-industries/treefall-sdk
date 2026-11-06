@@ -18,8 +18,8 @@ ResamplingAudioFileReader::ResamplingAudioFileReader(std::shared_ptr<IAudioFileR
     : m_inner(std::move(inner)), m_targetRate(targetRate == 0 ? 48000 : targetRate) {}
 
 void ResamplingAudioFileReader::rebuildResampler() {
-  m_resampler =
-      std::make_unique<PolyphaseResampler>(m_sourceRate, m_targetRate, m_numChannels, kTapsPerPhase);
+  m_resampler = std::make_unique<PolyphaseResampler>(m_sourceRate, m_targetRate, m_numChannels,
+                                                     kTapsPerPhase);
   m_outBuffer.clear();
   m_outReadFrame = 0;
   m_sourceEof = false;
