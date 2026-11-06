@@ -153,6 +153,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrote files such as `"tempo_bpm": 120,500000` that could not be read back,
   and a comma-decimal C locale made the parser reject `120.5`. The parser also
   accepts only JSON whitespace, so `\v` and `\f` between tokens are rejected.
+- `orpheus_minhost` integer options such as `--sr` and `--bd` reject values
+  outside `uint32_t`, signs and surrounding whitespace. `--sr 4294967297` was
+  previously accepted as 1 Hz and `-1` as 4294967295.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -28,6 +29,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -597,13 +599,19 @@ void PrintSimulateTransportHelp() {
 }
 
 bool ParseUint32(const std::string& text, std::uint32_t& value) {
-  char* end_ptr = nullptr;
-  errno = 0;
-  unsigned long parsed = std::strtoul(text.c_str(), &end_ptr, 10);
-  if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
+  // from_chars never skips whitespace, accepts no sign and reports overflow of
+  // the 32-bit target itself, so "-1" and "4294967297" cannot wrap.
+  if (text.empty()) {
     return false;
   }
-  value = static_cast<std::uint32_t>(parsed);
+  const char* const begin = text.data();
+  const char* const end = begin + text.size();
+  std::uint32_t parsed = 0;
+  const auto [ptr, ec] = std::from_chars(begin, end, parsed, 10);
+  if (ec != std::errc{} || ptr != end) {
+    return false;
+  }
+  value = parsed;
   return true;
 }
 
