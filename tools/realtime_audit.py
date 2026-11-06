@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: MIT
 """Static realtime-safety audit for Orpheus callback paths.
 
-The audit is intentionally conservative. Every in-repo realtime producer
-receives the hard-fail callback rules. The transport render path additionally
-receives the historical file-reader debt rules so one target can enforce both
-contracts without choosing between them.
+The audit is intentionally conservative and lexical. Every in-repository
+audio-thread function listed in ``repository_target_rows`` receives the
+hard-fail callback rules, including the blocking file-reader patterns. Adjacent
+application targets keep the file-reader patterns as tracked debt. A lexical
+scan cannot see forbidden work inside a callee that is not itself listed, so a
+new helper reachable from a callback must be added to the table with its change.
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ FORBIDDEN_DRIVER_PATTERNS = {
     ".notify_one(": "audio callbacks must not notify waiters",
     ".notify_all(": "audio callbacks must not notify waiters",
     "std::condition_variable": "audio callbacks must not use condition variables",
+    ".signal(": "audio callbacks must not signal events (juce::WaitableEvent::signal locks a mutex)",
+    "WaitableEvent": "audio callbacks must not use WaitableEvent",
     "std::lock_guard": "audio callbacks must not take locks",
     "std::unique_lock": "audio callbacks must not take locks",
     "std::scoped_lock": "audio callbacks must not take locks",
@@ -58,6 +62,11 @@ FORBIDDEN_DRIVER_PATTERNS = {
     ".emplace_back(": "audio callbacks must not grow containers",
     ".insert(": "audio callbacks must not grow containers",
     ".assign(": "audio callbacks must not grow containers",
+    # Blocking decoder/file access. In-repository callback paths must never
+    # reach it; adjacent app targets still carry these as tracked debt below.
+    "readSamples(": "audio callbacks must not perform blocking file reads",
+    "->seek(": "audio callbacks must not seek file readers",
+    "sf_readf_float": "audio callbacks must not call the blocking libsndfile decoder",
 }
 
 KNOWN_DEBT_PATTERNS = {
@@ -147,6 +156,55 @@ def _timing_guarded_lines(lines: list[str]) -> list[tuple[str, bool]]:
     return result
 
 
+def _mask_comments_and_literals(lines: list[str]) -> list[str]:
+    """Blank comment spans and literal contents, preserving length and line count."""
+    masked: list[str] = []
+    in_block = False
+    quote = ""
+    for line in lines:
+        out: list[str] = []
+        index = 0
+        length = len(line)
+        while index < length:
+            char = line[index]
+            nxt = line[index + 1] if index + 1 < length else ""
+            if in_block:
+                if char == "*" and nxt == "/":
+                    out.append("  ")
+                    index += 2
+                    in_block = False
+                else:
+                    out.append(" ")
+                    index += 1
+            elif quote:
+                if char == "\\" and nxt:
+                    out.append("  ")
+                    index += 2
+                elif char == quote:
+                    out.append(" ")
+                    index += 1
+                    quote = ""
+                else:
+                    out.append(" ")
+                    index += 1
+            elif char == "/" and nxt == "*":
+                out.append("  ")
+                index += 2
+                in_block = True
+            elif char == "/" and nxt == "/":
+                out.extend(" " * (length - index))
+                index = length
+            elif char in ('"', "'"):
+                quote = char
+                out.append(" ")
+                index += 1
+            else:
+                out.append(char)
+                index += 1
+        masked.append("".join(out))
+    return masked
+
+
 def scan_target(target: ScanTarget) -> list[Finding]:
     if not target.path.exists():
         if target.required:
@@ -155,16 +213,25 @@ def scan_target(target: ScanTarget) -> list[Finding]:
 
     text = target.path.read_text(encoding="utf-8", errors="replace")
     if target.function_regex:
-        base_line, lines = extract_function(text, target.function_regex, target.label)
+        try:
+            base_line, lines = extract_function(text, target.function_regex, target.label)
+        except AuditConfigurationError:
+            # An optional (adjacent-repo) target follows the sibling checkout:
+            # a renamed or inlined function there is not a configuration error
+            # of this repository, exactly as an absent file is not.
+            if target.required:
+                raise
+            return []
     else:
         base_line, lines = 1, text.splitlines()
+    masked = _mask_comments_and_literals(lines)
 
     findings: list[Finding] = []
     for pattern_items, hard_fail in target.resolved_pattern_sets():
         patterns = dict(pattern_items)
-        for offset, (line, timing_guarded) in enumerate(_timing_guarded_lines(lines)):
-            stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+        for offset, (_original, timing_guarded) in enumerate(_timing_guarded_lines(lines)):
+            line = masked[offset]
+            if not line.strip():
                 continue
             for pattern, message in patterns.items():
                 if pattern == "std::chrono" and timing_guarded:
@@ -183,108 +250,296 @@ def scan_target(target: ScanTarget) -> list[Finding]:
     return findings
 
 
-def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
-    targets = [
-        ScanTarget(
-            "CoreAudio render callback",
-            root / "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp",
-            r"OSStatus\s+CoreAudioDriver::renderCallback\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
-        ),
-        ScanTarget(
+def _method(owner: str, name: str) -> str:
+    """Definition regex for a qualified member function ``owner::name``."""
+    return rf"\b[\w:<>]+[\s*&]+{owner}::{name}\s*\("
+
+
+def _free(name: str) -> str:
+    """Definition regex for a free (typically anonymous-namespace) function."""
+    return rf"\b[\w:<>]+\s+{name}\s*\("
+
+
+@dataclass(frozen=True)
+class TargetRow:
+    """One source file and the audio-thread functions it must keep clean.
+
+    ``names`` entries are either a bare name, resolved against ``owner`` (or as
+    a free function when ``owner`` is None), or a ``(name, regex)`` pair for
+    header-inline members whose definition does not carry ``owner::``.
+    """
+
+    label: str
+    relpath: str
+    owner: str | None
+    names: tuple[str | tuple[str, str], ...]
+    pattern_sets: tuple[PatternSet, ...] = (HARD_REALTIME_SET,)
+    required: bool = True
+
+    def expand(self, root: Path) -> list[ScanTarget]:
+        expanded = []
+        for entry in self.names:
+            if isinstance(entry, tuple):
+                name, regex = entry
+            else:
+                name = entry
+                regex = _method(self.owner, name) if self.owner else _free(name)
+            expanded.append(
+                ScanTarget(
+                    self.label.format(owner=self.owner, name=name),
+                    root / self.relpath,
+                    regex,
+                    pattern_sets=self.pattern_sets,
+                    required=self.required,
+                )
+            )
+        return expanded
+
+
+_TRANSPORT = "src/core/transport/transport_controller.cpp"
+_ROUTING = "src/core/routing/routing_matrix.cpp"
+_METER_STATE = "src/core/routing/routing_meter_state.cpp"
+_CLIP_SOURCE = "src/core/transport/clip_source.cpp"
+_COREAUDIO = "src/platform/audio_drivers/coreaudio/coreaudio_driver.cpp"
+_GAIN_SMOOTHER_H = "src/core/routing/gain_smoother.h"
+
+
+def repository_target_rows() -> tuple[TargetRow, ...]:
+    """Every audio-thread function in this repository, one table.
+
+    A new function reachable from a render callback belongs here in the same
+    change that adds it; the gate is lexical, so it cannot see a callee that is
+    not listed.
+    """
+    return (
+        # Driver callbacks.
+        TargetRow("CoreAudio render callback", _COREAUDIO, "CoreAudioDriver", ("renderCallback",)),
+        TargetRow(
             "WASAPI render loop",
-            root / "src/platform/audio_drivers/wasapi/wasapi_driver.cpp",
-            r"void\s+WASAPIAudioDriver::audioLoop\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+            "src/platform/audio_drivers/wasapi/wasapi_driver.cpp",
+            "WASAPIAudioDriver",
+            ("audioLoop",),
         ),
-        ScanTarget(
-            "Transport command consumer",
-            root / "src/core/transport/transport_controller.cpp",
-            r"void\s+TransportController::processCommands\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+        TargetRow(
+            "CoreAudio callback helper {name}",
+            _COREAUDIO,
+            "CoreAudioDriver",
+            (
+                "recordInputRenderFailure",
+                "recordInputFifoOverrun",
+                "recordInputFifoUnderrun",
+                "recordInputConversionFailure",
+                "recordOutputConversionFailure",
+                "failRealtimeConversion",
+                "notifyInputOperation",
+                "inputRenderCallback",
+                "publishTerminalRouteOutcome",
+            ),
         ),
-        ScanTarget(
-            "Transport command detach helper",
-            root / "src/core/transport/transport_controller.cpp",
-            r"void\s+TransportController::detachPendingCommands\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+        TargetRow(
+            "CoreAudio route monitor callback helper {name}",
+            "src/platform/audio_drivers/coreaudio/coreaudio_route_monitor.cpp",
+            "CoreAudioRouteMonitor",
+            ("closeAdmissionFromCallback",),
         ),
-        ScanTarget(
-            "Transport command release helper",
-            root / "src/core/transport/transport_controller.cpp",
-            r"void\s+TransportController::releaseCommandNode\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+        # Transport render path and command consumer.
+        TargetRow("Transport command consumer", _TRANSPORT, "TransportController", ("processCommands",)),
+        TargetRow("Transport command detach helper", _TRANSPORT, "TransportController", ("detachPendingCommands",)),
+        TargetRow("Transport command release helper", _TRANSPORT, "TransportController", ("releaseCommandNode",)),
+        TargetRow("Transport render path", _TRANSPORT, "TransportController", ("processAudio",)),
+        TargetRow(
+            "Transport consumer helper {name}",
+            _TRANSPORT,
+            "TransportController",
+            (
+                "releasePendingStartReservations",
+                "releasePendingSeekReservations",
+                "publishStartSettlement",
+                "startVoiceWithMode",
+                "addActiveClip",
+                "removeActiveVoice",
+                "restartVoiceInPlace",
+                "allocateVoiceId",
+                "allocateVoiceStartOrdinal",
+                "incrementIngressCounter",
+                "mergeAudioMeter",
+                "markRoutingMetersUnmeasured",
+                "markLogicalGroupOutputUnmeasured",
+                "collectRoutingMeters",
+                "countActiveVoices",
+                "findOldestVoice",
+                "configureVoiceRouting",
+                "calculateFadeGain",
+                "applyDownmixLeft",
+                "applyDownmixRight",
+                "getCurrentPosition",
+                "positionAtSamples",
+            ),
         ),
-        ScanTarget(
-            "Transport render path",
-            root / "src/core/transport/transport_controller.cpp",
-            r"void\s+TransportController::processAudio\s*\(",
-            pattern_sets=(HARD_REALTIME_SET, FILE_READER_DEBT_SET),
+        TargetRow(
+            "Transport consumer free helper {name}",
+            _TRANSPORT,
+            None,
+            (
+                "incrementSaturated",
+                "isLaterStartOrdinal",
+                "beginOperatorStop",
+                "playbackWindowStart",
+                "playbackWindowEnd",
+                "resetSegmentCursor",
+                "advancePlaybackWindow",
+            ),
         ),
-        ScanTarget(
+        TargetRow(
+            "Transport callback publisher {name}",
+            _TRANSPORT,
+            "TransportController",
+            ("postTransportEvent", "publishVoiceSnapshot", "publishCallbackTelemetry"),
+        ),
+        # ORP273 F-15: the registered-source lifetime helpers live in the
+        # clip-source registry; the same realtime rules apply to them.
+        TargetRow(
+            "Transport consumer helper {name}",
+            "src/core/transport/clip_source_registry.cpp",
+            "ClipSourceRegistry",
+            ("releaseSourceCommand", "retainActiveSource", "releaseActiveSource"),
+        ),
+        # Per-clip DSP and streaming clip-source callback paths.
+        TargetRow("Clip DSP callback {name}", "src/core/transport/clip_dsp.cpp", "ClipDspProcessor", ("processFrame",)),
+        TargetRow(
+            "Streaming consumer lease helper {name}",
+            _CLIP_SOURCE,
+            "StreamingClipSource",
+            ("releaseCommandPrime", "commitLoopAnchorTransition", "releaseReadyPin"),
+        ),
+        TargetRow(
+            "Streaming callback helper {name}",
+            _CLIP_SOURCE,
+            "StreamingClipSource",
+            (
+                "copyFromResidentPage",
+                "acquireTransientReadPin",
+                "beginVoiceDemands",
+                "addVoiceDemand",
+                "refreshVoicePagePins",
+                "publishVoiceDemands",
+                "voiceWindowPages",
+                "keepsPage",
+            ),
+        ),
+        TargetRow("Clip source callback read {owner}::{name}", _CLIP_SOURCE, "PreparedClipSource", ("read",)),
+        TargetRow(
+            "Clip source callback read {owner}::{name}",
+            _CLIP_SOURCE,
+            "StreamingClipSource",
+            ("read", "readCached", "readForVoice"),
+        ),
+        # ORP-SUITE-20261103-001: functions the render callback calls on every block.
+        TargetRow(
+            "Realtime telemetry {name}",
+            "src/core/common/realtime_telemetry.cpp",
+            "RealtimeTelemetry",
+            ("beginRealtimeBlock", "reportUnderrunFromRealtime", "publishFromRealtime"),
+        ),
+        # Routing.
+        TargetRow(
             "Routing render path",
-            root / "src/core/routing/routing_matrix.cpp",
-            r"SessionGraphError\s+RoutingMatrix::processRouting\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+            _ROUTING,
+            "RoutingMatrix",
+            ("processRouting",),
         ),
-        ScanTarget(
-            "Routing block render path",
-            root / "src/core/routing/routing_matrix.cpp",
-            r"SessionGraphError\s+RoutingMatrix::processRoutingBlock\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+        TargetRow("Routing block render path", _ROUTING, "RoutingMatrix", ("processRoutingBlock",)),
+        TargetRow(
+            "Routing callback helper {name}",
+            _ROUTING,
+            "RoutingMatrix",
+            (
+                "getConfig",
+                "refreshRenderGroupControls",
+                "getGroupMeter",
+                "getOutputMeter",
+                "getMasterMeter",
+                "copyGroupOutputMeterSnapshot",
+                "resetLogicalGroupTruePeakHistories",
+                "processStereoMetering",
+                "publishChannelMeterSilence",
+                "detectClipping",
+                "dbToLinear",
+                "activeChannelCount",
+                "getHeadroomCompensation",
+            ),
         ),
-        ScanTarget(
-            "Audio input ring write",
-            root / "src/core/audio_io/audio_input.cpp",
-            r"size_t\s+AudioInputRing::write\s*\(",
-            pattern_sets=(HARD_REALTIME_SET,),
+        TargetRow(
+            "Routing meter-state helper {name}",
+            _METER_STATE,
+            "RoutingMeterState",
+            (
+                "publishMasterPeak",
+                "publishMasterRms",
+                "incrementMasterClip",
+                "publishOutputPeak",
+                "publishOutputRms",
+                "incrementOutputClip",
+                "masterMeter",
+                "outputMeter",
+                "beginGroupOutputPublication",
+                "publishGroupOutputHeader",
+                "endGroupOutputPublication",
+                "markGroupOutputUnmeasured",
+                "groupOutputPublicationSequence",
+                "groupOutputGroupCount",
+                "groupOutputTopologyRevision",
+                "groupOutputAvailability",
+                "groupOutputCoherent",
+                "linearToDb",
+            ),
         ),
-    ]
-    for function in (
-        "releasePendingStartReservations",
-        "releasePendingSeekReservations",
-        "publishStartSettlement",
-        "startVoiceWithMode",
-        "addActiveClip",
-        "removeActiveVoice",
-        "restartVoiceInPlace",
-        "allocateVoiceId",
-        "allocateVoiceStartOrdinal",
-        "incrementIngressCounter",
-    ):
-        targets.append(
-            ScanTarget(
-                f"Transport consumer helper {function}",
-                root / "src/core/transport/transport_controller.cpp",
-                rf"(?:void|bool|uint32_t|uint64_t)\s+TransportController::{function}\s*\(",
-                pattern_sets=(HARD_REALTIME_SET,),
-            )
-        )
-    # ORP273 F-15: the registered-source lifetime helpers moved out of the
-    # controller into the clip-source registry. The same realtime rules apply
-    # to their new home.
-    for function in (
-        "releaseSourceCommand",
-        "retainActiveSource",
-        "releaseActiveSource",
-    ):
-        targets.append(
-            ScanTarget(
-                f"Transport consumer helper {function}",
-                root / "src/core/transport/clip_source_registry.cpp",
-                rf"(?:void|bool|uint32_t|uint64_t)\s+ClipSourceRegistry::{function}\s*\(",
-                pattern_sets=(HARD_REALTIME_SET,),
-            )
-        )
-    for function in ("releaseCommandPrime", "commitLoopAnchorTransition", "releaseReadyPin"):
-        targets.append(
-            ScanTarget(
-                f"Streaming consumer lease helper {function}",
-                root / "src/core/transport/clip_source.cpp",
-                rf"void\s+StreamingClipSource::{function}\s*\(",
-                pattern_sets=(HARD_REALTIME_SET,),
-            )
-        )
+        TargetRow("Gain smoother {name}", "src/core/routing/gain_smoother.cpp", "GainSmoother", ("setTarget",)),
+        TargetRow(
+            "Gain smoother inline {name}",
+            _GAIN_SMOOTHER_H,
+            None,
+            (
+                ("process", r"\bfloat\s+process\s*\(\s*\)\s*(?=\{)"),
+                ("beginBlock", r"\bRampState\s+beginBlock\s*\(\s*\)\s*(?=\{)"),
+                ("next", r"\bfloat\s+next\s*\(\s*RampState&\s*\w+\s*\)\s*(?=\{)"),
+                ("endBlock", r"\bvoid\s+endBlock\s*\(\s*const\s+RampState&\s*\w+\s*\)\s*(?=\{)"),
+                ("adoptPendingTarget", r"\bvoid\s+adoptPendingTarget\s*\(\s*\)\s*noexcept\s*(?=\{)"),
+            ),
+        ),
+        TargetRow(
+            "True-peak meter inline {name}",
+            "src/core/routing/true_peak_meter.h",
+            None,
+            (("process", r"\bfloat\s+process\s*\(\s*float\s+\w+\s*\)\s*(?=\{)"),),
+        ),
+        TargetRow("Audio input ring write", "src/core/audio_io/audio_input.cpp", "AudioInputRing", ("write",)),
+        # Tier 2: callback-safe public classes hosts may call from their own callbacks.
+        TargetRow(
+            "Callback-safe ScrubResampler::{name}",
+            "src/core/audio_io/scrub_resampler.cpp",
+            "ScrubResampler",
+            ("push_forward", "sample_at", "render", "processVariable", "forward_refill_hint"),
+        ),
+        TargetRow(
+            "Callback-safe TriggerVoice::{name}",
+            "src/core/audio_io/trigger_voice.cpp",
+            "TriggerVoice",
+            ("trigger", "applyTrigger", "render"),
+        ),
+        TargetRow(
+            "Callback-safe PreparedTapeVarispeed::{name}",
+            "src/core/audio_io/tape_varispeed.cpp",
+            "PreparedTapeVarispeed",
+            ("process", "drain"),
+        ),
+    )
+
+
+def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
+    targets: list[ScanTarget] = []
+    for row in repository_target_rows():
+        targets.extend(row.expand(root))
 
     if include_adjacent:
         dev = root.parent
@@ -312,6 +567,16 @@ def default_targets(root: Path, include_adjacent: bool) -> list[ScanTarget]:
                     pattern_sets=(FILE_READER_DEBT_SET,),
                 ),
             ]
+        )
+        targets.extend(
+            ScanTarget(
+                f"FreqFinder analysis hand-off {function}",
+                dev / "freqfinder/src/audio/AnalysisEngine.cpp",
+                rf"(?:void|bool)\s+AnalysisEngine::{function}\s*\(",
+                required=False,
+                pattern_sets=(HARD_REALTIME_SET,),
+            )
+            for function in ("submitBlock", "enqueueJob", "populateJob")
         )
     return targets
 

@@ -106,3 +106,6 @@ docs/api/
 /.claude/implementation_progress.md
 /.claude/progress.md
 /suite/.backups/
+
+# Internal working prompts; never tracked in this public repository.
+/docs/tmp/

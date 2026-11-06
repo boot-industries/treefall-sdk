@@ -1,5 +1,16 @@
 # Progress
 
+## Realtime audit coverage — 2026-11-05
+
+The realtime static audit masks comments and string/char literals before
+scanning, so statements that begin with `*` (such as `*out = new ...`) are no
+longer skipped. Coverage extends to per-block callees (`publishFromRealtime`,
+`postTransportEvent`, `StreamingClipSource::readCached` and related helpers)
+and to the adjacent FreqFinder analysis enqueue when that sibling checkout is
+present. The audit unit tests (`tests/realtime_audit_test.py`) and the strict
+audit (`tools/realtime_audit.py --root . --fail-known-debt`) pass on the
+current tree. Downstream qualification is pending.
+
 ## ShmUI package removal and SDK source decoupling (SHM029) — 2026-11-02
 
 **Record:** `docs/orp/ORP278 ShmUI Package Removal and SDK Source Decoupling.md`
@@ -180,6 +191,12 @@ budgets met!", but the only configured bundle was skipped and neither the
 command-latency nor the event-frequency budgets was measured, so that exit
 code is not performance evidence. The `perf_render_click` figures time an
 end-to-end offline render that includes the WAV file write, not a callback.
+
+*Correction (2026-11-05):* `scripts/validate-performance.js` already fails with
+exit 1 when the render-deadline test is Skipped or Not Run, so a skipped bundle
+is a failed gate, not a pass. The render-deadline p99 budget is single-sourced
+from `budgets.json` into the CTest environment at configure time.
+
 No Windows, Linux, or physical-device evidence was gathered. All 255
 `path:line` anchors in the record were re-verified to resolve against the
 committed tree.

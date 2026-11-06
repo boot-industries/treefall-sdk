@@ -223,7 +223,9 @@ In-memory representation of an audio project:
 - **Tempo** – BPM and time signature information
 - **Metadata** – Session name, creation date, versioning
 
-**Thread Safety:** Read-only from audio thread, mutable from UI thread with atomic updates.
+**Thread Safety:** Read-only from the audio thread. Mutations are single-owner on the
+control thread and go through explicit transactions that roll back when the
+transaction is destroyed; nested transactions are rejected.
 
 **File:** `include/orpheus/session_graph.h`, `src/core/session/session_graph.cpp`
 

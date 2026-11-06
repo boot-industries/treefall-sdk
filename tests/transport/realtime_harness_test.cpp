@@ -848,7 +848,10 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
   constexpr RoutingChannelIndex kRoutingChannels = 256;
   constexpr RoutingGroupIndex kRoutingGroups = 32;
   constexpr RoutingOutputIndex kRoutingOutputs = 32;
-  constexpr int kCallbacks = 300;
+  // Timing assertions only exist in unsanitized Release builds, which keep the
+  // full 300-callback sample; Debug and sanitized runs only need the
+  // allocation and no-deadlock checks, which every callback exercises.
+  const int kCallbacks = orpheus::test::fullStressEnabled() ? 300 : 16;
 
   RoutingConfig config;
   config.num_channels = kRoutingChannels;
@@ -891,10 +894,10 @@ TEST_F(RealtimeHarnessTest, MaxTopologySamplePeakAndTruePeakMeetDeadline) {
     }
 
     std::vector<double> durations;
-    durations.reserve(kCallbacks);
+    durations.reserve(static_cast<size_t>(kCallbacks));
 #if defined(__APPLE__) || defined(__linux__)
     std::vector<double> cpuDurations;
-    cpuDurations.reserve(kCallbacks);
+    cpuDurations.reserve(static_cast<size_t>(kCallbacks));
 #endif
     RtGuardState::reset();
     for (int callback = 0; callback < kCallbacks; ++callback) {
@@ -995,6 +998,9 @@ TEST_F(RealtimeHarnessTest, WorstCaseTopologyDeadlineDistribution) {
   };
   const size_t warmups = envUnsigned("ORPHEUS_DEADLINE_WARMUPS", 100u);
   const size_t observations = envUnsigned("ORPHEUS_DEADLINE_OBSERVATIONS", 10000u);
+  // 0.5 is the clamp ceiling, not the budget: the budget is budgets.json
+  // (p99FractionOfDeadline), delivered through ORPHEUS_DEADLINE_P99_RATIO by
+  // tests/transport/CMakeLists.txt, which rejects a budget above this ceiling.
   const double p99_ratio = envRatio("ORPHEUS_DEADLINE_P99_RATIO", 0.5, 0.5);
 
   std::vector<uint32_t> rates;

@@ -99,19 +99,124 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
         self.assertTrue(findings)
         self.assertTrue(all(finding.hard_fail for finding in findings))
 
-    def test_one_target_receives_hard_rules_and_file_reader_debt(self):
+    def test_dereference_leading_statement_is_scanned(self):
         source = """
         void render() {
+            float* out = nullptr;
+            *out = new float[8];
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], [" new "])
+        self.assertTrue(findings[0].hard_fail)
+
+    def test_code_after_block_comment_close_is_scanned(self):
+        source = """
+        void render() {
+            /* note */ std::mutex mutex;
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], ["std::mutex"])
+
+    def test_comment_marker_inside_literal_does_not_open_block_comment(self):
+        source = """
+        void render() {
+            const char* marker = "/*";
+            std::mutex mutex;
+        }
+        """
+        findings = self.scan(source)
+        self.assertEqual([finding.pattern for finding in findings], ["std::mutex"])
+
+    def test_in_repo_target_treats_file_reads_as_hard_failures(self):
+        source = """
+        void render() {
+          reader->seek(0);
           readSamples();
           std::mutex mutex;
         }
         """
-        findings = self.scan(
-            source,
-            pattern_sets=(AUDIT.HARD_REALTIME_SET, AUDIT.FILE_READER_DEBT_SET),
+        findings = self.scan(source)
+        self.assertEqual(
+            {finding.pattern for finding in findings}, {"->seek(", "readSamples(", "std::mutex"}
         )
-        self.assertEqual({finding.pattern for finding in findings}, {"readSamples(", "std::mutex"})
-        self.assertEqual({finding.hard_fail for finding in findings}, {True, False})
+        self.assertTrue(all(finding.hard_fail for finding in findings))
+
+    def test_adjacent_file_reader_patterns_stay_tracked_debt(self):
+        findings = self.scan(
+            "void render() { readSamples(); }",
+            pattern_sets=(AUDIT.FILE_READER_DEBT_SET,),
+        )
+        self.assertEqual([finding.pattern for finding in findings], ["readSamples("])
+        self.assertFalse(findings[0].hard_fail)
+
+    def test_every_repository_target_resolves_on_the_real_tree(self):
+        targets = AUDIT.default_targets(ROOT, False)
+        self.assertGreater(len(targets), 100)
+        for target in targets:
+            AUDIT.scan_target(target)  # raises AuditConfigurationError when stale
+
+    def test_header_inline_regex_matches_process_but_not_a_longer_name(self):
+        row = AUDIT.TargetRow(
+            "inline {name}",
+            "fixture.h",
+            None,
+            (("process", r"\bfloat\s+process\s*\(\s*\)\s*(?=\{)"),),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "fixture.h").write_text(
+                "float processBuffer() { std::mutex m; return 0.0f; }\n"
+                "float process() { return 1.0f; }\n",
+                encoding="utf-8",
+            )
+            (target,) = row.expand(root)
+            self.assertEqual(AUDIT.scan_target(target), [])
+            (root / "fixture.h").write_text(
+                "float processBuffer() { return 0.0f; }\n"
+                "float process() { std::mutex m; return 1.0f; }\n",
+                encoding="utf-8",
+            )
+            self.assertEqual([f.pattern for f in AUDIT.scan_target(target)], ["std::mutex"])
+
+    def test_event_signalling_is_a_hard_failure_in_a_callback(self):
+        # juce::WaitableEvent::signal() takes the mutex the waiting worker
+        # holds, so signalling from a render callback is a lock.
+        findings = self.scan(
+            """
+            void render() {
+              jobAvailableEvent_.signal();
+            }
+            """
+        )
+        self.assertEqual([finding.pattern for finding in findings], [".signal("])
+        self.assertTrue(findings[0].hard_fail)
+        self.assertFalse(self.scan("void render() { juce::Thread::signalThreadShouldExit(); }"))
+
+    def test_adjacent_freqfinder_hand_off_is_scanned_with_hard_rules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "orpheus-sdk"
+            engine = Path(directory) / "freqfinder" / "src" / "audio" / "AnalysisEngine.cpp"
+            engine.parent.mkdir(parents=True)
+            engine.write_text(
+                """
+                void AnalysisEngine::submitBlock(int n) { n += 1; }
+                bool AnalysisEngine::enqueueJob(int n) {
+                  jobAvailableEvent_.signal();
+                  return n > 0;
+                }
+                void AnalysisEngine::populateJob(int n) { n += 1; }
+                """,
+                encoding="utf-8",
+            )
+            findings = []
+            for target in AUDIT.default_targets(root, True):
+                if target.path == engine:
+                    findings.extend(AUDIT.scan_target(target))
+            self.assertEqual([(f.target, f.pattern) for f in findings],
+                             [("FreqFinder analysis hand-off enqueueJob", ".signal(")])
+            self.assertTrue(findings[0].hard_fail)
 
     def test_default_adjacent_targets_are_opt_in(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -125,6 +230,15 @@ class RealtimeAuditFixturesTest(unittest.TestCase):
             target = AUDIT.ScanTarget("missing callback", path, r"void\s+render\s*\(")
             with self.assertRaises(AUDIT.AuditConfigurationError):
                 AUDIT.scan_target(target)
+
+    def test_optional_adjacent_target_tolerates_a_renamed_function(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.cpp"
+            path.write_text("void unrelated() {}\n", encoding="utf-8")
+            optional = AUDIT.ScanTarget(
+                "adjacent callback", path, r"void\s+render\s*\(", required=False
+            )
+            self.assertEqual(AUDIT.scan_target(optional), [])
 
 
 

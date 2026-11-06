@@ -37,10 +37,20 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
   it into a fixed scratch list for FIFO processing. Producer-side reuse may
   reclaim retained payloads, but `processCommands()` and its detach/release
   helpers must not allocate, lock, perform I/O, or invoke callbacks.
-- Static auditing explicitly targets `processCommands`, `detachPendingCommands`,
-  `releaseCommandNode`, and the command-lease/settlement cleanup helpers in
-  addition to `processAudio`. This lexical gate is a bounded source audit, not
-  a recursive call-graph proof.
+- Static auditing is driven by one table, `repository_target_rows()` in
+  `tools/realtime_audit.py`: the driver callbacks, `processCommands`,
+  `processAudio` and their helpers, the routing render path and its meter-state
+  publishers, the gain smoother and true-peak meter, per-clip DSP, the
+  streaming clip-source read and demand paths, the telemetry publishers, the
+  CoreAudio callback helpers, and the callback-safe public DSP classes
+  (`ScrubResampler`, `TriggerVoice`, `PreparedTapeVarispeed`). Every target
+  receives the hard rules, including the blocking file-reader patterns
+  (`readSamples(`, `->seek(`, `sf_readf_float`); only adjacent application
+  targets keep those as tracked debt. A function added to an audio-thread path
+  must gain a row in the same change; `AuditConfigurationError` fails the gate
+  when a row no longer matches a definition. This lexical gate is a bounded
+  source audit, not a recursive call-graph proof: it cannot see forbidden work
+  inside a callee that is not listed.
 - Whole command calls are non-realtime: registry preparation and retained-payload
   reclamation may lock, allocate, or perform I/O on the producer. The atomic
   admission primitives are bounded, not a wall-clock wait-free guarantee.
@@ -361,6 +371,13 @@ temporal-coherence acceptance remain separate release/support-promotion gates.
 - `tools/realtime_audit.py --fail-known-debt --include-adjacent` is the
   cross-repo strict gate. It still reports the ADJACENT-repo debt below and
   will pass once the app-side sprints land in those repos.
+- The adjacent scan also applies the hard callback rules (no locks, mutexes,
+  waits, notifies, event `signal()`/`WaitableEvent`, allocation or logging) to
+  FreqFinder's audio-thread analysis hand-off (`AnalysisEngine::submitBlock`,
+  `enqueueJob`, `populateJob`), not only to `processBlock`: a lock taken in a
+  callee of the callback is still a lock in the callback. It resolves the
+  sibling `freqfinder` checkout of the workspace, so its result describes
+  whatever revision that checkout has, not a pinned release.
 
 ## Resolved Architecture Debt
 
@@ -375,6 +392,16 @@ temporal-coherence acceptance remain separate release/support-promotion gates.
 
 ## Known Architecture Debt
 
+- **Audio-thread route publication can spin.** `TransportController::
+  configureVoiceRouting` runs on the audio thread (from `processCommands`,
+  `addActiveClip` and voice compaction) and calls `RoutingMatrix::
+  setChannelRoute`, whose `beginChannelRouteWrite` is a compare-exchange spin
+  (`routing_matrix.cpp`, `beginChannelRouteWrite`). A control-thread writer
+  reaching the same entry through `getRoutingMatrix()` can make the audio
+  thread spin, contradicting the "audio thread never waits" contract in
+  `routing_matrix.h`. The lexical audit passes on `configureVoiceRouting` and
+  does not prove its callee chain; this needs a design change to route
+  publication ownership.
 - The routing matrix now carries explicit `SourceChannelPolicy` and
   `DownmixPolicy`, but transport clip rendering still uses stereo pair buffers.
 - Clip Composer still performs app-level analyzer work in its audio callback in

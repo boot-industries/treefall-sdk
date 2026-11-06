@@ -33,4 +33,20 @@ inline bool timingAssertionsEnabled() {
   return flag == nullptr || std::string_view(flag) != "1";
 }
 
+/// Soak-length stress passes run in full only where they are meaningful and
+/// cheap: unsanitized Release builds, or anywhere ORPHEUS_STRESS_FULL=1.
+/// Debug and sanitized builds run a shortened pass that still exercises every
+/// code path; the assertions that depend on duration are not weakened.
+inline bool fullStressEnabled() {
+  if (const char* full = std::getenv("ORPHEUS_STRESS_FULL");
+      full != nullptr && std::string_view(full) == "1") {
+    return true;
+  }
+#if defined(NDEBUG)
+  return timingAssertionsEnabled();
+#else
+  return false;
+#endif
+}
+
 } // namespace orpheus::test

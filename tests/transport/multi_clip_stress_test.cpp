@@ -247,11 +247,13 @@ TEST_F(MultiClipStressTest, SixteenSimultaneousClips) {
   // ORP127: Verify stability by driving processAudio() a deterministic number
   // of buffers rather than sleeping for wall-clock seconds and counting
   // sleep-loop callbacks (which measured the host scheduler, not the SDK, and
-  // was flaky under load). 12000 buffers @ 512/48k == ~128 seconds of audio —
-  // exceeds the original 60s stability window, and runs in a fraction of the
-  // wall-clock time with a fully deterministic result.
-  std::cout << "  - Driving 12000 buffers (~128s of audio) to verify stability...\n";
-  constexpr int kNumBuffers = 12000;
+  // was flaky under load). Release runs 12000 buffers @ 512/48k == ~128 seconds
+  // of audio; Debug and sanitized builds run 1000, which is still more than
+  // three loops of the 3 s looping clips and outlasts the non-looping clips.
+  const bool fullSoak = orpheus::test::fullStressEnabled();
+  const int kNumBuffers = fullSoak ? 12000 : 1000;
+  std::cout << "  - Driving " << kNumBuffers << " buffers (~" << (kNumBuffers * 512 / 48000)
+            << "s of audio) to verify stability...\n";
   constexpr size_t kBufferSize = 512;
 
   std::vector<float> left(kBufferSize, 0.0f);
@@ -281,7 +283,7 @@ TEST_F(MultiClipStressTest, SixteenSimultaneousClips) {
     }
   }
   EXPECT_EQ(looping_still_playing, 8)
-      << "All 8 looping clips must still be playing after 12000 buffers";
+      << "All 8 looping clips must still be playing after " << kNumBuffers << " buffers";
 
   // Verify metadata is correct (unchanged by sustained playback).
   for (size_t i = 0; i < clips.size(); ++i) {
@@ -298,7 +300,8 @@ TEST_F(MultiClipStressTest, SixteenSimultaneousClips) {
   }
 
   std::cout << "[Stress Test] 16 simultaneous clips with metadata: PASSED\n";
-  std::cout << "  - Buffers driven: " << kNumBuffers << " (~128s of audio)\n";
+  std::cout << "  - Buffers driven: " << kNumBuffers << " (~" << (kNumBuffers * 512 / 48000)
+            << "s of audio)\n";
   std::cout << "  - Clips started: " << m_callback->getClipsStarted() << "\n";
   std::cout << "  - Still playing: " << playing_count << " / 16 (looping: " << looping_still_playing
             << "/8)\n";

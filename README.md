@@ -8,8 +8,11 @@
 was formerly the **Orpheus SDK**. The GitHub repository was renamed to match
 and the earlier `chrislyons/orpheus-sdk` slug still resolves. Native library,
 executable, and package names and the canonical `orpheus` C++ namespace remain
-technical compatibility identities, so the rename requires no consumer source,
-build, or binary change.
+technical compatibility identities, so the rename itself requires no consumer
+source, build, or binary change. That claim covers the rename only. Independently
+of it, the appended C++ virtual extension means every C++ consumer and subclass
+must be rebuilt against the matching headers, as described under
+"Compatibility names" below.
 Treefall provides deterministic session/transport control, sample-accurate clip
 playback, and real-time audio infrastructure.
 
@@ -33,6 +36,32 @@ cmake --build build -j8
 # Run the configured SDK contracts
 ctest --test-dir build --output-on-failure
 ```
+
+**Required specialized gates.** `AGENTS.md` names three gates that a change to a
+public contract or a realtime path must satisfy. The full `ctest` run above
+executes all three as registered tests; run each on its own while iterating on
+the surface it guards:
+
+```sh
+# Installed public-package consumer
+ctest --test-dir build --output-on-failure -R '^cmake_find_package$'
+```
+
+```sh
+# Strict in-repository realtime audit
+ctest --test-dir build --output-on-failure -R '^realtime_static_audit$'
+```
+
+```sh
+# Documentation links and removed paths
+ctest --test-dir build --output-on-failure -R '^docs_path_audit$'
+```
+
+The CI `C++ Lint` job also runs the realtime audit and its unit tests as
+standalone steps (`python3 tools/realtime_audit.py --root . --fail-known-debt`
+and `python3 tests/realtime_audit_test.py`), so the gate does not depend on
+the CTest registration succeeding. A new audio-thread function must gain a row
+in the audit's target table in the same change.
 
 **Prerequisites:**
 
@@ -516,6 +545,9 @@ Planned backends are not shipped capabilities.
 
    These commands produce the `orpheus_core` static library, build the
    `orpheus_minhost` adapter, and run the GoogleTest suite by default.
+   The required specialized gates are the same three listed under
+   "Required specialized gates" in the quick start above; run them after the
+   full-suite pass.
 
 ### Optional Targets
 
