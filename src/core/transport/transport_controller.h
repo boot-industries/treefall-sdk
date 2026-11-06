@@ -433,11 +433,6 @@ private:
   /// Process one detached FIFO batch from concurrent control producers.
   void processCommands();
 
-  /// Find active clip by handle (returns first instance found)
-  /// @return Pointer to active clip, or nullptr if not found
-  /// @note For multi-voice: returns first matching instance, not necessarily oldest
-  ActiveClip* findActiveClip(ClipHandle handle);
-
   /// Count active voices for a given clip handle
   /// @return Number of instances currently playing (0-MAX_VOICES_PER_CLIP)
   size_t countActiveVoices(ClipHandle handle) const;
@@ -485,10 +480,6 @@ private:
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove
   void removeActiveVoice(uint32_t voiceId);
-
-  /// Remove a clip from active list (audio thread only)
-  /// @note Deprecated: Use removeActiveVoice() for multi-voice
-  void removeActiveClip(ClipHandle handle);
 
   /// Post a POD transport event to the control-thread ring (audio thread only).
   /// Every attempt advances cumulative telemetry before the capacity check.

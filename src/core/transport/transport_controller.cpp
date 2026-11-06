@@ -1763,16 +1763,6 @@ void TransportController::releasePendingSeekReservations() noexcept {
   m_pendingSeekReservationCount = kept;
 }
 
-ActiveClip* TransportController::findActiveClip(ClipHandle handle) {
-  // Multi-voice: Returns first matching instance (not necessarily oldest)
-  for (size_t i = 0; i < m_activeClipCount; ++i) {
-    if (m_activeClips[i].handle == handle) {
-      return &m_activeClips[i];
-    }
-  }
-  return nullptr;
-}
-
 size_t TransportController::countActiveVoices(ClipHandle handle) const {
   size_t count = 0;
   for (size_t i = 0; i < m_activeClipCount; ++i) {
@@ -2248,15 +2238,6 @@ void TransportController::removeActiveVoice(uint32_t voiceId) {
       m_activeClips[m_activeClipCount - 1].sourceLifetime = nullptr;
       --m_activeClipCount;
       m_sourceRegistry.releaseActiveSource(removedLifetime);
-      return;
-    }
-  }
-}
-
-void TransportController::removeActiveClip(ClipHandle handle) {
-  for (size_t index = 0; index < m_activeClipCount; ++index) {
-    if (m_activeClips[index].handle == handle) {
-      removeActiveVoice(m_activeClips[index].voiceId);
       return;
     }
   }
@@ -2813,10 +2794,8 @@ SessionGraphError TransportController::getClipTrimPoints(ClipHandle handle, int6
   }
 
   // If not active, check persistent storage
-  // NOTE: const_cast needed because this is a query method (read-only, but mutex requires
-  // non-const)
   {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+    std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
     auto it = m_sourceRegistry.entries().find(handle);
     if (it == m_sourceRegistry.entries().end()) {
       return SessionGraphError::ClipNotRegistered;
@@ -2944,7 +2923,7 @@ SessionGraphError TransportController::setClipStopOthersMode(ClipHandle handle, 
 }
 
 bool TransportController::getClipStopOthersMode(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return false;
@@ -3008,7 +2987,6 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   cmd.data.metadata.routingGroup = metadata.routingGroup;
   cmd.data.metadata.segmentCount = metadata.segmentCount;
   cmd.data.metadata.segments = metadata.segments;
-  cmd.dspProcessor = preparedDsp;
 
   const uint32_t nodeIndex = acquireCommandNode();
   if (nodeIndex == UINT32_MAX) {
@@ -3057,7 +3035,7 @@ std::optional<ClipMetadata> TransportController::getClipMetadata(ClipHandle hand
     return std::nullopt;
   }
 
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return std::nullopt;
@@ -3196,7 +3174,7 @@ SessionGraphError TransportController::setClipVoiceMode(ClipHandle handle, Voice
 }
 
 VoiceMode TransportController::getClipVoiceMode(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return VoiceMode::Polyphonic;
@@ -3487,7 +3465,7 @@ int TransportController::addCuePoint(ClipHandle handle, int64_t position, const 
 }
 
 std::vector<CuePoint> TransportController::getCuePoints(ClipHandle handle) const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_sourceRegistry.mutex()));
+  std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return {}; // Return empty vector if clip not found
