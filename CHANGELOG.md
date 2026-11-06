@@ -159,6 +159,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
   mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
   flight that called a manager getter could deadlock against that join.
+- Stopping CoreAudio endpoint-change monitoring no longer deadlocks when the
+  endpoint callback in flight clears, replaces or re-registers itself (directly
+  or through `AudioDriverManager::setEndpointChangeCallback`) while another
+  thread is stopping the monitor: the stop joins the worker outside the monitor's
+  lifecycle lock. A worker retired by its own callback now exits after that
+  callback returns, even if the callback restarted monitoring, instead of
+  running beside the new worker. Concurrent stops still return only after the
+  retired worker has exited.
 - Session, scene, reconform-plan and ADM debug JSON, plus `orpheus_minhost`
   JSON numbers and numeric arguments, now ignore the host's global locale. A
   host that installed a comma-decimal or digit-grouping C++ locale previously
