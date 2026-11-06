@@ -255,6 +255,52 @@ TEST_F(DummyDriverTest, CallbackIsInvoked) {
   m_driver->stop();
 }
 
+TEST_F(DummyDriverTest, EachStartResetsClockAndMarksOnlyFirstCallbackDiscontinuous) {
+  class ClockCallback final : public IAudioCallback {
+  public:
+    void processAudio(const AudioProcessBlock& block) noexcept override {
+      const size_t index = count.load(std::memory_order_relaxed);
+      if (index < 3) {
+        positions[index] = block.device_sample_position;
+        discontinuities[index] = block.discontinuity;
+        host_times[index] = block.host_time_nanoseconds;
+        frames[index] = block.num_frames;
+      }
+      count.store(index + 1, std::memory_order_release);
+    }
+
+    uint64_t positions[3]{};
+    bool discontinuities[3]{};
+    uint64_t host_times[3]{};
+    size_t frames[3]{};
+    std::atomic<size_t> count{0};
+  } callback;
+
+  AudioDriverConfig config;
+  config.sample_rate = 48000;
+  config.buffer_size = 128;
+  config.num_outputs = 2;
+  ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
+
+  for (int start = 0; start < 2; ++start) {
+    callback.count.store(0, std::memory_order_relaxed);
+    ASSERT_EQ(m_driver->start(&callback), SessionGraphError::OK);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (callback.count.load(std::memory_order_acquire) < 3 &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
+    ASSERT_GE(callback.count.load(std::memory_order_acquire), 3u);
+    for (size_t index = 0; index < 3; ++index) {
+      EXPECT_EQ(callback.positions[index], index * config.buffer_size);
+      EXPECT_EQ(callback.discontinuities[index], index == 0);
+      EXPECT_GT(callback.host_times[index], 0u);
+      EXPECT_EQ(callback.frames[index], config.buffer_size);
+    }
+  }
+}
+
 TEST_F(DummyDriverTest, EightOutputCallbackReceivesDistinctWritableLanes) {
   AudioDriverConfig config;
   config.sample_rate = 48000;

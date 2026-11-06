@@ -288,7 +288,7 @@ void DummyAudioDriver::audioThreadMain() {
     block.host_time_nanoseconds = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(block_started.time_since_epoch())
             .count());
-    block.discontinuity = false;
+    block.discontinuity = stream_position == 0;
     callback->processAudio(block);
     stream_position += config_.buffer_size;
 
