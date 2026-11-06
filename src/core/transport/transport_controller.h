@@ -251,6 +251,9 @@ struct ActiveClip {
   VoiceMode voiceMode{VoiceMode::Polyphonic};
 };
 
+/// Outcome of a voice reaching the end of its current playback window.
+enum class PlaybackBoundaryAction : uint8_t { Ended, Advanced, Looped };
+
 /// ORP133 G1: Transport event kinds posted from the audio thread.
 ///
 /// The audio→UI callback ring used to carry std::function<void()> payloads,
@@ -481,6 +484,11 @@ private:
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove
   void removeActiveVoice(uint32_t voiceId);
+
+  /// Advance a voice past the end of its playback window: enter the next
+  /// segment or loop pass (posting ClipLooped for a loop), or begin the natural
+  /// ending fade. Audio thread only.
+  PlaybackBoundaryAction handlePlaybackBoundary(ActiveClip& clip, bool loopEnabled) noexcept;
 
   /// Post a POD transport event to the control-thread ring (audio thread only).
   /// Every attempt advances cumulative telemetry before the capacity check.

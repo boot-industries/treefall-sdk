@@ -359,6 +359,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "addActiveClip",
                 "removeActiveVoice",
                 "restartVoiceInPlace",
+                "handlePlaybackBoundary",
                 "allocateVoiceId",
                 "allocateVoiceStartOrdinal",
                 "incrementIngressCounter",

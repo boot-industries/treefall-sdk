@@ -57,8 +57,6 @@ void beginOperatorStop(ActiveClip& clip) noexcept {
           : 0;
 }
 
-enum class PlaybackBoundaryAction : uint8_t { Ended, Advanced, Looped };
-
 int64_t playbackWindowStart(const ActiveClip& clip) noexcept {
   return clip.segmentCount == 0 ? clip.trimInSamples.load(std::memory_order_relaxed)
                                 : clip.segments[clip.segmentIndex].startSample;
@@ -640,30 +638,9 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       }
 
       if (!clip.isStopping && clip.sourcePosition >= static_cast<double>(activeWindowEnd)) {
-        const auto boundary = advancePlaybackWindow(clip, loopEnabled);
-        if (boundary != PlaybackBoundaryAction::Ended) {
+        if (handlePlaybackBoundary(clip, loopEnabled) != PlaybackBoundaryAction::Ended) {
           activeWindowStart = playbackWindowStart(clip);
           activeWindowEnd = playbackWindowEnd(clip);
-          clip.sourcePosition = static_cast<double>(activeWindowStart);
-          clip.currentSample = activeWindowStart;
-          clip.source->setDemand(activeWindowStart);
-          clip.hasLoopedOnce = true;
-
-          if (boundary == PlaybackBoundaryAction::Looped) {
-            TransportEvent event{};
-            event.type = TransportEventType::ClipLooped;
-            event.handle = clip.handle;
-            event.requestTag = clip.startRequestTag;
-            event.voiceId = clip.voiceId;
-            event.position = getCurrentPosition();
-            postTransportEvent(event);
-          }
-        } else {
-          clip.isStopping = true;
-          clip.isNaturalEnding = true;
-          clip.fadeOutGain = 1.0f;
-          clip.fadeOutStartPos = activeWindowEnd;
-          clip.stopFadeFramesElapsed = 0;
         }
       }
 
@@ -937,35 +914,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       continue;
     }
 
-    const int64_t activeWindowEnd = playbackWindowEnd(clip);
-    if (clip.currentSample >= activeWindowEnd) {
-      const bool shouldLoop = clip.loopEnabled.load(std::memory_order_acquire);
-      const auto boundary = advancePlaybackWindow(clip, shouldLoop);
-      if (boundary != PlaybackBoundaryAction::Ended) {
-        const int64_t nextStart = playbackWindowStart(clip);
-        clip.currentSample = nextStart;
-        clip.sourcePosition = static_cast<double>(nextStart);
-        if (clip.source) {
-          clip.source->setDemand(nextStart);
-        }
-        clip.hasLoopedOnce = true;
-
-        if (boundary == PlaybackBoundaryAction::Looped) {
-          TransportEvent event{};
-          event.type = TransportEventType::ClipLooped;
-          event.handle = clip.handle;
-          event.requestTag = clip.startRequestTag;
-          event.voiceId = clip.voiceId;
-          event.position = getCurrentPosition();
-          postTransportEvent(event);
-        }
-      } else {
-        clip.isStopping = true;
-        clip.isNaturalEnding = true;
-        clip.fadeOutGain = 1.0f;
-        clip.fadeOutStartPos = activeWindowEnd;
-        clip.stopFadeFramesElapsed = 0;
-      }
+    if (clip.currentSample >= playbackWindowEnd(clip)) {
+      (void)handlePlaybackBoundary(clip, clip.loopEnabled.load(std::memory_order_acquire));
     }
     ++i;
   }
@@ -1023,6 +973,38 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       rearmRoutingMeterWindow();
     }
   }
+}
+
+PlaybackBoundaryAction TransportController::handlePlaybackBoundary(ActiveClip& clip,
+                                                                   bool loopEnabled) noexcept {
+  const int64_t activeWindowEnd = playbackWindowEnd(clip);
+  const auto boundary = advancePlaybackWindow(clip, loopEnabled);
+  if (boundary == PlaybackBoundaryAction::Ended) {
+    clip.isStopping = true;
+    clip.isNaturalEnding = true;
+    clip.fadeOutGain = 1.0f;
+    clip.fadeOutStartPos = activeWindowEnd;
+    clip.stopFadeFramesElapsed = 0;
+    return boundary;
+  }
+
+  const int64_t nextStart = playbackWindowStart(clip);
+  clip.sourcePosition = static_cast<double>(nextStart);
+  clip.currentSample = nextStart;
+  if (clip.source) {
+    clip.source->setDemand(nextStart);
+  }
+  clip.hasLoopedOnce = true;
+  if (boundary == PlaybackBoundaryAction::Looped) {
+    TransportEvent event{};
+    event.type = TransportEventType::ClipLooped;
+    event.handle = clip.handle;
+    event.requestTag = clip.startRequestTag;
+    event.voiceId = clip.voiceId;
+    event.position = getCurrentPosition();
+    postTransportEvent(event);
+  }
+  return boundary;
 }
 
 void TransportController::mergeAudioMeter(AudioMeter& accumulated,
