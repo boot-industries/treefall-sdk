@@ -4,7 +4,9 @@ add_library(orpheus_transport STATIC
     clip_source.cpp # ORP134 G1: prepared/streaming realtime clip sources
     clip_source_registry.cpp
     clip_dsp.cpp
-    transport_controller.cpp
+    transport_controller.cpp # realtime core: render path, command consumer
+    transport_control.cpp # control-thread mutations and command producers
+    transport_queries.cpp # const queries and snapshot readers
 )
 
 target_compile_features(orpheus_transport PUBLIC cxx_std_20)

@@ -359,6 +359,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "addActiveClip",
                 "removeActiveVoice",
                 "restartVoiceInPlace",
+                "handlePlaybackBoundary",
                 "allocateVoiceId",
                 "allocateVoiceStartOrdinal",
                 "incrementIngressCounter",
@@ -397,7 +398,12 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
             "Transport callback publisher {name}",
             _TRANSPORT,
             "TransportController",
-            ("postTransportEvent", "publishVoiceSnapshot", "publishCallbackTelemetry"),
+            (
+                "postTransportEvent",
+                "postVoiceEvent",
+                "publishVoiceSnapshot",
+                "publishCallbackTelemetry",
+            ),
         ),
         # ORP273 F-15: the registered-source lifetime helpers live in the
         # clip-source registry; the same realtime rules apply to them.

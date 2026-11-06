@@ -159,7 +159,9 @@ struct TransportCommand {
   TransportCommand() noexcept : type(Type::Start), handle(0), data{} {}
 };
 
-/// Active clip state (in audio thread)
+/// Active clip state. Owned and accessed only by the audio thread (control
+/// threads read the published voice snapshot), so every field is plain and
+/// compaction moves a voice with the defaulted move assignment.
 struct ActiveClip {
   ClipHandle handle;
   uint32_t voiceId; // Unique voice instance ID (for multi-voice layering)
@@ -169,38 +171,33 @@ struct ActiveClip {
   int64_t currentSample; // Current position within clip audio
   double sourcePosition; // Fractional source cursor for varispeed interpolation
 
-  // Trim points (atomic for thread safety)
-  std::atomic<int64_t> trimInSamples{0};  // Trim IN point (from metadata)
-  std::atomic<int64_t> trimOutSamples{0}; // Trim OUT point (from metadata)
+  // Trim points
+  int64_t trimInSamples{0};  // Trim IN point (from metadata)
+  int64_t trimOutSamples{0}; // Trim OUT point (from metadata)
 
-  // ORP127 G3: true file length in samples. Non-atomic (set once at start,
-  // audio-thread-read only). Bounds how far past trimOut the OUT-boundary stop
-  // fade may keep reading so the fade renders real audio instead of a hard cut.
+  // ORP127 G3: true file length in samples (set once at start). Bounds how far
+  // past trimOut the OUT-boundary stop fade may keep reading so the fade
+  // renders real audio instead of a hard cut.
   int64_t fileLengthSamples{0};
 
-  // Fade settings (atomic for thread safety)
-  std::atomic<double> fadeInSeconds{0.0};
-  std::atomic<double> fadeOutSeconds{0.0};
-  std::atomic<FadeCurve> fadeInCurve{FadeCurve::Linear};
-  std::atomic<FadeCurve> fadeOutCurve{FadeCurve::Linear};
+  // Fade settings
+  FadeCurve fadeInCurve{FadeCurve::Linear};
+  FadeCurve fadeOutCurve{FadeCurve::Linear};
 
   // Cached fade sample counts (computed when fades are updated)
-  std::atomic<int64_t> fadeInSamples{0};
-  std::atomic<int64_t> fadeOutSamples{0};
-  std::atomic<double> stopFadeOutSeconds{0.01};
-  std::atomic<FadeCurve> stopFadeOutCurve{FadeCurve::Linear};
-  std::atomic<int64_t> stopFadeOutSamples{0};
+  int64_t fadeInSamples{0};
+  int64_t fadeOutSamples{0};
+  FadeCurve stopFadeOutCurve{FadeCurve::Linear};
+  int64_t stopFadeOutSamples{0};
   int64_t stopFadeFramesElapsed{0};
 
-  // Gain control (atomic for thread safety)
-  std::atomic<float> gainDb{0.0f};     // Gain in decibels (0.0 = unity)
-  std::atomic<float> gainLinear{1.0f}; // Cached linear gain target (precomputed from gainDb)
-  std::atomic<bool> muted{false};
-  std::atomic<float> pan{0.0f};
-  std::atomic<float> panLeftGain{1.0f};
-  std::atomic<float> panRightGain{1.0f};
-  std::atomic<double> playbackRate{1.0};
-  std::atomic<int64_t> playDelayFrames{0};
+  // Gain control
+  float gainLinear{1.0f}; // Linear gain target (precomputed on the control thread)
+  bool muted{false};
+  float panLeftGain{1.0f};
+  float panRightGain{1.0f};
+  double playbackRate{1.0};
+  int64_t playDelayFrames{0};
   int64_t playDelayFramesRemaining{0};
 
   // ORP127 G4: per-voice gain smoothing state (audio-thread only). gainCurrent
@@ -209,18 +206,16 @@ struct ActiveClip {
   float gainCurrent{1.0f};       // Current smoothed linear gain
   float gainRampIncrement{0.0f}; // Linear gain change per sample (0 = snap)
 
-  // Loop mode (atomic for thread safety)
-  std::atomic<bool> loopEnabled{false}; // true = loop indefinitely
+  // Loop mode
+  bool loopEnabled{false}; // true = loop indefinitely
   uint32_t segmentCount{0};
   uint32_t segmentIndex{0};
   uint32_t segmentRepeatsRemaining{0};
   std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments> segments{};
   ClipDspProcessor dspProcessor;
 
-  float fadeOutGain;       // 1.0 = normal, 0.0 = fully faded (for stop fade-out)
-  bool isStopping;         // true if fade-out in progress
-  int64_t fadeOutStartPos; // Sample position when fade-out started (for additive time)
-  bool isNaturalEnding;    // true when OUT, false for operator/choke stop
+  bool isStopping;      // true if fade-out in progress
+  bool isNaturalEnding; // true when OUT, false for operator/choke stop
 
   // Restart crossfade state (broadcast-safe restart mechanism)
   bool isRestarting; // true if restart crossfade in progress
@@ -250,6 +245,9 @@ struct ActiveClip {
   // Start). Governs how a fresh fire interacts with this voice.
   VoiceMode voiceMode{VoiceMode::Polyphonic};
 };
+
+/// Outcome of a voice reaching the end of its current playback window.
+enum class PlaybackBoundaryAction : uint8_t { Ended, Advanced, Looped };
 
 /// ORP133 G1: Transport event kinds posted from the audio thread.
 ///
@@ -433,11 +431,6 @@ private:
   /// Process one detached FIFO batch from concurrent control producers.
   void processCommands();
 
-  /// Find active clip by handle (returns first instance found)
-  /// @return Pointer to active clip, or nullptr if not found
-  /// @note For multi-voice: returns first matching instance, not necessarily oldest
-  ActiveClip* findActiveClip(ClipHandle handle);
-
   /// Count active voices for a given clip handle
   /// @return Number of instances currently playing (0-MAX_VOICES_PER_CLIP)
   size_t countActiveVoices(ClipHandle handle) const;
@@ -477,22 +470,29 @@ private:
   uint32_t startVoiceWithMode(const std::shared_ptr<ClipPlaybackContext>& context,
                               StartRequestTag requestTag);
 
-  /// ORP127 G5: Reset an existing voice back to its trim IN for an in-place
-  /// restart (used by the mono voice modes). Applies the broadcast-safe restart
-  /// crossfade so the reset does not click. Audio thread only.
-  void restartVoiceInPlace(ActiveClip& clip);
+  /// ORP127 G5: Reset an existing voice back to its first programmed source
+  /// window for an in-place restart (Restart commands and the mono voice
+  /// modes). Applies the broadcast-safe restart crossfade so the reset does not
+  /// click. Returns the restart position. Audio thread only.
+  int64_t restartVoiceInPlace(ActiveClip& clip);
 
   /// Remove a specific voice instance from active list (audio thread only)
   /// @param voiceId Specific voice instance to remove
   void removeActiveVoice(uint32_t voiceId);
 
-  /// Remove a clip from active list (audio thread only)
-  /// @note Deprecated: Use removeActiveVoice() for multi-voice
-  void removeActiveClip(ClipHandle handle);
+  /// Advance a voice past the end of its playback window: enter the next
+  /// segment or loop pass (posting ClipLooped for a loop), or begin the natural
+  /// ending fade. Audio thread only.
+  PlaybackBoundaryAction handlePlaybackBoundary(ActiveClip& clip, bool loopEnabled) noexcept;
 
   /// Post a POD transport event to the control-thread ring (audio thread only).
   /// Every attempt advances cumulative telemetry before the capacity check.
   void postTransportEvent(const TransportEvent& event) noexcept;
+
+  /// Build and post one voice- or handle-scoped transport event (audio thread
+  /// only). Zero requestTag/voiceId mark events that carry no start identity.
+  void postVoiceEvent(TransportEventType type, ClipHandle handle, StartRequestTag requestTag,
+                      uint32_t voiceId, TransportPosition position) noexcept;
 
   /// Publish callback delivery counters through a coherent atomic seqlock.
   void publishCallbackTelemetry() noexcept;

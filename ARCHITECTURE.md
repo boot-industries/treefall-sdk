@@ -246,7 +246,11 @@ Real-time audio playback engine:
 - No I/O (file reads handled during load, not playback)
 - No blocking operations
 
-**File:** `include/orpheus/transport_controller.h`, `src/core/transport/transport_controller.cpp`
+**Files:** `include/orpheus/transport_controller.h`; `src/core/transport/transport_controller.cpp`
+holds the realtime core (render path, command consumer, and every audited audio-thread
+helper), `src/core/transport/transport_control.cpp` the control-thread mutations and
+command producers, and `src/core/transport/transport_queries.cpp` the const queries and
+snapshot readers.
 
 #### 3. Audio File Reader (`orpheus::IAudioFileReader`)
 
