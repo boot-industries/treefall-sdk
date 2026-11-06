@@ -516,6 +516,10 @@ private:
   void markRoutingMetersUnmeasured() noexcept;
   void markLogicalGroupOutputUnmeasured() noexcept;
   static void mergeAudioMeter(AudioMeter& accumulated, const AudioMeter& current) noexcept;
+  /// Copy the populated region of a group-output snapshot into the pending
+  /// canonical frame, merging lanes that both windows measured when asked.
+  void copyGroupOutputMeterRegion(const GroupOutputMeterSnapshot& source,
+                                  bool mergeMeasuredLanes) noexcept;
 
   uint32_t acquireCommandNode() noexcept;
   SessionGraphError publishCommandNode(uint32_t index) noexcept;
@@ -738,6 +742,10 @@ private:
   GroupOutputMeterSnapshot m_groupOutputMeterScratch{};
   RoutingMeterTelemetry m_routingMeterAccumulator{};
   bool m_routingMeterAccumulatorValid{false};
+  // Bounds of the accumulator's group-output region that may hold non-default
+  // frames; everything beyond them is default-initialized. Audio thread only.
+  RoutingGroupIndex m_meterGroupHigh{0};
+  std::array<uint16_t, kRoutingControlMaxGroups> m_meterLaneHigh{};
   RealtimeTelemetrySnapshot m_realtimeTelemetrySnapshot{};
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;

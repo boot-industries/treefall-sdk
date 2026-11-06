@@ -1056,6 +1056,8 @@ void TransportController::markRoutingMetersUnmeasured() noexcept {
   m_routingMeterAccumulator.group_output_meters.availability = MeterAvailability::Unmeasured;
   m_routingMeterAccumulator.group_output_meters.coherent = 0;
   m_routingMeterAccumulatorValid = false;
+  m_meterGroupHigh = 0;
+  m_meterLaneHigh.fill(0);
 }
 
 void TransportController::markLogicalGroupOutputUnmeasured() noexcept {
@@ -1067,6 +1069,72 @@ void TransportController::markLogicalGroupOutputUnmeasured() noexcept {
     m_routingMeterAccumulator.group_output_meters.groups[group].availability =
         MeterAvailability::Unmeasured;
   }
+}
+
+void TransportController::copyGroupOutputMeterRegion(const GroupOutputMeterSnapshot& source,
+                                                     bool mergeMeasuredLanes) noexcept {
+  GroupOutputMeterSnapshot& destination = m_routingMeterAccumulator.group_output_meters;
+  if (source.availability == MeterAvailability::Unsupported ||
+      source.schema_version != destination.schema_version) {
+    // No region contract to rely on: take the whole value and assume every
+    // frame may now be populated.
+    destination = source;
+    m_meterGroupHigh = kRoutingControlMaxGroups;
+    m_meterLaneHigh.fill(static_cast<uint16_t>(kRoutingMaxOutputs));
+    return;
+  }
+
+  // A routing snapshot leaves every frame beyond group_count and every lane
+  // beyond logical_lane_count default-initialized, so copying the populated
+  // region and resetting only what a larger earlier region left behind yields
+  // the same value as copying the whole snapshot.
+  destination.schema_version = source.schema_version;
+  destination.coherent = source.coherent;
+  destination.availability = source.availability;
+  destination.group_count = source.group_count;
+  destination.render_sequence = source.render_sequence;
+  destination.routing_topology_revision = source.routing_topology_revision;
+
+  const RoutingGroupIndex groupCount =
+      std::min<RoutingGroupIndex>(source.group_count, kRoutingControlMaxGroups);
+  for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
+    GroupOutputMeterFrame& frame = destination.groups[group];
+    const GroupOutputMeterFrame& current = source.groups[group];
+    const bool mergeFrame = mergeMeasuredLanes &&
+                            frame.availability == MeterAvailability::Measured &&
+                            current.availability == MeterAvailability::Measured;
+    frame.routing_output_start = current.routing_output_start;
+    frame.logical_lane_count = current.logical_lane_count;
+    frame.availability = current.availability;
+    frame.peak_definition = current.peak_definition;
+    frame.raw_block_frames = current.raw_block_frames;
+    const uint16_t laneCount = std::min<uint16_t>(current.logical_lane_count, kRoutingMaxOutputs);
+    if (mergeFrame) {
+      for (uint16_t lane = 0; lane < laneCount; ++lane) {
+        mergeAudioMeter(frame.lane_meters[lane], current.lane_meters[lane]);
+      }
+    } else {
+      std::copy_n(current.lane_meters.begin(), laneCount, frame.lane_meters.begin());
+    }
+    for (uint16_t lane = laneCount; lane < m_meterLaneHigh[group]; ++lane) {
+      frame.lane_meters[lane] = AudioMeter{};
+    }
+    m_meterLaneHigh[group] = laneCount;
+  }
+  for (RoutingGroupIndex group = groupCount; group < m_meterGroupHigh; ++group) {
+    GroupOutputMeterFrame& frame = destination.groups[group];
+    const uint16_t laneHigh = m_meterLaneHigh[group];
+    frame.routing_output_start = 0;
+    frame.logical_lane_count = 0;
+    frame.availability = MeterAvailability::Unconfigured;
+    frame.peak_definition = MeterPeakDefinition::SamplePeak;
+    frame.raw_block_frames = 0;
+    for (uint16_t lane = 0; lane < laneHigh; ++lane) {
+      frame.lane_meters[lane] = AudioMeter{};
+    }
+    m_meterLaneHigh[group] = 0;
+  }
+  m_meterGroupHigh = groupCount;
 }
 
 void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
@@ -1151,7 +1219,7 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
     m_routingMeterAccumulator.master_aggregate_meter = readings.master_meter;
     m_routingMeterAccumulator.post_master_output_availability = readings.output_availability;
     m_routingMeterAccumulator.post_master_output_lane_meters = readings.output_meters;
-    m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
+    copyGroupOutputMeterRegion(m_groupOutputMeterScratch, false);
     m_routingMeterAccumulatorValid = true;
     m_routingMeterAccumulator.peak_window_frames = 0;
     m_routingMeterAccumulator.rms_window_frames = 0;
@@ -1197,36 +1265,13 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
       }
     }
 
-    if (!logicalExtensionImplemented ||
-        m_groupOutputMeterScratch.availability == MeterAvailability::Unsupported) {
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-    } else if (logicalMeasured) {
-      const GroupOutputMeterSnapshot previous = m_routingMeterAccumulator.group_output_meters;
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-      const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-          m_groupOutputMeterScratch.group_count, kRoutingControlMaxGroups);
-      if (previous.availability == MeterAvailability::Measured &&
-          previous.routing_topology_revision ==
-              m_groupOutputMeterScratch.routing_topology_revision) {
-        for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
-          auto& accumulatedFrame = m_routingMeterAccumulator.group_output_meters.groups[group];
-          const auto& previousFrame = previous.groups[group];
-          if (accumulatedFrame.availability != MeterAvailability::Measured ||
-              previousFrame.availability != MeterAvailability::Measured) {
-            continue;
-          }
-          const uint16_t laneCount =
-              std::min<uint16_t>(accumulatedFrame.logical_lane_count, kRoutingMaxOutputs);
-          for (uint16_t lane = 0; lane < laneCount; ++lane) {
-            mergeAudioMeter(accumulatedFrame.lane_meters[lane], previousFrame.lane_meters[lane]);
-            mergeAudioMeter(accumulatedFrame.lane_meters[lane],
-                            m_groupOutputMeterScratch.groups[group].lane_meters[lane]);
-          }
-        }
-      }
-    } else {
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-    }
+    // Lanes measured in both the pending window and this block merge in place;
+    // every other populated lane takes this block's reading.
+    const GroupOutputMeterSnapshot& pending = m_routingMeterAccumulator.group_output_meters;
+    const bool mergeMeasuredLanes =
+        logicalMeasured && pending.availability == MeterAvailability::Measured &&
+        pending.routing_topology_revision == m_groupOutputMeterScratch.routing_topology_revision;
+    copyGroupOutputMeterRegion(m_groupOutputMeterScratch, mergeMeasuredLanes);
   }
 
   m_routingMeterAccumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;

@@ -366,6 +366,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "markRoutingMetersUnmeasured",
                 "markLogicalGroupOutputUnmeasured",
                 "collectRoutingMeters",
+                "copyGroupOutputMeterRegion",
                 "countActiveVoices",
                 "findOldestVoice",
                 "configureVoiceRouting",

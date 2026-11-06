@@ -112,6 +112,75 @@ protected:
     ASSERT_TRUE(file.good());
   }
 
+  // Mono 16-bit file holding kFrames frames at each listed level, so a
+  // looping voice rendered in kFrames blocks plays one level per block.
+  void writeMonoBlockFixture(const std::string& path, const std::vector<int16_t>& levels) const {
+    constexpr uint16_t channels = 1;
+    constexpr uint16_t bitsPerSample = 16;
+    constexpr uint16_t blockAlign = channels * (bitsPerSample / 8);
+    const uint32_t dataSize = static_cast<uint32_t>(levels.size() * kFrames * blockAlign);
+    const uint32_t riffSize = 36 + dataSize;
+    const uint32_t byteRate = kSampleRate * blockAlign;
+    constexpr uint32_t fmtSize = 16;
+    constexpr uint16_t pcmFormat = 1;
+
+    std::ofstream file(path, std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    file.write("RIFF", 4);
+    file.write(reinterpret_cast<const char*>(&riffSize), sizeof(riffSize));
+    file.write("WAVEfmt ", 8);
+    file.write(reinterpret_cast<const char*>(&fmtSize), sizeof(fmtSize));
+    file.write(reinterpret_cast<const char*>(&pcmFormat), sizeof(pcmFormat));
+    file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
+    file.write(reinterpret_cast<const char*>(&kSampleRate), sizeof(kSampleRate));
+    file.write(reinterpret_cast<const char*>(&byteRate), sizeof(byteRate));
+    file.write(reinterpret_cast<const char*>(&blockAlign), sizeof(blockAlign));
+    file.write(reinterpret_cast<const char*>(&bitsPerSample), sizeof(bitsPerSample));
+    file.write("data", 4);
+    file.write(reinterpret_cast<const char*>(&dataSize), sizeof(dataSize));
+    for (const int16_t level : levels) {
+      for (size_t frame = 0; frame < kFrames; ++frame) {
+        file.write(reinterpret_cast<const char*>(&level), sizeof(level));
+      }
+    }
+    ASSERT_TRUE(file.good());
+  }
+
+  // One looping mono voice panned into both lanes of a two-lane group 0.
+  static std::unique_ptr<ITransportController> startLoopingMonoVoice(const std::string& path,
+                                                                     uint32_t decimationBlocks) {
+    TransportConfig config;
+    config.sampleRate = kSampleRate;
+    config.outputChannels = 2;
+    config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+    config.maxActiveVoices = 1;
+    config.maxSourceChannels = 2;
+    config.numGroups = 1;
+    auto transport = createTransportController(nullptr, config);
+    EXPECT_NE(transport, nullptr);
+    if (!transport) {
+      return transport;
+    }
+    EXPECT_EQ(transport->registerClipAudio(40, path), SessionGraphError::OK);
+    auto metadata = transport->getClipMetadata(40);
+    EXPECT_TRUE(metadata.has_value());
+    if (metadata) {
+      metadata->loopEnabled = true;
+      metadata->fadeInSeconds = 0.0;
+      metadata->fadeOutSeconds = 0.0;
+      EXPECT_EQ(transport->updateClipMetadata(40, *metadata), SessionGraphError::OK);
+    }
+    EXPECT_EQ(transport->startClip(40), SessionGraphError::OK);
+    transport->getRealtimeTelemetry()->setDecimationBlocks(decimationBlocks);
+    return transport;
+  }
+
+  static void renderBlock(ITransportController& transport) {
+    std::array<std::array<float, kFrames>, 2> storage{};
+    std::array<float*, 2> outputs = {storage[0].data(), storage[1].data()};
+    transport.processAudio(outputs.data(), outputs.size(), kFrames);
+  }
+
   std::string filePath;
   std::string stereoPath;
 };
@@ -521,5 +590,101 @@ TEST_F(MultichannelTransportTest, CanonicalFrameStampsSchemas) {
   EXPECT_EQ(snapshot.routing_meters.schema_version, kRoutingMeterTelemetrySchemaVersion);
   EXPECT_EQ(snapshot.routing_meters.group_output_meters.schema_version,
             kGroupOutputMeterSnapshotSchemaVersion);
+}
+
+TEST_F(MultichannelTransportTest, TopologyShrinkClearsLanesBeyondLogicalCount) {
+  const auto path =
+      (std::filesystem::temp_directory_path() / "orpheus_meter_topology_shrink.wav").string();
+  writeMonoBlockFixture(path, {8192});
+  auto transport = startLoopingMonoVoice(path, 4);
+  ASSERT_NE(transport, nullptr);
+  auto* telemetry = transport->getRealtimeTelemetry();
+
+  for (int block = 0; block < 4; ++block) {
+    renderBlock(*transport);
+  }
+  auto wide = std::make_unique<RealtimeTelemetrySnapshot>();
+  ASSERT_TRUE(telemetry->tryRead(*wide));
+  ASSERT_EQ(wide->routing_meters.group_output_meters.groups[0].logical_lane_count, 2);
+  ASSERT_GT(wide->routing_meters.group_output_meters.groups[0].lane_meters[1].peak_db,
+            kAudioMeterSilenceDb);
+
+  // Shrink the group in the middle of a decimation window, after two blocks
+  // have already measured its second lane.
+  renderBlock(*transport);
+  renderBlock(*transport);
+  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  renderBlock(*transport);
+  renderBlock(*transport);
+
+  auto narrow = std::make_unique<RealtimeTelemetrySnapshot>();
+  ASSERT_TRUE(telemetry->tryRead(*narrow));
+  const auto& frame = narrow->routing_meters.group_output_meters.groups[0];
+  EXPECT_EQ(frame.logical_lane_count, 1);
+  EXPECT_GT(frame.lane_meters[0].peak_db, kAudioMeterSilenceDb);
+  const AudioMeter unconfigured{};
+  EXPECT_EQ(frame.lane_meters[1].peak_db, unconfigured.peak_db);
+  EXPECT_EQ(frame.lane_meters[1].rms_db, unconfigured.rms_db);
+  EXPECT_EQ(frame.lane_meters[1].clipping, unconfigured.clipping);
+  EXPECT_EQ(frame.lane_meters[1].clip_count, unconfigured.clip_count);
+
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+}
+
+TEST_F(MultichannelTransportTest, DecimationMergeMatchesBlockMaxima) {
+  const auto path =
+      (std::filesystem::temp_directory_path() / "orpheus_meter_alternating.wav").string();
+  writeMonoBlockFixture(path, {16384, 2048, 16384, 2048});
+  auto reference = startLoopingMonoVoice(path, 1);
+  auto decimated = startLoopingMonoVoice(path, 4);
+  ASSERT_NE(reference, nullptr);
+  ASSERT_NE(decimated, nullptr);
+
+  // Loud, quiet, loud, quiet: one per-block reference snapshot each.
+  std::vector<RealtimeTelemetrySnapshot> blocks(4);
+  for (auto& block : blocks) {
+    renderBlock(*reference);
+    ASSERT_TRUE(reference->getRealtimeTelemetry()->tryRead(block));
+    renderBlock(*decimated);
+  }
+  auto window = std::make_unique<RealtimeTelemetrySnapshot>();
+  ASSERT_TRUE(decimated->getRealtimeTelemetry()->tryRead(*window));
+  EXPECT_FALSE(decimated->getRealtimeTelemetry()->tryRead(*window));
+  const RoutingMeterTelemetry& meters = window->routing_meters;
+  EXPECT_EQ(meters.availability, MeterAvailability::Measured);
+  EXPECT_EQ(meters.peak_window_frames, 4 * kFrames);
+  EXPECT_EQ(meters.rms_window_frames, kFrames);
+
+  const auto expectWindow = [&](const AudioMeter& actual, auto&& perBlock, const char* name) {
+    float peak = kAudioMeterSilenceDb;
+    uint32_t clipCount = 0;
+    for (const auto& block : blocks) {
+      peak = std::max(peak, perBlock(block).peak_db);
+      clipCount = std::max(clipCount, perBlock(block).clip_count);
+    }
+    EXPECT_GT(peak, perBlock(blocks.back()).peak_db) << name;
+    EXPECT_EQ(actual.peak_db, peak) << name;
+    EXPECT_EQ(actual.rms_db, perBlock(blocks.back()).rms_db) << name;
+    EXPECT_EQ(actual.clip_count, clipCount) << name;
+  };
+  for (size_t lane = 0; lane < 2; ++lane) {
+    EXPECT_EQ(meters.group_output_meters.groups[0].availability, MeterAvailability::Measured);
+    expectWindow(
+        meters.group_output_meters.groups[0].lane_meters[lane],
+        [lane](const RealtimeTelemetrySnapshot& block) -> const AudioMeter& {
+          return block.routing_meters.group_output_meters.groups[0].lane_meters[lane];
+        },
+        lane == 0 ? "group 0 lane 0" : "group 0 lane 1");
+  }
+  expectWindow(
+      meters.master_aggregate_meter,
+      [](const RealtimeTelemetrySnapshot& block) -> const AudioMeter& {
+        return block.routing_meters.master_aggregate_meter;
+      },
+      "master aggregate");
+
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
 }
 } // namespace
