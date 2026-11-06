@@ -394,6 +394,9 @@ public:
 /// reset, gap, or non-contiguous stream position before this block; positions
 /// and timestamps on either side of it are not comparable. The transport
 /// position is a separate timeline that advances by every rendered block.
+/// A backend whose first block is at device sample position zero reports the
+/// device sample position unavailable for that one block, and that same block
+/// carries discontinuity=true. Host time availability is independent.
 /// A value-initialized reference reports every field unavailable.
 struct TransportTimeReference {
   uint64_t device_sample_position{0};
@@ -613,6 +616,13 @@ public:
   /// never replaced in place: it returns SessionGraphError::NotReady until the
   /// caller stops/drains, unregisters, and performs a clean re-registration.
   ///
+  /// Source width must satisfy TransportConfig::maxSourceChannels and, for
+  /// SourceChannelPolicy::Discrete, TransportConfig::outputChannels. This
+  /// defaults-only registration does not check the group's admission width;
+  /// registerClipAudioWithMetadata() and updateClipMetadata() check it when
+  /// applying explicit routing-group metadata. Matrix geometry and routing
+  /// snapshot recalls do not change that admission width (see setGroupOutputBus()).
+  ///
   /// @param handle Clip handle
   /// @param file_path Path to an audio file
   /// @return SessionGraphError::OK on success, or error code on failure
@@ -801,6 +811,11 @@ public:
   ///   trimmed clip duration.
   /// - pan is finite and in [-1, +1]; playbackRate is finite and in
   ///   [0.25, 4.0]; playDelaySeconds is finite and in [0, 99.9].
+  /// - The file's channel count must not exceed the target group's admission
+  ///   width: the width last accepted by setGroupOutputBus(), initially
+  ///   TransportConfig::outputChannels. Direct matrix edits and routing snapshot
+  ///   recalls do not change this limit. A clip wider than the current matrix
+  ///   geometry is intentionally allowed if it satisfies this admission limit.
   /// - If any validation fails, NO changes are applied (atomic operation).
   virtual SessionGraphError updateClipMetadata(ClipHandle handle, const ClipMetadata& metadata) = 0;
 
@@ -813,6 +828,15 @@ public:
   virtual std::optional<ClipMetadata> getClipMetadata(ClipHandle handle) const = 0;
 
   /// Route one logical clip group to a contiguous physical output bus.
+  ///
+  /// On success, updates both the routing matrix's group geometry and the
+  /// group's clip-admission width. The latter is initially
+  /// TransportConfig::outputChannels and retains the width last accepted here;
+  /// direct matrix edits and routing snapshot recalls never change it.
+  /// Returns InvalidParameter if the group or output range is invalid, the
+  /// width is zero, or any registered clip assigned to the group has more
+  /// source channels than the requested width. Rejection changes neither
+  /// geometry nor admission width.
   virtual SessionGraphError setGroupOutputBus(RoutingGroupIndex group,
                                               const OutputBusRoute& route) = 0;
 
@@ -823,6 +847,10 @@ public:
   /// applyGroupControlSnapshot()) reads back like one set by setGroupOutputBus().
   /// Rendering follows the same geometry: a mono voice pans into two lanes only
   /// when its group is at least two lanes wide.
+  /// This is not the clip-admission width: that remains the width last accepted
+  /// by setGroupOutputBus(), initially TransportConfig::outputChannels. Direct
+  /// matrix narrowing may therefore intentionally leave or admit clips wider
+  /// than the rendered group geometry; it does not revalidate their metadata.
   virtual std::optional<OutputBusRoute> getGroupOutputBus(RoutingGroupIndex group) const = 0;
 
   /// Set session-level default metadata for new clips
@@ -1136,6 +1164,12 @@ public:
   /// transport before its audio callback starts. Invalid metadata leaves the
   /// handle unregistered. Custom implementations that do not support atomic
   /// initial metadata registration return NotSupported.
+  /// The source-width limits documented by registerClipAudio() apply. The
+  /// file's channel count must also fit metadata.routingGroup's admission width:
+  /// the width last accepted by setGroupOutputBus(), initially
+  /// TransportConfig::outputChannels. Direct matrix edits and routing snapshot
+  /// recalls do not change that limit; a clip wider than the current matrix
+  /// geometry is intentionally allowed if it fits the admission width.
   ///
   /// This additive interface extension requires consumers to rebuild.
   virtual SessionGraphError registerClipAudioWithMetadata(ClipHandle /*handle*/,

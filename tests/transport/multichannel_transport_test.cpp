@@ -11,8 +11,10 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -322,9 +324,8 @@ TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange)
   ASSERT_GT(std::abs(storage[0][kFrames - 1]), 0.01f);
   ASSERT_GT(std::abs(storage[1][kFrames - 1]), 0.01f);
 
-  // Narrowing the live group stops the voice writing its second lane. The lane
-  // keeps the route it got at voice start, so the routing matrix still meters
-  // it: it must read silence, not keep replaying the last block it rendered.
+  // Narrowing stops the voice writing its second lane and unassigns that
+  // lane's route. Neither the output nor its meter may retain stale audio.
   ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
   for (int block = 0; block < 3; ++block) {
     storage = {};
@@ -428,6 +429,254 @@ TEST_F(MultichannelTransportTest, MonoVoiceFollowsGroupWidthSetThroughRoutingMat
 
   std::error_code ignored;
   std::filesystem::remove(monoPath, ignored);
+}
+
+TEST_F(MultichannelTransportTest, LiveMonoVoiceWidensThroughGroupControlSnapshot) {
+  const auto monoPath =
+      orpheus::tests::support::UniqueTempPath("orpheus_mono_live_widen", ".wav").string();
+  writeMonoBlockFixture(monoPath, {2048, 4096});
+
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = 2;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  auto reference = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  ASSERT_NE(reference, nullptr);
+  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  ASSERT_EQ(reference->setGroupOutputBus(0, OutputBusRoute{0, 2}), SessionGraphError::OK);
+  for (auto* controller : {transport.get(), reference.get()}) {
+    ASSERT_EQ(controller->registerClipAudio(32, monoPath), SessionGraphError::OK);
+    auto metadata = controller->getClipMetadata(32);
+    ASSERT_TRUE(metadata.has_value());
+    metadata->loopEnabled = true;
+    metadata->fadeInSeconds = 0.0;
+    metadata->fadeOutSeconds = 0.0;
+    ASSERT_EQ(controller->updateClipMetadata(32, *metadata), SessionGraphError::OK);
+    ASSERT_EQ(controller->startClip(32), SessionGraphError::OK);
+  }
+
+  using Block = std::array<std::array<float, kFrames>, 2>;
+  const auto render = [](ITransportController& controller) {
+    Block storage{};
+    std::array<float*, 2> outputs = {storage[0].data(), storage[1].data()};
+    controller.processAudio(outputs.data(), outputs.size(), kFrames);
+    return storage;
+  };
+  const Block narrow = render(*transport);
+  render(*reference);
+  EXPECT_GT(std::abs(narrow[0][kFrames - 1]), 0.01f);
+  EXPECT_TRUE(std::all_of(narrow[1].begin(), narrow[1].end(),
+                          [](float sample) { return sample == 0.0f; }));
+
+  auto* routing = transport->getRoutingMatrix();
+  auto desired = routing->getRoutingControlSnapshot();
+  desired.groups[0].output_start = 0;
+  desired.groups[0].output_width = 2;
+  ASSERT_EQ(routing->applyGroupControlSnapshot(desired), SessionGraphError::OK);
+  // Compare the very first widened block against the same playback time, not
+  // the reference's first block or a later block after routes have caught up.
+  const Block widened = render(*transport);
+  const Block expected = render(*reference);
+  const auto rms = [](const std::array<float, kFrames>& lane) {
+    double sum = 0.0;
+    for (const float sample : lane) {
+      sum += static_cast<double>(sample) * sample;
+    }
+    return std::sqrt(sum / lane.size());
+  };
+  for (size_t lane = 0; lane < 2; ++lane) {
+    const double actualRms = rms(widened[lane]);
+    const double expectedRms = rms(expected[lane]);
+    const std::string measurement =
+        "lane " + std::to_string(lane) + " first widened block RMS=" +
+        ::testing::PrintToString(actualRms) +
+        " same-time wide reference RMS=" + ::testing::PrintToString(expectedRms);
+    std::cout << "[ live-widen ] " << measurement << std::endl;
+    SCOPED_TRACE(measurement);
+    EXPECT_GT(expectedRms, 0.01);
+    EXPECT_GT(actualRms, 0.01);
+    EXPECT_EQ(actualRms, expectedRms);
+    EXPECT_EQ(std::memcmp(widened[lane].data(), expected[lane].data(),
+                          kFrames * sizeof(float)), 0);
+  }
+  EXPECT_GT(routing->getChannelMeter(1).peak_db, kAudioMeterSilenceDb);
+
+  // Return to one lane on the very next block, then widen once more. The
+  // looping fixture changes level each block, exposing stale second-lane data.
+  desired.groups[0].output_width = 1;
+  ASSERT_EQ(routing->applyGroupControlSnapshot(desired), SessionGraphError::OK);
+  const Block narrowedAgain = render(*transport);
+  render(*reference);
+  EXPECT_GT(std::abs(narrowedAgain[0][kFrames - 1]), 0.01f);
+  EXPECT_TRUE(std::all_of(narrowedAgain[1].begin(), narrowedAgain[1].end(),
+                          [](float sample) { return sample == 0.0f; }));
+  EXPECT_EQ(routing->getChannelMeter(1).peak_db, kAudioMeterSilenceDb);
+  desired.groups[0].output_width = 2;
+  ASSERT_EQ(routing->applyGroupControlSnapshot(desired), SessionGraphError::OK);
+  const Block rewidened = render(*transport);
+  const Block expectedRewidened = render(*reference);
+  EXPECT_EQ(std::memcmp(rewidened.data(), expectedRewidened.data(), sizeof(Block)), 0);
+
+  std::error_code ignored;
+  std::filesystem::remove(monoPath, ignored);
+}
+
+TEST_F(MultichannelTransportTest, LiveMonoWidthChangeLeavesOtherVoicesBitIdentical) {
+  const auto monoPath =
+      orpheus::tests::support::UniqueTempPath("orpheus_mono_width_isolation", ".wav").string();
+  writeFixture(monoPath, 1);
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 6;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 3;
+  config.maxSourceChannels = 2;
+  config.numGroups = 3;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  auto reference = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  ASSERT_NE(reference, nullptr);
+  for (auto* controller : {transport.get(), reference.get()}) {
+    ASSERT_EQ(controller->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+    ASSERT_EQ(controller->setGroupOutputBus(1, OutputBusRoute{2, 2}), SessionGraphError::OK);
+    ASSERT_EQ(controller->setGroupOutputBus(2, OutputBusRoute{4, 2}), SessionGraphError::OK);
+    for (uint32_t group = 0; group < 3; ++group) {
+      const ClipHandle handle = 50 + group;
+      ASSERT_EQ(controller->registerClipAudio(handle, group == 1 ? stereoPath : monoPath),
+                SessionGraphError::OK);
+      auto metadata = controller->getClipMetadata(handle);
+      ASSERT_TRUE(metadata.has_value());
+      metadata->routingGroup = static_cast<RoutingGroupIndex>(group);
+      metadata->loopEnabled = true;
+      metadata->fadeInSeconds = 0.0;
+      metadata->fadeOutSeconds = 0.0;
+      ASSERT_EQ(controller->updateClipMetadata(handle, *metadata), SessionGraphError::OK);
+      ASSERT_EQ(controller->startClip(handle), SessionGraphError::OK);
+    }
+  }
+  using Block = std::array<std::array<float, kFrames>, 6>;
+  const auto render = [](ITransportController& controller) {
+    Block storage{};
+    std::array<float*, 6> outputs{};
+    for (size_t lane = 0; lane < outputs.size(); ++lane) {
+      outputs[lane] = storage[lane].data();
+    }
+    controller.processAudio(outputs.data(), outputs.size(), kFrames);
+    return storage;
+  };
+  for (const uint16_t width : {1, 2, 1, 2}) {
+    auto desired = transport->getRoutingMatrix()->getRoutingControlSnapshot();
+    desired.groups[0].output_width = width;
+    ASSERT_EQ(transport->getRoutingMatrix()->applyGroupControlSnapshot(desired),
+              SessionGraphError::OK);
+    const Block actual = render(*transport);
+    const Block expected = render(*reference);
+    for (size_t lane = 2; lane < actual.size(); ++lane) {
+      SCOPED_TRACE(::testing::Message() << "width " << width << " lane " << lane);
+      EXPECT_GT(std::abs(expected[lane].back()), 0.01f);
+      EXPECT_EQ(std::memcmp(actual[lane].data(), expected[lane].data(),
+                            kFrames * sizeof(float)), 0);
+    }
+  }
+  std::error_code ignored;
+  std::filesystem::remove(monoPath, ignored);
+}
+
+TEST_F(MultichannelTransportTest, SingleSourceLaneNeverPansWhenLiveGroupWidens) {
+  const auto monoPath =
+      orpheus::tests::support::UniqueTempPath("orpheus_single_lane_width", ".wav").string();
+  writeFixture(monoPath, 1);
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 4;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = 1;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  ASSERT_EQ(transport->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  ASSERT_EQ(transport->registerClipAudio(60, monoPath), SessionGraphError::OK);
+  auto metadata = transport->getClipMetadata(60);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->pan = 1.0f;
+  metadata->loopEnabled = true;
+  metadata->fadeInSeconds = 0.0;
+  metadata->fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(60, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(60), SessionGraphError::OK);
+  for (const uint16_t width : {1, 4, 1}) {
+    auto desired = transport->getRoutingMatrix()->getRoutingControlSnapshot();
+    desired.groups[0].output_width = width;
+    ASSERT_EQ(transport->getRoutingMatrix()->applyGroupControlSnapshot(desired),
+              SessionGraphError::OK);
+    std::array<std::array<float, kFrames>, 4> storage{};
+    std::array<float*, 4> outputs{};
+    for (size_t lane = 0; lane < outputs.size(); ++lane) {
+      outputs[lane] = storage[lane].data();
+    }
+    transport->processAudio(outputs.data(), outputs.size(), kFrames);
+    for (const float sample : storage[0]) {
+      ASSERT_EQ(sample, 2048.0f / 32768.0f) << "width " << width;
+    }
+    for (size_t lane = 1; lane < storage.size(); ++lane) {
+      EXPECT_TRUE(std::all_of(storage[lane].begin(), storage[lane].end(),
+                              [](float sample) { return sample == 0.0f; }))
+          << "width " << width << " lane " << lane;
+    }
+  }
+  std::error_code ignored;
+  std::filesystem::remove(monoPath, ignored);
+}
+
+TEST_F(MultichannelTransportTest, MatrixWidthDoesNotChangeTransportAdmissionWidth) {
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = 2;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto matrixOnly = createTransportController(nullptr, config);
+  auto busNarrowed = createTransportController(nullptr, config);
+  auto plainRegistration = createTransportController(nullptr, config);
+  ASSERT_NE(matrixOnly, nullptr);
+  ASSERT_NE(busNarrowed, nullptr);
+  ASSERT_NE(plainRegistration, nullptr);
+
+  // Obtain valid file-derived metadata without registering a stereo clip in
+  // either transport whose bus must first be narrowed.
+  ASSERT_EQ(matrixOnly->registerClipAudio(70, stereoPath), SessionGraphError::OK);
+  const auto metadata = matrixOnly->getClipMetadata(70);
+  ASSERT_TRUE(metadata.has_value());
+  auto desired = matrixOnly->getRoutingMatrix()->getRoutingControlSnapshot();
+  desired.groups[0].output_width = 1;
+  ASSERT_EQ(matrixOnly->getRoutingMatrix()->applyGroupControlSnapshot(desired),
+            SessionGraphError::OK);
+  EXPECT_EQ(matrixOnly->registerClipAudioWithMetadata(71, stereoPath, *metadata),
+            SessionGraphError::OK);
+  EXPECT_EQ(matrixOnly->setGroupOutputBus(0, OutputBusRoute{0, 1}),
+            SessionGraphError::InvalidParameter);
+
+  ASSERT_EQ(busNarrowed->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  EXPECT_EQ(busNarrowed->registerClipAudioWithMetadata(71, stereoPath, *metadata),
+            SessionGraphError::InvalidParameter);
+  EXPECT_FALSE(busNarrowed->getClipMetadata(71).has_value());
+
+  // Plain registration deliberately retains its existing bypass of metadata
+  // width validation; the live-width fix must not silently change admission.
+  ASSERT_EQ(plainRegistration->setGroupOutputBus(0, OutputBusRoute{0, 1}),
+            SessionGraphError::OK);
+  EXPECT_EQ(plainRegistration->registerClipAudio(71, stereoPath), SessionGraphError::OK);
 }
 
 // A voice slot exposes all maxSourceChannels lanes to routing, including the

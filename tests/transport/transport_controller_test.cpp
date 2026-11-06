@@ -385,6 +385,27 @@ TEST_F(TransportControllerTest, ZeroClockValuesMeanUnavailable) {
   EXPECT_EQ(snapshot.clock.discontinuity_count, 0u);
 }
 
+TEST_F(TransportControllerTest, StreamOriginDiscontinuityPrecedesValidClockPosition) {
+  RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
+  telemetry->setDecimationBlocks(1);
+  StereoBlock block;
+
+  renderTimed(*m_transport, block, {0, 7'000'000, true});
+  RealtimeTelemetrySnapshot snapshot = readOnly(*telemetry);
+  EXPECT_FALSE(snapshot.clock.device_sample_position_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, 0u);
+  EXPECT_TRUE(snapshot.clock.host_time_valid);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_TRUE(snapshot.clock.discontinuity_in_window);
+
+  renderTimed(*m_transport, block, {kClockBlockFrames, 9'666'667, false});
+  snapshot = readOnly(*telemetry);
+  EXPECT_TRUE(snapshot.clock.device_sample_position_valid);
+  EXPECT_EQ(snapshot.clock.device_sample_position, kClockBlockFrames);
+  EXPECT_EQ(snapshot.clock.discontinuity_count, 1u);
+  EXPECT_FALSE(snapshot.clock.discontinuity_in_window);
+}
+
 TEST_F(TransportControllerTest, DiscontinuityInsideDecimatedWindowSurfaces) {
   RealtimeTelemetry* telemetry = m_transport->getRealtimeTelemetry();
   telemetry->setDecimationBlocks(4);

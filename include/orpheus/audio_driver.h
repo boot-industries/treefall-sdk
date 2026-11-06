@@ -308,6 +308,9 @@ struct AudioDriverCapabilities {
 /// the backend cannot provide a position. host_time_nanoseconds is a monotonic
 /// host-clock timestamp for that frame; zero likewise means unavailable.
 /// A discontinuity marks a device reset, gap, or non-contiguous stream position.
+/// A backend whose first block is at device sample position zero reports the
+/// device sample position unavailable for that one block, and that same block
+/// carries discontinuity=true. Host time availability is independent.
 struct AudioProcessBlock {
   const float* const* input_buffers = nullptr;
   float* const* output_buffers = nullptr;
