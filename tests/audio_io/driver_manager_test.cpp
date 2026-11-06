@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
+#include <orpheus/routing_matrix.h>
 
 #include <gtest/gtest.h>
 
@@ -190,14 +191,20 @@ TEST_F(AudioDriverManagerTest, EndpointCapabilitiesExposeStableDirectionalChanne
   EXPECT_EQ(endpoints.front().availability, AudioEndpointAvailability::Available);
   EXPECT_FALSE(endpoints.front().supports_input);
   EXPECT_TRUE(endpoints.front().supports_output);
-  ASSERT_EQ(endpoints.front().output_channels.size(), 32u);
+  ASSERT_EQ(endpoints.front().output_channels.size(), kRoutingMaxOutputs);
   EXPECT_EQ(endpoints.front().output_channels[2].stable_id, "dummy:output:2");
   EXPECT_EQ(endpoints.front().output_channels[2].device_index, 2u);
   EXPECT_EQ(endpoints.front().output_channels[2].display_name, "Dummy Output 3");
+  EXPECT_EQ(endpoints.front().output_channels[63].stable_id, "dummy:output:63");
+  EXPECT_EQ(endpoints.front().output_channels[63].device_index, 63u);
+  EXPECT_EQ(endpoints.front().output_channels[63].display_name, "Dummy Output 64");
 
   const auto dummy = manager->getEndpointCapabilities("dummy");
   ASSERT_TRUE(dummy.has_value());
-  EXPECT_EQ(dummy->output_channels.size(), 32u);
+  ASSERT_EQ(dummy->output_channels.size(), kRoutingMaxOutputs);
+  EXPECT_EQ(dummy->output_channels.back().stable_id, "dummy:output:63");
+  EXPECT_EQ(dummy->output_channels.back().device_index, 63u);
+  EXPECT_EQ(dummy->output_channels.back().display_name, "Dummy Output 64");
   EXPECT_FALSE(manager->getEndpointCapabilities("missing-endpoint").has_value());
 }
 
@@ -237,6 +244,8 @@ TEST_F(AudioDriverManagerTest, GetDeviceInfo_DummyDriver) {
   EXPECT_EQ(deviceInfo->deviceId, "dummy");
   EXPECT_EQ(deviceInfo->name, "Dummy Audio Driver");
   EXPECT_EQ(deviceInfo->driverType, "Dummy");
+  EXPECT_EQ(deviceInfo->minChannels, 2u);
+  EXPECT_EQ(deviceInfo->maxChannels, 2u);
 
   // Verify supported sample rates
   EXPECT_FALSE(deviceInfo->supportedSampleRates.empty());

@@ -6,6 +6,7 @@
 
 #include <orpheus/audio_driver.h>
 #include <orpheus/audio_driver_manager.h>
+#include <orpheus/routing_matrix.h>
 
 #include <algorithm>
 #include <array>
@@ -320,8 +321,8 @@ std::vector<AudioEndpointCapabilities> AudioDriverManager::enumerateEndpointCapa
   dummy.display_name = "Dummy Audio Driver";
   dummy.availability = AudioEndpointAvailability::Available;
   dummy.supports_output = true;
-  dummy.output_channels.reserve(32);
-  for (uint16_t channel = 0; channel < 32; ++channel) {
+  dummy.output_channels.reserve(kRoutingMaxOutputs);
+  for (uint16_t channel = 0; channel < kRoutingMaxOutputs; ++channel) {
     dummy.output_channels.push_back({channel, "dummy:output:" + std::to_string(channel),
                                      "Dummy Output " + std::to_string(channel + 1)});
   }

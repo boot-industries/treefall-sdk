@@ -5,9 +5,13 @@
 
 // Access implementation for processAudio
 #include "transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <thread>
 
 using namespace orpheus;
@@ -160,6 +164,107 @@ TEST_F(TransportIntegrationTest, DriverCallsTransportProcessAudio) {
   EXPECT_TRUE(waitForCallback([&] { return m_adapter->getCallbackCount() > 0; }));
 
   m_driver->stop();
+}
+
+TEST_F(TransportIntegrationTest, DummyRoutesStereoAudioToLastPairOfSixtyFourOutputs) {
+  constexpr uint32_t sampleRate = 48000;
+  constexpr uint32_t frames = 512;
+  constexpr uint16_t channels = 2;
+  constexpr uint16_t bitsPerSample = 16;
+  constexpr uint16_t blockAlign = channels * (bitsPerSample / 8);
+  constexpr uint32_t dataSize = frames * blockAlign;
+  constexpr uint32_t riffSize = 36 + dataSize;
+  constexpr uint32_t byteRate = sampleRate * blockAlign;
+  constexpr uint32_t fmtSize = 16;
+  constexpr uint16_t pcmFormat = 1;
+  tests::support::UniqueTempDir scratch("orpheus_dummy_last_output_pair");
+  const auto audioPath = scratch / "stereo.wav";
+  {
+    std::ofstream file(audioPath, std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    file.write("RIFF", 4);
+    file.write(reinterpret_cast<const char*>(&riffSize), sizeof(riffSize));
+    file.write("WAVEfmt ", 8);
+    file.write(reinterpret_cast<const char*>(&fmtSize), sizeof(fmtSize));
+    file.write(reinterpret_cast<const char*>(&pcmFormat), sizeof(pcmFormat));
+    file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
+    file.write(reinterpret_cast<const char*>(&sampleRate), sizeof(sampleRate));
+    file.write(reinterpret_cast<const char*>(&byteRate), sizeof(byteRate));
+    file.write(reinterpret_cast<const char*>(&blockAlign), sizeof(blockAlign));
+    file.write(reinterpret_cast<const char*>(&bitsPerSample), sizeof(bitsPerSample));
+    file.write("data", 4);
+    file.write(reinterpret_cast<const char*>(&dataSize), sizeof(dataSize));
+    for (uint32_t frame = 0; frame < frames; ++frame) {
+      for (uint16_t channel = 0; channel < channels; ++channel) {
+        const int16_t sample = static_cast<int16_t>((channel + 1) * 2048);
+        file.write(reinterpret_cast<const char*>(&sample), sizeof(sample));
+      }
+    }
+    ASSERT_TRUE(file.good());
+  }
+
+  TransportConfig config;
+  config.sampleRate = sampleRate;
+  config.outputChannels = 64;
+  config.maxBlockFrames = frames;
+  m_transport = std::make_unique<TransportController>(nullptr, config);
+  m_transport->setCallback(m_transport_callback.get());
+  m_adapter = std::make_unique<TransportAudioAdapter>(m_transport.get());
+  ASSERT_EQ(m_transport->registerClipAudio(2, audioPath.string()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->setGroupOutputBus(3, OutputBusRoute{62, 2}), SessionGraphError::OK);
+  auto metadata = m_transport->getClipMetadata(2);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->routingGroup = 3;
+  metadata->loopEnabled = true;
+  ASSERT_EQ(m_transport->updateClipMetadata(2, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(2), SessionGraphError::OK);
+
+  AudioOutputRouteRequest request;
+  request.output_device_id = "dummy";
+  request.requested_sample_rate = sampleRate;
+  request.requested_buffer_size = frames;
+  for (uint16_t channel = 0; channel < 64; ++channel) {
+    request.output_channel_map.push_back(channel);
+  }
+  ASSERT_EQ(m_driver->initializeAudioOutput(request), SessionGraphError::OK);
+  EXPECT_EQ(m_driver->getAudioIoRouteState().active_output_channel_map,
+            request.output_channel_map);
+
+  class AudioCapture final : public IAudioCallback {
+  public:
+    explicit AudioCapture(TransportController* transport) : adapter(transport) {}
+
+    void processAudio(const AudioProcessBlock& block) noexcept override {
+      adapter.processAudio(block);
+      if (block.num_output_channels != 64 || block.num_frames != 512) {
+        return;
+      }
+      bool matches = true;
+      for (size_t channel = 0; channel < block.num_output_channels; ++channel) {
+        const float expected = channel < 62 ? 0.0f
+                                           : static_cast<float>(channel - 61) * 2048.0f / 32768.0f;
+        for (size_t frame = 0; frame < block.num_frames; ++frame) {
+          matches = matches && std::abs(block.output_buffers[channel][frame] - expected) < 1.0e-4f;
+        }
+      }
+      if (matches) {
+        observed.store(true, std::memory_order_release);
+      }
+    }
+
+    TransportAudioAdapter adapter;
+    std::atomic<bool> observed{false};
+  } capture(m_transport.get());
+
+  ASSERT_EQ(m_driver->start(&capture), SessionGraphError::OK);
+  const bool observed =
+      waitForCallback([&] { return capture.observed.load(std::memory_order_acquire); });
+  // Join before assertions can destroy the stack-owned callback or scratch audio.
+  EXPECT_EQ(m_driver->stop(), SessionGraphError::OK);
+  EXPECT_TRUE(observed) << "Expected real callback audio on outputs 62/63 and silence on 0-61";
+  EXPECT_GT(capture.adapter.getCallbackCount(), 0);
+  m_adapter.reset();
+  m_transport.reset(); // Close audio readers before the scratch directory is removed.
 }
 
 TEST_F(TransportIntegrationTest, StartClipTriggersCallback) {
