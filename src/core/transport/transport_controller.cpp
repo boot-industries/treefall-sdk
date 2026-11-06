@@ -206,27 +206,10 @@ TransportController::~TransportController() {
     unreadIndices[unreadCount++] = index;
     index = m_commandNodes[index].next;
   }
-  size_t rollbackPosition = 0;
-  while (rollbackPosition < unreadCount) {
-    const uint32_t nodeIndex = unreadIndices[rollbackPosition++];
-    TransportCommand& command = m_commandNodes[nodeIndex].command;
-    if (command.loopAnchorSource != nullptr) {
-      command.loopAnchorSource->rollbackLoopAnchorTransition(command.loopAnchorTransition);
-      command.loopAnchorSource = nullptr;
-    }
-    if (command.type == TransportCommand::Type::Seek && command.seekSource &&
-        command.seekPrime.pageMask != 0)
-      command.seekSource->releaseCommandPrime(command.seekPrime);
-    if ((command.type == TransportCommand::Type::Start ||
-         command.type == TransportCommand::Type::StartWithGroupChoke ||
-         command.type == TransportCommand::Type::StartWithStopOthers) &&
-        command.startSource && command.startPrime.pageMask != 0)
-      command.startSource->releaseCommandPrime(command.startPrime);
-    if (command.sourceLifetime) {
-      m_sourceRegistry.releaseSourceCommand(command.sourceLifetime);
-      command.sourceLifetime = nullptr;
-    }
-    releaseCommandNode(nodeIndex);
+  // Unread commands still own their preparation side effects (loop anchors,
+  // streaming primes, source lifetimes); cancellation releases them all.
+  for (size_t position = 0; position < unreadCount; ++position) {
+    cancelCommandNode(unreadIndices[position]);
   }
   releasePendingStartReservations();
   releasePendingSeekReservations();
