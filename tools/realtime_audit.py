@@ -364,6 +364,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "incrementIngressCounter",
                 "mergeAudioMeter",
                 "markRoutingMetersUnmeasured",
+                "rearmRoutingMeterWindow",
                 "markLogicalGroupOutputUnmeasured",
                 "collectRoutingMeters",
                 "copyGroupOutputMeterRegion",

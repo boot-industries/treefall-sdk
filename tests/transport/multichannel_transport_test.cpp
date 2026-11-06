@@ -687,4 +687,73 @@ TEST_F(MultichannelTransportTest, DecimationMergeMatchesBlockMaxima) {
   std::error_code ignored;
   std::filesystem::remove(path, ignored);
 }
+
+TEST_F(MultichannelTransportTest, PostPublishWindowRestarts) {
+  const auto path =
+      (std::filesystem::temp_directory_path() / "orpheus_meter_window_restart.wav").string();
+  writeMonoBlockFixture(path, {8192});
+  auto transport = startLoopingMonoVoice(path, 1);
+  ASSERT_NE(transport, nullptr);
+  auto* telemetry = transport->getRealtimeTelemetry();
+  auto snapshot = std::make_unique<RealtimeTelemetrySnapshot>();
+
+  renderBlock(*transport);
+  ASSERT_TRUE(telemetry->tryRead(*snapshot));
+  renderBlock(*transport);
+  ASSERT_TRUE(telemetry->tryRead(*snapshot));
+  EXPECT_EQ(snapshot->routing_meters.availability, MeterAvailability::Measured);
+  EXPECT_EQ(snapshot->routing_meters.peak_window_frames, kFrames);
+  EXPECT_EQ(snapshot->routing_meters.rms_window_frames, kFrames);
+  EXPECT_EQ(snapshot->routing_meters.group_aggregate_availability[0], MeterAvailability::Measured);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.availability,
+            MeterAvailability::Measured);
+  EXPECT_GT(snapshot->routing_meters.group_output_meters.groups[0].lane_meters[1].peak_db,
+            kAudioMeterSilenceDb);
+
+  // A zero-frame block measures nothing: the published window is a full reset,
+  // not the previous window's payload under Unmeasured marks.
+  std::array<std::array<float, kFrames>, 2> storage{};
+  std::array<float*, 2> outputs = {storage[0].data(), storage[1].data()};
+  transport->processAudio(outputs.data(), outputs.size(), 0);
+  ASSERT_TRUE(telemetry->tryRead(*snapshot));
+  EXPECT_EQ(snapshot->routing_meters.availability, MeterAvailability::Unmeasured);
+  EXPECT_EQ(snapshot->routing_meters.peak_window_frames, 0u);
+  EXPECT_EQ(snapshot->routing_meters.rms_window_frames, 0u);
+  EXPECT_EQ(snapshot->routing_meters.post_master_output_count, 0u);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.group_count, 0u);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.groups[0].availability,
+            MeterAvailability::Unconfigured);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.groups[0].lane_meters[1].peak_db,
+            kAudioMeterSilenceDb);
+
+  renderBlock(*transport);
+  ASSERT_TRUE(telemetry->tryRead(*snapshot));
+  EXPECT_EQ(snapshot->routing_meters.availability, MeterAvailability::Measured);
+  EXPECT_EQ(snapshot->routing_meters.peak_window_frames, kFrames);
+
+  auto* controller = dynamic_cast<TransportController*>(transport.get());
+  ASSERT_NE(controller, nullptr);
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = 2;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = 2;
+  config.numGroups = 1;
+  auto failing = std::make_unique<FailingRoutingMatrix>();
+  ASSERT_EQ(failing->initialize(routingConfigForTransport(config)), SessionGraphError::OK);
+  TransportControllerTestAccess::replaceRoutingMatrix(*controller, std::move(failing));
+  renderBlock(*transport);
+  ASSERT_TRUE(telemetry->tryRead(*snapshot));
+  EXPECT_EQ(snapshot->routing_meters.availability, MeterAvailability::Unmeasured);
+  EXPECT_EQ(snapshot->routing_meters.peak_window_frames, 0u);
+  EXPECT_EQ(snapshot->routing_meters.rms_window_frames, 0u);
+  EXPECT_EQ(snapshot->routing_meters.group_aggregate_availability[0],
+            MeterAvailability::Unmeasured);
+  EXPECT_EQ(snapshot->routing_meters.group_output_meters.availability,
+            MeterAvailability::Unmeasured);
+
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+}
 } // namespace
