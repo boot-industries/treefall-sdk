@@ -5,7 +5,6 @@
 #include <orpheus/session_io.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +17,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "support/unique_temp_dir.hpp"
 
 namespace fs = std::filesystem;
 namespace session_json = orpheus::core::session_json;
@@ -230,10 +231,7 @@ TEST(RenderTracks, GeneratesSineStemsWithDitheredQuantization) {
 
   ASSERT_EQ(clipgrid_api->commit(session_handle), ORPHEUS_STATUS_OK);
 
-  const fs::path temp_root =
-      fs::temp_directory_path() /
-      fs::path("orpheus_render_tracks_test" +
-               std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const fs::path temp_root = orpheus::tests::support::UniqueTempPath("orpheus_render_tracks_test");
   fs::create_directories(temp_root);
   TempDirGuard temp_guard(temp_root);
 

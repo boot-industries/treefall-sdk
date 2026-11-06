@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "support/unique_temp_dir.hpp"
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -349,7 +350,7 @@ TEST(AbiRenderClickTest, StreamsBoundedPcmAndRejectsImpossiblePlansBeforeFileCre
   ASSERT_NE(render, nullptr);
 
   namespace fs = std::filesystem;
-  const fs::path root = fs::temp_directory_path() / "orpheus-abi-render-click";
+  const fs::path root = orpheus::tests::support::UniqueTempPath("orpheus-abi-render-click");
   fs::remove_all(root);
   fs::create_directories(root);
   const fs::path output = root / "valid.wav";

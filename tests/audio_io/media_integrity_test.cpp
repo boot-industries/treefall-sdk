@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "../support/unique_temp_dir.hpp"
 #include <gtest/gtest.h>
 
 namespace orpheus {
@@ -14,7 +15,7 @@ namespace {
 class MediaIntegrityTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    root_ = std::filesystem::temp_directory_path() / "orpheus_media_integrity_test";
+    root_ = orpheus::tests::support::UniqueTempPath("orpheus_media_integrity_test");
     std::filesystem::remove_all(root_);
     std::filesystem::create_directories(root_);
   }

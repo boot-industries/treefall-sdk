@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "../../src/core/transport/transport_controller.h"
+#include "../support/unique_temp_dir.hpp"
 #include <filesystem>
 #include <fstream>
 #include <orpheus/audio_file_reader.h>
@@ -14,7 +15,7 @@ protected:
   void SetUp() override {
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});
-    m_testFilePath = (std::filesystem::temp_directory_path() / "test_clip_metadata.wav").string();
+    m_testFilePath = orpheus::tests::support::UniqueTempPath("test_clip_metadata", ".wav").string();
     createTestAudioFile();
   }
 

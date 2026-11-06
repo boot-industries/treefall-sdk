@@ -21,6 +21,7 @@
 // the *verdict* is whether TSan reports races. Post-T3 it must be clean.
 
 #include "../support/rt_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 #include <gtest/gtest.h>
 #include <orpheus/audio_file_reader.h>
 #include <orpheus/transport_controller.h>
@@ -100,7 +101,7 @@ std::string writeSineWav(const std::filesystem::path& dir, const std::string& na
 class VoiceStateTsanTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_tempDir = std::filesystem::temp_directory_path() / "orp127_tsan";
+    m_tempDir = orpheus::tests::support::UniqueTempPath("orp127_tsan");
     std::filesystem::create_directories(m_tempDir);
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(48000)});

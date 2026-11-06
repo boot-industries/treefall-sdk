@@ -23,6 +23,7 @@
 
 #include "../support/rt_guard.hpp"
 #include "../support/sanitizer_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include "../../src/core/routing/gain_smoother.h"
 #include "../../src/core/routing/routing_matrix.h"
@@ -143,7 +144,7 @@ std::string writeSineWav(const std::filesystem::path& dir, const std::string& na
 class RealtimeHarnessTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    m_tempDir = std::filesystem::temp_directory_path() / "orp136_rt_harness";
+    m_tempDir = orpheus::tests::support::UniqueTempPath("orp136_rt_harness");
     std::filesystem::create_directories(m_tempDir);
     m_transport = std::make_unique<TransportController>(
         nullptr, TransportConfig{.sampleRate = static_cast<uint32_t>(kSampleRate)});

@@ -2,6 +2,7 @@
 // ORP168: rendered first-block streaming seek and command-prime transactions.
 
 #include "../support/rt_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include "audio_io/resampling_audio_file_reader.h"
 #include "transport/transport_controller.h"
@@ -515,7 +516,7 @@ private:
 class StreamingSeekMatrixTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
-    s_directory = std::filesystem::temp_directory_path() / "orp168_streaming_seek";
+    s_directory = orpheus::tests::support::UniqueTempPath("orp168_streaming_seek");
     std::filesystem::create_directories(s_directory);
   }
 

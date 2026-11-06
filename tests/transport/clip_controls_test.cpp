@@ -4,6 +4,7 @@
 
 #include <orpheus/audio_file_writer.h>
 
+#include "../support/unique_temp_dir.hpp"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -64,10 +65,10 @@ void writeMonoFixture(const std::string& path) {
 class ClipAudioControlsTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    path = (std::filesystem::temp_directory_path() / "orpheus_clip_audio_controls.wav").string();
+    path = orpheus::tests::support::UniqueTempPath("orpheus_clip_audio_controls", ".wav").string();
     writeStereoFixture(path);
-    monoPath =
-        (std::filesystem::temp_directory_path() / "orpheus_clip_audio_controls_mono.wav").string();
+    monoPath = orpheus::tests::support::UniqueTempPath("orpheus_clip_audio_controls_mono", ".wav")
+                   .string();
     writeMonoFixture(monoPath);
     transport =
         std::make_unique<TransportController>(nullptr, TransportConfig{.sampleRate = kSampleRate});
@@ -634,7 +635,7 @@ protected:
   static constexpr size_t kBlock = 256;
 
   void SetUp() override {
-    path = (std::filesystem::temp_directory_path() / "orpheus_transport_compaction.wav").string();
+    path = orpheus::tests::support::UniqueTempPath("orpheus_transport_compaction", ".wav").string();
     auto writer = createAudioFileWriter();
     ASSERT_NE(writer, nullptr);
     AudioFileWriterConfig config;

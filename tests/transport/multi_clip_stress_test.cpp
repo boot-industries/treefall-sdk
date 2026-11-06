@@ -8,6 +8,7 @@
 #include "../../src/core/transport/transport_controller.h"
 
 #include "../support/sanitizer_guard.hpp"
+#include "../support/unique_temp_dir.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -50,8 +51,6 @@ protected:
     // Create transport callback
     m_callback = std::make_unique<TestTransportCallback>();
     m_transport->setCallback(m_callback.get());
-
-    m_tempDir = std::filesystem::temp_directory_path();
   }
 
   void TearDown() override {
@@ -192,7 +191,7 @@ protected:
   std::unique_ptr<TransportController> m_transport;
   std::unique_ptr<IAudioDriver> m_driver;
   std::unique_ptr<TestTransportCallback> m_callback;
-  std::filesystem::path m_tempDir;
+  orpheus::tests::support::UniqueTempDir m_tempDir{"orpheus_multi_clip_stress"};
   std::vector<std::string> m_tempFiles;
 };
 
