@@ -467,6 +467,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "dbToLinear",
                 "activeChannelCount",
                 "getHeadroomCompensation",
+                ("fillRamp", r"\bvoid\s+fillRamp\s*\("),
             ),
         ),
         TargetRow(
@@ -486,7 +487,8 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "publishGroupOutputHeader",
                 "endGroupOutputPublication",
                 "markGroupOutputUnmeasured",
-                "groupOutputPublicationSequence",
+                "groupOutputReadBegin",
+                "groupOutputReadEnd",
                 "groupOutputGroupCount",
                 "groupOutputTopologyRevision",
                 "groupOutputAvailability",
@@ -512,6 +514,15 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
             "src/core/routing/true_peak_meter.h",
             None,
             (("process", r"\bfloat\s+process\s*\(\s*float\s+\w+\s*\)\s*(?=\{)"),),
+        ),
+        TargetRow(
+            "Seqlock fence inline {name}",
+            "src/core/common/seqlock_fence.h",
+            None,
+            (
+                ("seqlockReleaseFence", r"\bvoid\s+seqlockReleaseFence\s*\(\s*\)\s*noexcept\s*(?=\{)"),
+                ("seqlockAcquireFence", r"\bvoid\s+seqlockAcquireFence\s*\(\s*\)\s*noexcept\s*(?=\{)"),
+            ),
         ),
         TargetRow("Audio input ring write", "src/core/audio_io/audio_input.cpp", "AudioInputRing", ("write",)),
         # Tier 2: callback-safe public classes hosts may call from their own callbacks.

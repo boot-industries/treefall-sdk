@@ -2,6 +2,7 @@
 #include "routing_matrix.h"
 #include "../common/pinned_math.h"
 #include "../common/realtime_counter.h"
+#include "../common/seqlock_fence.h"
 #include "gain_smoother.h"
 
 #include <algorithm>
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 namespace orpheus {
 
 namespace {
@@ -28,6 +30,24 @@ inline bool isFiniteSample(float value) noexcept {
 
 inline float sanitizeSample(float value) noexcept {
   return isFiniteSample(value) ? value : 0.0f;
+}
+
+// Materialize one block of a smoother ramp, sanitized exactly as the per-frame
+// path sanitizes each next() result. A disabled or settled smoother yields the
+// same value for every frame, so it becomes a constant fill; the ramp state
+// ends where per-frame stepping would leave it.
+void fillRamp(GainSmoother& smoother, GainSmoother::RampState& state, float* dst,
+              uint32_t num_frames) noexcept {
+  if (state.disabled || state.current == state.target) {
+    if (state.disabled) {
+      state.current = state.target;
+    }
+    std::fill_n(dst, num_frames, sanitizeSample(state.current));
+    return;
+  }
+  for (uint32_t frame = 0; frame < num_frames; ++frame) {
+    dst[frame] = sanitizeSample(smoother.next(state));
+  }
 }
 } // namespace
 
@@ -110,6 +130,7 @@ SessionGraphError RoutingMatrix::initialize(const RoutingConfig& config) {
 
   m_meter_state.resetGroupOutputPublication(config.num_groups);
 
+  m_lane_tp_dirty.fill(0u);
   m_group_control_sequence.store(0, std::memory_order_release);
   m_initialized.store(true, std::memory_order_release);
 
@@ -484,7 +505,8 @@ RoutingControlSnapshot RoutingMatrix::getRoutingControlSnapshot() const noexcept
       state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
     }
 
-    const uint64_t after = m_group_control_sequence.load(std::memory_order_acquire);
+    seqlockAcquireFence();
+    const uint64_t after = m_group_control_sequence.load(std::memory_order_relaxed);
     if (before == after) {
       snapshot.revision = after / 2u;
       return snapshot;
@@ -608,14 +630,16 @@ SessionGraphError RoutingMatrix::applyGroupControlSnapshot(const RoutingControlS
 }
 
 void RoutingMatrix::beginGroupControlWrite() noexcept {
+  // Writer-to-writer exclusion only; the audio thread never holds this flag.
   bool expected = false;
   while (!m_group_control_publication_in_progress.compare_exchange_weak(
-      expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      expected, true, std::memory_order_acquire, std::memory_order_relaxed)) {
     expected = false;
   }
-  while (m_group_control_render_reading.load(std::memory_order_acquire)) {
-  }
-  m_group_control_sequence.fetch_add(1, std::memory_order_acq_rel);
+  // Seqlock writer: the odd value must be visible before any field store, so
+  // a reader that observes a new field also observes the odd sequence.
+  m_group_control_sequence.fetch_add(1, std::memory_order_relaxed);
+  seqlockReleaseFence();
 }
 
 void RoutingMatrix::endGroupControlWrite() noexcept {
@@ -624,38 +648,48 @@ void RoutingMatrix::endGroupControlWrite() noexcept {
 }
 
 void RoutingMatrix::refreshRenderGroupControls() noexcept {
-  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
+  // Non-waiting seqlock read: on an odd or changed sequence the audio thread
+  // keeps rendering the prior complete controls and retries next block.
+  const uint64_t before = m_group_control_sequence.load(std::memory_order_acquire);
+  if ((before & 1u) != 0u) {
     return;
   }
 
-  m_group_control_render_reading.store(true, std::memory_order_release);
-  if (m_group_control_publication_in_progress.load(std::memory_order_acquire)) {
-    m_group_control_render_reading.store(false, std::memory_order_release);
+  std::array<RoutingGroupControlState, kRoutingControlMaxGroups> controls{};
+  for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
+    const auto& group = m_groups[index];
+    auto& state = controls[index];
+    state.gain_db = group.configured_gain_db.load(std::memory_order_relaxed);
+    state.output_start = group.output_start.load(std::memory_order_relaxed);
+    state.output_width = group.output_width.load(std::memory_order_relaxed);
+    state.configured_mute = group.mute.load(std::memory_order_relaxed);
+    state.configured_solo = group.solo.load(std::memory_order_relaxed);
+  }
+  const uint64_t geometryGeneration = m_group_geometry_generation.load(std::memory_order_relaxed);
+
+  seqlockAcquireFence();
+  if (m_group_control_sequence.load(std::memory_order_relaxed) != before) {
     return;
   }
 
   bool groupSoloActive = false;
   for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
-    const auto& group = m_groups[index];
-    auto& state = m_render_group_controls[index];
-    const float gainDb = group.configured_gain_db.load(std::memory_order_relaxed);
-    if (gainDb != state.gain_db) {
-      state.gain_db = gainDb;
-      group.gain_smoother->setTarget(dbToLinear(gainDb));
-    }
-    state.output_start = group.output_start.load(std::memory_order_relaxed);
-    state.output_width = group.output_width.load(std::memory_order_relaxed);
-    state.configured_mute = group.mute.load(std::memory_order_relaxed);
-    state.configured_solo = group.solo.load(std::memory_order_relaxed);
-    groupSoloActive = groupSoloActive || state.configured_solo;
+    groupSoloActive = groupSoloActive || controls[index].configured_solo;
   }
   for (RoutingGroupIndex index = 0; index < m_groups.size(); ++index) {
     auto& state = m_render_group_controls[index];
-    state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
+    const auto& next = controls[index];
+    if (next.gain_db != state.gain_db) {
+      m_groups[index].gain_smoother->setTarget(dbToLinear(next.gain_db));
+    }
+    state.gain_db = next.gain_db;
+    state.output_start = next.output_start;
+    state.output_width = next.output_width;
+    state.configured_mute = next.configured_mute;
+    state.configured_solo = next.configured_solo;
+    state.effective_mute = next.configured_mute || (groupSoloActive && !next.configured_solo);
   }
-  m_rendered_group_geometry_generation =
-      m_group_geometry_generation.load(std::memory_order_acquire);
-  m_group_control_render_reading.store(false, std::memory_order_release);
+  m_rendered_group_geometry_generation = geometryGeneration;
 }
 
 AudioMeter RoutingMatrix::getChannelMeter(RoutingChannelIndex channel_index) const {
@@ -711,7 +745,7 @@ AudioMeter RoutingMatrix::getMasterMeter() const {
 
 void RoutingMatrix::copyGroupOutputMeterSnapshot(
     GroupOutputMeterSnapshot& destination) const noexcept {
-  const uint64_t before = m_meter_state.groupOutputPublicationSequence();
+  const uint64_t before = m_meter_state.groupOutputReadBegin();
   destination = {};
   destination.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
   destination.availability = m_meter_state.groupOutputAvailability();
@@ -719,6 +753,8 @@ void RoutingMatrix::copyGroupOutputMeterSnapshot(
   destination.render_sequence = before / 2u;
   destination.routing_topology_revision = m_meter_state.groupOutputTopologyRevision();
 
+  // The read window copies raw linear levels only; the decibel conversion
+  // runs after the window closes so it does not widen the race window.
   const RoutingGroupIndex groupCount =
       std::min<RoutingGroupIndex>(destination.group_count, kRoutingControlMaxGroups);
   for (RoutingGroupIndex groupIndex = 0; groupIndex < groupCount; ++groupIndex) {
@@ -733,18 +769,28 @@ void RoutingMatrix::copyGroupOutputMeterSnapshot(
     frame.raw_block_frames = source.meter_raw_block_frames.load(std::memory_order_relaxed);
     const uint16_t laneCount = std::min<uint16_t>(frame.logical_lane_count, kRoutingMaxOutputs);
     for (uint16_t lane = 0; lane < laneCount; ++lane) {
-      AudioMeter meter;
-      meter.peak_db = linearToDb(source.lane_peak_level[lane].load(std::memory_order_relaxed));
-      meter.rms_db = linearToDb(source.lane_rms_level[lane].load(std::memory_order_relaxed));
+      auto& meter = frame.lane_meters[lane];
+      meter.peak_db = source.lane_peak_level[lane].load(std::memory_order_relaxed);
+      meter.rms_db = source.lane_rms_level[lane].load(std::memory_order_relaxed);
       meter.clip_count = source.lane_clip_count[lane].load(std::memory_order_relaxed);
-      meter.clipping = meter.clip_count > 0;
-      frame.lane_meters[lane] = meter;
     }
   }
+  const bool publishedCoherent = m_meter_state.groupOutputCoherent();
 
-  const uint64_t after = m_meter_state.groupOutputPublicationSequence();
-  destination.coherent = static_cast<uint8_t>(before == after && (after & 1u) == 0u &&
-                                              m_meter_state.groupOutputCoherent());
+  const uint64_t after = m_meter_state.groupOutputReadEnd();
+  destination.coherent =
+      static_cast<uint8_t>(before == after && (after & 1u) == 0u && publishedCoherent);
+
+  for (RoutingGroupIndex groupIndex = 0; groupIndex < groupCount; ++groupIndex) {
+    auto& frame = destination.groups[groupIndex];
+    const uint16_t laneCount = std::min<uint16_t>(frame.logical_lane_count, kRoutingMaxOutputs);
+    for (uint16_t lane = 0; lane < laneCount; ++lane) {
+      auto& meter = frame.lane_meters[lane];
+      meter.peak_db = linearToDb(meter.peak_db);
+      meter.rms_db = linearToDb(meter.rms_db);
+      meter.clipping = meter.clip_count > 0;
+    }
+  }
 }
 
 // ============================================================================
@@ -1069,57 +1115,88 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
     auto& meter_left = m_channel_meter_buffer.channels[0];
     auto& meter_right = m_channel_meter_buffer.channels[1];
 
-    // The ramp state is acquired once per block and stepped per sample, so
-    // the smoothers no longer perform an atomic load per sample.
+    // The ramp state is acquired once per block and materialized once per
+    // slice, so the smoothers neither perform an atomic load per sample nor
+    // step inside the mix loops. A settled ramp is a constant fill.
     auto gain_state = channel.gain_smoother->beginBlock();
     auto pan_left_state = channel.pan_left->beginBlock();
     auto pan_right_state = channel.pan_right->beginBlock();
+    const float* const gainRamp = m_ramp_gain.data();
+    const float* const panLeftRamp = m_ramp_pan_l.data();
+    const float* const panRightRamp = m_ramp_pan_r.data();
+    fillRamp(*channel.gain_smoother, gain_state, m_ramp_gain.data(), num_frames);
+    fillRamp(*channel.pan_left, pan_left_state, m_ramp_pan_l.data(), num_frames);
+    fillRamp(*channel.pan_right, pan_right_state, m_ramp_pan_r.data(), num_frames);
 
-    for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float channel_gain = sanitize(channel.gain_smoother->next(gain_state));
-      const float pan_left = sanitize(channel.pan_left->next(pan_left_state));
-      const float pan_right = sanitize(channel.pan_right->next(pan_right_state));
-      if (muted) {
-        continue;
-      }
-
-      const float sample = sanitize(input[frame]);
-      const float gained = sanitize(sample * channel_gain);
-      switch (config.source_channel_policy) {
-      case SourceChannelPolicy::Discrete:
-        if (logicalLane < group_buffer.channels.size()) {
-          group_buffer.channels[logicalLane][frame] =
-              sanitize(group_buffer.channels[logicalLane][frame] + gained);
-        }
-        if (config.enable_metering) {
-          meter_left[frame] = gained;
-          meter_right[frame] = 0.0f;
-        }
-        break;
-      case SourceChannelPolicy::StereoPairs: {
-        const float left = sanitize(gained * pan_left);
-        group_buffer.channels[0][frame] = sanitize(group_buffer.channels[0][frame] + left);
-        if (config.enable_metering) {
-          meter_left[frame] = left;
-        }
-        if (config.num_outputs > 1) {
-          const float right = sanitize(gained * pan_right);
-          group_buffer.channels[1][frame] = sanitize(group_buffer.channels[1][frame] + right);
-          if (config.enable_metering) {
-            meter_right[frame] = right;
+    if (!muted) {
+      // Each per-sample expression and its evaluation order match the
+      // frame-major form exactly, so the mix is bit-identical to it. The
+      // policy, bounds and metering tests are hoisted out of the frame loops;
+      // channel-meter scratch is written only when metering is enabled.
+      float* const meterLeft = meter_left.data();
+      float* const meterRight = meter_right.data();
+      const auto mix = [&](auto meteringTag) noexcept {
+        constexpr bool kMetering = decltype(meteringTag)::value;
+        switch (config.source_channel_policy) {
+        case SourceChannelPolicy::Discrete:
+        case SourceChannelPolicy::MonoFoldDown: {
+          const size_t lane =
+              config.source_channel_policy == SourceChannelPolicy::Discrete ? logicalLane : 0u;
+          if (lane < group_buffer.channels.size()) {
+            float* const sum = group_buffer.channels[lane].data();
+            for (uint32_t frame = 0; frame < num_frames; ++frame) {
+              const float gained = sanitize(sanitize(input[frame]) * gainRamp[frame]);
+              sum[frame] = sanitize(sum[frame] + gained);
+              if constexpr (kMetering) {
+                meterLeft[frame] = gained;
+              }
+            }
+          } else if constexpr (kMetering) {
+            for (uint32_t frame = 0; frame < num_frames; ++frame) {
+              meterLeft[frame] = sanitize(sanitize(input[frame]) * gainRamp[frame]);
+            }
           }
-        } else if (config.enable_metering) {
-          meter_right[frame] = 0.0f;
+          if constexpr (kMetering) {
+            std::fill_n(meterRight, num_frames, 0.0f);
+          }
+          break;
         }
-        break;
-      }
-      case SourceChannelPolicy::MonoFoldDown:
-        group_buffer.channels[0][frame] = sanitize(group_buffer.channels[0][frame] + gained);
-        if (config.enable_metering) {
-          meter_left[frame] = gained;
-          meter_right[frame] = 0.0f;
+        case SourceChannelPolicy::StereoPairs: {
+          float* const sumLeft = group_buffer.channels[0].data();
+          if (config.num_outputs > 1) {
+            float* const sumRight = group_buffer.channels[1].data();
+            for (uint32_t frame = 0; frame < num_frames; ++frame) {
+              const float gained = sanitize(sanitize(input[frame]) * gainRamp[frame]);
+              const float left = sanitize(gained * panLeftRamp[frame]);
+              sumLeft[frame] = sanitize(sumLeft[frame] + left);
+              const float right = sanitize(gained * panRightRamp[frame]);
+              sumRight[frame] = sanitize(sumRight[frame] + right);
+              if constexpr (kMetering) {
+                meterLeft[frame] = left;
+                meterRight[frame] = right;
+              }
+            }
+          } else {
+            for (uint32_t frame = 0; frame < num_frames; ++frame) {
+              const float gained = sanitize(sanitize(input[frame]) * gainRamp[frame]);
+              const float left = sanitize(gained * panLeftRamp[frame]);
+              sumLeft[frame] = sanitize(sumLeft[frame] + left);
+              if constexpr (kMetering) {
+                meterLeft[frame] = left;
+              }
+            }
+            if constexpr (kMetering) {
+              std::fill_n(meterRight, num_frames, 0.0f);
+            }
+          }
+          break;
         }
-        break;
+        }
+      };
+      if (config.enable_metering) {
+        mix(std::true_type{});
+      } else {
+        mix(std::false_type{});
       }
     }
 
@@ -1185,23 +1262,43 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       }
     }
 
+    // Lane-major mix over occupied lanes only. Distinct lanes feed distinct
+    // outputs, so every output sample still receives this group's
+    // contribution in group order with the same expression: bit-identical.
     auto group_gain_state = group.gain_smoother->beginBlock();
-    for (uint32_t frame = 0; frame < num_frames; ++frame) {
-      const float group_gain = sanitize(group.gain_smoother->next(group_gain_state));
-      for (RoutingOutputIndex lane = 0; lane < config.num_outputs; ++lane) {
-        if ((occupiedLanes & (uint64_t{1} << lane)) == 0) {
-          continue;
+    float* const groupGainRamp = m_temp_buffer.data();
+    fillRamp(*group.gain_smoother, group_gain_state, groupGainRamp, num_frames);
+    group.gain_smoother->endBlock(group_gain_state);
+    uint64_t lanesToMix = occupiedLanes;
+    if (config.num_outputs < 64u) {
+      lanesToMix &= (uint64_t{1} << config.num_outputs) - 1u;
+    }
+    while (lanesToMix != 0u) {
+      const auto lane = static_cast<RoutingOutputIndex>(std::countr_zero(lanesToMix));
+      lanesToMix &= lanesToMix - 1u;
+      float* const sum = group_buffer.channels[lane].data();
+      if (!muted && lane < outputWidth) {
+        float* const out = master_output[outputStart + lane];
+        for (uint32_t frame = 0; frame < num_frames; ++frame) {
+          const float sample = sanitize(sum[frame] * groupGainRamp[frame] * headroom);
+          out[frame] = sanitize(out[frame] + sample);
+          sum[frame] = sample;
         }
-        float sample = 0.0f;
-        if (!muted && lane < outputWidth) {
-          sample = sanitize(group_buffer.channels[lane][frame] * group_gain * headroom);
-          master_output[outputStart + lane][frame] =
-              sanitize(master_output[outputStart + lane][frame] + sample);
-        }
-        group_buffer.channels[lane][frame] = sample;
+      } else {
+        std::fill_n(sum, num_frames, 0.0f);
       }
     }
-    group.gain_smoother->endBlock(group_gain_state);
+
+    // A lane's true-peak history is non-zero only after process() ran on it,
+    // so resets are skipped for lanes whose dirty bit is clear.
+    uint64_t& laneTruePeakDirty = m_lane_tp_dirty[group_index];
+    const auto resetLaneTruePeak = [&](RoutingOutputIndex lane) noexcept {
+      const uint64_t bit = uint64_t{1} << lane;
+      if ((laneTruePeakDirty & bit) != 0u) {
+        group.lane_true_peak_meters[lane].reset();
+        laneTruePeakDirty &= ~bit;
+      }
+    };
 
     if (config.enable_metering) {
       for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
@@ -1216,7 +1313,7 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         if ((occupiedLanes & (uint64_t{1} << lane)) == 0) {
           lanePeak.store(0.0f, std::memory_order_relaxed);
           laneRms.store(0.0f, std::memory_order_relaxed);
-          group.lane_true_peak_meters[lane].reset();
+          resetLaneTruePeak(lane);
           continue;
         }
 
@@ -1225,6 +1322,9 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         bool anyNonZero = false;
         bool clipped = false;
         const bool truePeakMode = (config.metering_mode == MeteringMode::TruePeak);
+        if (truePeakMode && num_frames > 0u) {
+          laneTruePeakDirty |= uint64_t{1} << lane;
+        }
         for (uint32_t frame = 0; frame < num_frames; ++frame) {
           const float sample = sanitize(group_buffer.channels[lane][frame]);
           group_buffer.channels[lane][frame] = sample;
@@ -1240,10 +1340,10 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
         }
 
         if (!anyNonZero || muted) {
-          group.lane_true_peak_meters[lane].reset();
+          resetLaneTruePeak(lane);
           peak = 0.0f;
         } else if (!truePeakMode) {
-          group.lane_true_peak_meters[lane].reset();
+          resetLaneTruePeak(lane);
         }
 
         lanePeak.store(sanitize(peak), std::memory_order_relaxed);
@@ -1258,24 +1358,29 @@ SessionGraphError RoutingMatrix::processRoutingBlock(const float* const* channel
       for (RoutingOutputIndex lane = 0; lane < kRoutingMaxOutputs; ++lane) {
         group.lane_peak_level[lane].store(0.0f, std::memory_order_relaxed);
         group.lane_rms_level[lane].store(0.0f, std::memory_order_relaxed);
-        group.lane_true_peak_meters[lane].reset();
       }
+      for (uint64_t dirty = laneTruePeakDirty; dirty != 0u; dirty &= dirty - 1u) {
+        group.lane_true_peak_meters[static_cast<size_t>(std::countr_zero(dirty))].reset();
+      }
+      laneTruePeakDirty = 0u;
     }
   }
 
+  // The master ramp advances while muted, exactly as per-frame stepping did.
   const bool master_muted = m_master_mute.load(std::memory_order_acquire);
   auto master_gain_state = m_master_gain_smoother->beginBlock();
-  for (uint32_t frame = 0; frame < num_frames; ++frame) {
-    const float master_gain =
-        master_muted ? 0.0f : sanitize(m_master_gain_smoother->next(master_gain_state));
-    if (master_muted) {
-      m_master_gain_smoother->next(master_gain_state);
-    }
-    for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
-      master_output[output][frame] = sanitize(master_output[output][frame] * master_gain);
+  float* const masterGainRamp = m_temp_buffer.data();
+  fillRamp(*m_master_gain_smoother, master_gain_state, masterGainRamp, num_frames);
+  m_master_gain_smoother->endBlock(master_gain_state);
+  if (master_muted) {
+    std::fill_n(masterGainRamp, num_frames, 0.0f);
+  }
+  for (RoutingOutputIndex output = 0; output < config.num_outputs; ++output) {
+    float* const out = master_output[output];
+    for (uint32_t frame = 0; frame < num_frames; ++frame) {
+      out[frame] = sanitize(out[frame] * masterGainRamp[frame]);
     }
   }
-  m_master_gain_smoother->endBlock(master_gain_state);
 
   if (config.enable_metering) {
     float master_peak = 0.0f;
@@ -1553,6 +1658,7 @@ void RoutingMatrix::resetLogicalGroupTruePeakHistories() noexcept {
       meter.reset();
     }
   }
+  m_lane_tp_dirty.fill(0u);
   for (auto& meter : m_meter_state.masterTruePeakMeters()) {
     meter.reset();
   }

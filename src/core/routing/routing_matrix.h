@@ -291,14 +291,15 @@ private:
   std::atomic<bool> m_group_solo_active{false};
   std::atomic<bool> m_solo_active{false};
   std::atomic<uint64_t> m_snapshot_revision{0};
-  /// Seqlock for fixed-capacity coherent group-control publication. The host's
-  /// control thread is the sole writer; readers may run concurrently.
+  /// Seqlock for fixed-capacity coherent group-control publication. Control
+  /// writers serialize on m_group_control_publication_in_progress, make the
+  /// sequence odd, store the fields, then make it even. Readers (the audio
+  /// thread and getRoutingControlSnapshot) copy the fields between two
+  /// sequence loads and discard the copy unless both loads are equal and even.
+  /// No side waits on the audio thread: on a torn read the audio thread keeps
+  /// rendering the prior complete controls and retries on the next block.
   std::atomic<uint64_t> m_group_control_sequence{0};
-  /// Control writers defer until the audio thread finishes its bounded snapshot
-  /// copy. The audio thread never waits; it renders the prior complete value
-  /// when publication is in progress.
   std::atomic<bool> m_group_control_publication_in_progress{false};
-  std::atomic<bool> m_group_control_render_reading{false};
   std::array<RoutingGroupControlState, kRoutingControlMaxGroups> m_render_group_controls{};
 
   // Callback
@@ -310,6 +311,10 @@ private:
   // only lanes that were written before, plus lanes newly observed in its
   // route snapshot.
   std::array<uint64_t, kRoutingControlMaxGroups> m_previous_occupied_lane_masks{};
+  // Logical-lane true-peak histories that process() touched since their last
+  // reset. Clean lanes skip the reset. Audio thread only, except at
+  // initialize().
+  std::array<uint64_t, kRoutingControlMaxGroups> m_lane_tp_dirty{};
   // ORP273 F-08: the headroom compensation needs the number of active
   // channels per group and in total. They are accumulated once per block from
   // the route snapshot instead of rescanning every channel for every group.
@@ -317,6 +322,10 @@ private:
   uint32_t m_total_active_channels{0u};
   MultichannelGroupBuffer m_channel_meter_buffer;
   std::vector<float> m_temp_buffer;
+  // Per-slice channel ramps; group and master ramps reuse m_temp_buffer.
+  std::array<float, kRoutingSliceFrames> m_ramp_gain{};
+  std::array<float, kRoutingSliceFrames> m_ramp_pan_l{};
+  std::array<float, kRoutingSliceFrames> m_ramp_pan_r{};
 
   // FTR028: Internal slice size. Kept in lock-step with the public
   // orpheus::kRoutingSliceFrames contract so hosts and the implementation
