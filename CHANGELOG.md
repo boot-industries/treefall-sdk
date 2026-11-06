@@ -135,6 +135,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instance address, so it was never a stable cross-run identifier. A host that
   matches devices by display name instead of `device_id` sees the new label.
 
+- Documentation: the README now records the C ABI 1.x compatibility contract.
+  The session, clipgrid and render tables are append-only within 1.x, and
+  consumers must gate any member added in a later minor version on the
+  negotiated `got_minor`. Known limitation: 1.x has no size handshake, so a
+  consumer built against a newer header and linked to an older library cannot
+  detect an extension from the table itself. A sized handshake is deferred to
+  ABI 2.0, which will ship with migration guidance. No header, table or export
+  changed.
+
 ### Fixed
 
 - Routing group-control publication is a fenced, non-waiting seqlock. The
