@@ -16,6 +16,7 @@
 #include <limits>
 
 #include "common/checked_numeric.h"
+#include "common/classic_locale.h"
 #include "orpheus/json.hpp"
 #include "orpheus/routing_matrix.h"
 #include <orpheus/session_graph.h>
@@ -32,7 +33,7 @@ std::string generateSceneId() {
   auto timestamp = std::chrono::system_clock::to_time_t(now);
   uint32_t id = counter.fetch_add(1, std::memory_order_relaxed);
 
-  std::ostringstream oss;
+  core::detail::ClassicOStringStream oss;
   oss << "scene-" << timestamp << "-" << std::setfill('0') << std::setw(3) << (id % 1000);
   return oss.str();
 }
@@ -90,7 +91,7 @@ json::JsonValue serializeSceneToJson(const SceneSnapshot& scene) {
 
 // JSON writing helper (manual JSON generation for simplicity)
 void writeJsonToFile(const json::JsonValue& value, const std::string& filePath) {
-  std::ostringstream oss;
+  core::detail::ClassicOStringStream oss;
 
   std::function<void(const json::JsonValue&, size_t)> writeValue = [&](const json::JsonValue& v,
                                                                        size_t indent) {

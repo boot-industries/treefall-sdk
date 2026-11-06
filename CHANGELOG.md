@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lane-major over occupied lanes only, and skips true-peak history resets on
   lanes whose history is already clear. Output samples and meters are
   bit-identical to the previous per-frame form.
+- Session serialization writes each track's clips in their stored order instead
+  of copying and re-sorting them; the stored order is already sorted and
+  validated, so the output bytes are unchanged.
+
+- `SessionGraph::add_clip`, `set_clip_start` and `set_clip_range` insert or move
+  the one clip to its sorted position and validate only its neighbours, and
+  `set_clip_length` checks only the following clip, instead of re-sorting and
+  re-validating the whole track. Accept/reject outcomes, clip order, error
+  messages and revisions are unchanged; per-call cost is now O(N).
 
 - Expanded realtime static audit coverage to per-block callees and optional
   adjacent FreqFinder analysis enqueue; final suite qualification is pending.
@@ -138,6 +147,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AudioDriverManager::setEndpointChangeCallback` no longer holds the manager
   mutex while it stops the CoreAudio endpoint monitor. An endpoint callback in
   flight that called a manager getter could deadlock against that join.
+- Session, scene, reconform-plan and ADM debug JSON, plus `orpheus_minhost`
+  JSON numbers and numeric arguments, now ignore the host's global locale. A
+  host that installed a comma-decimal or digit-grouping C++ locale previously
+  wrote files such as `"tempo_bpm": 120,500000` that could not be read back,
+  and a comma-decimal C locale made the parser reject `120.5`. The parser also
+  accepts only JSON whitespace, so `\v` and `\f` between tokens are rejected.
+- `orpheus_minhost` integer options such as `--sr` and `--bd` reject values
+  outside `uint32_t`, signs and surrounding whitespace. `--sr 4294967297` was
+  previously accepted as 1 Hz and `-1` as 4294967295.
 - Bounded session parsing checks collection limits before consuming the next
   value and caps file reads at 64 MiB. Serialization refuses documents outside
   loader limits before replacing the saved document. Rollback preserves exact

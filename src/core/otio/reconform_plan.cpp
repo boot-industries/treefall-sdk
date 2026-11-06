@@ -11,11 +11,13 @@
 #include <type_traits>
 #include <vector>
 
+#include "common/classic_locale.h"
 #include "common/json_parser.h"
 
 namespace orpheus::core::otio {
 namespace {
 
+using ::orpheus::core::detail::ClassicOStringStream;
 using ::orpheus::core::json::EscapeString;
 using ::orpheus::core::json::ExpectArray;
 using ::orpheus::core::json::ExpectObject;
@@ -134,7 +136,7 @@ ReconformPlan ParseReconformPlan(const std::string& json_text) {
 }
 
 std::string SerializeReconformPlan(const ReconformPlan& plan) {
-  std::ostringstream stream;
+  ClassicOStringStream stream;
   stream << "{\n";
   WriteIndent(stream, 2);
   stream << "\"version\": " << plan.version << ",\n";
@@ -151,14 +153,14 @@ std::string SerializeReconformPlan(const ReconformPlan& plan) {
     std::vector<std::string> field_blocks;
 
     {
-      std::ostringstream field;
+      ClassicOStringStream field;
       WriteIndent(field, 6);
       field << "\"kind\": \"" << OperationKindString(operation.data) << "\"";
       field_blocks.push_back(field.str());
     }
 
     if (!operation.note.empty()) {
-      std::ostringstream field;
+      ClassicOStringStream field;
       WriteIndent(field, 6);
       field << "\"note\": \"" << EscapeString(operation.note) << "\"";
       field_blocks.push_back(field.str());
@@ -168,23 +170,23 @@ std::string SerializeReconformPlan(const ReconformPlan& plan) {
         [&](const auto& op_data) {
           using T = std::decay_t<decltype(op_data)>;
           if constexpr (std::is_same_v<T, ReconformInsert>) {
-            std::ostringstream target_field;
+            ClassicOStringStream target_field;
             WriteTimeRange(target_field, 6, "target", op_data.target);
             field_blocks.push_back(target_field.str());
 
-            std::ostringstream source_field;
+            ClassicOStringStream source_field;
             WriteTimeRange(source_field, 6, "source", op_data.source);
             field_blocks.push_back(source_field.str());
           } else if constexpr (std::is_same_v<T, ReconformDelete>) {
-            std::ostringstream target_field;
+            ClassicOStringStream target_field;
             WriteTimeRange(target_field, 6, "target", op_data.target);
             field_blocks.push_back(target_field.str());
           } else if constexpr (std::is_same_v<T, ReconformRetime>) {
-            std::ostringstream target_field;
+            ClassicOStringStream target_field;
             WriteTimeRange(target_field, 6, "target", op_data.target);
             field_blocks.push_back(target_field.str());
 
-            std::ostringstream duration_field;
+            ClassicOStringStream duration_field;
             WriteIndent(duration_field, 6);
             duration_field << "\"retimed_duration_seconds\": "
                            << FormatDouble(op_data.retimed_duration_seconds);

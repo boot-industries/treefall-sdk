@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "abi_negotiation.h"
 #include "common/checked_numeric.h"
+#include "common/classic_locale.h"
 #include "orpheus/abi.h"
 #include "orpheus/errors.h"
 #include "orpheus/json.hpp"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -27,6 +29,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -100,7 +103,7 @@ void PrintError(const CliGlobalOptions& global, const ErrorInfo& error) {
 bool ParseDouble(const std::string& text, double& value) {
   char* end_ptr = nullptr;
   errno = 0;
-  value = std::strtod(text.c_str(), &end_ptr);
+  value = orpheus::core::detail::strtodClassic(text.c_str(), &end_ptr);
   if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
     return false;
   }
@@ -201,7 +204,7 @@ std::string JsonEscape(std::string_view value) {
 }
 
 std::string FormatNumber(double value, int precision = 6) {
-  std::ostringstream stream;
+  orpheus::core::detail::ClassicOStringStream stream;
   stream.setf(std::ios::fixed);
   stream.precision(precision);
   stream << value;
@@ -596,13 +599,19 @@ void PrintSimulateTransportHelp() {
 }
 
 bool ParseUint32(const std::string& text, std::uint32_t& value) {
-  char* end_ptr = nullptr;
-  errno = 0;
-  unsigned long parsed = std::strtoul(text.c_str(), &end_ptr, 10);
-  if (errno == ERANGE || end_ptr == text.c_str() || end_ptr != text.c_str() + text.size()) {
+  // from_chars never skips whitespace, accepts no sign and reports overflow of
+  // the 32-bit target itself, so "-1" and "4294967297" cannot wrap.
+  if (text.empty()) {
     return false;
   }
-  value = static_cast<std::uint32_t>(parsed);
+  const char* const begin = text.data();
+  const char* const end = begin + text.size();
+  std::uint32_t parsed = 0;
+  const auto [ptr, ec] = std::from_chars(begin, end, parsed, 10);
+  if (ec != std::errc{} || ptr != end) {
+    return false;
+  }
+  value = parsed;
   return true;
 }
 

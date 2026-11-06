@@ -28,6 +28,7 @@
 #endif
 
 #include "common/checked_numeric.h"
+#include "common/classic_locale.h"
 #include "common/json_parser.h"
 
 namespace orpheus::core::session_json {
@@ -161,7 +162,7 @@ std::string FormatSampleRateTag(std::uint32_t sample_rate_hz) {
   if (sample_rate_hz == 0u) {
     return "0k";
   }
-  std::ostringstream builder;
+  ::orpheus::core::detail::ClassicOStringStream builder;
   builder << (sample_rate_hz / 1000u);
   std::uint32_t remainder = sample_rate_hz % 1000u;
   if (remainder != 0u) {
@@ -430,7 +431,7 @@ SessionGraph ParseSession(const std::string& json_text) {
 
 std::string SerializeSession(const SessionGraph& session) {
   ValidateSessionSerializationLimits(session);
-  std::ostringstream stream;
+  ::orpheus::core::detail::ClassicOStringStream stream;
   stream << "{\n";
   WriteIndent(stream, 2);
   stream << "\"schema_version\": " << kCurrentSessionSchemaVersion << ",\n";
@@ -551,35 +552,11 @@ std::string SerializeSession(const SessionGraph& session) {
     stream << "\"name\": \"" << EscapeString(track.name()) << "\",\n";
     WriteIndent(stream, 6);
     stream << "\"clips\": [\n";
+    // Track::clips() is kept sorted and validated by every SessionGraph edit,
+    // so the stored order is already the serialized order.
     const auto& clips = track.clips();
-    std::vector<const Clip*> ordered_clips;
-    ordered_clips.reserve(clips.size());
-    for (const auto& clip : clips) {
-      ordered_clips.push_back(clip.get());
-    }
-    std::stable_sort(ordered_clips.begin(), ordered_clips.end(),
-                     [](const Clip* lhs, const Clip* rhs) {
-                       if (lhs->start() < rhs->start() - kClipOrderingTolerance) {
-                         return true;
-                       }
-                       if (rhs->start() < lhs->start() - kClipOrderingTolerance) {
-                         return false;
-                       }
-                       return lhs->name() < rhs->name();
-                     });
-    for (std::size_t clip_index = 0; clip_index < ordered_clips.size(); ++clip_index) {
-      const Clip& clip = *ordered_clips[clip_index];
-      if (clip_index > 0) {
-        const Clip& previous = *ordered_clips[clip_index - 1];
-        if (previous.start() > clip.start() + kClipOrderingTolerance) {
-          throw std::invalid_argument("Clips on track \"" + track.name() +
-                                      "\" must be sorted by start time");
-        }
-        const double previous_end = previous.start() + previous.length();
-        if (previous_end > clip.start() + kClipOrderingTolerance) {
-          throw std::invalid_argument("Clips on track \"" + track.name() + "\" must not overlap");
-        }
-      }
+    for (std::size_t clip_index = 0; clip_index < clips.size(); ++clip_index) {
+      const Clip& clip = *clips[clip_index];
       WriteIndent(stream, 8);
       stream << "{\n";
       WriteIndent(stream, 10);
@@ -590,7 +567,7 @@ std::string SerializeSession(const SessionGraph& session) {
       stream << "\"length_beats\": " << FormatDouble(clip.length()) << "\n";
       WriteIndent(stream, 8);
       stream << "}";
-      if (clip_index + 1 < ordered_clips.size()) {
+      if (clip_index + 1 < clips.size()) {
         stream << ",";
       }
       stream << "\n";

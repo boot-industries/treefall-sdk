@@ -5,7 +5,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -15,6 +19,61 @@ namespace {
 
 double ClipEnd(const Clip& clip) {
   return clip.start() + clip.length();
+}
+
+// Test-local model of the original track behaviour: append, stable_sort by
+// (start, name), then validate every adjacent pair.
+struct ReferenceClip {
+  std::uint64_t id = 0;
+  std::string name;
+  double start = 0.0;
+  double length = 0.0;
+};
+
+constexpr double kReferenceTolerance = 1e-9;
+
+void SortReference(std::vector<ReferenceClip>& clips) {
+  std::stable_sort(clips.begin(), clips.end(),
+                   [](const ReferenceClip& lhs, const ReferenceClip& rhs) {
+                     if (lhs.start < rhs.start) {
+                       return true;
+                     }
+                     if (rhs.start < lhs.start) {
+                       return false;
+                     }
+                     return lhs.name < rhs.name;
+                   });
+}
+
+/// Returns the error the full layout validation raises, if any.
+std::optional<std::string> ValidateReference(const std::vector<ReferenceClip>& clips,
+                                             const std::string& track_name) {
+  for (std::size_t index = 1; index < clips.size(); ++index) {
+    const ReferenceClip& previous = clips[index - 1];
+    const ReferenceClip& current = clips[index];
+    if (current.start + kReferenceTolerance < previous.start) {
+      return "Clips on track \"" + track_name + "\" must be sorted by start time";
+    }
+    if (previous.start + previous.length > current.start + kReferenceTolerance) {
+      return "Clips on track \"" + track_name + "\" must not overlap";
+    }
+  }
+  return std::nullopt;
+}
+
+/// Applies an edit to a copy of the reference and keeps it only when the
+/// full validation accepts it. Returns the rejection message, if any.
+template <typename Edit>
+std::optional<std::string> ApplyReferenceEdit(std::vector<ReferenceClip>& clips,
+                                              const std::string& track_name, Edit edit) {
+  std::vector<ReferenceClip> candidate = clips;
+  edit(candidate);
+  SortReference(candidate);
+  if (auto error = ValidateReference(candidate, track_name)) {
+    return error;
+  }
+  clips = std::move(candidate);
+  return std::nullopt;
 }
 
 } // namespace
@@ -495,5 +554,131 @@ TEST(SessionGraphInvariants, TransactionRollbackRestoresTheGraphWithoutAllocatin
   ASSERT_EQ(session.tracks().size(), 1u);
   ASSERT_EQ(session.tracks()[0]->clips().size(), 1u);
   EXPECT_EQ(session.tracks()[0]->clips()[0]->name(), "Clip");
+}
+
+TEST(SessionGraphInvariants, IncrementalEditsMatchSortedReference) {
+  SessionGraph session;
+  Track* track = session.add_track("Lane");
+  ASSERT_NE(track, nullptr);
+  const double tempo = session.tempo();
+  const std::uint32_t sample_rate = session.render_sample_rate();
+  // Quarter-beat grid in samples, so beat values derived from samples are exact.
+  const auto quarter_beat_samples =
+      static_cast<std::int64_t>(static_cast<double>(sample_rate) * 60.0 / tempo / 4.0);
+  ASSERT_GT(quarter_beat_samples, 0);
+
+  std::vector<ReferenceClip> reference;
+  std::optional<std::uint64_t> next_clip_id;
+  std::mt19937 rng(0x0282u);
+  const auto pick = [&rng](std::uint32_t bound) {
+    return static_cast<std::uint32_t>(rng() % bound);
+  };
+  const auto find_live = [&](std::uint64_t id) -> Clip* {
+    for (const auto& clip : track->clips()) {
+      if (clip->id().raw() == id) {
+        return clip.get();
+      }
+    }
+    return nullptr;
+  };
+
+  std::size_t accepted = 0;
+  std::size_t rejected = 0;
+  for (int step = 0; step < 2000; ++step) {
+    const std::uint64_t revision_before = session.revision();
+    const std::uint32_t op = reference.empty() ? 0u : pick(3);
+    std::optional<std::string> expected_error;
+    std::optional<std::string> actual_error;
+
+    if (op == 0u) {
+      const std::string name = "c" + std::to_string(pick(6));
+      const double start = static_cast<double>(pick(1024)) * 0.25;
+      const double length = static_cast<double>(1u + pick(16)) * 0.25;
+      expected_error =
+          ApplyReferenceEdit(reference, track->name(), [&](std::vector<ReferenceClip>& clips) {
+            clips.push_back(ReferenceClip{next_clip_id.value_or(0), name, start, length});
+          });
+      try {
+        Clip* clip = session.add_clip(*track, name, start, length);
+        ASSERT_NE(clip, nullptr);
+        if (!next_clip_id.has_value()) {
+          next_clip_id = clip->id().raw();
+          for (ReferenceClip& entry : reference) {
+            if (entry.id == 0) {
+              entry.id = *next_clip_id;
+            }
+          }
+        }
+        EXPECT_EQ(clip->id().raw(), *next_clip_id) << "step " << step;
+        ++*next_clip_id;
+      } catch (const std::invalid_argument& error) {
+        actual_error = error.what();
+      }
+    } else {
+      const ReferenceClip chosen = reference[pick(static_cast<std::uint32_t>(reference.size()))];
+      const std::uint32_t start_quarter = pick(1024);
+      if (op == 1u) {
+        const double start = static_cast<double>(start_quarter) * 0.25;
+        expected_error =
+            ApplyReferenceEdit(reference, track->name(), [&](std::vector<ReferenceClip>& clips) {
+              for (ReferenceClip& entry : clips) {
+                if (entry.id == chosen.id) {
+                  entry.start = start;
+                }
+              }
+            });
+        Clip* live = find_live(chosen.id);
+        ASSERT_NE(live, nullptr);
+        try {
+          session.set_clip_start(*live, start);
+        } catch (const std::invalid_argument& error) {
+          actual_error = error.what();
+        }
+      } else {
+        const auto start_samples = static_cast<std::int64_t>(start_quarter) * quarter_beat_samples;
+        const auto length_samples = static_cast<std::int64_t>(1u + pick(16)) * quarter_beat_samples;
+        const TimePoint start_point = TimePoint::fromSamples(start_samples);
+        const TimePoint end_point = TimePoint::fromSamples(start_samples + length_samples);
+        const double start = start_point.toBeats(tempo, sample_rate);
+        const double length = end_point.toBeats(tempo, sample_rate) - start;
+        expected_error =
+            ApplyReferenceEdit(reference, track->name(), [&](std::vector<ReferenceClip>& clips) {
+              for (ReferenceClip& entry : clips) {
+                if (entry.id == chosen.id) {
+                  entry.start = start;
+                  entry.length = length;
+                }
+              }
+            });
+        try {
+          session.set_clip_range(ClipId::fromRaw(chosen.id),
+                                 TimeRange::fromStartEnd(start_point, end_point));
+        } catch (const std::invalid_argument& error) {
+          actual_error = error.what();
+        }
+      }
+    }
+
+    ASSERT_EQ(actual_error, expected_error) << "step " << step << " op " << op;
+    if (expected_error.has_value()) {
+      ++rejected;
+      EXPECT_EQ(session.revision(), revision_before) << "step " << step;
+    } else {
+      ++accepted;
+      EXPECT_EQ(session.revision(), revision_before + 1u) << "step " << step;
+    }
+
+    const auto& live = track->clips();
+    ASSERT_EQ(live.size(), reference.size()) << "step " << step;
+    for (std::size_t index = 0; index < live.size(); ++index) {
+      ASSERT_EQ(live[index]->id().raw(), reference[index].id) << "step " << step;
+      ASSERT_EQ(live[index]->name(), reference[index].name) << "step " << step;
+      ASSERT_EQ(live[index]->start(), reference[index].start) << "step " << step;
+      ASSERT_EQ(live[index]->length(), reference[index].length) << "step " << step;
+    }
+  }
+  // The walk must exercise both outcomes to mean anything.
+  EXPECT_GT(accepted, 100u);
+  EXPECT_GT(rejected, 100u);
 }
 } // namespace orpheus::core::tests
