@@ -211,10 +211,11 @@ public:
   //
   // A TransportController claims its matrix once, after configuring it and
   // before audio starts. From then on the public channel-route writers
-  // (setChannelGroup, setChannelRoute, configureChannel) and initialize()
-  // return SessionGraphError::NotSupported, and loadSnapshot()/reset() leave
-  // channel routes untouched, so no control-thread call ever holds the
-  // channel-route writer exclusion.
+  // (setChannelGroup, setChannelRoute, configureChannel), setChannelPan and
+  // initialize() return SessionGraphError::NotSupported, and
+  // loadSnapshot()/reset() leave channel routes and pans untouched, so no
+  // control-thread call ever holds the channel-route writer exclusion and the
+  // transport's lane pans (its stereo imaging) survive scene recall.
   void claimChannelRoutesForTransport() noexcept;
 
   /// Publish one channel route from the transport's audio thread. Same

@@ -43,13 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state, and `loadSnapshot()`/`reset()` apply everything except channel routes.
   The transport's audio thread is now the only writer of its voice-lane routes,
   so a host edit can no longer make the render path spin on the channel-route
-  writer exclusion. Group-level routing and per-channel gain, pan, mute and
-  solo are unchanged, and matrices created with `createRoutingMatrix()` stay
+  writer exclusion. Group-level routing and per-channel gain, mute and solo
+  are unchanged, and matrices created with `createRoutingMatrix()` stay
   fully writable. Migration: hosts that edited per-channel routes on
   transport-owned lanes must use group-level routing (`setGroupOutputRoute()`,
   `configureGroup()`, `applyGroupControlSnapshot()`, group gain/mute/solo or
   `ITransportController::setGroupOutputBus()`). No rebuild is required; the
   interface layout is unchanged.
+- **Behavior change:** the transport also owns its voice lanes' pans (the
+  hard-left/right lane pans that carry `StereoPairs` imaging). On its routing
+  matrix `setChannelPan()` returns `NotSupported`, and `loadSnapshot()` and
+  `reset()` keep the lane pans instead of resetting them, so a `SceneManager`
+  recall or a routing reset during playback no longer collapses a stereo voice
+  toward mono. Migration: hosts position transport audio with clip metadata
+  `pan` or group-level routing.
 - `RoutingMatrix::processRouting()` materializes each gain and pan smoother
   ramp once per slice (a settled ramp is a constant fill), mixes groups
   lane-major over occupied lanes only, and skips true-peak history resets on

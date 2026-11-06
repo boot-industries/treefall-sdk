@@ -566,10 +566,11 @@ public:
   ///
   /// Ownership: the transport assigns every voice lane's channel route from its
   /// audio thread and is their only writer, so its render path never waits on
-  /// a host edit. On this matrix setChannelRoute(), setChannelGroup(),
-  /// configureChannel() and initialize() return SessionGraphError::NotSupported,
-  /// and loadSnapshot()/reset() leave channel routes untouched. Route transport
-  /// audio with the group-level calls (group gain/mute/solo, configureGroup(),
+  /// a host edit; it also owns each lane's pan. On this matrix setChannelRoute(),
+  /// setChannelGroup(), setChannelPan(), configureChannel() and initialize()
+  /// return SessionGraphError::NotSupported, and loadSnapshot()/reset() leave
+  /// channel routes and pans untouched. Route transport audio with the
+  /// group-level calls (group gain/mute/solo, configureGroup(),
   /// setGroupOutputRoute(), applyGroupControlSnapshot()).
   virtual IRoutingMatrix* getRoutingMatrix() const = 0;
 

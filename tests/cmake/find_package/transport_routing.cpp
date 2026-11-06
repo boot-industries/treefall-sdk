@@ -186,6 +186,7 @@ int main() {
   if (transportRouting == nullptr ||
       transportRouting->setChannelRoute(0, 0, 1) != orpheus::SessionGraphError::NotSupported ||
       transportRouting->setChannelGroup(0, 0) != orpheus::SessionGraphError::NotSupported ||
+      transportRouting->setChannelPan(0, 0.0f) != orpheus::SessionGraphError::NotSupported ||
       transportRouting->configureChannel(0, orpheus::ChannelConfig{}) !=
           orpheus::SessionGraphError::NotSupported) {
     return 15;

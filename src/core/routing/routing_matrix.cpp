@@ -291,6 +291,9 @@ SessionGraphError RoutingMatrix::setChannelGain(RoutingChannelIndex channel_inde
 }
 
 SessionGraphError RoutingMatrix::setChannelPan(RoutingChannelIndex channel_index, float pan) {
+  if (m_channel_routes_transport_owned) {
+    return SessionGraphError::NotSupported;
+  }
   if (!m_initialized.load(std::memory_order_acquire)) {
     return SessionGraphError::NotInitialized;
   }
@@ -920,8 +923,8 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     m_groups[index].config = std::move(normalizedGroup);
   }
 
-  // The transport is the only writer of its matrix's channel routes; a
-  // transport-owned matrix restores every channel control except the route.
+  // The transport is the only writer of its matrix's channel routes and lane
+  // pans; a transport-owned matrix restores every other channel control.
   const bool restoreRoutes = !m_channel_routes_transport_owned;
   if (restoreRoutes) {
     beginChannelRouteWrite();
@@ -931,6 +934,9 @@ SessionGraphError RoutingMatrix::loadSnapshot(const RoutingSnapshot& snapshot) {
     normalizedChannel.gain_db = std::clamp(normalizedChannel.gain_db, -100.0f, 12.0f);
     normalizedChannel.pan = std::clamp(normalizedChannel.pan, -1.0f, 1.0f);
     auto& channel = m_channels[i];
+    if (!restoreRoutes) {
+      normalizedChannel.pan = channel.config.pan;
+    }
     channel.config = normalizedChannel;
     if (restoreRoutes) {
       channel.packed_route.store(
@@ -957,7 +963,7 @@ SessionGraphError RoutingMatrix::reset() {
   }
 
   // Reset all channels to default. A transport-owned matrix keeps the routes
-  // its transport published and resets only the channel controls.
+  // and lane pans its transport installed and resets the other controls.
   for (size_t i = 0; i < m_channels.size(); ++i) {
     const auto index = static_cast<RoutingChannelIndex>(i);
     ChannelConfig default_config;
@@ -965,6 +971,7 @@ SessionGraphError RoutingMatrix::reset() {
       configureChannel(index, default_config);
       continue;
     }
+    default_config.pan = m_channels[i].config.pan;
     m_channels[i].config = default_config;
     applyChannelControls(index, default_config);
     if (m_callback) {

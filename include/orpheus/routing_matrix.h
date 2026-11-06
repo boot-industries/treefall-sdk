@@ -352,15 +352,15 @@ struct RoutingSnapshot {
 ///
 /// Transport-owned matrices:
 /// The matrix returned by ITransportController::getRoutingMatrix() routes the
-/// transport's voice lanes, and the transport's audio thread is the only
-/// writer of its channel routes. On that matrix setChannelGroup(),
-/// setChannelRoute(), configureChannel() and initialize() return
-/// SessionGraphError::NotSupported without changing state, and loadSnapshot()
-/// and reset() apply everything except channel routes. Hosts route transport
-/// audio at group level (setGroup*(), configureGroup(), setGroupOutputRoute(),
-/// applyGroupControlSnapshot()); per-channel gain, pan, mute and solo remain
-/// writable. Matrices a host creates with createRoutingMatrix() are fully
-/// writable.
+/// transport's voice lanes, and the transport is the only writer of their
+/// channel routes and lane pans. On that matrix setChannelGroup(),
+/// setChannelRoute(), setChannelPan(), configureChannel() and initialize()
+/// return SessionGraphError::NotSupported without changing state, and
+/// loadSnapshot() and reset() apply everything except channel routes and pans.
+/// Hosts route transport audio at group level (setGroup*(), configureGroup(),
+/// setGroupOutputRoute(), applyGroupControlSnapshot()); per-channel gain, mute
+/// and solo remain writable. Matrices a host creates with createRoutingMatrix()
+/// are fully writable.
 ///
 /// Typical Usage:
 /// @code
@@ -438,6 +438,8 @@ public:
   /// @param channel_index Channel index [0, num_channels)
   /// @param pan Pan position [-1.0 = hard left, 0.0 = center, +1.0 = hard right]
   /// @return Error code
+  /// @note Returns NotSupported on a transport-owned matrix, whose lane pans
+  /// carry the transport's stereo imaging
   /// @note Smoothed pan law: constant-power (-3 dB at center)
   virtual SessionGraphError setChannelPan(RoutingChannelIndex channel_index, float pan) = 0;
 
@@ -459,7 +461,7 @@ public:
   /// @param config Channel configuration
   /// @return Error code
   /// @note Sets the channel route too, so it returns NotSupported on a
-  /// transport-owned matrix; use setChannelGain/Pan/Mute/Solo there.
+  /// transport-owned matrix; use setChannelGain/Mute/Solo there.
   virtual SessionGraphError configureChannel(RoutingChannelIndex channel_index,
                                              const ChannelConfig& config) = 0;
 
@@ -591,12 +593,12 @@ public:
   /// @return Error code
   /// @note All parameters smoothly transition to new values
   /// @note A transport-owned matrix ignores the snapshot's channel routes and
-  /// restores everything else
+  /// pans and restores everything else
   virtual SessionGraphError loadSnapshot(const RoutingSnapshot& snapshot) = 0;
 
   /// Reset all channels/groups to default state
   /// @return Error code
-  /// @note A transport-owned matrix keeps its channel routes
+  /// @note A transport-owned matrix keeps its channel routes and pans
   virtual SessionGraphError reset() = 0;
 
   // ========================================================================
