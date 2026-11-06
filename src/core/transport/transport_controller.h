@@ -514,8 +514,13 @@ private:
   /// Capture canonical routing metering from the completed routing render.
   void collectRoutingMeters(uint32_t numFrames) noexcept;
   void markRoutingMetersUnmeasured() noexcept;
+  void rearmRoutingMeterWindow() noexcept;
   void markLogicalGroupOutputUnmeasured() noexcept;
   static void mergeAudioMeter(AudioMeter& accumulated, const AudioMeter& current) noexcept;
+  /// Copy the populated region of a group-output snapshot into the pending
+  /// canonical frame, merging lanes that both windows measured when asked.
+  void copyGroupOutputMeterRegion(const GroupOutputMeterSnapshot& source,
+                                  bool mergeMeasuredLanes) noexcept;
 
   uint32_t acquireCommandNode() noexcept;
   SessionGraphError publishCommandNode(uint32_t index) noexcept;
@@ -734,11 +739,19 @@ private:
 
   // Routing matrix for final mix (audio thread processes, UI thread configures)
 
-  // Audio-thread-owned routing-meter scratch and pending canonical frame.
+  // Audio-thread-owned routing-meter scratch. The pending canonical frame is
+  // m_realtimeTelemetrySnapshot.routing_meters itself.
   GroupOutputMeterSnapshot m_groupOutputMeterScratch{};
-  RoutingMeterTelemetry m_routingMeterAccumulator{};
   bool m_routingMeterAccumulatorValid{false};
+  // Bounds of the accumulator's group-output region that may hold non-default
+  // frames; everything beyond them is default-initialized. Audio thread only.
+  RoutingGroupIndex m_meterGroupHigh{0};
+  std::array<uint16_t, kRoutingControlMaxGroups> m_meterLaneHigh{};
   RealtimeTelemetrySnapshot m_realtimeTelemetrySnapshot{};
+  // Group and output meter counts last written into the snapshot, so a
+  // shrink resets exactly the entries it leaves behind. Audio thread only.
+  uint8_t m_snapshotGroupHigh{0};
+  uint8_t m_snapshotOutputHigh{0};
   std::unique_ptr<IRoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;
   std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS> m_groupOutputStarts{};

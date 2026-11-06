@@ -93,6 +93,21 @@ PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled)
   return loopEnabled ? PlaybackBoundaryAction::Looped : PlaybackBoundaryAction::Ended;
 }
 
+// Every disabled stage of ClipDspProcessor::processFrame is an exact identity,
+// so a voice whose program enables none of them can skip the per-frame call.
+bool clipDspProgramActive(const ClipDspProgram& program) noexcept {
+  if (program.gate.enabled || program.compressor.enabled || program.width.enabled ||
+      program.limiter.enabled) {
+    return true;
+  }
+  for (const ClipEqBandSettings& band : program.eq) {
+    if (band.enabled) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
 
 TransportController::TransportController(core::SessionGraph* sessionGraph,
@@ -579,10 +594,16 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
   // Only active lanes expose sample storage to routing. Clearing them here
   // keeps reused slots clean; inactive pointers stay null even if a host edits
-  // their routes directly through the exposed routing matrix.
+  // their routes directly through the exposed routing matrix. A voice renders
+  // at most max(numChannels, 2) lanes (a mono voice pans into two), and
+  // configureVoiceRouting() leaves every lane beyond its channel count
+  // unassigned, so only the lanes the voice can write need clearing.
   for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
+    const uint16_t voiceChannels = m_activeClips[voiceIndex].numChannels;
+    const size_t laneCount = std::min<size_t>(m_config.maxSourceChannels,
+                                              voiceChannels == 1 ? size_t{2} : voiceChannels);
+    for (size_t lane = 0; lane < laneCount; ++lane) {
       std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
     }
   }
@@ -609,6 +630,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const float panRight = clip.panRightGain.load(std::memory_order_acquire);
     const float clipGainTarget = muted ? 0.0f : clip.gainLinear.load(std::memory_order_acquire);
     const size_t numFileChannels = clip.numChannels;
+    const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
     const bool panMonoToStereo =
         numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
@@ -818,7 +840,9 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                          : clipReadBuffer[secondInputFrame * numFileChannels + channel]);
           sourceFrame[channel] = first + (second - first) * fraction;
         }
-        clip.dspProcessor.processFrame(sourceFrame.data(), numFileChannels);
+        if (dspActive) {
+          clip.dspProcessor.processFrame(sourceFrame.data(), numFileChannels);
+        }
 
         const size_t destinationFrame = outputFrame + frame;
         if (m_config.sourceChannelPolicy == SourceChannelPolicy::Discrete) {
@@ -980,28 +1004,40 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   publishCallbackTelemetry();
 
   if (publishTelemetry) {
+    // The snapshot owns the pending routing window (routing_meters), so only
+    // the per-block fields are written here; tails a larger earlier count left
+    // behind are reset instead of value-initializing the whole snapshot.
     RealtimeTelemetrySnapshot& snapshot = m_realtimeTelemetrySnapshot;
-    snapshot = {};
     snapshot.position = TimePoint::fromSamples(newSample);
     snapshot.active_voice_count = static_cast<uint32_t>(m_activeClipCount);
 
-    snapshot.group_count = static_cast<uint8_t>(
+    const auto groupCount = static_cast<uint8_t>(
         std::min<size_t>(routingConfig.num_groups, kRealtimeTelemetryMaxGroups));
-    for (uint8_t group = 0; group < snapshot.group_count; ++group) {
+    snapshot.group_count = groupCount;
+    for (uint8_t group = 0; group < groupCount; ++group) {
       snapshot.group_meters[group] = m_routingMatrix->getGroupMeter(group);
     }
-    snapshot.output_count = static_cast<uint8_t>(
+    for (uint8_t group = groupCount; group < m_snapshotGroupHigh; ++group) {
+      snapshot.group_meters[group] = AudioMeter{};
+    }
+    m_snapshotGroupHigh = groupCount;
+
+    const auto outputCount = static_cast<uint8_t>(
         std::min<size_t>(routingConfig.num_outputs, kRealtimeTelemetryMaxOutputs));
-    for (uint8_t output = 0; output < snapshot.output_count; ++output) {
+    snapshot.output_count = outputCount;
+    for (uint8_t output = 0; output < outputCount; ++output) {
       snapshot.output_meters[output] = m_routingMatrix->getOutputMeter(output);
     }
+    for (uint8_t output = outputCount; output < m_snapshotOutputHigh; ++output) {
+      snapshot.output_meters[output] = AudioMeter{};
+    }
+    m_snapshotOutputHigh = outputCount;
     snapshot.master_meter = m_routingMatrix->getMasterMeter();
-    snapshot.routing_meters = m_routingMeterAccumulator;
 
     if (m_realtimeTelemetry.publishFromRealtime(snapshot)) {
       // A successful enqueue transfers the pending canonical window to the
-      // ring; the next successful render starts a fresh accumulator.
-      markRoutingMetersUnmeasured();
+      // ring; the next successful render starts a fresh window.
+      rearmRoutingMeterWindow();
     }
   }
 }
@@ -1019,34 +1055,127 @@ void TransportController::mergeAudioMeter(AudioMeter& accumulated,
 }
 
 void TransportController::markRoutingMetersUnmeasured() noexcept {
-  m_routingMeterAccumulator = {};
-  m_routingMeterAccumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;
-  m_routingMeterAccumulator.availability = MeterAvailability::Unmeasured;
-  m_routingMeterAccumulator.peak_window_frames = 0;
-  m_routingMeterAccumulator.rms_window_frames = 0;
-  m_routingMeterAccumulator.group_aggregate_availability.fill(MeterAvailability::Unmeasured);
-  m_routingMeterAccumulator.master_aggregate_availability = MeterAvailability::Unmeasured;
-  m_routingMeterAccumulator.post_master_output_availability.fill(MeterAvailability::Unmeasured);
-  m_routingMeterAccumulator.group_output_meters.schema_version =
-      kGroupOutputMeterSnapshotSchemaVersion;
-  m_routingMeterAccumulator.group_output_meters.availability = MeterAvailability::Unmeasured;
-  m_routingMeterAccumulator.group_output_meters.coherent = 0;
+  RoutingMeterTelemetry& accumulator = m_realtimeTelemetrySnapshot.routing_meters;
+  accumulator = {};
+  accumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;
+  accumulator.availability = MeterAvailability::Unmeasured;
+  accumulator.peak_window_frames = 0;
+  accumulator.rms_window_frames = 0;
+  accumulator.group_aggregate_availability.fill(MeterAvailability::Unmeasured);
+  accumulator.master_aggregate_availability = MeterAvailability::Unmeasured;
+  accumulator.post_master_output_availability.fill(MeterAvailability::Unmeasured);
+  accumulator.group_output_meters.schema_version = kGroupOutputMeterSnapshotSchemaVersion;
+  accumulator.group_output_meters.availability = MeterAvailability::Unmeasured;
+  accumulator.group_output_meters.coherent = 0;
+  m_routingMeterAccumulatorValid = false;
+  m_meterGroupHigh = 0;
+  m_meterLaneHigh.fill(0);
+}
+
+void TransportController::rearmRoutingMeterWindow() noexcept {
+  // Every payload field is rewritten by the next collectRoutingMeters() that
+  // finds the window invalid, so only the window and availability marks are
+  // reset here. A zero-frame block, which collects nothing, completes the
+  // reset there before anything could publish the retained payload.
+  RoutingMeterTelemetry& accumulator = m_realtimeTelemetrySnapshot.routing_meters;
+  accumulator.availability = MeterAvailability::Unmeasured;
+  accumulator.peak_window_frames = 0;
+  accumulator.rms_window_frames = 0;
+  accumulator.group_aggregate_availability.fill(MeterAvailability::Unmeasured);
+  accumulator.master_aggregate_availability = MeterAvailability::Unmeasured;
+  accumulator.post_master_output_availability.fill(MeterAvailability::Unmeasured);
+  accumulator.group_output_meters.availability = MeterAvailability::Unmeasured;
+  accumulator.group_output_meters.coherent = 0;
   m_routingMeterAccumulatorValid = false;
 }
 
 void TransportController::markLogicalGroupOutputUnmeasured() noexcept {
-  m_routingMeterAccumulator.group_output_meters.availability = MeterAvailability::Unmeasured;
-  m_routingMeterAccumulator.group_output_meters.coherent = 0;
-  const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-      m_routingMeterAccumulator.group_output_meters.group_count, kRoutingControlMaxGroups);
+  GroupOutputMeterSnapshot& groupOutputs =
+      m_realtimeTelemetrySnapshot.routing_meters.group_output_meters;
+  groupOutputs.availability = MeterAvailability::Unmeasured;
+  groupOutputs.coherent = 0;
+  const RoutingGroupIndex groupCount =
+      std::min<RoutingGroupIndex>(groupOutputs.group_count, kRoutingControlMaxGroups);
   for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
-    m_routingMeterAccumulator.group_output_meters.groups[group].availability =
-        MeterAvailability::Unmeasured;
+    groupOutputs.groups[group].availability = MeterAvailability::Unmeasured;
   }
+}
+
+void TransportController::copyGroupOutputMeterRegion(const GroupOutputMeterSnapshot& source,
+                                                     bool mergeMeasuredLanes) noexcept {
+  GroupOutputMeterSnapshot& destination =
+      m_realtimeTelemetrySnapshot.routing_meters.group_output_meters;
+  if (source.availability == MeterAvailability::Unsupported ||
+      source.schema_version != destination.schema_version) {
+    // No region contract to rely on: take the whole value and assume every
+    // frame may now be populated.
+    destination = source;
+    m_meterGroupHigh = kRoutingControlMaxGroups;
+    m_meterLaneHigh.fill(static_cast<uint16_t>(kRoutingMaxOutputs));
+    return;
+  }
+
+  // A routing snapshot leaves every frame beyond group_count and every lane
+  // beyond logical_lane_count default-initialized, so copying the populated
+  // region and resetting only what a larger earlier region left behind yields
+  // the same value as copying the whole snapshot.
+  destination.schema_version = source.schema_version;
+  destination.coherent = source.coherent;
+  destination.availability = source.availability;
+  destination.group_count = source.group_count;
+  destination.render_sequence = source.render_sequence;
+  destination.routing_topology_revision = source.routing_topology_revision;
+
+  const RoutingGroupIndex groupCount =
+      std::min<RoutingGroupIndex>(source.group_count, kRoutingControlMaxGroups);
+  for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
+    GroupOutputMeterFrame& frame = destination.groups[group];
+    const GroupOutputMeterFrame& current = source.groups[group];
+    const bool mergeFrame = mergeMeasuredLanes &&
+                            frame.availability == MeterAvailability::Measured &&
+                            current.availability == MeterAvailability::Measured;
+    frame.routing_output_start = current.routing_output_start;
+    frame.logical_lane_count = current.logical_lane_count;
+    frame.availability = current.availability;
+    frame.peak_definition = current.peak_definition;
+    frame.raw_block_frames = current.raw_block_frames;
+    const uint16_t laneCount = std::min<uint16_t>(current.logical_lane_count, kRoutingMaxOutputs);
+    if (mergeFrame) {
+      for (uint16_t lane = 0; lane < laneCount; ++lane) {
+        mergeAudioMeter(frame.lane_meters[lane], current.lane_meters[lane]);
+      }
+    } else {
+      std::copy_n(current.lane_meters.begin(), laneCount, frame.lane_meters.begin());
+    }
+    for (uint16_t lane = laneCount; lane < m_meterLaneHigh[group]; ++lane) {
+      frame.lane_meters[lane] = AudioMeter{};
+    }
+    m_meterLaneHigh[group] = laneCount;
+  }
+  for (RoutingGroupIndex group = groupCount; group < m_meterGroupHigh; ++group) {
+    GroupOutputMeterFrame& frame = destination.groups[group];
+    const uint16_t laneHigh = m_meterLaneHigh[group];
+    frame.routing_output_start = 0;
+    frame.logical_lane_count = 0;
+    frame.availability = MeterAvailability::Unconfigured;
+    frame.peak_definition = MeterPeakDefinition::SamplePeak;
+    frame.raw_block_frames = 0;
+    for (uint16_t lane = 0; lane < laneHigh; ++lane) {
+      frame.lane_meters[lane] = AudioMeter{};
+    }
+    m_meterLaneHigh[group] = 0;
+  }
+  m_meterGroupHigh = groupCount;
 }
 
 void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
   if (numFrames == 0) {
+    // A zero-frame block extends no window. After a publish only the window
+    // marks were re-armed, so finish the reset before the retained payload of
+    // the published window could be captured again.
+    if (!m_routingMeterAccumulatorValid) {
+      markRoutingMetersUnmeasured();
+    }
     return;
   }
 
@@ -1058,8 +1187,8 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
 
   // ORP273 F-05: the block's readings are collected into a small local that
   // carries only what the block measures. The published payload lives in
-  // m_routingMeterAccumulator and is written field by field, so no
-  // 17,936-byte value is constructed and copied on the audio thread.
+  // m_realtimeTelemetrySnapshot.routing_meters and is written field by field,
+  // so no 17,936-byte value is constructed and copied on the audio thread.
   struct BlockReadings {
     std::array<AudioMeter, kRoutingControlMaxGroups> group_meters{};
     std::array<MeterAvailability, kRoutingControlMaxGroups> group_availability{};
@@ -1116,103 +1245,72 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
     }
   }
 
-  const bool topologyChanged =
-      m_routingMeterAccumulatorValid && logicalExtensionImplemented &&
-      m_routingMeterAccumulator.group_output_meters.routing_topology_revision !=
-          m_groupOutputMeterScratch.routing_topology_revision;
+  RoutingMeterTelemetry& accumulator = m_realtimeTelemetrySnapshot.routing_meters;
+  const bool topologyChanged = m_routingMeterAccumulatorValid && logicalExtensionImplemented &&
+                               accumulator.group_output_meters.routing_topology_revision !=
+                                   m_groupOutputMeterScratch.routing_topology_revision;
   if (!m_routingMeterAccumulatorValid || topologyChanged) {
-    m_routingMeterAccumulator.group_aggregate_availability = readings.group_availability;
-    m_routingMeterAccumulator.group_aggregate_meters = readings.group_meters;
-    m_routingMeterAccumulator.master_aggregate_availability = readings.master_availability;
-    m_routingMeterAccumulator.master_aggregate_meter = readings.master_meter;
-    m_routingMeterAccumulator.post_master_output_availability = readings.output_availability;
-    m_routingMeterAccumulator.post_master_output_lane_meters = readings.output_meters;
-    m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
+    accumulator.group_aggregate_availability = readings.group_availability;
+    accumulator.group_aggregate_meters = readings.group_meters;
+    accumulator.master_aggregate_availability = readings.master_availability;
+    accumulator.master_aggregate_meter = readings.master_meter;
+    accumulator.post_master_output_availability = readings.output_availability;
+    accumulator.post_master_output_lane_meters = readings.output_meters;
+    copyGroupOutputMeterRegion(m_groupOutputMeterScratch, false);
     m_routingMeterAccumulatorValid = true;
-    m_routingMeterAccumulator.peak_window_frames = 0;
-    m_routingMeterAccumulator.rms_window_frames = 0;
+    accumulator.peak_window_frames = 0;
+    accumulator.rms_window_frames = 0;
   } else {
     for (RoutingGroupIndex group = 0; group < kRoutingControlMaxGroups; ++group) {
       if (readings.group_availability[group] == MeterAvailability::Measured) {
-        if (m_routingMeterAccumulator.group_aggregate_availability[group] !=
-            MeterAvailability::Measured) {
-          m_routingMeterAccumulator.group_aggregate_meters[group] = readings.group_meters[group];
+        if (accumulator.group_aggregate_availability[group] != MeterAvailability::Measured) {
+          accumulator.group_aggregate_meters[group] = readings.group_meters[group];
         } else {
-          mergeAudioMeter(m_routingMeterAccumulator.group_aggregate_meters[group],
-                          readings.group_meters[group]);
+          mergeAudioMeter(accumulator.group_aggregate_meters[group], readings.group_meters[group]);
         }
-        m_routingMeterAccumulator.group_aggregate_availability[group] = MeterAvailability::Measured;
+        accumulator.group_aggregate_availability[group] = MeterAvailability::Measured;
       } else {
-        m_routingMeterAccumulator.group_aggregate_availability[group] =
-            readings.group_availability[group];
+        accumulator.group_aggregate_availability[group] = readings.group_availability[group];
       }
     }
     if (readings.master_availability == MeterAvailability::Measured) {
-      if (m_routingMeterAccumulator.master_aggregate_availability != MeterAvailability::Measured) {
-        m_routingMeterAccumulator.master_aggregate_meter = readings.master_meter;
+      if (accumulator.master_aggregate_availability != MeterAvailability::Measured) {
+        accumulator.master_aggregate_meter = readings.master_meter;
       } else {
-        mergeAudioMeter(m_routingMeterAccumulator.master_aggregate_meter, readings.master_meter);
+        mergeAudioMeter(accumulator.master_aggregate_meter, readings.master_meter);
       }
-      m_routingMeterAccumulator.master_aggregate_availability = MeterAvailability::Measured;
+      accumulator.master_aggregate_availability = MeterAvailability::Measured;
     }
     for (RoutingOutputIndex output = 0; output < kRoutingMaxOutputs; ++output) {
       if (readings.output_availability[output] == MeterAvailability::Measured) {
-        if (m_routingMeterAccumulator.post_master_output_availability[output] !=
-            MeterAvailability::Measured) {
-          m_routingMeterAccumulator.post_master_output_lane_meters[output] =
-              readings.output_meters[output];
+        if (accumulator.post_master_output_availability[output] != MeterAvailability::Measured) {
+          accumulator.post_master_output_lane_meters[output] = readings.output_meters[output];
         } else {
-          mergeAudioMeter(m_routingMeterAccumulator.post_master_output_lane_meters[output],
+          mergeAudioMeter(accumulator.post_master_output_lane_meters[output],
                           readings.output_meters[output]);
         }
-        m_routingMeterAccumulator.post_master_output_availability[output] =
-            MeterAvailability::Measured;
+        accumulator.post_master_output_availability[output] = MeterAvailability::Measured;
       } else {
-        m_routingMeterAccumulator.post_master_output_availability[output] =
-            readings.output_availability[output];
+        accumulator.post_master_output_availability[output] = readings.output_availability[output];
       }
     }
 
-    if (!logicalExtensionImplemented ||
-        m_groupOutputMeterScratch.availability == MeterAvailability::Unsupported) {
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-    } else if (logicalMeasured) {
-      const GroupOutputMeterSnapshot previous = m_routingMeterAccumulator.group_output_meters;
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-      const RoutingGroupIndex groupCount = std::min<RoutingGroupIndex>(
-          m_groupOutputMeterScratch.group_count, kRoutingControlMaxGroups);
-      if (previous.availability == MeterAvailability::Measured &&
-          previous.routing_topology_revision ==
-              m_groupOutputMeterScratch.routing_topology_revision) {
-        for (RoutingGroupIndex group = 0; group < groupCount; ++group) {
-          auto& accumulatedFrame = m_routingMeterAccumulator.group_output_meters.groups[group];
-          const auto& previousFrame = previous.groups[group];
-          if (accumulatedFrame.availability != MeterAvailability::Measured ||
-              previousFrame.availability != MeterAvailability::Measured) {
-            continue;
-          }
-          const uint16_t laneCount =
-              std::min<uint16_t>(accumulatedFrame.logical_lane_count, kRoutingMaxOutputs);
-          for (uint16_t lane = 0; lane < laneCount; ++lane) {
-            mergeAudioMeter(accumulatedFrame.lane_meters[lane], previousFrame.lane_meters[lane]);
-            mergeAudioMeter(accumulatedFrame.lane_meters[lane],
-                            m_groupOutputMeterScratch.groups[group].lane_meters[lane]);
-          }
-        }
-      }
-    } else {
-      m_routingMeterAccumulator.group_output_meters = m_groupOutputMeterScratch;
-    }
+    // Lanes measured in both the pending window and this block merge in place;
+    // every other populated lane takes this block's reading.
+    const GroupOutputMeterSnapshot& pending = accumulator.group_output_meters;
+    const bool mergeMeasuredLanes =
+        logicalMeasured && pending.availability == MeterAvailability::Measured &&
+        pending.routing_topology_revision == m_groupOutputMeterScratch.routing_topology_revision;
+    copyGroupOutputMeterRegion(m_groupOutputMeterScratch, mergeMeasuredLanes);
   }
 
-  m_routingMeterAccumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;
-  m_routingMeterAccumulator.availability = MeterAvailability::Measured;
-  m_routingMeterAccumulator.aggregate_peak_definition = readings.aggregate_peak_definition;
-  m_routingMeterAccumulator.post_master_output_peak_definition = MeterPeakDefinition::TruePeak4x;
-  m_routingMeterAccumulator.post_master_output_count = readings.output_count;
-  m_routingMeterAccumulator.peak_window_frames =
-      detail::saturatingAdd(m_routingMeterAccumulator.peak_window_frames, numFrames);
-  m_routingMeterAccumulator.rms_window_frames = numFrames;
+  accumulator.schema_version = kRoutingMeterTelemetrySchemaVersion;
+  accumulator.availability = MeterAvailability::Measured;
+  accumulator.aggregate_peak_definition = readings.aggregate_peak_definition;
+  accumulator.post_master_output_peak_definition = MeterPeakDefinition::TruePeak4x;
+  accumulator.post_master_output_count = readings.output_count;
+  accumulator.peak_window_frames = detail::saturatingAdd(accumulator.peak_window_frames, numFrames);
+  accumulator.rms_window_frames = numFrames;
   if (logicalRetryFailed) {
     markLogicalGroupOutputUnmeasured();
   }

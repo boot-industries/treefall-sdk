@@ -364,8 +364,10 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "incrementIngressCounter",
                 "mergeAudioMeter",
                 "markRoutingMetersUnmeasured",
+                "rearmRoutingMeterWindow",
                 "markLogicalGroupOutputUnmeasured",
                 "collectRoutingMeters",
+                "copyGroupOutputMeterRegion",
                 "countActiveVoices",
                 "findOldestVoice",
                 "configureVoiceRouting",
@@ -388,6 +390,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "playbackWindowEnd",
                 "resetSegmentCursor",
                 "advancePlaybackWindow",
+                "clipDspProgramActive",
             ),
         ),
         TargetRow(
