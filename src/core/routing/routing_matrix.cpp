@@ -205,6 +205,13 @@ void RoutingMatrix::claimChannelRoutesForTransport() noexcept {
   m_channel_routes_transport_owned = true;
 }
 
+uint16_t RoutingMatrix::groupOutputWidth(RoutingGroupIndex group_index) const noexcept {
+  if (group_index >= m_groups.size()) {
+    return 0;
+  }
+  return m_groups[group_index].output_width.load(std::memory_order_acquire);
+}
+
 void RoutingMatrix::applyChannelControls(RoutingChannelIndex channel_index,
                                          const ChannelConfig& normalized) {
   auto& channel = m_channels[channel_index];

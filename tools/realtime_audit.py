@@ -477,6 +477,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "activeChannelCount",
                 "getHeadroomCompensation",
                 "setTransportChannelRoute",
+                "groupOutputWidth",
                 ("fillRamp", r"\bvoid\s+fillRamp\s*\("),
             ),
         ),

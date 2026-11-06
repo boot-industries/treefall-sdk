@@ -160,6 +160,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A mono voice's decision to pan into two lanes now follows the group width
+  its transport's routing matrix actually renders. It read a transport-side
+  copy that only `setGroupOutputBus()` updated, so a group narrowed or widened
+  through `getRoutingMatrix()` (`setGroupOutputRoute()`, `configureGroup()`,
+  `applyGroupControlSnapshot()`) rendered mono voices wrong: 3 dB low in a
+  one-lane group, or on one lane only in a group widened to two.
+  `getGroupOutputBus()` reports the matrix's geometry for the same reason.
+  Routes set through `setGroupOutputBus()` behave as before; clip admission
+  still checks the width last accepted by `setGroupOutputBus()`.
 - Routing group-control publication is a fenced, non-waiting seqlock. The
   audio thread renders only complete group gain, mute, solo and output-route
   transactions on every architecture (a torn read was reachable on x86), and

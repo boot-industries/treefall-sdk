@@ -797,6 +797,12 @@ public:
                                               const OutputBusRoute& route) = 0;
 
   /// Query the current physical destination of a logical clip group.
+  ///
+  /// Reports the routing matrix's committed group geometry, so a route set
+  /// through getRoutingMatrix() (setGroupOutputRoute(), configureGroup(),
+  /// applyGroupControlSnapshot()) reads back like one set by setGroupOutputBus().
+  /// Rendering follows the same geometry: a mono voice pans into two lanes only
+  /// when its group is at least two lanes wide.
   virtual std::optional<OutputBusRoute> getGroupOutputBus(RoutingGroupIndex group) const = 0;
 
   /// Set session-level default metadata for new clips

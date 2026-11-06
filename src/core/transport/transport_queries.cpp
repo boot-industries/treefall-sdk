@@ -185,8 +185,10 @@ TransportController::getGroupOutputBus(RoutingGroupIndex group) const {
   if (group >= m_config.numGroups) {
     return std::nullopt;
   }
-  return OutputBusRoute{m_groupOutputStarts[group].load(std::memory_order_acquire),
-                        m_groupOutputWidths[group].load(std::memory_order_acquire)};
+  // The matrix's committed geometry, so a route the host set through
+  // getRoutingMatrix() reads back as faithfully as one set by setGroupOutputBus().
+  const RoutingControlSnapshot controls = m_routingMatrix->getRoutingControlSnapshot();
+  return OutputBusRoute{controls.groups[group].output_start, controls.groups[group].output_width};
 }
 
 SessionDefaults TransportController::getSessionDefaults() const {

@@ -225,6 +225,12 @@ public:
                                              RoutingGroupIndex group_index,
                                              RoutingOutputIndex output_index) noexcept;
 
+  /// Most recently committed output width of one group, whichever public path
+  /// set it (setGroupOutputRoute, configureGroup, applyGroupControlSnapshot,
+  /// loadSnapshot, reset). One atomic load: safe on the audio thread, never
+  /// waits. Returns 0 for a group index outside the configuration.
+  uint16_t groupOutputWidth(RoutingGroupIndex group_index) const noexcept;
+
 private:
   friend class RoutingMatrixTestAccess;
 

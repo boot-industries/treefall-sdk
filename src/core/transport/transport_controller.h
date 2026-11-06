@@ -757,7 +757,10 @@ private:
   // RoutingMatrix::setTransportChannelRoute(), which is not on IRoutingMatrix.
   std::unique_ptr<RoutingMatrix> m_routingMatrix;
   static constexpr size_t MAX_LOGICAL_GROUPS = 32;
-  std::array<std::atomic<RoutingOutputIndex>, MAX_LOGICAL_GROUPS> m_groupOutputStarts{};
+  // Group widths last accepted by setGroupOutputBus(). They gate clip
+  // admission (a clip may not be wider than its group's bus) and nothing else:
+  // rendering and getGroupOutputBus() read the routing matrix's own group
+  // geometry, which hosts may also change through getRoutingMatrix().
   std::array<std::atomic<uint16_t>, MAX_LOGICAL_GROUPS> m_groupOutputWidths{};
 
   // Fixed-capacity audio-thread → message-thread telemetry bridge.

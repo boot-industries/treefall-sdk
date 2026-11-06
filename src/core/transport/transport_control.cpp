@@ -86,7 +86,6 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     }
   }
   for (size_t group = 0; group < MAX_LOGICAL_GROUPS; ++group) {
-    m_groupOutputStarts[group].store(0, std::memory_order_relaxed);
     m_groupOutputWidths[group].store(0, std::memory_order_relaxed);
   }
   for (RoutingGroupIndex group = 0; group < m_config.numGroups; ++group) {
@@ -956,7 +955,6 @@ SessionGraphError TransportController::setGroupOutputBus(RoutingGroupIndex group
   if (result != SessionGraphError::OK) {
     return result;
   }
-  m_groupOutputStarts[group].store(route.outputStart, std::memory_order_release);
   m_groupOutputWidths[group].store(route.channelCount, std::memory_order_release);
   return SessionGraphError::OK;
 }

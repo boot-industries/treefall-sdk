@@ -196,6 +196,21 @@ int main() {
       transportRouting->getRoutingControlSnapshot().groups[0].gain_db != -3.0f) {
     return 16;
   }
+  // getGroupOutputBus() reports the matrix's geometry, whichever path set it.
+  if (transportRouting->setGroupOutputRoute(0, 1, 1) != orpheus::SessionGraphError::OK) {
+    return 17;
+  }
+  const auto matrixBus = transport->getGroupOutputBus(0);
+  if (!matrixBus || matrixBus->outputStart != 1 || matrixBus->channelCount != 1 ||
+      transport->setGroupOutputBus(0, orpheus::OutputBusRoute{0, 2}) !=
+          orpheus::SessionGraphError::OK) {
+    return 17;
+  }
+  const auto restoredBus = transport->getGroupOutputBus(0);
+  if (!restoredBus || restoredBus->outputStart != 0 || restoredBus->channelCount != 2 ||
+      transportRouting->getRoutingControlSnapshot().groups[0].output_width != 2) {
+    return 17;
+  }
 
   const auto wav = writeFixtureWav();
   orpheus::ClipMetadata initialMetadata;
