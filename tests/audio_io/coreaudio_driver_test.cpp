@@ -28,24 +28,42 @@ std::unique_ptr<IAudioDriver> createCoreAudioDriver();
 
 using namespace orpheus;
 
-// Test callback that counts invocations and measures timing
+// Hosted macOS CI runners expose a virtual output device whose IOProc can stall
+// for seconds right after start (observed in CI: 3-4 callbacks inside a 2 s
+// window that real time fills with ~190, and zero callbacks inside 100 ms).
+// Every wait on real device callbacks therefore polls against this generous
+// deadline and returns as soon as its condition holds: a healthy device still
+// finishes in milliseconds, a stalled runner gets time to recover, and a device
+// that never delivers still fails.
+constexpr std::chrono::seconds kDeviceCallbackDeadline{20};
+
+// Test callback that counts invocations and measures the delivered sample rate
 class TestCallback : public IAudioCallback {
 public:
+  // Callbacks up to and including this one are start-up warm-up; the rate
+  // window opens at this callback's timestamp.
+  static constexpr size_t kRateAnchorCall = 16;
+
   void processAudio(const AudioProcessBlock& block) noexcept override {
     auto output_buffers = block.output_buffers;
     const size_t num_channels = block.num_output_channels;
     const size_t num_frames = block.num_frames;
     m_last_num_channels.store(num_channels, std::memory_order_relaxed);
     m_last_num_frames.store(num_frames, std::memory_order_relaxed);
-    m_total_frames.fetch_add(num_frames, std::memory_order_relaxed);
-    m_call_count.fetch_add(1, std::memory_order_release);
+    const size_t call = m_call_count.fetch_add(1, std::memory_order_release) + 1;
 
-    // Record timing for drift measurement
-    auto now = std::chrono::steady_clock::now();
-    if (m_start_time.time_since_epoch().count() == 0) {
-      m_start_time = now;
+    // Rate window: frames delivered after the anchor callback divided by the
+    // time elapsed since it. Counting the anchor block's own frames would bias
+    // the estimate upward by one block per window.
+    const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+    if (call == kRateAnchorCall) {
+      m_rate_anchor_ns.store(now_ns, std::memory_order_relaxed);
+    } else if (call > kRateAnchorCall) {
+      m_rate_last_ns.store(now_ns, std::memory_order_relaxed);
+      m_rate_frames.fetch_add(num_frames, std::memory_order_release);
     }
-    m_last_callback_time = now;
 
     // Fill output with a simple pattern for verification
     for (size_t ch = 0; ch < num_channels; ++ch) {
@@ -82,12 +100,25 @@ public:
     return waitForCallCount(1, timeout);
   }
 
+  // Waits until the rate window holds at least `minimum` frames.
+  bool waitForRateFrames(uint64_t minimum, std::chrono::milliseconds timeout) const {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (m_rate_frames.load(std::memory_order_acquire) < minimum) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+  }
+
   void resetCallCount() {
     m_call_count.store(0, std::memory_order_relaxed);
-    m_total_frames.store(0, std::memory_order_relaxed);
     m_last_num_channels.store(0, std::memory_order_relaxed);
     m_last_num_frames.store(0, std::memory_order_relaxed);
-    m_start_time = std::chrono::steady_clock::time_point{};
+    m_rate_frames.store(0, std::memory_order_relaxed);
+    m_rate_anchor_ns.store(0, std::memory_order_relaxed);
+    m_rate_last_ns.store(0, std::memory_order_relaxed);
   }
 
   size_t getLastNumChannels() const {
@@ -97,30 +128,26 @@ public:
     return m_last_num_frames.load(std::memory_order_acquire);
   }
 
-  uint64_t getTotalFrames() const {
-    return m_total_frames.load(std::memory_order_relaxed);
-  }
-
-  // Calculate actual sample rate based on timing
+  // Delivered sample rate over the rate window. Read after the driver stopped
+  // so the window's frame count and end timestamp belong to the same callback.
   double getMeasuredSampleRate() const {
-    auto duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(m_last_callback_time - m_start_time)
-            .count();
-    if (duration == 0)
+    const int64_t elapsed_ns = m_rate_last_ns.load(std::memory_order_acquire) -
+                               m_rate_anchor_ns.load(std::memory_order_acquire);
+    const uint64_t frames = m_rate_frames.load(std::memory_order_acquire);
+    if (frames == 0 || elapsed_ns <= 0) {
       return 0.0;
-
-    uint64_t frames = m_total_frames.load(std::memory_order_relaxed);
-    return (frames * 1000000.0) / duration;
+    }
+    return (static_cast<double>(frames) * 1e9) / static_cast<double>(elapsed_ns);
   }
 
 private:
   std::atomic<size_t> m_call_count{0};
-  std::atomic<uint64_t> m_total_frames{0};
   std::atomic<uint32_t> m_active_clip_count{0};
   std::atomic<size_t> m_last_num_channels{0};
   std::atomic<size_t> m_last_num_frames{0};
-  std::chrono::steady_clock::time_point m_start_time{};
-  std::chrono::steady_clock::time_point m_last_callback_time{};
+  std::atomic<uint64_t> m_rate_frames{0};
+  std::atomic<int64_t> m_rate_anchor_ns{0};
+  std::atomic<int64_t> m_rate_last_ns{0};
 };
 
 // Input-capture callback (FTR023 regression). Records whether a non-null input
@@ -159,6 +186,16 @@ public:
 
   int getCallCount() const {
     return m_call_count.load(std::memory_order_relaxed);
+  }
+  bool waitForCall(std::chrono::milliseconds timeout) const {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (getCallCount() == 0) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
   }
   bool sawInputBuffer() const {
     return m_saw_input_buffer.load(std::memory_order_relaxed);
@@ -391,7 +428,7 @@ TEST_F(CoreAudioDriverTest, PlaybackOnlyRouteSupports256FrameBuffers) {
   const uint32_t actual_frames = m_driver->getActiveRoute().actual_buffer_frames;
   ASSERT_GT(actual_frames, 0u);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-  ASSERT_TRUE(m_callback->waitForCall(std::chrono::seconds(2))) << "Audio callback never fired";
+  ASSERT_TRUE(m_callback->waitForCall(kDeviceCallbackDeadline)) << "Audio callback never fired";
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
   EXPECT_EQ(m_callback->getLastNumFrames(), config.buffer_size);
 }
@@ -432,9 +469,9 @@ TEST_F(CoreAudioDriverTest, CallbackIsInvoked) {
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
-  // Require sustained callback progress while tolerating hosted-runner startup
-  // latency. Six 512-frame callbacks represent about 64 ms at 48 kHz.
-  ASSERT_TRUE(m_callback->waitForCallCount(6, std::chrono::seconds(2)))
+  // Require sustained callback progress: six 512-frame callbacks are about
+  // 64 ms of device time at 48 kHz (see kDeviceCallbackDeadline for the bound).
+  ASSERT_TRUE(m_callback->waitForCallCount(6, kDeviceCallbackDeadline))
       << "Audio callback stalled after " << m_callback->getCallCount() << " calls";
 
   // Verify callback parameters
@@ -456,7 +493,7 @@ TEST_F(CoreAudioDriverTest, PublishesCallbackActiveClipCount) {
 
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-  ASSERT_TRUE(m_callback->waitForCallCount(6, std::chrono::seconds(2)))
+  ASSERT_TRUE(m_callback->waitForCallCount(6, kDeviceCallbackDeadline))
       << "Audio callback stalled after " << m_callback->getCallCount() << " calls";
   ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
 
@@ -474,9 +511,7 @@ TEST_F(CoreAudioDriverTest, CallbackIsNotInvokedAfterStop) {
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
   // Wait for callbacks
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  int count_while_running = m_callback->getCallCount();
-  EXPECT_GT(count_while_running, 0);
+  ASSERT_TRUE(m_callback->waitForCall(kDeviceCallbackDeadline)) << "Audio callback never fired";
 
   // Stop and reset count
   m_driver->stop();
@@ -540,7 +575,7 @@ TEST_F(CoreAudioDriverTest, StereoConfiguration) {
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ASSERT_TRUE(m_callback->waitForCall(kDeviceCallbackDeadline)) << "Audio callback never fired";
 
   EXPECT_EQ(m_callback->getLastNumChannels(), 2u);
 
@@ -558,7 +593,7 @@ TEST_F(CoreAudioDriverTest, QuadConfiguration) {
   // This may fail if device doesn't support quad - that's OK
   if (error == SessionGraphError::OK) {
     ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_TRUE(m_callback->waitForCall(kDeviceCallbackDeadline)) << "Audio callback never fired";
     EXPECT_EQ(m_callback->getLastNumChannels(), 4u);
     m_driver->stop();
   }
@@ -575,7 +610,7 @@ TEST_F(CoreAudioDriverTest, SurroundConfiguration) {
   // This may fail if device doesn't support 5.1 - that's OK
   if (error == SessionGraphError::OK) {
     ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_TRUE(m_callback->waitForCall(kDeviceCallbackDeadline)) << "Audio callback never fired";
     EXPECT_EQ(m_callback->getLastNumChannels(), 6u);
     m_driver->stop();
   }
@@ -595,10 +630,13 @@ TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(m_callback.get()), SessionGraphError::OK);
 
-  // Let it run for 1 second to measure sample rate accuracy
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  // Measure at least one second of device time after the start-up warm-up
+  // (TestCallback::kRateAnchorCall), then stop so the window is final.
+  ASSERT_TRUE(m_callback->waitForRateFrames(config.sample_rate, kDeviceCallbackDeadline))
+      << "Audio callback stalled after " << m_callback->getCallCount() << " calls";
+  ASSERT_EQ(m_driver->stop(), SessionGraphError::OK);
 
-  double measured_rate = m_callback->getMeasuredSampleRate();
+  const double measured_rate = m_callback->getMeasuredSampleRate();
 
   // Note: Device may not support requested sample rate (e.g., 44.1kHz device with 48kHz request)
   // This test verifies that the device runs at a standard sample rate with low drift
@@ -624,8 +662,6 @@ TEST_F(CoreAudioDriverTest, SampleRateAccuracy) {
     std::cout << "NOTE: Device is running at " << matched_rate << " Hz instead of requested "
               << config.sample_rate << " Hz (common for consumer hardware)" << std::endl;
   }
-
-  m_driver->stop();
 }
 
 // ============================================================================
@@ -740,8 +776,10 @@ TEST_F(CoreAudioDriverTest, InputBufferReachesCallback) {
   InputCaptureCallback capture;
   ASSERT_EQ(m_driver->start(&capture), SessionGraphError::OK);
 
-  // Let capture run long enough for many callbacks (~500ms).
+  // Let capture run long enough for many callbacks (~500ms), and on a stalled
+  // device until the first callback arrives.
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  capture.waitForCall(kDeviceCallbackDeadline);
   m_driver->stop();
 
   ASSERT_GT(capture.getCallCount(), 0) << "Audio callback never fired";
@@ -910,6 +948,7 @@ EndpointPair getSameDeviceEndpointsForTest() {
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  capture.waitForCall(kDeviceCallbackDeadline);
   const SessionGraphError stop_result = driver.stop();
   if (stop_result != SessionGraphError::OK) {
     return ::testing::AssertionFailure()
@@ -1216,7 +1255,7 @@ TEST_F(CoreAudioDriverTest, StopWaitsForAdmittedCallback) {
   BlockingCallback callback;
   ASSERT_EQ(m_driver->initialize(config), SessionGraphError::OK);
   ASSERT_EQ(m_driver->start(&callback), SessionGraphError::OK);
-  if (!callback.waitForEntry(std::chrono::seconds(2))) {
+  if (!callback.waitForEntry(kDeviceCallbackDeadline)) {
     callback.release();
     ADD_FAILURE() << "CoreAudio did not invoke the blocking callback";
     return;
