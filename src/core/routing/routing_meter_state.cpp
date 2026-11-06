@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "routing_meter_state.h"
 
+#include "../common/seqlock_fence.h"
+
 #include <cmath>
 
 namespace orpheus {
@@ -81,7 +83,7 @@ void RoutingMeterState::beginGroupOutputPublication() noexcept {
   // Seqlock writer: the odd value must be visible before any payload store, so
   // a reader that observes a new payload value also observes the odd sequence.
   m_group_output_meter_publication_sequence.fetch_add(1, std::memory_order_relaxed);
-  std::atomic_thread_fence(std::memory_order_release);
+  seqlockReleaseFence();
 }
 
 void RoutingMeterState::publishGroupOutputHeader(RoutingGroupIndex group_count,
@@ -120,7 +122,7 @@ uint64_t RoutingMeterState::groupOutputReadBegin() const noexcept {
 uint64_t RoutingMeterState::groupOutputReadEnd() const noexcept {
   // Orders every payload load of the read window before the closing sequence
   // load, so an equal even pair proves the payload came from one publication.
-  std::atomic_thread_fence(std::memory_order_acquire);
+  seqlockAcquireFence();
   return m_group_output_meter_publication_sequence.load(std::memory_order_relaxed);
 }
 

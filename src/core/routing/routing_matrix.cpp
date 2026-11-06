@@ -2,6 +2,7 @@
 #include "routing_matrix.h"
 #include "../common/pinned_math.h"
 #include "../common/realtime_counter.h"
+#include "../common/seqlock_fence.h"
 #include "gain_smoother.h"
 
 #include <algorithm>
@@ -504,7 +505,7 @@ RoutingControlSnapshot RoutingMatrix::getRoutingControlSnapshot() const noexcept
       state.effective_mute = state.configured_mute || (groupSoloActive && !state.configured_solo);
     }
 
-    std::atomic_thread_fence(std::memory_order_acquire);
+    seqlockAcquireFence();
     const uint64_t after = m_group_control_sequence.load(std::memory_order_relaxed);
     if (before == after) {
       snapshot.revision = after / 2u;
@@ -638,7 +639,7 @@ void RoutingMatrix::beginGroupControlWrite() noexcept {
   // Seqlock writer: the odd value must be visible before any field store, so
   // a reader that observes a new field also observes the odd sequence.
   m_group_control_sequence.fetch_add(1, std::memory_order_relaxed);
-  std::atomic_thread_fence(std::memory_order_release);
+  seqlockReleaseFence();
 }
 
 void RoutingMatrix::endGroupControlWrite() noexcept {
@@ -666,7 +667,7 @@ void RoutingMatrix::refreshRenderGroupControls() noexcept {
   }
   const uint64_t geometryGeneration = m_group_geometry_generation.load(std::memory_order_relaxed);
 
-  std::atomic_thread_fence(std::memory_order_acquire);
+  seqlockAcquireFence();
   if (m_group_control_sequence.load(std::memory_order_relaxed) != before) {
     return;
   }
