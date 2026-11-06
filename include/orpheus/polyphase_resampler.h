@@ -16,8 +16,13 @@ namespace orpheus {
 ///
 /// Design goals (host-neutral SDK contract):
 /// - No third-party dependency (hand-rolled).
-/// - Deterministic: same input -> same output, bit-identical across platforms
-///   (uses double accumulation and a fixed kernel; no RNG, no fast-math).
+/// - Deterministic for a given toolchain, libm and floating-point contraction
+///   setting: the same input produces the same output (double accumulation,
+///   fixed kernel, no RNG, no fast-math). Output is not guaranteed
+///   bit-identical across platforms: the tap design uses libm `sin`/`cos`, and
+///   this code is not built with contraction disabled, so arm64 and x86 builds
+///   may differ in the last bits. Shared cross-platform goldens (such as the
+///   installed-package offline render fixture) prove only their own paths.
 /// - Streaming: process() can be called repeatedly; internal history persists.
 /// - Offline-capable: works outside any real-time constraint.
 ///

@@ -420,7 +420,7 @@ The Treefall SDK provides deterministic session/transport control for profession
 1. **Host-neutral Core** – C++20 library works across DAWs, plugins, and standalone apps
 2. **Real-time Safe** – Zero allocations on audio thread, lock-free command processing
 3. **Sample-accurate** – ±0 sample tolerance for transport operations
-4. **Deterministic** – Same input → same output, always (bit-identical)
+4. **Deterministic** – Same input → same output for a given toolchain, libm and floating-point contraction setting. Cross-platform bit identity is established only for the exact scenarios that assert one shared golden on every tested runner (the transport render-hash scenario and the installed-package offline render fixture), each for its own path; resampled, varispeed and other DSP paths that use libm may differ in the last bits between architectures
 
 ## Core Capabilities
 

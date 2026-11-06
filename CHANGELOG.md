@@ -272,6 +272,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no-touch return: routing control state, the group-output meter snapshot, and
   telemetry are all left unchanged.
 
+- Documentation correction: `PolyphaseResampler`, the README and
+  `ARCHITECTURE.md` no longer claim bit-identical output across platforms.
+  Output is deterministic for a given toolchain, libm and floating-point
+  contraction setting; the resampler's tap design uses libm `sin`/`cos` and is
+  not built with contraction disabled, so arm64 and x86 results may differ in
+  the last bits. Cross-platform bit identity is established only by the
+  scenarios that assert one shared golden on every tested runner (the transport
+  render-hash scenario and the installed-package offline render fixture), each
+  for its own path. No code or compiler flag changed.
+
 ### Verification and remaining acceptance
 
 - Local macOS Debug T1 verification: 12 selected native/package/ABI/realtime/docs
