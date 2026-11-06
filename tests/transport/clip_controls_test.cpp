@@ -366,9 +366,13 @@ TEST_F(ClipAudioControlsTest, InactiveLaneStaysSilentAfterHostRouteEdit) {
 
   ASSERT_EQ(transport->panic(), SessionGraphError::OK);
   render(left, right);
+  // The transport owns its channel routes: every public channel-route writer
+  // is rejected, so the inactive lane cannot be routed back into the mix.
   auto* routing = transport->getRoutingMatrix();
   ASSERT_NE(routing, nullptr);
-  ASSERT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::OK);
+  EXPECT_EQ(routing->setChannelRoute(0, 0, 0), SessionGraphError::NotSupported);
+  EXPECT_EQ(routing->setChannelGroup(0, 0), SessionGraphError::NotSupported);
+  EXPECT_EQ(routing->configureChannel(0, ChannelConfig{}), SessionGraphError::NotSupported);
   render(left, right);
 
   for (float sample : left) {
@@ -377,6 +381,55 @@ TEST_F(ClipAudioControlsTest, InactiveLaneStaysSilentAfterHostRouteEdit) {
   for (float sample : right) {
     EXPECT_NEAR(sample, 0.0f, 1.0e-6f);
   }
+}
+
+// Under StereoPairs the transport pans each voice lane hard left or right in
+// its routing matrix. Snapshot recall (SceneManager builds snapshots with
+// default channel configs) and reset() must keep those lane pans, so a
+// playing stereo voice keeps its imaging bit for bit.
+TEST_F(ClipAudioControlsTest, SnapshotRecallAndResetKeepTransportLanePans) {
+  transport = std::make_unique<TransportController>(
+      nullptr, TransportConfig{.sampleRate = kSampleRate,
+                               .sourceChannelPolicy = SourceChannelPolicy::StereoPairs});
+  ASSERT_EQ(transport->registerClipAudio(handle, path.c_str()), SessionGraphError::OK);
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  value.loopEnabled = true;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 16> referenceLeft{};
+  std::array<float, 16> referenceRight{};
+  render(referenceLeft, referenceRight);
+  render(referenceLeft, referenceRight);
+  // The fixture holds 0.25 on its left channel and 0.5 on its right.
+  ASSERT_GT(referenceLeft.front(), 0.1f);
+  ASSERT_GT(referenceRight.front(), referenceLeft.front() + 0.1f);
+
+  auto* routing = transport->getRoutingMatrix();
+  ASSERT_NE(routing, nullptr);
+  EXPECT_EQ(routing->setChannelPan(0, 0.0f), SessionGraphError::NotSupported);
+
+  const auto expectReferenceImaging = [&](const char* step) {
+    std::array<float, 16> left{};
+    std::array<float, 16> right{};
+    render(left, right);
+    for (size_t frame = 0; frame < left.size(); ++frame) {
+      EXPECT_EQ(left[frame], referenceLeft[frame]) << step << " frame " << frame;
+      EXPECT_EQ(right[frame], referenceRight[frame]) << step << " frame " << frame;
+    }
+  };
+
+  RoutingSnapshot recalled = routing->saveSnapshot("recall");
+  for (auto& channel : recalled.channels) {
+    channel = ChannelConfig{};
+  }
+  ASSERT_EQ(routing->loadSnapshot(recalled), SessionGraphError::OK);
+  expectReferenceImaging("loadSnapshot");
+
+  ASSERT_EQ(routing->reset(), SessionGraphError::OK);
+  expectReferenceImaging("reset");
 }
 TEST_F(ClipAudioControlsTest, MonoCenterPanDuplicatesWithConstantPowerGain) {
   constexpr ClipHandle monoHandle = 2;

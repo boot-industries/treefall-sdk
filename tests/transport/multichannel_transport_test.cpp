@@ -21,8 +21,16 @@ namespace orpheus {
 class TransportControllerTestAccess {
 public:
   static void replaceRoutingMatrix(TransportController& controller,
-                                   std::unique_ptr<IRoutingMatrix> replacement) {
+                                   std::unique_ptr<RoutingMatrix> replacement) {
+    replacement->claimChannelRoutesForTransport();
     controller.m_routingMatrix = std::move(replacement);
+  }
+
+  // Publishes a route through the transport's internal writer. Tests call it
+  // between blocks on the thread that drives processAudio().
+  static SessionGraphError routeLane(TransportController& controller, RoutingChannelIndex lane,
+                                     RoutingGroupIndex group, RoutingOutputIndex output) {
+    return controller.m_routingMatrix->setTransportChannelRoute(lane, group, output);
   }
 };
 } // namespace orpheus
@@ -331,6 +339,170 @@ TEST_F(MultichannelTransportTest, MonoVoiceLaneStaysSilentAfterGroupWidthChange)
 
   std::error_code ignored;
   std::filesystem::remove(monoPath, ignored);
+}
+
+// Whether a mono voice pans into two lanes follows the group width the routing
+// matrix renders, whichever public path set it: setGroupOutputBus() on the
+// transport, or setGroupOutputRoute()/applyGroupControlSnapshot() on its
+// matrix. Matrix-path transports must render bit for bit like the
+// setGroupOutputBus() reference at the same width.
+TEST_F(MultichannelTransportTest, MonoVoiceFollowsGroupWidthSetThroughRoutingMatrix) {
+  const auto monoPath =
+      (std::filesystem::temp_directory_path() / "orpheus_mono_matrix_width.wav").string();
+  writeFixture(monoPath, 1);
+
+  using Block = std::array<std::array<float, kFrames>, 2>;
+  const auto makeTransport = [&] {
+    TransportConfig config;
+    config.sampleRate = kSampleRate;
+    config.outputChannels = 2;
+    config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+    config.maxActiveVoices = 1;
+    config.maxSourceChannels = 2;
+    config.numGroups = 1;
+    config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+    auto transport = createTransportController(nullptr, config);
+    EXPECT_NE(transport, nullptr);
+    EXPECT_EQ(transport->registerClipAudio(31, monoPath), SessionGraphError::OK);
+    auto metadata = transport->getClipMetadata(31);
+    EXPECT_TRUE(metadata.has_value());
+    metadata->loopEnabled = true;
+    metadata->fadeInSeconds = 0.0;
+    metadata->fadeOutSeconds = 0.0;
+    EXPECT_EQ(transport->updateClipMetadata(31, *metadata), SessionGraphError::OK);
+    return transport;
+  };
+  const auto firstBlock = [](ITransportController& transport) {
+    Block storage{};
+    std::array<float*, 2> outputs = {storage[0].data(), storage[1].data()};
+    EXPECT_EQ(transport.startClip(31), SessionGraphError::OK);
+    transport.processAudio(outputs.data(), outputs.size(), kFrames);
+    return storage;
+  };
+  const auto withSnapshotWidth = [](ITransportController& transport, uint16_t width) {
+    auto* routing = transport.getRoutingMatrix();
+    auto desired = routing->getRoutingControlSnapshot();
+    desired.groups[0].output_start = 0;
+    desired.groups[0].output_width = width;
+    return routing->applyGroupControlSnapshot(desired);
+  };
+  const auto expectSameBlock = [](const Block& actual, const Block& expected, const char* path) {
+    for (size_t lane = 0; lane < 2; ++lane) {
+      for (size_t frame = 0; frame < kFrames; ++frame) {
+        ASSERT_EQ(actual[lane][frame], expected[lane][frame])
+            << path << " lane " << lane << " frame " << frame;
+      }
+    }
+  };
+
+  // One lane wide: the voice renders a single unpanned lane.
+  auto narrowReference = makeTransport();
+  ASSERT_EQ(narrowReference->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  const Block narrow = firstBlock(*narrowReference);
+  ASSERT_GT(std::abs(narrow[0][kFrames - 1]), 0.01f);
+  ASSERT_EQ(narrow[1][kFrames - 1], 0.0f);
+
+  auto narrowBySnapshot = makeTransport();
+  ASSERT_EQ(withSnapshotWidth(*narrowBySnapshot, 1), SessionGraphError::OK);
+  expectSameBlock(firstBlock(*narrowBySnapshot), narrow, "applyGroupControlSnapshot narrow");
+
+  auto narrowByRoute = makeTransport();
+  ASSERT_EQ(narrowByRoute->getRoutingMatrix()->setGroupOutputRoute(0, 0, 1), SessionGraphError::OK);
+  expectSameBlock(firstBlock(*narrowByRoute), narrow, "setGroupOutputRoute narrow");
+
+  // Two lanes wide: the voice pans into both lanes.
+  auto wideReference = makeTransport();
+  const Block wide = firstBlock(*wideReference);
+  ASSERT_GT(std::abs(wide[0][kFrames - 1]), 0.01f);
+  ASSERT_GT(std::abs(wide[1][kFrames - 1]), 0.01f);
+
+  auto wideBySnapshot = makeTransport();
+  ASSERT_EQ(wideBySnapshot->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  ASSERT_EQ(withSnapshotWidth(*wideBySnapshot, 2), SessionGraphError::OK);
+  expectSameBlock(firstBlock(*wideBySnapshot), wide, "applyGroupControlSnapshot wide");
+
+  auto wideByRoute = makeTransport();
+  ASSERT_EQ(wideByRoute->setGroupOutputBus(0, OutputBusRoute{0, 1}), SessionGraphError::OK);
+  ASSERT_EQ(wideByRoute->getRoutingMatrix()->setGroupOutputRoute(0, 0, 2), SessionGraphError::OK);
+  expectSameBlock(firstBlock(*wideByRoute), wide, "setGroupOutputRoute wide");
+
+  std::error_code ignored;
+  std::filesystem::remove(monoPath, ignored);
+}
+
+// A voice slot exposes all maxSourceChannels lanes to routing, including the
+// lanes beyond the voice's own channel count. Those lanes must read silence,
+// not the last block a wider voice rendered into the same slot. Hosts can no
+// longer route a transport lane, so the test publishes the route through the
+// transport's internal writer to make the lane's content audible.
+TEST_F(MultichannelTransportTest, LaneBeyondVoiceChannelsStaysSilentAfterSlotReuse) {
+  TransportConfig config;
+  config.sampleRate = kSampleRate;
+  config.outputChannels = kChannels;
+  config.maxBlockFrames = static_cast<uint32_t>(kFrames);
+  config.maxActiveVoices = 1;
+  config.maxSourceChannels = kChannels;
+  config.numGroups = 1;
+  config.sourceChannelPolicy = SourceChannelPolicy::Discrete;
+  auto transport = createTransportController(nullptr, config);
+  ASSERT_NE(transport, nullptr);
+  std::array<std::array<float, kFrames>, kChannels> storage{};
+  std::array<float*, kChannels> outputs{};
+  for (size_t channel = 0; channel < kChannels; ++channel) {
+    outputs[channel] = storage[channel].data();
+  }
+  const auto render = [&] {
+    storage = {};
+    transport->processAudio(outputs.data(), outputs.size(), kFrames);
+  };
+
+  // An 8-channel voice writes every lane of the only voice slot, then ends.
+  ASSERT_EQ(transport->registerClipAudio(40, filePath), SessionGraphError::OK);
+  auto wide = transport->getClipMetadata(40);
+  ASSERT_TRUE(wide.has_value());
+  wide->loopEnabled = true;
+  wide->fadeInSeconds = 0.0;
+  wide->fadeOutSeconds = 0.0;
+  const auto format = ChannelFormat::SMPTE51Stereo();
+  wide->sourceLayout = format.layout;
+  wide->speakerPatchSize = format.num_channels;
+  std::copy_n(format.channel_map.begin(), format.num_channels, wide->speakerPatch.begin());
+  ASSERT_EQ(transport->updateClipMetadata(40, *wide), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(40), SessionGraphError::OK);
+  render();
+  ASSERT_GT(std::abs(storage[5][kFrames - 1]), 0.01f);
+  ASSERT_EQ(transport->panic(), SessionGraphError::OK);
+  render();
+  render();
+
+  // A stereo voice reuses the slot; lanes 2..7 are beyond its channel count,
+  // so it never writes them and voice routing leaves them unassigned.
+  ASSERT_EQ(transport->registerClipAudio(41, stereoPath), SessionGraphError::OK);
+  auto narrow = transport->getClipMetadata(41);
+  ASSERT_TRUE(narrow.has_value());
+  narrow->loopEnabled = true;
+  narrow->fadeInSeconds = 0.0;
+  narrow->fadeOutSeconds = 0.0;
+  ASSERT_EQ(transport->updateClipMetadata(41, *narrow), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(41), SessionGraphError::OK);
+  render();
+
+  // Hosts may not edit transport-owned channel routes.
+  auto* routing = transport->getRoutingMatrix();
+  ASSERT_NE(routing, nullptr);
+  EXPECT_EQ(routing->setChannelRoute(5, 0, 5), SessionGraphError::NotSupported);
+
+  // Route lane 5 to output 5 so whatever the lane holds becomes audible.
+  auto* controller = dynamic_cast<TransportController*>(transport.get());
+  ASSERT_NE(controller, nullptr);
+  ASSERT_EQ(TransportControllerTestAccess::routeLane(*controller, 5, 0, 5), SessionGraphError::OK);
+  for (int block = 0; block < 4; ++block) {
+    render();
+    EXPECT_GT(std::abs(storage[0][kFrames - 1]), 0.01f) << "block " << block;
+    for (size_t frame = 0; frame < kFrames; ++frame) {
+      ASSERT_EQ(storage[5][frame], 0.0f) << "block " << block << " frame " << frame;
+    }
+  }
 }
 
 TEST(MultichannelTransportConfigTest, RejectsUnsupportedRealtimeBounds) {

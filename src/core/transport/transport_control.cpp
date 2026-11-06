@@ -52,7 +52,7 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
       (CLIP_GAIN_SMOOTHING_MS / 1000.0f) * static_cast<float>(m_sampleRate);
   m_clipGainRampIncrement = smoothingSamples > 0.0f ? 1.0f / smoothingSamples : 1.0f;
 
-  m_routingMatrix = createRoutingMatrix();
+  m_routingMatrix = std::make_unique<RoutingMatrix>();
   const size_t routingLaneCount =
       static_cast<size_t>(m_config.maxActiveVoices) * m_config.maxSourceChannels;
 
@@ -86,7 +86,6 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     }
   }
   for (size_t group = 0; group < MAX_LOGICAL_GROUPS; ++group) {
-    m_groupOutputStarts[group].store(0, std::memory_order_relaxed);
     m_groupOutputWidths[group].store(0, std::memory_order_relaxed);
   }
   for (RoutingGroupIndex group = 0; group < m_config.numGroups; ++group) {
@@ -95,6 +94,10 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     (void)m_routingMatrix->setGroupOutputRoute(group, 0,
                                                static_cast<uint16_t>(m_config.outputChannels));
   }
+  // From here on the audio thread is the only writer of channel routes: host
+  // channel-route edits through getRoutingMatrix() are rejected, so the
+  // render-path route publication never contends with a control thread.
+  m_routingMatrix->claimChannelRoutesForTransport();
 
   constexpr size_t kMaxPlaybackRate = 4;
   constexpr size_t kInterpolationGuardFrames = 2;
@@ -952,7 +955,6 @@ SessionGraphError TransportController::setGroupOutputBus(RoutingGroupIndex group
   if (result != SessionGraphError::OK) {
     return result;
   }
-  m_groupOutputStarts[group].store(route.outputStart, std::memory_order_release);
   m_groupOutputWidths[group].store(route.channelCount, std::memory_order_release);
   return SessionGraphError::OK;
 }

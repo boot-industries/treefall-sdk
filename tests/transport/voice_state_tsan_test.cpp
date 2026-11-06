@@ -229,14 +229,18 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
   ASSERT_NE(routing, nullptr);
   const RoutingConfig routingConfig = routing->getConfig();
 
+  std::atomic<uint64_t> renderedBlocks{0};
   std::thread audioThread([&]() {
     while (!stop.load(std::memory_order_relaxed)) {
       m_transport->processAudio(outPtrs.data(), kNumChannels, kNumFrames);
+      renderedBlocks.fetch_add(1, std::memory_order_relaxed);
     }
   });
 
   volatile int sink = 0; // prevent the queries being optimized away
   uint32_t invalidMeterSnapshots = 0;
+  uint32_t acceptedChannelRouteEdits = 0;
+  uint32_t failedGroupEdits = 0;
 
   constexpr int kIterations = 6000;
   GroupOutputMeterSnapshot meterSnapshot;
@@ -267,6 +271,9 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
       }
     }
 
+    // Hosts edit transport routing at group level; the transport's audio
+    // thread is the only channel-route writer, so a concurrent channel-route
+    // edit must be rejected without reaching the render path.
     if ((iter % 5) == 0) {
       const auto channel = static_cast<RoutingChannelIndex>(
           static_cast<size_t>(iter) % (static_cast<size_t>(routingConfig.num_channels)));
@@ -274,7 +281,14 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
           static_cast<RoutingGroupIndex>(static_cast<size_t>(iter) % routingConfig.num_groups);
       const auto lane =
           static_cast<RoutingOutputIndex>(static_cast<size_t>(iter) % routingConfig.num_outputs);
-      routing->setChannelRoute(channel, group, lane);
+      if (routing->setChannelRoute(channel, group, lane) != SessionGraphError::NotSupported) {
+        ++acceptedChannelRouteEdits;
+      }
+      const float gainDb = -static_cast<float>(static_cast<size_t>(iter) % 12);
+      if (routing->setGroupGain(group, gainDb) != SessionGraphError::OK ||
+          routing->setGroupMute(group, (iter % 2) == 0) != SessionGraphError::OK) {
+        ++failedGroupEdits;
+      }
     }
     if ((iter % 11) == 0) {
       const auto group =
@@ -291,6 +305,9 @@ TEST_F(VoiceStateTsanTest, HammerQueriesUnderConcurrentRender) {
 
   stop.store(true, std::memory_order_relaxed);
   audioThread.join();
+  EXPECT_EQ(acceptedChannelRouteEdits, 0u) << "a host channel-route edit reached a transport lane";
+  EXPECT_EQ(failedGroupEdits, 0u);
+  EXPECT_GT(renderedBlocks.load(std::memory_order_relaxed), 0u);
   m_transport->processAudio(outPtrs.data(), kNumChannels, kNumFrames);
   ASSERT_EQ(m_transport->panic(), SessionGraphError::OK);
   m_transport->processAudio(outPtrs.data(), kNumChannels, kNumFrames);

@@ -396,19 +396,23 @@ temporal-coherence acceptance remain separate release/support-promotion gates.
   streaming cache miss renders silence and reports `BufferUnderrun`, never
   blocking. Parity with the old reading path is proven bit-exact by the
   golden render-hash gate.
+- **Audio-thread route publication no longer spins.** `TransportController::
+  configureVoiceRouting` runs on the audio thread (from `processCommands`,
+  `addActiveClip` and voice compaction) and used to publish through
+  `RoutingMatrix::setChannelRoute`, whose `beginChannelRouteWrite` is a
+  compare-exchange spin for writer-to-writer exclusion. A host reaching the
+  same entry through `getRoutingMatrix()` could make the audio thread spin.
+  The transport now claims its matrix (`claimChannelRoutesForTransport`) and
+  publishes voice lanes through the internal `setTransportChannelRoute`, which
+  takes no writer exclusion. On a claimed matrix every public entry that takes
+  the exclusion or rewrites channel routes (`setChannelRoute`,
+  `setChannelGroup`, `configureChannel`, `initialize`) returns `NotSupported`,
+  and `loadSnapshot`/`reset` leave channel routes alone, so the audio thread is
+  the only channel-route writer and never contends. Group-level edits use the
+  separate group-control seqlock, which the audio thread only reads.
 
 ## Known Architecture Debt
 
-- **Audio-thread route publication can spin.** `TransportController::
-  configureVoiceRouting` runs on the audio thread (from `processCommands`,
-  `addActiveClip` and voice compaction) and calls `RoutingMatrix::
-  setChannelRoute`, whose `beginChannelRouteWrite` is a compare-exchange spin
-  (`routing_matrix.cpp`, `beginChannelRouteWrite`). A control-thread writer
-  reaching the same entry through `getRoutingMatrix()` can make the audio
-  thread spin, contradicting the "audio thread never waits" contract in
-  `routing_matrix.h`. The lexical audit passes on `configureVoiceRouting` and
-  does not prove its callee chain; this needs a design change to route
-  publication ownership.
 - The routing matrix now carries explicit `SourceChannelPolicy` and
   `DownmixPolicy`, but transport clip rendering still uses stereo pair buffers.
 - Clip Composer still performs app-level analyzer work in its audio callback in

@@ -46,6 +46,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Behavior change:** the routing matrix returned by
+  `ITransportController::getRoutingMatrix()` is transport-owned. Its
+  `setChannelRoute()`, `setChannelGroup()`, `configureChannel()` and
+  `initialize()` now return `SessionGraphError::NotSupported` without changing
+  state, and `loadSnapshot()`/`reset()` apply everything except channel routes.
+  The transport's audio thread is now the only writer of its voice-lane routes,
+  so a host edit can no longer make the render path spin on the channel-route
+  writer exclusion. Group-level routing and per-channel gain, mute and solo
+  are unchanged, and matrices created with `createRoutingMatrix()` stay
+  fully writable. Migration: hosts that edited per-channel routes on
+  transport-owned lanes must use group-level routing (`setGroupOutputRoute()`,
+  `configureGroup()`, `applyGroupControlSnapshot()`, group gain/mute/solo or
+  `ITransportController::setGroupOutputBus()`). No rebuild is required; the
+  interface layout is unchanged.
+- **Behavior change:** the transport also owns its voice lanes' pans (the
+  hard-left/right lane pans that carry `StereoPairs` imaging). On its routing
+  matrix `setChannelPan()` returns `NotSupported`, and `loadSnapshot()` and
+  `reset()` keep the lane pans instead of resetting them, so a `SceneManager`
+  recall or a routing reset during playback no longer collapses a stereo voice
+  toward mono. Migration: hosts position transport audio with clip metadata
+  `pan` or group-level routing.
 - `RoutingMatrix::processRouting()` materializes each gain and pan smoother
   ramp once per slice (a settled ramp is a constant fill), mixes groups
   lane-major over occupied lanes only, and skips true-peak history resets on
@@ -67,8 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PreparedTapeVarispeed::process` computes its 128 windowed-sinc coefficients
   once per output frame instead of once per channel. Output is bit-identical.
 - The transport render path skips per-voice clip DSP when a voice's program
-  enables no stage, and clears only the source lanes a voice can write. Output
-  is bit-identical; the per-voice render cost drops (ORP282).
+  enables no stage. Output is bit-identical; the per-voice render cost drops
+  (ORP282). Every routing lane of an active voice slot is still cleared each
+  block, so a lane beyond the voice's channel count never replays a previous
+  voice's audio.
 
 - Routing telemetry collection merges logical group-output lanes in place and
   copies only the populated group and lane region of each snapshot instead of
@@ -175,6 +198,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Distinct cursors keep the existing capacity limit. Migration: the class
   gains a private member, so its layout grows; consumers must rebuild against
   the updated `orpheus/clip_source.h`. No API or C ABI table changes.
+- A mono voice's decision to pan into two lanes now follows the group width
+  its transport's routing matrix actually renders. It read a transport-side
+  copy that only `setGroupOutputBus()` updated, so a group narrowed or widened
+  through `getRoutingMatrix()` (`setGroupOutputRoute()`, `configureGroup()`,
+  `applyGroupControlSnapshot()`) rendered mono voices wrong: 3 dB low in a
+  one-lane group, or on one lane only in a group widened to two.
+  `getGroupOutputBus()` reports the matrix's geometry for the same reason.
+  Routes set through `setGroupOutputBus()` behave as before; clip admission
+  still checks the width last accepted by `setGroupOutputBus()`.
 - Routing group-control publication is a fenced, non-waiting seqlock. The
   audio thread renders only complete group gain, mute, solo and output-route
   transactions on every architecture (a torn read was reachable on x86), and

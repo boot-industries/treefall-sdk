@@ -164,18 +164,13 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
   const bool publishTelemetry =
       m_realtimeTelemetry.beginRealtimeBlock(static_cast<uint32_t>(numFrames), m_sampleRate);
 
-  // Only active lanes expose sample storage to routing. Clearing them here
-  // keeps reused slots clean; inactive pointers stay null even if a host edits
-  // their routes directly through the exposed routing matrix. A voice renders
-  // at most max(numChannels, 2) lanes (a mono voice pans into two), and
-  // configureVoiceRouting() leaves every lane beyond its channel count
-  // unassigned, so only the lanes the voice can write need clearing.
+  // addActiveClip() points every lane of an active voice slot at its sample
+  // storage, including lanes beyond the voice's channel count, and the routing
+  // matrix reads whichever of them carry a route. Clear all of them each block
+  // so a reused slot never replays the last block a wider voice rendered.
   for (size_t voiceIndex = 0; voiceIndex < m_activeClipCount; ++voiceIndex) {
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    const uint16_t voiceChannels = m_activeClips[voiceIndex].numChannels;
-    const size_t laneCount = std::min<size_t>(m_config.maxSourceChannels,
-                                              voiceChannels == 1 ? size_t{2} : voiceChannels);
-    for (size_t lane = 0; lane < laneCount; ++lane) {
+    for (size_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
       std::memset(m_clipChannelBuffers[laneBase + lane].data(), 0, numFrames * sizeof(float));
     }
   }
@@ -204,10 +199,9 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const size_t numFileChannels = clip.numChannels;
     const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
-    const bool panMonoToStereo =
-        numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
-        clip.routingGroup < m_config.numGroups &&
-        m_groupOutputWidths[clip.routingGroup].load(std::memory_order_relaxed) >= 2;
+    const bool panMonoToStereo = numFileChannels == 1 && m_config.maxSourceChannels > 1 &&
+                                 clip.routingGroup < m_config.numGroups &&
+                                 m_routingMatrix->groupOutputWidth(clip.routingGroup) >= 2;
     float* const clipReadBuffer = m_clipReadBuffers[voiceIndex].data();
     const size_t clipReadBufferSize = m_clipReadBuffers[voiceIndex].size();
 
@@ -1429,15 +1423,15 @@ void TransportController::configureVoiceRouting(size_t voiceIndex, RoutingGroupI
   const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
   const bool panMonoToStereo = numChannels == 1 && m_config.maxSourceChannels > 1 &&
                                group < m_config.numGroups &&
-                               m_groupOutputWidths[group].load(std::memory_order_relaxed) >= 2;
+                               m_routingMatrix->groupOutputWidth(group) >= 2;
   const uint16_t renderedChannels = panMonoToStereo ? 2 : numChannels;
   for (uint32_t lane = 0; lane < m_config.maxSourceChannels; ++lane) {
     const bool activeLane = lane < renderedChannels;
     const auto routeGroup = activeLane ? group : UNASSIGNED_GROUP;
     const auto output =
         activeLane ? static_cast<RoutingOutputIndex>(lane) : static_cast<RoutingOutputIndex>(0);
-    (void)m_routingMatrix->setChannelRoute(static_cast<RoutingChannelIndex>(laneBase + lane),
-                                           routeGroup, output);
+    (void)m_routingMatrix->setTransportChannelRoute(
+        static_cast<RoutingChannelIndex>(laneBase + lane), routeGroup, output);
   }
 }
 
