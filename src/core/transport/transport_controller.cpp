@@ -69,6 +69,36 @@ PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled)
   return loopEnabled ? PlaybackBoundaryAction::Looped : PlaybackBoundaryAction::Ended;
 }
 
+/// Next window start advancePlaybackWindow would select, without mutating; -1 when the
+/// program ends at the current window.
+int64_t nextPlaybackWindowStart(const ActiveClip& clip, bool loopEnabled) noexcept {
+  if (clip.segmentCount != 0) {
+    if (clip.segmentRepeatsRemaining > 1)
+      return clip.segments[clip.segmentIndex].startSample;
+    if (clip.segmentIndex + 1 < clip.segmentCount)
+      return clip.segments[clip.segmentIndex + 1].startSample;
+    return loopEnabled ? clip.segments[0].startSample : -1;
+  }
+  return loopEnabled ? clip.trimInSamples : -1;
+}
+
+struct VoiceProgram {
+  int64_t windowEnd;
+  int64_t jumpTarget;
+};
+
+/// What a voice will read after its cursor. A stopping voice reads linearly through its stop fade,
+/// past any window end, and so does the last window of a program that ends: its natural-ending
+/// fade-out reads past trim-out. Only a program that jumps has a window end to read up to.
+VoiceProgram voiceProgram(const ActiveClip& clip) noexcept {
+  if (clip.isStopping)
+    return {clip.fileLengthSamples, -1};
+  const int64_t jumpTarget = nextPlaybackWindowStart(clip, clip.loopEnabled);
+  if (jumpTarget < 0)
+    return {clip.fileLengthSamples, -1};
+  return {playbackWindowEnd(clip), jumpTarget};
+}
+
 // Every disabled stage of ClipDspProcessor::processFrame is an exact identity,
 // so a voice whose program enables none of them can skip the per-frame call.
 bool clipDspProgramActive(const ClipDspProgram& program) noexcept {
@@ -154,8 +184,10 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       streamingSources[streamingSourceCount++] = source;
       source->beginVoiceDemands();
     }
+    const VoiceProgram program = voiceProgram(clip);
     clip.streamingDemandIndex =
-        source->addVoiceDemand(static_cast<int64_t>(std::floor(clip.sourcePosition)));
+        source->addVoiceDemand(static_cast<int64_t>(std::floor(clip.sourcePosition)),
+                               program.windowEnd, program.jumpTarget);
   }
   for (size_t index = 0; index < streamingSourceCount; ++index) {
     streamingSources[index]->publishVoiceDemands();
@@ -278,35 +310,58 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
       size_t framesRead = 0;
       bool readSucceeded = true;
+      const VoiceProgram program = voiceProgram(clip);
       if (readStart < clip.fileLengthSamples && samplesNeeded <= clipReadBufferSize) {
         readSucceeded =
             clip.streamingSource
-                ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, readStart,
-                                                     clipReadBuffer, requestedInputFrames,
-                                                     framesRead)
+                ? clip.streamingSource->readForVoice(
+                      clip.streamingDemandIndex, readStart, program.windowEnd, program.jumpTarget,
+                      clipReadBuffer, requestedInputFrames, framesRead)
                 : clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
       }
 
+      const bool wasConcealing = clip.concealing;
+      size_t renderableFrames = segmentFrames;
       if (!readSucceeded) {
-        postVoiceEvent(TransportEventType::BufferUnderrun, clip.handle, 0, clip.voiceId,
-                       getCurrentPosition());
-        m_realtimeTelemetry.reportUnderrunFromRealtime();
-        clip.source->setDemand(readStart);
-        framesRead = 0;
+        if (clip.streamingSource == nullptr) {
+          framesRead = 0; // IClipSource contract: a miss reports no frames
+        }
+        // Output frames whose interpolation pair is resident still render, faded out below.
+        const double residentFrames = static_cast<double>(framesRead) - 1.0 -
+                                      (clip.sourcePosition - static_cast<double>(readStart));
+        renderableFrames =
+            framesRead < 2 || residentFrames <= 0.0
+                ? 0
+                : std::min(segmentFrames,
+                           static_cast<size_t>(std::ceil(residentFrames / playbackRate)));
+        const int64_t firstMissing = readStart + static_cast<int64_t>(framesRead);
+        reportPageMiss(clip, firstMissing, static_cast<uint32_t>(segmentFrames - renderableFrames));
+        clip.source->setDemand(firstMissing);
       }
+      // The first resident frame after a gap fades in from silence, also in a block that
+      // misses again later. A block that ends in a gap leaves the voice concealing.
+      if (wasConcealing && renderableFrames > 0) {
+        clip.concealFadeInRemaining = static_cast<int64_t>(kConcealmentFadeFrames);
+      }
+      clip.concealing = renderableFrames < segmentFrames;
       std::array<float, 8> loopStartFrame{};
       bool hasLoopStartFrame = false;
       if (clip.segmentCount == 0 && loopEnabled &&
           readStart + static_cast<int64_t>(requestedInputFrames) > activeWindowEnd) {
         size_t loopStartFramesRead = 0;
-        hasLoopStartFrame =
-            (clip.streamingSource
-                 ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, activeWindowStart,
-                                                      loopStartFrame.data(), 1, loopStartFramesRead)
-                 : clip.source->read(activeWindowStart, loopStartFrame.data(), 1,
-                                     loopStartFramesRead)) &&
-            loopStartFramesRead == 1;
+        const bool loopStartRead =
+            clip.streamingSource
+                ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, activeWindowStart,
+                                                     program.windowEnd, program.jumpTarget,
+                                                     loopStartFrame.data(), 1, loopStartFramesRead)
+                : clip.source->read(activeWindowStart, loopStartFrame.data(), 1,
+                                    loopStartFramesRead);
+        hasLoopStartFrame = loopStartRead && loopStartFramesRead == 1;
         if (!hasLoopStartFrame) {
+          if (!loopStartRead) {
+            // Only the interpolation frame at the loop boundary missed; nothing is concealed.
+            reportPageMiss(clip, activeWindowStart, 0);
+          }
           clip.source->setDemand(activeWindowStart);
         }
       }
@@ -341,9 +396,27 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
             clip.sourcePosition + playbackRate * static_cast<double>(frame);
         const double localPosition = frameSourcePosition - static_cast<double>(readStart);
         const size_t firstInputFrame = static_cast<size_t>(std::floor(localPosition));
-        if (firstInputFrame >= framesRead) {
+        if (firstInputFrame >= framesRead || frame >= renderableFrames) {
           continue;
         }
+        // Concealment envelopes advance over rendered frames only. The fade-in after a gap
+        // is never restarted by a fresh miss; the fade-out runs ahead of a gap in this block.
+        if (clip.concealFadeInRemaining > 0) {
+          gain *= m_concealmentFade[kConcealmentFadeFrames -
+                                    static_cast<size_t>(clip.concealFadeInRemaining)];
+          --clip.concealFadeInRemaining;
+        }
+        if (renderableFrames < segmentFrames) {
+          const int64_t fade =
+              static_cast<int64_t>(std::min(kConcealmentFadeFrames, renderableFrames));
+          const int64_t toEdge =
+              static_cast<int64_t>(renderableFrames) - static_cast<int64_t>(frame);
+          if (toEdge > 0 && toEdge <= fade) {
+            gain *= m_concealmentFade[static_cast<size_t>(
+                toEdge * static_cast<int64_t>(kConcealmentFadeFrames) / (fade + 1))];
+          }
+        }
+
         const size_t secondInputFrame = std::min(firstInputFrame + 1, framesRead - 1);
         const float fraction =
             static_cast<float>(localPosition - static_cast<double>(firstInputFrame));
@@ -588,6 +661,21 @@ void TransportController::postVoiceEvent(TransportEventType type, ClipHandle han
   event.voiceId = voiceId;
   event.position = position;
   postTransportEvent(event);
+}
+
+void TransportController::reportPageMiss(const ActiveClip& clip, int64_t sourceFrame,
+                                         uint32_t concealedFrames) noexcept {
+  m_pageMissCount = detail::saturatingIncrement(m_pageMissCount);
+  TransportEvent event{};
+  event.type = TransportEventType::BufferUnderrun;
+  event.handle = clip.handle;
+  event.voiceId = clip.voiceId;
+  event.position = getCurrentPosition();
+  event.sourceFrame = sourceFrame;
+  event.concealedFrames = concealedFrames;
+  event.cumulativeCount = m_pageMissCount;
+  postTransportEvent(event);
+  m_realtimeTelemetry.reportUnderrunFromRealtime();
 }
 
 void TransportController::mergeAudioMeter(AudioMeter& accumulated,
@@ -867,7 +955,8 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
 void TransportController::processCommands() {
   detachPendingCommands();
   size_t commandPosition = m_detachedCommandCount;
-  const auto settleStartPrime = [&](const TransportCommand& command, bool retain) noexcept {
+  const auto settleStartPrime = [&](const TransportCommand& command, bool retain,
+                                    int64_t primedStart) noexcept {
     if (command.startSource == nullptr || command.startPrime.pageMask == 0) {
       return;
     }
@@ -875,20 +964,23 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    const int64_t primedStart = command.startContext ? command.startContext->trimInSamples : 0;
     m_pendingStartReservations[m_pendingStartReservationCount++] = {
         command.startSource, command.startPrime, primedStart};
   };
   const auto processStart = [&](const TransportCommand& command) -> uint32_t {
     if (command.requestTag != 0 && m_startSettlementSequenceExhausted) {
-      settleStartPrime(command, false);
+      settleStartPrime(command, false, 0);
       return 0;
     }
 
     const TransportPosition position = getCurrentPosition();
     const uint32_t voiceId =
         command.startContext ? startVoiceWithMode(command.startContext, command.requestTag) : 0;
-    settleStartPrime(command, voiceId != 0);
+    settleStartPrime(command, voiceId != 0,
+                     command.startContext ? programStartSample(command.startContext->trimInSamples,
+                                                               command.startContext->segmentCount,
+                                                               command.startContext->segments)
+                                          : 0);
 
     if (command.requestTag != 0) {
       publishStartSettlement(command.requestTag, command.handle, voiceId, position,
@@ -1058,6 +1150,7 @@ void TransportController::processCommands() {
           startPosition = restartVoiceInPlace(m_activeClips[i]);
         }
       }
+      settleStartPrime(cmd, foundAnyVoice, startPosition);
 
       if (foundAnyVoice) {
         postVoiceEvent(TransportEventType::ClipRestarted, cmd.handle, 0, 0,
@@ -1329,6 +1422,8 @@ int64_t TransportController::restartVoiceInPlace(ActiveClip& clip) {
   }
   clip.isStopping = false;
   clip.hasLoopedOnce = false;
+  clip.concealing = false;
+  clip.concealFadeInRemaining = 0;
   // Broadcast-safe restart crossfade to avoid a click at the reset point.
   clip.isRestarting = true;
   clip.restartFadeFramesRemaining = static_cast<int64_t>(m_restartCrossfadeSamples);
@@ -1393,6 +1488,8 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
       primary->source->setDemand(startPosition);
     primary->isStopping = false;
     primary->hasLoopedOnce = false;
+    primary->concealing = false;
+    primary->concealFadeInRemaining = 0;
     primary->isRestarting = false;
     primary->restartFadeFramesRemaining = 0;
     primary->voiceMode = mode;
@@ -1578,6 +1675,8 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
 
   // ORP097 Bug 7 Fix: Initialize loop state
   clip.hasLoopedOnce = false;
+  clip.concealing = false;
+  clip.concealFadeInRemaining = 0;
 
   // Prime the streaming prefetcher at the first programmed source window
   // (no-op for prepared sources; reads remain position-explicit).

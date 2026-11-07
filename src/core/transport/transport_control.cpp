@@ -99,14 +99,20 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
   // render-path route publication never contends with a control thread.
   m_routingMatrix->claimChannelRoutesForTransport();
 
-  constexpr size_t kMaxPlaybackRate = 4;
-  constexpr size_t kInterpolationGuardFrames = 2;
   m_clipReadBuffers.resize(m_config.maxActiveVoices);
   for (auto& buffer : m_clipReadBuffers) {
-    const size_t inputFrames =
-        static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + kInterpolationGuardFrames;
-    buffer.resize(inputFrames * m_config.maxSourceChannels, 0.0f);
+    buffer.resize(firstRenderFrames(m_config.maxBlockFrames) * m_config.maxSourceChannels, 0.0f);
   }
+
+  // Equal-power concealment curve, sin^2: exactly silent at 0 and unity at the far end.
+  for (size_t index = 0; index <= kConcealmentFadeFrames; ++index) {
+    const double s = orpheus::pinned::sin(
+        static_cast<double>(index) *
+        (static_cast<double>(M_PI_2) / static_cast<double>(kConcealmentFadeFrames)));
+    m_concealmentFade[index] = static_cast<float>(s * s);
+  }
+  m_concealmentFade.front() = 0.0f;
+  m_concealmentFade.back() = 1.0f;
 
   m_clipChannelBuffers.resize(routingLaneCount);
   for (auto& buffer : m_clipChannelBuffers) {
@@ -567,6 +573,9 @@ void TransportController::processCallbacks() {
         break;
       case TransportEventType::BufferUnderrun:
         m_callback->onBufferUnderrun(event.position);
+        m_callback->onClassifiedUnderrun(TransportUnderrun{
+            UnderrunCause::StreamingPageMiss, event.handle, event.voiceId, event.sourceFrame,
+            event.concealedFrames, event.cumulativeCount, event.position});
         break;
       case TransportEventType::ActiveClipLimitReached:
         m_callback->onActiveClipLimitReached(event.handle, event.requestTag, event.position);
@@ -595,20 +604,17 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Preserved contract: preparation is a pre-playback operation. (With
-  // ORP134 G1 sources a re-preparation while playing would actually be safe -
-  // active voices hold their own reference - but the historical NotReady
-  // keeps host behavior unchanged.)
-  if (isClipPlaying(handle)) {
-    return SessionGraphError::NotReady;
-  }
+  // A live voice evicts any unpinned page outside its own window, so a live clip pins its restart
+  // window instead of prefilling the steady one.
+  const bool live = isClipPlaying(handle);
 
   std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
-  return m_sourceRegistry.ensurePreparedSourceLocked(it->second);
+  return live ? m_sourceRegistry.pinRestartWindowLocked(it->second)
+              : m_sourceRegistry.ensurePreparedSourceLocked(it->second);
 }
 
 SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {
@@ -677,14 +683,16 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
   cmd.data.trim = {trimInSamples, trimOutSamples};
   auto* streaming =
       it->second.source ? dynamic_cast<StreamingClipSource*>(it->second.source.get()) : nullptr;
-  if (streaming != nullptr && it->second.loopEnabled) {
+  if (streaming != nullptr) {
     cmd.sourceLifetime = it->second.commandLifetime.get();
     if (cmd.sourceLifetime == nullptr) {
       return SessionGraphError::InternalError;
     }
     m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
-    const auto result =
-        streaming->prepareLoopAnchorTransition(trimInSamples, true, cmd.loopAnchorTransition);
+    const auto result = streaming->prepareLoopAnchorTransition(
+        programStartSample(trimInSamples, it->second.segmentCount, it->second.segments),
+        firstRenderFrames(m_config.maxBlockFrames), it->second.loopEnabled,
+        cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
       cmd.loopAnchorSource = nullptr;
       return result;
@@ -806,8 +814,9 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
       return SessionGraphError::InternalError;
     }
     m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
-    const auto result = streaming->prepareLoopAnchorTransition(it->second.trimInSamples, shouldLoop,
-                                                               cmd.loopAnchorTransition);
+    const auto result = streaming->prepareLoopAnchorTransition(
+        programStartSample(it->second.trimInSamples, it->second.segmentCount, it->second.segments),
+        firstRenderFrames(m_config.maxBlockFrames), shouldLoop, cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
       cmd.loopAnchorSource = nullptr;
       return result;
@@ -912,7 +921,8 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
   if (streaming != nullptr) {
     const SessionGraphError prepareResult = streaming->prepareLoopAnchorTransition(
-        metadata.trimInSamples, metadata.loopEnabled, transition);
+        programStartSample(metadata.trimInSamples, metadata.segmentCount, metadata.segments),
+        firstRenderFrames(m_config.maxBlockFrames), metadata.loopEnabled, transition);
     if (prepareResult != SessionGraphError::OK) {
       return prepareResult;
     }
@@ -1021,6 +1031,23 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
       return result;
     command.type =
         stopOthers ? TransportCommand::Type::StartWithStopOthers : TransportCommand::Type::Start;
+  } else {
+    // A live restart renders from the program start on its next block; prime that window so the
+    // restart never depends on the stream worker. A failed prime publishes the Restart unprimed.
+    auto& registered = entry->second;
+    if (auto* streaming = dynamic_cast<StreamingClipSource*>(registered.source.get());
+        streaming != nullptr && registered.commandLifetime) {
+      StreamingClipSource::PrimeReservation prime{};
+      if (m_sourceRegistry.ensurePreparedSourceLocked(registered, &prime) ==
+          SessionGraphError::OK) {
+        command.sourceLifetime = registered.commandLifetime.get();
+        m_sourceRegistry.retainSourceCommand(command.sourceLifetime);
+        if (prime.pageMask != 0) {
+          command.startSource = streaming;
+          command.startPrime = prime;
+        }
+      }
+    }
   }
   return reservation.publish();
 }
@@ -1065,12 +1092,10 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
   cmd.sourceLifetime = entry.commandLifetime.get();
   if (auto* streaming = dynamic_cast<StreamingClipSource*>(entry.source.get())) {
     cmd.seekSource = streaming;
-    constexpr size_t kMaxPlaybackRate = 4;
-    const size_t firstRenderFrames =
-        static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + 2;
+    const size_t firstRender = firstRenderFrames(m_config.maxBlockFrames);
 
     const auto prime = [&](int64_t start) {
-      return streaming->primeForCommand(start, firstRenderFrames, cmd.seekPrime);
+      return streaming->primeForCommand(start, firstRender, cmd.seekPrime);
     };
     // The renderer clamps a non-segment seek below trim-IN before its first
     // source read. Prime that effective position, not the discarded request.
@@ -1087,7 +1112,7 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     } else if (primeResult == SessionGraphError::OK && entry.loopEnabled) {
       const int64_t trimIn = entry.trimInSamples;
       const int64_t trimOut = entry.trimOutSamples == 0 ? fileLength : entry.trimOutSamples;
-      const int64_t rangeFrames = static_cast<int64_t>(firstRenderFrames);
+      const int64_t rangeFrames = static_cast<int64_t>(firstRender);
       // A position at/past OUT wraps before its first read; otherwise this
       // accepted command could enter trim-IN on a non-resident page.
       if (trimOut > trimIn &&

@@ -475,7 +475,7 @@ TEST_F(RegisteredIngressTest, RejectedLoopTransitionRollsBackAfterOlderCommandIs
       true);
   EXPECT_EQ(transport->getClipMetadata(1)->trimInSamples, before->trimInSamples);
   StreamingClipSource::LoopAnchorTransition inspection{};
-  ASSERT_EQ(source->prepareLoopAnchorTransition(0, false, inspection), SessionGraphError::OK);
+  ASSERT_EQ(source->prepareLoopAnchorTransition(0, 1, false, inspection), SessionGraphError::OK);
   EXPECT_EQ(inspection.previousStart, 0);
   source->rollbackLoopAnchorTransition(inspection);
   ASSERT_EQ(transport->setClipLoopMode(1, false), SessionGraphError::OK);
@@ -499,9 +499,8 @@ TEST_F(RegisteredIngressTest, UnreadLoopTransitionsRollBackNewestFirstDuringTear
   transport.reset(); // No command has been consumed.
   EXPECT_FALSE(source->hasPendingCommandPrimes());
   StreamingClipSource::LoopAnchorTransition inspection{};
-  ASSERT_EQ(source->prepareLoopAnchorTransition(0, false, inspection), SessionGraphError::OK);
-  EXPECT_EQ(inspection.previousPageIndex,
-            StreamingClipSource::LoopAnchorTransition::kInactivePageIndex);
+  ASSERT_EQ(source->prepareLoopAnchorTransition(0, 1, false, inspection), SessionGraphError::OK);
+  EXPECT_EQ(inspection.previousPageMask, 0u);
   EXPECT_EQ(inspection.previousStart, -1);
   source->rollbackLoopAnchorTransition(inspection);
 }

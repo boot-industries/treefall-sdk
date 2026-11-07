@@ -324,20 +324,31 @@ transport->updateClipMetadata(handle, metadata);
 
 Streaming clips share one decoder across their voices. The source keeps six
 steady pages and four separate command-prime pages. Steady pages are budgeted
-per distinct page-aligned cursor: voices on the same page share one window
-(behind, current and four forward pages), and a Stop/refire overlap with two
-independent cursors receives three steady pages per cursor (behind, current,
-and forward). Audio reads retain transient pins, while the worker consumes a
-coherent bounded cursor snapshot and refills current pages before look-ahead.
-First-render primes and loop anchors retain independent ownership.
+per distinct program shape (a cursor page plus the pages the voice's playback
+program reads): voices on the same page that follow the same program share one
+window (behind, current and four forward pages), and a Stop/refire overlap with
+two independent cursors receives three steady pages per cursor (behind,
+current, and forward). Read-ahead follows the playback program, so a segment
+advance or loop wrap prefetches the next window start. Starts, restarts and
+loop anchors pin the pages covering a voice's first render window, and
+`prepareClipAudio()` pins that window for a playing clip. Audio reads retain
+transient pins, while the worker consumes a coherent bounded cursor snapshot
+and refills current pages before look-ahead. First-render primes and loop
+anchors retain independent ownership.
 
-This fixed cache is not an arbitrary-polyphony guarantee. More distinct cursors
-reduce their windows; cursors beyond the six steady-page budget can miss.
-Unavailable command-prime capacity returns `NotReady`; a render cache miss
-remains observable silence plus an underrun, never synchronous decoding.
+This fixed cache is not an arbitrary-polyphony guarantee. More distinct shapes
+reduce their windows; shapes beyond the six steady-page budget can miss.
+Unavailable command-prime capacity returns `NotReady` (a start, restart or
+anchor then falls back to a one-page prime); a render cache miss never decodes
+synchronously. The resident frames of the block still render and fade out over
+64 frames, the voice keeps its schedule and fades back in over 64 frames, and
+every miss is reported through `onBufferUnderrun()`, `onClassifiedUnderrun()`
+and the cumulative `underrun_count`.
+
 Rebuild consumers with matching SDK headers/libraries when adopting this change:
-streaming-source and internal voice layouts changed, but public signatures,
-virtual interfaces and stable C ABI 1.0 exports/layouts did not.
+streaming-source and internal voice layouts changed and `ITransportCallback`
+gained an appended `onClassifiedUnderrun()` virtual; existing public signatures
+and the stable C ABI 1.0 exports/layouts did not change.
 
 ### ⚡ Seamless Restart & Seek
 

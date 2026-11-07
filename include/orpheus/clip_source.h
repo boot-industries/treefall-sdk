@@ -71,7 +71,9 @@ public:
   ///
   /// @return true on success (framesRead = frames actually copied, capped at
   ///         EOF); false on a streaming cache miss (framesRead == 0, dest
-  ///         untouched) — the caller renders silence and reports an underrun.
+  ///         contents unspecified) — the caller renders silence and reports an
+  ///         underrun. The transport's render path conceals the resident prefix of a
+  ///         missed streaming block itself.
   virtual bool read(int64_t pos, float* dest, size_t frames, size_t& framesRead) = 0;
 
   /// Audio-thread hint: playback continues from `pos` (streaming prefetch
@@ -112,12 +114,12 @@ private:
 
 /// Fixed-page streaming source for long files.
 ///
-/// Six steady pages are shared across distinct page-aligned voice cursors;
-/// voices whose cursors sit on the same page share one window. A single
-/// cursor retains one page behind, its current page and four forward pages;
-/// two distinct cursors receive behind/current/forward windows of three pages
-/// each. More distinct cursors reduce runway and can exceed this fixed cache
-/// budget.
+/// Six steady pages are shared across distinct voice program shapes (a cursor page plus the
+/// pages the voice's playback program reads); voices whose cursors sit on the same page and
+/// follow the same program share one window. A single shape retains one page behind, its
+/// current page and four forward pages; two distinct shapes receive behind/current/forward
+/// windows of three pages each. More distinct shapes reduce runway and can exceed this fixed
+/// cache budget.
 /// Four separate command-prime pages retain first-render and loop-anchor leases.
 class StreamingClipSource : public IClipSource {
 public:
@@ -132,12 +134,12 @@ public:
   };
 
   struct LoopAnchorTransition {
-    static constexpr size_t kInactivePageIndex = kNumPages;
-
-    size_t previousPageIndex{kInactivePageIndex};
-    int64_t previousStart{-1};
-    size_t replacementPageIndex{kInactivePageIndex};
+    uint16_t previousPageMask{0};
+    int64_t previousStart{-1}; ///< first anchored page start, -1 when inactive
+    size_t previousPageCount{0};
+    uint16_t replacementPageMask{0};
     int64_t replacementStart{-1};
+    size_t replacementPageCount{0};
   };
 
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
@@ -199,10 +201,15 @@ public:
   void serviceCommandDemand();
 
   /// Prepare an exact loop-anchor ownership transition, retaining the previous
-  /// anchor's pin until commit. CONTROL THREAD ONLY; stages the next control
+  /// anchor's pins until commit. CONTROL THREAD ONLY; stages the next control
   /// anchor and owns transition exclusively until command admission. Never
   /// prepare into or otherwise mutate an admitted command's transition.
-  SessionGraphError prepareLoopAnchorTransition(int64_t pos, bool enabled,
+  ///
+  /// The transition pins every page covering [pos, pos + frames), clamped to
+  /// the clip, as the restart working set. When the command pool cannot hold
+  /// that set (NotReady) it pins only the page holding `pos`; a later prepare
+  /// retries the full set. `enabled == false` stages release of the set.
+  SessionGraphError prepareLoopAnchorTransition(int64_t pos, size_t frames, bool enabled,
                                                 LoopAnchorTransition& transition);
 
   /// Commit a prepared loop-anchor transition under exclusive ownership.
@@ -223,26 +230,58 @@ private:
   friend class StreamingClipSourceTestAccess;
   friend class TransportController;
 
+  // One voice's cursor and the program it will follow: where its current playback window ends and
+  // the window start it jumps to next (-1 when playback ends there). Read-ahead and retention
+  // follow this program, not the file order.
+  struct VoiceDemand {
+    int64_t position{0};
+    int64_t windowEnd{0};   ///< exclusive end of the voice's current playback window
+    int64_t jumpTarget{-1}; ///< next window start after windowEnd; -1 when playback ends there
+  };
+
   // The worker receives one coherent bounded snapshot of every active voice
   // cursor for this source. The six steady pages are budgeted per distinct
-  // page-aligned cursor, not per voice: they support two three-page windows,
-  // three two-page windows, or up to six current pages. More distinct cursors
-  // are a real cache-capacity limit, not a polyphony guarantee.
+  // program shape (cursor page plus the pages its program reads), not per
+  // voice: they support two three-page windows, three two-page windows, or up
+  // to six current pages. More distinct shapes are a real cache-capacity
+  // limit, not a polyphony guarantee.
   static constexpr size_t kMaxVoiceDemands = 32;
   static constexpr uint32_t kVoiceDemandWriter = uint32_t{1} << 31;
   // One active view, possible worker/control readers, and an inactive writer slot.
   static constexpr uint32_t kVoiceDemandBufferCount = 4;
   void beginVoiceDemands() noexcept;
-  size_t addVoiceDemand(int64_t position) noexcept;
+  size_t addVoiceDemand(int64_t position, int64_t windowEnd, int64_t jumpTarget) noexcept;
   void publishVoiceDemands() noexcept;
   void refreshVoicePagePins() noexcept;
-  bool readForVoice(size_t demandIndex, int64_t pos, float* dest, size_t frames,
-                    size_t& framesRead);
+  bool readForVoice(size_t demandIndex, int64_t pos, int64_t windowEnd, int64_t jumpTarget,
+                    float* dest, size_t frames, size_t& framesRead);
   bool readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead);
   bool keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept;
 
+  /// Budget the steady pages per distinct program shape: voices that read the same pages share
+  /// one window, and windows rank by first appearance. Voices on one cursor page that follow
+  /// different programs (a looping voice and a stopping one, say) read different pages, so each
+  /// shape gets its own share and the total retained never exceeds the budget. Audio-side
+  /// retention and the worker refill both derive their windows here from the same published
+  /// demands. Realtime-safe.
+  void computeVoiceWindowPages(const VoiceDemand* demands, size_t count,
+                               std::array<uint8_t, kMaxVoiceDemands>& pages) const noexcept;
+
+  /// The pages one voice reads, in order: `linear` consecutive pages from `current`, then, when
+  /// the program jumps, consecutive pages from `hop`.
+  struct ProgramShape {
+    int64_t current{0};
+    size_t linear{1};
+    int64_t hop{-1}; ///< first page after the jump, -1 when playback ends at the window
+    bool operator==(const ProgramShape&) const noexcept = default;
+  };
+  ProgramShape programShape(const VoiceDemand& demand) const noexcept;
+
+  /// Start of the `ahead`-th page a voice reads, or -1 past the program end or the clip.
+  int64_t programPageStart(const VoiceDemand& demand, size_t ahead) const noexcept;
+
   struct VoiceDemandSnapshot {
-    std::array<int64_t, kMaxVoiceDemands> positions{};
+    std::array<VoiceDemand, kMaxVoiceDemands> demands{};
     size_t count{0};
   };
   struct VoiceDemandBuffer {
@@ -254,7 +293,7 @@ private:
     // This is a bounded pin protocol, not a seqlock over concurrently accessed
     // non-atomic fields.
     std::atomic<uint32_t> access{0};
-    std::array<int64_t, kMaxVoiceDemands> positions{};
+    std::array<VoiceDemand, kMaxVoiceDemands> demands{};
     size_t count{0};
   };
   bool readWorkerVoiceDemands(VoiceDemandSnapshot& snapshot) noexcept;
@@ -343,6 +382,9 @@ private:
   /// Release exactly one caller-owned READY-page pin with bounded atomic work.
   void releaseReadyPin(Page& page) noexcept;
 
+  /// Release one pin on every page whose bit is set in `mask`.
+  void releasePinMask(uint16_t mask) noexcept;
+
   std::shared_ptr<IAudioFileReader> m_reader; // worker/control threads only
   std::mutex m_readerMutex;                   // serializes prefill vs service
   std::mutex m_fillMutex;                     // protects the command-fill request transaction
@@ -351,7 +393,7 @@ private:
   // Audio-thread-owned cursor list; worker threads consume only the pinned
   // immutable multi-buffer snapshot below.
   size_t m_voiceDemandCount{0};
-  std::array<int64_t, kMaxVoiceDemands> m_voiceDemands{};
+  std::array<VoiceDemand, kMaxVoiceDemands> m_voiceDemands{};
   // Audio-thread-owned per-voice steady-page budget, derived at publication
   // from the same positions the worker snapshot carries, so retention and
   // refill follow one plan.
@@ -364,8 +406,9 @@ private:
   std::atomic<bool> m_attached{false}; // set by MediaStreamWorker::attach
   uint64_t m_nextCommandFillGeneration{1};
   CommandFillRequest m_commandFillRequest{};
-  size_t m_loopAnchorPageIndex{kNumPages};
+  uint16_t m_loopAnchorPageMask{0};
   int64_t m_loopAnchorStart{-1};
+  size_t m_loopAnchorPageCount{0};
   uint16_t m_numChannels;
   int64_t m_lengthFrames;
   Page m_pages[kNumPages];

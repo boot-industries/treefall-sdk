@@ -19,6 +19,29 @@ static_assert(std::is_same_v<decltype(&orpheus::RealtimeTelemetry::publishFromRe
 static_assert(orpheus::kRealtimeTelemetrySchemaVersion == 4u);
 static_assert(std::is_trivially_copyable_v<orpheus::RealtimeClockTelemetry>);
 static_assert(std::is_standard_layout_v<orpheus::RealtimeClockTelemetry>);
+static_assert(std::is_trivially_copyable_v<orpheus::TransportUnderrun>);
+static_assert(static_cast<uint8_t>(orpheus::UnderrunCause::StreamingPageMiss) == 0u);
+
+namespace {
+
+// An installed consumer that implements only the four pure virtuals plus the appended hook.
+class UnderrunRecorder final : public orpheus::ITransportCallback {
+public:
+  uint64_t cumulativeCount{0};
+
+  void onClipStarted(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                     orpheus::TransportPosition) override {}
+  void onClipStopped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                     orpheus::TransportPosition) override {}
+  void onClipLooped(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
+                    orpheus::TransportPosition) override {}
+  void onBufferUnderrun(orpheus::TransportPosition) override {}
+  void onClassifiedUnderrun(const orpheus::TransportUnderrun& underrun) override {
+    cumulativeCount = underrun.cumulativeCount;
+  }
+};
+
+} // namespace
 
 int main() {
   orpheus::core::SessionGraph graph;
@@ -112,5 +135,11 @@ int main() {
     return 9;
   }
   transportTelemetry.setDecimationBlocks(4);
-  return transportTelemetry.decimationBlocks() == 4 ? 0 : 6;
+  if (transportTelemetry.decimationBlocks() != 4) {
+    return 6;
+  }
+  UnderrunRecorder recorder;
+  orpheus::ITransportCallback& callback = recorder;
+  callback.onClassifiedUnderrun(orpheus::TransportUnderrun{.cumulativeCount = 7});
+  return recorder.cumulativeCount == 7 ? 0 : 11;
 }

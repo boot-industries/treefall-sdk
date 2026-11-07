@@ -92,7 +92,9 @@ ClipSourceRegistry::ClipSourceRegistry(uint32_t sampleRate, const TransportConfi
                                        const std::atomic<uint16_t>* groupOutputWidths) noexcept
     : m_sampleRate(sampleRate), m_numGroups(config.numGroups),
       m_maxSourceChannels(config.maxSourceChannels), m_outputChannels(config.outputChannels),
-      m_sourceChannelPolicy(config.sourceChannelPolicy), m_groupOutputWidths(groupOutputWidths) {}
+      m_sourceChannelPolicy(config.sourceChannelPolicy),
+      m_firstRenderFrames(firstRenderFrames(config.maxBlockFrames)),
+      m_groupOutputWidths(groupOutputWidths) {}
 
 void ClipSourceRegistry::setPreparedSourceMaxFrames(int64_t maxFrames) noexcept {
   preparedSourceMaxFrames_ = maxFrames;
@@ -342,16 +344,23 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
   // ORP134 G1: build the realtime playback source on the CONTROL thread. All
   // decode/resample/file I/O happens here (or on the stream worker) - the
   // audio thread only ever memcpy-reads the published source.
+  const int64_t start = programStartSample(entry.trimInSamples, entry.segmentCount, entry.segments);
   const auto prepareStreaming = [&](const std::shared_ptr<StreamingClipSource>& streaming) {
     StreamingClipSource::LoopAnchorTransition transition{};
-    SessionGraphError result =
-        streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+    SessionGraphError result = streaming->prepareLoopAnchorTransition(
+        start, m_firstRenderFrames, entry.loopEnabled, transition);
     if (result != SessionGraphError::OK) {
       return result;
     }
-    result = reservation != nullptr
-                 ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                 : streaming->prefill(entry.trimInSamples);
+    if (reservation != nullptr) {
+      result = streaming->primeForCommand(start, m_firstRenderFrames, *reservation);
+      if (result == SessionGraphError::NotReady) {
+        // The command pool cannot hold the whole window: keep the one-frame prime.
+        result = streaming->primeForCommand(start, 1, *reservation);
+      }
+    } else {
+      result = streaming->prefill(start);
+    }
     if (result != SessionGraphError::OK) {
       streaming->rollbackLoopAnchorTransition(transition);
       return result;
@@ -393,22 +402,32 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
     streamWorker_ = std::make_unique<MediaStreamWorker>();
   }
   streamWorker_->attach(streaming);
-  streaming->setDemand(entry.trimInSamples);
+  streaming->setDemand(start);
 
-  StreamingClipSource::LoopAnchorTransition transition{};
-  SessionGraphError result =
-      streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+  const SessionGraphError result = prepareStreaming(streaming);
   if (result != SessionGraphError::OK) {
     return result;
   }
-  result = reservation != nullptr ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                                  : streaming->prefill(entry.trimInSamples);
+  entry.source = streaming;
+  return SessionGraphError::OK;
+}
+
+SessionGraphError ClipSourceRegistry::pinRestartWindowLocked(Entry& entry) {
+  if (!entry.source) {
+    return ensurePreparedSourceLocked(entry);
+  }
+  auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source);
+  if (!streaming) {
+    return SessionGraphError::OK;
+  }
+  StreamingClipSource::LoopAnchorTransition transition{};
+  const SessionGraphError result = streaming->prepareLoopAnchorTransition(
+      programStartSample(entry.trimInSamples, entry.segmentCount, entry.segments),
+      m_firstRenderFrames, true, transition);
   if (result != SessionGraphError::OK) {
-    streaming->rollbackLoopAnchorTransition(transition);
     return result;
   }
   streaming->commitLoopAnchorTransition(transition);
-  entry.source = streaming;
   return SessionGraphError::OK;
 }
 

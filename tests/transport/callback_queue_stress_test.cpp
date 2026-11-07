@@ -416,7 +416,15 @@ namespace {
 // ring can be asserted (not just counts).
 class RecordingCallback : public ITransportCallback {
 public:
-  enum class Kind : uint8_t { Started, Stopped, Looped, Restarted, Seeked, Underrun };
+  enum class Kind : uint8_t {
+    Started,
+    Stopped,
+    Looped,
+    Restarted,
+    Seeked,
+    Underrun,
+    ClassifiedUnderrun
+  };
 
   struct Entry {
     Kind kind;
@@ -445,6 +453,9 @@ public:
   }
   void onBufferUnderrun(TransportPosition /*position*/) override {
     entries.push_back({Kind::Underrun, 0});
+  }
+  void onClassifiedUnderrun(const TransportUnderrun& underrun) override {
+    entries.push_back({Kind::ClassifiedUnderrun, underrun.handle});
   }
 };
 
@@ -499,6 +510,7 @@ public:
   };
   std::array<Entry, 8> entries{};
   std::atomic<size_t> count{0};
+  std::array<TransportUnderrun, 8> underruns{};
 
   void onClipStarted(ClipHandle handle, StartRequestTag tag, uint32_t voice,
                      TransportPosition position) override {
@@ -520,6 +532,13 @@ public:
   }
   void onBufferUnderrun(TransportPosition position) override {
     record(Kind::Underrun, 0, 0, 0, position);
+  }
+  void onClassifiedUnderrun(const TransportUnderrun& underrun) override {
+    const size_t index = count.load(std::memory_order_relaxed);
+    if (index < underruns.size()) {
+      underruns[index] = underrun;
+    }
+    record(Kind::ClassifiedUnderrun, underrun.handle, 0, underrun.voiceId, underrun.position);
   }
 
 private:
@@ -647,7 +666,7 @@ TEST_F(CallbackQueueStressTest, CacheMissCallbacksRequireControlPump) {
 
   EXPECT_NE(audioId, controlId);
   EXPECT_EQ(observedBeforePump, 0u) << "Rendering must only enqueue host callbacks";
-  ASSERT_EQ(recorder.count.load(std::memory_order_acquire), 2u);
+  ASSERT_EQ(recorder.count.load(std::memory_order_acquire), 3u);
   EXPECT_EQ(recorder.entries[0].kind, FixedRecordingCallback::Kind::Started);
   EXPECT_EQ(recorder.entries[0].handle, kHandle);
   EXPECT_EQ(recorder.entries[0].requestTag, kTag);
@@ -655,7 +674,14 @@ TEST_F(CallbackQueueStressTest, CacheMissCallbacksRequireControlPump) {
   EXPECT_EQ(recorder.entries[0].position.samples, 0);
   EXPECT_EQ(recorder.entries[1].kind, FixedRecordingCallback::Kind::Underrun);
   EXPECT_EQ(recorder.entries[1].position.samples, 0);
-  for (size_t index = 0; index < 2; ++index) {
+  EXPECT_EQ(recorder.entries[2].kind, FixedRecordingCallback::Kind::ClassifiedUnderrun);
+  EXPECT_EQ(recorder.underruns[2].cause, UnderrunCause::StreamingPageMiss);
+  EXPECT_EQ(recorder.underruns[2].handle, kHandle);
+  EXPECT_EQ(recorder.underruns[2].voiceId, recorder.entries[0].voiceId);
+  EXPECT_EQ(recorder.underruns[2].sourceFrame, 0);
+  EXPECT_EQ(recorder.underruns[2].concealedFrames, static_cast<uint32_t>(BUFFER_SIZE));
+  EXPECT_EQ(recorder.underruns[2].cumulativeCount, 1u);
+  for (size_t index = 0; index < 3; ++index) {
     EXPECT_EQ(recorder.entries[index].thread, controlId);
     EXPECT_NE(recorder.entries[index].thread, audioId);
   }
