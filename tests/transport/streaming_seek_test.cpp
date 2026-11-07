@@ -3325,6 +3325,81 @@ TEST_F(StreamingSeekMatrixTest, PageMissInsideBlockRendersResidentPrefixWithClic
   EXPECT_EQ(callback.underruns.load(), 1);
 }
 
+TEST_F(StreamingSeekMatrixTest, RecoveryThatMissesAgainFadesInFromSilence) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 0, 432000, 1.0, false,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  // Block A reads [3P - 924, 3P - 412) and block B reads [3P - 412, 3P + 100).
+  ASSERT_EQ(transport->seekClip(1, 3 * page - 924 - 8 * 512), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 8);
+  ASSERT_TRUE(waitForResident(*source, 2 * page));
+  ASSERT_TRUE(waitForResident(*source, 3 * page));
+  const size_t pageX = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  const size_t pageY = StreamingClipSourceTestAccess::residentPageIndex(*source, 3 * page);
+  ASSERT_LT(pageX, StreamingClipSource::kNumPages);
+  ASSERT_LT(pageY, StreamingClipSource::kNumPages);
+  ASSERT_EQ(callback.underruns.load(), 0);
+  const uint32_t previousX = StreamingClipSourceTestAccess::blockReads(*source, pageX);
+  const uint32_t previousY = StreamingClipSourceTestAccess::blockReads(*source, pageY);
+
+  // Block A lies wholly inside the blocked page: silent from its first frame.
+  renderBlocks(*transport, out, block, 1);
+  EXPECT_EQ(callback.underruns.load(), 1);
+  for (size_t frame = 0; frame < block; ++frame) {
+    EXPECT_EQ(out[frame], 0.0f) << "frame " << frame;
+  }
+
+  // Block B has 412 resident frames and then misses again. Its resident part must fade in
+  // from silence, then fade out ahead of the new gap: never a step from silence to full level.
+  StreamingClipSourceTestAccess::unblockReads(*source, pageX, previousX);
+  renderBlocks(*transport, out, block, 1);
+  const float ref = out[200];
+  ASSERT_GT(std::abs(ref), 0.1f);
+  EXPECT_EQ(out[0], 0.0f);
+  for (size_t frame = 1; frame < 64; ++frame) {
+    EXPECT_GE(std::abs(out[frame]), std::abs(out[frame - 1])) << "frame " << frame;
+  }
+  for (size_t frame = 64; frame < 347; ++frame) {
+    EXPECT_FLOAT_EQ(out[frame], ref) << "frame " << frame;
+  }
+  for (size_t frame = 348; frame < 411; ++frame) {
+    EXPECT_LE(std::abs(out[frame]), std::abs(out[frame - 1])) << "frame " << frame;
+  }
+  for (size_t frame = 411; frame < block; ++frame) {
+    EXPECT_EQ(out[frame], 0.0f) << "frame " << frame;
+  }
+  EXPECT_EQ(callback.underruns.load(), 2);
+
+  // Block C is fully resident and follows a gap at the end of B, so it fades in as well.
+  StreamingClipSourceTestAccess::unblockReads(*source, pageY, previousY);
+  renderBlocks(*transport, out, block, 1);
+  EXPECT_EQ(out[0], 0.0f);
+  for (size_t frame = 1; frame < 64; ++frame) {
+    EXPECT_GE(std::abs(out[frame]), std::abs(out[frame - 1])) << "frame " << frame;
+  }
+  for (size_t frame = 64; frame < block; ++frame) {
+    EXPECT_FLOAT_EQ(out[frame], ref) << "frame " << frame;
+  }
+  EXPECT_EQ(callback.underruns.load(), 2);
+
+  ASSERT_EQ(callback.classified.size(), 2u);
+  EXPECT_EQ(callback.classified[0].sourceFrame, 3 * page - 924);
+  EXPECT_EQ(callback.classified[0].concealedFrames, 512u);
+  EXPECT_EQ(callback.classified[0].cumulativeCount, 1u);
+  EXPECT_EQ(callback.classified[1].sourceFrame, 3 * page);
+  EXPECT_EQ(callback.classified[1].concealedFrames, 101u);
+  EXPECT_EQ(callback.classified[1].cumulativeCount, 2u);
+}
+
 TEST_F(StreamingSeekMatrixTest, LoopStartInterpolationMissIsReported) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   constexpr uint32_t block = 512;

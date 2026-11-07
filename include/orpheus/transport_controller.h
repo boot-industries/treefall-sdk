@@ -340,12 +340,13 @@ struct TransportUnderrun {
   uint32_t voiceId{0};
   /// First source frame that was not resident.
   int64_t sourceFrame{0};
-  /// Output frames of this voice replaced by silence in the block; zero when only the
-  /// loop-boundary interpolation frame missed.
+  /// Output frames of this voice replaced by silence in the block; zero when only an
+  /// interpolation frame missed (at a loop boundary or past the block's last output frame).
   uint32_t concealedFrames{0};
   /// Page misses since construction, including this one. A step above one between
   /// consecutive deliveries means callback-ring overflow dropped reports; see
-  /// getCallbackDeliveryTelemetry(). Equals RealtimeDiagnosticsSnapshot::underrun_count.
+  /// getCallbackDeliveryTelemetry(). RealtimeDiagnosticsSnapshot::underrun_count counts the
+  /// same misses.
   uint64_t cumulativeCount{0};
   TransportPosition position{};
 };

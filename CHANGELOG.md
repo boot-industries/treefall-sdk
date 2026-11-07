@@ -46,8 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ITransportCallback::onClassifiedUnderrun(const TransportUnderrun&)` is called
   immediately after `onBufferUnderrun()` for every streamed-page miss, with the
   cause (`UnderrunCause::StreamingPageMiss`), clip, voice, first missing source
-  frame, concealed output frames and the cumulative miss count (equal to
-  `RealtimeDiagnosticsSnapshot::underrun_count`). A step above one between
+  frame, concealed output frames and the cumulative miss count (counting the
+  same misses as `RealtimeDiagnosticsSnapshot::underrun_count`). A step above one between
   consecutive deliveries means callback-ring overflow dropped reports; see
   `getCallbackDeliveryTelemetry()`. The transport observes no device overload,
   so page misses are the only cause today. The virtual is appended to the
@@ -243,7 +243,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns `NotReady`.
 - A streamed-page miss in the middle of a render block keeps the resident
   frames: they fade out over 64 frames, the missing remainder is silent, the
-  voice keeps its schedule and fades back in over 64 frames when data returns.
+  voice keeps its schedule and the first resident frames after a gap fade in
+  over 64 frames, also when the same block misses again later.
   Previously the whole block was silent. A one-frame loop-interpolation miss is
   now reported too. `StreamingClipSource::LoopAnchorTransition` now carries page
   masks and `prepareLoopAnchorTransition()` takes a frame count; the private

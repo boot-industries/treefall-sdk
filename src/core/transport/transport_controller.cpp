@@ -320,6 +320,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                 : clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
       }
 
+      const bool wasConcealing = clip.concealing;
       size_t renderableFrames = segmentFrames;
       if (!readSucceeded) {
         if (clip.streamingSource == nullptr) {
@@ -333,14 +334,16 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
                 ? 0
                 : std::min(segmentFrames,
                            static_cast<size_t>(std::ceil(residentFrames / playbackRate)));
-        clip.concealing = true;
         const int64_t firstMissing = readStart + static_cast<int64_t>(framesRead);
         reportPageMiss(clip, firstMissing, static_cast<uint32_t>(segmentFrames - renderableFrames));
         clip.source->setDemand(firstMissing);
-      } else if (clip.concealing) {
-        clip.concealing = false;
+      }
+      // The first resident frame after a gap fades in from silence, also in a block that
+      // misses again later. A block that ends in a gap leaves the voice concealing.
+      if (wasConcealing && renderableFrames > 0) {
         clip.concealFadeInRemaining = static_cast<int64_t>(kConcealmentFadeFrames);
       }
+      clip.concealing = renderableFrames < segmentFrames;
       std::array<float, 8> loopStartFrame{};
       bool hasLoopStartFrame = false;
       if (clip.segmentCount == 0 && loopEnabled &&
@@ -389,14 +392,21 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           gain *= std::max(0.0f, 1.0f - calculateFadeGain(stopFadePosition, activeStopFadeCurve));
         }
 
-        // The fade-in after a miss runs over resident frames only; a fresh miss never restarts it.
+        const double frameSourcePosition =
+            clip.sourcePosition + playbackRate * static_cast<double>(frame);
+        const double localPosition = frameSourcePosition - static_cast<double>(readStart);
+        const size_t firstInputFrame = static_cast<size_t>(std::floor(localPosition));
+        if (firstInputFrame >= framesRead || frame >= renderableFrames) {
+          continue;
+        }
+        // Concealment envelopes advance over rendered frames only. The fade-in after a gap
+        // is never restarted by a fresh miss; the fade-out runs ahead of a gap in this block.
         if (clip.concealFadeInRemaining > 0) {
           gain *= m_concealmentFade[kConcealmentFadeFrames -
                                     static_cast<size_t>(clip.concealFadeInRemaining)];
           --clip.concealFadeInRemaining;
         }
-        if (!readSucceeded) {
-          // Fade the resident frames out ahead of the gap so the cut is not a click.
+        if (renderableFrames < segmentFrames) {
           const int64_t fade =
               static_cast<int64_t>(std::min(kConcealmentFadeFrames, renderableFrames));
           const int64_t toEdge =
@@ -407,13 +417,6 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           }
         }
 
-        const double frameSourcePosition =
-            clip.sourcePosition + playbackRate * static_cast<double>(frame);
-        const double localPosition = frameSourcePosition - static_cast<double>(readStart);
-        const size_t firstInputFrame = static_cast<size_t>(std::floor(localPosition));
-        if (firstInputFrame >= framesRead || frame >= renderableFrames) {
-          continue;
-        }
         const size_t secondInputFrame = std::min(firstInputFrame + 1, framesRead - 1);
         const float fraction =
             static_cast<float>(localPosition - static_cast<double>(firstInputFrame));
