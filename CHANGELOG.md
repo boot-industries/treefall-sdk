@@ -43,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implementations keep compiling, but every consumer and subclass must
   rebuild; an old prebuilt subclass must not receive the call. The stable C
   ABI tables are unchanged.
+- `ITransportCallback::onClassifiedUnderrun(const TransportUnderrun&)` is called
+  immediately after `onBufferUnderrun()` for every streamed-page miss, with the
+  cause (`UnderrunCause::StreamingPageMiss`), clip, voice, first missing source
+  frame, concealed output frames and the cumulative miss count (equal to
+  `RealtimeDiagnosticsSnapshot::underrun_count`). A step above one between
+  consecutive deliveries means callback-ring overflow dropped reports; see
+  `getCallbackDeliveryTelemetry()`. The transport observes no device overload,
+  so page misses are the only cause today. The virtual is appended to the
+  interface with a no-op default: consumers and subclasses must rebuild; an old
+  prebuilt subclass must not receive the call. The stable C ABI tables are
+  unchanged.
 
 ### Changed
 
@@ -216,6 +227,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Streamed clips no longer underrun at predictable page boundaries. A looping
+  clip pins every page covering its first render window at the program start
+  (one page, or two when the start lies within `maxBlockFrames * 4 + 2` frames
+  of a page end), starts and restarts prime the same window instead of one
+  frame, and read-ahead and retention follow the playback program (a segment
+  advance or loop wrap prefetches the next window start). Each path falls back
+  to the previous single-page prime when the command pool is full, so none is
+  refused more often than before. A looping clip occupies up to one more of its
+  source's four command-pool slots; page buffers are preallocated, so memory is
+  unchanged.
+- `prepareClipAudio()` is accepted on a playing or fading clip. A streamed clip
+  pins its first render window at the program start until the next start or
+  restart, a trim, loop or metadata update, or unregistration; it no longer
+  returns `NotReady`.
+- A streamed-page miss in the middle of a render block keeps the resident
+  frames: they fade out over 64 frames, the missing remainder is silent, the
+  voice keeps its schedule and fades back in over 64 frames when data returns.
+  Previously the whole block was silent. A one-frame loop-interpolation miss is
+  now reported too. `StreamingClipSource::LoopAnchorTransition` now carries page
+  masks and `prepareLoopAnchorTransition()` takes a frame count; the private
+  `StreamingClipSource` layout changes, so rebuild consumers with the updated
+  headers.
 - `StreamingClipSource` budgets its six steady pages per distinct page-aligned
   voice cursor instead of per voice. Voices of one clip that sit on the same
   page now share one behind/current/four-forward window, so six or more

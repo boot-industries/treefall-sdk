@@ -634,7 +634,8 @@ own threading contracts.
 - Lock-free SPSC event queue carrying POD `TransportEvent`s (ORP133 G1) — no
   `std::function` on the audio thread. `processCallbacks()` translates events
   into `ITransportCallback` virtuals (`onClipStarted`, `onClipStopped`,
-  `onClipLooped`, `onClipRestarted`, `onClipSeeked`, `onBufferUnderrun`) on
+  `onClipLooped`, `onClipRestarted`, `onClipSeeked`, `onBufferUnderrun` and its
+  classified companion `onClassifiedUnderrun`) on
   the host's UI thread (typically from a UI timer). This reverse-direction
   callback queue remains SPSC; it is distinct from the bounded MPSC command
   ingress described above.
