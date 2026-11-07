@@ -2970,6 +2970,64 @@ TEST_F(StreamingSeekMatrixTest, LoopWrapNearPageEndKeepsSuccessorPageResident) {
   }
 }
 
+TEST_F(StreamingSeekMatrixTest, RetriggerFarFromTrimInPrimesFirstRenderWindow) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t far = 5 * page + 100;
+  enum class Trigger { StartOverlap, StartStrict, RestartOverlap };
+  for (const uint32_t block : {512u, 2048u}) {
+    for (const double rate : {1.0, 1.04, 2.0}) {
+      for (const int64_t k : {int64_t{1}, int64_t{256}}) {
+        for (const bool loop : {false, true}) {
+          for (const Trigger trigger :
+               {Trigger::StartOverlap, Trigger::StartStrict, Trigger::RestartOverlap}) {
+            SCOPED_TRACE("block=" + std::to_string(block) + " rate=" + std::to_string(rate) +
+                         " k=" + std::to_string(k) + " loop=" + std::to_string(loop) +
+                         " trigger=" + std::to_string(static_cast<int>(trigger)));
+            const VoiceMode mode = trigger == Trigger::StartStrict ? VoiceMode::MonoStrict
+                                                                   : VoiceMode::MonoWithFadeOverlap;
+            auto transport = makeStreamingTransport(block);
+            SeekCallback callback;
+            ASSERT_NO_FATAL_FAILURE(
+                configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                       2 * page - k, 5 * page + 60000, rate, loop, mode));
+            ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+            std::vector<float> out;
+            renderBlocks(*transport, out, block, 2);
+            for (int round = 0; round < 5; ++round) {
+              ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+              renderBlocks(*transport, out, block, 4);
+              ASSERT_EQ(trigger == Trigger::RestartOverlap ? transport->restartClip(1)
+                                                           : transport->startClip(1),
+                        SessionGraphError::OK);
+              renderBlocks(*transport, out, block, 2);
+            }
+            EXPECT_EQ(callback.underruns.load(), 0);
+            EXPECT_EQ(transport->getActiveVoiceCount(1), 1u);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(StreamingSeekMatrixTest, ColdStartShortOfPageBoundaryNeedsNoHostPrefill) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  int total = 0;
+  for (int trial = 0; trial < 40; ++trial) {
+    auto transport = makeStreamingTransport(block);
+    SeekCallback callback;
+    ASSERT_NO_FATAL_FAILURE(
+        configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000), 2 * page - 256,
+                               5 * page, 1.04, true, VoiceMode::MonoWithFadeOverlap));
+    ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+    std::vector<float> out;
+    renderBlocks(*transport, out, block, 4);
+    total += callback.underruns.load();
+  }
+  EXPECT_EQ(total, 0);
+}
+
 TEST(ResamplingSeekPrimeTest, WrappedReaderErrorIsNotConvertedToEof) {
   auto reader = std::make_shared<FaultReader>(48000);
   ResamplingAudioFileReader resampling(reader, 44100);

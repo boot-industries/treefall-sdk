@@ -352,8 +352,15 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
     if (result != SessionGraphError::OK) {
       return result;
     }
-    result = reservation != nullptr ? streaming->primeForCommand(start, 1, *reservation)
-                                    : streaming->prefill(start);
+    if (reservation != nullptr) {
+      result = streaming->primeForCommand(start, m_firstRenderFrames, *reservation);
+      if (result == SessionGraphError::NotReady) {
+        // The command pool cannot hold the whole window: keep the one-frame prime.
+        result = streaming->primeForCommand(start, 1, *reservation);
+      }
+    } else {
+      result = streaming->prefill(start);
+    }
     if (result != SessionGraphError::OK) {
       streaming->rollbackLoopAnchorTransition(transition);
       return result;

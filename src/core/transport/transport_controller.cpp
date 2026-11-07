@@ -867,7 +867,8 @@ void TransportController::collectRoutingMeters(uint32_t numFrames) noexcept {
 void TransportController::processCommands() {
   detachPendingCommands();
   size_t commandPosition = m_detachedCommandCount;
-  const auto settleStartPrime = [&](const TransportCommand& command, bool retain) noexcept {
+  const auto settleStartPrime = [&](const TransportCommand& command, bool retain,
+                                    int64_t primedStart) noexcept {
     if (command.startSource == nullptr || command.startPrime.pageMask == 0) {
       return;
     }
@@ -875,20 +876,23 @@ void TransportController::processCommands() {
       command.startSource->releaseCommandPrime(command.startPrime);
       return;
     }
-    const int64_t primedStart = command.startContext ? command.startContext->trimInSamples : 0;
     m_pendingStartReservations[m_pendingStartReservationCount++] = {
         command.startSource, command.startPrime, primedStart};
   };
   const auto processStart = [&](const TransportCommand& command) -> uint32_t {
     if (command.requestTag != 0 && m_startSettlementSequenceExhausted) {
-      settleStartPrime(command, false);
+      settleStartPrime(command, false, 0);
       return 0;
     }
 
     const TransportPosition position = getCurrentPosition();
     const uint32_t voiceId =
         command.startContext ? startVoiceWithMode(command.startContext, command.requestTag) : 0;
-    settleStartPrime(command, voiceId != 0);
+    settleStartPrime(command, voiceId != 0,
+                     command.startContext ? programStartSample(command.startContext->trimInSamples,
+                                                               command.startContext->segmentCount,
+                                                               command.startContext->segments)
+                                          : 0);
 
     if (command.requestTag != 0) {
       publishStartSettlement(command.requestTag, command.handle, voiceId, position,
@@ -1058,6 +1062,7 @@ void TransportController::processCommands() {
           startPosition = restartVoiceInPlace(m_activeClips[i]);
         }
       }
+      settleStartPrime(cmd, foundAnyVoice, startPosition);
 
       if (foundAnyVoice) {
         postVoiceEvent(TransportEventType::ClipRestarted, cmd.handle, 0, 0,

@@ -1021,6 +1021,23 @@ SessionGraphError TransportController::restartClip(ClipHandle handle) {
       return result;
     command.type =
         stopOthers ? TransportCommand::Type::StartWithStopOthers : TransportCommand::Type::Start;
+  } else {
+    // A live restart renders from the program start on its next block; prime that window so the
+    // restart never depends on the stream worker. A failed prime publishes the Restart unprimed.
+    auto& registered = entry->second;
+    if (auto* streaming = dynamic_cast<StreamingClipSource*>(registered.source.get());
+        streaming != nullptr && registered.commandLifetime) {
+      StreamingClipSource::PrimeReservation prime{};
+      if (m_sourceRegistry.ensurePreparedSourceLocked(registered, &prime) ==
+          SessionGraphError::OK) {
+        command.sourceLifetime = registered.commandLifetime.get();
+        m_sourceRegistry.retainSourceCommand(command.sourceLifetime);
+        if (prime.pageMask != 0) {
+          command.startSource = streaming;
+          command.startPrime = prime;
+        }
+      }
+    }
   }
   return reservation.publish();
 }
