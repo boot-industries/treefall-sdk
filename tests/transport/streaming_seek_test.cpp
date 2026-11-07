@@ -1052,11 +1052,11 @@ TEST_F(StreamingSeekMatrixTest, AdmittedLoopTransitionsRetainPinsUntilAudioConsu
   ASSERT_TRUE(source);
   const size_t oldIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
   ASSERT_LT(oldIndex, StreamingClipSource::kNumPages);
-  // The seeked voice's program wraps to trim-in, so its window also keeps the anchor page: the
-  // voice-demand lease is a second, audio-owned pin beside the anchor's own.
+  // The seeked voice's program wraps to trim-in, so its window keeps the anchor page too. A
+  // command-pool page then carries the audio-owned voice-demand lease beside the anchor's pin;
+  // a steady-window page carries the anchor's pin alone.
   const uint32_t oldBaseline = StreamingClipSourceTestAccess::pageGuard(*source, oldIndex);
-  ASSERT_GE(oldBaseline, 1u);
-  ASSERT_LE(oldBaseline, 2u);
+  ASSERT_EQ(oldBaseline, oldIndex >= StreamingClipSource::kWindowPages ? 2u : 1u);
 
   ASSERT_EQ(transport->updateClipTrimPoints(1, 3 * page + 100, trimOut), SessionGraphError::OK);
   const size_t intermediateIndex =
@@ -3112,6 +3112,40 @@ TEST_F(StreamingSeekMatrixTest, LoopWrapNearPageEndKeepsSuccessorPageResident) {
   }
 }
 
+TEST_F(StreamingSeekMatrixTest, LoopWrapWithTrimOutOnPageBoundaryHasNoMiss) {
+  // The last frame a block interpolates is the one at trim-out, so a trim-out on or next to a
+  // page boundary needs the page after the window resident as well.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  for (const int64_t trimOut : {5 * page - 1, 5 * page, 5 * page + 1}) {
+    for (const double rate : {1.0, 1.04}) {
+      SCOPED_TRACE("trimOut=" + std::to_string(trimOut) + " rate=" + std::to_string(rate));
+      const int64_t trimIn = 2 * page - 256;
+      auto transport = makeStreamingTransport(block);
+      SeekCallback callback;
+      ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback,
+                                                     sourcePath(48000, 1, 48000), trimIn, trimOut,
+                                                     rate, true, VoiceMode::MonoWithFadeOverlap));
+      ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+      std::vector<float> out;
+      renderBlocks(*transport, out, block, 2);
+
+      const int64_t step = static_cast<int64_t>(std::ceil(static_cast<double>(block) * rate));
+      const int64_t lead = static_cast<int64_t>(block) * 4 + 2 + 4 * step + 2;
+      const int64_t parked = trimOut - lead;
+      const auto blocks = static_cast<size_t>(
+          std::ceil(static_cast<double>(lead) / (static_cast<double>(block) * rate)) + 2);
+      for (int wrap = 0; wrap < 10; ++wrap) {
+        ASSERT_EQ(transport->seekClip(1, parked), SessionGraphError::OK);
+        renderBlocks(*transport, out, block, blocks);
+      }
+      EXPECT_EQ(callback.loops.load(), 10);
+      EXPECT_EQ(callback.underruns.load(), 0);
+      EXPECT_TRUE(callback.classified.empty());
+    }
+  }
+}
+
 TEST_F(StreamingSeekMatrixTest, RetriggerFarFromTrimInPrimesFirstRenderWindow) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   const int64_t far = 5 * page + 100;
@@ -3272,12 +3306,39 @@ TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveLoopKeepsExistingAnchor) {
       recorded.emplace_back(start, StreamingClipSourceTestAccess::pageGuard(*source, index));
     }
   }
+  ASSERT_EQ(recorded.size(), 2u) << "both pages of the first-render window must be resident";
+  for (const auto& entry : recorded) {
+    ASSERT_GE(entry.second, 1u) << "page " << entry.first << " must be pinned by the anchor";
+  }
   ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
   for (const auto& [start, guard] : recorded) {
     const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, start);
     ASSERT_LT(index, StreamingClipSource::kNumPages);
     EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, index), guard) << "page " << start;
   }
+}
+
+TEST_F(StreamingSeekMatrixTest, UnconsumedLiveRestartReleasesItsPrimeOnTeardown) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 2 * page - 256, 5 * page + 60000, 1.0, false,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  ASSERT_EQ(transport->seekClip(1, 5 * page + 100), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+
+  // The restart pins the first-render window on the control thread; it is never consumed.
+  ASSERT_EQ(transport->restartClip(1), SessionGraphError::OK);
+  ASSERT_TRUE(source->hasPendingCommandPrimes());
+  transport.reset();
+  EXPECT_FALSE(source->hasPendingCommandPrimes());
 }
 
 TEST_F(StreamingSeekMatrixTest, SegmentAdvanceToDistantPageIsPrefetchedBeforeTheJump) {

@@ -454,6 +454,9 @@ public:
   void onBufferUnderrun(TransportPosition /*position*/) override {
     entries.push_back({Kind::Underrun, 0});
   }
+  void onClassifiedUnderrun(const TransportUnderrun& underrun) override {
+    entries.push_back({Kind::ClassifiedUnderrun, underrun.handle});
+  }
 };
 
 class OneCacheMissSource final : public IClipSource {
