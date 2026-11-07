@@ -228,6 +228,15 @@ private:
   friend class StreamingClipSourceTestAccess;
   friend class TransportController;
 
+  // One voice's cursor and the program it will follow: where its current playback window ends and
+  // the window start it jumps to next (-1 when playback ends there). Read-ahead and retention
+  // follow this program, not the file order.
+  struct VoiceDemand {
+    int64_t position{0};
+    int64_t windowEnd{0};   ///< exclusive end of the voice's current playback window
+    int64_t jumpTarget{-1}; ///< next window start after windowEnd; -1 when playback ends there
+  };
+
   // The worker receives one coherent bounded snapshot of every active voice
   // cursor for this source. The six steady pages are budgeted per distinct
   // page-aligned cursor, not per voice: they support two three-page windows,
@@ -238,16 +247,34 @@ private:
   // One active view, possible worker/control readers, and an inactive writer slot.
   static constexpr uint32_t kVoiceDemandBufferCount = 4;
   void beginVoiceDemands() noexcept;
-  size_t addVoiceDemand(int64_t position) noexcept;
+  size_t addVoiceDemand(int64_t position, int64_t windowEnd, int64_t jumpTarget) noexcept;
   void publishVoiceDemands() noexcept;
   void refreshVoicePagePins() noexcept;
-  bool readForVoice(size_t demandIndex, int64_t pos, float* dest, size_t frames,
-                    size_t& framesRead);
+  bool readForVoice(size_t demandIndex, int64_t pos, int64_t windowEnd, int64_t jumpTarget,
+                    float* dest, size_t frames, size_t& framesRead);
   bool readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead);
   bool keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept;
 
+  /// Budget the steady pages per distinct page-aligned cursor: voices on the same page share one
+  /// window, and windows rank by first appearance. Audio-side retention and the worker refill both
+  /// derive their windows here from the same published demands. Realtime-safe.
+  static void computeVoiceWindowPages(const VoiceDemand* demands, size_t count,
+                                      std::array<uint8_t, kMaxVoiceDemands>& pages) noexcept;
+
+  /// The pages one voice reads, in order: `linear` consecutive pages from `current`, then, when
+  /// the program jumps, consecutive pages from `hop`.
+  struct ProgramShape {
+    int64_t current{0};
+    size_t linear{1};
+    int64_t hop{-1}; ///< first page after the jump, -1 when playback ends at the window
+  };
+  ProgramShape programShape(const VoiceDemand& demand) const noexcept;
+
+  /// Start of the `ahead`-th page a voice reads, or -1 past the program end or the clip.
+  int64_t programPageStart(const VoiceDemand& demand, size_t ahead) const noexcept;
+
   struct VoiceDemandSnapshot {
-    std::array<int64_t, kMaxVoiceDemands> positions{};
+    std::array<VoiceDemand, kMaxVoiceDemands> demands{};
     size_t count{0};
   };
   struct VoiceDemandBuffer {
@@ -259,7 +286,7 @@ private:
     // This is a bounded pin protocol, not a seqlock over concurrently accessed
     // non-atomic fields.
     std::atomic<uint32_t> access{0};
-    std::array<int64_t, kMaxVoiceDemands> positions{};
+    std::array<VoiceDemand, kMaxVoiceDemands> demands{};
     size_t count{0};
   };
   bool readWorkerVoiceDemands(VoiceDemandSnapshot& snapshot) noexcept;
@@ -359,7 +386,7 @@ private:
   // Audio-thread-owned cursor list; worker threads consume only the pinned
   // immutable multi-buffer snapshot below.
   size_t m_voiceDemandCount{0};
-  std::array<int64_t, kMaxVoiceDemands> m_voiceDemands{};
+  std::array<VoiceDemand, kMaxVoiceDemands> m_voiceDemands{};
   // Audio-thread-owned per-voice steady-page budget, derived at publication
   // from the same positions the worker snapshot carries, so retention and
   // refill follow one plan.

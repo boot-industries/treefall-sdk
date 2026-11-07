@@ -142,7 +142,8 @@ public:
                              size_t count) {
     source.beginVoiceDemands();
     for (size_t index = 0; index < count; ++index) {
-      source.addVoiceDemand(positions[index]);
+      // A linear program: the window runs to the end of the clip and never jumps.
+      source.addVoiceDemand(positions[index], source.lengthFrames(), -1);
     }
     source.publishVoiceDemands();
   }
@@ -153,13 +154,16 @@ public:
       return false;
     }
     result.count = snapshot.count;
-    result.positions = snapshot.positions;
+    for (size_t index = 0; index < snapshot.count; ++index) {
+      result.positions[index] = snapshot.demands[index].position;
+    }
     return true;
   }
 
   static bool readForVoice(StreamingClipSource& source, size_t demandIndex, int64_t position,
                            float* destination, size_t frames, size_t& framesRead) {
-    return source.readForVoice(demandIndex, position, destination, frames, framesRead);
+    return source.readForVoice(demandIndex, position, source.lengthFrames(), -1, destination,
+                               frames, framesRead);
   }
   static bool acquireTransientReadPin(StreamingClipSource& source, size_t index,
                                       int64_t expectedStart) {
@@ -623,6 +627,18 @@ bool waitForEvicted(TransportController& transport, StreamingClipSource& source,
   return false;
 }
 
+bool waitForResident(StreamingClipSource& source, int64_t pageStart) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (StreamingClipSourceTestAccess::residentPageIndex(source, pageStart) <
+        StreamingClipSource::kNumPages) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return false;
+}
+
 void drainAndCrossLoop(TransportController& transport, SeekCallback& callback,
                        std::vector<float>& output, uint32_t block, int64_t trimOut) {
   float* buffers[] = {output.data()};
@@ -1004,7 +1020,11 @@ TEST_F(StreamingSeekMatrixTest, AdmittedLoopTransitionsRetainPinsUntilAudioConsu
   ASSERT_TRUE(source);
   const size_t oldIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
   ASSERT_LT(oldIndex, StreamingClipSource::kNumPages);
-  ASSERT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 1u);
+  // The seeked voice's program wraps to trim-in, so its window also keeps the anchor page: the
+  // voice-demand lease is a second, audio-owned pin beside the anchor's own.
+  const uint32_t oldBaseline = StreamingClipSourceTestAccess::pageGuard(*source, oldIndex);
+  ASSERT_GE(oldBaseline, 1u);
+  ASSERT_LE(oldBaseline, 2u);
 
   ASSERT_EQ(transport->updateClipTrimPoints(1, 3 * page + 100, trimOut), SessionGraphError::OK);
   const size_t intermediateIndex =
@@ -1014,7 +1034,7 @@ TEST_F(StreamingSeekMatrixTest, AdmittedLoopTransitionsRetainPinsUntilAudioConsu
   ASSERT_EQ(transport->updateClipTrimPoints(1, 4 * page + 100, trimOut), SessionGraphError::OK);
   const size_t finalIndex = StreamingClipSourceTestAccess::residentPageIndex(*source, 4 * page);
   ASSERT_LT(finalIndex, StreamingClipSource::kNumPages);
-  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 1u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), oldBaseline);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, intermediateIndex), 1u);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, finalIndex), 1u);
 
@@ -1038,7 +1058,7 @@ TEST_F(StreamingSeekMatrixTest, AdmittedLoopTransitionsRetainPinsUntilAudioConsu
   EXPECT_NE(audioThread, controlThread);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, oldIndex), 2 * page);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageStart(*source, intermediateIndex), 3 * page);
-  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), 0u);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, oldIndex), oldBaseline - 1);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, intermediateIndex), 0u);
   EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, finalIndex), 1u);
   EXPECT_EQ(RtGuardState::totalViolations(), 0u);
@@ -3147,6 +3167,37 @@ TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveLoopKeepsExistingAnchor) {
     const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, start);
     ASSERT_LT(index, StreamingClipSource::kNumPages);
     EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, index), guard) << "page " << start;
+  }
+}
+
+TEST_F(StreamingSeekMatrixTest, SegmentAdvanceToDistantPageIsPrefetchedBeforeTheJump) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  for (const double rate : {1.0, 1.04}) {
+    for (const int64_t k : {int64_t{1}, int64_t{256}}) {
+      SCOPED_TRACE("rate=" + std::to_string(rate) + " k=" + std::to_string(k));
+      auto transport = makeStreamingTransport(block);
+      SeekCallback callback;
+      ASSERT_NO_FATAL_FAILURE(
+          configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000), 0, 432000, rate,
+                                 true, VoiceMode::MonoWithFadeOverlap,
+                                 {ClipPlaybackSegment{5 * page + 1000, 5 * page + 40000, 1},
+                                  ClipPlaybackSegment{page - k, page + 30000, 1}}));
+      ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+      std::vector<float> out;
+      renderBlocks(*transport, out, block, 1);
+      auto source = TransportControllerTestAccess::source(*transport, 1);
+      ASSERT_TRUE(source);
+      for (int cycle = 0; cycle < 3; ++cycle) {
+        renderBlocks(*transport, out, block, 4);
+        ASSERT_TRUE(waitForResident(*source, 0) && waitForResident(*source, page))
+            << "segment target not prefetched";
+        const auto blocks = static_cast<size_t>(
+            std::ceil(static_cast<double>(39000 + 30000 + k) / (512.0 * rate)) + 4);
+        renderBlocks(*transport, out, block, blocks);
+      }
+      EXPECT_EQ(callback.underruns.load(), 0);
+    }
   }
 }
 

@@ -69,6 +69,36 @@ PlaybackBoundaryAction advancePlaybackWindow(ActiveClip& clip, bool loopEnabled)
   return loopEnabled ? PlaybackBoundaryAction::Looped : PlaybackBoundaryAction::Ended;
 }
 
+/// Next window start advancePlaybackWindow would select, without mutating; -1 when the
+/// program ends at the current window.
+int64_t nextPlaybackWindowStart(const ActiveClip& clip, bool loopEnabled) noexcept {
+  if (clip.segmentCount != 0) {
+    if (clip.segmentRepeatsRemaining > 1)
+      return clip.segments[clip.segmentIndex].startSample;
+    if (clip.segmentIndex + 1 < clip.segmentCount)
+      return clip.segments[clip.segmentIndex + 1].startSample;
+    return loopEnabled ? clip.segments[0].startSample : -1;
+  }
+  return loopEnabled ? clip.trimInSamples : -1;
+}
+
+struct VoiceProgram {
+  int64_t windowEnd;
+  int64_t jumpTarget;
+};
+
+/// What a voice will read after its cursor. A stopping voice reads linearly through its stop fade,
+/// past any window end, and so does the last window of a program that ends: its natural-ending
+/// fade-out reads past trim-out. Only a program that jumps has a window end to read up to.
+VoiceProgram voiceProgram(const ActiveClip& clip) noexcept {
+  if (clip.isStopping)
+    return {clip.fileLengthSamples, -1};
+  const int64_t jumpTarget = nextPlaybackWindowStart(clip, clip.loopEnabled);
+  if (jumpTarget < 0)
+    return {clip.fileLengthSamples, -1};
+  return {playbackWindowEnd(clip), jumpTarget};
+}
+
 // Every disabled stage of ClipDspProcessor::processFrame is an exact identity,
 // so a voice whose program enables none of them can skip the per-frame call.
 bool clipDspProgramActive(const ClipDspProgram& program) noexcept {
@@ -154,8 +184,10 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       streamingSources[streamingSourceCount++] = source;
       source->beginVoiceDemands();
     }
+    const VoiceProgram program = voiceProgram(clip);
     clip.streamingDemandIndex =
-        source->addVoiceDemand(static_cast<int64_t>(std::floor(clip.sourcePosition)));
+        source->addVoiceDemand(static_cast<int64_t>(std::floor(clip.sourcePosition)),
+                               program.windowEnd, program.jumpTarget);
   }
   for (size_t index = 0; index < streamingSourceCount; ++index) {
     streamingSources[index]->publishVoiceDemands();
@@ -278,12 +310,13 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
 
       size_t framesRead = 0;
       bool readSucceeded = true;
+      const VoiceProgram program = voiceProgram(clip);
       if (readStart < clip.fileLengthSamples && samplesNeeded <= clipReadBufferSize) {
         readSucceeded =
             clip.streamingSource
-                ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, readStart,
-                                                     clipReadBuffer, requestedInputFrames,
-                                                     framesRead)
+                ? clip.streamingSource->readForVoice(
+                      clip.streamingDemandIndex, readStart, program.windowEnd, program.jumpTarget,
+                      clipReadBuffer, requestedInputFrames, framesRead)
                 : clip.source->read(readStart, clipReadBuffer, requestedInputFrames, framesRead);
       }
 
@@ -302,6 +335,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         hasLoopStartFrame =
             (clip.streamingSource
                  ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, activeWindowStart,
+                                                      program.windowEnd, program.jumpTarget,
                                                       loopStartFrame.data(), 1, loopStartFramesRead)
                  : clip.source->read(activeWindowStart, loopStartFrame.data(), 1,
                                      loopStartFramesRead)) &&

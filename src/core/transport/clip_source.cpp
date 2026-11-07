@@ -68,52 +68,6 @@ bool PreparedClipSource::read(int64_t pos, float* dest, size_t frames, size_t& f
 // StreamingClipSource
 // ============================================================================
 
-namespace {
-
-// Budget the steady pages per distinct page-aligned cursor: voices on the same
-// page share one window, and windows rank by first appearance. Audio-side
-// retention (publishVoiceDemands/keepsPage) and the worker refill
-// (serviceVoiceWindow) both derive their windows here from the same published
-// positions, so neither can evict or refill against the other's plan.
-// Realtime-safe: at most Capacity^2 integer compares, no allocation, no locks.
-template <size_t Capacity>
-void computeVoiceWindowPages(const int64_t* positions, size_t count,
-                             std::array<uint8_t, Capacity>& pages) noexcept {
-  static_assert(Capacity <= UINT8_MAX, "window ranks are stored in the plan bytes");
-  constexpr int64_t kPage = static_cast<int64_t>(StreamingClipSource::kPageFrames);
-  constexpr size_t kBudget = StreamingClipSource::kWindowPages;
-  count = std::min(count, Capacity);
-
-  // First pass: store each voice's window rank in its plan byte.
-  size_t windows = 0;
-  for (size_t voice = 0; voice < count; ++voice) {
-    const int64_t page = std::max<int64_t>(0, positions[voice]) / kPage;
-    size_t rank = windows;
-    for (size_t earlier = 0; earlier < voice; ++earlier) {
-      if (std::max<int64_t>(0, positions[earlier]) / kPage == page) {
-        rank = pages[earlier];
-        break;
-      }
-    }
-    if (rank == windows) {
-      ++windows;
-    }
-    pages[voice] = static_cast<uint8_t>(rank);
-  }
-  if (windows == 0) {
-    return;
-  }
-
-  // Second pass: replace each rank with its window's share of the budget.
-  const size_t base = kBudget / windows;
-  const size_t remainder = kBudget % windows;
-  for (size_t voice = 0; voice < count; ++voice) {
-    pages[voice] = static_cast<uint8_t>(base + (pages[voice] < remainder ? 1u : 0u));
-  }
-}
-
-} // namespace
-
 StreamingClipSource::StreamingClipSource(std::shared_ptr<IAudioFileReader> reader,
                                          uint16_t numChannels, int64_t lengthFrames)
     : m_reader(std::move(reader)), m_numChannels(numChannels), m_lengthFrames(lengthFrames) {
@@ -169,17 +123,83 @@ void StreamingClipSource::releaseReadyPin(Page& page) noexcept {
   static_cast<void>(previous);
 }
 
+void StreamingClipSource::computeVoiceWindowPages(
+    const VoiceDemand* demands, size_t count,
+    std::array<uint8_t, kMaxVoiceDemands>& pages) noexcept {
+  static_assert(kMaxVoiceDemands <= UINT8_MAX, "window ranks are stored in the plan bytes");
+  constexpr int64_t kPage = static_cast<int64_t>(kPageFrames);
+  constexpr size_t kBudget = kWindowPages;
+  count = std::min(count, kMaxVoiceDemands);
+
+  // First pass: store each voice's window rank in its plan byte.
+  size_t windows = 0;
+  for (size_t voice = 0; voice < count; ++voice) {
+    const int64_t page = std::max<int64_t>(0, demands[voice].position) / kPage;
+    size_t rank = windows;
+    for (size_t earlier = 0; earlier < voice; ++earlier) {
+      if (std::max<int64_t>(0, demands[earlier].position) / kPage == page) {
+        rank = pages[earlier];
+        break;
+      }
+    }
+    if (rank == windows) {
+      ++windows;
+    }
+    pages[voice] = static_cast<uint8_t>(rank);
+  }
+  if (windows == 0) {
+    return;
+  }
+
+  // Second pass: replace each rank with its window's share of the budget.
+  const size_t base = kBudget / windows;
+  const size_t remainder = kBudget % windows;
+  for (size_t voice = 0; voice < count; ++voice) {
+    pages[voice] = static_cast<uint8_t>(base + (pages[voice] < remainder ? 1u : 0u));
+  }
+}
+
+StreamingClipSource::ProgramShape
+StreamingClipSource::programShape(const VoiceDemand& demand) const noexcept {
+  ProgramShape shape;
+  shape.current = alignDown(std::max<int64_t>(0, demand.position));
+  // The read interpolates one frame past windowEnd - 1, so the window's last page is the one
+  // holding frame windowEnd (clamped to the clip).
+  const int64_t lastFrame = std::max<int64_t>(0, std::min(demand.windowEnd, m_lengthFrames - 1));
+  const int64_t lastLinear = std::max(shape.current, alignDown(lastFrame));
+  shape.linear =
+      static_cast<size_t>((lastLinear - shape.current) / static_cast<int64_t>(kPageFrames)) + 1;
+  if (demand.jumpTarget >= 0 && m_lengthFrames > 0) {
+    shape.hop = alignDown(std::min(demand.jumpTarget, m_lengthFrames - 1));
+  }
+  return shape;
+}
+
+int64_t StreamingClipSource::programPageStart(const VoiceDemand& demand,
+                                              size_t ahead) const noexcept {
+  const ProgramShape shape = programShape(demand);
+  const int64_t page = static_cast<int64_t>(kPageFrames);
+  int64_t start = -1;
+  if (ahead < shape.linear) {
+    start = shape.current + static_cast<int64_t>(ahead) * page;
+  } else if (shape.hop >= 0) {
+    start = shape.hop + static_cast<int64_t>(ahead - shape.linear) * page;
+  }
+  return start >= 0 && start < m_lengthFrames ? start : -1;
+}
+
 void StreamingClipSource::beginVoiceDemands() noexcept {
   m_voiceDemandCount = 0;
 }
 
-size_t StreamingClipSource::addVoiceDemand(int64_t position) noexcept {
+size_t StreamingClipSource::addVoiceDemand(int64_t position, int64_t windowEnd,
+                                           int64_t jumpTarget) noexcept {
   assert(m_voiceDemandCount < kMaxVoiceDemands);
   if (m_voiceDemandCount >= kMaxVoiceDemands) {
     return kMaxVoiceDemands;
   }
   const size_t index = m_voiceDemandCount++;
-  m_voiceDemands[index] = position;
+  m_voiceDemands[index] = VoiceDemand{position, windowEnd, jumpTarget};
   return index;
 }
 
@@ -259,7 +279,7 @@ void StreamingClipSource::publishVoiceDemands() noexcept {
   VoiceDemandBuffer& buffer = m_voiceDemandBuffers[target];
   buffer.count = m_voiceDemandCount;
   for (size_t index = 0; index < m_voiceDemandCount; ++index) {
-    buffer.positions[index] = m_voiceDemands[index];
+    buffer.demands[index] = m_voiceDemands[index];
   }
   buffer.access.store(0, std::memory_order_release);
   m_activeVoiceDemandBuffer.store(target, std::memory_order_release);
@@ -292,7 +312,7 @@ bool StreamingClipSource::readWorkerVoiceDemands(VoiceDemandSnapshot& snapshot) 
     }
     snapshot.count = count;
     for (size_t voice = 0; voice < count; ++voice) {
-      snapshot.positions[voice] = buffer.positions[voice];
+      snapshot.demands[voice] = buffer.demands[voice];
     }
     buffer.access.fetch_sub(1, std::memory_order_release);
     return true;
@@ -302,33 +322,48 @@ bool StreamingClipSource::readWorkerVoiceDemands(VoiceDemandSnapshot& snapshot) 
 
 bool StreamingClipSource::keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept {
   const size_t count = m_voiceDemandCount;
-  const auto keepsPosition = [=](int64_t position, size_t pages) {
+  const int64_t page = static_cast<int64_t>(kPageFrames);
+  // Must agree exactly with programPageStart(): the pages a voice keeps are the pages the worker
+  // fills for it.
+  const auto keepsDemand = [&](const VoiceDemand& demand, size_t pages) {
     if (pages == 0) {
       return false;
     }
     const size_t behind = pages >= 3 ? 1 : 0;
-    const int64_t base = alignDown(std::max<int64_t>(0, position));
-    const int64_t delta = pageStart - base;
-    return delta >= -static_cast<int64_t>(behind * kPageFrames) &&
-           delta < static_cast<int64_t>(pages - behind) * static_cast<int64_t>(kPageFrames);
+    const size_t forward = pages - behind;
+    const ProgramShape shape = programShape(demand);
+    if (behind != 0 && shape.current >= page && pageStart == shape.current - page) {
+      return true;
+    }
+    const int64_t linearDelta = pageStart - shape.current;
+    if (linearDelta >= 0 &&
+        linearDelta < static_cast<int64_t>(std::min(forward, shape.linear)) * page) {
+      return true;
+    }
+    if (shape.hop >= 0 && forward > shape.linear) {
+      const int64_t hopDelta = pageStart - shape.hop;
+      return hopDelta >= 0 && hopDelta < static_cast<int64_t>(forward - shape.linear) * page;
+    }
+    return false;
   };
 
   if (count == 0) {
-    return keepsPosition(fallbackPosition, kWindowPages);
+    return keepsDemand(VoiceDemand{fallbackPosition, m_lengthFrames, -1}, kWindowPages);
   }
   for (size_t voice = 0; voice < count; ++voice) {
-    if (keepsPosition(m_voiceDemands[voice], m_voiceWindowPlan[voice])) {
+    if (keepsDemand(m_voiceDemands[voice], m_voiceWindowPlan[voice])) {
       return true;
     }
   }
   return false;
 }
 
-bool StreamingClipSource::readForVoice(size_t demandIndex, int64_t pos, float* dest, size_t frames,
+bool StreamingClipSource::readForVoice(size_t demandIndex, int64_t pos, int64_t windowEnd,
+                                       int64_t jumpTarget, float* dest, size_t frames,
                                        size_t& framesRead) {
   assert(demandIndex < m_voiceDemandCount);
   if (demandIndex < m_voiceDemandCount) {
-    m_voiceDemands[demandIndex] = pos;
+    m_voiceDemands[demandIndex] = VoiceDemand{pos, windowEnd, jumpTarget};
   }
   return readCached(pos, dest, frames, framesRead);
 }
@@ -919,7 +954,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
   }
   const size_t count = snapshot.count;
   std::array<uint8_t, kMaxVoiceDemands> plan{};
-  computeVoiceWindowPages(snapshot.positions.data(), count, plan);
+  computeVoiceWindowPages(snapshot.demands.data(), count, plan);
   size_t maxBehind = 0;
   size_t maxForward = 0;
   for (size_t voice = 0; voice < count; ++voice) {
@@ -965,7 +1000,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
     if (plan[voice] == 0) {
       continue;
     }
-    const int64_t base = alignDown(std::max<int64_t>(0, snapshot.positions[voice]));
+    const int64_t base = programPageStart(snapshot.demands[voice], 0);
     if (!tryPage(voice, base, true)) {
       return;
     }
@@ -978,8 +1013,8 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
       if (voicePages <= ahead + behind) {
         continue;
       }
-      const int64_t base = alignDown(std::max<int64_t>(0, snapshot.positions[voice]));
-      if (!tryPage(voice, base + static_cast<int64_t>(ahead * kPageFrames), false)) {
+      const int64_t start = programPageStart(snapshot.demands[voice], ahead);
+      if (!tryPage(voice, start, false)) {
         break;
       }
     }
@@ -990,7 +1025,7 @@ void StreamingClipSource::serviceVoiceWindow(const VoiceDemandSnapshot& snapshot
       if (plan[voice] < 3) {
         continue;
       }
-      const int64_t base = alignDown(std::max<int64_t>(0, snapshot.positions[voice]));
+      const int64_t base = alignDown(std::max<int64_t>(0, snapshot.demands[voice].position));
       if (base >= static_cast<int64_t>(kPageFrames) &&
           !tryPage(voice, base - static_cast<int64_t>(kPageFrames), false)) {
         break;
