@@ -327,6 +327,29 @@ struct CuePoint {
   uint32_t color;   ///< RGBA color for UI rendering (0xRRGGBBAA format)
 };
 
+/// Cause of a transport underrun report.
+enum class UnderrunCause : uint8_t {
+  /// A streamed clip's render read needed a page that was not resident.
+  StreamingPageMiss = 0,
+};
+
+/// One underrun, delivered by processCallbacks() immediately after onBufferUnderrun().
+struct TransportUnderrun {
+  UnderrunCause cause{UnderrunCause::StreamingPageMiss};
+  ClipHandle handle{0};
+  uint32_t voiceId{0};
+  /// First source frame that was not resident.
+  int64_t sourceFrame{0};
+  /// Output frames of this voice replaced by silence in the block; zero when only the
+  /// loop-boundary interpolation frame missed.
+  uint32_t concealedFrames{0};
+  /// Page misses since construction, including this one. A step above one between
+  /// consecutive deliveries means callback-ring overflow dropped reports; see
+  /// getCallbackDeliveryTelemetry(). Equals RealtimeDiagnosticsSnapshot::underrun_count.
+  uint64_t cumulativeCount{0};
+  TransportPosition position{};
+};
+
 /// Callback interface for transport events
 /// All callbacks are invoked on the UI thread (NOT audio thread)
 class ITransportCallback {
@@ -373,14 +396,25 @@ public:
   /// @see onClipRestarted() for restart to IN point
   virtual void onClipSeeked(ClipHandle /*handle*/, TransportPosition /*position*/) {}
 
-  /// Called when a buffer underrun occurs (audio dropout)
-  /// @param position Position where underrun occurred
+  /// Called once per voice read that missed a streamed page.
+  ///
+  /// The transport does not observe device overload; driver discontinuities reach
+  /// RealtimeClockTelemetry::discontinuity_count. A miss never stops the voice. Resident frames
+  /// render and fade out over 64 frames, the missing remainder is silent, the voice keeps its
+  /// schedule, and it fades back in over 64 frames when data returns. A miss at a block's first
+  /// frame cannot fade out. Every miss is reported here, through onClassifiedUnderrun(), and in
+  /// RealtimeDiagnosticsSnapshot::underrun_count.
+  /// @param position Position where the underrun occurred
   virtual void onBufferUnderrun(TransportPosition position) = 0;
 
   /// Called when the fixed global active-voice pool refuses a start.
   /// @param requestTag Identity of the refused start
   virtual void onActiveClipLimitReached(ClipHandle /*handle*/, StartRequestTag /*requestTag*/,
                                         TransportPosition /*position*/) {}
+
+  /// Called immediately after onBufferUnderrun() for the same miss, with its cause, clip, voice
+  /// and extent. Appended to the interface: rebuild consumers and subclasses with these headers.
+  virtual void onClassifiedUnderrun(const TransportUnderrun& /*underrun*/) {}
 };
 
 /// Backend clock reference for one transport render block.

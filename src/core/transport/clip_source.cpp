@@ -369,7 +369,11 @@ bool StreamingClipSource::readForVoice(size_t demandIndex, int64_t pos, int64_t 
 }
 
 bool StreamingClipSource::read(int64_t pos, float* dest, size_t frames, size_t& framesRead) {
-  return readCached(pos, dest, frames, framesRead);
+  const bool hit = readCached(pos, dest, frames, framesRead);
+  if (!hit) {
+    framesRead = 0; // IClipSource contract: a miss reports no frames
+  }
+  return hit;
 }
 
 bool StreamingClipSource::readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead) {
@@ -401,6 +405,7 @@ bool StreamingClipSource::readCached(int64_t pos, float* dest, size_t frames, si
     const size_t subFrames = static_cast<size_t>(
         std::min<int64_t>(static_cast<int64_t>(toCopy - copied), pageEnd - subPos));
     if (!copyFromResidentPage(subPos, dest + copied * m_numChannels, subFrames)) {
+      framesRead = copied; // the resident prefix, already written to dest
       return false;
     }
     copied += subFrames;

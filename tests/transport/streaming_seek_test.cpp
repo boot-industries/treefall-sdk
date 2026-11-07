@@ -192,6 +192,17 @@ public:
   static void releaseClaim(StreamingClipSource& source, size_t index) {
     source.m_pages[index].guard.store(0, std::memory_order_release);
   }
+
+  // Test-only: makes every read of the page miss. No pin may be released on that page while
+  // it is blocked.
+  static uint32_t blockReads(StreamingClipSource& source, size_t index) {
+    return source.m_pages[index].guard.exchange(StreamingClipSource::kClaimed,
+                                                std::memory_order_acq_rel);
+  }
+
+  static void unblockReads(StreamingClipSource& source, size_t index, uint32_t previous) {
+    source.m_pages[index].guard.store(previous, std::memory_order_release);
+  }
 };
 
 class TransportControllerTestAccess {
@@ -322,6 +333,7 @@ public:
   std::atomic<int> starts{0};
   std::atomic<int> secondRequestStarts{0};
   std::atomic<int> loops{0};
+  std::vector<TransportUnderrun> classified; // control thread only (processCallbacks)
 
   void onClipStarted(ClipHandle, orpheus::StartRequestTag requestTag, uint32_t,
                      TransportPosition) override {
@@ -336,6 +348,9 @@ public:
   }
   void onBufferUnderrun(TransportPosition) override {
     underruns.fetch_add(1, std::memory_order_relaxed);
+  }
+  void onClassifiedUnderrun(const TransportUnderrun& underrun) override {
+    classified.push_back(underrun);
   }
   void onClipSeeked(ClipHandle, TransportPosition) override {
     seeks.fetch_add(1, std::memory_order_relaxed);
@@ -3000,6 +3015,7 @@ TEST_F(StreamingSeekMatrixTest, LoopWrapNearPageEndKeepsSuccessorPageResident) {
         }
         EXPECT_EQ(callback.loops.load(), 10);
         EXPECT_EQ(callback.underruns.load(), 0);
+        EXPECT_TRUE(callback.classified.empty());
       }
     }
   }
@@ -3037,6 +3053,7 @@ TEST_F(StreamingSeekMatrixTest, RetriggerFarFromTrimInPrimesFirstRenderWindow) {
               renderBlocks(*transport, out, block, 2);
             }
             EXPECT_EQ(callback.underruns.load(), 0);
+            EXPECT_TRUE(callback.classified.empty());
             EXPECT_EQ(transport->getActiveVoiceCount(1), 1u);
           }
         }
@@ -3059,6 +3076,7 @@ TEST_F(StreamingSeekMatrixTest, ColdStartShortOfPageBoundaryNeedsNoHostPrefill) 
     std::vector<float> out;
     renderBlocks(*transport, out, block, 4);
     total += callback.underruns.load();
+    EXPECT_TRUE(callback.classified.empty());
   }
   EXPECT_EQ(total, 0);
 }
@@ -3089,6 +3107,7 @@ TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveClipPinsRestartWindowUntil
   ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
   renderBlocks(*transport, out, block, 2);
   EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_TRUE(callback.classified.empty());
   ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
   renderBlocks(*transport, out, block, 4);
   for (const int64_t start : {page, 2 * page}) {
@@ -3197,8 +3216,101 @@ TEST_F(StreamingSeekMatrixTest, SegmentAdvanceToDistantPageIsPrefetchedBeforeThe
         renderBlocks(*transport, out, block, blocks);
       }
       EXPECT_EQ(callback.underruns.load(), 0);
+      EXPECT_TRUE(callback.classified.empty());
     }
   }
+}
+
+TEST_F(StreamingSeekMatrixTest, PageMissInsideBlockRendersResidentPrefixWithClickFreeGap) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 0, 432000, 1.0, false,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, 2 * page - 200 - 8 * 512), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 8);
+  ASSERT_TRUE(waitForResident(*source, 2 * page));
+  const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, 2 * page);
+  ASSERT_LT(index, StreamingClipSource::kNumPages);
+  ASSERT_TRUE(StreamingClipSourceTestAccess::claimPage(*source, index));
+  ASSERT_EQ(callback.underruns.load(), 0);
+
+  // Block A reads [2P - 200, 2P + 313): the first 200 frames are resident, the rest are not.
+  renderBlocks(*transport, out, block, 1);
+  const float ref = out[0];
+  ASSERT_GT(std::abs(ref), 0.1f);
+  for (size_t frame = 0; frame <= 134; ++frame) {
+    EXPECT_FLOAT_EQ(out[frame], ref) << "frame " << frame;
+  }
+  for (size_t frame = 136; frame <= 198; ++frame) {
+    EXPECT_LE(std::abs(out[frame]), std::abs(out[frame - 1])) << "frame " << frame;
+  }
+  EXPECT_LT(std::abs(out[198]), 0.05f * std::abs(ref));
+  for (size_t frame = 199; frame < block; ++frame) {
+    EXPECT_EQ(out[frame], 0.0f) << "frame " << frame;
+  }
+  EXPECT_EQ(callback.underruns.load(), 1);
+  ASSERT_EQ(callback.classified.size(), 1u);
+  EXPECT_EQ(callback.classified[0].cause, UnderrunCause::StreamingPageMiss);
+  EXPECT_EQ(callback.classified[0].handle, 1u);
+  EXPECT_EQ(callback.classified[0].sourceFrame, 2 * page);
+  EXPECT_EQ(callback.classified[0].concealedFrames, 313u);
+  EXPECT_EQ(callback.classified[0].cumulativeCount, 1u);
+
+  StreamingClipSourceTestAccess::releaseClaim(*source, index);
+  renderBlocks(*transport, out, block, 1);
+  EXPECT_EQ(out[0], 0.0f);
+  for (size_t frame = 1; frame < 64; ++frame) {
+    EXPECT_GE(std::abs(out[frame]), std::abs(out[frame - 1])) << "frame " << frame;
+  }
+  for (size_t frame = 64; frame < block; ++frame) {
+    EXPECT_FLOAT_EQ(out[frame], ref) << "frame " << frame;
+  }
+  EXPECT_EQ(callback.underruns.load(), 1);
+}
+
+TEST_F(StreamingSeekMatrixTest, LoopStartInterpolationMissIsReported) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  const int64_t trimIn = page + 1000;
+  const int64_t trimOut = 2 * page + 3000;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 trimIn, trimOut, 1.0, true,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  // Stop one block short of the block that straddles trim-out.
+  const auto before_straddle = static_cast<size_t>((trimOut - trimIn) / block);
+  renderBlocks(*transport, out, block, before_straddle);
+  ASSERT_EQ(callback.loops.load(), 0);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_TRUE(waitForResident(*source, 2 * page));
+  const int before = callback.underruns.load();
+  const size_t trimInPage = StreamingClipSourceTestAccess::residentPageIndex(*source, page);
+  ASSERT_LT(trimInPage, StreamingClipSource::kNumPages);
+  const uint32_t previous = StreamingClipSourceTestAccess::blockReads(*source, trimInPage);
+  renderBlocks(*transport, out, block, 1);
+  StreamingClipSourceTestAccess::unblockReads(*source, trimInPage, previous);
+  EXPECT_EQ(callback.loops.load(), 1);
+  // One interpolation-only miss at the loop start and one post-wrap read miss.
+  EXPECT_EQ(callback.underruns.load() - before, 2);
+  ASSERT_GE(callback.classified.size(), 2u);
+  const auto& interpolation = callback.classified[callback.classified.size() - 2];
+  const auto& postWrap = callback.classified.back();
+  EXPECT_EQ(interpolation.concealedFrames, 0u);
+  EXPECT_EQ(interpolation.sourceFrame, page + 1000);
+  EXPECT_GT(postWrap.concealedFrames, 0u);
+  EXPECT_EQ(postWrap.cumulativeCount, interpolation.cumulativeCount + 1);
 }
 
 TEST(ResamplingSeekPrimeTest, WrappedReaderErrorIsNotConvertedToEof) {

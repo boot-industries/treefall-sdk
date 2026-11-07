@@ -104,6 +104,16 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
     buffer.resize(firstRenderFrames(m_config.maxBlockFrames) * m_config.maxSourceChannels, 0.0f);
   }
 
+  // Equal-power concealment curve, sin^2: exactly silent at 0 and unity at the far end.
+  for (size_t index = 0; index <= kConcealmentFadeFrames; ++index) {
+    const double s = orpheus::pinned::sin(
+        static_cast<double>(index) *
+        (static_cast<double>(M_PI_2) / static_cast<double>(kConcealmentFadeFrames)));
+    m_concealmentFade[index] = static_cast<float>(s * s);
+  }
+  m_concealmentFade.front() = 0.0f;
+  m_concealmentFade.back() = 1.0f;
+
   m_clipChannelBuffers.resize(routingLaneCount);
   for (auto& buffer : m_clipChannelBuffers) {
     buffer.resize(m_config.maxBlockFrames, 0.0f);
@@ -563,6 +573,9 @@ void TransportController::processCallbacks() {
         break;
       case TransportEventType::BufferUnderrun:
         m_callback->onBufferUnderrun(event.position);
+        m_callback->onClassifiedUnderrun(TransportUnderrun{
+            UnderrunCause::StreamingPageMiss, event.handle, event.voiceId, event.sourceFrame,
+            event.concealedFrames, event.cumulativeCount, event.position});
         break;
       case TransportEventType::ActiveClipLimitReached:
         m_callback->onActiveClipLimitReached(event.handle, event.requestTag, event.position);

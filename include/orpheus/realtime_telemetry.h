@@ -165,7 +165,8 @@ public:
   /// not this bridge's diagnostic threshold counters.
   [[nodiscard]] bool beginRealtimeBlock(uint32_t bufferFrames, uint32_t sampleRate) noexcept;
 
-  /// Add one source/cache underrun to the next diagnostics snapshot.
+  /// Add one streamed-page miss to the next diagnostics snapshot, including a miss that was
+  /// concealed and one that only affected a loop-boundary interpolation frame.
   void reportUnderrunFromRealtime() noexcept;
 
   /// Publish a due snapshot by copying into the fixed ring slot. Returns false

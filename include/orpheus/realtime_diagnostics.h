@@ -10,6 +10,7 @@ namespace orpheus {
 struct RealtimeDiagnosticsSnapshot {
   uint64_t callback_count = 0;
   uint64_t samples_processed = 0;
+  /// Streamed-page misses, cumulative; includes concealed and interpolation-only misses.
   uint64_t underrun_count = 0;
   /// Observed durations strictly greater than one quarter of the buffer budget.
   uint64_t callback_over_budget_count = 0;

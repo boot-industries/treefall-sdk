@@ -71,7 +71,9 @@ public:
   ///
   /// @return true on success (framesRead = frames actually copied, capped at
   ///         EOF); false on a streaming cache miss (framesRead == 0, dest
-  ///         untouched) — the caller renders silence and reports an underrun.
+  ///         contents unspecified) — the caller renders silence and reports an
+  ///         underrun. The transport's render path conceals the resident prefix of a
+  ///         missed streaming block itself.
   virtual bool read(int64_t pos, float* dest, size_t frames, size_t& framesRead) = 0;
 
   /// Audio-thread hint: playback continues from `pos` (streaming prefetch

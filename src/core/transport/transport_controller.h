@@ -240,6 +240,9 @@ struct ActiveClip {
   std::shared_ptr<IClipSource> source;
   StreamingClipSource* streamingSource{nullptr};
   size_t streamingDemandIndex{0};
+  // Click-free concealment of a streamed page miss (audio thread only).
+  bool concealing{false};            ///< the previous read missed; fade back in on the next hit
+  int64_t concealFadeInRemaining{0}; ///< frames left of the fade-in after a miss
   // Pins the registry entry while this voice remains in the active set.
   SourceCommandLifetime* sourceLifetime{nullptr};
 
@@ -279,6 +282,9 @@ struct TransportEvent {
   StartRequestTag requestTag; ///< Start identity, zero for untagged paths
   uint32_t voiceId;           ///< Voice instance when known, 0 otherwise (diagnostic)
   TransportPosition position; ///< Position payload delivered to the callback
+  int64_t sourceFrame;        ///< BufferUnderrun: first source frame that was not resident
+  uint32_t concealedFrames;   ///< BufferUnderrun: output frames silenced in the block
+  uint64_t cumulativeCount;   ///< BufferUnderrun: page misses since construction
 };
 
 static_assert(std::is_trivially_copyable_v<TransportEvent>,
@@ -499,6 +505,11 @@ private:
   /// only). Zero requestTag/voiceId mark events that carry no start identity.
   void postVoiceEvent(TransportEventType type, ClipHandle handle, StartRequestTag requestTag,
                       uint32_t voiceId, TransportPosition position) noexcept;
+
+  /// Report one streamed-page miss: legacy underrun event carrying the classified payload, plus
+  /// the cumulative realtime telemetry counter. Audio thread only.
+  void reportPageMiss(const ActiveClip& clip, int64_t sourceFrame,
+                      uint32_t concealedFrames) noexcept;
 
   /// Publish callback delivery counters through a coherent atomic seqlock.
   void publishCallbackTelemetry() noexcept;
@@ -739,6 +750,12 @@ private:
       5.0f;                         // Broadcast-safe restart crossfade (5ms)
   size_t m_fadeOutSamples;          // Calculated from sample rate
   size_t m_restartCrossfadeSamples; // Calculated from sample rate
+
+  // Click-free concealment of a streamed page miss: resident frames fade out, and the voice fades
+  // back in, over this many frames along an equal-power curve (table built once at construction).
+  static constexpr size_t kConcealmentFadeFrames = 64;
+  std::array<float, kConcealmentFadeFrames + 1> m_concealmentFade{};
+  uint64_t m_pageMissCount{0}; // streamed-page misses since construction; audio thread only
 
   void releasePendingStartReservations() noexcept;
   void releasePendingSeekReservations() noexcept;
