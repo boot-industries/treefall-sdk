@@ -673,14 +673,16 @@ SessionGraphError TransportController::updateClipTrimPoints(ClipHandle handle,
   cmd.data.trim = {trimInSamples, trimOutSamples};
   auto* streaming =
       it->second.source ? dynamic_cast<StreamingClipSource*>(it->second.source.get()) : nullptr;
-  if (streaming != nullptr && it->second.loopEnabled) {
+  if (streaming != nullptr) {
     cmd.sourceLifetime = it->second.commandLifetime.get();
     if (cmd.sourceLifetime == nullptr) {
       return SessionGraphError::InternalError;
     }
     m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
-    const auto result =
-        streaming->prepareLoopAnchorTransition(trimInSamples, true, cmd.loopAnchorTransition);
+    const auto result = streaming->prepareLoopAnchorTransition(
+        programStartSample(trimInSamples, it->second.segmentCount, it->second.segments),
+        firstRenderFrames(m_config.maxBlockFrames), it->second.loopEnabled,
+        cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
       cmd.loopAnchorSource = nullptr;
       return result;
@@ -802,8 +804,9 @@ SessionGraphError TransportController::setClipLoopMode(ClipHandle handle, bool s
       return SessionGraphError::InternalError;
     }
     m_sourceRegistry.retainSourceCommand(cmd.sourceLifetime);
-    const auto result = streaming->prepareLoopAnchorTransition(it->second.trimInSamples, shouldLoop,
-                                                               cmd.loopAnchorTransition);
+    const auto result = streaming->prepareLoopAnchorTransition(
+        programStartSample(it->second.trimInSamples, it->second.segmentCount, it->second.segments),
+        firstRenderFrames(m_config.maxBlockFrames), shouldLoop, cmd.loopAnchorTransition);
     if (result != SessionGraphError::OK) {
       cmd.loopAnchorSource = nullptr;
       return result;
@@ -908,7 +911,8 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
     streaming = dynamic_cast<StreamingClipSource*>(it->second.source.get());
   if (streaming != nullptr) {
     const SessionGraphError prepareResult = streaming->prepareLoopAnchorTransition(
-        metadata.trimInSamples, metadata.loopEnabled, transition);
+        programStartSample(metadata.trimInSamples, metadata.segmentCount, metadata.segments),
+        firstRenderFrames(m_config.maxBlockFrames), metadata.loopEnabled, transition);
     if (prepareResult != SessionGraphError::OK) {
       return prepareResult;
     }

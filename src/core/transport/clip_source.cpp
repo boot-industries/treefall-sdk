@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cassert>
 #include <chrono>
 #include <cstring>
@@ -1190,57 +1191,81 @@ void StreamingClipSource::serviceCommandDemand() {
   } while (work.generation != 0);
 }
 
+void StreamingClipSource::releasePinMask(uint16_t mask) noexcept {
+  for (size_t index = 0; index < kNumPages; ++index) {
+    if ((mask & static_cast<uint16_t>(uint16_t{1} << index)) != 0) {
+      releaseReadyPin(m_pages[index]);
+    }
+  }
+}
+
 SessionGraphError
-StreamingClipSource::prepareLoopAnchorTransition(int64_t pos, bool enabled,
+StreamingClipSource::prepareLoopAnchorTransition(int64_t pos, size_t frames, bool enabled,
                                                  LoopAnchorTransition& transition) {
   transition = {};
-  transition.previousPageIndex = m_loopAnchorPageIndex;
+  transition.previousPageMask = m_loopAnchorPageMask;
   transition.previousStart = m_loopAnchorStart;
-  transition.replacementPageIndex = m_loopAnchorPageIndex;
+  transition.previousPageCount = m_loopAnchorPageCount;
+  transition.replacementPageMask = m_loopAnchorPageMask;
   transition.replacementStart = m_loopAnchorStart;
+  transition.replacementPageCount = m_loopAnchorPageCount;
 
   if (!enabled) {
-    transition.replacementPageIndex = LoopAnchorTransition::kInactivePageIndex;
+    transition.replacementPageMask = 0;
     transition.replacementStart = -1;
-    m_loopAnchorPageIndex = LoopAnchorTransition::kInactivePageIndex;
+    transition.replacementPageCount = 0;
+    m_loopAnchorPageMask = 0;
     m_loopAnchorStart = -1;
+    m_loopAnchorPageCount = 0;
     return SessionGraphError::OK;
   }
   if (m_lengthFrames <= 0) {
     transition = {};
     return SessionGraphError::NotReady;
   }
+  if (frames == 0) {
+    transition = {};
+    return SessionGraphError::InvalidParameter;
+  }
 
-  const int64_t anchor = alignDown(std::clamp<int64_t>(pos, 0, m_lengthFrames - 1));
-  if (m_loopAnchorStart == anchor && m_loopAnchorPageIndex < kNumPages) {
+  const int64_t first = std::clamp<int64_t>(pos, 0, m_lengthFrames - 1);
+  const int64_t last = std::min<int64_t>(first + static_cast<int64_t>(frames), m_lengthFrames) - 1;
+  const int64_t firstPage = alignDown(first);
+  size_t pageCount =
+      static_cast<size_t>((alignDown(last) - firstPage) / static_cast<int64_t>(kPageFrames)) + 1;
+  if (m_loopAnchorPageMask != 0 && m_loopAnchorStart == firstPage &&
+      m_loopAnchorPageCount == pageCount) {
     return SessionGraphError::OK;
   }
 
   PrimeReservation temporaryReservation{};
-  const SessionGraphError primeResult = primeForCommand(anchor, 1, temporaryReservation);
+  SessionGraphError primeResult = primeForCommand(first, frames, temporaryReservation);
+  if (primeResult == SessionGraphError::NotReady && pageCount > 1) {
+    // The command pool cannot hold the whole window: keep today's one-page anchor.
+    pageCount = 1;
+    primeResult = primeForCommand(first, 1, temporaryReservation);
+  }
   if (primeResult != SessionGraphError::OK) {
     transition = {};
     return primeResult;
   }
 
-  size_t replacementIndex = kNumPages;
-  for (size_t index = 0; index < kNumPages; ++index) {
-    const uint16_t bit = static_cast<uint16_t>(uint16_t{1} << index);
-    if ((temporaryReservation.pageMask & bit) == 0) {
-      continue;
-    }
-    if (replacementIndex != kNumPages) {
-      releaseCommandPrime(temporaryReservation);
-      transition = {};
-      return SessionGraphError::InternalError;
-    }
-    replacementIndex = index;
-  }
-  if (replacementIndex == kNumPages ||
-      m_pages[replacementIndex].start.load(std::memory_order_acquire) != anchor) {
+  if (static_cast<size_t>(std::popcount(temporaryReservation.pageMask)) != pageCount) {
     releaseCommandPrime(temporaryReservation);
     transition = {};
-    return SessionGraphError::NotReady;
+    return SessionGraphError::InternalError;
+  }
+  for (size_t index = 0; index < kNumPages; ++index) {
+    if ((temporaryReservation.pageMask & static_cast<uint16_t>(uint16_t{1} << index)) == 0) {
+      continue;
+    }
+    const int64_t offset = m_pages[index].start.load(std::memory_order_acquire) - firstPage;
+    if (offset < 0 || offset % static_cast<int64_t>(kPageFrames) != 0 ||
+        static_cast<size_t>(offset / static_cast<int64_t>(kPageFrames)) >= pageCount) {
+      releaseCommandPrime(temporaryReservation);
+      transition = {};
+      return SessionGraphError::NotReady;
+    }
   }
 
   const uint32_t pending = m_pendingCommandPrimes.load(std::memory_order_acquire);
@@ -1252,32 +1277,31 @@ StreamingClipSource::prepareLoopAnchorTransition(int64_t pos, bool enabled,
   }
   m_pendingCommandPrimes.fetch_sub(1, std::memory_order_release);
 
-  transition.replacementPageIndex = replacementIndex;
-  transition.replacementStart = anchor;
-  m_loopAnchorPageIndex = replacementIndex;
-  m_loopAnchorStart = anchor;
+  transition.replacementPageMask = temporaryReservation.pageMask;
+  transition.replacementStart = firstPage;
+  transition.replacementPageCount = pageCount;
+  m_loopAnchorPageMask = temporaryReservation.pageMask;
+  m_loopAnchorStart = firstPage;
+  m_loopAnchorPageCount = pageCount;
   return SessionGraphError::OK;
 }
 
 void StreamingClipSource::commitLoopAnchorTransition(LoopAnchorTransition& transition) noexcept {
-  if (transition.previousPageIndex != transition.replacementPageIndex ||
-      transition.previousStart != transition.replacementStart) {
-    if (transition.previousPageIndex < kNumPages) {
-      releaseReadyPin(m_pages[transition.previousPageIndex]);
-    }
+  if (transition.previousStart != transition.replacementStart ||
+      transition.previousPageCount != transition.replacementPageCount) {
+    releasePinMask(transition.previousPageMask);
   }
   transition = {};
 }
 
 void StreamingClipSource::rollbackLoopAnchorTransition(LoopAnchorTransition& transition) noexcept {
-  if (transition.previousPageIndex != transition.replacementPageIndex ||
-      transition.previousStart != transition.replacementStart) {
-    if (transition.replacementPageIndex < kNumPages) {
-      releaseReadyPin(m_pages[transition.replacementPageIndex]);
-    }
+  if (transition.previousStart != transition.replacementStart ||
+      transition.previousPageCount != transition.replacementPageCount) {
+    releasePinMask(transition.replacementPageMask);
   }
-  m_loopAnchorPageIndex = transition.previousPageIndex;
+  m_loopAnchorPageMask = transition.previousPageMask;
   m_loopAnchorStart = transition.previousStart;
+  m_loopAnchorPageCount = transition.previousPageCount;
   transition = {};
 }
 

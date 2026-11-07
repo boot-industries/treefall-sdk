@@ -344,16 +344,16 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
   // ORP134 G1: build the realtime playback source on the CONTROL thread. All
   // decode/resample/file I/O happens here (or on the stream worker) - the
   // audio thread only ever memcpy-reads the published source.
+  const int64_t start = programStartSample(entry.trimInSamples, entry.segmentCount, entry.segments);
   const auto prepareStreaming = [&](const std::shared_ptr<StreamingClipSource>& streaming) {
     StreamingClipSource::LoopAnchorTransition transition{};
-    SessionGraphError result =
-        streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+    SessionGraphError result = streaming->prepareLoopAnchorTransition(
+        start, m_firstRenderFrames, entry.loopEnabled, transition);
     if (result != SessionGraphError::OK) {
       return result;
     }
-    result = reservation != nullptr
-                 ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                 : streaming->prefill(entry.trimInSamples);
+    result = reservation != nullptr ? streaming->primeForCommand(start, 1, *reservation)
+                                    : streaming->prefill(start);
     if (result != SessionGraphError::OK) {
       streaming->rollbackLoopAnchorTransition(transition);
       return result;
@@ -395,21 +395,12 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
     streamWorker_ = std::make_unique<MediaStreamWorker>();
   }
   streamWorker_->attach(streaming);
-  streaming->setDemand(entry.trimInSamples);
+  streaming->setDemand(start);
 
-  StreamingClipSource::LoopAnchorTransition transition{};
-  SessionGraphError result =
-      streaming->prepareLoopAnchorTransition(entry.trimInSamples, entry.loopEnabled, transition);
+  const SessionGraphError result = prepareStreaming(streaming);
   if (result != SessionGraphError::OK) {
     return result;
   }
-  result = reservation != nullptr ? streaming->primeForCommand(entry.trimInSamples, 1, *reservation)
-                                  : streaming->prefill(entry.trimInSamples);
-  if (result != SessionGraphError::OK) {
-    streaming->rollbackLoopAnchorTransition(transition);
-    return result;
-  }
-  streaming->commitLoopAnchorTransition(transition);
   entry.source = streaming;
   return SessionGraphError::OK;
 }

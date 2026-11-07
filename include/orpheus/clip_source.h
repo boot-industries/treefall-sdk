@@ -132,12 +132,12 @@ public:
   };
 
   struct LoopAnchorTransition {
-    static constexpr size_t kInactivePageIndex = kNumPages;
-
-    size_t previousPageIndex{kInactivePageIndex};
-    int64_t previousStart{-1};
-    size_t replacementPageIndex{kInactivePageIndex};
+    uint16_t previousPageMask{0};
+    int64_t previousStart{-1}; ///< first anchored page start, -1 when inactive
+    size_t previousPageCount{0};
+    uint16_t replacementPageMask{0};
     int64_t replacementStart{-1};
+    size_t replacementPageCount{0};
   };
 
   /// BACKGROUND/CONTROL THREAD. The reader is retained and used exclusively
@@ -199,10 +199,15 @@ public:
   void serviceCommandDemand();
 
   /// Prepare an exact loop-anchor ownership transition, retaining the previous
-  /// anchor's pin until commit. CONTROL THREAD ONLY; stages the next control
+  /// anchor's pins until commit. CONTROL THREAD ONLY; stages the next control
   /// anchor and owns transition exclusively until command admission. Never
   /// prepare into or otherwise mutate an admitted command's transition.
-  SessionGraphError prepareLoopAnchorTransition(int64_t pos, bool enabled,
+  ///
+  /// The transition pins every page covering [pos, pos + frames), clamped to
+  /// the clip, as the restart working set. When the command pool cannot hold
+  /// that set (NotReady) it pins only the page holding `pos`; a later prepare
+  /// retries the full set. `enabled == false` stages release of the set.
+  SessionGraphError prepareLoopAnchorTransition(int64_t pos, size_t frames, bool enabled,
                                                 LoopAnchorTransition& transition);
 
   /// Commit a prepared loop-anchor transition under exclusive ownership.
@@ -343,6 +348,9 @@ private:
   /// Release exactly one caller-owned READY-page pin with bounded atomic work.
   void releaseReadyPin(Page& page) noexcept;
 
+  /// Release one pin on every page whose bit is set in `mask`.
+  void releasePinMask(uint16_t mask) noexcept;
+
   std::shared_ptr<IAudioFileReader> m_reader; // worker/control threads only
   std::mutex m_readerMutex;                   // serializes prefill vs service
   std::mutex m_fillMutex;                     // protects the command-fill request transaction
@@ -364,8 +372,9 @@ private:
   std::atomic<bool> m_attached{false}; // set by MediaStreamWorker::attach
   uint64_t m_nextCommandFillGeneration{1};
   CommandFillRequest m_commandFillRequest{};
-  size_t m_loopAnchorPageIndex{kNumPages};
+  uint16_t m_loopAnchorPageMask{0};
   int64_t m_loopAnchorStart{-1};
+  size_t m_loopAnchorPageCount{0};
   uint16_t m_numChannels;
   int64_t m_lengthFrames;
   Page m_pages[kNumPages];
