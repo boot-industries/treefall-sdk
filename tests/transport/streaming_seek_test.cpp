@@ -3129,15 +3129,24 @@ TEST_F(StreamingSeekMatrixTest, LoopWrapWithTrimOutOnPageBoundaryHasNoMiss) {
       ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
       std::vector<float> out;
       renderBlocks(*transport, out, block, 2);
+      auto source = TransportControllerTestAccess::source(*transport, 1);
+      ASSERT_TRUE(source);
 
       const int64_t step = static_cast<int64_t>(std::ceil(static_cast<double>(block) * rate));
       const int64_t lead = static_cast<int64_t>(block) * 4 + 2 + 4 * step + 2;
       const int64_t parked = trimOut - lead;
       const auto blocks = static_cast<size_t>(
           std::ceil(static_cast<double>(lead) / (static_cast<double>(block) * rate)) + 2);
+      // The seek primes only the first render window. The page holding trim-out comes from the
+      // worker's program-aware look-ahead, so give it the time real playback has (about a
+      // hundred milliseconds) instead of racing it with back-to-back unpaced blocks.
+      const int64_t windowEndPage = trimOut / page * page;
       for (int wrap = 0; wrap < 10; ++wrap) {
         ASSERT_EQ(transport->seekClip(1, parked), SessionGraphError::OK);
-        renderBlocks(*transport, out, block, blocks);
+        renderBlocks(*transport, out, block, 1);
+        ASSERT_TRUE(waitForResident(*source, windowEndPage))
+            << "the page holding trim-out was not prefetched, wrap " << wrap;
+        renderBlocks(*transport, out, block, blocks - 1);
       }
       EXPECT_EQ(callback.loops.load(), 10);
       EXPECT_EQ(callback.underruns.load(), 0);
