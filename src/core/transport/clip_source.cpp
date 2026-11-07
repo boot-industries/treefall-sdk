@@ -1273,16 +1273,25 @@ StreamingClipSource::prepareLoopAnchorTransition(int64_t pos, size_t frames, boo
   const int64_t firstPage = alignDown(first);
   size_t pageCount =
       static_cast<size_t>((alignDown(last) - firstPage) / static_cast<int64_t>(kPageFrames)) + 1;
-  if (m_loopAnchorPageMask != 0 && m_loopAnchorStart == firstPage &&
-      m_loopAnchorPageCount == pageCount) {
+  // A fresh acquisition always differs from the current anchor in (start, count); commit and
+  // rollback rely on that to tell a new pin set from an anchor that was left untouched.
+  const auto anchorHolds = [&](size_t count) noexcept {
+    return m_loopAnchorPageMask != 0 && m_loopAnchorStart == firstPage &&
+           m_loopAnchorPageCount == count;
+  };
+  if (anchorHolds(pageCount)) {
     return SessionGraphError::OK;
   }
 
   PrimeReservation temporaryReservation{};
   SessionGraphError primeResult = primeForCommand(first, frames, temporaryReservation);
   if (primeResult == SessionGraphError::NotReady && pageCount > 1) {
-    // The command pool cannot hold the whole window: keep today's one-page anchor.
+    // The command pool cannot hold the whole window: keep today's one-page anchor. If that
+    // is the anchor already held, pinning it again would leak one pin per repeat.
     pageCount = 1;
+    if (anchorHolds(pageCount)) {
+      return SessionGraphError::OK;
+    }
     primeResult = primeForCommand(first, 1, temporaryReservation);
   }
   if (primeResult != SessionGraphError::OK) {

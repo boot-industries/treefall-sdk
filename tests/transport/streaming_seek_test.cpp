@@ -2794,6 +2794,55 @@ TEST(StreamingClipSourcePrimeTest, FailedReanchorRetainsExactOldPage) {
   EXPECT_FALSE(source.hasPendingCommandPrimes());
 }
 
+TEST(StreamingClipSourcePrimeTest, RepeatedFallbackAnchorDoesNotLeakPins) {
+  // A window anchor that falls back to one page because the command pool is full must not
+  // pin that page again each time the same anchor is prepared, whether it is committed or
+  // rolled back.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(16 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 16 * page);
+  ASSERT_EQ(source.prefill(0), SessionGraphError::OK);
+
+  // Three single-page reservations leave exactly one command-pool slot.
+  std::array<StreamingClipSource::PrimeReservation, 3> held{};
+  for (size_t index = 0; index < held.size(); ++index) {
+    ASSERT_EQ(source.primeForCommand((11 + static_cast<int64_t>(index)) * page, 32, held[index]),
+              SessionGraphError::OK);
+  }
+
+  // The window covers pages 8 and 9 and needs two slots, so the anchor keeps page 8 only.
+  const int64_t pos = 9 * page - 100;
+  StreamingClipSource::LoopAnchorTransition first{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(pos, 512, true, first), SessionGraphError::OK);
+  ASSERT_EQ(std::popcount(first.replacementPageMask), 1);
+  const size_t index = static_cast<size_t>(std::countr_zero(first.replacementPageMask));
+  ASSERT_LT(index, StreamingClipSource::kNumPages);
+  ASSERT_EQ(StreamingClipSourceTestAccess::pageStart(source, index), 8 * page);
+  source.commitLoopAnchorTransition(first);
+  ASSERT_EQ(StreamingClipSourceTestAccess::pageGuard(source, index), 1u);
+
+  StreamingClipSource::LoopAnchorTransition repeated{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(pos, 512, true, repeated), SessionGraphError::OK);
+  source.commitLoopAnchorTransition(repeated);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, index), 1u) << "after commit";
+
+  StreamingClipSource::LoopAnchorTransition rolledBack{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(pos, 512, true, rolledBack), SessionGraphError::OK);
+  source.rollbackLoopAnchorTransition(rolledBack);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, index), 1u) << "after rollback";
+
+  StreamingClipSource::LoopAnchorTransition released{};
+  ASSERT_EQ(source.prepareLoopAnchorTransition(0, 1, false, released), SessionGraphError::OK);
+  source.commitLoopAnchorTransition(released);
+  EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(source, index), 0u) << "after release";
+
+  for (auto& reservation : held) {
+    source.releaseCommandPrime(reservation);
+  }
+  EXPECT_FALSE(source.hasPendingCommandPrimes());
+}
+
 TEST(StreamingClipSourcePrimeTest, LoopAnchorReleasePreservesCommandPin) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   auto reader = std::make_shared<FaultReader>(10 * page);
