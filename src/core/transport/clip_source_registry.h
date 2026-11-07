@@ -24,6 +24,25 @@ struct SourceCommandLifetime {
   std::atomic<uint32_t> active_voices{0};
 };
 
+/// Largest clip playback rate ClipMetadata validation accepts.
+inline constexpr size_t kMaxClipPlaybackRate = 4;
+/// Source frames a render block reads past its last output frame for interpolation.
+inline constexpr size_t kInterpolationGuardFrames = 2;
+
+/// Source frames one render block can consume from a voice's first render position
+/// at any accepted playback rate. Seek, start, restart and loop-anchor primes pin
+/// every page covering this window so the first block never misses.
+constexpr size_t firstRenderFrames(uint32_t maxBlockFrames) noexcept {
+  return static_cast<size_t>(maxBlockFrames) * kMaxClipPlaybackRate + kInterpolationGuardFrames;
+}
+
+/// First source frame a voice renders after a start, restart or loop wrap.
+inline int64_t programStartSample(
+    int64_t trimInSamples, uint32_t segmentCount,
+    const std::array<ClipPlaybackSegment, kMaxClipPlaybackSegments>& segments) noexcept {
+  return segmentCount == 0 ? trimInSamples : segments[0].startSample;
+}
+
 /// Control-side registry of the transport's registered clip sources.
 ///
 /// Owns every registered clip's reader, prepared/streaming source, persistent
@@ -139,6 +158,7 @@ private:
   uint32_t m_maxSourceChannels;
   uint32_t m_outputChannels;
   SourceChannelPolicy m_sourceChannelPolicy;
+  size_t m_firstRenderFrames;
   // Routing-group output widths published by the transport. Read-only here:
   // a metadata batch is validated against the group's current width.
   const std::atomic<uint16_t>* m_groupOutputWidths{nullptr};

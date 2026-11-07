@@ -99,13 +99,9 @@ TransportController::TransportController(core::SessionGraph* sessionGraph,
   // render-path route publication never contends with a control thread.
   m_routingMatrix->claimChannelRoutesForTransport();
 
-  constexpr size_t kMaxPlaybackRate = 4;
-  constexpr size_t kInterpolationGuardFrames = 2;
   m_clipReadBuffers.resize(m_config.maxActiveVoices);
   for (auto& buffer : m_clipReadBuffers) {
-    const size_t inputFrames =
-        static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + kInterpolationGuardFrames;
-    buffer.resize(inputFrames * m_config.maxSourceChannels, 0.0f);
+    buffer.resize(firstRenderFrames(m_config.maxBlockFrames) * m_config.maxSourceChannels, 0.0f);
   }
 
   m_clipChannelBuffers.resize(routingLaneCount);
@@ -1065,12 +1061,10 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
   cmd.sourceLifetime = entry.commandLifetime.get();
   if (auto* streaming = dynamic_cast<StreamingClipSource*>(entry.source.get())) {
     cmd.seekSource = streaming;
-    constexpr size_t kMaxPlaybackRate = 4;
-    const size_t firstRenderFrames =
-        static_cast<size_t>(m_config.maxBlockFrames) * kMaxPlaybackRate + 2;
+    const size_t firstRender = firstRenderFrames(m_config.maxBlockFrames);
 
     const auto prime = [&](int64_t start) {
-      return streaming->primeForCommand(start, firstRenderFrames, cmd.seekPrime);
+      return streaming->primeForCommand(start, firstRender, cmd.seekPrime);
     };
     // The renderer clamps a non-segment seek below trim-IN before its first
     // source read. Prime that effective position, not the discarded request.
@@ -1087,7 +1081,7 @@ SessionGraphError TransportController::seekClip(ClipHandle handle, int64_t posit
     } else if (primeResult == SessionGraphError::OK && entry.loopEnabled) {
       const int64_t trimIn = entry.trimInSamples;
       const int64_t trimOut = entry.trimOutSamples == 0 ? fileLength : entry.trimOutSamples;
-      const int64_t rangeFrames = static_cast<int64_t>(firstRenderFrames);
+      const int64_t rangeFrames = static_cast<int64_t>(firstRender);
       // A position at/past OUT wraps before its first read; otherwise this
       // accepted command could enter trim-IN on a non-resident page.
       if (trimOut > trimIn &&

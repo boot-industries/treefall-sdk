@@ -92,7 +92,9 @@ ClipSourceRegistry::ClipSourceRegistry(uint32_t sampleRate, const TransportConfi
                                        const std::atomic<uint16_t>* groupOutputWidths) noexcept
     : m_sampleRate(sampleRate), m_numGroups(config.numGroups),
       m_maxSourceChannels(config.maxSourceChannels), m_outputChannels(config.outputChannels),
-      m_sourceChannelPolicy(config.sourceChannelPolicy), m_groupOutputWidths(groupOutputWidths) {}
+      m_sourceChannelPolicy(config.sourceChannelPolicy),
+      m_firstRenderFrames(firstRenderFrames(config.maxBlockFrames)),
+      m_groupOutputWidths(groupOutputWidths) {}
 
 void ClipSourceRegistry::setPreparedSourceMaxFrames(int64_t maxFrames) noexcept {
   preparedSourceMaxFrames_ = maxFrames;
