@@ -628,14 +628,17 @@ public:
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError registerClipAudio(ClipHandle handle, const std::string& file_path) = 0;
 
-  /// Prewarm a registered clip reader outside the audio callback.
+  /// Prepare a registered clip's realtime source outside the audio callback.
   ///
-  /// Seeks the clip's reader to its trim-in point and performs a minimal read,
-  /// then restores the trim-in position. Hosts should call this after
+  /// An idle clip builds its realtime source and fills the steady window from the program start.
+  /// A playing or fading streamed clip pins the first render window at the program start until the
+  /// next start or restart, a trim, loop or metadata update, or unregistration, so a restart or
+  /// loop wrap never waits for the stream worker. Hosts should call this after
   /// registration/metadata changes and before latency-critical playback.
   ///
   /// @param handle Clip handle registered via registerClipAudio()
-  /// @return SessionGraphError::OK on success, NotReady if the clip is active
+  /// @return SessionGraphError::OK on success; NotReady when even one page cannot be pinned;
+  ///         ClipNotRegistered and InvalidHandle as before
   virtual SessionGraphError prepareClipAudio(ClipHandle handle) = 0;
 
   /// Release a clip previously registered via registerClipAudio() (OCC155 Ask #4).

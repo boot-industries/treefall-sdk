@@ -369,7 +369,8 @@ public:
   /// callback — whole-file PCM in memory for short clips, a worker-fed page
   /// ring for long ones. Hosts should call this after registration/metadata
   /// changes and before latency-critical playback; startClip() prepares
-  /// lazily (on the control thread) when it wasn't called.
+  /// lazily (on the control thread) when it wasn't called. A playing or fading
+  /// streamed clip pins its first-render window instead of prefilling.
   SessionGraphError prepareClipAudio(ClipHandle handle) override;
 
   /// OCC155 Ask #4: release a registered clip's reader + prepared source.

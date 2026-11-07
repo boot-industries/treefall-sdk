@@ -137,6 +137,12 @@ public:
   SessionGraphError
   ensurePreparedSourceLocked(Entry& entry,
                              StreamingClipSource::PrimeReservation* reservation = nullptr);
+
+  /// Pin the restart working set of a clip whose voices may be live: the first-render window at
+  /// the program start, held as the loop anchor until the next start or restart, a trim, loop or
+  /// metadata update, or unregistration. A source that does not exist yet is prepared normally.
+  /// Non-streaming sources are always resident and need no pin.
+  SessionGraphError pinRestartWindowLocked(Entry& entry);
   void retainSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void releaseSourceCommand(SourceCommandLifetime* lifetime) noexcept;
   void retainActiveSource(SourceCommandLifetime* lifetime) noexcept;

@@ -608,6 +608,21 @@ void renderBlocks(TransportController& transport, std::vector<float>& out, uint3
   }
 }
 
+// Renders one block per poll so the published demand keeps the worker refreshing its window.
+bool waitForEvicted(TransportController& transport, StreamingClipSource& source,
+                    std::vector<float>& out, uint32_t block, int64_t pageStart) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (StreamingClipSourceTestAccess::residentPageIndex(source, pageStart) ==
+        StreamingClipSource::kNumPages) {
+      return true;
+    }
+    renderBlocks(transport, out, block, 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return false;
+}
+
 void drainAndCrossLoop(TransportController& transport, SeekCallback& callback,
                        std::vector<float>& output, uint32_t block, int64_t trimOut) {
   float* buffers[] = {output.data()};
@@ -3026,6 +3041,113 @@ TEST_F(StreamingSeekMatrixTest, ColdStartShortOfPageBoundaryNeedsNoHostPrefill) 
     total += callback.underruns.load();
   }
   EXPECT_EQ(total, 0);
+}
+
+TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveClipPinsRestartWindowUntilNextStart) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t far = 5 * page + 100;
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 2 * page - 256, 5 * page + 60000, 1.0, false,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  for (const int64_t start : {page, 2 * page}) {
+    const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, start);
+    ASSERT_LT(index, StreamingClipSource::kNumPages) << "restart page not resident: " << start;
+    EXPECT_GE(StreamingClipSourceTestAccess::pageGuard(*source, index), 1u);
+  }
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 2);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  for (const int64_t start : {page, 2 * page}) {
+    EXPECT_TRUE(waitForEvicted(*transport, *source, out, block, start))
+        << "pin on page " << start << " was not released by the non-looping start";
+  }
+}
+
+TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveClipPinsAreReleasedByUpdatesAndUnregister) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t far = 5 * page + 100;
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 2 * page - 256, 5 * page + 60000, 1.0, false,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+
+  // Phase 1: a loop-mode update releases the live-prepare pins.
+  ASSERT_EQ(transport->setClipLoopMode(1, false), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 1);
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  for (const int64_t start : {page, 2 * page}) {
+    EXPECT_TRUE(waitForEvicted(*transport, *source, out, block, start))
+        << "pin on page " << start << " survived the loop-mode update";
+  }
+
+  // Phase 2: unregister succeeds after a live prepare, once the voice has stopped.
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+  ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  for (int index = 0; index < 64 && transport->getActiveVoiceCount(1) != 0; ++index) {
+    renderBlocks(*transport, out, block, 1);
+  }
+  ASSERT_EQ(transport->getActiveVoiceCount(1), 0u);
+  renderBlocks(*transport, out, block, 1);
+  source.reset();
+  ASSERT_EQ(transport->unregisterClipAudio(1), SessionGraphError::OK);
+}
+
+TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveLoopKeepsExistingAnchor) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const int64_t far = 5 * page + 100;
+  constexpr uint32_t block = 512;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 2 * page - 256, 5 * page + 60000, 1.0, true,
+                                                 VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  ASSERT_EQ(transport->seekClip(1, far), SessionGraphError::OK);
+  renderBlocks(*transport, out, block, 4);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  std::vector<std::pair<int64_t, uint32_t>> recorded;
+  for (const int64_t start : {page, 2 * page}) {
+    const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, start);
+    if (index < StreamingClipSource::kNumPages) {
+      recorded.emplace_back(start, StreamingClipSourceTestAccess::pageGuard(*source, index));
+    }
+  }
+  ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+  for (const auto& [start, guard] : recorded) {
+    const size_t index = StreamingClipSourceTestAccess::residentPageIndex(*source, start);
+    ASSERT_LT(index, StreamingClipSource::kNumPages);
+    EXPECT_EQ(StreamingClipSourceTestAccess::pageGuard(*source, index), guard) << "page " << start;
+  }
 }
 
 TEST(ResamplingSeekPrimeTest, WrappedReaderErrorIsNotConvertedToEof) {

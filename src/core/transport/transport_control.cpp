@@ -591,20 +591,17 @@ SessionGraphError TransportController::prepareClipAudio(ClipHandle handle) {
     return SessionGraphError::InvalidHandle;
   }
 
-  // Preserved contract: preparation is a pre-playback operation. (With
-  // ORP134 G1 sources a re-preparation while playing would actually be safe -
-  // active voices hold their own reference - but the historical NotReady
-  // keeps host behavior unchanged.)
-  if (isClipPlaying(handle)) {
-    return SessionGraphError::NotReady;
-  }
+  // A live voice evicts any unpinned page outside its own window, so a live clip pins its restart
+  // window instead of prefilling the steady one.
+  const bool live = isClipPlaying(handle);
 
   std::lock_guard<std::mutex> lock(m_sourceRegistry.mutex());
   auto it = m_sourceRegistry.entries().find(handle);
   if (it == m_sourceRegistry.entries().end()) {
     return SessionGraphError::ClipNotRegistered;
   }
-  return m_sourceRegistry.ensurePreparedSourceLocked(it->second);
+  return live ? m_sourceRegistry.pinRestartWindowLocked(it->second)
+              : m_sourceRegistry.ensurePreparedSourceLocked(it->second);
 }
 
 SessionGraphError TransportController::unregisterClipAudio(ClipHandle handle) {

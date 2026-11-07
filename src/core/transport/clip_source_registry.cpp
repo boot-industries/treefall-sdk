@@ -412,4 +412,23 @@ ClipSourceRegistry::ensurePreparedSourceLocked(Entry& entry,
   return SessionGraphError::OK;
 }
 
+SessionGraphError ClipSourceRegistry::pinRestartWindowLocked(Entry& entry) {
+  if (!entry.source) {
+    return ensurePreparedSourceLocked(entry);
+  }
+  auto streaming = std::dynamic_pointer_cast<StreamingClipSource>(entry.source);
+  if (!streaming) {
+    return SessionGraphError::OK;
+  }
+  StreamingClipSource::LoopAnchorTransition transition{};
+  const SessionGraphError result = streaming->prepareLoopAnchorTransition(
+      programStartSample(entry.trimInSamples, entry.segmentCount, entry.segments),
+      m_firstRenderFrames, true, transition);
+  if (result != SessionGraphError::OK) {
+    return result;
+  }
+  streaming->commitLoopAnchorTransition(transition);
+  return SessionGraphError::OK;
+}
+
 } // namespace orpheus
