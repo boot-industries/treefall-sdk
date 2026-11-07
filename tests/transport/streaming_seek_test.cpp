@@ -148,6 +148,23 @@ public:
     source.publishVoiceDemands();
   }
 
+  using VoiceDemand = StreamingClipSource::VoiceDemand;
+  using DemandArray = std::array<VoiceDemand, kVoiceDemandTestCapacity>;
+
+  static void publishPrograms(StreamingClipSource& source, const DemandArray& demands,
+                              size_t count) {
+    source.beginVoiceDemands();
+    for (size_t index = 0; index < count; ++index) {
+      source.addVoiceDemand(demands[index].position, demands[index].windowEnd,
+                            demands[index].jumpTarget);
+    }
+    source.publishVoiceDemands();
+  }
+
+  static bool keepsPage(const StreamingClipSource& source, int64_t pageStart) {
+    return source.keepsPage(pageStart, 0);
+  }
+
   static bool readPublishedDemands(StreamingClipSource& source, PublishedDemandSnapshot& result) {
     StreamingClipSource::VoiceDemandSnapshot snapshot{};
     if (!source.readWorkerVoiceDemands(snapshot)) {
@@ -2081,6 +2098,31 @@ TEST(StreamingClipSourceDemandTest, GroupedVoicesSplitBudgetPerDistinctCursor) {
     EXPECT_EQ(StreamingClipSourceTestAccess::residentPageIndex(source, start),
               StreamingClipSource::kNumPages)
         << "grouped window exceeded its three-page share at " << start;
+  }
+}
+
+TEST(StreamingClipSourceDemandTest, DifferentProgramsOnOnePageSplitTheSteadyBudget) {
+  // Voices on one cursor page that follow different programs read different pages. The six
+  // steady pages are therefore budgeted per program shape, not per cursor page: otherwise
+  // every shape keeps a full window and together they retain more pages than the pool holds.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  auto reader = std::make_shared<FaultReader>(20 * page);
+  ASSERT_TRUE(reader->open("").isOk());
+  StreamingClipSource source(reader, 1, 20 * page);
+  StreamingClipSourceTestAccess::DemandArray demands{};
+  demands[0] = {2 * page + 16, source.lengthFrames(), -1};
+  demands[1] = {2 * page + 80, 2 * page + 1000, 12 * page + 5};
+  demands[2] = {2 * page + 144, 2 * page + 2000, 16 * page + 5};
+  StreamingClipSourceTestAccess::publishPrograms(source, demands, 3);
+
+  size_t kept = 0;
+  for (int64_t index = 0; index < 20; ++index) {
+    kept += StreamingClipSourceTestAccess::keepsPage(source, index * page) ? 1u : 0u;
+  }
+  EXPECT_LE(kept, StreamingClipSource::kWindowPages);
+  for (const int64_t start : {2 * page, 3 * page, 12 * page, 16 * page}) {
+    EXPECT_TRUE(StreamingClipSourceTestAccess::keepsPage(source, start))
+        << "each program keeps its current page and its first hop page: " << start;
   }
 }
 

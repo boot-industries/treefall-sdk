@@ -114,12 +114,12 @@ private:
 
 /// Fixed-page streaming source for long files.
 ///
-/// Six steady pages are shared across distinct page-aligned voice cursors;
-/// voices whose cursors sit on the same page share one window. A single
-/// cursor retains one page behind, its current page and four forward pages;
-/// two distinct cursors receive behind/current/forward windows of three pages
-/// each. More distinct cursors reduce runway and can exceed this fixed cache
-/// budget.
+/// Six steady pages are shared across distinct voice program shapes (a cursor page plus the
+/// pages the voice's playback program reads); voices whose cursors sit on the same page and
+/// follow the same program share one window. A single shape retains one page behind, its
+/// current page and four forward pages; two distinct shapes receive behind/current/forward
+/// windows of three pages each. More distinct shapes reduce runway and can exceed this fixed
+/// cache budget.
 /// Four separate command-prime pages retain first-render and loop-anchor leases.
 class StreamingClipSource : public IClipSource {
 public:
@@ -241,9 +241,10 @@ private:
 
   // The worker receives one coherent bounded snapshot of every active voice
   // cursor for this source. The six steady pages are budgeted per distinct
-  // page-aligned cursor, not per voice: they support two three-page windows,
-  // three two-page windows, or up to six current pages. More distinct cursors
-  // are a real cache-capacity limit, not a polyphony guarantee.
+  // program shape (cursor page plus the pages its program reads), not per
+  // voice: they support two three-page windows, three two-page windows, or up
+  // to six current pages. More distinct shapes are a real cache-capacity
+  // limit, not a polyphony guarantee.
   static constexpr size_t kMaxVoiceDemands = 32;
   static constexpr uint32_t kVoiceDemandWriter = uint32_t{1} << 31;
   // One active view, possible worker/control readers, and an inactive writer slot.
@@ -257,11 +258,14 @@ private:
   bool readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead);
   bool keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept;
 
-  /// Budget the steady pages per distinct page-aligned cursor: voices on the same page share one
-  /// window, and windows rank by first appearance. Audio-side retention and the worker refill both
-  /// derive their windows here from the same published demands. Realtime-safe.
-  static void computeVoiceWindowPages(const VoiceDemand* demands, size_t count,
-                                      std::array<uint8_t, kMaxVoiceDemands>& pages) noexcept;
+  /// Budget the steady pages per distinct program shape: voices that read the same pages share
+  /// one window, and windows rank by first appearance. Voices on one cursor page that follow
+  /// different programs (a looping voice and a stopping one, say) read different pages, so each
+  /// shape gets its own share and the total retained never exceeds the budget. Audio-side
+  /// retention and the worker refill both derive their windows here from the same published
+  /// demands. Realtime-safe.
+  void computeVoiceWindowPages(const VoiceDemand* demands, size_t count,
+                               std::array<uint8_t, kMaxVoiceDemands>& pages) const noexcept;
 
   /// The pages one voice reads, in order: `linear` consecutive pages from `current`, then, when
   /// the program jumps, consecutive pages from `hop`.
@@ -269,6 +273,7 @@ private:
     int64_t current{0};
     size_t linear{1};
     int64_t hop{-1}; ///< first page after the jump, -1 when playback ends at the window
+    bool operator==(const ProgramShape&) const noexcept = default;
   };
   ProgramShape programShape(const VoiceDemand& demand) const noexcept;
 

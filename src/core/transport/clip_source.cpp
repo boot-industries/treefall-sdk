@@ -125,19 +125,20 @@ void StreamingClipSource::releaseReadyPin(Page& page) noexcept {
 
 void StreamingClipSource::computeVoiceWindowPages(
     const VoiceDemand* demands, size_t count,
-    std::array<uint8_t, kMaxVoiceDemands>& pages) noexcept {
+    std::array<uint8_t, kMaxVoiceDemands>& pages) const noexcept {
   static_assert(kMaxVoiceDemands <= UINT8_MAX, "window ranks are stored in the plan bytes");
-  constexpr int64_t kPage = static_cast<int64_t>(kPageFrames);
   constexpr size_t kBudget = kWindowPages;
   count = std::min(count, kMaxVoiceDemands);
 
-  // First pass: store each voice's window rank in its plan byte.
+  // First pass: store each voice's window rank in its plan byte. Voices share a window only
+  // when they read the same pages: same cursor page, same window length and same hop.
+  std::array<ProgramShape, kMaxVoiceDemands> shapes;
   size_t windows = 0;
   for (size_t voice = 0; voice < count; ++voice) {
-    const int64_t page = std::max<int64_t>(0, demands[voice].position) / kPage;
+    shapes[voice] = programShape(demands[voice]);
     size_t rank = windows;
     for (size_t earlier = 0; earlier < voice; ++earlier) {
-      if (std::max<int64_t>(0, demands[earlier].position) / kPage == page) {
+      if (shapes[earlier] == shapes[voice]) {
         rank = pages[earlier];
         break;
       }

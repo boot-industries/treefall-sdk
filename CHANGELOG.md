@@ -250,13 +250,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masks and `prepareLoopAnchorTransition()` takes a frame count; the private
   `StreamingClipSource` layout changes, so rebuild consumers with the updated
   headers.
-- `StreamingClipSource` budgets its six steady pages per distinct page-aligned
-  voice cursor instead of per voice. Voices of one clip that sit on the same
-  page now share one behind/current/four-forward window, so six or more
+- `StreamingClipSource` budgets its six steady pages per distinct program shape
+  (cursor page plus the pages the voice's playback program reads) instead of
+  per voice. Voices of one clip that sit on the same page and follow the same
+  program now share one behind/current/four-forward window, so six or more
   co-located voices (the default per-clip cap is eight) no longer drop to zero
-  look-ahead and underrun at every page crossing. The audio thread and the
+  look-ahead and underrun at every page crossing; voices on one page that
+  follow different programs (a looping voice beside a stopping one) split the
+  budget instead of each retaining a full window. The audio thread and the
   stream worker derive the same plan from each published demand snapshot.
-  Distinct cursors keep the existing capacity limit. Migration: the class
+  Distinct shapes keep the existing capacity limit. Migration: the class
   gains a private member, so its layout grows; consumers must rebuild against
   the updated `orpheus/clip_source.h`. No API or C ABI table changes.
 - Lane routes for an already-playing mono voice now follow live group-width
