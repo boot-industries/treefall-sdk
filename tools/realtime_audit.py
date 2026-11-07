@@ -399,6 +399,8 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "resetSegmentCursor",
                 "advancePlaybackWindow",
                 "clipDspProgramActive",
+                "nextPlaybackWindowStart",
+                "voiceProgram",
             ),
         ),
         TargetRow(
@@ -409,6 +411,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "postTransportEvent",
                 "postVoiceEvent",
                 "publishVoiceSnapshot",
+                "reportPageMiss",
                 "publishCallbackTelemetry",
             ),
         ),
@@ -426,7 +429,7 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
             "Streaming consumer lease helper {name}",
             _CLIP_SOURCE,
             "StreamingClipSource",
-            ("releaseCommandPrime", "commitLoopAnchorTransition", "releaseReadyPin"),
+            ("releaseCommandPrime", "commitLoopAnchorTransition", "releaseReadyPin", "releasePinMask"),
         ),
         TargetRow(
             "Streaming callback helper {name}",
@@ -440,13 +443,10 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "refreshVoicePagePins",
                 "publishVoiceDemands",
                 "keepsPage",
+                "computeVoiceWindowPages",
+                "programShape",
+                "programPageStart",
             ),
-        ),
-        TargetRow(
-            "Streaming callback free helper {name}",
-            _CLIP_SOURCE,
-            None,
-            ("computeVoiceWindowPages",),
         ),
         TargetRow("Clip source callback read {owner}::{name}", _CLIP_SOURCE, "PreparedClipSource", ("read",)),
         TargetRow(
