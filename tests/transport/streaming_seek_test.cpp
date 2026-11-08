@@ -3215,6 +3215,44 @@ TEST_F(StreamingSeekMatrixTest, ColdStartShortOfPageBoundaryNeedsNoHostPrefill) 
   EXPECT_EQ(total, 0);
 }
 
+TEST_F(StreamingSeekMatrixTest, PrepareClipAudioAfterPlayDoesNotWaitOutFillTimeout) {
+  // A stopped clip keeps the steady pages its last voice left behind. Only the audio thread
+  // evicts, and it no longer reads, so those pages must not starve the restart window: the
+  // control-thread prefill must complete in worker time, not at kFillWaitTimeout.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 512;
+  const auto budget = std::chrono::milliseconds(500);
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  ASSERT_NO_FATAL_FAILURE(
+      configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000), page - 256,
+                             6 * page, 1.0, false, VoiceMode::MonoWithFadeOverlap));
+  std::vector<float> out;
+  for (const size_t playBlocks : {size_t{20}, size_t{100}, size_t{150}, size_t{270}, size_t{400}}) {
+    SCOPED_TRACE("playBlocks=" + std::to_string(playBlocks));
+    ASSERT_EQ(transport->prepareClipAudio(1), SessionGraphError::OK);
+    ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+    renderBlocks(*transport, out, block, playBlocks);
+    ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+    for (int index = 0; index < 64 && transport->getActiveVoiceCount(1) != 0; ++index) {
+      renderBlocks(*transport, out, block, 1);
+    }
+    ASSERT_EQ(transport->getActiveVoiceCount(1), 0u);
+    renderBlocks(*transport, out, block, 20);
+
+    const auto begin = std::chrono::steady_clock::now();
+    const SessionGraphError result = transport->prepareClipAudio(1);
+    const auto elapsed = std::chrono::steady_clock::now() - begin;
+    EXPECT_EQ(result, SessionGraphError::OK);
+    EXPECT_LT(elapsed, budget) << "prepareClipAudio blocked "
+                               << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                                      .count()
+                               << " ms on a stopped clip";
+  }
+  EXPECT_EQ(callback.underruns.load(), 0);
+  transport->setCallback(nullptr);
+}
+
 TEST_F(StreamingSeekMatrixTest, PrepareClipAudioOnLiveClipPinsRestartWindowUntilNextStart) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   const int64_t far = 5 * page + 100;
