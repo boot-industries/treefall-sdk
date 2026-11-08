@@ -227,6 +227,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `prepareClipAudio()` on a stopped streamed clip no longer blocks the control
+  thread for the full 2 s `StreamingClipSource::kFillWaitTimeout` after the clip
+  has played. A finished play left its steady pages resident, only the audio
+  thread evicted them, and with no voice reading nothing did, so the pool stayed
+  full and the demand page could not be decoded. The stream worker now drops
+  unpinned steady pages outside the idle window before refilling it.
 - Streamed clips no longer underrun at predictable page boundaries. A looping
   clip pins every page covering its first render window at the program start
   (one page, or two when the start lies within `maxBlockFrames * 4 + 2` frames

@@ -1050,6 +1050,32 @@ void StreamingClipSource::serviceWindow(size_t pageOpportunities) {
     serviceVoiceWindow(snapshot, pageOpportunities);
   } else {
     const int64_t pos = m_demand.load(std::memory_order_relaxed);
+    // No voice reads this source, so nothing on the audio side will evict (readCached is the
+    // only other evictor). Pages a finished play left behind would otherwise fill the steady
+    // pool and starve the next window: fillPage needs a free slot, so the demand page would stay
+    // NotReady and prefill() would run out kFillWaitTimeout. Drop every unpinned steady page
+    // outside the window keepsPage() grants a source without voices; the guard CAS skips pages
+    // a loop anchor, command lease or reader still holds. A voice that starts after the
+    // snapshot above is primed from the command pool, then fed by the voice path.
+    if (m_lengthFrames > 0) {
+      const int64_t keepBase = alignDown(std::max<int64_t>(0, pos));
+      const int64_t keepFirst = keepBase - static_cast<int64_t>(kPageFrames);
+      const int64_t keepEnd =
+          keepBase + static_cast<int64_t>(kWindowPages - 1) * static_cast<int64_t>(kPageFrames);
+      for (size_t index = 0; index < kWindowPages; ++index) {
+        Page& page = m_pages[index];
+        const int64_t start = page.start.load(std::memory_order_acquire);
+        if (start < 0 || (start >= keepFirst && start < keepEnd)) {
+          continue;
+        }
+        uint32_t expected = 0;
+        if (page.guard.compare_exchange_strong(expected, kClaimed, std::memory_order_acq_rel,
+                                               std::memory_order_acquire)) {
+          page.start.store(-1, std::memory_order_release);
+          page.guard.store(0, std::memory_order_release);
+        }
+      }
+    }
     if (m_lengthFrames > 0 && pos < m_lengthFrames) {
       (void)fillWindow(alignDown(std::max<int64_t>(0, pos)), kWindowPages, pageOpportunities);
     }
