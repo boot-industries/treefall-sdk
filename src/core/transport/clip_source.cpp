@@ -416,6 +416,13 @@ bool StreamingClipSource::readCached(int64_t pos, float* dest, size_t frames, si
   return true;
 }
 
+bool StreamingClipSource::readResidentFrame(int64_t pos, float* dest) noexcept {
+  if (pos < 0 || pos >= m_lengthFrames) {
+    return false;
+  }
+  return copyFromResidentPage(pos, dest, 1);
+}
+
 SessionGraphError StreamingClipSource::decodePage(Page& page, int64_t alignedStart) {
   if (!m_reader || !m_reader->isOpen()) {
     return SessionGraphError::NotReady;

@@ -54,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interface with a no-op default: consumers and subclasses must rebuild; an old
   prebuilt subclass must not receive the call. The stable C ABI tables are
   unchanged.
+- `TransportUnderrun::voiceStopping` is appended to the struct, default `false`.
+  It is `true` when the voice that missed a streamed page was already in a stop
+  fade (an operator stop, a group choke, Stop All or a natural-end fade), so a
+  host can weigh a miss in a fading tail differently from one on a voice that is
+  still playing. The field has a default and sits after `position`: aggregate
+  initialisation that stops at `position` keeps compiling, and consumers must
+  rebuild to read it.
 
 ### Changed
 
@@ -227,6 +234,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A looping streamed clip whose stop fade (operator stop, `stopOtherClips()`,
+  `startClipWithGroupChoke()`, `stopAllClips()`) reached trim-out no longer
+  retires the pages under its own cursor. On every block of the rest of the
+  fade the loop-boundary interpolation read moved that voice's page demand to
+  trim-in, so the next block missed, once per block until the fade ended. A
+  natural-end fade of a clip whose looping was switched on mid-fade did the
+  same.
+- A stop fade now stays inside the loop. A looping voice keeps wrapping from
+  trim-out to trim-in while it fades out, with the usual boundary interpolation:
+  a 0.6 s stop fade pressed 0.2 s before trim-out plays 0.2 s up to OUT and the
+  remaining 0.4 s from IN, and a fade longer than the loop wraps again. The
+  voice still retires when its fade ends. Earlier the fade read on past trim-out
+  into audio the clip's trim had cut away. Segment programs advance through
+  their windows during a stop fade the same way; the last window of a program
+  that does not loop is read through. Operator-stopped clips with looping off
+  are unchanged.
+- A natural-end tail stays silent past trim-out when looping is switched on
+  while it plays, and never wraps. The in-window fade-out previously dropped out
+  with the loop flag, which made the trimmed-away audio audible.
+- `StreamingClipSource` reads the loop-start interpolation frame from a resident
+  page without publishing a demand or retiring pages, so a second read in a
+  block can no longer evict the pages under the voice's cursor.
 - `prepareClipAudio()` on a stopped streamed clip no longer blocks the control
   thread for the full 2 s `StreamingClipSource::kFillWaitTimeout` after the clip
   has played. A finished play left its steady pages resident, only the audio
@@ -891,7 +920,9 @@ route methods.
   no longer mutes every logical group after summing.
 - A stopping loop no longer wraps from its OUT point back to IN. Stop fades now
   complete across the loop boundary, so host-level group chokes and Stop All
-  cannot leave a looping voice active indefinitely.
+  cannot leave a looping voice active indefinitely. (Superseded by the
+  Unreleased section: a looping voice wraps again during its stop fade, which
+  stays finite, so the voice still retires when the fade ends.)
 
 ### Verification
 

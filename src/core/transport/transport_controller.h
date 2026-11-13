@@ -285,6 +285,7 @@ struct TransportEvent {
   int64_t sourceFrame;        ///< BufferUnderrun: first source frame that was not resident
   uint32_t concealedFrames;   ///< BufferUnderrun: output frames silenced in the block
   uint64_t cumulativeCount;   ///< BufferUnderrun: page misses since construction
+  bool voiceStopping;         ///< BufferUnderrun: the voice was in a stop fade
 };
 
 static_assert(std::is_trivially_copyable_v<TransportEvent>,
