@@ -89,11 +89,11 @@ struct VoiceProgram {
 
 /// True when the voice's program continues at its window end: a looping clip returns to its loop
 /// start and a segment program advances to its next window. A stop fade does not change that, so
-/// a looping voice keeps wrapping while it fades out and the fade stays inside the loop. The
-/// tail of a natural end never continues: it is silent past trim-out, even if looping is
-/// switched on while it plays.
+/// a looping voice keeps wrapping while it fades out and the fade stays inside the loop. A voice
+/// that has reached the end of its program never continues: its tail is silent past trim-out,
+/// even if looping is switched on while it plays or Stop All restarts its fade.
 bool voiceWrapsAtWindowEnd(const ActiveClip& clip, bool loopEnabled) noexcept {
-  return (loopEnabled || clip.segmentCount != 0) && !clip.isNaturalEnding;
+  return (loopEnabled || clip.segmentCount != 0) && !clip.endedNaturally;
 }
 
 /// True when the voice's render loop must stop at its window end and hand over to
@@ -461,7 +461,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           gain *= calculateFadeGain(fadePosition, fadeInCurveType);
         }
 
-        if (!loopEnabled || clip.isNaturalEnding) {
+        if (!loopEnabled || clip.endedNaturally) {
           const int64_t activeWindowDuration = activeWindowEnd - activeWindowStart;
           if (atProgramEnd && fadeOutSampleCount > 0 &&
               relativePosition >= activeWindowDuration - fadeOutSampleCount) {
@@ -661,6 +661,7 @@ PlaybackBoundaryAction TransportController::handlePlaybackBoundary(ActiveClip& c
   if (boundary == PlaybackBoundaryAction::Ended) {
     clip.isStopping = true;
     clip.isNaturalEnding = true;
+    clip.endedNaturally = true;
     clip.stopFadeFramesElapsed = 0;
     return boundary;
   }
@@ -1260,6 +1261,7 @@ void TransportController::processCommands() {
             clip.sourcePosition = static_cast<double>(startPosition);
             clip.isStopping = false;
             clip.isNaturalEnding = false;
+            clip.endedNaturally = false;
             if (clip.source) {
               clip.source->setDemand(startPosition);
             }
@@ -1446,6 +1448,7 @@ int64_t TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.sourcePosition = static_cast<double>(startPosition);
   clip.playDelayFramesRemaining = clip.playDelayFrames;
   clip.isNaturalEnding = false;
+  clip.endedNaturally = false;
   if (clip.source) {
     clip.source->setDemand(startPosition);
   }
@@ -1513,6 +1516,7 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
     primary->sourcePosition = static_cast<double>(startPosition);
     primary->playDelayFramesRemaining = primary->playDelayFrames;
     primary->isNaturalEnding = false;
+    primary->endedNaturally = false;
     if (primary->source)
       primary->source->setDemand(startPosition);
     primary->isStopping = false;
@@ -1700,6 +1704,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize restart crossfade state
   clip.isRestarting = false;
   clip.isNaturalEnding = false;
+  clip.endedNaturally = false;
   clip.restartFadeFramesRemaining = 0;
 
   // ORP097 Bug 7 Fix: Initialize loop state

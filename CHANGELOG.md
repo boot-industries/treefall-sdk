@@ -250,9 +250,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their windows during a stop fade the same way; the last window of a program
   that does not loop is read through. Operator-stopped clips with looping off
   are unchanged.
-- A natural-end tail stays silent past trim-out when looping is switched on
-  while it plays, and never wraps. The in-window fade-out previously dropped out
-  with the loop flag, which made the trimmed-away audio audible.
+- A voice that has reached the end of its program (loop off) never wraps, also
+  when looping is switched on while its tail plays and also when Stop All then
+  restarts its fade. The tail stays as it was: with a natural fade-out
+  configured the in-window fade-out keeps the audio past trim-out silent (it
+  previously dropped out with the loop flag, which made the trimmed-away audio
+  audible); with none configured the clip still plays real audio past trim-out
+  through the default fade instead of hard-cutting, as before.
 - `StreamingClipSource` reads the loop-start interpolation frame from a resident
   page without publishing a demand or retiring pages, so a second read in a
   block can no longer evict the pages under the voice's cursor.

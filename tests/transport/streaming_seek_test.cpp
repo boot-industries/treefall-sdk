@@ -3641,11 +3641,13 @@ struct FadeClipSetup {
   bool loop{false};
   double stopFadeSeconds{0.01};
   double naturalFadeOutSeconds{0.0};
+  // Files longer than this stream; a larger value decodes the file whole (a prepared source).
+  int64_t preparedMaxFrames{48000};
 };
 
 void configureFadeClip(TransportController& transport, SeekCallback& callback, ClipHandle handle,
                        const std::string& path, const FadeClipSetup& setup, VoiceMode mode) {
-  transport.setPreparedSourceMaxFrames(48000);
+  transport.setPreparedSourceMaxFrames(setup.preparedMaxFrames);
   transport.setCallback(&callback);
   ASSERT_EQ(transport.registerClipAudio(handle, path), SessionGraphError::OK);
   ASSERT_EQ(transport.setClipVoiceMode(handle, mode), SessionGraphError::OK);
@@ -3817,12 +3819,15 @@ void renderStopAcrossTrimOut(const std::string& path, const FadeClipSetup& setup
   std::vector<float> scratch;
   renderBlocks(*transport, scratch, block, 2);
   auto source = TransportControllerTestAccess::source(*transport, 1);
-  ASSERT_TRUE(source);
+  const bool streamed = setup.preparedMaxFrames < kFloatWavFrames;
+  ASSERT_EQ(source != nullptr, streamed);
   ASSERT_EQ(transport->seekClip(1, setup.trimOut - lead), SessionGraphError::OK);
   ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
   renderPaced(*transport, captured, block, 1);
-  ASSERT_TRUE(waitForResident(*source, setup.trimOut / page * page));
-  ASSERT_TRUE(waitForResident(*source, setup.trimIn / page * page));
+  if (streamed) {
+    ASSERT_TRUE(waitForResident(*source, setup.trimOut / page * page));
+    ASSERT_TRUE(waitForResident(*source, setup.trimIn / page * page));
+  }
   renderPaced(*transport, captured, block, blocks - 1);
   finalState = transport->getClipState(1);
 }
@@ -3990,6 +3995,251 @@ TEST_F(StreamingSeekMatrixTest,
   EXPECT_LE(stoppedAfterBlocks, 302);
   EXPECT_EQ(callback.underruns.load(), 0);
   EXPECT_EQ(callback.loops.load(), 0);
+}
+
+// A non-looping clip with no configured fade-out does not hard-cut at trim-out: its natural end
+// plays real audio past OUT through the default fade (the ORP127 T5 contract, also pinned by
+// StopFadeEnvelopeTest.NonLoopedOutBoundaryHasNoHardCut). The in-window fade-out is skipped
+// here, so a loop-on update must not change that tail either.
+void renderNaturalEndWithDefaultFade(const std::string& path, bool switchLoopOnInTail,
+                                     SeekCallback& callback, std::vector<float>& captured) {
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  const int64_t lead = 1000;
+  auto transport = makeStreamingTransport(block);
+  FadeClipSetup setup;
+  setup.trimIn = 2 * page - 256;
+  setup.trimOut = 5 * page + 7000;
+  setup.rate = 1.0;
+  setup.loop = false;
+  ASSERT_NO_FATAL_FAILURE(
+      configureFadeClip(*transport, callback, 1, path, setup, VoiceMode::Polyphonic));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> scratch;
+  renderBlocks(*transport, scratch, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, setup.trimOut - lead), SessionGraphError::OK);
+  renderPaced(*transport, captured, block, 1);
+  ASSERT_TRUE(waitForResident(*source, setup.trimOut / page * page));
+  // OUT is reached at output frame 1000; the default fade is 480 frames. 200 frames into it:
+  renderPaced(*transport, captured, block, (static_cast<size_t>(lead) + 200) / block - 1);
+  if (switchLoopOnInTail) {
+    auto metadata = transport->getClipMetadata(1);
+    ASSERT_TRUE(metadata.has_value());
+    metadata->loopEnabled = true;
+    ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  }
+  renderPaced(*transport, captured, block, 24);
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopped);
+}
+
+TEST_F(StreamingSeekMatrixTest,
+       NaturalEndWithoutConfiguredFadeKeepsItsDefaultTailWhenLoopSwitchedOn) {
+  const std::string dcPath = writeFloatWav(s_directory, "dc.wav", false);
+  SeekCallback plainCallback;
+  SeekCallback toggledCallback;
+  std::vector<float> plain;
+  std::vector<float> toggled;
+  ASSERT_NO_FATAL_FAILURE(renderNaturalEndWithDefaultFade(dcPath, false, plainCallback, plain));
+  ASSERT_NO_FATAL_FAILURE(renderNaturalEndWithDefaultFade(dcPath, true, toggledCallback, toggled));
+  ASSERT_EQ(plain.size(), toggled.size());
+
+  // The tail past OUT is audible and fades out within the default 480 frames.
+  EXPECT_GT(plain[1000], 0.4f);
+  EXPECT_GT(plain[1100], 0.0f);
+  for (size_t frame = 1000 + 480 + 64; frame < plain.size(); ++frame) {
+    ASSERT_EQ(plain[frame], 0.0f) << "output frame " << frame;
+  }
+  // Switching looping on mid-tail changes nothing: no wrap, no miss, the same samples.
+  EXPECT_EQ(plain, toggled);
+  EXPECT_EQ(toggledCallback.loops.load(), 0);
+  EXPECT_EQ(toggledCallback.underruns.load(), 0);
+}
+
+TEST_F(StreamingSeekMatrixTest, StopAllInANaturalEndTailAfterLoopOnStaysSilentAndNeverWraps) {
+  // Natural end, looping switched on during the tail, then Stop All. stopClip(), stopOtherClips()
+  // and the group choke skip a voice that is already fading; Stop All restarts its fade with the
+  // operator length. The voice has already ended: it must not wrap into the loop and play the
+  // clip's start.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  constexpr double rate = 0.967;
+  const int64_t trimOut = 5 * page + 7000;
+  const int64_t lead = 3000;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  FadeClipSetup setup;
+  setup.trimIn = 2 * page - 256;
+  setup.trimOut = trimOut;
+  setup.rate = rate;
+  setup.loop = false;
+  setup.stopFadeSeconds = 0.3;
+  setup.naturalFadeOutSeconds = 0.75;
+  ASSERT_NO_FATAL_FAILURE(configureFadeClip(*transport, callback, 1,
+                                            writeFloatWav(s_directory, "dc.wav", false), setup,
+                                            VoiceMode::Polyphonic));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, trimOut - lead), SessionGraphError::OK);
+  std::vector<float> captured;
+  renderPaced(*transport, captured, block, 1);
+  ASSERT_TRUE(waitForResident(*source, trimOut / page * page));
+  const auto naturalEndFrame = static_cast<size_t>(std::ceil(static_cast<double>(lead) / rate));
+  renderPaced(*transport, captured, block, (naturalEndFrame + 4800) / block);
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->loopEnabled = true;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  renderPaced(*transport, captured, block, 20);
+  ASSERT_EQ(transport->stopAllClips(), SessionGraphError::OK);
+  renderPaced(*transport, captured, block, 400);
+
+  for (size_t frame = naturalEndFrame; frame < captured.size(); ++frame) {
+    ASSERT_EQ(captured[frame], 0.0f) << "audio past trim-out at output frame " << frame;
+  }
+  EXPECT_EQ(callback.loops.load(), 0);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopped);
+}
+
+TEST_F(StreamingSeekMatrixTest, WholeDecodedLoopStopFadeTailIsTheWrappedLoop) {
+  // A prepared (whole-file) source takes the non-streaming read path for the loop-start frame.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  const std::string rampPath = writeFloatWav(s_directory, "ramp.wav", true);
+  const std::string dcPath = writeFloatWav(s_directory, "dc.wav", false);
+  FadeClipSetup setup;
+  setup.trimIn = 2 * page - 256;
+  setup.trimOut = 5 * page + 7000;
+  setup.rate = 0.967;
+  setup.loop = true;
+  setup.stopFadeSeconds = 0.6;
+  setup.preparedMaxFrames = kFloatWavFrames + 1;
+  ASSERT_NO_FATAL_FAILURE(expectWrappedLoopTail(setup, 9280, 0.6, 1, rampPath, dcPath));
+}
+
+TEST_F(StreamingSeekMatrixTest, LoopSwitchedOffDuringAStopFadeReadsOnWithoutWrappingOrMisses) {
+  // A looping voice in its stop fade, looping then turned off before OUT: the fade no longer has
+  // a loop to stay in, so it reads on past OUT and, with a natural fade-out configured, the
+  // in-window fade-out keeps the audio past trim-out silent.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  constexpr double rate = 0.967;
+  const int64_t trimOut = 5 * page + 7000;
+  const int64_t lead = 9280;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  FadeClipSetup setup;
+  setup.trimIn = 2 * page - 256;
+  setup.trimOut = trimOut;
+  setup.rate = rate;
+  setup.loop = true;
+  setup.stopFadeSeconds = 0.6;
+  setup.naturalFadeOutSeconds = 0.2;
+  ASSERT_NO_FATAL_FAILURE(configureFadeClip(*transport, callback, 1,
+                                            writeFloatWav(s_directory, "dc.wav", false), setup,
+                                            VoiceMode::Polyphonic));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, trimOut - lead), SessionGraphError::OK);
+  ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  std::vector<float> captured;
+  renderPaced(*transport, captured, block, 1);
+  ASSERT_TRUE(waitForResident(*source, trimOut / page * page));
+  renderPaced(*transport, captured, block, 99); // 6400 output frames, short of OUT at 9597
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->loopEnabled = false;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  renderPaced(*transport, captured, block, 400);
+
+  const auto outFrame = static_cast<size_t>(std::ceil(static_cast<double>(lead) / rate));
+  for (size_t frame = outFrame; frame < captured.size(); ++frame) {
+    ASSERT_EQ(captured[frame], 0.0f) << "audio past trim-out at output frame " << frame;
+  }
+  EXPECT_EQ(callback.loops.load(), 0);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopped);
+}
+
+TEST_F(StreamingSeekMatrixTest, RetriggerOfALoopFadingAcrossTrimOutDoesNotMiss) {
+  // MonoWithFadeOverlap restart while the old voice's stop fade crosses OUT: the old voice wraps
+  // while the new one starts at trim-in, both from the same source.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  const int64_t trimOut = 5 * page + 7000;
+  const int64_t lead = 9280;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  FadeClipSetup setup;
+  setup.trimIn = 2 * page - 256;
+  setup.trimOut = trimOut;
+  setup.rate = 0.967;
+  setup.loop = true;
+  setup.stopFadeSeconds = 0.6;
+  ASSERT_NO_FATAL_FAILURE(configureFadeClip(*transport, callback, 1,
+                                            writeFloatWav(s_directory, "dc.wav", false), setup,
+                                            VoiceMode::MonoWithFadeOverlap));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, trimOut - lead), SessionGraphError::OK);
+  renderPaced(*transport, out, block, 1);
+  ASSERT_TRUE(waitForResident(*source, trimOut / page * page));
+  renderPaced(*transport, out, block, 100);                  // 0.13 s before OUT at 9597
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK); // retrigger
+  renderPaced(*transport, out, block, 600);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_TRUE(callback.classified.empty());
+  ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  renderPaced(*transport, out, block, 600);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopped);
+}
+
+TEST_F(StreamingSeekMatrixTest, TrimOutMovedBehindACursorInAStopFadeWrapsWithoutMiss) {
+  // The Clip Edit dialog can pull trim-out back behind a fading voice. UpdateTrim clamps the
+  // cursor to the new OUT, and the fade then wraps from there.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  const int64_t trimIn = 2 * page - 256;
+  const int64_t trimOut = 5 * page + 7000;
+  const int64_t lead = 9280;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  FadeClipSetup setup;
+  setup.trimIn = trimIn;
+  setup.trimOut = trimOut;
+  setup.rate = 0.967;
+  setup.loop = true;
+  setup.stopFadeSeconds = 0.6;
+  ASSERT_NO_FATAL_FAILURE(configureFadeClip(*transport, callback, 1,
+                                            writeFloatWav(s_directory, "dc.wav", false), setup,
+                                            VoiceMode::Polyphonic));
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> out;
+  renderBlocks(*transport, out, block, 2);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_EQ(transport->seekClip(1, trimOut - lead), SessionGraphError::OK);
+  ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+  renderPaced(*transport, out, block, 1);
+  ASSERT_TRUE(waitForResident(*source, trimOut / page * page));
+  renderPaced(*transport, out, block, 50); // the cursor is about 6,000 frames short of OUT
+  ASSERT_EQ(transport->updateClipTrimPoints(1, trimIn, trimOut - 20000), SessionGraphError::OK);
+  renderPaced(*transport, out, block, 450);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_TRUE(callback.classified.empty());
+  EXPECT_GE(callback.loops.load(), 1);
+  EXPECT_EQ(transport->getClipState(1), PlaybackState::Stopped);
 }
 
 TEST(StreamingClipSourceDemandTest, ResidentFrameReadMovesNeitherDemandNorPages) {
