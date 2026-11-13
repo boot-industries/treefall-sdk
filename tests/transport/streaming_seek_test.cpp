@@ -3945,6 +3945,53 @@ TEST_F(StreamingSeekMatrixTest, PageMissReportsWhetherTheVoiceWasAlreadyFadingOu
   EXPECT_TRUE(callback.classified.back().voiceStopping);
 }
 
+TEST_F(StreamingSeekMatrixTest,
+       StopFadeAcrossTheEndOfANonLoopingSegmentProgramStaysAnOperatorStop) {
+  // The last window of a program that does not loop has nothing to wrap to: the fade reads
+  // through it and keeps its own length. Treating the window end as a natural end would restart
+  // the fade with the (much longer) natural-end fade-out.
+  const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
+  constexpr uint32_t block = 64;
+  auto transport = makeStreamingTransport(block);
+  SeekCallback callback;
+  const std::vector<ClipPlaybackSegment> segments = {{2 * page, 2 * page + 2000, 1},
+                                                     {4 * page, 4 * page + 3000, 1}};
+  ASSERT_NO_FATAL_FAILURE(configureStreamingClip(*transport, callback, sourcePath(48000, 1, 48000),
+                                                 0, 9 * 48000, 1.0, false, VoiceMode::Polyphonic,
+                                                 segments));
+  auto metadata = transport->getClipMetadata(1);
+  ASSERT_TRUE(metadata.has_value());
+  metadata->stopFadeOutSeconds = 0.4;
+  metadata->fadeOutSeconds = 1.5;
+  ASSERT_EQ(transport->updateClipMetadata(1, *metadata), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(1), SessionGraphError::OK);
+  std::vector<float> captured;
+  renderPaced(*transport, captured, block, 20);
+  auto source = TransportControllerTestAccess::source(*transport, 1);
+  ASSERT_TRUE(source);
+  ASSERT_TRUE(waitForResident(*source, 4 * page));
+  // 2000 frames of the first window, then 1328 of the last 3000-frame window: 1672 frames short
+  // of the end of the program when the stop arrives.
+  renderPaced(*transport, captured, block, 32);
+  ASSERT_EQ(transport->getClipState(1), PlaybackState::Playing);
+  ASSERT_EQ(transport->stopClip(1), SessionGraphError::OK);
+
+  // The 0.4 s fade is 300 blocks of 64 frames and crosses the program end; the natural-end
+  // fade-out would run 1.5 s.
+  int stoppedAfterBlocks = -1;
+  for (int blocks = 1; blocks <= 400; ++blocks) {
+    renderPaced(*transport, captured, block, 1);
+    if (transport->getClipState(1) == PlaybackState::Stopped) {
+      stoppedAfterBlocks = blocks;
+      break;
+    }
+  }
+  EXPECT_GE(stoppedAfterBlocks, 300);
+  EXPECT_LE(stoppedAfterBlocks, 302);
+  EXPECT_EQ(callback.underruns.load(), 0);
+  EXPECT_EQ(callback.loops.load(), 0);
+}
+
 TEST(StreamingClipSourceDemandTest, ResidentFrameReadMovesNeitherDemandNorPages) {
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   auto reader = std::make_shared<FaultReader>(8 * page);
