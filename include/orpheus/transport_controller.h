@@ -349,6 +349,10 @@ struct TransportUnderrun {
   /// same misses.
   uint64_t cumulativeCount{0};
   TransportPosition position{};
+  /// True when the missing voice was already in a stop fade, an operator stop or a natural-end
+  /// fade, when the miss was detected. Hosts may weigh such a miss differently from one on a
+  /// voice that is still playing.
+  bool voiceStopping{false};
 };
 
 /// Callback interface for transport events
@@ -507,6 +511,10 @@ public:
   ///
   /// @note If the clip is not playing, this function has no effect
   /// @note Fade-out duration is configurable via clip metadata
+  /// @note A looping clip keeps looping through its stop fade: a fade that reaches trim-out
+  ///       continues from trim-in, so it never plays audio past trim-out. The same holds for
+  ///       stopAllClips(), stopOtherClips() and the group choke of startClipWithGroupChoke().
+  ///       A natural-end fade never wraps.
   virtual SessionGraphError stopClip(ClipHandle handle) = 0;
 
   /// Stop all currently playing clips

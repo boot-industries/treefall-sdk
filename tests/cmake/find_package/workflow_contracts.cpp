@@ -28,6 +28,7 @@ namespace {
 class UnderrunRecorder final : public orpheus::ITransportCallback {
 public:
   uint64_t cumulativeCount{0};
+  bool voiceStopping{false};
 
   void onClipStarted(orpheus::ClipHandle, orpheus::StartRequestTag, uint32_t,
                      orpheus::TransportPosition) override {}
@@ -38,6 +39,7 @@ public:
   void onBufferUnderrun(orpheus::TransportPosition) override {}
   void onClassifiedUnderrun(const orpheus::TransportUnderrun& underrun) override {
     cumulativeCount = underrun.cumulativeCount;
+    voiceStopping = underrun.voiceStopping;
   }
 };
 
@@ -140,6 +142,10 @@ int main() {
   }
   UnderrunRecorder recorder;
   orpheus::ITransportCallback& callback = recorder;
-  callback.onClassifiedUnderrun(orpheus::TransportUnderrun{.cumulativeCount = 7});
-  return recorder.cumulativeCount == 7 ? 0 : 11;
+  callback.onClassifiedUnderrun(
+      orpheus::TransportUnderrun{.cumulativeCount = 7, .voiceStopping = true});
+  if (orpheus::TransportUnderrun{}.voiceStopping) {
+    return 12; // the appended field defaults to false
+  }
+  return recorder.cumulativeCount == 7 && recorder.voiceStopping ? 0 : 11;
 }

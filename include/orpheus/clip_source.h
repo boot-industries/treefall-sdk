@@ -256,6 +256,11 @@ private:
   bool readForVoice(size_t demandIndex, int64_t pos, int64_t windowEnd, int64_t jumpTarget,
                     float* dest, size_t frames, size_t& framesRead);
   bool readCached(int64_t pos, float* dest, size_t frames, size_t& framesRead);
+  /// Copy one frame from a page that is already resident. Unlike readForVoice() and readCached()
+  /// it neither publishes a voice demand nor retires pages, so a voice's auxiliary look at another
+  /// part of the file cannot move the pages under its real cursor. False when the page is not
+  /// resident or the position is outside the file; audio-thread safe.
+  bool readResidentFrame(int64_t pos, float* dest) noexcept;
   bool keepsPage(int64_t pageStart, int64_t fallbackPosition) const noexcept;
 
   /// Budget the steady pages per distinct program shape: voices that read the same pages share

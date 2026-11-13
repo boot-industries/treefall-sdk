@@ -575,7 +575,7 @@ void TransportController::processCallbacks() {
         m_callback->onBufferUnderrun(event.position);
         m_callback->onClassifiedUnderrun(TransportUnderrun{
             UnderrunCause::StreamingPageMiss, event.handle, event.voiceId, event.sourceFrame,
-            event.concealedFrames, event.cumulativeCount, event.position});
+            event.concealedFrames, event.cumulativeCount, event.position, event.voiceStopping});
         break;
       case TransportEventType::ActiveClipLimitReached:
         m_callback->onActiveClipLimitReached(event.handle, event.requestTag, event.position);

@@ -217,6 +217,10 @@ struct ActiveClip {
 
   bool isStopping;      // true if fade-out in progress
   bool isNaturalEnding; // true when OUT, false for operator/choke stop
+  // The voice reached the end of its program (trimmed OUT, loop off) and has not been restarted.
+  // Unlike isNaturalEnding it survives an operator stop of the tail (Stop All), so a loop-on
+  // update followed by that stop cannot make the finished voice wrap.
+  bool endedNaturally;
 
   // Restart crossfade state (broadcast-safe restart mechanism)
   bool isRestarting; // true if restart crossfade in progress
@@ -285,6 +289,7 @@ struct TransportEvent {
   int64_t sourceFrame;        ///< BufferUnderrun: first source frame that was not resident
   uint32_t concealedFrames;   ///< BufferUnderrun: output frames silenced in the block
   uint64_t cumulativeCount;   ///< BufferUnderrun: page misses since construction
+  bool voiceStopping;         ///< BufferUnderrun: the voice was in a stop fade
 };
 
 static_assert(std::is_trivially_copyable_v<TransportEvent>,

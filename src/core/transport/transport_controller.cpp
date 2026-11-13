@@ -87,11 +87,30 @@ struct VoiceProgram {
   int64_t jumpTarget;
 };
 
-/// What a voice will read after its cursor. A stopping voice reads linearly through its stop fade,
-/// past any window end, and so does the last window of a program that ends: its natural-ending
-/// fade-out reads past trim-out. Only a program that jumps has a window end to read up to.
+/// True when the voice's program continues at its window end: a looping clip returns to its loop
+/// start and a segment program advances to its next window. A stop fade does not change that, so
+/// a looping voice keeps wrapping while it fades out and the fade stays inside the loop. A voice
+/// that has reached the end of its program never continues: its tail is silent past trim-out,
+/// even if looping is switched on while it plays or Stop All restarts its fade.
+bool voiceWrapsAtWindowEnd(const ActiveClip& clip, bool loopEnabled) noexcept {
+  return (loopEnabled || clip.segmentCount != 0) && !clip.endedNaturally;
+}
+
+/// True when the voice's render loop must stop at its window end and hand over to
+/// handlePlaybackBoundary. A playing voice always does, also for the end of a program that does
+/// not loop. A stopping voice only does when its program has a next window: the last window of a
+/// segment program without looping has nothing to wrap to, so the fade reads through it.
+bool voiceReadsToWindowEnd(const ActiveClip& clip, bool loopEnabled) noexcept {
+  return !clip.isStopping || (voiceWrapsAtWindowEnd(clip, loopEnabled) &&
+                              nextPlaybackWindowStart(clip, loopEnabled) >= 0);
+}
+
+/// What a voice will read after its cursor. A voice whose program wraps reads up to its window
+/// end and then from its jump target, whether it plays or fades out. Every other voice reads
+/// linearly: the last window of a program that ends, an operator stop without looping, and the
+/// natural-ending fade-out, which reads past trim-out.
 VoiceProgram voiceProgram(const ActiveClip& clip) noexcept {
-  if (clip.isStopping)
+  if (!voiceWrapsAtWindowEnd(clip, clip.loopEnabled))
     return {clip.fileLengthSamples, -1};
   const int64_t jumpTarget = nextPlaybackWindowStart(clip, clip.loopEnabled);
   if (jumpTarget < 0)
@@ -257,7 +276,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         clip.source->setDemand(activeWindowStart);
       }
 
-      if (!clip.isStopping && clip.sourcePosition >= static_cast<double>(activeWindowEnd)) {
+      if (voiceReadsToWindowEnd(clip, loopEnabled) &&
+          clip.sourcePosition >= static_cast<double>(activeWindowEnd)) {
         if (handlePlaybackBoundary(clip, loopEnabled) != PlaybackBoundaryAction::Ended) {
           activeWindowStart = playbackWindowStart(clip);
           activeWindowEnd = playbackWindowEnd(clip);
@@ -294,7 +314,8 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
       if (clip.isStopping) {
         segmentFrames = std::min(
             segmentFrames, static_cast<size_t>(activeStopFadeSamples - clip.stopFadeFramesElapsed));
-      } else {
+      }
+      if (voiceReadsToWindowEnd(clip, loopEnabled)) {
         const double sourceFramesToOut = static_cast<double>(activeWindowEnd) - clip.sourcePosition;
         const size_t outputFramesToOut =
             static_cast<size_t>(std::max(1.0, std::ceil(sourceFramesToOut / playbackRate)));
@@ -344,18 +365,26 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
         clip.concealFadeInRemaining = static_cast<int64_t>(kConcealmentFadeFrames);
       }
       clip.concealing = renderableFrames < segmentFrames;
+      // Whether the frames across window end come from the voice's next window, for a playing
+      // and for a fading voice alike.
+      const bool wrapsAtWindowEnd =
+          voiceWrapsAtWindowEnd(clip, loopEnabled) && voiceReadsToWindowEnd(clip, loopEnabled);
       std::array<float, 8> loopStartFrame{};
       bool hasLoopStartFrame = false;
-      if (clip.segmentCount == 0 && loopEnabled &&
+      if (clip.segmentCount == 0 && wrapsAtWindowEnd &&
           readStart + static_cast<int64_t>(requestedInputFrames) > activeWindowEnd) {
         size_t loopStartFramesRead = 0;
-        const bool loopStartRead =
-            clip.streamingSource
-                ? clip.streamingSource->readForVoice(clip.streamingDemandIndex, activeWindowStart,
-                                                     program.windowEnd, program.jumpTarget,
-                                                     loopStartFrame.data(), 1, loopStartFramesRead)
-                : clip.source->read(activeWindowStart, loopStartFrame.data(), 1,
-                                    loopStartFramesRead);
+        bool loopStartRead = false;
+        if (clip.streamingSource) {
+          // A one-frame auxiliary read: it moves neither this voice's demand nor the page
+          // retirement that follows the real cursor.
+          loopStartRead =
+              clip.streamingSource->readResidentFrame(activeWindowStart, loopStartFrame.data());
+          loopStartFramesRead = loopStartRead ? 1 : 0;
+        } else {
+          loopStartRead =
+              clip.source->read(activeWindowStart, loopStartFrame.data(), 1, loopStartFramesRead);
+        }
         hasLoopStartFrame = loopStartRead && loopStartFramesRead == 1;
         if (!hasLoopStartFrame) {
           if (!loopStartRead) {
@@ -432,7 +461,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           gain *= calculateFadeGain(fadePosition, fadeInCurveType);
         }
 
-        if (!loopEnabled) {
+        if (!loopEnabled || clip.endedNaturally) {
           const int64_t activeWindowDuration = activeWindowEnd - activeWindowStart;
           if (atProgramEnd && fadeOutSampleCount > 0 &&
               relativePosition >= activeWindowDuration - fadeOutSampleCount) {
@@ -450,11 +479,10 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
           const bool secondFrameCrossesWindow =
               readStart + static_cast<int64_t>(secondInputFrame) >= activeWindowEnd;
           const float second =
-              secondFrameCrossesWindow && clip.segmentCount != 0
-                  ? first
-                  : (secondFrameCrossesWindow && loopEnabled
-                         ? (hasLoopStartFrame ? loopStartFrame[channel] : first)
-                         : clipReadBuffer[secondInputFrame * numFileChannels + channel]);
+              secondFrameCrossesWindow && wrapsAtWindowEnd
+                  ? (clip.segmentCount != 0 ? first
+                                            : (hasLoopStartFrame ? loopStartFrame[channel] : first))
+                  : clipReadBuffer[secondInputFrame * numFileChannels + channel];
           sourceFrame[channel] = first + (second - first) * fraction;
         }
         if (dspActive) {
@@ -633,6 +661,7 @@ PlaybackBoundaryAction TransportController::handlePlaybackBoundary(ActiveClip& c
   if (boundary == PlaybackBoundaryAction::Ended) {
     clip.isStopping = true;
     clip.isNaturalEnding = true;
+    clip.endedNaturally = true;
     clip.stopFadeFramesElapsed = 0;
     return boundary;
   }
@@ -674,6 +703,7 @@ void TransportController::reportPageMiss(const ActiveClip& clip, int64_t sourceF
   event.sourceFrame = sourceFrame;
   event.concealedFrames = concealedFrames;
   event.cumulativeCount = m_pageMissCount;
+  event.voiceStopping = clip.isStopping;
   postTransportEvent(event);
   m_realtimeTelemetry.reportUnderrunFromRealtime();
 }
@@ -1231,6 +1261,7 @@ void TransportController::processCommands() {
             clip.sourcePosition = static_cast<double>(startPosition);
             clip.isStopping = false;
             clip.isNaturalEnding = false;
+            clip.endedNaturally = false;
             if (clip.source) {
               clip.source->setDemand(startPosition);
             }
@@ -1417,6 +1448,7 @@ int64_t TransportController::restartVoiceInPlace(ActiveClip& clip) {
   clip.sourcePosition = static_cast<double>(startPosition);
   clip.playDelayFramesRemaining = clip.playDelayFrames;
   clip.isNaturalEnding = false;
+  clip.endedNaturally = false;
   if (clip.source) {
     clip.source->setDemand(startPosition);
   }
@@ -1484,6 +1516,7 @@ TransportController::startVoiceWithMode(const std::shared_ptr<ClipPlaybackContex
     primary->sourcePosition = static_cast<double>(startPosition);
     primary->playDelayFramesRemaining = primary->playDelayFrames;
     primary->isNaturalEnding = false;
+    primary->endedNaturally = false;
     if (primary->source)
       primary->source->setDemand(startPosition);
     primary->isStopping = false;
@@ -1671,6 +1704,7 @@ bool TransportController::addActiveClip(const std::shared_ptr<ClipPlaybackContex
   // Initialize restart crossfade state
   clip.isRestarting = false;
   clip.isNaturalEnding = false;
+  clip.endedNaturally = false;
   clip.restartFadeFramesRemaining = 0;
 
   // ORP097 Bug 7 Fix: Initialize loop state
