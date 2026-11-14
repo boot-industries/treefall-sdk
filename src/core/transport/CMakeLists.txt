@@ -4,6 +4,7 @@ add_library(orpheus_transport STATIC
     clip_source.cpp # ORP134 G1: prepared/streaming realtime clip sources
     clip_source_registry.cpp
     clip_dsp.cpp
+    parametric_eq.cpp # analog-matched SVF parametric EQ used by clip DSP
     transport_controller.cpp # realtime core: render path, command consumer
     transport_control.cpp # control-thread mutations and command producers
     transport_queries.cpp # const queries and snapshot readers

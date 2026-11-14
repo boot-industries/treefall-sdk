@@ -398,7 +398,6 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
                 "playbackWindowEnd",
                 "resetSegmentCursor",
                 "advancePlaybackWindow",
-                "clipDspProgramActive",
                 "nextPlaybackWindowStart",
                 "voiceProgram",
             ),
@@ -424,7 +423,26 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
             ("releaseSourceCommand", "retainActiveSource", "releaseActiveSource"),
         ),
         # Per-clip DSP and streaming clip-source callback paths.
-        TargetRow("Clip DSP callback {name}", "src/core/transport/clip_dsp.cpp", "ClipDspProcessor", ("processFrame",)),
+        TargetRow(
+            "Clip DSP callback {name}",
+            "src/core/transport/clip_dsp.cpp",
+            "ClipDspProcessor",
+            ("processFrame", "transitionTo", "active"),
+        ),
+        TargetRow(
+            "Parametric EQ callback {name}",
+            "src/core/transport/parametric_eq.cpp",
+            "ParametricEqProcessor",
+            (
+                "processFrame",
+                "transitionTo",
+                "active",
+                "beginRamp",
+                "advanceRamp",
+                "stopBand",
+                "deriveCoefficients",
+            ),
+        ),
         TargetRow(
             "Streaming consumer lease helper {name}",
             _CLIP_SOURCE,

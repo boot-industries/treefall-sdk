@@ -94,7 +94,11 @@ struct TransportCommand {
   // Context for Start command (carries reader + metadata safely)
   // This is separate from the union to ensure proper shared_ptr management
   std::shared_ptr<ClipPlaybackContext> startContext;
-  ClipDspProcessor dspProcessor;
+  // UpdateMetadata: the clip DSP prepared on the control thread. A prepared
+  // processor is too large to embed in each of the MAX_COMMANDS nodes. The
+  // audio thread only reads it; the control thread releases it when it
+  // overwrites the node for its next command, never the audio thread.
+  std::shared_ptr<const ClipDspProcessor> dspProcessor;
 
   // Raw source lifetimes are retained by the registry before publication and
   // released exactly once by the audio command consumer.

@@ -517,7 +517,8 @@ jobs:
   # ============================================================================
   cpp-lint:
     name: C++ Lint
-    runs-on: ubuntu-latest
+    # Pinned: clang-format-14 is not packaged for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:

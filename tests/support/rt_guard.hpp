@@ -14,6 +14,9 @@
 //    deallocation performed while the calling thread is inside an RtSection
 //    is counted as a violation (the allocation itself still succeeds, so the
 //    system under test keeps running and the test can report precisely).
+//  * FailNextAllocation — RAII, thread-local allocation-failure injection
+//    through the same overrides, so a test can force one specific
+//    control-thread allocation to fail without a production injection hook.
 //  * ProcIoCounters — Linux /proc/self/io sampling (read syscalls + bytes)
 //    so a test can prove a guarded render section performed file I/O — or
 //    prove that it did not. Returns has_value()==false where unsupported.
@@ -78,6 +81,44 @@ public:
 inline bool inRtSection() {
   return RtGuardState::t_sectionDepth > 0;
 }
+
+/// Thread-local state behind FailNextAllocation; defined in rt_guard.cpp.
+struct AllocationFailureState {
+  static thread_local bool t_armed;
+  static thread_local std::size_t t_minBytes;
+  static thread_local std::size_t t_maxBytes;
+  static thread_local std::uint32_t t_failures;
+  static thread_local std::size_t t_failedBytes;
+};
+
+/// RAII: while alive, the first global operator new on this thread whose size
+/// lies in [minBytes, maxBytes] fails — the throwing forms throw
+/// std::bad_alloc, the nothrow forms return nullptr — and the injection
+/// disarms. Other threads and other sizes are unaffected. Not nestable.
+class FailNextAllocation {
+public:
+  FailNextAllocation(std::size_t minBytes, std::size_t maxBytes) noexcept {
+    AllocationFailureState::t_minBytes = minBytes;
+    AllocationFailureState::t_maxBytes = maxBytes;
+    AllocationFailureState::t_failures = 0;
+    AllocationFailureState::t_failedBytes = 0;
+    AllocationFailureState::t_armed = true;
+  }
+  ~FailNextAllocation() {
+    AllocationFailureState::t_armed = false;
+  }
+  FailNextAllocation(const FailNextAllocation&) = delete;
+  FailNextAllocation& operator=(const FailNextAllocation&) = delete;
+
+  /// Number of allocations failed by this injection (0 or 1).
+  std::uint32_t failures() const noexcept {
+    return AllocationFailureState::t_failures;
+  }
+  /// Requested size of the failed allocation; meaningful when failures() == 1.
+  std::size_t failedBytes() const noexcept {
+    return AllocationFailureState::t_failedBytes;
+  }
+};
 
 /// Linux /proc/self/io snapshot. syscr = read() syscall count, rchar = bytes
 /// requested from read-family syscalls (counted even when served from the

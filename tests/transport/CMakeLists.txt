@@ -37,6 +37,17 @@ target_link_libraries(clip_dsp_test
 target_link_libraries(clip_dsp_test PRIVATE orpheus_test_rt_guard)
 add_test(NAME clip_dsp_test COMMAND clip_dsp_test)
 
+add_executable(parametric_eq_test parametric_eq_test.cpp)
+target_link_libraries(parametric_eq_test
+    PRIVATE
+        orpheus_transport
+        GTest::gtest
+        GTest::gtest_main
+        orpheus_test_rt_guard
+)
+target_include_directories(parametric_eq_test PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
+add_test(NAME parametric_eq_test COMMAND parametric_eq_test)
+
 # Bounded multi-producer command-ingress regressions (D3).
 add_executable(command_ingress_test
     command_ingress_test.cpp
@@ -231,6 +242,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(clip_controls_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(clip_controls_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include

@@ -864,7 +864,12 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   if (validation != SessionGraphError::OK)
     return validation;
 
-  ClipDspProcessor preparedDsp;
+  std::shared_ptr<ClipDspProcessor> preparedDsp;
+  try {
+    preparedDsp = std::make_shared<ClipDspProcessor>();
+  } catch (const std::bad_alloc&) {
+    return SessionGraphError::InternalError;
+  }
 
   const int64_t fadeInSampleCount =
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));
@@ -910,10 +915,11 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   CommandReservation reservation(*this, nodeIndex);
   TransportCommand& admitted = m_commandNodes[nodeIndex].command;
   admitted = cmd;
-  if (preparedDsp.prepare(metadata.dsp, m_sampleRate, fileChannels) != ClipDspValidationError::OK) {
+  if (preparedDsp->prepare(metadata.dsp, m_sampleRate, fileChannels) !=
+      ClipDspValidationError::OK) {
     return SessionGraphError::InvalidParameter;
   }
-  admitted.dspProcessor = preparedDsp;
+  admitted.dspProcessor = std::move(preparedDsp);
   StreamingClipSource* streaming = nullptr;
   SourceCommandLifetime* lifetime = nullptr;
   StreamingClipSource::LoopAnchorTransition transition{};

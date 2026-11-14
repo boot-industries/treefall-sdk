@@ -92,6 +92,8 @@ add_orpheus_fixture(orpheus_find_package_tape_varispeed tape_varispeed.cpp)
 target_link_libraries(orpheus_find_package_tape_varispeed PRIVATE Orpheus::audio_utils)
 add_orpheus_fixture(orpheus_find_package_clip_dsp clip_dsp.cpp)
 target_link_libraries(orpheus_find_package_clip_dsp PRIVATE Orpheus::transport)
+add_orpheus_fixture(orpheus_find_package_parametric_eq parametric_eq.cpp)
+target_link_libraries(orpheus_find_package_parametric_eq PRIVATE Orpheus::transport)
 
 
 add_orpheus_fixture(orpheus_find_package_media_integrity media_integrity.cpp)

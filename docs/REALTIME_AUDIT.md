@@ -40,10 +40,11 @@ about realtime safety and architecture contracts, not micro-optimizing DSP.
 - Static auditing is driven by one table, `repository_target_rows()` in
   `tools/realtime_audit.py`: the driver callbacks, `processCommands`,
   `processAudio` and their helpers, the routing render path and its meter-state
-  publishers, the gain smoother and true-peak meter, per-clip DSP, the
-  streaming clip-source read and demand paths, the telemetry publishers, the
-  CoreAudio callback helpers, and the callback-safe public DSP classes
-  (`ScrubResampler`, `TriggerVoice`, `PreparedTapeVarispeed`). Every target
+  publishers, the gain smoother and true-peak meter, per-clip DSP and its
+  parametric EQ, the streaming clip-source read and demand paths, the telemetry
+  publishers, the CoreAudio callback helpers, and the callback-safe public DSP
+  classes (`ScrubResampler`, `TriggerVoice`, `PreparedTapeVarispeed`,
+  `ParametricEqProcessor`). Every target
   receives the hard rules, including the blocking file-reader patterns
   (`readSamples(`, `->seek(`, `sf_readf_float`); only adjacent application
   targets keep those as tracked debt. A function added to an audio-thread path
