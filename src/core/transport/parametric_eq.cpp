@@ -310,9 +310,12 @@ ParametricEqProcessor::deriveCoefficients(const SvfParameters& parameters) noexc
   coefficients.gt1 = parameters.g * gt0;
   coefficients.gk1 = parameters.g * gk * gt0;
   coefficients.gt2 = parameters.g * coefficients.gt1;
-  coefficients.m0 = parameters.m0;
-  coefficients.m1x = parameters.m1x;
-  coefficients.m2x = parameters.m2x;
+  // y = m0 x + m1x v1 + m2x v2 with v1 = gt0 ic1 + gt1 t0 and
+  // v2 = ic2 + gt1 ic1 + gt2 t0, t0 = x - ic2, regrouped by x, ic1 and ic2.
+  const float throughGain = parameters.m1x * coefficients.gt1 + parameters.m2x * coefficients.gt2;
+  coefficients.inputGain = parameters.m0 + throughGain;
+  coefficients.ic1Gain = parameters.m1x * gt0 + parameters.m2x * coefficients.gt1;
+  coefficients.ic2Gain = parameters.m2x - throughGain;
   return coefficients;
 }
 
@@ -409,14 +412,13 @@ void ParametricEqProcessor::processFrame(float* channels, size_t channelCount) n
     for (size_t channel = 0; channel < channelCount; ++channel) {
       auto& state = states[channel];
       const float x = channels[channel];
+      const float y = c.inputGain * x + (c.ic1Gain * state.ic1 + c.ic2Gain * state.ic2);
       const float t0 = x - state.ic2;
       const float t1 = c.gt1 * t0 - c.gk1 * state.ic1;
       const float t2 = c.gt2 * t0 + c.gt1 * state.ic1;
-      const float v1 = state.ic1 + t1;
-      const float v2 = state.ic2 + t2;
       state.ic1 = state.ic1 + 2.0f * t1;
       state.ic2 = state.ic2 + 2.0f * t2;
-      channels[channel] = c.m0 * x + c.m1x * v1 + c.m2x * v2;
+      channels[channel] = y;
     }
   }
 }

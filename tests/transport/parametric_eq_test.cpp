@@ -622,7 +622,7 @@ TEST(ParametricEqTest, SixBandRenderHashIsPinned) {
     hash = orpheus::tests::support::Fnv1a64(bits, hash);
   }
   // Pinned from the first macOS run; Linux and Windows must reproduce it bit for bit.
-  EXPECT_EQ(hash, 0x236f9e61d5831444ull) << std::hex << "0x" << hash;
+  EXPECT_EQ(hash, 0xb9a80b0dbc6b7631ull) << std::hex << "0x" << hash;
 }
 
 TEST(ParametricEqTest, ProcessorIsFixedTriviallyCopyable) {

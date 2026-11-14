@@ -132,13 +132,15 @@ private:
     float m2x = 0.0f;
     bool operator==(const SvfParameters&) const = default;
   };
+  /// Per-sample SVF gains. The output mix is folded onto the input and the
+  /// two integrator states, so the input-to-output path is one multiply-add.
   struct SvfCoefficients {
     float gt1 = 0.0f;
     float gk1 = 0.0f;
     float gt2 = 0.0f;
-    float m0 = 1.0f;
-    float m1x = 0.0f;
-    float m2x = 0.0f;
+    float inputGain = 1.0f;
+    float ic1Gain = 0.0f;
+    float ic2Gain = 0.0f;
   };
   struct SvfState {
     float ic1 = 0.0f;
