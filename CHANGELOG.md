@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `include/orpheus/parametric_eq.h` adds a host-neutral parametric EQ of up to
+  eight bands (`kParametricEqMaxBands`). Each band is a trapezoidal
+  state-variable filter fitted to its analog prototype, so bell centres, notch
+  zeros and shelf midpoints stay on their frequency close to Nyquist. Band types
+  are `Bell`, `LowShelf`, `HighShelf`, `HighPass`, `LowPass`, `Notch`,
+  `BandPass`, `AllPass` and `TiltShelf`; shelves, high-pass and low-pass also
+  accept `EqBandOrder::First` (6 dB/oct). Shelf `q` is honoured up to
+  `kParametricEqMaxShelfQ` (4.0), so low-Q tone shaping (Q 0.1, 0.3) is
+  available. `parametricEqMagnitudeDb()` returns the target response for UI
+  curves, and `ParametricEqProcessor::transitionTo()` moves a running EQ to a
+  new prepared response over `kParametricEqTransitionSeconds` (10 ms) without
+  resetting its filter state. Per-band `enabled` is the band bypass and
+  `ParametricEqSettings::enabled` bypasses all bands; both keep the settings
+  and toggle click-free. The installed-package fixture covers the header.
+- `ClipDspProcessor::transitionTo()` adopts another prepared processor while
+  keeping its filter and dynamics state, and `ClipDspProcessor::active()`
+  reports whether any stage, including a pending EQ or width transition, still
+  processes audio.
 - `tools/docs_path_audit.py` (CTest `docs_path_audit`) now fails if private
   engineering records (`docs/orp/`, `.claude/implementation_progress.md`) are
   tracked by git. Engineering records moved to a private companion repository
@@ -64,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** clip DSP uses the parametric EQ. `ClipDspProgram::eq` is now a
+  `ParametricEqSettings` with an EQ-wide `enabled` flag (default `false`) and
+  eight `bands`. `ClipEqBandType` and `ClipEqBandSettings` are replaced by
+  `EqBandType` and `EqBandSettings`, which add an `order` field, and
+  `kClipDspEqBandCount` is removed. Hosts migrate by setting
+  `dsp.eq.enabled = true`, writing `dsp.eq.bands[i]`, and padding saved
+  four-band arrays with disabled bands. Shelf `q` now shapes the response:
+  saved shelves with a Q other than 0.70710678 sound different, and a
+  second-order shelf Q above 4.0 fails validation. The new design matches the
+  analog response near Nyquist, so high bands sit higher than the former
+  bilinear design placed them.
+- Clip DSP EQ and stereo-width changes on a playing voice now glide over
+  `kClipDspTransitionSeconds` (10 ms). Gate, compressor and limiter settings
+  still apply at once; a dynamics stage switched on by an update starts idle.
 - The dummy audio endpoint advertises 64 output channels instead of 32,
   matching the driver's existing 64-channel configuration limit. Clip
   Composer's `AudioEngine::initialize(config)` widens its identity map to
@@ -234,6 +266,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A live `updateClipMetadata()` on a playing voice no longer resets its clip
+  DSP filter and dynamics state. Replacing the processor zeroed every filter,
+  so a 0.5 dB nudge of a +12 dB low shelf on a DC signal produced a sample step
+  of about 0.7; the voice now keeps its state and the step stays below 1e-3.
 - A looping streamed clip whose stop fade (operator stop, `stopOtherClips()`,
   `startClipWithGroupChoke()`, `stopAllClips()`) reached trim-out no longer
   retires the pages under its own cursor. On every block of the rest of the
