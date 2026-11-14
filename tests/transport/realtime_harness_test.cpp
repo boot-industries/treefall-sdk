@@ -281,10 +281,11 @@ TEST_F(RealtimeHarnessTest, FileBackedRenderDoesNoFileIO) {
     ASSERT_TRUE(metadata.has_value());
     metadata->dsp.gate.enabled = true;
     metadata->dsp.gate.thresholdDb = -80.0f;
-    for (size_t band = 0; band < metadata->dsp.eq.size(); ++band) {
-      metadata->dsp.eq[band].enabled = true;
-      metadata->dsp.eq[band].frequencyHz = 120.0f * static_cast<float>(band + 1);
-      metadata->dsp.eq[band].gainDb = static_cast<float>(band) - 1.5f;
+    metadata->dsp.eq.enabled = true;
+    for (size_t band = 0; band < metadata->dsp.eq.bands.size(); ++band) {
+      metadata->dsp.eq.bands[band].enabled = true;
+      metadata->dsp.eq.bands[band].frequencyHz = 120.0f * static_cast<float>(band + 1);
+      metadata->dsp.eq.bands[band].gainDb = static_cast<float>(band) - 1.5f;
     }
     metadata->dsp.compressor.enabled = true;
     metadata->dsp.width.enabled = true;

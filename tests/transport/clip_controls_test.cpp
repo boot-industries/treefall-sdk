@@ -606,9 +606,10 @@ TEST_F(ClipAudioControlsTest, SessionDefaultsNormalizeClipControlBounds) {
 
 TEST_F(ClipAudioControlsTest, DspProgramRoundTripsAndInvalidUpdateIsAtomic) {
   auto value = metadata();
-  value.dsp.eq[0].enabled = true;
-  value.dsp.eq[0].frequencyHz = 2500.0f;
-  value.dsp.eq[0].gainDb = 4.5f;
+  value.dsp.eq.enabled = true;
+  value.dsp.eq.bands[0].enabled = true;
+  value.dsp.eq.bands[0].frequencyHz = 2500.0f;
+  value.dsp.eq.bands[0].gainDb = 4.5f;
   value.dsp.compressor.enabled = true;
   value.dsp.compressor.ratio = 3.0f;
   ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);

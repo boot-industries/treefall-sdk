@@ -118,21 +118,6 @@ VoiceProgram voiceProgram(const ActiveClip& clip) noexcept {
   return {playbackWindowEnd(clip), jumpTarget};
 }
 
-// Every disabled stage of ClipDspProcessor::processFrame is an exact identity,
-// so a voice whose program enables none of them can skip the per-frame call.
-bool clipDspProgramActive(const ClipDspProgram& program) noexcept {
-  if (program.gate.enabled || program.compressor.enabled || program.width.enabled ||
-      program.limiter.enabled) {
-    return true;
-  }
-  for (const ClipEqBandSettings& band : program.eq) {
-    if (band.enabled) {
-      return true;
-    }
-  }
-  return false;
-}
-
 } // namespace
 
 TransportPosition TransportController::positionAtSamples(int64_t samples) const {
@@ -248,7 +233,7 @@ void TransportController::processAudio(float* const* outputBuffers, size_t numCh
     const float panRight = clip.panRightGain;
     const float clipGainTarget = muted ? 0.0f : clip.gainLinear;
     const size_t numFileChannels = clip.numChannels;
-    const bool dspActive = clipDspProgramActive(clip.dspProcessor.program());
+    const bool dspActive = clip.dspProcessor.active();
     const size_t laneBase = voiceIndex * m_config.maxSourceChannels;
     // Keep rendering and lane routes on the same width decision for this block.
     // Stable voices do not republish their routes.

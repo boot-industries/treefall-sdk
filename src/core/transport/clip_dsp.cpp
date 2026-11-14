@@ -2,6 +2,7 @@
 #include <orpheus/clip_dsp.h>
 
 #include "../common/pinned_math.h"
+#include "parametric_eq_design.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +10,6 @@
 
 namespace orpheus {
 namespace {
-constexpr float kPi = 3.14159265358979323846f;
 
 bool finiteInRange(float value, float minimum, float maximum) noexcept {
   return std::isfinite(value) && value >= minimum && value <= maximum;
@@ -36,12 +36,8 @@ ClipDspValidationError validateClipDspProgram(const ClipDspProgram& program, dou
       !finiteInRange(program.gate.releaseMs, 1.0f, 5000.0f))
     return ClipDspValidationError::InvalidGate;
 
-  const float maximumFrequency = static_cast<float>(sampleRate * 0.49);
-  for (const auto& band : program.eq) {
-    if (!finiteInRange(band.frequencyHz, 20.0f, maximumFrequency) ||
-        !finiteInRange(band.gainDb, -24.0f, 24.0f) || !finiteInRange(band.q, 0.1f, 20.0f))
-      return ClipDspValidationError::InvalidEq;
-  }
+  if (validateParametricEq(program.eq, sampleRate) != ParametricEqValidationError::OK)
+    return ClipDspValidationError::InvalidEq;
 
   if (!finiteInRange(program.compressor.thresholdDb, -96.0f, 0.0f) ||
       !finiteInRange(program.compressor.ratio, 1.0f, 20.0f) ||
@@ -69,77 +65,21 @@ ClipDspValidationError ClipDspProcessor::prepare(const ClipDspProgram& program, 
   ClipDspProcessor prepared;
   prepared.m_program = program;
   prepared.m_channelCount = channelCount;
-  prepared.m_gateThresholdLinear = dbToLinear(program.gate.thresholdDb);
-  prepared.m_gateAttackCoefficient = timeCoefficient(program.gate.attackMs, sampleRate);
-  prepared.m_gateReleaseCoefficient = timeCoefficient(program.gate.releaseMs, sampleRate);
-  prepared.m_compressorAttackCoefficient = timeCoefficient(program.compressor.attackMs, sampleRate);
-  prepared.m_compressorReleaseCoefficient =
-      timeCoefficient(program.compressor.releaseMs, sampleRate);
-  prepared.m_limiterReleaseCoefficient = timeCoefficient(program.limiter.releaseMs, sampleRate);
-  prepared.m_limiterCeilingLinear = dbToLinear(program.limiter.ceilingDb);
-  prepared.m_compressorMakeupLinear = dbToLinear(program.compressor.makeupGainDb);
-
-  for (size_t index = 0; index < program.eq.size(); ++index) {
-    const auto& band = program.eq[index];
-    const float omega = 2.0f * kPi * band.frequencyHz / static_cast<float>(sampleRate);
-    const float cosine = std::cos(omega);
-    const float sine = std::sin(omega);
-    const float alpha = sine / (2.0f * band.q);
-    const float amplitude = std::pow(10.0f, band.gainDb / 40.0f);
-    const float shelfAlpha = sine * 0.5f * std::sqrt(2.0f);
-    const float twiceSqrtAAlpha = 2.0f * std::sqrt(amplitude) * shelfAlpha;
-
-    float b0 = 1.0f;
-    float b1 = 0.0f;
-    float b2 = 0.0f;
-    float a0 = 1.0f;
-    float a1 = 0.0f;
-    float a2 = 0.0f;
-    switch (band.type) {
-    case ClipEqBandType::Bell:
-      b0 = 1.0f + alpha * amplitude;
-      b1 = -2.0f * cosine;
-      b2 = 1.0f - alpha * amplitude;
-      a0 = 1.0f + alpha / amplitude;
-      a1 = -2.0f * cosine;
-      a2 = 1.0f - alpha / amplitude;
-      break;
-    case ClipEqBandType::LowShelf:
-      b0 = amplitude * ((amplitude + 1.0f) - (amplitude - 1.0f) * cosine + twiceSqrtAAlpha);
-      b1 = 2.0f * amplitude * ((amplitude - 1.0f) - (amplitude + 1.0f) * cosine);
-      b2 = amplitude * ((amplitude + 1.0f) - (amplitude - 1.0f) * cosine - twiceSqrtAAlpha);
-      a0 = (amplitude + 1.0f) + (amplitude - 1.0f) * cosine + twiceSqrtAAlpha;
-      a1 = -2.0f * ((amplitude - 1.0f) + (amplitude + 1.0f) * cosine);
-      a2 = (amplitude + 1.0f) + (amplitude - 1.0f) * cosine - twiceSqrtAAlpha;
-      break;
-    case ClipEqBandType::HighShelf:
-      b0 = amplitude * ((amplitude + 1.0f) + (amplitude - 1.0f) * cosine + twiceSqrtAAlpha);
-      b1 = -2.0f * amplitude * ((amplitude - 1.0f) + (amplitude + 1.0f) * cosine);
-      b2 = amplitude * ((amplitude + 1.0f) + (amplitude - 1.0f) * cosine - twiceSqrtAAlpha);
-      a0 = (amplitude + 1.0f) - (amplitude - 1.0f) * cosine + twiceSqrtAAlpha;
-      a1 = 2.0f * ((amplitude - 1.0f) - (amplitude + 1.0f) * cosine);
-      a2 = (amplitude + 1.0f) - (amplitude - 1.0f) * cosine - twiceSqrtAAlpha;
-      break;
-    case ClipEqBandType::HighPass:
-      b0 = (1.0f + cosine) * 0.5f;
-      b1 = -(1.0f + cosine);
-      b2 = b0;
-      a0 = 1.0f + alpha;
-      a1 = -2.0f * cosine;
-      a2 = 1.0f - alpha;
-      break;
-    case ClipEqBandType::LowPass:
-      b0 = (1.0f - cosine) * 0.5f;
-      b1 = 1.0f - cosine;
-      b2 = b0;
-      a0 = 1.0f + alpha;
-      a1 = -2.0f * cosine;
-      a2 = 1.0f - alpha;
-      break;
-    }
-
-    prepared.m_eqCoefficients[index] = {b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0};
-  }
+  prepared.m_sampleRate = sampleRate;
+  prepared.m_transitionFrames = detail::parametricEqTransitionFrames(sampleRate);
+  auto& coefficients = prepared.m_coefficients;
+  coefficients.gateThresholdLinear = dbToLinear(program.gate.thresholdDb);
+  coefficients.gateAttack = timeCoefficient(program.gate.attackMs, sampleRate);
+  coefficients.gateRelease = timeCoefficient(program.gate.releaseMs, sampleRate);
+  coefficients.compressorAttack = timeCoefficient(program.compressor.attackMs, sampleRate);
+  coefficients.compressorRelease = timeCoefficient(program.compressor.releaseMs, sampleRate);
+  coefficients.compressorMakeupLinear = dbToLinear(program.compressor.makeupGainDb);
+  coefficients.limiterRelease = timeCoefficient(program.limiter.releaseMs, sampleRate);
+  coefficients.limiterCeilingLinear = dbToLinear(program.limiter.ceilingDb);
+  coefficients.widthTarget = program.width.enabled ? program.width.amount : 1.0f;
+  if (prepared.m_eq.prepare(program.eq, sampleRate, channelCount) !=
+      ParametricEqValidationError::OK)
+    return ClipDspValidationError::InvalidEq;
 
   *this = prepared;
   reset();
@@ -147,13 +87,49 @@ ClipDspValidationError ClipDspProcessor::prepare(const ClipDspProgram& program, 
 }
 
 void ClipDspProcessor::reset() noexcept {
-  for (auto& band : m_eqState)
-    for (auto& channel : band)
-      channel = {};
+  m_eq.reset();
   m_gateEnvelope = 0.0f;
   m_gateGain = m_program.gate.enabled ? 0.0f : 1.0f;
   m_compressorEnvelope = 0.0f;
   m_limiterGain = 1.0f;
+  m_widthCurrent = m_coefficients.widthTarget;
+  m_widthFramesRemaining = 0;
+}
+
+void ClipDspProcessor::transitionTo(const ClipDspProcessor& prepared) noexcept {
+  if (m_channelCount == 0 || m_channelCount != prepared.m_channelCount ||
+      m_sampleRate != prepared.m_sampleRate) {
+    *this = prepared;
+    return;
+  }
+  const bool gateWasEnabled = m_program.gate.enabled;
+  const bool compressorWasEnabled = m_program.compressor.enabled;
+  const bool limiterWasEnabled = m_program.limiter.enabled;
+  m_eq.transitionTo(prepared.m_eq);
+  m_program = prepared.m_program;
+  m_coefficients = prepared.m_coefficients;
+
+  if (m_program.gate.enabled && !gateWasEnabled) {
+    m_gateEnvelope = 0.0f;
+    m_gateGain = 1.0f;
+  }
+  if (m_program.compressor.enabled && !compressorWasEnabled)
+    m_compressorEnvelope = 0.0f;
+  if (m_program.limiter.enabled && !limiterWasEnabled)
+    m_limiterGain = 1.0f;
+
+  if (m_coefficients.widthTarget == m_widthCurrent) {
+    m_widthFramesRemaining = 0;
+  } else {
+    m_widthStep =
+        (m_coefficients.widthTarget - m_widthCurrent) / static_cast<float>(m_transitionFrames);
+    m_widthFramesRemaining = m_transitionFrames;
+  }
+}
+
+bool ClipDspProcessor::active() const noexcept {
+  return m_program.gate.enabled || m_program.compressor.enabled || m_program.limiter.enabled ||
+         m_program.width.enabled || m_widthFramesRemaining > 0 || m_eq.active();
 }
 
 void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexcept {
@@ -166,36 +142,25 @@ void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexce
     for (size_t channel = 0; channel < channelCount; ++channel)
       peak = std::max(peak, std::abs(channels[channel]));
     const float envelopeCoefficient =
-        peak > m_gateEnvelope ? m_gateAttackCoefficient : m_gateReleaseCoefficient;
+        peak > m_gateEnvelope ? m_coefficients.gateAttack : m_coefficients.gateRelease;
     m_gateEnvelope = envelopeCoefficient * m_gateEnvelope + (1.0f - envelopeCoefficient) * peak;
-    const float target = m_gateEnvelope >= m_gateThresholdLinear ? 1.0f : 0.0f;
+    const float target = m_gateEnvelope >= m_coefficients.gateThresholdLinear ? 1.0f : 0.0f;
     const float gainCoefficient =
-        target > m_gateGain ? m_gateAttackCoefficient : m_gateReleaseCoefficient;
+        target > m_gateGain ? m_coefficients.gateAttack : m_coefficients.gateRelease;
     m_gateGain = gainCoefficient * m_gateGain + (1.0f - gainCoefficient) * target;
     for (size_t channel = 0; channel < channelCount; ++channel)
       channels[channel] *= m_gateGain;
   }
 
-  for (size_t band = 0; band < m_program.eq.size(); ++band) {
-    if (!m_program.eq[band].enabled)
-      continue;
-    const auto& coefficients = m_eqCoefficients[band];
-    for (size_t channel = 0; channel < channelCount; ++channel) {
-      auto& state = m_eqState[band][channel];
-      const float input = channels[channel];
-      const float output = coefficients.b0 * input + state.z1;
-      state.z1 = coefficients.b1 * input - coefficients.a1 * output + state.z2;
-      state.z2 = coefficients.b2 * input - coefficients.a2 * output;
-      channels[channel] = output;
-    }
-  }
+  m_eq.processFrame(channels, channelCount);
 
   if (m_program.compressor.enabled) {
     float peak = 0.0f;
     for (size_t channel = 0; channel < channelCount; ++channel)
       peak = std::max(peak, std::abs(channels[channel]));
-    const float envelopeCoefficient = peak > m_compressorEnvelope ? m_compressorAttackCoefficient
-                                                                  : m_compressorReleaseCoefficient;
+    const float envelopeCoefficient = peak > m_compressorEnvelope
+                                          ? m_coefficients.compressorAttack
+                                          : m_coefficients.compressorRelease;
     m_compressorEnvelope =
         envelopeCoefficient * m_compressorEnvelope + (1.0f - envelopeCoefficient) * peak;
     const float inputDb = 20.0f * std::log10(std::max(m_compressorEnvelope, 1.0e-12f));
@@ -204,7 +169,7 @@ void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexce
     if (overDb <= 0.0f) {
       // No reduction: reductionDb would be +0.0f, so the gain is exactly the
       // constant makeup gain. Skip the per-frame pow.
-      compressorGain = m_compressorMakeupLinear;
+      compressorGain = m_coefficients.compressorMakeupLinear;
     } else {
       const float reductionDb = overDb / m_program.compressor.ratio - overDb;
       compressorGain = dbToLinear(reductionDb + m_program.compressor.makeupGainDb);
@@ -213,9 +178,17 @@ void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexce
       channels[channel] *= compressorGain;
   }
 
-  if (m_program.width.enabled && channelCount >= 2) {
+  const bool widthRamping = m_widthFramesRemaining > 0;
+  if (widthRamping) {
+    --m_widthFramesRemaining;
+    if (m_widthFramesRemaining == 0)
+      m_widthCurrent = m_coefficients.widthTarget;
+    else
+      m_widthCurrent += m_widthStep;
+  }
+  if ((m_program.width.enabled || widthRamping) && channelCount >= 2) {
     const float mid = (channels[0] + channels[1]) * 0.5f;
-    const float side = (channels[0] - channels[1]) * 0.5f * m_program.width.amount;
+    const float side = (channels[0] - channels[1]) * 0.5f * m_widthCurrent;
     channels[0] = mid + side;
     channels[1] = mid - side;
   }
@@ -224,12 +197,14 @@ void ClipDspProcessor::processFrame(float* channels, size_t channelCount) noexce
     float peak = 0.0f;
     for (size_t channel = 0; channel < channelCount; ++channel)
       peak = std::max(peak, std::abs(channels[channel]));
-    const float requiredGain = peak > m_limiterCeilingLinear ? m_limiterCeilingLinear / peak : 1.0f;
+    const float requiredGain = peak > m_coefficients.limiterCeilingLinear
+                                   ? m_coefficients.limiterCeilingLinear / peak
+                                   : 1.0f;
     if (requiredGain < m_limiterGain)
       m_limiterGain = requiredGain;
     else
       m_limiterGain =
-          m_limiterReleaseCoefficient * m_limiterGain + (1.0f - m_limiterReleaseCoefficient);
+          m_coefficients.limiterRelease * m_limiterGain + (1.0f - m_coefficients.limiterRelease);
     for (size_t channel = 0; channel < channelCount; ++channel)
       channels[channel] *= m_limiterGain;
   }
