@@ -105,6 +105,7 @@ void ClipDspProcessor::transitionTo(const ClipDspProcessor& prepared) noexcept {
   const bool gateWasEnabled = m_program.gate.enabled;
   const bool compressorWasEnabled = m_program.compressor.enabled;
   const bool limiterWasEnabled = m_program.limiter.enabled;
+  const float previousWidthTarget = m_coefficients.widthTarget;
   m_eq.transitionTo(prepared.m_eq);
   m_program = prepared.m_program;
   m_coefficients = prepared.m_coefficients;
@@ -118,6 +119,10 @@ void ClipDspProcessor::transitionTo(const ClipDspProcessor& prepared) noexcept {
   if (m_program.limiter.enabled && !limiterWasEnabled)
     m_limiterGain = 1.0f;
 
+  // A pending ramp toward the same width keeps going: unrelated metadata
+  // updates re-send the program and must not postpone the settle.
+  if (m_widthFramesRemaining > 0 && m_coefficients.widthTarget == previousWidthTarget)
+    return;
   if (m_coefficients.widthTarget == m_widthCurrent) {
     m_widthFramesRemaining = 0;
   } else {

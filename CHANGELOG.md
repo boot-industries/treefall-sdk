@@ -20,15 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accept `EqBandOrder::First` (6 dB/oct). Shelf `q` is honoured up to
   `kParametricEqMaxShelfQ` (4.0), so low-Q tone shaping (Q 0.1, 0.3) is
   available. `parametricEqMagnitudeDb()` returns the target response for UI
-  curves, and `ParametricEqProcessor::transitionTo()` moves a running EQ to a
-  new prepared response over `kParametricEqTransitionSeconds` (10 ms) without
+  curves; its frequency and result spans may overlap, including an in-place
+  query. `ParametricEqProcessor::transitionTo()` moves a running EQ to a new
+  prepared response over `kParametricEqTransitionSeconds` (10 ms) without
   resetting its filter state. Per-band `enabled` is the band bypass and
   `ParametricEqSettings::enabled` bypasses all bands; both keep the settings
   and toggle click-free. The installed-package fixture covers the header.
 - `ClipDspProcessor::transitionTo()` adopts another prepared processor while
   keeping its filter and dynamics state, and `ClipDspProcessor::active()`
   reports whether any stage, including a pending EQ or width transition, still
-  processes audio.
+  processes audio. Re-requesting a pending EQ or width target keeps its ramp,
+  so repeated metadata updates do not postpone the 10 ms settle or a bypass.
 - `tools/docs_path_audit.py` (CTest `docs_path_audit`) now fails if private
   engineering records (`docs/orp/`, `.claude/implementation_progress.md`) are
   tracked by git. Engineering records moved to a private companion repository

@@ -92,7 +92,8 @@ ParametricEqValidationError validateParametricEq(const ParametricEqSettings& set
 
 /// Control thread. Magnitude in dB of the full target cascade at each
 /// frequency in [0, sampleRate / 2]. A bypassed EQ reports 0 dB everywhere.
-/// The spans must have equal sizes; on any error nothing is written.
+/// The spans must have equal sizes and may overlap or alias (an in-place query
+/// is allowed); on any error nothing is written.
 ParametricEqValidationError parametricEqMagnitudeDb(const ParametricEqSettings& settings,
                                                     double sampleRate,
                                                     std::span<const float> frequenciesHz,
@@ -109,7 +110,9 @@ public:
   ParametricEqValidationError prepare(const ParametricEqSettings& settings, double sampleRate,
                                       size_t channelCount) noexcept;
   /// Precondition: `prepared` came from a successful prepare(). A different
-  /// channel count or sample rate replaces this processor outright.
+  /// channel count or sample rate replaces this processor outright. A band
+  /// whose pending ramp already heads to the requested response (including a
+  /// bypass ramp-out) keeps that ramp rather than restarting it.
   void transitionTo(const ParametricEqProcessor& prepared) noexcept;
   void reset() noexcept;
   void processFrame(float* channels, size_t channelCount) noexcept;

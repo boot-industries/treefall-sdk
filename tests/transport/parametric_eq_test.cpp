@@ -11,6 +11,7 @@
 #include <bit>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -431,6 +432,44 @@ TEST(ParametricEqTest, TransitionsAreClickFree) {
   EXPECT_FALSE(processor.settings().bands[0].enabled);
 }
 
+TEST(ParametricEqTest, RepeatedTransitionToSameTargetKeepsPendingRamp) {
+  // The transport calls transitionTo() for every metadata update, including
+  // unrelated gain or pan changes. Re-requesting the pending target must not
+  // restart the ramp or delay a band's bypass.
+  const auto from = single(second(EqBandType::LowShelf, 160.0f, 12.0f, 0.3f));
+  const auto gainChange = single(second(EqBandType::LowShelf, 160.0f, 6.0f, 0.3f));
+  auto bandOff = from;
+  bandOff.bands[0].enabled = false;
+  auto eqOff = from;
+  eqOff.enabled = false;
+
+  for (const auto& to : {gainChange, bandOff, eqOff}) {
+    ParametricEqProcessor once;
+    ParametricEqProcessor repeated;
+    ParametricEqProcessor next;
+    ASSERT_EQ(once.prepare(from, 48000.0, 1), ParametricEqValidationError::OK);
+    ASSERT_EQ(repeated.prepare(from, 48000.0, 1), ParametricEqValidationError::OK);
+    ASSERT_EQ(next.prepare(to, 48000.0, 1), ParametricEqValidationError::OK);
+    once.transitionTo(next);
+    size_t mismatches = 0;
+    for (size_t n = 0; n < 960; ++n) {
+      if (n % 128 == 0)
+        repeated.transitionTo(next);
+      const auto input =
+          static_cast<float>(0.25 * std::sin(2.0 * kPi * 60.0 * static_cast<double>(n) / 48000.0));
+      float a = input;
+      float b = input;
+      once.processFrame(&a, 1);
+      repeated.processFrame(&b, 1);
+      if (std::bit_cast<uint32_t>(a) != std::bit_cast<uint32_t>(b))
+        ++mismatches;
+    }
+    EXPECT_EQ(mismatches, 0u) << "enabled " << to.enabled << " band " << to.bands[0].enabled;
+    EXPECT_EQ(repeated.active(), once.active());
+    EXPECT_EQ(repeated.active(), to.enabled && to.bands[0].enabled);
+  }
+}
+
 TEST(ParametricEqTest, DisabledEqIsBitExactIdentity) {
   auto bypassed = sixBandLayout();
   bypassed.enabled = false;
@@ -513,6 +552,26 @@ TEST(ParametricEqTest, MagnitudeQueryRejectsBadQueries) {
             ParametricEqValidationError::OK);
   for (const float value : magnitudes)
     EXPECT_TRUE(std::isfinite(value));
+}
+
+TEST(ParametricEqTest, MagnitudeQueryAcceptsOverlappingSpans) {
+  const auto settings = sixBandLayout();
+  const std::vector<float> frequencies{20.0f, 100.0f, 1000.0f, 5000.0f, 16000.0f, 24000.0f};
+  const auto expected = queryDb(settings, 48000.0, frequencies);
+  constexpr size_t kInputStart = 2;
+  for (const ptrdiff_t offset : {-2, -1, 0, 1, 2}) {
+    std::vector<float> buffer(frequencies.size() + 2 * kInputStart, 0.0f);
+    std::copy(frequencies.begin(), frequencies.end(),
+              buffer.begin() + static_cast<ptrdiff_t>(kInputStart));
+    float* input = buffer.data() + kInputStart;
+    float* output = input + offset;
+    ASSERT_EQ(parametricEqMagnitudeDb(settings, 48000.0,
+                                      std::span<const float>(input, frequencies.size()),
+                                      std::span<float>(output, frequencies.size())),
+              ParametricEqValidationError::OK);
+    for (size_t index = 0; index < frequencies.size(); ++index)
+      EXPECT_EQ(output[index], expected[index]) << "offset " << offset << " index " << index;
+  }
 }
 
 TEST(ParametricEqTest, DesignGridIsStable) {

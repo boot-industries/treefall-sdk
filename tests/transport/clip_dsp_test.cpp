@@ -286,6 +286,38 @@ TEST(ClipDspTest, WidthTransitionRampsThenSettlesExactly) {
   EXPECT_FALSE(processor.active());
 }
 
+TEST(ClipDspTest, RepeatedTransitionKeepsPendingWidthRamp) {
+  // Unrelated metadata updates re-send the same program; the width ramp must
+  // still settle 480 frames after the first request.
+  ClipDspProgram program;
+  program.width.enabled = true;
+  program.width.amount = 1.0f;
+  auto collapsed = program;
+  collapsed.width.amount = 0.0f;
+
+  ClipDspProcessor once;
+  ClipDspProcessor repeated;
+  ClipDspProcessor next;
+  ASSERT_EQ(once.prepare(program, 48000.0, 2), ClipDspValidationError::OK);
+  ASSERT_EQ(repeated.prepare(program, 48000.0, 2), ClipDspValidationError::OK);
+  ASSERT_EQ(next.prepare(collapsed, 48000.0, 2), ClipDspValidationError::OK);
+  once.transitionTo(next);
+  for (size_t n = 0; n < 512; ++n) {
+    if (n % 128 == 0)
+      repeated.transitionTo(next);
+    std::array<float, 2> a{1.0f, -0.5f};
+    std::array<float, 2> b{1.0f, -0.5f};
+    once.processFrame(a.data(), a.size());
+    repeated.processFrame(b.data(), b.size());
+    EXPECT_EQ(b[0], a[0]) << "frame " << n;
+    EXPECT_EQ(b[1], a[1]) << "frame " << n;
+    if (n >= 479) {
+      EXPECT_EQ(b[0], 0.25f) << "frame " << n;
+      EXPECT_EQ(b[1], 0.25f) << "frame " << n;
+    }
+  }
+}
+
 TEST(ClipDspTest, ActiveCoversEnabledStagesAndPendingTransitions) {
   const auto preparedActive = [](const ClipDspProgram& program) {
     ClipDspProcessor processor;

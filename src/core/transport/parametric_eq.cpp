@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace orpheus {
 namespace {
@@ -218,7 +219,13 @@ ParametricEqValidationError parametricEqMagnitudeDb(const ParametricEqSettings& 
     }
   }
 
-  for (size_t index = 0; index < frequenciesHz.size(); ++index) {
+  // Each result depends only on its own frequency. When the output span starts
+  // after the input in memory, write from the end so an overlapping write never
+  // lands on a frequency that has not been read yet.
+  const bool reverse = std::greater<const float*>{}(magnitudesDb.data(), frequenciesHz.data());
+  const size_t count = frequenciesHz.size();
+  for (size_t step = 0; step < count; ++step) {
+    const size_t index = reverse ? count - 1 - step : step;
     const double frequency = static_cast<double>(frequenciesHz[index]);
     double totalDb = 0.0;
     const bool atNyquist = frequency >= nyquist;
@@ -376,15 +383,22 @@ void ParametricEqProcessor::transitionTo(const ParametricEqProcessor& prepared) 
   for (size_t index = 0; index < kParametricEqMaxBands; ++index) {
     auto& runtime = m_bands[index];
     const auto& next = prepared.m_bands[index];
+    const bool wasEnabled = runtime.enabled;
     runtime.enabled = next.enabled;
     if (next.enabled) {
       if (!runtime.running) {
         m_state[index].fill({});
         runtime.current = identityOf(next.target);
+        beginRamp(index, next.target);
+      } else if (runtime.framesRemaining == 0 || !(runtime.target == next.target)) {
+        beginRamp(index, next.target);
       }
-      beginRamp(index, next.target);
+      // Otherwise the pending ramp already heads to this target: keep it.
     } else if (runtime.running) {
-      beginRamp(index, identityOf(runtime.current));
+      // A band already ramping out keeps its ramp; re-requesting the bypass
+      // must not postpone it.
+      if (wasEnabled)
+        beginRamp(index, identityOf(runtime.current));
     } else {
       runtime.target = next.target;
       runtime.current = next.current;

@@ -85,9 +85,10 @@ public:
   /// state. EQ and width changes settle in kClipDspTransitionSeconds; gate,
   /// compressor and limiter settings apply at once. A dynamics stage enabled by
   /// the transition starts idle: gate envelope 0 with gain 1, compressor
-  /// envelope 0, limiter gain 1. A different channel count or sample rate
-  /// replaces this processor outright. Precondition: `prepared` came from a
-  /// successful prepare().
+  /// envelope 0, limiter gain 1. Re-requesting a pending EQ or width target
+  /// keeps its ramp, so repeated updates do not postpone the settle. A
+  /// different channel count or sample rate replaces this processor outright.
+  /// Precondition: `prepared` came from a successful prepare().
   void transitionTo(const ClipDspProcessor& prepared) noexcept;
   /// True while any stage processes audio, including an EQ or width transition.
   bool active() const noexcept;
