@@ -3,7 +3,9 @@
 #include "../../src/core/transport/transport_controller.h"
 
 #include <orpheus/audio_file_writer.h>
+#include <orpheus/clip_dsp.h>
 
+#include "../support/rt_guard.hpp"
 #include "../support/unique_temp_dir.hpp"
 #include <algorithm>
 #include <array>
@@ -620,6 +622,57 @@ TEST_F(ClipAudioControlsTest, DspProgramRoundTripsAndInvalidUpdateIsAtomic) {
   invalid.dsp.width.amount = 2.5f;
   EXPECT_EQ(transport->updateClipMetadata(handle, invalid), SessionGraphError::InvalidParameter);
   EXPECT_EQ(metadata().dsp, value.dsp);
+}
+
+TEST_F(ClipAudioControlsTest, DspPayloadAllocationFailureIsAtomic) {
+  auto value = metadata();
+  value.gainDb = -6.0f;
+  value.dsp.eq.enabled = true;
+  value.dsp.eq.bands[0].enabled = true;
+  value.dsp.eq.bands[0].frequencyHz = 2500.0f;
+  value.dsp.eq.bands[0].gainDb = 4.5f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+
+  auto updated = value;
+  updated.gainDb = -3.0f;
+  updated.pan = 0.5f;
+  updated.dsp.eq.bands[0].gainDb = -4.5f;
+  updated.dsp.width.enabled = true;
+  updated.dsp.width.amount = 0.0f;
+
+  // make_shared puts the prepared processor and its reference counts in one
+  // block: sizeof(ClipDspProcessor) plus a small control-block header. Nothing
+  // earlier in updateClipMetadata allocates, so this window selects exactly
+  // the DSP payload allocation.
+  constexpr size_t kPayloadBytes = sizeof(ClipDspProcessor);
+  constexpr size_t kControlBlockSlack = 64;
+  SessionGraphError result = SessionGraphError::OK;
+  uint32_t injectedFailures = 0;
+  size_t failedBytes = 0;
+  {
+    orpheus::tests::support::FailNextAllocation failPayload(kPayloadBytes,
+                                                            kPayloadBytes + kControlBlockSlack);
+    result = transport->updateClipMetadata(handle, updated);
+    injectedFailures = failPayload.failures();
+    failedBytes = failPayload.failedBytes();
+  }
+  ASSERT_EQ(injectedFailures, 1u);
+  EXPECT_GE(failedBytes, kPayloadBytes);
+  EXPECT_LE(failedBytes, kPayloadBytes + kControlBlockSlack);
+  EXPECT_EQ(result, SessionGraphError::InternalError);
+
+  const auto retained = metadata();
+  EXPECT_FLOAT_EQ(retained.gainDb, value.gainDb);
+  EXPECT_FLOAT_EQ(retained.pan, value.pan);
+  EXPECT_EQ(retained.dsp, value.dsp);
+
+  // The failed update published nothing and released the registry lock, so
+  // the same update succeeds once allocation does.
+  ASSERT_EQ(transport->updateClipMetadata(handle, updated), SessionGraphError::OK);
+  const auto applied = metadata();
+  EXPECT_FLOAT_EQ(applied.gainDb, updated.gainDb);
+  EXPECT_FLOAT_EQ(applied.pan, updated.pan);
+  EXPECT_EQ(applied.dsp, updated.dsp);
 }
 
 TEST_F(ClipAudioControlsTest, PerVoiceDspRunsBeforeClipGainAndPan) {

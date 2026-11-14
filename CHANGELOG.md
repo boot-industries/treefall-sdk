@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports whether any stage, including a pending EQ or width transition, still
   processes audio. Re-requesting a pending EQ or width target keeps its ramp,
   so repeated metadata updates do not postpone the 10 ms settle or a bypass.
+  If preparing an update cannot allocate its DSP payload, the transport returns
+  `SessionGraphError::InternalError` without applying the update.
 - `tools/docs_path_audit.py` (CTest `docs_path_audit`) now fails if private
   engineering records (`docs/orp/`, `.claude/implementation_progress.md`) are
   tracked by git. Engineering records moved to a private companion repository

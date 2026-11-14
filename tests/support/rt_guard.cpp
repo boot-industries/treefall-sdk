@@ -11,16 +11,29 @@ thread_local int RtGuardState::t_sectionDepth = 0;
 std::atomic<std::uint64_t> RtGuardState::s_allocViolations{0};
 std::atomic<std::uint64_t> RtGuardState::s_deallocViolations{0};
 std::atomic<std::uint64_t> RtGuardState::s_allocViolationBytes{0};
+thread_local bool AllocationFailureState::t_armed = false;
+thread_local std::size_t AllocationFailureState::t_minBytes = 0;
+thread_local std::size_t AllocationFailureState::t_maxBytes = 0;
+thread_local std::uint32_t AllocationFailureState::t_failures = 0;
+thread_local std::size_t AllocationFailureState::t_failedBytes = 0;
 
 } // namespace orpheus::tests::support
 
 namespace {
 
 void* guardedAlloc(std::size_t size) {
+  using orpheus::tests::support::AllocationFailureState;
   using orpheus::tests::support::RtGuardState;
   if (RtGuardState::t_sectionDepth > 0) {
     RtGuardState::s_allocViolations.fetch_add(1, std::memory_order_relaxed);
     RtGuardState::s_allocViolationBytes.fetch_add(size, std::memory_order_relaxed);
+  }
+  if (AllocationFailureState::t_armed && size >= AllocationFailureState::t_minBytes &&
+      size <= AllocationFailureState::t_maxBytes) {
+    AllocationFailureState::t_armed = false;
+    ++AllocationFailureState::t_failures;
+    AllocationFailureState::t_failedBytes = size;
+    return nullptr;
   }
   return std::malloc(size);
 }

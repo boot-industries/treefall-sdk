@@ -864,7 +864,12 @@ SessionGraphError TransportController::updateClipMetadata(ClipHandle handle,
   if (validation != SessionGraphError::OK)
     return validation;
 
-  auto preparedDsp = std::make_shared<ClipDspProcessor>();
+  std::shared_ptr<ClipDspProcessor> preparedDsp;
+  try {
+    preparedDsp = std::make_shared<ClipDspProcessor>();
+  } catch (const std::bad_alloc&) {
+    return SessionGraphError::InternalError;
+  }
 
   const int64_t fadeInSampleCount =
       static_cast<int64_t>(metadata.fadeInSeconds * static_cast<double>(m_sampleRate));

@@ -242,6 +242,7 @@ if(TARGET orpheus_audio_io)
             GTest::gtest
             GTest::gtest_main
     )
+    target_link_libraries(clip_controls_test PRIVATE orpheus_test_rt_guard)
     target_include_directories(clip_controls_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
