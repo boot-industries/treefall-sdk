@@ -5,6 +5,7 @@
 #include <orpheus/audio_file_writer.h>
 
 #include "../support/unique_temp_dir.hpp"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -638,15 +639,20 @@ TEST_F(ClipAudioControlsTest, PerVoiceDspRunsBeforeClipGainAndPan) {
   value.dsp.limiter.enabled = true;
   value.dsp.limiter.ceilingDb = -12.0411998f;
   ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
-  render(left, right);
+  // Width glides over kClipDspTransitionSeconds (480 frames at 48 kHz); the
+  // limiter applies at once.
+  std::array<float, 512> dspLeft{};
+  std::array<float, 512> dspRight{};
+  render(dspLeft, dspRight);
 
-  for (size_t frame = 0; frame < left.size(); ++frame) {
-    EXPECT_NEAR(left[frame], right[frame], 1.0e-6f);
-    EXPECT_LT(std::abs(left[frame]), 0.251f);
+  for (size_t frame = 0; frame < dspLeft.size(); ++frame) {
+    if (frame >= 479)
+      EXPECT_NEAR(dspLeft[frame], dspRight[frame], 1.0e-6f) << "frame " << frame;
+    EXPECT_LT(std::abs(dspLeft[frame]), 0.251f) << "frame " << frame;
   }
 }
 
-TEST_F(ClipAudioControlsTest, DspEnableTakesEffectOnNextBlock) {
+TEST_F(ClipAudioControlsTest, DspEnableStartsOnNextBlockAndSettlesWithinTransition) {
   auto value = metadata();
   value.fadeInSeconds = 0.0;
   value.fadeOutSeconds = 0.0;
@@ -659,14 +665,16 @@ TEST_F(ClipAudioControlsTest, DspEnableTakesEffectOnNextBlock) {
   ASSERT_NE(identityLeft.front(), identityRight.front());
 
   // The program update reaches the voice through the command queue, which the
-  // next render drains before it renders, so that block is already collapsed.
+  // next render drains before it renders: that block starts collapsing at its
+  // first frame and is fully collapsed once the 480-frame transition ends.
   value.dsp.width.enabled = true;
   value.dsp.width.amount = 0.0f;
   ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
-  std::array<float, 16> left{};
-  std::array<float, 16> right{};
+  std::array<float, 512> left{};
+  std::array<float, 512> right{};
   render(left, right);
-  for (size_t frame = 0; frame < left.size(); ++frame) {
+  EXPECT_LT(std::abs(left[0] - right[0]), std::abs(identityLeft[0] - identityRight[0]));
+  for (size_t frame = 479; frame < left.size(); ++frame) {
     EXPECT_EQ(left[frame], right[frame]) << "frame " << frame;
     EXPECT_GT(std::abs(left[frame]), 0.1f) << "frame " << frame;
   }
@@ -674,10 +682,53 @@ TEST_F(ClipAudioControlsTest, DspEnableTakesEffectOnNextBlock) {
   value.dsp.width.enabled = false;
   ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
   render(left, right);
-  for (size_t frame = 0; frame < left.size(); ++frame) {
-    EXPECT_EQ(left[frame], identityLeft[frame]) << "frame " << frame;
-    EXPECT_EQ(right[frame], identityRight[frame]) << "frame " << frame;
+  for (size_t frame = 480; frame < left.size(); ++frame) {
+    EXPECT_EQ(left[frame], identityLeft[0]) << "frame " << frame;
+    EXPECT_EQ(right[frame], identityRight[0]) << "frame " << frame;
   }
+
+  std::array<float, 16> afterLeft{};
+  std::array<float, 16> afterRight{};
+  render(afterLeft, afterRight);
+  for (size_t frame = 0; frame < afterLeft.size(); ++frame) {
+    EXPECT_EQ(afterLeft[frame], identityLeft[frame]) << "frame " << frame;
+    EXPECT_EQ(afterRight[frame], identityRight[frame]) << "frame " << frame;
+  }
+}
+
+TEST_F(ClipAudioControlsTest, EqUpdateOnPlayingVoiceIsContinuous) {
+  auto value = metadata();
+  value.fadeInSeconds = 0.0;
+  value.fadeOutSeconds = 0.0;
+  // The +12 dB shelf lifts the DC fixture near full scale; -12 dB of clip gain
+  // keeps the mix below the master clipping-protection knee so the measured
+  // ratio is the EQ's alone.
+  value.gainDb = -12.0f;
+  value.dsp.eq.enabled = true;
+  value.dsp.eq.bands[0] = {true,  EqBandType::LowShelf, EqBandOrder::Second, 160.0f,
+                           12.0f, 0.70710678f};
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  ASSERT_EQ(transport->startClip(handle), SessionGraphError::OK);
+
+  std::array<float, 1024> settleLeft{};
+  std::array<float, 1024> settleRight{};
+  render(settleLeft, settleRight);
+
+  // A 0.5 dB nudge on a playing voice must glide, not reset the filter state.
+  value.dsp.eq.bands[0].gainDb = 11.5f;
+  ASSERT_EQ(transport->updateClipMetadata(handle, value), SessionGraphError::OK);
+  std::array<float, 1024> left{};
+  std::array<float, 1024> right{};
+  render(left, right);
+
+  float previous = settleLeft.back();
+  float largestStep = 0.0f;
+  for (const float sample : left) {
+    largestStep = std::max(largestStep, std::abs(sample - previous));
+    previous = sample;
+  }
+  EXPECT_LT(largestStep, 1.0e-3f);
+  EXPECT_NEAR(left.back() / settleLeft.back(), std::pow(10.0f, -0.5f / 20.0f), 1.0e-4f);
 }
 
 // Renders the survivors of a voice-pool compaction and compares them with a

@@ -1270,7 +1270,9 @@ void TransportController::processCommands() {
             clip.playDelayFramesRemaining = cmd.data.metadata.playDelayFrames;
           }
           clip.routingGroup = cmd.data.metadata.routingGroup;
-          clip.dspProcessor = cmd.dspProcessor;
+          // Keep the voice's filter and dynamics state: EQ and width glide to
+          // the new program instead of restarting from silence.
+          clip.dspProcessor.transitionTo(cmd.dspProcessor);
           configureVoiceRouting(i, clip.routingGroup, clip.numChannels,
                                 shouldPanMonoToStereo(clip.routingGroup, clip.numChannels));
         }
