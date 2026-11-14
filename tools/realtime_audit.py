@@ -430,6 +430,20 @@ def repository_target_rows() -> tuple[TargetRow, ...]:
             ("processFrame", "transitionTo", "active"),
         ),
         TargetRow(
+            "Parametric EQ callback {name}",
+            "src/core/transport/parametric_eq.cpp",
+            "ParametricEqProcessor",
+            (
+                "processFrame",
+                "transitionTo",
+                "active",
+                "beginRamp",
+                "advanceRamp",
+                "stopBand",
+                "deriveCoefficients",
+            ),
+        ),
+        TargetRow(
             "Streaming consumer lease helper {name}",
             _CLIP_SOURCE,
             "StreamingClipSource",
