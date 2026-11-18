@@ -1011,7 +1011,11 @@ void TransportController::processCommands() {
   };
 
   // Every operator-stop command applies the same stop fade to the voices its
-  // predicate selects; only StopAll also restarts fades already in progress.
+  // predicate selects. None of them restarts an operator stop fade already in
+  // progress: restarting begins the envelope again at full gain, so a second
+  // stop on a fading voice would play the level back up before taking it down.
+  // StopAll alone also takes over a natural-end tail, whose own fade-out can be
+  // much longer than the operator's stop fade.
   const auto stopVoicesWhere = [this](const auto& shouldStop) noexcept {
     for (size_t i = 0; i < m_activeClipCount; ++i) {
       ActiveClip& voice = m_activeClips[i];
@@ -1063,7 +1067,8 @@ void TransportController::processCommands() {
       break;
 
     case TransportCommand::Type::StopAll:
-      stopVoicesWhere([](const ActiveClip&) { return true; });
+      stopVoicesWhere(
+          [](const ActiveClip& voice) { return !voice.isStopping || voice.isNaturalEnding; });
       break;
 
     case TransportCommand::Type::Panic:

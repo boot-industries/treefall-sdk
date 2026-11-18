@@ -256,3 +256,135 @@ TEST_F(StopFadeEnvelopeTest, NonLoopedOutBoundaryHasNoHardCut) {
   // And the clip must reach silence (fade actually completed).
   EXPECT_LT(envelope.back(), steady * 0.02f) << "Clip did not fade to silence after OUT";
 }
+
+// A second stop command on a voice that is already fading must not start its fade again. Stop All
+// used to restart every fade in progress, so the envelope stepped back up to full gain and then
+// faded out over the whole stop fade a second time (stop, then Stop All: an audible level jump).
+TEST_F(StopFadeEnvelopeTest, StopAllDuringAStopFadeKeepsTheLevelFalling) {
+  ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  constexpr double kFadeSeconds = 0.5;
+  const int fadeSamples = static_cast<int>(kFadeSeconds * kSampleRate); // 24000
+  ASSERT_EQ(
+      m_transport->updateClipFades(handle, 0.0, kFadeSeconds, FadeCurve::Linear, FadeCurve::Linear),
+      SessionGraphError::OK);
+
+  std::vector<float> left(kBuffer, 0.0f);
+  std::vector<float> right(kBuffer, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+
+  m_transport->startClip(handle);
+  m_transport->processAudio(buffers, 2, kBuffer);
+  const float steady = std::fabs(left[100]);
+  ASSERT_GT(steady, 0.01f);
+
+  // The first Stop runs about a sixth of its fade (8 buffers = 4096 samples), then Stop All.
+  ASSERT_EQ(m_transport->stopClip(handle), SessionGraphError::OK);
+  std::vector<float> envelope;
+  const auto capture = [&](int buffersToRender) {
+    for (int b = 0; b < buffersToRender; ++b) {
+      m_transport->processAudio(buffers, 2, kBuffer);
+      for (size_t i = 0; i < kBuffer; ++i)
+        envelope.push_back(std::fabs(left[i]));
+    }
+  };
+  capture(8);
+  const size_t stopAllAt = envelope.size();
+  ASSERT_LT(envelope.back(), steady * 0.9f) << "the first fade should be under way";
+  ASSERT_GT(envelope.back(), steady * 0.5f) << "and not yet near its end";
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  capture(60); // 30720 samples: past the end of the original fade
+
+  // The level only ever falls, across the Stop All as well. A restarted fade steps up to
+  // ~steady at the first sample after it.
+  for (size_t i = 1; i < envelope.size(); ++i) {
+    ASSERT_LE(envelope[i], envelope[i - 1] + steady * 1e-3f)
+        << "level rose at sample " << i << " (" << envelope[i - 1] << " -> " << envelope[i]
+        << "); Stop All was issued at sample " << stopAllAt;
+  }
+
+  // The voice is silent when its original fade ends (within a buffer), not a second fade later.
+  size_t silentAt = envelope.size();
+  for (size_t i = 0; i < envelope.size(); ++i) {
+    if (envelope[i] < steady * 0.02f) {
+      silentAt = i;
+      break;
+    }
+  }
+  EXPECT_LE(silentAt, static_cast<size_t>(fadeSamples) + kBuffer)
+      << "the fade ran longer than its configured length";
+  EXPECT_EQ(m_transport->getClipState(handle), PlaybackState::Stopped);
+}
+
+// Stop All still has to stop what is not fading yet, next to a voice that already is.
+TEST_F(StopFadeEnvelopeTest, StopAllStillStartsTheFadeOfAVoiceThatWasNotFading) {
+  const ClipHandle fading = 1;
+  const ClipHandle playing = 2;
+  for (const ClipHandle handle : {fading, playing}) {
+    ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+    ASSERT_EQ(m_transport->updateClipFades(handle, 0.0, 0.5, FadeCurve::Linear, FadeCurve::Linear),
+              SessionGraphError::OK);
+  }
+
+  std::vector<float> left(kBuffer, 0.0f);
+  std::vector<float> right(kBuffer, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+  const auto render = [&](int buffersToRender) {
+    for (int b = 0; b < buffersToRender; ++b)
+      m_transport->processAudio(buffers, 2, kBuffer);
+  };
+
+  ASSERT_EQ(m_transport->startClip(fading), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->startClip(playing), SessionGraphError::OK);
+  render(2);
+  ASSERT_EQ(m_transport->stopClip(fading), SessionGraphError::OK);
+  render(4);
+  ASSERT_EQ(m_transport->getClipState(fading), PlaybackState::Stopping);
+  ASSERT_EQ(m_transport->getClipState(playing), PlaybackState::Playing);
+
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  render(1);
+  EXPECT_EQ(m_transport->getClipState(playing), PlaybackState::Stopping)
+      << "Stop All must start the fade of a voice that was still playing";
+
+  render(60);
+  EXPECT_EQ(m_transport->getClipState(fading), PlaybackState::Stopped);
+  EXPECT_EQ(m_transport->getClipState(playing), PlaybackState::Stopped);
+}
+
+// Stop All pressed again while its own fade runs must not restart that fade either.
+TEST_F(StopFadeEnvelopeTest, StopAllRepeatedKeepsTheLevelFalling) {
+  ClipHandle handle = 1;
+  ASSERT_EQ(m_transport->registerClipAudio(handle, m_path.c_str()), SessionGraphError::OK);
+  ASSERT_EQ(m_transport->updateClipFades(handle, 0.0, 0.5, FadeCurve::Linear, FadeCurve::Linear),
+            SessionGraphError::OK);
+
+  std::vector<float> left(kBuffer, 0.0f);
+  std::vector<float> right(kBuffer, 0.0f);
+  float* buffers[2] = {left.data(), right.data()};
+  m_transport->startClip(handle);
+  m_transport->processAudio(buffers, 2, kBuffer);
+  const float steady = std::fabs(left[100]);
+  ASSERT_GT(steady, 0.01f);
+
+  std::vector<float> envelope;
+  const auto capture = [&](int buffersToRender) {
+    for (int b = 0; b < buffersToRender; ++b) {
+      m_transport->processAudio(buffers, 2, kBuffer);
+      for (size_t i = 0; i < kBuffer; ++i)
+        envelope.push_back(std::fabs(left[i]));
+    }
+  };
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  capture(8);
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  capture(8);
+  ASSERT_EQ(m_transport->stopAllClips(), SessionGraphError::OK);
+  capture(50);
+
+  for (size_t i = 1; i < envelope.size(); ++i) {
+    ASSERT_LE(envelope[i], envelope[i - 1] + steady * 1e-3f)
+        << "level rose at sample " << i << " (" << envelope[i - 1] << " -> " << envelope[i] << ")";
+  }
+  EXPECT_EQ(m_transport->getClipState(handle), PlaybackState::Stopped);
+}

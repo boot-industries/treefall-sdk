@@ -519,7 +519,10 @@ public:
 
   /// Stop all currently playing clips
   ///
-  /// All active clips will fade out simultaneously over 10ms (default).
+  /// Every voice that is not already in an operator stop fade starts its stop fade (10ms by
+  /// default). A voice already in one, from stopClip(), a choke or an earlier stopAllClips(),
+  /// keeps the fade it is on: stopAllClips() never restarts it, so the level never steps back up.
+  /// A voice in its natural-end tail is taken over by the stop fade.
   ///
   /// @return SessionGraphError::OK on success, or error code on failure
   virtual SessionGraphError stopAllClips() = 0;
