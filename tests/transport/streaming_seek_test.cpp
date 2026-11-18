@@ -4059,9 +4059,9 @@ TEST_F(StreamingSeekMatrixTest,
 
 TEST_F(StreamingSeekMatrixTest, StopAllInANaturalEndTailAfterLoopOnStaysSilentAndNeverWraps) {
   // Natural end, looping switched on during the tail, then Stop All. stopClip(), stopOtherClips()
-  // and the group choke skip a voice that is already fading; Stop All restarts its fade with the
-  // operator length. The voice has already ended: it must not wrap into the loop and play the
-  // clip's start.
+  // and the group choke skip a voice that is already fading; Stop All takes the tail over with the
+  // operator length (it leaves a voice already in an operator stop fade alone). The voice has
+  // already ended: it must not wrap into the loop and play the clip's start.
   const int64_t page = static_cast<int64_t>(StreamingClipSource::kPageFrames);
   constexpr uint32_t block = 64;
   constexpr double rate = 0.967;

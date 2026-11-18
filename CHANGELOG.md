@@ -297,6 +297,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously dropped out with the loop flag, which made the trimmed-away audio
   audible); with none configured the clip still plays real audio past trim-out
   through the default fade instead of hard-cutting, as before.
+- `stopAllClips()` no longer restarts a stop fade that is already running.
+  Pressing Stop twice (the second press being Stop All) restarted every fading
+  voice's envelope at full gain, so the level stepped back up before it faded
+  out again. A voice already in an operator stop fade, from `stopClip()`, a
+  group choke or an earlier Stop All, now keeps the fade it is on, as it does
+  for `stopClip()`, `stopOtherClips()` and the choke; voices that are not
+  fading start their stop fade as before. Stop All still takes over a voice in
+  its natural-end tail with the operator stop fade (that restart is unchanged).
 - `StreamingClipSource` reads the loop-start interpolation frame from a resident
   page without publishing a demand or retiring pages, so a second read in a
   block can no longer evict the pages under the voice's cursor.
